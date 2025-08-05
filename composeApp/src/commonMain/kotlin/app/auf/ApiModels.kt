@@ -12,8 +12,6 @@ data class GenerateContentRequest(
 
 @Serializable
 data class Content(
-    // MODIFIED: Added the 'role' field to match the Gemini API spec.
-    // The role will be "user" or "model".
     val role: String,
     val parts: List<Part>
 )
@@ -27,9 +25,12 @@ data class Part(
 
 @Serializable
 data class GenerateContentResponse(
-    val candidates: List<Candidate>?,
+    // This field is present on success
+    val candidates: List<Candidate>? = null,
     @SerialName("promptFeedback")
-    val promptFeedback: PromptFeedback? = null
+    val promptFeedback: PromptFeedback? = null,
+    // ADDED: This new field will capture any error object returned by the API
+    val error: ApiError? = null
 )
 
 @Serializable
@@ -49,6 +50,14 @@ data class SafetyRating(
 data class PromptFeedback(
     val blockReason: String?,
     val safetyRatings: List<SafetyRating>
+)
+
+// ADDED: A new data class to represent the structure of an error response from the Gemini API.
+@Serializable
+data class ApiError(
+    val code: Int,
+    val message: String,
+    val status: String
 )
 
 

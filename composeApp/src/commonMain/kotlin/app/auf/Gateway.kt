@@ -20,11 +20,8 @@ class Gateway {
         }
     }
 
-    // MODIFIED: The function now accepts a List<Content> instead of a raw String.
-    // This aligns the gateway with the StateManager's new prompt building logic.
     suspend fun generateContent(apiKey: String, model: String, contents: List<Content>): String {
         val apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
-        // MODIFIED: The request body is now created directly from the passed-in contents.
         val requestBody = GenerateContentRequest(contents = contents)
         try {
             val response: GenerateContentResponse = client.post(apiUrl) {
@@ -33,14 +30,22 @@ class Gateway {
                 setBody(requestBody)
             }.body()
 
-            // The rest of the response parsing logic remains correct.
+            // --- MODIFIED ERROR HANDLING LOGIC ---
+            // First, check if the response contains an explicit error object.
+            // If it does, format and return the detailed error message.
+            response.error?.let {
+                return "Error: ${it.message} (Code: ${it.code}, Status: ${it.status})"
+            }
+
+            // If there's no error object, parse the success response as before.
             return response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
                 ?: response.promptFeedback?.blockReason?.let { "Blocked: $it" }
-                ?: "No content received."
+                ?: "No content received, but no error was reported." // Modified to be more descriptive
         } catch (e: Exception) {
             println("API Call Failed: ${e.message}")
             e.printStackTrace()
-            return "Error: Could not connect to the API."
+            // This catch block now handles true network/serialization exceptions.
+            return "Error: A client-side exception occurred. Check console for details."
         }
     }
 
