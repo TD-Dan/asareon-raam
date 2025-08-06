@@ -8,7 +8,6 @@ data class HolonCatalogueFile(
     val holon_catalogue: List<HolonHeader>
 )
 
-// MODIFIED: Final, lean state model. "Me" (aiPersonaId) vs "The World" (contextualHolonIds).
 data class AppState(
     val holonCatalogue: List<HolonHeader> = emptyList(),
     val catalogueFilter: String? = null,
@@ -25,7 +24,12 @@ data class AppState(
     val gatewayStatus: GatewayStatus = GatewayStatus.IDLE,
     val isProcessing: Boolean = false,
     val availableModels: List<String> = emptyList(),
-    val selectedModel: String = "gemini-1.5-flash-latest"
+    val selectedModel: String = "gemini-1.5-flash-latest",
+
+    // --- NEW: Awaiting User Command ---
+    // Holds a parsed action manifest that has been proposed by the AI
+    // but not yet confirmed by the user. The UI will react to this state.
+    val pendingActionManifest: List<Action>? = null
 )
 
 data class ChatMessage(

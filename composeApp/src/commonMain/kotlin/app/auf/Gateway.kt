@@ -3,6 +3,7 @@ package app.auf
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.plugins.HttpTimeout // Added
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
@@ -17,6 +18,11 @@ class Gateway {
                 prettyPrint = true
                 isLenient = true
             })
+        }
+        // NEW: Install HttpTimeout plugin with a generous timeout for LLM calls
+        install(HttpTimeout) {
+            // Set the request timeout to 300 seconds (300,000 milliseconds)
+            requestTimeoutMillis = 300000
         }
     }
 

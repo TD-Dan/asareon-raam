@@ -37,17 +37,18 @@ fun ChatView(stateManager: StateManager, modifier: Modifier = Modifier) {
     // --- Data for Control Panel ---
     val availableModels = appState.availableModels
     val selectedModel = appState.selectedModel
-    // ADDED: Get data for the new "Active Agent" dropdown
     val aiPersonas = appState.holonCatalogue.filter { it.type == "AI_Persona" }
     val selectedAiPersonaId = appState.aiPersonaId
     val selectedAiPersonaName = aiPersonas.find { it.id == selectedAiPersonaId }?.name ?: "None"
 
     var isModelSelectorExpanded by remember { mutableStateOf(false) }
-    // ADDED: State for the new dropdown
     var isAgentSelectorExpanded by remember { mutableStateOf(false) }
 
+    // --- NEW: Check if a manifest is pending user confirmation ---
+    val isManifestPending = appState.pendingActionManifest != null
+
     val sendMessageAction = {
-        if (userMessage.isNotBlank() && !isProcessing) {
+        if (userMessage.isNotBlank() && !isProcessing && !isManifestPending) {
             stateManager.sendMessage(userMessage)
             userMessage = ""
         }
@@ -55,9 +56,10 @@ fun ChatView(stateManager: StateManager, modifier: Modifier = Modifier) {
     val displayedHistory = if (appState.isSystemVisible) chatHistory else chatHistory.filter { it.author != Author.SYSTEM }
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        // Message History (unchanged from previous version)
+        // Message History
         LazyColumn(modifier = Modifier.weight(1f).padding(bottom = 8.dp)) {
             items(displayedHistory) { message ->
+                // This entire message display block is unchanged and correct.
                 Column(modifier = Modifier.padding(bottom = 8.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -102,7 +104,44 @@ fun ChatView(stateManager: StateManager, modifier: Modifier = Modifier) {
             }
         }
 
-        // --- MODIFIED: Control Panel Toolbar ---
+        // --- NEW: Manifest Confirmation Panel ---
+        if (isManifestPending) {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                elevation = 4.dp,
+                backgroundColor = Color(0xFFFFF8E1) // A light yellow to draw attention
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "Confirm Action Manifest",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "The AI has proposed changes to the knowledge graph. Review the proposal in the chat history. Do you want to execute these changes?",
+                        fontSize = 14.sp
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Button(
+                            onClick = { stateManager.rejectManifest() },
+                            colors = ButtonDefaults.buttonColors(backgroundColor = Color.DarkGray, contentColor = Color.White)
+                        ) { Text("Reject") }
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = { stateManager.confirmManifest() },
+                            colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF4CAF50)) // A positive green
+                        ) { Text("Accept & Execute") }
+                    }
+                }
+            }
+        }
+
+        // Control Panel Toolbar (unchanged)
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -114,27 +153,19 @@ fun ChatView(stateManager: StateManager, modifier: Modifier = Modifier) {
             ) { Text(if (appState.isSystemVisible) "Hide System" else "Show System") }
 
             Column(horizontalAlignment = Alignment.End) {
-                // Active Agent Selector
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Active Agent:", fontSize = 12.sp)
                     Spacer(Modifier.width(8.dp))
                     Box {
                         Button(onClick = { isAgentSelectorExpanded = true }) { Text(selectedAiPersonaName) }
                         DropdownMenu(expanded = isAgentSelectorExpanded, onDismissRequest = { isAgentSelectorExpanded = false }) {
-                            DropdownMenuItem(onClick = {
-                                stateManager.selectAiPersona(null)
-                                isAgentSelectorExpanded = false
-                            }) { Text("None") }
+                            DropdownMenuItem(onClick = { stateManager.selectAiPersona(null); isAgentSelectorExpanded = false }) { Text("None") }
                             aiPersonas.forEach { persona ->
-                                DropdownMenuItem(onClick = {
-                                    stateManager.selectAiPersona(persona.id)
-                                    isAgentSelectorExpanded = false
-                                }) { Text(persona.name) }
+                                DropdownMenuItem(onClick = { stateManager.selectAiPersona(persona.id); isAgentSelectorExpanded = false }) { Text(persona.name) }
                             }
                         }
                     }
                 }
-                // Model Selector
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Model:", fontSize = 12.sp)
                     Spacer(Modifier.width(8.dp))
@@ -142,10 +173,7 @@ fun ChatView(stateManager: StateManager, modifier: Modifier = Modifier) {
                         Button(onClick = { isModelSelectorExpanded = true }) { Text(selectedModel) }
                         DropdownMenu(expanded = isModelSelectorExpanded, onDismissRequest = { isModelSelectorExpanded = false }) {
                             availableModels.forEach { modelName ->
-                                DropdownMenuItem(onClick = {
-                                    stateManager.selectModel(modelName)
-                                    isModelSelectorExpanded = false
-                                }) { Text(modelName) }
+                                DropdownMenuItem(onClick = { stateManager.selectModel(modelName); isModelSelectorExpanded = false }) { Text(modelName) }
                             }
                         }
                     }
@@ -153,7 +181,7 @@ fun ChatView(stateManager: StateManager, modifier: Modifier = Modifier) {
             }
         }
 
-        // Input field and send button (unchanged)
+        // --- MODIFIED: Input field and send button are now disabled when a manifest is pending ---
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             TextField(
                 value = userMessage,
@@ -163,10 +191,10 @@ fun ChatView(stateManager: StateManager, modifier: Modifier = Modifier) {
                         sendMessageAction(); true
                     } else false
                 },
-                placeholder = { Text("Type your message...") },
-                enabled = !isProcessing
+                placeholder = { if (isManifestPending) Text("Confirm or reject the pending manifest to continue.") else Text("Type your message...") },
+                enabled = !isProcessing && !isManifestPending // Disabled when processing OR when manifest is pending
             )
-            Button(onClick = sendMessageAction, modifier = Modifier.padding(start = 8.dp), enabled = !isProcessing) {
+            Button(onClick = sendMessageAction, modifier = Modifier.padding(start = 8.dp), enabled = !isProcessing && !isManifestPending) {
                 if (isProcessing) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(24.dp)) {
                         CircularProgressIndicator(strokeWidth = 2.dp)
