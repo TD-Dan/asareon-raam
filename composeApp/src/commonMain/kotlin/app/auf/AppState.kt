@@ -2,20 +2,15 @@ package app.auf
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-
-@Serializable
-data class HolonCatalogueFile(
-    val holon_catalogue: List<HolonHeader>
-)
+import kotlinx.serialization.Transient
 
 data class AppState(
-    val holonCatalogue: List<HolonHeader> = emptyList(),
+    val holonGraph: List<HolonHeader> = emptyList(),
     val catalogueFilter: String? = null,
     val activeHolons: Map<String, Holon> = emptyMap(),
 
-    // --- The "Me" ---
+    // --- The "Me" vs "The World" ---
     val aiPersonaId: String? = null,
-    // --- The "World" ---
     val contextualHolonIds: Set<String> = emptySet(),
 
     val inspectedHolonId: String? = null,
@@ -25,18 +20,15 @@ data class AppState(
     val isProcessing: Boolean = false,
     val availableModels: List<String> = emptyList(),
     val selectedModel: String = "gemini-1.5-flash-latest",
-
-    // --- NEW: Awaiting User Command ---
-    // Holds a parsed action manifest that has been proposed by the AI
-    // but not yet confirmed by the user. The UI will react to this state.
-    val pendingActionManifest: List<Action>? = null
 )
 
 data class ChatMessage(
     val author: Author,
     val content: String,
     val title: String? = null,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val actionManifest: List<Action>? = null,
+    val isActionResolved: Boolean = false
 )
 
 enum class Author {
@@ -59,6 +51,24 @@ data class HolonHeader(
     val type: String,
     val name: String,
     val summary: String,
-    @SerialName("file_path")
-    val filePath: String
+    val relationships: List<Relationship> = emptyList(),
+    @SerialName("sub_holons")
+    val subHolons: List<SubHolonRef> = emptyList(),
+    @Transient val filePath: String = "",
+    @Transient val parentId: String? = null,
+    @Transient val depth: Int = 0
+)
+
+@Serializable
+data class Relationship(
+    @SerialName("target_id")
+    val targetId: String,
+    val type: String
+)
+
+@Serializable
+data class SubHolonRef(
+    val id: String,
+    val type: String,
+    val summary: String
 )

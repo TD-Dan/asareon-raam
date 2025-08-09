@@ -22,25 +22,29 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun SessionView(stateManager: StateManager, modifier: Modifier = Modifier) {
     val appState by stateManager.state.collectAsState()
-    val holonCatalogue = appState.holonCatalogue
+    // --- MODIFIED: We now get the graph from the new state property ---
+    val holonGraph = appState.holonGraph
     val activeContextualHolonIds = appState.contextualHolonIds
     val activeAiPersonaId = appState.aiPersonaId
     val activeFilter = appState.catalogueFilter
-    val holonTypes = holonCatalogue.map { it.type }.distinct().sorted()
-    val filteredCatalogue = if (activeFilter == null) {
-        holonCatalogue
+
+    // Filtering logic remains the same, but operates on the new graph structure
+    val holonTypes = holonGraph.map { it.type }.distinct().sorted()
+    val filteredGraph = if (activeFilter == null) {
+        holonGraph
     } else {
-        holonCatalogue.filter { it.type == activeFilter }
+        holonGraph.filter { it.type == activeFilter }
     }
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         Text(
-            text = "Holon Catalogue",
+            text = "Knowledge Graph", // Renamed for accuracy
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(bottom = 12.dp)
         )
 
+        // Filter buttons remain the same
         FlowRow(
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -68,36 +72,45 @@ fun SessionView(stateManager: StateManager, modifier: Modifier = Modifier) {
             }
         }
 
+        // --- MODIFIED: The LazyColumn now renders the hierarchy visually ---
         LazyColumn {
-            items(filteredCatalogue) { holon ->
+            items(filteredGraph) { holon ->
                 val isTheActiveAgent = activeAiPersonaId == holon.id
                 val isInContext = activeContextualHolonIds.contains(holon.id)
                 val isSelected = isTheActiveAgent || isInContext
+
                 val backgroundColor = when {
-                    isTheActiveAgent && isInContext -> Color(0xFFA9A9A9) // Darker grey if both active and in context
-                    isTheActiveAgent -> Color(0xFFD3D3D3) // Light grey if just active agent
-                    isInContext -> Color(0xFFE0E0E0) // Slightly lighter grey if just in context
+                    isTheActiveAgent -> Color(0xFFD3D3D3) // Light grey if active agent
+                    isInContext -> Color(0xFFE0E0E0) // Slightly lighter grey if in context
                     else -> Color.Transparent
                 }
                 val fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                 val fontStyle = if (isTheActiveAgent) FontStyle.Italic else FontStyle.Normal
                 val displayText = if (isTheActiveAgent) "${holon.name} (Active Agent)" else holon.name
 
-                Text(
-                    text = displayText,
-                    fontWeight = fontWeight,
-                    fontStyle = fontStyle,
-                    color = if(isTheActiveAgent) Color.DarkGray else Color.Black,
+                // --- KEY CHANGE: Indentation based on depth ---
+                val indentation = (holon.depth * 16).dp
+
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        // MODIFIED: Click is now always enabled.
-                        .clickable {
-                            stateManager.toggleHolonActive(holon.id)
-                            stateManager.inspectHolon(holon.id)
-                        }
                         .background(backgroundColor)
-                        .padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)
-                )
+                        .clickable {
+                            // Logic is now simpler: always inspect on click.
+                            // The context toggle happens independently in the StateManager.
+                            stateManager.inspectHolon(holon.id)
+                            stateManager.toggleHolonActive(holon.id)
+                        }
+                        // Apply the calculated indentation here
+                        .padding(start = indentation, top = 8.dp, bottom = 8.dp, end = 4.dp)
+                ){
+                    Text(
+                        text = displayText,
+                        fontWeight = fontWeight,
+                        fontStyle = fontStyle,
+                        color = if(isTheActiveAgent) Color.DarkGray else Color.Black,
+                    )
+                }
             }
         }
     }

@@ -7,18 +7,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.*
 import java.io.File
-import java.time.Instant
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
+import java.nio.file.Files
+import java.nio.file.Paths
+import kotlin.streams.toList
 
 class StateManager(private val apiKey: String, private val initialSettings: UserSettings) {
 
     private val _state = MutableStateFlow(AppState(
         selectedModel = initialSettings.selectedModel,
+        // --- CORRECTED: Using the correct property name from UserSettings ---
         aiPersonaId = initialSettings.selectedAiPersonaId,
         contextualHolonIds = initialSettings.activeContextualHolonIds
     ))
@@ -28,25 +27,11 @@ class StateManager(private val apiKey: String, private val initialSettings: User
     private val gateway: Gateway = Gateway()
     private val appVersion = "1.0.0"
 
-    // --- NEW: Dynamic Tool Manifest ---
-    // The application's code is now the single source of truth for its capabilities.
-    private val dynamicToolManifest = """
-        --- START OF FILE Host Tool Manifest ---
-        **Tool: Atomic Change Manifest**
-        *   **Description:** Use this tool to propose any changes to the file system, such as creating or updating Holons.
-        *   **Format:** Enclose a JSON array of `Action` objects within `[AUF_ACTION_MANIFEST]` and `[/AUF_ACTION_MANIFEST]` tags.
-        *   **Available Actions:**
-            *   `CreateHolon(content: String)`: Proposes a new Holon. The content must be a complete, valid JSON string for the holon.
-            *   `UpdateHolonContent(holonId: String, newContent: String)`: Proposes replacing the entire content of an existing Holon.
-            *   `CreateFile(filePath: String, content: String)`: Proposes creating a new non-Holon file (e.g., a dream transcript).
-    """.trimIndent()
-
     init {
-        loadCatalogue()
+        loadHolonGraph()
         loadAvailableModels()
     }
 
-    // --- Core Business Logic (Unchanged and Correct) ---
     fun toggleHolonActive(holonId: String) {
         val state = _state.value
         val newContextIds = if (state.contextualHolonIds.contains(holonId)) {
@@ -55,79 +40,275 @@ class StateManager(private val apiKey: String, private val initialSettings: User
             state.contextualHolonIds + holonId
         }
         _state.update { it.copy(contextualHolonIds = newContextIds) }
+        inspectHolon(holonId, forceLoad = true)
     }
-    fun selectAiPersona(holonId: String?) { _state.update { it.copy(aiPersonaId = holonId) } }
-    fun inspectHolon(holonId: String?) {
+
+    fun selectAiPersona(holonId: String?) {
+        _state.update { it.copy(aiPersonaId = holonId) }
+        loadHolonGraph()
+    }
+
+    fun inspectHolon(holonId: String?, forceLoad: Boolean = false) {
         if (holonId == null) {
             _state.update { it.copy(inspectedHolonId = null) }
             return
         }
-        if (_state.value.activeHolons.containsKey(holonId)) {
+        if (holonId == _state.value.inspectedHolonId && !forceLoad) return
+        if (_state.value.activeHolons.containsKey(holonId) && !forceLoad) {
             _state.update { it.copy(inspectedHolonId = holonId) }
             return
         }
-        val holonHeader = _state.value.holonCatalogue.find { it.id == holonId } ?: return
+        val holonHeader = _state.value.holonGraph.find { it.id == holonId } ?: return
         try {
-            val holonFile = File("framework/${holonHeader.filePath}")
-            val holon = Holon(header = holonHeader, content = holonFile.readText())
-            _state.update { it.copy(inspectedHolonId = holonId, activeHolons = it.activeHolons + (holonId to holon)) }
+            val holonFile = File(holonHeader.filePath)
+            val holonContent = holonFile.readText()
+            val holon = Holon(header = holonHeader, content = holonContent)
+            _state.update {
+                it.copy(
+                    inspectedHolonId = holonId,
+                    activeHolons = it.activeHolons + (holonId to holon)
+                )
+            }
         } catch (e: Exception) {
             println("Error loading holon content for inspection: ${e.message}")
         }
     }
+
     fun selectModel(modelName: String) {
         if (modelName in _state.value.availableModels) {
             _state.update { it.copy(selectedModel = modelName) }
         }
     }
+
     fun setCatalogueFilter(type: String?) {
         _state.update { it.copy(catalogueFilter = type) }
     }
-    fun toggleSystemMessageVisibility() { _state.update { it.copy(isSystemVisible = !it.isSystemVisible) } }
 
-
-    // --- MODIFIED: Prompt Building Logic ---
-    private fun readFileContent(filePath: String): String { return try { File(filePath).readText() } catch (e: Exception) { "Error reading file: $filePath" } }
+    fun toggleSystemMessageVisibility() {
+        _state.update { it.copy(isSystemVisible = !it.isSystemVisible) }
+    }
 
     private fun buildPromptMessages(newMessage: String): List<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
-        val catalogue = _state.value.holonCatalogue
         val state = _state.value
-
-        // 1. Core AI Protocol
         messages.add(ChatMessage(Author.SYSTEM, readFileContent("framework/framework_protocol.md"), "framework_protocol.md"))
-
-        // 2. System State & Host Capabilities
-        val utcTimestamp = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
-        val systemStateContent = """
-            {
-              "utc_timestamp": "$utcTimestamp",
-              "host_application": "AUF App",
-              "host_version": "$appVersion",
-              "host_os": "${System.getProperty("os.name")}",
-              "host_llm": "${state.selectedModel}"
-            }
-        """.trimIndent()
-        messages.add(ChatMessage(Author.SYSTEM, systemStateContent, "system_state.json"))
-        messages.add(ChatMessage(Author.SYSTEM, readFileContent("framework/auf_app_tool_use.md"), "auf_app_tool_use.md"))
-        // **NEW**: Inject the dynamically generated tool manifest.
-        messages.add(ChatMessage(Author.SYSTEM, dynamicToolManifest, "Host Tool Manifest"))
-
-
-        // 3. Knowledge Graph
-        messages.add(ChatMessage(Author.SYSTEM, readFileContent("framework/holon_catalogue.json"), "holon_catalogue.json"))
+        messages.add(ChatMessage(Author.SYSTEM, generateDynamicToolManifest(), "Host Tool Manifest"))
         val allActiveIds = (state.contextualHolonIds + listOfNotNull(state.aiPersonaId)).toSet()
         allActiveIds.forEach { holonId ->
-            catalogue.find { it.id == holonId }?.let { header ->
-                messages.add(ChatMessage(Author.SYSTEM, readFileContent("framework/${header.filePath}"), File(header.filePath).name))
+            state.activeHolons[holonId]?.let { holon ->
+                messages.add(ChatMessage(Author.SYSTEM, holon.content, File(holon.header.filePath).name))
             }
         }
-
-        // 4. Conversation History
         state.chatHistory.filter { it.author == Author.USER || it.author == Author.AI }.forEach { messages.add(it) }
         messages.add(ChatMessage(Author.USER, newMessage, "User"))
-
         return messages
+    }
+
+    fun sendMessage(message: String) {
+        if (_state.value.isProcessing) return
+        val userChatMessage = ChatMessage(Author.USER, message)
+        _state.update { it.copy(chatHistory = it.chatHistory + userChatMessage, isProcessing = true) }
+        val fullPromptMessages = buildPromptMessages(message)
+        val apiRequestContents = convertChatToApiContents(fullPromptMessages)
+
+        coroutineScope.launch {
+            val responseContent = gateway.generateContent(apiKey, _state.value.selectedModel, apiRequestContents)
+            val manifestStartTag = "[AUF_ACTION_MANIFEST]"
+            val manifestEndTag = "[/AUF_ACTION_MANIFEST]"
+            if (responseContent.contains(manifestStartTag) && responseContent.contains(manifestEndTag)) {
+                val manifestJson = responseContent.substringAfter(manifestStartTag).substringBeforeLast(manifestEndTag).trim()
+                try {
+                    val parsedActions = jsonParser.decodeFromString<List<Action>>(manifestJson)
+                    val summary = "The AI has proposed ${parsedActions.size} action(s). Please review and confirm."
+                    val proposalMessage = ChatMessage(
+                        author = Author.SYSTEM,
+                        title = "Action Manifest Proposed",
+                        content = summary,
+                        actionManifest = parsedActions,
+                        isActionResolved = false
+                    )
+                    _state.update {
+                        it.copy(
+                            chatHistory = it.chatHistory + proposalMessage,
+                            isProcessing = false
+                        )
+                    }
+                } catch (e: Exception) {
+                    val errorMessage = ChatMessage(Author.SYSTEM, "I attempted to propose an Action Manifest, but it was malformed. Error: ${e.message}", "Manifest Parse Error")
+                    _state.update { it.copy(chatHistory = it.chatHistory + errorMessage, isProcessing = false) }
+                }
+            } else {
+                val aiResponse = ChatMessage(Author.AI, responseContent, "AI")
+                _state.update { it.copy(chatHistory = it.chatHistory + aiResponse, isProcessing = false) }
+            }
+        }
+    }
+
+    fun executeActionFromMessage(messageTimestamp: Long) {
+        val message = _state.value.chatHistory.find { it.timestamp == messageTimestamp }
+        val manifest = message?.actionManifest ?: return
+        if (message.isActionResolved) return
+        _state.update { it.copy(isProcessing = true) }
+        updateMessageInHistory(messageTimestamp) { it.copy(isActionResolved = true) }
+        coroutineScope.launch {
+            val resultMessage = executeActionManifest(manifest)
+            _state.update { it.copy(chatHistory = it.chatHistory + resultMessage, isProcessing = false) }
+            loadHolonGraph()
+        }
+    }
+
+    fun rejectActionFromMessage(messageTimestamp: Long) {
+        val message = _state.value.chatHistory.find { it.timestamp == messageTimestamp }
+        if (message?.isActionResolved == true) return
+        updateMessageInHistory(messageTimestamp) { it.copy(isActionResolved = true) }
+        val rejectionMessage = ChatMessage(Author.SYSTEM, "The proposed action manifest has been rejected and discarded.", "Manifest Rejected")
+        _state.update { it.copy(chatHistory = it.chatHistory + rejectionMessage) }
+    }
+
+    private fun executeActionManifest(actions: List<Action>): ChatMessage {
+        val results = mutableListOf<String>()
+        actions.forEachIndexed { index, action ->
+            val actionName = "${index + 1}: ${action::class.simpleName}"
+            try {
+                when (action) {
+                    is CreateHolon -> {
+                        val parentHolonHeader = _state.value.holonGraph.find { it.id == action.parentId }
+                            ?: throw NoSuchElementException("Parent holon with ID '${action.parentId}' not found in the graph.")
+                        val newHolonJson = jsonParser.parseToJsonElement(action.content).jsonObject
+                        val newHolonHeaderJson = newHolonJson["header"]?.jsonObject
+                            ?: throw IllegalArgumentException("New holon content is missing a 'header'.")
+                        val newHolonId = newHolonHeaderJson["id"]?.jsonPrimitive?.content
+                            ?: throw IllegalArgumentException("New holon header is missing an 'id'.")
+                        val newHolonType = newHolonHeaderJson["type"]?.jsonPrimitive?.content ?: "Unknown"
+                        val newHolonSummary = newHolonHeaderJson["summary"]?.jsonPrimitive?.content ?: ""
+                        val newHolonFileName = "$newHolonId.json"
+                        val newHolonFilePath = "framework/holons/$newHolonFileName"
+                        File(newHolonFilePath).writeText(jsonParser.encodeToString(JsonElement.serializer(), newHolonJson))
+                        val parentFile = File(parentHolonHeader.filePath)
+                        val parentJson = jsonParser.parseToJsonElement(parentFile.readText()).jsonObject
+                        val parentHeader = parentJson["header"]!!.jsonObject
+                        val parentSubHolons = parentHeader["sub_holons"]!!.jsonArray.toMutableList()
+                        parentSubHolons.add(
+                            buildJsonObject {
+                                put("id", newHolonId)
+                                put("type", newHolonType)
+                                put("summary", newHolonSummary)
+                            }
+                        )
+                        val updatedParentJson = buildJsonObject {
+                            put("header", buildJsonObject {
+                                parentHeader.entries.forEach { (key, value) ->
+                                    if (key != "sub_holons") put(key, value)
+                                }
+                                put("sub_holons", JsonArray(parentSubHolons))
+                            })
+                            put("payload", parentJson["payload"]!!)
+                        }
+                        parentFile.writeText(jsonParser.encodeToString(JsonElement.serializer(), updatedParentJson))
+                        results.add("✅ $actionName: Success. Created '$newHolonId' and linked to parent '${action.parentId}'.")
+                    }
+                    is UpdateHolonContent -> {
+                        val holonToUpdate = _state.value.holonGraph.find { it.id == action.holonId }
+                            ?: throw NoSuchElementException("Holon with ID '${action.holonId}' not found in graph.")
+                        File(holonToUpdate.filePath).writeText(action.newContent)
+                        results.add("✅ $actionName ('${action.holonId}'): Success")
+                    }
+                    is CreateFile -> {
+                        val file = File("framework/${action.filePath}")
+                        file.parentFile.mkdirs()
+                        file.writeText(action.content)
+                        results.add("✅ $actionName ('${action.filePath}'): Success")
+                    }
+                }
+            } catch (e: Exception) {
+                results.add("❌ $actionName: FAILED - ${e.message}")
+                e.printStackTrace()
+            }
+        }
+        return ChatMessage(Author.SYSTEM, "Execution complete. Results:\n- ${results.joinToString("\n- ")}", "Action Manifest Executed")
+    }
+
+    private fun updateMessageInHistory(timestamp: Long, transform: (ChatMessage) -> ChatMessage) {
+        _state.update { currentState ->
+            currentState.copy(
+                chatHistory = currentState.chatHistory.map {
+                    if (it.timestamp == timestamp) transform(it) else it
+                }
+            )
+        }
+    }
+
+    private fun loadHolonGraph() {
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val holonsDir = File("framework/holons")
+                if (!holonsDir.exists()) throw IllegalStateException("Framework directory 'framework/holons' not found.")
+                val allHolonFiles = Files.walk(Paths.get(holonsDir.toURI()))
+                    .filter { Files.isRegularFile(it) && it.toString().endsWith(".json") }
+                    .map { it.toFile() }
+                    .toList()
+                var rootId = _state.value.aiPersonaId
+                if (rootId == null) {
+                    val rootCandidates = allHolonFiles.mapNotNull { file ->
+                        try {
+                            val header = jsonParser.parseToJsonElement(file.readText()).jsonObject["header"]?.jsonObject
+                            if (header?.get("type")?.jsonPrimitive?.content == "AI_Persona_Root") {
+                                header["id"]?.jsonPrimitive?.content
+                            } else null
+                        } catch (e: Exception) { null }
+                    }
+                    if (rootCandidates.size != 1) {
+                        throw IllegalStateException("Found ${rootCandidates.size} AI_Persona_Root holons. Expected exactly 1 for a cold start.")
+                    }
+                    rootId = rootCandidates.first()
+                    _state.update { it.copy(aiPersonaId = rootId) }
+                }
+                val holonFileMap = allHolonFiles.associateBy { it.nameWithoutExtension }
+                val graph = mutableListOf<HolonHeader>()
+                val activeHolons = mutableMapOf<String, Holon>()
+                traverseAndLoad(rootId, null, 0, holonFileMap, graph, activeHolons)
+                _state.update { it.copy(
+                    holonGraph = graph,
+                    activeHolons = activeHolons,
+                    gatewayStatus = GatewayStatus.OK
+                ) }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _state.update { it.copy(gatewayStatus = GatewayStatus.ERROR) }
+            }
+        }
+    }
+
+    private fun traverseAndLoad(holonId: String, parentId: String?, depth: Int, fileMap: Map<String, File>, graph: MutableList<HolonHeader>, activeHolons: MutableMap<String, Holon>) {
+        val file = fileMap[holonId] ?: return
+        try {
+            val content = file.readText()
+            var header = jsonParser.decodeFromString<Holon>(content).header
+            header = header.copy(
+                filePath = file.path,
+                parentId = parentId,
+                depth = depth
+            )
+            graph.add(header)
+            if ((_state.value.contextualHolonIds + _state.value.aiPersonaId).contains(holonId)) {
+                activeHolons[holonId] = Holon(header, content)
+            }
+            header.subHolons.forEach { subRef ->
+                traverseAndLoad(subRef.id, holonId, depth + 1, fileMap, graph, activeHolons)
+            }
+        } catch(e: Exception) {
+            println("Failed to load or parse holon: $holonId. Error: ${e.message}")
+        }
+    }
+
+    private fun readFileContent(filePath: String): String { return try { File(filePath).readText() } catch (e: Exception) { "Error reading file: $filePath" } }
+
+    private fun loadAvailableModels() {
+        coroutineScope.launch {
+            val models = gateway.listModels(apiKey)
+            if (models.isNotEmpty()) { _state.update { it.copy(availableModels = models.map { m -> m.name.removePrefix("models/") }) }
+            } else { _state.update { it.copy(availableModels = listOf("gemini-1.5-pro-latest", "gemini-1.s5-flash-latest")) } }
+        }
     }
 
     private fun convertChatToApiContents(messages: List<ChatMessage>): List<Content> {
@@ -170,147 +351,32 @@ class StateManager(private val apiKey: String, private val initialSettings: User
         return mergedContents
     }
 
+    private fun generateDynamicToolManifest(): String {
+        return """
+        --- START OF FILE Host Tool Manifest ---
+        **Tool: Atomic Change Manifest**
+        *   **Description:** Use this tool to propose any changes to the file system, such as creating or updating Holons.
+        *   **Format:** Enclose a JSON array of `Action` objects within `[AUF_ACTION_MANIFEST]` and `[/AUF_ACTION_MANIFEST]` tags. Each action object MUST include a "summary" field explaining its purpose.
+        *   **Available Action Contracts:**
 
-    // --- Main Interaction Loop (Unchanged and Correct) ---
-    fun sendMessage(message: String) {
-        if (_state.value.isProcessing) return
-        val fullPromptMessages = buildPromptMessages(message)
-        val apiRequestContents = convertChatToApiContents(fullPromptMessages)
-        _state.update { it.copy(chatHistory = fullPromptMessages, isProcessing = true) }
+            1.  `CreateHolon(parentId: String, content: String, summary: String)`
+                *   **Purpose:** Proposes a new Holon as a child of an existing one.
+                *   `parentId`: The `id` of the existing holon that will be this new holon's parent.
+                *   `content`: The complete, valid JSON string for the new holon.
+                *   `summary`: A brief, human-readable description of this action (e.g., "Create project task for UI refactor").
 
-        coroutineScope.launch {
-            val responseContent = gateway.generateContent(apiKey, _state.value.selectedModel, apiRequestContents)
-            val manifestStartTag = "[AUF_ACTION_MANIFEST]"
-            val manifestEndTag = "[/AUF_ACTION_MANIFEST]"
-            if (responseContent.contains(manifestStartTag) && responseContent.contains(manifestEndTag)) {
-                val manifestJson = responseContent.substringAfter(manifestStartTag).substringBeforeLast(manifestEndTag).trim()
-                try {
-                    val parsedActions = jsonParser.decodeFromString<List<Action>>(manifestJson)
-                    val proposalMessage = ChatMessage(Author.SYSTEM, "I have proposed a set of changes to the knowledge graph. Please review and confirm to proceed.", "Action Manifest Proposed")
-                    _state.update {
-                        it.copy(
-                            pendingActionManifest = parsedActions,
-                            chatHistory = it.chatHistory + proposalMessage,
-                            isProcessing = false
-                        )
-                    }
-                } catch (e: Exception) {
-                    val errorMessage = ChatMessage(Author.SYSTEM, "I attempted to propose an Action Manifest, but it was malformed. Error: ${e.message}", "Manifest Parse Error")
-                    _state.update { it.copy(chatHistory = it.chatHistory + errorMessage, isProcessing = false) }
-                }
-            } else {
-                val aiResponse = ChatMessage(Author.AI, responseContent, "AI")
-                _state.update { it.copy(chatHistory = it.chatHistory + aiResponse, isProcessing = false) }
-            }
-        }
+            2.  `UpdateHolonContent(holonId: String, newContent: String, summary: String)`
+                *   **Purpose:** Proposes replacing the entire content of an existing Holon.
+                *   `holonId`: The `id` of the holon to update.
+                *   `newContent`: The complete, new JSON string that will replace the existing file's content.
+                *   `summary`: A brief description of the update (e.g., "Update project status to Active").
+
+            3.  `CreateFile(filePath: String, content: String, summary: String)`
+                *   **Purpose:** Proposes creating a new non-Holon file (e.g., a dream transcript).
+                *   `filePath`: The relative path from the `framework/` directory (e.g., `dreams/dream-1.md`).
+                *   `content`: The raw text content of the file.
+                *   `summary`: A brief description of the file being created.
+        --- END OF FILE Host Tool Manifest ---
+        """.trimIndent()
     }
-
-
-    // --- Action Executor Logic (Unchanged and Correct) ---
-    fun confirmManifest() {
-        val manifest = _state.value.pendingActionManifest ?: return
-        _state.update { it.copy(pendingActionManifest = null, isProcessing = true) }
-
-        coroutineScope.launch {
-            val resultMessage = executeActionManifest(manifest)
-            _state.update { it.copy(chatHistory = it.chatHistory + resultMessage, isProcessing = false) }
-            loadCatalogue()
-        }
-    }
-
-    fun rejectManifest() {
-        _state.update { it.copy(pendingActionManifest = null) }
-        val rejectionMessage = ChatMessage(Author.SYSTEM, "The proposed action manifest has been rejected and discarded.", "Manifest Rejected")
-        _state.update { it.copy(chatHistory = it.chatHistory + rejectionMessage) }
-    }
-
-    private fun executeActionManifest(actions: List<Action>): ChatMessage {
-        val results = mutableListOf<String>()
-        val preFlightErrors = mutableListOf<String>()
-        actions.forEachIndexed { index, action ->
-            try {
-                when (action) {
-                    is CreateHolon -> jsonParser.parseToJsonElement(action.content).jsonObject["header"] ?: throw IllegalStateException("Header missing")
-                    is UpdateHolonContent -> if (_state.value.holonCatalogue.none { it.id == action.holonId }) throw NoSuchElementException("Holon ID not found")
-                    else -> { /* Other actions valid by structure */ }
-                }
-            } catch (e: Exception) {
-                preFlightErrors.add("Action #${index + 1} (${action::class.simpleName}) failed pre-flight check: ${e.message}")
-            }
-        }
-
-        if (preFlightErrors.isNotEmpty()) {
-            return ChatMessage(Author.SYSTEM, "Manifest execution aborted due to pre-flight errors:\n- ${preFlightErrors.joinToString("\n- ")}", "Execution Aborted")
-        }
-
-        actions.forEachIndexed { index, action ->
-            val actionName = "${index + 1}: ${action::class.simpleName}"
-            try {
-                when (action) {
-                    is CreateHolon -> {
-                        val holonJson = jsonParser.parseToJsonElement(action.content).jsonObject
-                        val headerJson = holonJson["header"]!!.jsonObject
-                        val type = headerJson["type"]!!.jsonPrimitive.content
-                        val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC).format(Instant.now())
-                        val id = headerJson["id"]?.jsonPrimitive?.content ?: "holon-$timestamp"
-                        val fileName = when(type) {
-                            "Session_Record", "Dream_Record" -> "${type.replace("_", "").lowercase()}-$timestamp.json"
-                            else -> "$id.json"
-                        }
-                        val filePath = "holons/$fileName"
-                        File("framework/$filePath").writeText(action.content)
-
-                        val catalogueFile = File("framework/holon_catalogue.json")
-                        val catalogueData = jsonParser.decodeFromString<HolonCatalogueFile>(catalogueFile.readText())
-                        val newHeader = jsonParser.decodeFromString<HolonHeader>(headerJson.toString())
-                        val updatedCatalogue = catalogueData.copy(holon_catalogue = catalogueData.holon_catalogue + newHeader.copy(filePath = "./$filePath"))
-                        catalogueFile.writeText(jsonParser.encodeToString(HolonCatalogueFile.serializer(), updatedCatalogue))
-                        results.add("✅ $actionName: Success")
-                    }
-                    is UpdateHolonContent -> {
-                        val holonToUpdate = _state.value.holonCatalogue.find { it.id == action.holonId }!!
-                        File("framework/${holonToUpdate.filePath}").writeText(action.newContent)
-                        results.add("✅ $actionName ('${action.holonId}'): Success")
-                    }
-                    is CreateFile -> {
-                        val file = File("framework/${action.filePath}")
-                        file.parentFile.mkdirs()
-                        file.writeText(action.content)
-                        results.add("✅ $actionName ('${action.filePath}'): Success")
-                    }
-                    is UpdateHolon -> results.add("⚠️ $actionName: Skipped (granular updates not yet implemented).")
-                }
-            } catch (e: Exception) {
-                results.add("❌ $actionName: FAILED - ${e.message}")
-            }
-        }
-        return ChatMessage(Author.SYSTEM, "Execution complete. Results:\n- ${results.joinToString("\n- ")}", "Action Manifest Executed")
-    }
-
-
-    // --- Data Loading & Initialization ---
-    private fun loadCatalogue() {
-        try {
-            val catalogueFile = File("framework/holon_catalogue.json")
-            val catalogueJson = catalogueFile.readText()
-            val parsedCatalogue = jsonParser.decodeFromString<HolonCatalogueFile>(catalogueJson)
-            val currentActiveHolons = _state.value.activeHolons
-            val updatedActiveHolons = currentActiveHolons.filterKeys { key -> parsedCatalogue.holon_catalogue.any { it.id == key } }
-
-            _state.update { it.copy(
-                holonCatalogue = parsedCatalogue.holon_catalogue,
-                activeHolons = updatedActiveHolons,
-                gatewayStatus = GatewayStatus.OK
-            ) }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            _state.update { it.copy(gatewayStatus = GatewayStatus.ERROR) }
-        }
-    }
-
-    private fun loadAvailableModels() { coroutineScope.launch {
-        val models = gateway.listModels(apiKey)
-        if (models.isNotEmpty()) { _state.update { it.copy(availableModels = models.map { m -> m.name.removePrefix("models/") }) }
-        } else { _state.update { it.copy(availableModels = listOf("gemini-1.5-pro-latest", "gemini-1.5-flash-latest")) } }
-    } }
 }

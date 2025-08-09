@@ -8,18 +8,22 @@ import kotlinx.serialization.Serializable
  * The application will process a list of these actions as a single transaction.
  */
 @Serializable
-sealed interface Action
+sealed interface Action {
+    // A human-readable summary of the action's intent for UI display.
+    val summary: String
+}
 
 /**
  * Instructs the app to create a new Holon. The app is responsible for
- * generating the timestamped file name (e.g., `session-record-[timestamp].json`),
- * creating the file with the provided content, and automatically updating
- * the `holon_catalogue.json` with the new entry.
+ * creating the file with the provided content and, crucially,
+ * updating the parent Holon's `sub_holons` array to include a reference to this new Holon.
  */
 @Serializable
 data class CreateHolon(
+    val parentId: String,
     // The AI provides the full, valid JSON content for the new holon as a string.
-    val content: String
+    val content: String,
+    override val summary: String
 ) : Action
 
 /**
@@ -30,7 +34,8 @@ data class CreateHolon(
 @Serializable
 data class UpdateHolonContent(
     val holonId: String,
-    val newContent: String
+    val newContent: String,
+    override val summary: String
 ) : Action
 
 /**
@@ -42,30 +47,10 @@ data class UpdateHolonContent(
 data class CreateFile(
     // The full, relative path for the new file (e.g., "./dreams/dream-transcript-XYZ.md")
     val filePath: String,
-    val content: String
+    val content: String,
+    override val summary: String
 ) : Action
 
-/**
- * Instructs the app to apply a series of granular changes to an existing Holon.
- * NOTE: The execution logic for this is complex and deferred to a future version.
- * The AI should prefer using UpdateHolonContent for now.
- */
-@Serializable
-data class UpdateHolon(
-    val holonId: String,
-    val operations: List<UpdateSubOperation>
-) : Action
-
-/**
- * Defines a single, granular update within an UpdateHolon action.
- * NOTE: Execution logic is not yet implemented in the StateManager.
- */
-@Serializable
-data class UpdateSubOperation(
-    // e.g., "REPLACE", "ADD_TO_LIST"
-    val operation: String,
-    // e.g., "payload.knowledge.project_backlog"
-    val jsonPath: String,
-    // The new value, encoded as a valid JSON string.
-    val newValue: String
-)
+// --- DELETED: The UpdateHolon and UpdateSubOperation classes have been removed ---
+// They represented an unimplemented feature, and their presence was a violation
+// of the principle of an honest API contract.
