@@ -12,9 +12,16 @@ import kotlinx.serialization.json.*
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
+import java.awt.Desktop
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 @Serializable
 private data class HolonFileContent(
@@ -54,9 +61,74 @@ class StateManager(private val apiKey: String, private val initialSettings: User
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
     private val gateway: Gateway = Gateway()
 
+    // --- ADDED: Path for automatic backups ---
+    private val backupsDir = File(System.getProperty("user.home"), ".auf/backups")
+
+
     init {
+        // --- ADDED: Automatic backup on launch ---
+        createBackup("on-launch")
         loadInitialData()
     }
+
+    // --- NEW: Automatic Backup System ---
+
+    /**
+     * Creates a zip archive of the entire 'holons' directory.
+     * This is a non-blocking operation.
+     * @param trigger A string to name the backup source (e.g., "on-launch", "pre-export")
+     */
+    private fun createBackup(trigger: String) {
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                backupsDir.mkdirs()
+                val sourceDir = File(HOLONS_BASE_PATH)
+                if (!sourceDir.exists() || !sourceDir.isDirectory) {
+                    println("Backup failed: Holons directory not found at '${sourceDir.absolutePath}'")
+                    return@launch
+                }
+
+                val timestamp = SimpleDateFormat("yyyyMMdd-HHmmss").format(Date())
+                val zipFile = File(backupsDir, "auf-backup-$timestamp-$trigger.zip")
+
+                ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
+                    sourceDir.walkTopDown().forEach { file ->
+                        if (file.isFile) {
+                            val zipEntry = ZipEntry(sourceDir.toURI().relativize(file.toURI()).path)
+                            zos.putNextEntry(zipEntry)
+                            FileInputStream(file).use { fis ->
+                                fis.copyTo(zos)
+                            }
+                            zos.closeEntry()
+                        }
+                    }
+                }
+                println("Backup created successfully at ${zipFile.absolutePath}")
+            } catch (e: Exception) {
+                // In a real app, this might show a non-fatal error to the user
+                println("Automatic backup failed: ${e.message}")
+                e.printStackTrace()
+            }
+        }
+    }
+
+
+    /**
+     * Opens the user's backup folder in the default file explorer.
+     */
+    fun openBackupFolder() {
+        if (Desktop.isDesktopSupported() && backupsDir.exists()) {
+            try {
+                Desktop.getDesktop().open(backupsDir)
+            } catch (e: Exception) {
+                println("Failed to open backup folder: ${e.message}")
+                // Optionally, update state with an error message for the UI
+            }
+        } else {
+            println("Cannot open backup folder. Desktop support: ${Desktop.isDesktopSupported()}, Folder exists: ${backupsDir.exists()}")
+        }
+    }
+
 
     // --- NEW LOGIC FOR EXPORT WORKFLOW ---
 
@@ -93,12 +165,25 @@ class StateManager(private val apiKey: String, private val initialSettings: User
     }
 
     fun executeExport(destinationPath: String) {
+        // --- ADDED: Automatic backup before export ---
+        createBackup("pre-export")
+
         val holonsToExport = _state.value.holonGraph.filter { it.id in _state.value.holonIdsForExport }
         if (holonsToExport.isEmpty()) return
 
         coroutineScope.launch(Dispatchers.IO) {
             val destDir = File(destinationPath)
             if (!destDir.exists()) destDir.mkdirs()
+
+            // ADDED: Also copy the manual protocol file for a complete manual runtime package
+            try {
+                val manualProtocolFile = File("$FRAMEWORK_BASE_PATH/framework_protocol_manual.md")
+                if(manualProtocolFile.exists()){
+                    Files.copy(manualProtocolFile.toPath(), File(destDir, manualProtocolFile.name).toPath(), StandardCopyOption.REPLACE_EXISTING)
+                }
+            } catch (e: Exception) {
+                println("Failed to copy manual protocol file: ${e.message}")
+            }
 
             holonsToExport.forEach { holonHeader ->
                 val sourceFile = File(holonHeader.filePath)
