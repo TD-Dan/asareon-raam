@@ -25,12 +25,11 @@ data class Part(
 
 @Serializable
 data class GenerateContentResponse(
-    // This field is present on success
     val candidates: List<Candidate>? = null,
     @SerialName("promptFeedback")
     val promptFeedback: PromptFeedback? = null,
-    // ADDED: This new field will capture any error object returned by the API
-    val error: ApiError? = null
+    val error: ApiError? = null,
+    val usageMetadata: UsageMetadata? = null
 )
 
 @Serializable
@@ -52,12 +51,19 @@ data class PromptFeedback(
     val safetyRatings: List<SafetyRating>
 )
 
-// ADDED: A new data class to represent the structure of an error response from the Gemini API.
 @Serializable
 data class ApiError(
     val code: Int,
     val message: String,
     val status: String
+)
+
+// --- FIX IS HERE: Provide default values to make fields optional ---
+@Serializable
+data class UsageMetadata(
+    val promptTokenCount: Int = 0,
+    val candidatesTokenCount: Int = 0,
+    val totalTokenCount: Int = 0
 )
 
 

@@ -9,7 +9,6 @@ data class AppState(
     val catalogueFilter: String? = null,
     val activeHolons: Map<String, Holon> = emptyMap(),
 
-    // --- MODIFIED: Add a list of all available agents ---
     val availableAiPersonas: List<HolonHeader> = emptyList(),
     val aiPersonaId: String? = null,
     val contextualHolonIds: Set<String> = emptySet(),
@@ -31,7 +30,9 @@ data class ChatMessage(
     val title: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val actionManifest: List<Action>? = null,
-    val isActionResolved: Boolean = false
+    val isActionResolved: Boolean = false,
+    // ADDED: New field to store token usage for a given message.
+    val usageMetadata: UsageMetadata? = null
 )
 
 enum class Author {

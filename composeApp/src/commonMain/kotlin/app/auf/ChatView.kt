@@ -12,11 +12,14 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowRight
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -28,8 +31,8 @@ import kotlinx.coroutines.launch
 private fun StandardMessage(
     message: ChatMessage
 ) {
-    // System context messages start collapsed, others start expanded.
     var isExpanded by remember { mutableStateOf(message.author != Author.SYSTEM || message.actionManifest != null) }
+    val clipboardManager = LocalClipboardManager.current
 
     val cardColor = when (message.author) {
         Author.USER -> Color.White
@@ -45,11 +48,14 @@ private fun StandardMessage(
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { isExpanded = !isExpanded },
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.weight(1f).clickable { isExpanded = !isExpanded },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Icon(
                         imageVector = if (isExpanded) Icons.Default.ArrowDropDown else Icons.Default.ArrowRight,
                         contentDescription = if (isExpanded) "Collapse" else "Expand",
@@ -62,6 +68,11 @@ private fun StandardMessage(
                         fontStyle = if (message.author == Author.SYSTEM) FontStyle.Italic else FontStyle.Normal,
                         fontSize = 14.sp
                     )
+                }
+                IconButton(onClick = {
+                    clipboardManager.setText(AnnotatedString(message.content))
+                }, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy Message Content", tint = Color.Gray)
                 }
             }
             AnimatedVisibility(visible = isExpanded) {
@@ -93,7 +104,7 @@ private fun ActionableMessageCard(
             Spacer(modifier = Modifier.height(12.dp))
             AnimatedVisibility(visible = !message.isActionResolved) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Button(onClick = onReject, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Gray)) { Text("Reject") }
+                    OutlinedButton(onClick = onReject, colors = ButtonDefaults.outlinedButtonColors()) { Text("Reject") }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(onClick = onConfirm) { Text("Confirm") }
                 }
@@ -112,6 +123,7 @@ fun ChatView(
     var userMessage by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
     val lazyListState = rememberLazyListState()
+    val clipboardManager = LocalClipboardManager.current
 
     val availableModels = appState.availableModels
     val selectedModel = appState.selectedModel
@@ -119,16 +131,16 @@ fun ChatView(
     val selectedAiPersonaId = appState.aiPersonaId
     val selectedAiPersonaName = aiPersonas.find { it.id == selectedAiPersonaId }?.name ?: "None"
 
-    // --- UNIFIED VIEW LOGIC ---
+    val lastTransactionTokens = appState.chatHistory.lastOrNull { it.author == Author.AI }?.usageMetadata
+
     val systemContextPreview = if (appState.isSystemVisible) {
-        remember(appState.contextualHolonIds, appState.aiPersonaId) {
+        remember(appState.contextualHolonIds, appState.aiPersonaId, appState.activeHolons) {
             stateManager.getSystemContextPreview()
         }
     } else emptyList()
 
     val displayedMessages = systemContextPreview + appState.chatHistory
 
-    // Scroll to bottom when new messages are added
     LaunchedEffect(displayedMessages.size) {
         coroutineScope.launch {
             if (displayedMessages.isNotEmpty()) {
@@ -145,12 +157,11 @@ fun ChatView(
     }
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        // --- Unified Chat and Context Area ---
         LazyColumn(
             state = lazyListState,
             modifier = Modifier.weight(1f).padding(bottom = 8.dp)
         ) {
-            items(displayedMessages) { message ->
+            items(displayedMessages) { message: ChatMessage ->
                 if (message.actionManifest != null) {
                     ActionableMessageCard(
                         message = message,
@@ -177,14 +188,43 @@ fun ChatView(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            val systemButtonColors = if (appState.isSystemVisible) {
-                ButtonDefaults.buttonColors(backgroundColor = Color.DarkGray, contentColor = Color.White)
-            } else {
-                ButtonDefaults.buttonColors(backgroundColor = Color.LightGray.copy(alpha = 0.4f), contentColor = Color.Black)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val systemButtonColors = if (appState.isSystemVisible) {
+                    ButtonDefaults.buttonColors(backgroundColor = Color.DarkGray, contentColor = Color.White)
+                } else {
+                    ButtonDefaults.buttonColors(backgroundColor = Color.LightGray.copy(alpha = 0.4f), contentColor = Color.Black)
+                }
+                Button(onClick = { stateManager.toggleSystemMessageVisibility() }, colors = systemButtonColors) {
+                    Text("Show System")
+                }
+
+                Spacer(Modifier.width(8.dp))
+                IconButton(onClick = {
+                    val startTag = "--START OF COPIED PROMPT TRANSCRIPT--"
+                    val endTag = "--END OF COPIED PROMPT TRANSCRIPT--"
+                    val systemText = stateManager.getSystemContextPreview().joinToString("\n\n") {
+                        "--- START OF FILE ${it.title} ---\n${it.content}"
+                    }
+                    val historyText = appState.chatHistory.joinToString("\n\n") {
+                        val authorTag = if(it.author == Author.AI) "[model]" else "[user]"
+                        "$authorTag ${it.content}"
+                    }
+                    val fullPrompt = "$startTag\n\n$systemText\n\n$historyText\n\n$endTag"
+                    clipboardManager.setText(AnnotatedString(fullPrompt))
+                }) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy Full Prompt")
+                }
             }
-            Button(onClick = { stateManager.toggleSystemMessageVisibility() }, colors = systemButtonColors) {
-                Text("Show System")
+
+            lastTransactionTokens?.let {
+                Text(
+                    text = "Last Tx: ${it.promptTokenCount}p / ${it.candidatesTokenCount}o / ${it.totalTokenCount}t",
+                    fontSize = 11.sp,
+                    color = Color.Gray,
+                    fontStyle = FontStyle.Italic
+                )
             }
+
 
             var isModelSelectorExpanded by remember { mutableStateOf(false) }
             var isAgentSelectorExpanded by remember { mutableStateOf(false) }
@@ -220,20 +260,22 @@ fun ChatView(
         }
 
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextField(
+            OutlinedTextField(
                 value = userMessage,
                 onValueChange = { userMessage = it },
                 modifier = Modifier.weight(1f).onKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown && event.isCtrlPressed && event.key == Key.Enter) {
+                    if (event.type == KeyEventType.KeyDown && (event.isCtrlPressed || event.isShiftPressed) && event.key == Key.Enter) {
                         sendMessageAction(); true
                     } else false
                 },
-                placeholder = { Text("Type your message...") },
+                placeholder = { Text("Enter message... (Shift+Enter or Ctrl+Enter to send)") },
                 enabled = !appState.isProcessing && appState.gatewayStatus == GatewayStatus.OK
             )
-            Button(onClick = sendMessageAction, modifier = Modifier.padding(start = 8.dp), enabled = !appState.isProcessing && appState.gatewayStatus == GatewayStatus.OK) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = sendMessageAction, modifier = Modifier.height(56.dp), enabled = !appState.isProcessing && appState.gatewayStatus == GatewayStatus.OK) {
+                // --- FIX: Corrected the variable name ---
                 if (appState.isProcessing) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
                 } else { Text("Send") }
             }
         }

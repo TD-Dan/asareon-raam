@@ -191,14 +191,10 @@ class StateManager(private val apiKey: String, private val initialSettings: User
 
         _state.update { it.copy(isProcessing = true, errorMessage = null) }
         val userChatMessage = ChatMessage(Author.USER, message)
-
-        // --- CORE LOGIC FIX ---
-        // 1. Prepare the full context for the API call, but DO NOT save it to state.
         val systemMessages = buildSystemContextMessages()
         val historyForApi = _state.value.chatHistory
         val fullContextForApi = systemMessages + historyForApi + userChatMessage
 
-        // 2. Add ONLY the user's message to the history to update the UI immediately.
         _state.update {
             it.copy(chatHistory = it.chatHistory + userChatMessage)
         }
@@ -206,15 +202,20 @@ class StateManager(private val apiKey: String, private val initialSettings: User
         coroutineScope.launch {
             try {
                 val apiRequestContents = convertChatToApiContents(fullContextForApi)
-                val responseContent = gateway.generateContent(apiKey, _state.value.selectedModel, apiRequestContents)
+                // --- MODIFIED: Handle the full response object ---
+                val response = gateway.generateContent(apiKey, _state.value.selectedModel, apiRequestContents)
 
-                // 3. Process the response and add it to history.
+                // Check for explicit errors in the response object
+                response.error?.let {
+                    throw Exception("API Error: ${it.message} (Code: ${it.code})")
+                }
+
+                val responseContent = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                    ?: response.promptFeedback?.blockReason?.let { "Blocked: $it" }
+                    ?: "No content received, but no error was reported."
+
                 val manifestStartTag = "[AUF_ACTION_MANIFEST]"
                 val manifestEndTag = "[/AUF_ACTION_MANIFEST]"
-
-                if (responseContent.startsWith("Error:")) {
-                    throw Exception(responseContent)
-                }
 
                 if (responseContent.contains(manifestStartTag) && responseContent.contains(manifestEndTag)) {
                     val manifestJson = responseContent.substringAfter(manifestStartTag).substringBeforeLast(manifestEndTag).trim()
@@ -234,7 +235,13 @@ class StateManager(private val apiKey: String, private val initialSettings: User
                         )
                     }
                 } else {
-                    val aiResponse = ChatMessage(Author.AI, responseContent, "AI")
+                    // --- MODIFIED: Pass the usageMetadata to the ChatMessage ---
+                    val aiResponse = ChatMessage(
+                        author = Author.AI,
+                        content = responseContent,
+                        title = "AI",
+                        usageMetadata = response.usageMetadata
+                    )
                     _state.update { it.copy(chatHistory = it.chatHistory + aiResponse, isProcessing = false) }
                 }
 
