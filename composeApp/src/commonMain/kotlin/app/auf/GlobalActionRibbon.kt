@@ -39,12 +39,14 @@ fun GlobalActionRibbon(
                 }) {
                     Text("Export for AUF manual runtime")
                 }
-                // Placeholder for future Import/Sync tool
-                DropdownMenuItem(onClick = { /* TODO */ isMenuExpanded = false }, enabled = false) {
+                // --- MODIFIED: Enabled and implemented ---
+                DropdownMenuItem(onClick = {
+                    stateManager.setViewMode(ViewMode.IMPORT)
+                    isMenuExpanded = false
+                }) {
                     Text("Import & Sync from manual runtime")
                 }
                 Divider()
-                // --- MODIFIED: Changed functionality ---
                 DropdownMenuItem(onClick = {
                     stateManager.openBackupFolder()
                     isMenuExpanded = false

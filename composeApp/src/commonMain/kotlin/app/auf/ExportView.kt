@@ -33,7 +33,7 @@ fun ExportView(
     }
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        Text("Export for Manual Studio", style = MaterialTheme.typography.h5, modifier = Modifier.padding(bottom = 16.dp))
+        Text("Export for AUF Manual Runtime", style = MaterialTheme.typography.h5, modifier = Modifier.padding(bottom = 16.dp))
         Text(
             "Select holons from the Knowledge Graph on the left to add them to the export manifest below. " +
                     "All selected holons will be copied as a flat list into the destination folder.",

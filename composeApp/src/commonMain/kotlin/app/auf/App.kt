@@ -44,29 +44,30 @@ fun App(stateManager: StateManager) {
             }
             GatewayStatus.OK, GatewayStatus.IDLE -> {
                 Row(Modifier.fillMaxSize()) {
-                    // --- GLOBAL ACTION RIBBON ADDED ---
                     GlobalActionRibbon(stateManager)
                     Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
 
-                    // --- MAIN CONTENT AREA ---
                     SessionView(
                         appState = appState,
                         onFilter = { stateManager.setCatalogueFilter(it) },
-                        // MODIFIED: Centralized click handling
                         onHolonSelected = { stateManager.onHolonClicked(it) },
                         modifier = Modifier.width(320.dp)
                     )
 
                     Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
 
-                    // --- DYNAMIC CENTER PANE ---
                     Box(modifier = Modifier.weight(1f)) {
+                        // --- MODIFIED: Added IMPORT case ---
                         when (appState.currentViewMode) {
                             ViewMode.CHAT -> ChatView(
                                 appState = appState,
                                 stateManager = stateManager
                             )
                             ViewMode.EXPORT -> ExportView(
+                                appState = appState,
+                                stateManager = stateManager
+                            )
+                            ViewMode.IMPORT -> ImportView(
                                 appState = appState,
                                 stateManager = stateManager
                             )

@@ -3,11 +3,25 @@ package app.auf
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import java.io.File
 
-// ADDED: Enum to control the main view context.
+// MODIFIED: Added IMPORT mode
 enum class ViewMode {
-    CHAT, EXPORT
+    CHAT, EXPORT, IMPORT
 }
+
+// --- NEW: Data classes for import analysis results ---
+data class ImportAnalysisResult(
+    val updatedHolons: List<HolonComparison> = emptyList(),
+    val newHolons: List<File> = emptyList(),
+    val unchangedHolons: List<HolonHeader> = emptyList(),
+    val sourcePath: String
+)
+data class HolonComparison(
+    val existingHeader: HolonHeader,
+    val incomingFile: File,
+    val incomingLastModified: Long
+)
 
 data class AppState(
     val holonGraph: List<HolonHeader> = emptyList(),
@@ -28,9 +42,10 @@ data class AppState(
 
     val errorMessage: String? = null,
 
-    // --- NEW STATE PROPERTIES FOR VIEW SWITCHING ---
+    // --- MODIFIED STATE PROPERTIES ---
     val currentViewMode: ViewMode = ViewMode.CHAT,
-    val holonIdsForExport: Set<String> = emptySet()
+    val holonIdsForExport: Set<String> = emptySet(),
+    val importAnalysisResult: ImportAnalysisResult? = null
 )
 
 data class ChatMessage(
