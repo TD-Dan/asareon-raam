@@ -1,14 +1,11 @@
 package app.auf
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
@@ -24,55 +21,41 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-// --- CORRECTED: Added the missing import for BorderStroke ---
-import androidx.compose.foundation.BorderStroke
-
-// --- HELPER COMPOSABLES ---
 
 @Composable
 private fun StandardMessage(
     message: ChatMessage,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager
 ) {
-    Column(modifier = Modifier.padding(vertical = 4.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            val authorText = when (message.author) {
-                Author.SYSTEM -> "SYSTEM: ${message.title}"
-                Author.USER -> "USER:"
-                Author.AI -> "AI:"
-            }
-            Text(
-                text = authorText,
-                fontWeight = FontWeight.Bold,
-                fontStyle = if (message.author == Author.SYSTEM) FontStyle.Italic else FontStyle.Normal,
-                fontSize = 14.sp,
-                color = if (message.author == Author.SYSTEM) Color.Gray else Color.Unspecified
-            )
-            IconButton(
-                onClick = { clipboardManager.setText(AnnotatedString(message.content)) },
-                modifier = Modifier.size(24.dp)
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        backgroundColor = when (message.author) {
+            Author.USER -> Color.White
+            Author.AI -> Color.White
+            Author.SYSTEM -> Color.LightGray.copy(alpha = 0.2f)
+        },
+        border = BorderStroke(1.dp, Color.LightGray),
+        elevation = 0.dp
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.ContentCopy, "Copy", tint = Color.Gray, modifier = Modifier.size(16.dp))
+                Text(
+                    text = message.title ?: message.author.name,
+                    fontWeight = FontWeight.Bold,
+                    fontStyle = if (message.author == Author.SYSTEM) FontStyle.Italic else FontStyle.Normal,
+                    fontSize = 14.sp
+                )
+                IconButton(onClick = { clipboardManager.setText(AnnotatedString(message.content)) }, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
+                }
             }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(message.content, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
         }
-        val messageModifier = if (message.author == Author.SYSTEM) {
-            Modifier.fillMaxWidth()
-                .background(Color.LightGray.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
-                .border(1.dp, Color.LightGray.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-        } else {
-            Modifier.padding(start = 8.dp)
-        }
-        Text(
-            text = message.content,
-            modifier = messageModifier,
-            fontSize = 14.sp,
-            color = if (message.author == Author.SYSTEM) Color.DarkGray else Color.Unspecified
-        )
     }
 }
 
@@ -82,103 +65,49 @@ private fun ActionableMessageCard(
     onConfirm: () -> Unit,
     onReject: () -> Unit
 ) {
-    var detailsVisible by remember { mutableStateOf(false) }
-    val isResolved = message.isActionResolved
-
-    val cardBackgroundColor = when {
-        isResolved && message.actionManifest != null -> Color(0xFFE8F5E9)
-        isResolved -> Color.LightGray.copy(alpha = 0.3f)
-        else -> Color(0xFFFFF8E1)
-    }
-
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        elevation = 4.dp,
-        backgroundColor = cardBackgroundColor,
-        border = if (!isResolved) BorderStroke(1.dp, Color(0xFFFFC107)) else null
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        backgroundColor = Color(0xFFE8EAF6),
+        border = BorderStroke(1.dp, Color(0xFF3F51B5)),
+        elevation = 2.dp
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = message.title ?: "Confirm Action Manifest",
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(message.content, fontSize = 14.sp)
-            Spacer(Modifier.height(8.dp))
-            message.actionManifest?.forEach { action ->
-                Text(
-                    text = "• ${action.summary}",
-                    fontSize = 13.sp,
-                    fontStyle = FontStyle.Italic,
-                    modifier = Modifier.padding(start = 8.dp)
-                )
-            }
-            Spacer(Modifier.height(16.dp))
-
-            AnimatedVisibility(visible = detailsVisible) {
-                Column(
-                    modifier = Modifier.background(Color.Black.copy(alpha = 0.05f), RoundedCornerShape(4.dp))
-                        .padding(8.dp)
-                        .heightIn(max = 300.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    message.actionManifest?.forEachIndexed { index, action ->
-                        val contentToShow = when(action) {
-                            is CreateHolon -> action.content
-                            is UpdateHolonContent -> action.newContent
-                            is CreateFile -> action.content
-                        }
-                        Text("Action ${index + 1}: ${action::class.simpleName}", fontWeight = FontWeight.Bold, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                        Spacer(Modifier.height(4.dp))
-                        Text(contentToShow, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                        if (index < message.actionManifest.size - 1) {
-                            Divider(modifier = Modifier.padding(vertical = 8.dp))
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedButton(
-                    onClick = { detailsVisible = !detailsVisible },
-                    modifier = Modifier.height(36.dp)
-                ) { Text(if (detailsVisible) "Hide Details" else "View Details") }
-
-                Spacer(Modifier.weight(1f))
-
-                if (!isResolved) {
-                    Button(
-                        onClick = onReject,
-                        colors = ButtonDefaults.buttonColors(backgroundColor = Color.DarkGray, contentColor = Color.White)
-                    ) { Text("Reject") }
-                    Spacer(Modifier.width(8.dp))
-                    Button(
-                        onClick = onConfirm,
-                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF4CAF50))
-                    ) { Text("Accept & Execute") }
-                } else {
-                    Text("Action Resolved", fontStyle = FontStyle.Italic, color = Color.Gray)
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(message.title ?: "System Action", fontWeight = FontWeight.Bold, color = Color(0xFF303F9F))
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(message.content)
+            Spacer(modifier = Modifier.height(12.dp))
+            AnimatedVisibility(visible = !message.isActionResolved) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    Button(onClick = onReject, colors = ButtonDefaults.buttonColors(backgroundColor = Color.Gray)) { Text("Reject") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(onClick = onConfirm) { Text("Confirm") }
                 }
             }
         }
     }
 }
 
-// --- MAIN COMPOSABLE ---
 
 @Composable
-fun ChatView(stateManager: StateManager, modifier: Modifier = Modifier) {
-    val appState by stateManager.state.collectAsState()
+fun ChatView(
+    appState: AppState,
+    stateManager: StateManager,
+    modifier: Modifier = Modifier
+) {
     val chatHistory = appState.chatHistory
     val isProcessing = appState.isProcessing
-    var userMessage by remember { mutableStateOf("") }
+    var userMessage by remember { mutableState of("") }
     val clipboardManager = LocalClipboardManager.current
+
+    val availableModels = appState.availableModels
+    val selectedModel = appState.selectedModel
+    // --- MODIFIED: Use the new list of available personas ---
+    val aiPersonas = appState.availableAiPersonas
+    val selectedAiPersonaId = appState.aiPersonaId
+    val selectedAiPersonaName = aiPersonas.find { it.id == selectedAiPersonaId }?.name ?: "None"
+
+    var isModelSelectorExpanded by remember { mutableStateOf(false) }
+    var isAgentSelectorExpanded by remember { mutableStateOf(false) }
 
     val sendMessageAction = {
         if (userMessage.isNotBlank() && !isProcessing) {
@@ -205,6 +134,45 @@ fun ChatView(stateManager: StateManager, modifier: Modifier = Modifier) {
             }
         }
 
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Button(
+                onClick = { stateManager.toggleSystemMessageVisibility() },
+                colors = ButtonDefaults.buttonColors(backgroundColor = Color.LightGray.copy(alpha = 0.4f))
+            ) { Text(if (appState.isSystemVisible) "Hide System" else "Show System") }
+
+            Column(horizontalAlignment = Alignment.End) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Active Agent:", fontSize = 12.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Box {
+                        Button(onClick = { isAgentSelectorExpanded = true }) { Text(selectedAiPersonaName) }
+                        DropdownMenu(expanded = isAgentSelectorExpanded, onDismissRequest = { isAgentSelectorExpanded = false }) {
+                            // --- MODIFIED: Populate from the definitive list ---
+                            aiPersonas.forEach { persona ->
+                                DropdownMenuItem(onClick = { stateManager.selectAiPersona(persona.id); isAgentSelectorExpanded = false }) { Text(persona.name) }
+                            }
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Model:", fontSize = 12.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Box {
+                        Button(onClick = { isModelSelectorExpanded = true }) { Text(selectedModel) }
+                        DropdownMenu(expanded = isModelSelectorExpanded, onDismissRequest = { isModelSelectorExpanded = false }) {
+                            availableModels.forEach { modelName ->
+                                DropdownMenuItem(onClick = { stateManager.selectModel(modelName); isModelSelectorExpanded = false }) { Text(modelName) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             TextField(
                 value = userMessage,
@@ -215,9 +183,9 @@ fun ChatView(stateManager: StateManager, modifier: Modifier = Modifier) {
                     } else false
                 },
                 placeholder = { Text("Type your message...") },
-                enabled = !isProcessing
+                enabled = !isProcessing && appState.gatewayStatus == GatewayStatus.OK
             )
-            Button(onClick = sendMessageAction, modifier = Modifier.padding(start = 8.dp), enabled = !isProcessing) {
+            Button(onClick = sendMessageAction, modifier = Modifier.padding(start = 8.dp), enabled = !isProcessing && appState.gatewayStatus == GatewayStatus.OK) {
                 if (isProcessing) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp))
                 } else { Text("Send") }

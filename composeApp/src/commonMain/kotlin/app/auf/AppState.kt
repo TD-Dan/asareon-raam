@@ -9,7 +9,8 @@ data class AppState(
     val catalogueFilter: String? = null,
     val activeHolons: Map<String, Holon> = emptyMap(),
 
-    // --- The "Me" vs "The World" ---
+    // --- MODIFIED: Add a list of all available agents ---
+    val availableAiPersonas: List<HolonHeader> = emptyList(),
     val aiPersonaId: String? = null,
     val contextualHolonIds: Set<String> = emptySet(),
 
@@ -20,6 +21,8 @@ data class AppState(
     val isProcessing: Boolean = false,
     val availableModels: List<String> = emptyList(),
     val selectedModel: String = "gemini-1.5-flash-latest",
+
+    val errorMessage: String? = null
 )
 
 data class ChatMessage(
@@ -36,7 +39,7 @@ enum class Author {
 }
 
 enum class GatewayStatus {
-    OK, IDLE, ERROR
+    OK, IDLE, ERROR, LOADING
 }
 
 @Serializable

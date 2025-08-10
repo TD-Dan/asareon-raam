@@ -8,6 +8,7 @@ import java.io.File
 import java.util.Properties
 
 fun main() = application {
+    // --- MODIFIED: Proper settings management ---
     val settingsDir = File(System.getProperty("user.home"), ".auf")
     val settingsManager = SettingsManager(settingsDir)
     val savedSettings = settingsManager.loadSettings() ?: UserSettings()
@@ -20,7 +21,7 @@ fun main() = application {
     } else { "" }
 
     if (apiKey.isBlank()) {
-        println("WARNING: google.api.key not found in composeApp/local.properties. AI will not function.")
+        println("WARNING: google.api.key not found in local.properties. AI will not function.")
     }
 
     val stateManager = StateManager(apiKey, savedSettings)
@@ -33,17 +34,13 @@ fun main() = application {
     Window(
         onCloseRequest = {
             val currentState = stateManager.state.value
-
-            // MODIFIED: Create the new UserSettings object with the correct fields.
             val currentSettingsToSave = UserSettings(
                 windowWidth = windowState.size.width.value.toInt(),
                 windowHeight = windowState.size.height.value.toInt(),
                 selectedModel = currentState.selectedModel,
-                // Save the "Me" and "World" state directly.
                 selectedAiPersonaId = currentState.aiPersonaId,
                 activeContextualHolonIds = currentState.contextualHolonIds
             )
-
             settingsManager.saveSettings(currentSettingsToSave)
             exitApplication()
         },

@@ -1,64 +1,63 @@
 package app.auf
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.Divider
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun HolonInspectorView(stateManager: StateManager, modifier: Modifier = Modifier) {
-    val appState by stateManager.state.collectAsState()
-    // --- CORRECTED LOGIC: Now we just look up the holon by the inspected ID ---
-    val inspectedHolon = appState.activeHolons[appState.inspectedHolonId]
+fun HolonInspectorView(
+    appState: AppState, // --- MODIFIED: Receive AppState directly ---
+    modifier: Modifier = Modifier
+) {
+    // --- REMOVED: No longer collects state here ---
 
-    Box(
-        modifier = modifier.fillMaxSize().padding(16.dp),
-        contentAlignment = Alignment.TopStart
-    ) {
+    val inspectedHolon = appState.inspectedHolonId?.let { appState.activeHolons[it] }
+
+    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         if (inspectedHolon != null) {
-            // Added a scrollable column for long holon content
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            val scrollState = rememberScrollState()
+            Column(Modifier.verticalScroll(scrollState)) {
                 Text(
                     text = inspectedHolon.header.name,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
-                Spacer(Modifier.height(4.dp))
                 Text(
                     text = "ID: ${inspectedHolon.header.id}",
+                    fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
-                    fontStyle = FontStyle.Italic
+                    color = Color.Gray,
+                    modifier = Modifier.padding(bottom = 4.dp)
                 )
-                Spacer(Modifier.height(16.dp))
                 Text(
-                    text = inspectedHolon.header.summary,
-                    fontSize = 14.sp
+                    text = "Type: ${inspectedHolon.header.type}",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(bottom = 16.dp)
                 )
-                Divider(modifier = Modifier.padding(vertical = 16.dp))
                 Text(
                     text = inspectedHolon.content,
+                    fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
-                    color = Color.DarkGray // Improved contrast
+                    modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha=0.05f)).padding(8.dp)
                 )
             }
         } else {
-            Text("Select a holon from the catalogue to see its details.", fontStyle = FontStyle.Italic)
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Select a holon from the catalogue to see its details.")
+            }
         }
     }
 }
