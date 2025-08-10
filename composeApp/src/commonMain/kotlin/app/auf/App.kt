@@ -19,7 +19,6 @@ fun App(stateManager: StateManager) {
     val appState by stateManager.state.collectAsState()
 
     MaterialTheme {
-        // --- KEY CHANGE: Conditional rendering based on gatewayStatus ---
         when (appState.gatewayStatus) {
             GatewayStatus.LOADING -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -45,23 +44,35 @@ fun App(stateManager: StateManager) {
             }
             GatewayStatus.OK, GatewayStatus.IDLE -> {
                 Row(Modifier.fillMaxSize()) {
+                    // --- GLOBAL ACTION RIBBON ADDED ---
+                    GlobalActionRibbon(stateManager)
+                    Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
+
+                    // --- MAIN CONTENT AREA ---
                     SessionView(
                         appState = appState,
                         onFilter = { stateManager.setCatalogueFilter(it) },
-                        onHolonSelected = {
-                            stateManager.inspectHolon(it)
-                            stateManager.toggleHolonActive(it)
-                        },
+                        // MODIFIED: Centralized click handling
+                        onHolonSelected = { stateManager.onHolonClicked(it) },
                         modifier = Modifier.width(320.dp)
                     )
 
                     Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
 
-                    ChatView(
-                        appState = appState,
-                        stateManager = stateManager,
-                        modifier = Modifier.weight(1f)
-                    )
+                    // --- DYNAMIC CENTER PANE ---
+                    Box(modifier = Modifier.weight(1f)) {
+                        when (appState.currentViewMode) {
+                            ViewMode.CHAT -> ChatView(
+                                appState = appState,
+                                stateManager = stateManager
+                            )
+                            ViewMode.EXPORT -> ExportView(
+                                appState = appState,
+                                stateManager = stateManager
+                            )
+                        }
+                    }
+
 
                     Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
 

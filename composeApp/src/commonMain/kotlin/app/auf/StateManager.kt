@@ -13,6 +13,8 @@ import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 @Serializable
 private data class HolonFileContent(
@@ -55,6 +57,66 @@ class StateManager(private val apiKey: String, private val initialSettings: User
     init {
         loadInitialData()
     }
+
+    // --- NEW LOGIC FOR EXPORT WORKFLOW ---
+
+    fun setViewMode(mode: ViewMode) {
+        // Clear export selection when leaving the mode
+        if (mode == ViewMode.CHAT) {
+            _state.update { it.copy(currentViewMode = mode, holonIdsForExport = emptySet()) }
+        } else {
+            _state.update { it.copy(currentViewMode = mode) }
+        }
+    }
+
+    fun onHolonClicked(holonId: String) {
+        when (_state.value.currentViewMode) {
+            ViewMode.CHAT -> {
+                inspectHolon(holonId)
+                toggleHolonActive(holonId)
+            }
+            ViewMode.EXPORT -> {
+                toggleHolonForExport(holonId)
+                inspectHolon(holonId)
+            }
+        }
+    }
+
+    private fun toggleHolonForExport(holonId: String) {
+        val currentSelection = _state.value.holonIdsForExport
+        val newSelection = if (currentSelection.contains(holonId)) {
+            currentSelection - holonId
+        } else {
+            currentSelection + holonId
+        }
+        _state.update { it.copy(holonIdsForExport = newSelection) }
+    }
+
+    fun executeExport(destinationPath: String) {
+        val holonsToExport = _state.value.holonGraph.filter { it.id in _state.value.holonIdsForExport }
+        if (holonsToExport.isEmpty()) return
+
+        coroutineScope.launch(Dispatchers.IO) {
+            val destDir = File(destinationPath)
+            if (!destDir.exists()) destDir.mkdirs()
+
+            holonsToExport.forEach { holonHeader ->
+                val sourceFile = File(holonHeader.filePath)
+                val destFile = File(destDir, sourceFile.name)
+                try {
+                    Files.copy(sourceFile.toPath(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                } catch (e: Exception) {
+                    // In a real app, we'd collect these errors and show them to the user
+                    println("Failed to copy ${sourceFile.name}: ${e.message}")
+                }
+            }
+            // After export, return to chat view
+            setViewMode(ViewMode.CHAT)
+        }
+    }
+
+
+    // --- EXISTING LOGIC (with modifications) ---
 
     private fun loadInitialData() {
         loadHolonGraph()
@@ -202,10 +264,8 @@ class StateManager(private val apiKey: String, private val initialSettings: User
         coroutineScope.launch {
             try {
                 val apiRequestContents = convertChatToApiContents(fullContextForApi)
-                // --- MODIFIED: Handle the full response object ---
                 val response = gateway.generateContent(apiKey, _state.value.selectedModel, apiRequestContents)
 
-                // Check for explicit errors in the response object
                 response.error?.let {
                     throw Exception("API Error: ${it.message} (Code: ${it.code})")
                 }
@@ -235,7 +295,6 @@ class StateManager(private val apiKey: String, private val initialSettings: User
                         )
                     }
                 } else {
-                    // --- MODIFIED: Pass the usageMetadata to the ChatMessage ---
                     val aiResponse = ChatMessage(
                         author = Author.AI,
                         content = responseContent,
@@ -412,14 +471,12 @@ class StateManager(private val apiKey: String, private val initialSettings: User
                     apiContents.add(Content(role, listOf(Part(msg.content))))
                 }
                 Author.SYSTEM -> {
-                    // Critical: System messages for the API should be from the USER role
                     val fullContent = "--- START OF FILE ${msg.title} ---\n${msg.content}"
                     apiContents.add(Content("user", listOf(Part(fullContent))))
                 }
             }
         }
 
-        // Merge consecutive messages from the same author to optimize for the Gemini API
         val mergedContents = mutableListOf<Content>()
         if (apiContents.isNotEmpty()) {
             var currentRole = apiContents.first().role

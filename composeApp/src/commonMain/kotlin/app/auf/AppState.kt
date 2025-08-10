@@ -4,6 +4,11 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
+// ADDED: Enum to control the main view context.
+enum class ViewMode {
+    CHAT, EXPORT
+}
+
 data class AppState(
     val holonGraph: List<HolonHeader> = emptyList(),
     val catalogueFilter: String? = null,
@@ -21,7 +26,11 @@ data class AppState(
     val availableModels: List<String> = emptyList(),
     val selectedModel: String = "gemini-1.5-flash-latest",
 
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+
+    // --- NEW STATE PROPERTIES FOR VIEW SWITCHING ---
+    val currentViewMode: ViewMode = ViewMode.CHAT,
+    val holonIdsForExport: Set<String> = emptySet()
 )
 
 data class ChatMessage(
@@ -31,7 +40,6 @@ data class ChatMessage(
     val timestamp: Long = System.currentTimeMillis(),
     val actionManifest: List<Action>? = null,
     val isActionResolved: Boolean = false,
-    // ADDED: New field to store token usage for a given message.
     val usageMetadata: UsageMetadata? = null
 )
 

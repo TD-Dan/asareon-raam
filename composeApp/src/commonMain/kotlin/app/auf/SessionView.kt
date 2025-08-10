@@ -19,18 +19,19 @@ import androidx.compose.ui.unit.sp
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SessionView(
-    appState: AppState, // --- MODIFIED: Receive AppState directly ---
+    appState: AppState,
     onFilter: (String?) -> Unit,
     onHolonSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // --- REMOVED: No longer collects state here ---
-    // val appState by stateManager.state.collectAsState()
-
     val holonGraph = appState.holonGraph
     val activeContextualHolonIds = appState.contextualHolonIds
     val activeAiPersonaId = appState.aiPersonaId
     val activeFilter = appState.catalogueFilter
+    // --- ADDED: Get export selection state ---
+    val holonIdsForExport = appState.holonIdsForExport
+    val currentViewMode = appState.currentViewMode
+
 
     val holonTypes = holonGraph.map { it.type }.distinct().sorted()
     val filteredGraph = if (activeFilter == null) {
@@ -68,7 +69,7 @@ fun SessionView(
             val buttonPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
             val buttonFontSize = 12.sp
             Button(
-                onClick = { onFilter(null) }, // --- MODIFIED: Use callback ---
+                onClick = { onFilter(null) },
                 contentPadding = buttonPadding,
                 colors = ButtonDefaults.buttonColors(
                     backgroundColor = if (activeFilter == null) Color.DarkGray else Color.LightGray,
@@ -77,7 +78,7 @@ fun SessionView(
             ) { Text("All", fontSize = buttonFontSize) }
             holonTypes.forEach { type ->
                 Button(
-                    onClick = { onFilter(type) }, // --- MODIFIED: Use callback ---
+                    onClick = { onFilter(type) },
                     contentPadding = buttonPadding,
                     colors = ButtonDefaults.buttonColors(
                         backgroundColor = if (activeFilter == type) Color.DarkGray else Color.LightGray,
@@ -90,15 +91,18 @@ fun SessionView(
         LazyColumn {
             items(filteredGraph) { holon ->
                 val isTheActiveAgent = activeAiPersonaId == holon.id
-                val isInContext = activeContextualHolonIds.contains(holon.id)
-                val isSelected = isTheActiveAgent || isInContext
+                val isInChatContext = activeContextualHolonIds.contains(holon.id)
+                // --- ADDED: Check if selected for export ---
+                val isSelectedForExport = holonIdsForExport.contains(holon.id)
 
                 val backgroundColor = when {
+                    // --- MODIFIED: Prioritize export selection color ---
+                    currentViewMode == ViewMode.EXPORT && isSelectedForExport -> Color(0xFFC5CAE9) // Light Indigo for Export
                     isTheActiveAgent -> Color(0xFFD3D3D3)
-                    isInContext -> Color(0xFFE0E0E0)
+                    isInChatContext -> Color(0xFFE0E0E0)
                     else -> Color.Transparent
                 }
-                val fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                val fontWeight = if (isTheActiveAgent || (currentViewMode == ViewMode.CHAT && isInChatContext) || (currentViewMode == ViewMode.EXPORT && isSelectedForExport)) FontWeight.Bold else FontWeight.Normal
                 val fontStyle = if (isTheActiveAgent) FontStyle.Italic else FontStyle.Normal
                 val displayText = if (isTheActiveAgent) "${holon.name} (Active Agent)" else holon.name
                 val indentation = (holon.depth * 16).dp
@@ -107,7 +111,7 @@ fun SessionView(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(backgroundColor)
-                        .clickable { onHolonSelected(holon.id) } // --- MODIFIED: Use callback ---
+                        .clickable { onHolonSelected(holon.id) }
                         .padding(start = indentation, top = 8.dp, bottom = 8.dp, end = 4.dp)
                 ){
                     Text(
