@@ -3,58 +3,73 @@ package app.auf
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowRight
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 @Composable
 private fun StandardMessage(
-    message: ChatMessage,
-    clipboardManager: androidx.compose.ui.platform.ClipboardManager
+    message: ChatMessage
 ) {
+    // System context messages start collapsed, others start expanded.
+    var isExpanded by remember { mutableStateOf(message.author != Author.SYSTEM || message.actionManifest != null) }
+
+    val cardColor = when (message.author) {
+        Author.USER -> Color.White
+        Author.AI -> Color.White
+        Author.SYSTEM -> Color.LightGray.copy(alpha = 0.2f)
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        backgroundColor = when (message.author) {
-            Author.USER -> Color.White
-            Author.AI -> Color.White
-            Author.SYSTEM -> Color.LightGray.copy(alpha = 0.2f)
-        },
-        border = BorderStroke(1.dp, Color.LightGray),
+        backgroundColor = cardColor,
+        border = BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.5f)),
         elevation = 0.dp
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().clickable { isExpanded = !isExpanded },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = message.title ?: message.author.name,
-                    fontWeight = FontWeight.Bold,
-                    fontStyle = if (message.author == Author.SYSTEM) FontStyle.Italic else FontStyle.Normal,
-                    fontSize = 14.sp
-                )
-                IconButton(onClick = { clipboardManager.setText(AnnotatedString(message.content)) }, modifier = Modifier.size(24.dp)) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.ArrowDropDown else Icons.Default.ArrowRight,
+                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = message.title ?: message.author.name,
+                        fontWeight = FontWeight.Bold,
+                        fontStyle = if (message.author == Author.SYSTEM) FontStyle.Italic else FontStyle.Normal,
+                        fontSize = 14.sp
+                    )
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(message.content, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+            AnimatedVisibility(visible = isExpanded) {
+                Column {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(message.content, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+                }
+            }
         }
     }
 }
@@ -94,75 +109,106 @@ fun ChatView(
     stateManager: StateManager,
     modifier: Modifier = Modifier
 ) {
-    val chatHistory = appState.chatHistory
-    val isProcessing = appState.isProcessing
-    var userMessage by remember { mutableState of("") }
-    val clipboardManager = LocalClipboardManager.current
+    var userMessage by remember { mutableStateOf("") }
+    val coroutineScope = rememberCoroutineScope()
+    val lazyListState = rememberLazyListState()
 
     val availableModels = appState.availableModels
     val selectedModel = appState.selectedModel
-    // --- MODIFIED: Use the new list of available personas ---
     val aiPersonas = appState.availableAiPersonas
     val selectedAiPersonaId = appState.aiPersonaId
     val selectedAiPersonaName = aiPersonas.find { it.id == selectedAiPersonaId }?.name ?: "None"
 
-    var isModelSelectorExpanded by remember { mutableStateOf(false) }
-    var isAgentSelectorExpanded by remember { mutableStateOf(false) }
+    // --- UNIFIED VIEW LOGIC ---
+    val systemContextPreview = if (appState.isSystemVisible) {
+        remember(appState.contextualHolonIds, appState.aiPersonaId) {
+            stateManager.getSystemContextPreview()
+        }
+    } else emptyList()
+
+    val displayedMessages = systemContextPreview + appState.chatHistory
+
+    // Scroll to bottom when new messages are added
+    LaunchedEffect(displayedMessages.size) {
+        coroutineScope.launch {
+            if (displayedMessages.isNotEmpty()) {
+                lazyListState.animateScrollToItem(index = displayedMessages.size - 1)
+            }
+        }
+    }
 
     val sendMessageAction = {
-        if (userMessage.isNotBlank() && !isProcessing) {
+        if (userMessage.isNotBlank() && !appState.isProcessing) {
             stateManager.sendMessage(userMessage)
             userMessage = ""
         }
     }
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        LazyColumn(modifier = Modifier.weight(1f).padding(bottom = 8.dp)) {
-            items(chatHistory) { message ->
-                val shouldShow = appState.isSystemVisible || message.author != Author.SYSTEM || message.actionManifest != null
-                if (shouldShow) {
-                    if (message.actionManifest != null) {
-                        ActionableMessageCard(
-                            message = message,
-                            onConfirm = { stateManager.executeActionFromMessage(message.timestamp) },
-                            onReject = { stateManager.rejectActionFromMessage(message.timestamp) }
-                        )
-                    } else {
-                        StandardMessage(message, clipboardManager)
-                    }
+        // --- Unified Chat and Context Area ---
+        LazyColumn(
+            state = lazyListState,
+            modifier = Modifier.weight(1f).padding(bottom = 8.dp)
+        ) {
+            items(displayedMessages) { message ->
+                if (message.actionManifest != null) {
+                    ActionableMessageCard(
+                        message = message,
+                        onConfirm = { stateManager.executeActionFromMessage(message.timestamp) },
+                        onReject = { stateManager.rejectActionFromMessage(message.timestamp) }
+                    )
+                } else {
+                    StandardMessage(message)
                 }
             }
         }
 
+        appState.errorMessage?.let { error ->
+            Text(
+                text = error,
+                color = Color.Red,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth().background(Color.Red.copy(alpha=0.1f)).padding(8.dp)
+            )
+        }
+
         Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Button(
-                onClick = { stateManager.toggleSystemMessageVisibility() },
-                colors = ButtonDefaults.buttonColors(backgroundColor = Color.LightGray.copy(alpha = 0.4f))
-            ) { Text(if (appState.isSystemVisible) "Hide System" else "Show System") }
+            val systemButtonColors = if (appState.isSystemVisible) {
+                ButtonDefaults.buttonColors(backgroundColor = Color.DarkGray, contentColor = Color.White)
+            } else {
+                ButtonDefaults.buttonColors(backgroundColor = Color.LightGray.copy(alpha = 0.4f), contentColor = Color.Black)
+            }
+            Button(onClick = { stateManager.toggleSystemMessageVisibility() }, colors = systemButtonColors) {
+                Text("Show System")
+            }
+
+            var isModelSelectorExpanded by remember { mutableStateOf(false) }
+            var isAgentSelectorExpanded by remember { mutableStateOf(false) }
 
             Column(horizontalAlignment = Alignment.End) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Active Agent:", fontSize = 12.sp)
+                    Text("Agent:", fontSize = 12.sp)
                     Spacer(Modifier.width(8.dp))
                     Box {
                         Button(onClick = { isAgentSelectorExpanded = true }) { Text(selectedAiPersonaName) }
                         DropdownMenu(expanded = isAgentSelectorExpanded, onDismissRequest = { isAgentSelectorExpanded = false }) {
-                            // --- MODIFIED: Populate from the definitive list ---
+                            DropdownMenuItem(onClick = { stateManager.selectAiPersona(null); isAgentSelectorExpanded = false }) { Text("None") }
                             aiPersonas.forEach { persona ->
                                 DropdownMenuItem(onClick = { stateManager.selectAiPersona(persona.id); isAgentSelectorExpanded = false }) { Text(persona.name) }
                             }
                         }
                     }
                 }
+                Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Model:", fontSize = 12.sp)
                     Spacer(Modifier.width(8.dp))
                     Box {
-                        Button(onClick = { isModelSelectorExpanded = true }) { Text(selectedModel) }
+                        Button(onClick = { isModelSelectorExpanded = true }) { Text(selectedModel, maxLines = 1) }
                         DropdownMenu(expanded = isModelSelectorExpanded, onDismissRequest = { isModelSelectorExpanded = false }) {
                             availableModels.forEach { modelName ->
                                 DropdownMenuItem(onClick = { stateManager.selectModel(modelName); isModelSelectorExpanded = false }) { Text(modelName) }
@@ -183,10 +229,10 @@ fun ChatView(
                     } else false
                 },
                 placeholder = { Text("Type your message...") },
-                enabled = !isProcessing && appState.gatewayStatus == GatewayStatus.OK
+                enabled = !appState.isProcessing && appState.gatewayStatus == GatewayStatus.OK
             )
-            Button(onClick = sendMessageAction, modifier = Modifier.padding(start = 8.dp), enabled = !isProcessing && appState.gatewayStatus == GatewayStatus.OK) {
-                if (isProcessing) {
+            Button(onClick = sendMessageAction, modifier = Modifier.padding(start = 8.dp), enabled = !appState.isProcessing && appState.gatewayStatus == GatewayStatus.OK) {
+                if (appState.isProcessing) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp))
                 } else { Text("Send") }
             }

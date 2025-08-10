@@ -27,7 +27,6 @@ class StateManager(private val apiKey: String, private val initialSettings: User
         private const val FRAMEWORK_BASE_PATH = "framework"
     }
 
-    // --- FIX: Configure the JSON parser for polymorphism ---
     private val actionModule = SerializersModule {
         polymorphic(Action::class) {
             subclass(CreateHolon::class)
@@ -41,7 +40,6 @@ class StateManager(private val apiKey: String, private val initialSettings: User
         ignoreUnknownKeys = true
         prettyPrint = true
     }
-    // --- END FIX ---
 
     private val _state = MutableStateFlow(AppState(
         gatewayStatus = GatewayStatus.IDLE,
@@ -168,7 +166,7 @@ class StateManager(private val apiKey: String, private val initialSettings: User
         _state.update { it.copy(isSystemVisible = !it.isSystemVisible) }
     }
 
-    private fun buildPromptMessages(newMessage: String): List<ChatMessage> {
+    private fun buildSystemContextMessages(): List<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
         val state = _state.value
         messages.add(ChatMessage(Author.SYSTEM, readFileContent("$FRAMEWORK_BASE_PATH/framework_protocol.md"), "framework_protocol.md"))
@@ -180,27 +178,46 @@ class StateManager(private val apiKey: String, private val initialSettings: User
                 messages.add(ChatMessage(Author.SYSTEM, holon.content, File(holon.header.filePath).name))
             }
         }
-
-        state.chatHistory.filter { it.author == Author.USER || it.author == Author.AI }.forEach { messages.add(it) }
-        messages.add(ChatMessage(Author.USER, newMessage, "User"))
         return messages
     }
 
+    fun getSystemContextPreview(): List<ChatMessage> {
+        return buildSystemContextMessages()
+    }
+
+
     fun sendMessage(message: String) {
         if (_state.value.isProcessing || _state.value.aiPersonaId == null) return
+
+        _state.update { it.copy(isProcessing = true, errorMessage = null) }
         val userChatMessage = ChatMessage(Author.USER, message)
-        _state.update { it.copy(chatHistory = it.chatHistory + userChatMessage, isProcessing = true) }
+
+        // --- CORE LOGIC FIX ---
+        // 1. Prepare the full context for the API call, but DO NOT save it to state.
+        val systemMessages = buildSystemContextMessages()
+        val historyForApi = _state.value.chatHistory
+        val fullContextForApi = systemMessages + historyForApi + userChatMessage
+
+        // 2. Add ONLY the user's message to the history to update the UI immediately.
+        _state.update {
+            it.copy(chatHistory = it.chatHistory + userChatMessage)
+        }
 
         coroutineScope.launch {
-            val fullPromptMessages = buildPromptMessages(message)
-            val apiRequestContents = convertChatToApiContents(fullPromptMessages)
-            val responseContent = gateway.generateContent(apiKey, _state.value.selectedModel, apiRequestContents)
-            val manifestStartTag = "[AUF_ACTION_MANIFEST]"
-            val manifestEndTag = "[/AUF_ACTION_MANIFEST]"
-            if (responseContent.contains(manifestStartTag) && responseContent.contains(manifestEndTag)) {
-                val manifestJson = responseContent.substringAfter(manifestStartTag).substringBeforeLast(manifestEndTag).trim()
-                try {
-                    // This now uses the polymorphism-aware parser
+            try {
+                val apiRequestContents = convertChatToApiContents(fullContextForApi)
+                val responseContent = gateway.generateContent(apiKey, _state.value.selectedModel, apiRequestContents)
+
+                // 3. Process the response and add it to history.
+                val manifestStartTag = "[AUF_ACTION_MANIFEST]"
+                val manifestEndTag = "[/AUF_ACTION_MANIFEST]"
+
+                if (responseContent.startsWith("Error:")) {
+                    throw Exception(responseContent)
+                }
+
+                if (responseContent.contains(manifestStartTag) && responseContent.contains(manifestEndTag)) {
+                    val manifestJson = responseContent.substringAfter(manifestStartTag).substringBeforeLast(manifestEndTag).trim()
                     val parsedActions = jsonParser.decodeFromString<List<Action>>(manifestJson)
                     val summary = "The AI has proposed ${parsedActions.size} action(s). Please review and confirm."
                     val proposalMessage = ChatMessage(
@@ -216,16 +233,22 @@ class StateManager(private val apiKey: String, private val initialSettings: User
                             isProcessing = false
                         )
                     }
-                } catch (e: Exception) {
-                    val errorMessage = ChatMessage(Author.SYSTEM, "I attempted to propose an Action Manifest, but it was malformed. Error: ${e.message}", "Manifest Parse Error")
-                    _state.update { it.copy(chatHistory = it.chatHistory + errorMessage, isProcessing = false) }
+                } else {
+                    val aiResponse = ChatMessage(Author.AI, responseContent, "AI")
+                    _state.update { it.copy(chatHistory = it.chatHistory + aiResponse, isProcessing = false) }
                 }
-            } else {
-                val aiResponse = ChatMessage(Author.AI, responseContent, "AI")
-                _state.update { it.copy(chatHistory = it.chatHistory + aiResponse, isProcessing = false) }
+
+            } catch(e: Exception) {
+                _state.update {
+                    it.copy(
+                        isProcessing = false,
+                        errorMessage = "Gateway Error: ${e.message}"
+                    )
+                }
             }
         }
     }
+
 
     private fun loadHolonGraph() {
         coroutineScope.launch(Dispatchers.IO) {
@@ -374,29 +397,27 @@ class StateManager(private val apiKey: String, private val initialSettings: User
 
     private fun convertChatToApiContents(messages: List<ChatMessage>): List<Content> {
         val apiContents = mutableListOf<Content>()
-        val userPromptParts = mutableListOf<String>()
-        var historyProcessed = false
+
         messages.forEach { msg ->
             when (msg.author) {
-                Author.SYSTEM -> userPromptParts.add("--- START OF FILE ${msg.title} ---\n${msg.content}")
                 Author.USER, Author.AI -> {
-                    if (!historyProcessed) {
-                        if (userPromptParts.isNotEmpty()) {
-                            apiContents.add(Content("user", listOf(Part(userPromptParts.joinToString("\n\n")))))
-                            userPromptParts.clear()
-                        }
-                        historyProcessed = true
-                    }
                     val role = if (msg.author == Author.AI) "model" else "user"
                     apiContents.add(Content(role, listOf(Part(msg.content))))
                 }
+                Author.SYSTEM -> {
+                    // Critical: System messages for the API should be from the USER role
+                    val fullContent = "--- START OF FILE ${msg.title} ---\n${msg.content}"
+                    apiContents.add(Content("user", listOf(Part(fullContent))))
+                }
             }
         }
-        if (userPromptParts.isNotEmpty()) { apiContents.add(Content("user", listOf(Part(userPromptParts.joinToString("\n\n"))))) }
+
+        // Merge consecutive messages from the same author to optimize for the Gemini API
         val mergedContents = mutableListOf<Content>()
         if (apiContents.isNotEmpty()) {
             var currentRole = apiContents.first().role
             val currentParts = mutableListOf<String>()
+
             apiContents.forEach { content ->
                 if (content.role == currentRole) {
                     currentParts.add(content.parts.first().text)
@@ -412,7 +433,6 @@ class StateManager(private val apiKey: String, private val initialSettings: User
         return mergedContents
     }
 
-    // --- FIX: Update manifest to align with polymorphic serialization ---
     private fun generateDynamicToolManifest(): String {
         return """
         --- START OF FILE Host Tool Manifest ---
