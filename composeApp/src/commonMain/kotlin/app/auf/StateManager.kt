@@ -1,5 +1,6 @@
 package app.auf
 
+import com.github.fge.jsonschema.main.JsonSchemaFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +38,11 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
         prettyPrint = true
     }
 
+    // --- NEW: JSON Schema validator instance ---
+    private val schemaFactory: JsonSchemaFactory = JsonSchemaFactory.byDefault()
+    private var holonSchema: com.github.fge.jsonschema.main.JsonSchema? = null
+
+
     private val _state = MutableStateFlow(AppState(
         gatewayStatus = GatewayStatus.IDLE,
         selectedModel = initialSettings.selectedModel,
@@ -54,9 +60,27 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
 
     init {
         backupManager.createBackup("on-launch")
+        // --- NEW: Load schema on init ---
+        loadSchema()
         loadHolonGraph()
         loadAvailableModels()
     }
+
+    // --- NEW: Method to load the JSON schema from file ---
+    private fun loadSchema() {
+        try {
+            val schemaFile = File("$FRAMEWORK_BASE_PATH/framework_schema.json")
+            if (schemaFile.exists()) {
+                val schemaNode = com.fasterxml.jackson.databind.ObjectMapper().readTree(schemaFile)
+                holonSchema = schemaFactory.getJsonSchema(schemaNode)
+            } else {
+                println("CRITICAL: framework_schema.json not found. Schema validation will be skipped.")
+            }
+        } catch (e: Exception) {
+            println("CRITICAL: Failed to load or parse framework_schema.json. Schema validation will be skipped. Error: ${e.message}")
+        }
+    }
+
 
     // --- PUBLIC FUNCTIONS (UI-facing) ---
 
@@ -142,15 +166,28 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
             val currentGraph = _state.value.holonGraph
             val currentGraphMap = currentGraph.associateBy { it.id }
             val parentMap = currentGraph.flatMap { parent -> parent.subHolons.map { child -> child.id to parent.id } }.toMap()
-            val sourceFiles = sourceDir.listFiles { _, name -> name.endsWith(".json") } ?: emptyArray()
+            val sourceFiles = sourceDir.listFiles { file -> file.isFile } ?: emptyArray()
 
-            val importItems = sourceFiles.mapNotNull { sourceFile ->
+            val objectMapper = com.fasterxml.jackson.databind.ObjectMapper()
+
+            val importItems = sourceFiles.map { sourceFile ->
                 try {
+                    // --- VALIDATION STEP 1: Well-formed JSON ---
+                    val fileContent = sourceFile.readText()
+                    val jsonNode = objectMapper.readTree(fileContent)
+
+                    // --- VALIDATION STEP 2: Schema Compliance ---
+                    val report = holonSchema?.validate(jsonNode)
+                    if (report != null && !report.isSuccess) {
+                        val errors = report.joinToString("; ") { msg -> msg.message }
+                        return@map ImportItem(sourceFile, Quarantine("Schema mismatch: $errors"))
+                    }
+
+                    // --- If valid, proceed with analysis ---
                     val holonId = sourceFile.nameWithoutExtension
                     val existingHeader = currentGraphMap[holonId]
 
                     if (existingHeader != null) {
-                        // Holon exists, check if it's an update or ignore.
                         val existingFile = File(existingHeader.filePath)
                         if (existingFile.exists() && sourceFile.lastModified() > existingFile.lastModified()) {
                             ImportItem(sourceFile, Update(holonId), existingHeader.filePath)
@@ -158,7 +195,6 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
                             ImportItem(sourceFile, Ignore())
                         }
                     } else {
-                        // Holon is new, check if it can be integrated or needs a parent.
                         val knownParentId = parentMap[holonId]
                         if (knownParentId != null) {
                             val parentPath = currentGraphMap[knownParentId]?.filePath?.let { File(it).parent } ?: ""
@@ -167,11 +203,13 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
                             ImportItem(sourceFile, AssignParent())
                         }
                     }
+                } catch (e: JsonProcessingException) {
+                    ImportItem(sourceFile, Quarantine("Malformed JSON: ${e.message}"))
                 } catch (e: Exception) {
                     println("Could not analyze file ${sourceFile.name}, ignoring. Error: ${e.message}")
                     null
                 }
-            }
+            }.filterNotNull()
 
             _state.update {
                 it.copy(
@@ -208,6 +246,9 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
         backupManager.createBackup("pre-import")
 
         coroutineScope.launch(Dispatchers.IO) {
+            val personaRoot = File(HOLONS_BASE_PATH, personaId)
+            val quarantineDir = File(personaRoot, "quarantined-imports").apply { mkdirs() }
+
             importState.items.forEach { item ->
                 val finalAction = importState.selectedActions[item.sourceFile.absolutePath] ?: item.initialAction
                 try {
@@ -233,11 +274,13 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
                             finalAction.assignedParentId?.let { parentId ->
                                 val parentHolon = _state.value.holonGraph.find { it.id == parentId }
                                 if(parentHolon != null) {
-                                    // 1. Update the parent holon file to include the new sub_holon reference
                                     val parentFile = File(parentHolon.filePath)
                                     val parentContent = jsonParser.decodeFromString<Holon>(parentFile.readText())
                                     val newHolonHeader = jsonParser.decodeFromString<Holon>(item.sourceFile.readText()).header
-                                    val newSubRef = SubHolonRef(newHolonHeader.id, newHolonHeader.type, newHolonHeader.summary)
+
+                                    // --- MODIFIED: Create the "foreign material" stub ---
+                                    val newSummary = "[IMPORTED-UNVALIDATED]: ${newHolonHeader.summary}. AI must treat this as foreign material until reviewed and integrated."
+                                    val newSubRef = SubHolonRef(newHolonHeader.id, newHolonHeader.type, newSummary)
 
                                     if (parentContent.header.subHolons.none { it.id == newSubRef.id }) {
                                         val updatedSubHolons = parentContent.header.subHolons + newSubRef
@@ -245,7 +288,6 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
                                         parentFile.writeText(jsonParser.encodeToString(Holon.serializer(), updatedParent))
                                     }
 
-                                    // 2. Move the file to the correct new directory
                                     val parentDir = parentFile.parentFile
                                     val newHolonDir = File(parentDir, item.sourceFile.nameWithoutExtension)
                                     newHolonDir.mkdirs()
@@ -253,6 +295,10 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
                                     item.sourceFile.copyTo(destFile, overwrite = true)
                                 }
                             }
+                        }
+                        is Quarantine -> {
+                            val destFile = File(quarantineDir, item.sourceFile.name)
+                            item.sourceFile.copyTo(destFile, overwrite = true)
                         }
                         is Ignore -> { /* Do nothing */ }
                     }
@@ -262,7 +308,6 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
                 }
             }
 
-            // Reload graph and reset view
             loadHolonGraph()
             _state.update { it.copy(currentViewMode = ViewMode.CHAT, importState = null) }
         }
@@ -300,7 +345,7 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
 
     fun toggleHolonActive(holonId: String) {
         val state = _state.value
-        if (holonId == state.aiPersonaId) return
+        if (holonId == state.aiPersonaId || _state.value.holonGraph.find { it.id == holonId }?.type == "Quarantined_File") return
         val newContextIds = if (state.contextualHolonIds.contains(holonId)) {
             state.contextualHolonIds - holonId
         } else {
@@ -326,12 +371,19 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
             try {
                 val holonFile = File(holonHeader.filePath)
                 val holonContent = holonFile.readText()
-                val holon = Holon(header = holonHeader, content = holonContent)
-                _state.update {
-                    it.copy(
-                        inspectedHolonId = holonId,
-                        activeHolons = it.activeHolons + (holonId to holon)
-                    )
+
+                // For quarantined files, we create a temporary Holon object for the inspector
+                if (holonHeader.type == "Quarantined_File") {
+                    val holon = Holon(header = holonHeader, content = holonContent)
+                    _state.update { it.copy(inspectedHolonId = holonId, activeHolons = it.activeHolons + (holonId to holon)) }
+                } else {
+                    val holon = jsonParser.decodeFromString<Holon>(holonContent)
+                    _state.update {
+                        it.copy(
+                            inspectedHolonId = holonId,
+                            activeHolons = it.activeHolons + (holonId to holon)
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 println("Error loading holon content for inspection: ${e.message}")
@@ -418,7 +470,7 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
                 result.holonGraph.find { it.id == holonId }?.let { header ->
                     try {
                         val content = File(header.filePath).readText()
-                        activeHolonsMap[holonId] = Holon(header, content)
+                        activeHolonsMap[holonId] = jsonParser.decodeFromString<Holon>(content)
                     } catch (e: Exception) {
                         finalParsingErrors.add("Failed to load content for active holon: $holonId")
                     }
@@ -454,7 +506,11 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
         val allActiveIds = (state.contextualHolonIds + listOfNotNull(state.aiPersonaId)).toSet()
         allActiveIds.forEach { holonId ->
             state.activeHolons[holonId]?.let { holon ->
-                messages.add(ChatMessage(Author.SYSTEM, holon.content, File(holon.header.filePath).name))
+                // Don't send content of quarantined files to AI
+                if (holon.header.type != "Quarantined_File") {
+                    val holonContentString = jsonParser.encodeToString(Holon.serializer(), holon)
+                    messages.add(ChatMessage(Author.SYSTEM, holonContentString, File(holon.header.filePath).name))
+                }
             }
         }
         return messages

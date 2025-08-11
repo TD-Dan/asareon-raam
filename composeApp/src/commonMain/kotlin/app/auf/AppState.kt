@@ -10,7 +10,7 @@ enum class ViewMode {
 }
 
 
-// --- NEW / MODIFIED: Data classes for the Import & Sync Workbench ---
+// --- FINALIZED: Data classes for the Import & Sync Workbench ---
 
 /**
  * Represents a single row in the Import Workbench UI.
@@ -19,7 +19,7 @@ enum class ViewMode {
 data class ImportItem(
     val sourceFile: File,
     val initialAction: ImportAction,
-    val targetPath: String? = null // For previewing where the file will go
+    val targetPath: String? = null
 )
 
 /**
@@ -32,7 +32,7 @@ sealed interface ImportAction {
 }
 
 enum class ImportActionType {
-    UPDATE, INTEGRATE, ASSIGN_PARENT, IGNORE
+    UPDATE, INTEGRATE, ASSIGN_PARENT, QUARANTINE, IGNORE
 }
 
 @Serializable
@@ -56,6 +56,17 @@ data class AssignParent(
     override val summary: String = "New holon - requires parent."
 ) : ImportAction
 
+/**
+ * --- NEW: The Quarantine action is now a first-class citizen of our model. ---
+ */
+@Serializable
+data class Quarantine(
+    val reason: String,
+    override val type: ImportActionType = ImportActionType.QUARANTINE,
+    override val summary: String = "Quarantine File"
+) : ImportAction
+
+
 @Serializable
 data class Ignore(
     override val type: ImportActionType = ImportActionType.IGNORE,
@@ -67,7 +78,6 @@ data class Ignore(
 data class ImportState(
     val sourcePath: String,
     val items: List<ImportItem> = emptyList(),
-    // We need a map to track user-overridden actions, separate from the initial analysis
     val selectedActions: Map<String, ImportAction> = emptyMap()
 )
 
@@ -91,10 +101,8 @@ data class AppState(
 
     val errorMessage: String? = null,
 
-    // --- MODIFIED STATE PROPERTIES ---
     val currentViewMode: ViewMode = ViewMode.CHAT,
     val holonIdsForExport: Set<String> = emptySet(),
-    // --- MODIFIED: The old analysis result is replaced with the new workbench state model ---
     val importState: ImportState? = null
 )
 
@@ -119,7 +127,7 @@ enum class GatewayStatus {
 @Serializable
 data class Holon(
     val header: HolonHeader,
-    val content: String
+    val content: String // Note: For parsing, we might need to change this to a generic JsonElement if payload is truly freeform. For now, assuming it's a JSON object string.
 )
 
 @Serializable

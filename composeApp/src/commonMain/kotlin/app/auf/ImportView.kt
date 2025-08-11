@@ -32,10 +32,8 @@ fun ImportView(
         Text("Import & Sync from AUF manual runtime", style = MaterialTheme.typography.h5, modifier = Modifier.padding(bottom = 16.dp))
 
         if (importState == null) {
-            // --- Stage 1: Selection ---
             SelectSourceStage(stateManager)
         } else {
-            // --- Stage 2: Workbench ---
             WorkbenchStage(appState, stateManager)
         }
     }
@@ -98,14 +96,12 @@ private fun WorkbenchStage(
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        // Header Row
         Row(modifier = Modifier.fillMaxWidth().background(Color.LightGray.copy(alpha = 0.3f)).padding(8.dp)) {
             Text("Source Holon", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
             Text("Proposed Action", modifier = Modifier.weight(1.5f), fontWeight = FontWeight.Bold)
-            Text("Target State", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+            Text("Target State / Info", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
         }
 
-        // Workbench List
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(importState.items) { item ->
                 val action = importState.selectedActions[item.sourceFile.absolutePath] ?: item.initialAction
@@ -119,7 +115,6 @@ private fun WorkbenchStage(
             }
         }
 
-        // Footer Buttons
         Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.End) {
             OutlinedButton(onClick = { stateManager.setViewMode(ViewMode.CHAT) }) {
                 Text("Cancel")
@@ -141,11 +136,12 @@ private fun WorkbenchItemRow(
     appState: AppState
 ) {
     var isExpanded by remember { mutableStateOf(false) }
-    // <<< FIX IS HERE: The state is "hoisted" to the row's scope.
     var showParentSelector by remember { mutableStateOf(false) }
 
+    val rowColor = if (selectedAction is Quarantine) Color.Red.copy(alpha = 0.1f) else Color.Transparent
+
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().background(rowColor).padding(horizontal = 8.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Panel 1: Source Manifest
@@ -158,7 +154,7 @@ private fun WorkbenchItemRow(
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.outlinedButtonColors(backgroundColor = Color.White)
             ) {
-                Text(selectedAction.summary, modifier = Modifier.weight(1f))
+                Text(selectedAction.summary, modifier = Modifier.weight(1f), maxLines = 1)
                 Icon(Icons.Default.ArrowDropDown, contentDescription = "Change Action")
             }
 
@@ -166,29 +162,29 @@ private fun WorkbenchItemRow(
                 expanded = isExpanded,
                 onDismissRequest = { isExpanded = false }
             ) {
+                // Always available
                 DropdownMenuItem(onClick = {
                     stateManager.updateImportAction(item.sourceFile.absolutePath, Ignore())
                     isExpanded = false
                 }) { Text("Ignore") }
 
-                if (item.initialAction is Update) {
-                    DropdownMenuItem(onClick = {
-                        stateManager.updateImportAction(item.sourceFile.absolutePath, item.initialAction)
-                        isExpanded = false
-                    }) { Text(item.initialAction.summary) }
-                }
-
-                if (item.initialAction is Integrate) {
-                    DropdownMenuItem(onClick = {
-                        stateManager.updateImportAction(item.sourceFile.absolutePath, item.initialAction)
-                        isExpanded = false
-                    }) { Text(item.initialAction.summary) }
-                }
-
-                // Allow assigning parent for any new holon
-                if (item.initialAction is Integrate || item.initialAction is AssignParent) {
-                    DropdownMenuItem(onClick = { showParentSelector = true; isExpanded = false }) {
-                        Text("Assign Parent...")
+                // --- FIX IS HERE: The 'when' is now exhaustive ---
+                when (val initial = item.initialAction) {
+                    is Update -> {
+                        DropdownMenuItem(onClick = { stateManager.updateImportAction(item.sourceFile.absolutePath, initial); isExpanded = false }) { Text(initial.summary) }
+                    }
+                    is Integrate -> {
+                        DropdownMenuItem(onClick = { stateManager.updateImportAction(item.sourceFile.absolutePath, initial); isExpanded = false }) { Text(initial.summary) }
+                        DropdownMenuItem(onClick = { showParentSelector = true; isExpanded = false }) { Text("Assign Parent...") }
+                    }
+                    is AssignParent -> {
+                        DropdownMenuItem(onClick = { showParentSelector = true; isExpanded = false }) { Text("Assign Parent...") }
+                    }
+                    is Quarantine -> {
+                        DropdownMenuItem(onClick = { stateManager.updateImportAction(item.sourceFile.absolutePath, initial); isExpanded = false }) { Text("Quarantine File") }
+                    }
+                    is Ignore -> {
+                        // This case is handled by the "Always available" item above, so nothing extra is needed here.
                     }
                 }
             }
@@ -197,14 +193,14 @@ private fun WorkbenchItemRow(
         // Panel 3: Target State Preview
         val targetText = when (selectedAction) {
             is Update -> "Overwrites existing holon."
-            is Integrate -> "Integrates under parent:\n${appState.holonGraph.find{it.id == selectedAction.parentHolonId}?.name ?: "Unknown"}"
+            is Integrate -> "Parent: ${appState.holonGraph.find{it.id == selectedAction.parentHolonId}?.name ?: "Unknown"}"
             is AssignParent -> "Parent: ${appState.holonGraph.find { it.id == selectedAction.assignedParentId }?.name ?: "Not Assigned"}"
+            is Quarantine -> selectedAction.reason
             is Ignore -> "No change."
         }
         Text(targetText, modifier = Modifier.weight(1f), style = MaterialTheme.typography.caption)
     }
 
-    // This now exists outside the DropdownMenu's scope and will persist.
     if (showParentSelector) {
         ParentSelectorDialog(
             holons = appState.holonGraph,
@@ -233,7 +229,7 @@ fun ParentSelectorDialog(
             Box(modifier = Modifier.fillMaxSize(0.8f)) {
                 val state = rememberLazyListState()
                 LazyColumn(state = state, modifier = Modifier.fillMaxSize()) {
-                    items(holons.filter { it.type != "AI_Persona_Root" }) { holon ->
+                    items(holons.filter { it.type != "Quarantined_File" }) { holon ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

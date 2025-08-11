@@ -46,7 +46,6 @@ class GraphLoader(
             }
 
             val availablePersonas = discoverAvailablePersonas(holonsDir)
-
             val determinedPersonaId = determinePersonaToLoad(currentPersonaId, availablePersonas)
 
             if (determinedPersonaId == null) {
@@ -57,6 +56,23 @@ class GraphLoader(
             val graph = mutableListOf<HolonHeader>()
             val rootDirectory = File(holonsDir, determinedPersonaId)
             traverseAndLoad(rootDirectory, null, 0, graph, parsingErrors)
+
+            // --- NEW: Scan and add quarantined files ---
+            val quarantineDir = File(rootDirectory, "quarantined-imports")
+            if (quarantineDir.exists() && quarantineDir.isDirectory) {
+                quarantineDir.listFiles()?.forEach { file ->
+                    val dummyHeader = HolonHeader(
+                        id = file.name, // Use filename as a temporary ID
+                        type = "Quarantined_File",
+                        name = file.name,
+                        summary = "This file is in quarantine. Inspect it to see its raw content. It may be malformed or fail schema validation.",
+                        filePath = file.absolutePath,
+                        depth = 1 // Appear just under the root
+                    )
+                    graph.add(dummyHeader)
+                }
+            }
+
 
             if (graph.isEmpty()) {
                 return GraphLoadResult(
@@ -120,6 +136,8 @@ class GraphLoader(
 
         val holonId = holonDirectory.name
         val holonFile = File(holonDirectory, "$holonId.json")
+
+        if (holonId == "quarantined-imports") return // --- NEW: Skip the quarantine folder during normal traversal
 
         if (!holonFile.exists()) {
             parsingErrors.add("File not found for dir: ${holonDirectory.path}")
