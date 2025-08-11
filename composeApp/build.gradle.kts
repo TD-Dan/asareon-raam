@@ -81,6 +81,7 @@ kotlin {
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.ktor.client.cio)
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing")
         }
         listOf("iosX64Main", "iosArm64Main", "iosSimulatorArm64Main").forEach {
             getByName(it).dependencies {

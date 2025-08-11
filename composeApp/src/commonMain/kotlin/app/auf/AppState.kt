@@ -3,28 +3,19 @@ package app.auf
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonObject // --- ADDED: Import for the correct payload type
 import java.io.File
 
 enum class ViewMode {
     CHAT, EXPORT, IMPORT
 }
 
-
-// --- FINALIZED: Data classes for the Import & Sync Workbench ---
-
-/**
- * Represents a single row in the Import Workbench UI.
- * It holds the source file and the result of the initial analysis.
- */
 data class ImportItem(
     val sourceFile: File,
     val initialAction: ImportAction,
     val targetPath: String? = null
 )
 
-/**
- * A sealed interface representing the possible actions a user can select for an import item.
- */
 @Serializable
 sealed interface ImportAction {
     val type: ImportActionType
@@ -56,9 +47,6 @@ data class AssignParent(
     override val summary: String = "New holon - requires parent."
 ) : ImportAction
 
-/**
- * --- NEW: The Quarantine action is now a first-class citizen of our model. ---
- */
 @Serializable
 data class Quarantine(
     val reason: String,
@@ -66,31 +54,25 @@ data class Quarantine(
     override val summary: String = "Quarantine File"
 ) : ImportAction
 
-
 @Serializable
 data class Ignore(
     override val type: ImportActionType = ImportActionType.IGNORE,
     override val summary: String = "Do not import."
 ) : ImportAction
 
-
-// Represents the state of the entire Import & Sync view.
 data class ImportState(
     val sourcePath: String,
     val items: List<ImportItem> = emptyList(),
     val selectedActions: Map<String, ImportAction> = emptyMap()
 )
 
-
 data class AppState(
     val holonGraph: List<HolonHeader> = emptyList(),
     val catalogueFilter: String? = null,
     val activeHolons: Map<String, Holon> = emptyMap(),
-
     val availableAiPersonas: List<HolonHeader> = emptyList(),
     val aiPersonaId: String? = null,
     val contextualHolonIds: Set<String> = emptySet(),
-
     val inspectedHolonId: String? = null,
     val chatHistory: List<ChatMessage> = emptyList(),
     val isSystemVisible: Boolean = false,
@@ -98,9 +80,7 @@ data class AppState(
     val isProcessing: Boolean = false,
     val availableModels: List<String> = emptyList(),
     val selectedModel: String = "gemini-1.5-flash-latest",
-
     val errorMessage: String? = null,
-
     val currentViewMode: ViewMode = ViewMode.CHAT,
     val holonIdsForExport: Set<String> = emptySet(),
     val importState: ImportState? = null
@@ -124,10 +104,11 @@ enum class GatewayStatus {
     OK, IDLE, ERROR, LOADING
 }
 
+// --- MODIFIED: This data class now correctly matches the JSON file structure. ---
 @Serializable
 data class Holon(
     val header: HolonHeader,
-    val content: String // Note: For parsing, we might need to change this to a generic JsonElement if payload is truly freeform. For now, assuming it's a JSON object string.
+    val payload: JsonObject
 )
 
 @Serializable
