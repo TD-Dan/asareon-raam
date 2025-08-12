@@ -49,6 +49,8 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
     private val graphLoader = GraphLoader(HOLONS_BASE_PATH, jsonParser)
     private val gatewayManager = GatewayManager(apiKey, jsonParser)
     private val importExportManager = ImportExportManager(FRAMEWORK_BASE_PATH, jsonParser)
+    // --- ADDED: Instantiate the new executor ---
+    private val actionExecutor = ActionExecutor(jsonParser)
 
 
     init {
@@ -101,7 +103,6 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
         if (holonsToExport.isEmpty()) return
         coroutineScope.launch(Dispatchers.IO) {
             importExportManager.executeExport(destinationPath, holonsToExport)
-            // --- FIX: Removed the redundant and problematic launch(Dispatchers.Main) ---
             setViewMode(ViewMode.CHAT)
         }
     }
@@ -140,7 +141,6 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
 
         coroutineScope.launch(Dispatchers.IO) {
             importExportManager.executeImport(importState, currentGraph, personaId, HOLONS_BASE_PATH)
-            // --- FIX: Removed the redundant and problematic launch(Dispatchers.Main) ---
             loadHolonGraph()
             _state.update { it.copy(currentViewMode = ViewMode.CHAT, importState = null) }
         }
@@ -151,17 +151,41 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
         loadHolonGraph()
     }
 
+    // --- MODIFIED: This function is now fully implemented ---
     fun executeActionFromMessage(messageTimestamp: Long) {
         val originalMessageIndex = _state.value.chatHistory.indexOfFirst { it.timestamp == messageTimestamp }
         if (originalMessageIndex == -1) return
+
         val originalMessage = _state.value.chatHistory[originalMessageIndex]
         val manifest = originalMessage.actionManifest ?: return
-        val confirmationSummary = "Action Manifest Confirmed: \n" + manifest.joinToString("\n") { "- ${it.summary}" }
-        val confirmationMessage = ChatMessage(Author.SYSTEM, confirmationSummary, "Action Executed")
-        val updatedHistory = _state.value.chatHistory.toMutableList()
-        updatedHistory[originalMessageIndex] = originalMessage.copy(isActionResolved = true)
-        updatedHistory.add(confirmationMessage)
-        _state.update { it.copy(chatHistory = updatedHistory) }
+        val personaId = _state.value.aiPersonaId ?: return
+        val currentGraph = _state.value.holonGraph
+
+        backupManager.createBackup("pre-action-manifest")
+
+        _state.update { it.copy(isProcessing = true) }
+
+        coroutineScope.launch(Dispatchers.IO) {
+            val result = actionExecutor.execute(manifest, HOLONS_BASE_PATH, personaId, currentGraph)
+
+            val updatedHistory = _state.value.chatHistory.toMutableList()
+            updatedHistory[originalMessageIndex] = originalMessage.copy(isActionResolved = true)
+
+            when (result) {
+                is ActionExecutorResult.Success -> {
+                    val confirmationMessage = ChatMessage(Author.SYSTEM, result.summary, "Action Executed")
+                    updatedHistory.add(confirmationMessage)
+                    // CRITICAL: Reload the graph to reflect the changes.
+                    loadHolonGraph()
+                }
+                is ActionExecutorResult.Failure -> {
+                    val failureMessage = ChatMessage(Author.SYSTEM, result.error, "Action Failed")
+                    updatedHistory.add(failureMessage)
+                }
+            }
+
+            _state.update { it.copy(chatHistory = updatedHistory, isProcessing = false) }
+        }
     }
 
     fun rejectActionFromMessage(messageTimestamp: Long) {
@@ -351,6 +375,7 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
         return try { File(filePath).readText() } catch (e: Exception) { "Error reading file: $filePath" }
     }
 
+    // --- MODIFIED: Updated the CreateFile example path ---
     private fun generateDynamicToolManifest(): String {
         return """
         --- START OF FILE Host Tool Manifest ---
@@ -398,7 +423,7 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
                       "summary": "..."
                     }
                     ```
-                *   `filePath`: The relative path from the `framework/` directory (e.g., `dreams/dream-1.md`).
+                *   `filePath`: The relative path from the persona's root directory (e.g., `dreams/dream-1.md`).
                 *   `content`: The raw text content of the file.
                 *   `summary`: A brief description of the file being created.
         --- END OF FILE Host Tool Manifest ---
