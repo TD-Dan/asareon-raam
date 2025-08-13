@@ -1,6 +1,7 @@
 package app.auf
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonClassDiscriminator
 
 /**
  * A sealed interface representing a single, universal, and atomic action
@@ -8,6 +9,7 @@ import kotlinx.serialization.Serializable
  * The application will process a list of these actions as a single transaction.
  */
 @Serializable
+@JsonClassDiscriminator("type")
 sealed interface Action {
     // A human-readable summary of the action's intent for UI display.
     val summary: String

@@ -19,7 +19,7 @@ class GatewayManager(
     private val apiKey: String,
     private val jsonParser: Json
 ) {
-    // --- MODIFIED: The configured parser is now passed down to the Gateway instance. ---
+    // The configured parser is now passed down to the Gateway instance.
     private val gateway = Gateway(jsonParser)
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
 
@@ -77,7 +77,9 @@ class GatewayManager(
             try {
                 when (tag) {
                     "ACTION_MANIFEST" -> {
-                        val actions = jsonParser.decodeFromString<List<Action>>(content)
+                        // --- FIX IS HERE: Clean the content string before parsing ---
+                        val cleanContent = content.trim().removePrefix("```json").removePrefix("```").trim().removeSuffix("```")
+                        val actions = jsonParser.decodeFromString<List<Action>>(cleanContent)
                         blocks.add(ActionBlock(actions, "The AI proposes ${actions.size} action(s). Review and confirm."))
                     }
                     "FILE_VIEW" -> {

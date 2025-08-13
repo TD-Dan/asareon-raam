@@ -26,7 +26,6 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
         private const val FRAMEWORK_BASE_PATH = "framework"
     }
 
-    // --- MODIFIED: Explicitly registering the serializer for each subclass ---
     private val actionModule = SerializersModule {
         polymorphic(Action::class) {
             subclass(CreateHolon::class, CreateHolon.serializer())
@@ -41,12 +40,13 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
             subclass(AnchorBlock::class, AnchorBlock.serializer())
         }
     }
+    // --- FIX IS HERE: Removing the redundant 'classDiscriminator' property. ---
     private val jsonParser = Json {
         serializersModule = actionModule
         isLenient = true
         ignoreUnknownKeys = true
         prettyPrint = true
-        classDiscriminator = "type"
+        // classDiscriminator = "type" // This is redundant with the @JsonClassDiscriminator annotation
     }
 
     private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
@@ -303,18 +303,24 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
         *   **Format:** Enclose a JSON array of `Action` objects within `[AUF_ACTION_MANIFEST]` and `[/AUF_ACTION_MANIFEST]` tags. The JSON object for each action *must* include a `"type"` field with the name of the action class.
         *   **Example:**
             ```json
+            [AUF_ACTION_MANIFEST]
+            ```json
             [
               {
                 "type": "CreateFile",
                 "filePath": "path/to/new_file.txt",
-                "content": "This is the file content."
+                "content": "This is the file content.",
+                "summary": "Create a new file."
               },
               {
                 "type": "CreateHolon",
                 "content": "{\"header\":{...},\"payload\":{...}}",
-                "parentId": "parent-holon-id-123"
+                "parentId": "parent-holon-id-123",
+                "summary": "Create a new holon."
               }
             ]
+            ```
+            [/AUF_ACTION_MANIFEST]
             ```
 
         **Tool: Application Request**

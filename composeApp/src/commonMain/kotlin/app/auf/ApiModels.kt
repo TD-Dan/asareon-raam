@@ -13,7 +13,8 @@ data class GenerateContentRequest(
 @Serializable
 data class Content(
     val role: String,
-    val parts: List<Part>
+    // --- FIX IS HERE: Made the 'parts' field optional by providing a default value. ---
+    val parts: List<Part> = emptyList()
 )
 
 @Serializable
@@ -58,7 +59,6 @@ data class ApiError(
     val status: String
 )
 
-// --- FIX IS HERE: Provide default values to make fields optional ---
 @Serializable
 data class UsageMetadata(
     val promptTokenCount: Int = 0,
