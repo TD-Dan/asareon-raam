@@ -10,9 +10,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.ArrowRight
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,19 +25,37 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import java.text.SimpleDateFormat
+import java.util.*
 
 @Composable
-private fun StandardMessage(
-    message: ChatMessage
-) {
-    var isExpanded by remember { mutableStateOf(message.author != Author.SYSTEM || message.actionManifest != null) }
+fun MessageCard(message: ChatMessage, stateManager: StateManager) {
+    var isCollapsed by remember { mutableStateOf(message.author == Author.SYSTEM) }
     val clipboardManager = LocalClipboardManager.current
-
     val cardColor = when (message.author) {
         Author.USER -> Color.White
         Author.AI -> Color.White
         Author.SYSTEM -> Color.LightGray.copy(alpha = 0.2f)
     }
+
+    // --- ENHANCED COPY LOGIC ---
+    val contentToCopy = when {
+        message.rawContent != null -> message.rawContent
+        else -> message.contentBlocks.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
+    }
+    val showCopyButton = contentToCopy.isNotBlank()
+    val titleForCopy = message.title ?: "untitled"
+    val guardedCopyContent = "---COPY of ${titleForCopy}:---\n$contentToCopy\n---END OF COPY of ${titleForCopy}---"
+    // --- END ENHANCED COPY LOGIC ---
+
+    // --- TIMESTAMP DISPLAY ---
+    val formattedTimestamp = remember(message.timestamp) {
+        val sdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+        sdf.format(Date(message.timestamp))
+    }
+    // --- END TIMESTAMP DISPLAY ---
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -48,37 +65,86 @@ private fun StandardMessage(
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().clickable { isCollapsed = !isCollapsed },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.weight(1f).clickable { isExpanded = !isExpanded },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = if (isExpanded) Icons.Default.ArrowDropDown else Icons.Default.ArrowRight,
-                        contentDescription = if (isExpanded) "Collapse" else "Expand",
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = message.title ?: message.author.name,
                         fontWeight = FontWeight.Bold,
                         fontStyle = if (message.author == Author.SYSTEM) FontStyle.Italic else FontStyle.Normal,
                         fontSize = 14.sp
                     )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "($formattedTimestamp)",
+                        fontSize = 11.sp,
+                        color = Color.Gray
+                    )
                 }
-                IconButton(onClick = {
-                    clipboardManager.setText(AnnotatedString(message.content))
-                }, modifier = Modifier.size(24.dp)) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy Message Content", tint = Color.Gray)
+
+                if (showCopyButton) {
+                    IconButton(onClick = {
+                        clipboardManager.setText(AnnotatedString(guardedCopyContent))
+                    }, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy Message Content", tint = Color.Gray)
+                    }
                 }
             }
-            AnimatedVisibility(visible = isExpanded) {
+
+            AnimatedVisibility(visible = !isCollapsed) {
+                Column {
+                    Spacer(Modifier.height(8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        message.contentBlocks.forEach { block ->
+                            when (block) {
+                                is TextBlock -> RenderTextBlock(block)
+                                is ActionBlock -> RenderActionBlock(block,
+                                    onConfirm = { stateManager.executeActionFromMessage(message.timestamp) },
+                                    onReject = { stateManager.rejectActionFromMessage(message.timestamp) }
+                                )
+                                is FileContentBlock -> RenderFileContentBlock(block)
+                                is AppRequestBlock -> RenderAppRequestBlock(block)
+                                is AnchorBlock -> RenderAnchorBlock(block)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// --- Individual Block Renderers (Unchanged) ---
+
+@Composable
+fun RenderTextBlock(block: TextBlock) {
+    Text(block.text, fontFamily = FontFamily.Default, fontSize = 14.sp)
+}
+
+@Composable
+fun RenderActionBlock(block: ActionBlock, onConfirm: () -> Unit, onReject: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        backgroundColor = if (block.isResolved) Color.LightGray.copy(alpha=0.3f) else Color(0xFFE8EAF6),
+        border = BorderStroke(1.dp, if (block.isResolved) Color.Gray else Color(0xFF3F51B5)),
+        elevation = 0.dp
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(block.summary, fontWeight = FontWeight.Bold, color = if (block.isResolved) Color.Gray else Color(0xFF303F9F))
+            AnimatedVisibility(visible = !block.isResolved) {
                 Column {
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(message.content, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+                    block.actions.forEach { action ->
+                        Text("- ${action.summary}", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        OutlinedButton(onClick = onReject, colors = ButtonDefaults.outlinedButtonColors()) { Text("Reject") }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(onClick = onConfirm) { Text("Confirm") }
+                    }
                 }
             }
         }
@@ -86,33 +152,47 @@ private fun StandardMessage(
 }
 
 @Composable
-private fun ActionableMessageCard(
-    message: ChatMessage,
-    onConfirm: () -> Unit,
-    onReject: () -> Unit
-) {
+fun RenderFileContentBlock(block: FileContentBlock) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        backgroundColor = Color(0xFFE8EAF6),
-        border = BorderStroke(1.dp, Color(0xFF3F51B5)),
-        elevation = 2.dp
+        modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, Color.Gray),
+        elevation = 0.dp
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(message.title ?: "System Action", fontWeight = FontWeight.Bold, color = Color(0xFF303F9F))
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(message.content)
-            Spacer(modifier = Modifier.height(12.dp))
-            AnimatedVisibility(visible = !message.isActionResolved) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    OutlinedButton(onClick = onReject, colors = ButtonDefaults.outlinedButtonColors()) { Text("Reject") }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = onConfirm) { Text("Confirm") }
-                }
-            }
+            Text(block.fileName, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+            Divider(modifier=Modifier.padding(vertical=8.dp))
+            Text(block.content, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
         }
     }
 }
 
+@Composable
+fun RenderAppRequestBlock(block: AppRequestBlock) {
+    Row(modifier = Modifier.fillMaxWidth().background(Color.Yellow.copy(alpha=0.2f)).padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Default.Warning, contentDescription = "App Request", tint = Color.DarkGray)
+        Spacer(Modifier.width(8.dp))
+        Text(block.summary, fontStyle = FontStyle.Italic, color = Color.DarkGray)
+    }
+}
+
+@Composable
+fun RenderAnchorBlock(block: AnchorBlock) {
+    val jsonPrettyPrinter = remember { Json { prettyPrint = true } }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        backgroundColor = Color.Black.copy(alpha = 0.05f)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("State Anchor Created: ${block.anchorId}", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+            Divider(modifier=Modifier.padding(vertical=8.dp))
+            Text(jsonPrettyPrinter.encodeToString(JsonObject.serializer(), block.content), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+        }
+    }
+}
+
+// --- Main ChatView ---
 
 @Composable
 fun ChatView(
@@ -159,18 +239,14 @@ fun ChatView(
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         LazyColumn(
             state = lazyListState,
-            modifier = Modifier.weight(1f).padding(bottom = 8.dp)
+            modifier = Modifier.weight(1f).padding(bottom = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            items(displayedMessages) { message: ChatMessage ->
-                if (message.actionManifest != null) {
-                    ActionableMessageCard(
-                        message = message,
-                        onConfirm = { stateManager.executeActionFromMessage(message.timestamp) },
-                        onReject = { stateManager.rejectActionFromMessage(message.timestamp) }
-                    )
-                } else {
-                    StandardMessage(message)
-                }
+            items(
+                items = displayedMessages,
+                key = { message -> "${message.timestamp}-${message.title}" }
+            ) { message ->
+                MessageCard(message = message, stateManager = stateManager)
             }
         }
 
@@ -199,20 +275,11 @@ fun ChatView(
                 }
 
                 Spacer(Modifier.width(8.dp))
-                IconButton(onClick = {
-                    val startTag = "--START OF COPIED PROMPT TRANSCRIPT--"
-                    val endTag = "--END OF COPIED PROMPT TRANSCRIPT--"
-                    val systemText = stateManager.getSystemContextPreview().joinToString("\n\n") {
-                        "--- START OF FILE ${it.title} ---\n${it.content}"
-                    }
-                    val historyText = appState.chatHistory.joinToString("\n\n") {
-                        val authorTag = if(it.author == Author.AI) "[model]" else "[user]"
-                        "$authorTag ${it.content}"
-                    }
-                    val fullPrompt = "$startTag\n\n$systemText\n\n$historyText\n\n$endTag"
+                OutlinedButton(onClick = {
+                    val fullPrompt = stateManager.getPromptAsString()
                     clipboardManager.setText(AnnotatedString(fullPrompt))
                 }) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy Full Prompt")
+                    Text("Copy Prompt")
                 }
             }
 
@@ -224,7 +291,6 @@ fun ChatView(
                     fontStyle = FontStyle.Italic
                 )
             }
-
 
             var isModelSelectorExpanded by remember { mutableStateOf(false) }
             var isAgentSelectorExpanded by remember { mutableStateOf(false) }
@@ -273,7 +339,6 @@ fun ChatView(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Button(onClick = sendMessageAction, modifier = Modifier.height(56.dp), enabled = !appState.isProcessing && appState.gatewayStatus == GatewayStatus.OK) {
-                // --- FIX: Corrected the variable name ---
                 if (appState.isProcessing) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
                 } else { Text("Send") }

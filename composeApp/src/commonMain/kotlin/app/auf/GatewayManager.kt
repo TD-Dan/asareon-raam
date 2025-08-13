@@ -3,17 +3,20 @@ package app.auf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json // <<< FIX IS HERE: Added the missing import
+import kotlinx.serialization.builtins.ListSerializer // <<< FIX IS HERE
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * A simple data class to represent a processed AI response,
  * decoupling StateManager from the raw API response models.
  */
 data class AIResponse(
-    val content: String,
-    val actionManifest: List<Action>? = null,
+    val contentBlocks: List<ContentBlock>,
     val usageMetadata: UsageMetadata? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val rawContent: String // Always include the original, unaltered AI output
 )
 
 /**
@@ -41,53 +44,111 @@ class GatewayManager(
                 val response = gateway.generateContent(apiKey, selectedModel, apiRequestContents)
 
                 response.error?.let {
-                    return@withContext AIResponse(content = "", errorMessage = "API Error: ${it.message} (Code: ${it.code})")
+                    return@withContext AIResponse(
+                        contentBlocks = emptyList(),
+                        rawContent = "API Error",
+                        errorMessage = "API Error: ${it.message} (Code: ${it.code})"
+                    )
                 }
 
-                val responseContent = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                val rawTextResponse = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
                     ?: response.promptFeedback?.blockReason?.let { "Blocked: $it" }
                     ?: "No content received, but no error was reported."
 
-                val manifestStartTag = "[AUF_ACTION_MANIFEST]"
-                val manifestEndTag = "[/AUF_ACTION_MANIFEST]"
+                val parsedBlocks = parseRawContentToBlocks(rawTextResponse)
 
-                if (responseContent.contains(manifestStartTag) && responseContent.contains(manifestEndTag)) {
-                    val manifestJson = responseContent.substringAfter(manifestStartTag).substringBeforeLast(manifestEndTag).trim()
-                    val parsedActions = jsonParser.decodeFromString<List<Action>>(manifestJson)
-                    val summary = "The AI has proposed ${parsedActions.size} action(s). Please review and confirm."
-                    AIResponse(
-                        content = summary,
-                        actionManifest = parsedActions,
-                        usageMetadata = response.usageMetadata
-                    )
-                } else {
-                    AIResponse(
-                        content = responseContent,
-                        usageMetadata = response.usageMetadata
-                    )
-                }
+                AIResponse(
+                    contentBlocks = parsedBlocks,
+                    usageMetadata = response.usageMetadata,
+                    rawContent = rawTextResponse
+                )
             } catch (e: Exception) {
-                AIResponse(content = "", errorMessage = "Gateway Error: ${e.message}")
+                AIResponse(contentBlocks = emptyList(), rawContent = "Gateway Error", errorMessage = "Gateway Error: ${e.message}")
             }
         }
     }
 
-
     /**
-     * Converts the application's internal ChatMessage format to the list of
-     * Content objects required by the specific generative AI API.
-     * It also handles the merging of consecutive 'user' role messages.
+     * Fetches the list of available models from the API.
      */
+    suspend fun listModels(): List<ModelInfo> {
+        return withContext(coroutineScope.coroutineContext) {
+            gateway.listModels(apiKey)
+        }
+    }
+
+    private fun parseRawContentToBlocks(rawText: String): List<ContentBlock> {
+        val blocks = mutableListOf<ContentBlock>()
+        val regex = Regex("""\[AUF_([A-Z_]+)(?::\s*(.*?))?\]\s*(.*?)\s*\[/AUF_\1\]""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.MULTILINE))
+        var lastIndex = 0
+
+        regex.findAll(rawText).forEach { matchResult ->
+            if (matchResult.range.first > lastIndex) {
+                val precedingText = rawText.substring(lastIndex, matchResult.range.first).trim()
+                if (precedingText.isNotEmpty()) {
+                    blocks.add(TextBlock(precedingText))
+                }
+            }
+
+            val (tag, params, content) = matchResult.destructured
+            try {
+                when (tag) {
+                    "ACTION_MANIFEST" -> {
+                        val actions = jsonParser.decodeFromString<List<Action>>(content)
+                        blocks.add(ActionBlock(actions, "The AI proposes ${actions.size} action(s). Review and confirm."))
+                    }
+                    "FILE_VIEW" -> {
+                        blocks.add(FileContentBlock(fileName = params.trim(), content = content.trim()))
+                    }
+                    "APP_REQUEST" -> {
+                        blocks.add(AppRequestBlock(requestType = content.trim(), summary = "AI App Request: ${content.trim()}"))
+                    }
+                    "STATE_ANCHOR" -> {
+                        val jsonObject = jsonParser.decodeFromString<JsonObject>(content)
+                        val anchorId = jsonObject["anchorId"]?.jsonPrimitive?.content ?: "unknown-anchor"
+                        blocks.add(AnchorBlock(anchorId, jsonObject))
+                    }
+                }
+            } catch (e: Exception) {
+                blocks.add(TextBlock("--- ERROR PARSING BLOCK ---\nTAG: $tag\nERROR: ${e.message}\nCONTENT:\n$content\n--- END ERROR ---"))
+            }
+
+            lastIndex = matchResult.range.last + 1
+        }
+
+        if (lastIndex < rawText.length) {
+            val trailingText = rawText.substring(lastIndex).trim()
+            if (trailingText.isNotEmpty()) {
+                blocks.add(TextBlock(trailingText))
+            }
+        }
+
+        if (blocks.isEmpty() && rawText.isNotBlank()) {
+            blocks.add(TextBlock(rawText))
+        }
+
+        return blocks
+    }
+
     private fun convertChatToApiContents(messages: List<ChatMessage>): List<Content> {
         val apiContents = mutableListOf<Content>()
         messages.forEach { msg ->
+            val reconstructedContent = msg.contentBlocks.joinToString(separator = "\n") { block ->
+                when (block) {
+                    is TextBlock -> block.text
+                    is ActionBlock -> "[AUF_ACTION_MANIFEST]\n${jsonParser.encodeToString(ListSerializer(Action.serializer()), block.actions)}\n[/AUF_ACTION_MANIFEST]"
+                    // Add reconstructions for other types as needed
+                    else -> "[System placeholder for block type: ${block::class.simpleName}]"
+                }
+            }
+
             when (msg.author) {
                 Author.USER, Author.AI -> {
                     val role = if (msg.author == Author.AI) "model" else "user"
-                    apiContents.add(Content(role, listOf(Part(msg.content))))
+                    apiContents.add(Content(role, listOf(Part(reconstructedContent))))
                 }
                 Author.SYSTEM -> {
-                    val fullContent = "--- START OF FILE ${msg.title} ---\n${msg.content}"
+                    val fullContent = "--- START OF FILE ${msg.title} ---\n$reconstructedContent"
                     apiContents.add(Content("user", listOf(Part(fullContent))))
                 }
             }
@@ -109,14 +170,5 @@ class GatewayManager(
             mergedContents.add(Content(currentRole, listOf(Part(currentParts.joinToString("\n\n")))))
         }
         return mergedContents
-    }
-
-    /**
-     * Fetches the list of available models from the API.
-     */
-    suspend fun listModels(): List<ModelInfo> {
-        return withContext(coroutineScope.coroutineContext) {
-            gateway.listModels(apiKey)
-        }
     }
 }

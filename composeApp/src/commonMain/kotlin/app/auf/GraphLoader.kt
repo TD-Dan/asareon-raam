@@ -57,7 +57,7 @@ class GraphLoader(
             val rootDirectory = File(holonsDir, determinedPersonaId)
             traverseAndLoad(rootDirectory, null, 0, graph, parsingErrors)
 
-            // --- NEW: Scan and add quarantined files ---
+            // --- Scan and add quarantined files ---
             val quarantineDir = File(rootDirectory, "quarantined-imports")
             if (quarantineDir.exists() && quarantineDir.isDirectory) {
                 quarantineDir.listFiles()?.forEach { file ->
@@ -66,6 +66,7 @@ class GraphLoader(
                         type = "Quarantined_File",
                         name = file.name,
                         summary = "This file is in quarantine. Inspect it to see its raw content. It may be malformed or fail schema validation.",
+                        // --- BUG-004 FIX: Use absolutePath for robustness ---
                         filePath = file.absolutePath,
                         depth = 1 // Appear just under the root
                     )
@@ -104,7 +105,8 @@ class GraphLoader(
                 try {
                     val content = holonFile.readText()
                     val header = jsonParser.decodeFromString<HolonFileContent>(content).header
-                    if (header.type == "AI_Persona_Root") header.copy(filePath = holonFile.path) else null
+                    // --- BUG-004 FIX: Use absolutePath for robustness ---
+                    if (header.type == "AI_Persona_Root") header.copy(filePath = holonFile.absolutePath) else null
                 } catch (e: Exception) {
                     println("Warning: Malformed persona found and ignored in dir: ${dir.name}")
                     null
@@ -137,7 +139,7 @@ class GraphLoader(
         val holonId = holonDirectory.name
         val holonFile = File(holonDirectory, "$holonId.json")
 
-        if (holonId == "quarantined-imports") return // --- NEW: Skip the quarantine folder during normal traversal
+        if (holonId == "quarantined-imports") return
 
         if (!holonFile.exists()) {
             parsingErrors.add("File not found for dir: ${holonDirectory.path}")
@@ -150,7 +152,8 @@ class GraphLoader(
             var header = parsedFile.header
 
             header = header.copy(
-                filePath = holonFile.path,
+                // --- BUG-004 FIX: Use absolutePath for robustness ---
+                filePath = holonFile.absolutePath,
                 parentId = parentId,
                 depth = depth
             )

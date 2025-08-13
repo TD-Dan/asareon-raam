@@ -86,14 +86,52 @@ data class AppState(
     val importState: ImportState? = null
 )
 
+@Serializable
+sealed interface ContentBlock
+
+@Serializable
+@SerialName("TextBlock")
+data class TextBlock(val text: String) : ContentBlock
+
+@Serializable
+@SerialName("ActionBlock")
+data class ActionBlock(
+    val actions: List<Action>,
+    val summary: String,
+    val isResolved: Boolean = false
+) : ContentBlock
+
+@Serializable
+@SerialName("FileContentBlock")
+data class FileContentBlock(
+    val fileName: String,
+    val content: String,
+    val language: String? = null // Hint for syntax highlighting
+) : ContentBlock
+
+@Serializable
+@SerialName("AppRequestBlock")
+data class AppRequestBlock(
+    val requestType: String, // e.g., "START_DREAM_CYCLE"
+    val summary: String
+) : ContentBlock
+
+@Serializable
+@SerialName("AnchorBlock")
+data class AnchorBlock(
+    val anchorId: String,
+    val content: JsonObject
+) : ContentBlock
+
+
 data class ChatMessage(
     val author: Author,
-    val content: String,
     val title: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
-    val actionManifest: List<Action>? = null,
-    val isActionResolved: Boolean = false,
-    val usageMetadata: UsageMetadata? = null
+    val contentBlocks: List<ContentBlock>,
+    val usageMetadata: UsageMetadata? = null,
+    // For AI messages only, to store the original, pre-parsed output for debugging.
+    val rawContent: String? = null
 )
 
 enum class Author {
