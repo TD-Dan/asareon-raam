@@ -11,6 +11,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,15 +34,22 @@ import java.util.*
 
 @Composable
 fun MessageCard(message: ChatMessage, stateManager: StateManager) {
-    var isCollapsed by remember { mutableStateOf(message.author == Author.SYSTEM) }
+    var isCollapsed by remember { mutableStateOf(message.author == Author.SYSTEM && message.title != "Gateway Error") }
     val clipboardManager = LocalClipboardManager.current
-    val cardColor = when (message.author) {
-        Author.USER -> Color.White
-        Author.AI -> Color.White
-        Author.SYSTEM -> Color.LightGray.copy(alpha = 0.2f)
+    var showMenu by remember { mutableStateOf(false) }
+
+    val cardColor = when {
+        message.title == "Gateway Error" -> Color.Red.copy(alpha = 0.1f)
+        message.author == Author.USER -> Color.White
+        message.author == Author.AI -> Color.White
+        message.author == Author.SYSTEM -> Color.LightGray.copy(alpha = 0.2f)
+        else -> Color.White
+    }
+    val borderColor = when {
+        message.title == "Gateway Error" -> Color.Red.copy(alpha = 0.4f)
+        else -> Color.LightGray.copy(alpha = 0.5f)
     }
 
-    // --- ENHANCED COPY LOGIC ---
     val contentToCopy = when {
         message.rawContent != null -> message.rawContent
         else -> message.contentBlocks.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
@@ -48,28 +57,28 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
     val showCopyButton = contentToCopy.isNotBlank()
     val titleForCopy = message.title ?: "untitled"
     val guardedCopyContent = "---COPY of ${titleForCopy}:---\n$contentToCopy\n---END OF COPY of ${titleForCopy}---"
-    // --- END ENHANCED COPY LOGIC ---
 
-    // --- TIMESTAMP DISPLAY ---
     val formattedTimestamp = remember(message.timestamp) {
         val sdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
         sdf.format(Date(message.timestamp))
     }
-    // --- END TIMESTAMP DISPLAY ---
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         backgroundColor = cardColor,
-        border = BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.5f)),
+        border = BorderStroke(1.dp, borderColor),
         elevation = 0.dp
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { isCollapsed = !isCollapsed },
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.weight(1f).clickable { isCollapsed = !isCollapsed },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
                         text = message.title ?: message.author.name,
                         fontWeight = FontWeight.Bold,
@@ -84,11 +93,40 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                     )
                 }
 
-                if (showCopyButton) {
-                    IconButton(onClick = {
-                        clipboardManager.setText(AnnotatedString(guardedCopyContent))
-                    }, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy Message Content", tint = Color.Gray)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (showCopyButton) {
+                        IconButton(onClick = {
+                            clipboardManager.setText(AnnotatedString(guardedCopyContent))
+                        }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy Message Content", tint = Color.Gray)
+                        }
+                    }
+
+                    Box {
+                        IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = Color.Gray)
+                        }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            if (message.author == Author.USER) {
+                                DropdownMenuItem(onClick = {
+                                    stateManager.rerunMessage(message.timestamp)
+                                    showMenu = false
+                                }) {
+                                    Text("Rerun")
+                                }
+                            }
+
+                            val deleteText = if (message.title == "Gateway Error") "Dismiss" else "Delete"
+                            DropdownMenuItem(onClick = {
+                                stateManager.deleteMessage(message.timestamp)
+                                showMenu = false
+                            }) {
+                                Text(deleteText)
+                            }
+                        }
                     }
                 }
             }
@@ -115,8 +153,6 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
         }
     }
 }
-
-// --- Individual Block Renderers (Unchanged) ---
 
 @Composable
 fun RenderTextBlock(block: TextBlock) {
@@ -192,8 +228,6 @@ fun RenderAnchorBlock(block: AnchorBlock) {
     }
 }
 
-// --- Main ChatView ---
-
 @Composable
 fun ChatView(
     appState: AppState,
@@ -250,9 +284,9 @@ fun ChatView(
             }
         }
 
-        appState.errorMessage?.let { error ->
+        appState.errorMessage?.let {
             Text(
-                text = error,
+                text = it,
                 color = Color.Red,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.fillMaxWidth().background(Color.Red.copy(alpha=0.1f)).padding(8.dp)
@@ -277,7 +311,9 @@ fun ChatView(
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = {
                     val fullPrompt = stateManager.getPromptAsString()
-                    clipboardManager.setText(AnnotatedString(fullPrompt))
+                    // --- MODIFIED: Added copy guards ---
+                    val guardedPrompt = "---START OF COPY:---\n$fullPrompt\n--- END OF COPY---"
+                    clipboardManager.setText(AnnotatedString(guardedPrompt))
                 }) {
                     Text("Copy Prompt")
                 }
@@ -338,10 +374,22 @@ fun ChatView(
                 enabled = !appState.isProcessing && appState.gatewayStatus == GatewayStatus.OK
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Button(onClick = sendMessageAction, modifier = Modifier.height(56.dp), enabled = !appState.isProcessing && appState.gatewayStatus == GatewayStatus.OK) {
+            // --- MODIFIED: Conditional Send/Stop button ---
+            Button(
+                onClick = { if (appState.isProcessing) stateManager.cancelMessage() else sendMessageAction() },
+                modifier = Modifier.height(56.dp),
+                enabled = appState.gatewayStatus == GatewayStatus.OK,
+                colors = if (appState.isProcessing) ButtonDefaults.buttonColors(backgroundColor = Color.Red, contentColor = Color.White) else ButtonDefaults.buttonColors()
+            ) {
                 if (appState.isProcessing) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
-                } else { Text("Send") }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Stop, contentDescription = "Stop Request")
+                        Spacer(Modifier.width(8.dp))
+                        Text("Stop")
+                    }
+                } else {
+                    Text("Send")
+                }
             }
         }
     }

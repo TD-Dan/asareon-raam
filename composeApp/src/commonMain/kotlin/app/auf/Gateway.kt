@@ -9,22 +9,19 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
 
-class Gateway {
+// --- MODIFIED: The Gateway now accepts a configured Json parser. ---
+class Gateway(private val jsonParser: Json) {
 
     private val client = HttpClient {
         install(ContentNegotiation) {
-            json(Json {
-                ignoreUnknownKeys = true
-                prettyPrint = true
-                isLenient = true
-            })
+            // --- MODIFIED: It uses the provided parser instance, not a new default one. ---
+            json(jsonParser)
         }
         install(HttpTimeout) {
             requestTimeoutMillis = 300000
         }
     }
 
-    // --- MODIFIED: Return the full response object, not just the text string ---
     suspend fun generateContent(apiKey: String, model: String, contents: List<Content>): GenerateContentResponse {
         val apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
         val requestBody = GenerateContentRequest(contents = contents)
@@ -37,7 +34,6 @@ class Gateway {
         } catch (e: Exception) {
             println("API Call Failed: ${e.message}")
             e.printStackTrace()
-            // Return a response object containing the error
             GenerateContentResponse(
                 error = ApiError(
                     code = 500,

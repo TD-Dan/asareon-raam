@@ -2,6 +2,7 @@ package app.auf
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,18 +26,19 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
         private const val FRAMEWORK_BASE_PATH = "framework"
     }
 
+    // --- MODIFIED: Explicitly registering the serializer for each subclass ---
     private val actionModule = SerializersModule {
         polymorphic(Action::class) {
-            subclass(CreateHolon::class)
-            subclass(UpdateHolonContent::class)
-            subclass(CreateFile::class)
+            subclass(CreateHolon::class, CreateHolon.serializer())
+            subclass(UpdateHolonContent::class, UpdateHolonContent.serializer())
+            subclass(CreateFile::class, CreateFile.serializer())
         }
         polymorphic(ContentBlock::class) {
-            subclass(TextBlock::class)
-            subclass(ActionBlock::class)
-            subclass(FileContentBlock::class)
-            subclass(AppRequestBlock::class)
-            subclass(AnchorBlock::class)
+            subclass(TextBlock::class, TextBlock.serializer())
+            subclass(ActionBlock::class, ActionBlock.serializer())
+            subclass(FileContentBlock::class, FileContentBlock.serializer())
+            subclass(AppRequestBlock::class, AppRequestBlock.serializer())
+            subclass(AnchorBlock::class, AnchorBlock.serializer())
         }
     }
     private val jsonParser = Json {
@@ -47,7 +49,6 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
         classDiscriminator = "type"
     }
 
-    // --- TIMESTAMP FORMATTER ---
     private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
         timeZone = TimeZone.getTimeZone("UTC")
     }
@@ -63,6 +64,7 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
     val state: StateFlow<AppState> = _state.asStateFlow()
 
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
+    private var activeJob: Job? = null
 
     private val backupManager = BackupManager(HOLONS_BASE_PATH, File(System.getProperty("user.home"), ".auf"))
     private val graphLoader = GraphLoader(HOLONS_BASE_PATH, jsonParser)
@@ -82,46 +84,40 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
 
         _state.update { it.copy(isProcessing = true, errorMessage = null) }
 
-        // --- TIMESTAMP INJECTION (USER) ---
-        val userTimestamp = System.currentTimeMillis()
-        val formattedUserTimestamp = isoFormatter.format(Date(userTimestamp))
-        val userMessageWithTimestamp = "[timestamp: $formattedUserTimestamp]\n$message"
-        val userChatMessage = ChatMessage(Author.USER, title = "USER", timestamp = userTimestamp, contentBlocks = listOf(TextBlock(userMessageWithTimestamp)))
+        val userChatMessage = ChatMessage(Author.USER, title = "USER", contentBlocks = listOf(TextBlock(message)))
 
         if (from == Author.USER) {
             _state.update { it.copy(chatHistory = it.chatHistory + userChatMessage) }
         }
 
+        val historyForApi = _state.value.chatHistory.filter { it.author == Author.USER || it.author == Author.AI }
         val systemMessages = buildSystemContextMessages()
-        val historyForApi = _state.value.chatHistory
         val fullContextForApi = systemMessages + historyForApi
 
-        coroutineScope.launch {
+        activeJob = coroutineScope.launch {
             val response = gatewayManager.sendMessage(_state.value.selectedModel, fullContextForApi)
 
             if (response.errorMessage != null) {
-                _state.update { it.copy(isProcessing = false, errorMessage = response.errorMessage) }
+                println("GATEWAY ERROR: ${response.errorMessage}")
+                val errorChatMessage = ChatMessage(
+                    author = Author.SYSTEM,
+                    title = "Gateway Error",
+                    contentBlocks = listOf(TextBlock(response.errorMessage))
+                )
+                _state.update {
+                    it.copy(
+                        isProcessing = false,
+                        chatHistory = it.chatHistory + errorChatMessage,
+                    )
+                }
+                activeJob = null
                 return@launch
             }
-
-            // --- TIMESTAMP INJECTION (AI) ---
-            val aiTimestamp = System.currentTimeMillis()
-            val formattedAiTimestamp = isoFormatter.format(Date(aiTimestamp))
-            val modifiedBlocks = response.contentBlocks.toMutableList()
-            val firstTextBlockIndex = modifiedBlocks.indexOfFirst { it is TextBlock }
-
-            if (firstTextBlockIndex != -1) {
-                val originalBlock = modifiedBlocks[firstTextBlockIndex] as TextBlock
-                val newText = "[timestamp: $formattedAiTimestamp]\n${originalBlock.text}"
-                modifiedBlocks[firstTextBlockIndex] = originalBlock.copy(text = newText)
-            }
-            // --- END TIMESTAMP INJECTION (AI) ---
 
             val aiMessage = ChatMessage(
                 author = Author.AI,
                 title = "AI",
-                timestamp = aiTimestamp,
-                contentBlocks = modifiedBlocks,
+                contentBlocks = response.contentBlocks,
                 usageMetadata = response.usageMetadata,
                 rawContent = response.rawContent
             )
@@ -132,9 +128,42 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
                     chatHistory = it.chatHistory + aiMessage
                 )
             }
-
+            activeJob = null
             handleAppRequests(aiMessage)
         }
+    }
+
+    fun cancelMessage() {
+        activeJob?.cancel()
+        _state.update { it.copy(isProcessing = false, errorMessage = "Request cancelled by user.") }
+        activeJob = null
+    }
+
+    fun deleteMessage(timestamp: Long) {
+        _state.update { currentState ->
+            val updatedHistory = currentState.chatHistory.filterNot { it.timestamp == timestamp }
+            currentState.copy(chatHistory = updatedHistory)
+        }
+    }
+
+    fun rerunMessage(timestamp: Long) {
+        val history = _state.value.chatHistory
+        val messageIndex = history.indexOfFirst { it.timestamp == timestamp }
+
+        if (messageIndex == -1 || history[messageIndex].author != Author.USER) {
+            return
+        }
+
+        val messageToRerun = history[messageIndex]
+        val originalContent = messageToRerun.contentBlocks
+            .filterIsInstance<TextBlock>()
+            .joinToString("\n") { it.text }
+
+        val truncatedHistory = history.subList(0, messageIndex)
+
+        _state.update { it.copy(chatHistory = truncatedHistory) }
+
+        sendMessage(originalContent, from = Author.USER)
     }
 
     private fun handleAppRequests(message: ChatMessage) {
@@ -304,9 +333,10 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
         """.trimIndent()
     }
 
-    // --- PROMPT GENERATION WITH TIMESTAMPS ---
     fun getPromptAsString(): String {
-        val allMessages = buildSystemContextMessages() + _state.value.chatHistory
+        val historyToProcess = _state.value.chatHistory.filter { it.author == Author.USER || it.author == Author.AI }
+        val allMessages = buildSystemContextMessages() + historyToProcess
+
         return allMessages.joinToString("\n\n") { message ->
             val content = message.contentBlocks.joinToString("\n") { block ->
                 when (block) {
@@ -320,9 +350,8 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
 
             when (message.author) {
                 Author.AI, Author.USER -> {
-                    // Find the timestamp already embedded in the content
-                    val textContent = (message.contentBlocks.firstOrNull { it is TextBlock } as? TextBlock)?.text ?: content
-                    "[${message.author.name.lowercase()}]\n$textContent"
+                    val formattedTimestamp = isoFormatter.format(Date(message.timestamp))
+                    "[${message.author.name.lowercase()} - $formattedTimestamp]\n$content"
                 }
                 Author.SYSTEM -> {
                     val title = message.title ?: "system_file"

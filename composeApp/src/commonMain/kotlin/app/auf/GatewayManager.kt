@@ -3,40 +3,26 @@ package app.auf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.builtins.ListSerializer // <<< FIX IS HERE
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-/**
- * A simple data class to represent a processed AI response,
- * decoupling StateManager from the raw API response models.
- */
 data class AIResponse(
     val contentBlocks: List<ContentBlock>,
     val usageMetadata: UsageMetadata? = null,
     val errorMessage: String? = null,
-    val rawContent: String // Always include the original, unaltered AI output
+    val rawContent: String
 )
 
-/**
- * Manages all communication with the remote AI gateway.
- * It is responsible for formatting requests, making API calls,
- * and parsing responses into a clean, app-usable format.
- */
 class GatewayManager(
     private val apiKey: String,
     private val jsonParser: Json
 ) {
-    private val gateway = Gateway()
+    // --- MODIFIED: The configured parser is now passed down to the Gateway instance. ---
+    private val gateway = Gateway(jsonParser)
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
 
-    /**
-     * Sends a list of chat messages to the AI and returns a processed response.
-     * @param selectedModel The name of the AI model to use.
-     * @param messages The full list of messages (system and chat history) to send.
-     * @return An [AIResponse] object containing the result of the API call.
-     */
     suspend fun sendMessage(selectedModel: String, messages: List<ChatMessage>): AIResponse {
         return withContext(coroutineScope.coroutineContext) {
             try {
@@ -68,9 +54,6 @@ class GatewayManager(
         }
     }
 
-    /**
-     * Fetches the list of available models from the API.
-     */
     suspend fun listModels(): List<ModelInfo> {
         return withContext(coroutineScope.coroutineContext) {
             gateway.listModels(apiKey)
@@ -137,7 +120,6 @@ class GatewayManager(
                 when (block) {
                     is TextBlock -> block.text
                     is ActionBlock -> "[AUF_ACTION_MANIFEST]\n${jsonParser.encodeToString(ListSerializer(Action.serializer()), block.actions)}\n[/AUF_ACTION_MANIFEST]"
-                    // Add reconstructions for other types as needed
                     else -> "[System placeholder for block type: ${block::class.simpleName}]"
                 }
             }

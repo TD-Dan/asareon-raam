@@ -50,7 +50,3 @@ data class CreateFile(
     val content: String,
     override val summary: String
 ) : Action
-
-// --- DELETED: The UpdateHolon and UpdateSubOperation classes have been removed ---
-// They represented an unimplemented feature, and their presence was a violation
-// of the principle of an honest API contract.
