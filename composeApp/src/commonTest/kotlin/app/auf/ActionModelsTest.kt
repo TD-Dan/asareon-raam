@@ -30,11 +30,6 @@ class ActionModelsTest {
     }
 
     @Test
-    fun `fails`(){
-        assertFalse(true)
-    }
-
-    @Test
     fun `CreateHolon action can be serialized and deserialized successfully`() {
         // 1. Arrange: Create a pristine test object.
         val originalAction = CreateHolon(
