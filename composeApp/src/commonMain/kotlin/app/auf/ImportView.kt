@@ -20,25 +20,26 @@ import androidx.compose.ui.unit.dp
  *
  * ---
  * ## Mandate
- * This view's responsibility is to render the state of an ongoing import operation, as
- * defined by the `ImportState` data class. It displays a list of files to be imported,
- * shows the automatically proposed action for each, and allows the user to override those
- * actions. It then provides the final user-approved import plan to the `StateManager`
- * for execution. It is a "dumb" view that only reflects state and forwards user events.
+ * This view is a "dumb component". Its only responsibility is to render the `ImportState`
+ * and emit events (via lambdas) when the user interacts with it. It is fully decoupled
+ * from the application's business logic and does not know about StateManager or any ViewModel.
+ * This makes it highly reusable and easy to test.
  *
  * ---
  * ## Dependencies
- * - `app.auf.AppState` (specifically `ImportState` and `ImportItem`)
- * - `app.auf.StateManager` (for dispatching user events like `SelectImportAction` or `ExecuteImport`)
+ * - `app.auf.ImportState`
+ * - `app.auf.ImportItem`
  *
- * @version 1.1
+ * @version 1.2
  * @since 2025-08-14
  */
 @Composable
 fun ImportView(
     importState: ImportState,
-    stateManager: StateManager,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onAnalyze: (path: String) -> Unit,
+    onActionSelected: (itemPath: String, action: ImportAction) -> Unit,
+    onExecute: () -> Unit
 ) {
     var sourcePath by remember { mutableStateOf(importState.sourcePath) }
 
@@ -56,8 +57,9 @@ fun ImportView(
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(modifier = Modifier.height(8.dp))
+        // --- FIX APPLIED: Emits an event instead of calling a manager ---
         Button(
-            onClick = { stateManager.analyzeImportFolder(sourcePath) },
+            onClick = { onAnalyze(sourcePath) },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Analyze Folder")
@@ -67,7 +69,6 @@ fun ImportView(
         if (importState.items.isNotEmpty()) {
             Box(modifier = Modifier.weight(1f).border(1.dp, MaterialTheme.colors.onSurface.copy(alpha = 0.12f))) {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    // Header Row
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth().background(MaterialTheme.colors.surface).padding(8.dp),
@@ -78,13 +79,13 @@ fun ImportView(
                         }
                         Divider()
                     }
-                    // Data Rows
                     items(importState.items) { item ->
                         ImportItemRow(
                             item = item,
                             selectedAction = importState.selectedActions[item.sourcePath] ?: item.initialAction,
+                            // --- FIX APPLIED: The row now correctly calls the lambda passed to the view ---
                             onActionSelected = { action ->
-                                stateManager.selectImportAction(item.sourcePath, action)
+                                onActionSelected(item.sourcePath, action)
                             }
                         )
                         Divider()
@@ -100,7 +101,8 @@ fun ImportView(
                     Text("Cancel")
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                Button(onClick = { stateManager.executeImport() }) {
+                // --- FIX APPLIED: Emits the 'onExecute' event ---
+                Button(onClick = onExecute) {
                     Text("Execute Import")
                 }
             }
@@ -122,10 +124,6 @@ fun ImportItemRow(
     onActionSelected: (ImportAction) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    // --- FIX APPLIED ---
-    // The unresolved reference 'sourceFile' is fixed here. We now derive the
-    // filename from the platform-agnostic 'sourcePath' string. This is a robust
-    // way to handle paths from different OSes.
     val fileName = item.sourcePath.substringAfterLast('/').substringAfterLast('\\')
 
 
@@ -134,12 +132,10 @@ fun ImportItemRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Column for File Name
         Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
             Text(fileName, style = MaterialTheme.typography.body1)
         }
 
-        // Column for Dropdown Action Selector
         Column(modifier = Modifier.weight(1f)) {
             Box {
                 OutlinedTextField(
@@ -154,12 +150,7 @@ fun ImportItemRow(
                     expanded = expanded,
                     onDismissRequest = { expanded = false }
                 ) {
-                    val possibleActions = when (item.initialAction) {
-                        is AssignParent -> listOf(selectedAction, Ignore()) // Can only assign a parent or ignore
-                        else -> listOf(item.initialAction, Ignore())
-                    }
                     // For now, the user can only choose between the proposed action and ignoring it.
-                    // A future version could allow changing the type of action.
                     DropdownMenuItem(onClick = {
                         onActionSelected(item.initialAction)
                         expanded = false

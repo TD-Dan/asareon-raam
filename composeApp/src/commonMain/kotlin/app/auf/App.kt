@@ -19,27 +19,23 @@ import androidx.compose.ui.unit.dp
  *
  * ---
  * ## Mandate
- * This component's sole responsibility is to act as the main router for the application's UI.
- * It observes the top-level `AppState` and, based on the `gatewayStatus` and `currentViewMode`,
- * decides which primary screen or view to render. It is responsible for wiring the
- * `StateManager` into all top-level views.
+ * This component's sole responsibility is to act as the main router and orchestrator for the UI.
+ * It observes top-level state and wires "dumb" view components to the appropriate
+ * ViewModel or StateManager functions, passing state down and routing events up.
  *
  * ---
  * ## Dependencies
  * - `app.auf.StateManager`
- * - `app.auf.GlobalActionRibbon`
- * - `app.auf.SessionView`
- * - `app.auf.ChatView`
- * - `app.auf.ExportView`
- * - `app.auf.ImportView`
- * - `app.auf.HolonInspectorView`
+ * - `app.auf.ImportExportViewModel`
  *
- * @version 1.1
+ * @version 1.3
  * @since 2025-08-14
  */
 @Composable
 fun App(stateManager: StateManager) {
     val appState by stateManager.state.collectAsState()
+    val importState by stateManager.importExportViewModel.importState.collectAsState()
+
 
     MaterialTheme {
         when (appState.gatewayStatus) {
@@ -81,23 +77,27 @@ fun App(stateManager: StateManager) {
 
                     Box(modifier = Modifier.weight(1f)) {
                         when (appState.currentViewMode) {
-                            ViewMode.CHAT -> ChatView(
-                                appState = appState,
-                                stateManager = stateManager
-                            )
-                            ViewMode.EXPORT -> ExportView(
-                                appState = appState,
-                                stateManager = stateManager
-                            )
+                            ViewMode.CHAT -> ChatView(appState = appState, stateManager = stateManager)
+                            ViewMode.EXPORT -> ExportView(appState = appState, stateManager = stateManager)
                             ViewMode.IMPORT -> {
-                                // --- FIX APPLIED ---
-                                // Only render the ImportView if the importState is actually available.
-                                // Pass the specific 'importState' object and the required 'onClose' lambda.
-                                appState.importState?.let {
+                                // --- FIX APPLIED: Wires the dumb ImportView to the ViewModel and StateManager ---
+                                importState?.let {
                                     ImportView(
                                         importState = it,
-                                        stateManager = stateManager,
-                                        onClose = { stateManager.setViewMode(ViewMode.CHAT) }
+                                        onClose = { stateManager.setViewMode(ViewMode.CHAT) },
+                                        onAnalyze = { path ->
+                                            stateManager.importExportViewModel.analyzeFolder(path, appState.holonGraph)
+                                        },
+                                        onActionSelected = { itemPath, action ->
+                                            stateManager.importExportViewModel.updateImportAction(itemPath, action)
+                                        },
+                                        onExecute = {
+                                            stateManager.importExportViewModel.executeImport(
+                                                currentGraph = appState.holonGraph,
+                                                personaId = appState.aiPersonaId ?: "",
+                                                holonsBasePath = "holons" // This should probably come from a constant
+                                            )
+                                        }
                                     )
                                 }
                             }
@@ -106,10 +106,7 @@ fun App(stateManager: StateManager) {
 
                     Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
 
-                    HolonInspectorView(
-                        appState = appState,
-                        modifier = Modifier.width(320.dp)
-                    )
+                    HolonInspectorView(appState = appState, modifier = Modifier.width(320.dp))
                 }
             }
         }

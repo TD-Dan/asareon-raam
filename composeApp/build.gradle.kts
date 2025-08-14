@@ -83,6 +83,10 @@ kotlin {
             implementation(libs.ktor.client.cio)
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing")
         }
+        jvmTest.dependencies {
+            implementation(kotlin("test-junit"))
+            implementation(compose.uiTestJunit4)
+        }
         listOf("iosX64Main", "iosArm64Main", "iosSimulatorArm64Main").forEach {
             getByName(it).dependencies {
                 implementation(libs.ktor.client.darwin)

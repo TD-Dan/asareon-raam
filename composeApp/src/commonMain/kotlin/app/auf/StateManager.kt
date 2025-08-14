@@ -25,10 +25,6 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
         private const val FRAMEWORK_BASE_PATH = "framework"
     }
 
-    // --- FIX APPLIED ---
-    // The rogue, locally-defined SerializersModule and jsonParser have been REMOVED.
-    // We will now exclusively use the canonical parser from JsonProvider.
-
     private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
         timeZone = TimeZone.getTimeZone("UTC")
     }
@@ -46,13 +42,18 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
     private var activeJob: Job? = null
 
-    // --- FIX APPLIED: All manager instances now receive the one true parser. ---
     private val backupManager = BackupManager(HOLONS_BASE_PATH, File(System.getProperty("user.home"), ".auf"))
     private val graphLoader = GraphLoader(HOLONS_BASE_PATH, JsonProvider.appJson)
     private val gatewayManager = GatewayManager(apiKey, JsonProvider.appJson)
-    private val importExportManager = ImportExportManager(FRAMEWORK_BASE_PATH, JsonProvider.appJson)
     private val actionExecutor = ActionExecutor(JsonProvider.appJson)
 
+    // --- REFACTOR: Import/Export logic is now handled by a dedicated ViewModel ---
+    private val importExportManager = ImportExportManager(FRAMEWORK_BASE_PATH, JsonProvider.appJson)
+    val importExportViewModel = ImportExportViewModel(importExportManager) {
+        // This lambda is called when the import is finished, ensuring a refresh.
+        loadHolonGraph()
+        setViewMode(ViewMode.CHAT)
+    }
 
     init {
         backupManager.createBackup("on-launch")
@@ -263,7 +264,6 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
 
             if (holonContent != null && holonHeader != null) {
                 if (holonHeader.type != "Quarantined_File") {
-                    // --- FIX APPLIED: Using the canonical parser ---
                     val holonContentString = JsonProvider.appJson.encodeToString(Holon.serializer(), holonContent)
                     messages.add(
                         ChatMessage(
@@ -359,9 +359,13 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
 
     fun setViewMode(mode: ViewMode) {
         if (mode == ViewMode.CHAT) {
-            _state.update { it.copy(currentViewMode = mode, holonIdsForExport = emptySet(), importState = null) }
+            _state.update { it.copy(currentViewMode = mode, holonIdsForExport = emptySet()) }
+            importExportViewModel.cancelImport()
+        } else if (mode == ViewMode.IMPORT) {
+            _state.update { it.copy(currentViewMode = mode) }
+            importExportViewModel.startImport()
         } else {
-            _state.update { it.copy(currentViewMode = mode, importState = null) }
+            _state.update { it.copy(currentViewMode = mode) }
         }
     }
 
@@ -397,39 +401,6 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
             _state.value.holonGraph.filter { it.id in _state.value.holonIdsForExport }; if (holonsToExport.isEmpty()) return; coroutineScope.launch(
             Dispatchers.IO
         ) { importExportManager.executeExport(destinationPath, holonsToExport); setViewMode(ViewMode.CHAT) }
-    }
-
-    fun analyzeImportFolder(sourcePath: String) {
-        coroutineScope.launch(Dispatchers.IO) {
-            val importItems = importExportManager.analyzeFolder(
-                sourcePath,
-                _state.value.holonGraph
-            ); _state.update { it.copy(importState = ImportState(sourcePath = sourcePath, items = importItems)) }
-        }
-    }
-
-    fun updateImportAction(sourceFilePath: String, newAction: ImportAction) {
-        _state.update { currentState ->
-            currentState.importState?.let { currentImportState ->
-                val updatedActions = currentImportState.selectedActions.toMutableMap(); updatedActions[sourceFilePath] =
-                newAction; currentState.copy(importState = currentImportState.copy(selectedActions = updatedActions))
-            } ?: currentState
-        }
-    }
-
-    fun executeImport() {
-        val importState = _state.value.importState ?: return;
-        val personaId = _state.value.aiPersonaId ?: return;
-        val currentGraph = _state.value.holonGraph; backupManager.createBackup("pre-import"); coroutineScope.launch(
-            Dispatchers.IO
-        ) {
-            importExportManager.executeImport(
-                importState,
-                currentGraph,
-                personaId,
-                HOLONS_BASE_PATH
-            ); loadHolonGraph(); _state.update { it.copy(currentViewMode = ViewMode.CHAT, importState = null) }
-        }
     }
 
     fun retryLoadHolonGraph() {
@@ -481,7 +452,6 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
                         payload = payload
                     )
                 } else {
-                    // --- FIX APPLIED: Using the canonical parser ---
                     JsonProvider.appJson.decodeFromString<Holon>(fileString)
                 }; _state.update {
                     it.copy(
@@ -498,6 +468,8 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
     fun selectModel(modelName: String) {
         if (modelName in _state.value.availableModels) _state.update { it.copy(selectedModel = modelName) }
     }
+
+
 
     fun setCatalogueFilter(type: String?) {
         _state.update { it.copy(catalogueFilter = type) }
@@ -539,7 +511,6 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
             result.holonGraph.find { it.id == holonId }?.let { header ->
                 try {
                     val content = File(header.filePath).readText(); activeHolonsMap[holonId] =
-                            // --- FIX APPLIED: Using the canonical parser ---
                         JsonProvider.appJson.decodeFromString<Holon>(content)
                 } catch (e: SerializationException) {
                     finalParsingErrors.add("Failed to load/parse content for active holon: $holonId. Error: ${e.message}")
