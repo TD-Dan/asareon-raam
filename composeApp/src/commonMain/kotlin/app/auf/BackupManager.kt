@@ -16,7 +16,7 @@ import java.util.zip.ZipOutputStream
  * Manages all backup-related operations for the AUF application.
  * This class is responsible for creating and locating backup archives.
  */
-class BackupManager(
+open class BackupManager(
     private val holonsBasePath: String,
     private val settingsDir: File
 ) {

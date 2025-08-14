@@ -15,27 +15,26 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 /**
- * The root Composable for the entire AUF application.
+ * The root Composable for the entire AUF application's UI.
  *
  * ---
  * ## Mandate
  * This component's sole responsibility is to act as the main router and orchestrator for the UI.
- * It observes top-level state and wires "dumb" view components to the appropriate
- * ViewModel or StateManager functions, passing state down and routing events up.
+ * It observes the state from the provided StateManager and wires "dumb" view components
+ * to the appropriate ViewModel or StateManager functions, passing state down and routing events up.
+ * It does NOT create or manage its own dependencies.
  *
  * ---
  * ## Dependencies
  * - `app.auf.StateManager`
- * - `app.auf.ImportExportViewModel`
  *
- * @version 1.3
+ * @version 2.2
  * @since 2025-08-14
  */
 @Composable
 fun App(stateManager: StateManager) {
     val appState by stateManager.state.collectAsState()
     val importState by stateManager.importExportViewModel.importState.collectAsState()
-
 
     MaterialTheme {
         when (appState.gatewayStatus) {
@@ -80,10 +79,6 @@ fun App(stateManager: StateManager) {
                             ViewMode.CHAT -> ChatView(appState = appState, stateManager = stateManager)
                             ViewMode.EXPORT -> ExportView(appState = appState, stateManager = stateManager)
                             ViewMode.IMPORT -> {
-                                // --- THIS IS THE FIX ---
-                                // We now pass the ViewModel and the required state directly to the
-                                // ImportView. The view itself will collect the specific importState
-                                // and handle its own lifecycle.
                                 ImportView(
                                     viewModel = stateManager.importExportViewModel,
                                     currentGraph = appState.holonGraph,

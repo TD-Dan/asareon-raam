@@ -18,7 +18,38 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-open class StateManager(apiKey: String, private val initialSettings: UserSettings) {
+/**
+ * The core state management class for the AUF application.
+ *
+ * ---
+ * ## Mandate
+ * This class is the single source of truth for the application's UI state (AppState).
+ * It orchestrates data loading, AI interaction, and user actions by delegating to
+ * specialized service classes. It is designed with Dependency Injection to be
+ * fully testable.
+ *
+ * ---
+ * ## Dependencies
+ * - `app.auf.GatewayManager`: Handles all communication with the AI model API.
+ * - `app.auf.BackupManager`: Manages automatic and manual backups of the knowledge graph.
+ * - `app.auf.GraphLoader`: Responsible for loading the Holon graph from the file system.
+ * - `app.auf.ActionExecutor`: Executes `ActionManifest` requests from the AI.
+ * - `app.auf.ImportExportViewModel`: Manages the state and logic for the import/export view.
+ * - `kotlinx.coroutines.CoroutineScope`: The scope for launching background tasks.
+ *
+ * @version 2.0
+ * @since 2025-08-14
+ */
+open class StateManager(
+    // --- DI REFACTOR: All dependencies are now injected ---
+    private val gatewayManager: GatewayManager,
+    private val backupManager: BackupManager,
+    private val graphLoader: GraphLoader,
+    private val actionExecutor: ActionExecutor,
+    val importExportViewModel: ImportExportViewModel,
+    private val initialSettings: UserSettings,
+    private val coroutineScope: CoroutineScope
+) {
 
     companion object {
         private const val HOLONS_BASE_PATH = "holons"
@@ -39,23 +70,15 @@ open class StateManager(apiKey: String, private val initialSettings: UserSetting
     )
     open val state: StateFlow<AppState> = _state.asStateFlow()
 
-    private val coroutineScope = CoroutineScope(Dispatchers.Default)
     private var activeJob: Job? = null
 
-    private val backupManager = BackupManager(HOLONS_BASE_PATH, File(System.getProperty("user.home"), ".auf"))
-    private val graphLoader = GraphLoader(HOLONS_BASE_PATH, JsonProvider.appJson)
-    private val gatewayManager = GatewayManager(apiKey, JsonProvider.appJson)
-    private val actionExecutor = ActionExecutor(JsonProvider.appJson)
-
-    // --- REFACTOR: Import/Export logic is now handled by a dedicated ViewModel ---
-    private val importExportManager = ImportExportManager(FRAMEWORK_BASE_PATH, JsonProvider.appJson)
-    val importExportViewModel = ImportExportViewModel(importExportManager) {
-        // This lambda is called when the import is finished, ensuring a refresh.
-        loadHolonGraph()
-        setViewMode(ViewMode.CHAT)
-    }
-
-    init {
+    /**
+     * --- DI REFACTOR: The init block is gone. ---
+     * This public function must be called by the composition root after the
+     * StateManager is created to kick off initial data loading.
+     * This prevents automatic side-effects during testing.
+     */
+    fun initialize() {
         backupManager.createBackup("on-launch")
         loadHolonGraph()
         loadAvailableModels()
@@ -400,7 +423,7 @@ open class StateManager(apiKey: String, private val initialSettings: UserSetting
         val holonsToExport =
             _state.value.holonGraph.filter { it.id in _state.value.holonIdsForExport }; if (holonsToExport.isEmpty()) return; coroutineScope.launch(
             Dispatchers.IO
-        ) { importExportManager.executeExport(destinationPath, holonsToExport); setViewMode(ViewMode.CHAT) }
+        ) { importExportViewModel.importExportManager.executeExport(destinationPath, holonsToExport); setViewMode(ViewMode.CHAT) }
     }
 
     fun retryLoadHolonGraph() {
@@ -487,7 +510,7 @@ open class StateManager(apiKey: String, private val initialSettings: UserSetting
         }
     }
 
-    private fun loadHolonGraph() {
+    fun loadHolonGraph() {
         coroutineScope.launch(Dispatchers.IO) {
             _state.update {
                 it.copy(
@@ -539,5 +562,12 @@ open class StateManager(apiKey: String, private val initialSettings: UserSetting
             _state.update { it.copy(availableModels = listOf("gemini-1.5-pro-latest", "gemini-1.5-flash-latest")) }
         }
         }
+    }
+
+    /**
+     * Public accessor to update state directly, intended for use ONLY in test environments.
+     */
+    fun updateStateForTesting(newState: AppState) {
+        _state.value = newState
     }
 }

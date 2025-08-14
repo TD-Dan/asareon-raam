@@ -26,9 +26,8 @@ class ImportViewJvmTest {
 
     // A fake implementation of the ViewModel to control state and verify interactions.
     class FakeImportExportViewModel(initialState: ImportState?) : ImportExportViewModel(
-        // We provide dummy implementations for the real dependencies.
-        importExportManager = ImportExportManager("", JsonProvider.appJson),
-        onImportComplete = {}
+        // --- FIX: The constructor no longer requires a callback ---
+        importExportManager = FakeImportExportManager()
     ) {
         // Expose the state for the test to control.
         private val _testState = MutableStateFlow(initialState)

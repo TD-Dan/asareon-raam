@@ -2,44 +2,44 @@ package app.auf
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.test.TestCoroutineScope
+import kotlinx.coroutines.test.runBlockingTest
 import org.junit.Rule
-import kotlin.test.Test
+import org.junit.Test
 
 /**
  * UI test suite for the root App Composable.
- * This test belongs in a platform-specific source set (jvmTest) because it
- * needs to render a real UI using createComposeRule. It verifies the top-level
- * routing logic.
+ * This test suite has been refactored to use proper Dependency Injection.
+ * We now test the real `StateManager` but inject it with "Fake" versions
+ * of its dependencies to prevent network calls and file I/O.
  */
 class AppJvmTest {
 
     @get:Rule
     val composeTestRule = createComposeRule()
 
-    // A minimal fake StateManager for controlling the state in tests.
-    // We use a MutableStateFlow to update the state and trigger recomposition.
-    class FakeStateManager(initialState: AppState) : StateManager("", UserSettings()) {
-        // Override the state to control it directly in tests
-        private val _testState = MutableStateFlow(initialState)
-        override val state: StateFlow<AppState> = _testState.asStateFlow()
-
-        fun setState(newState: AppState) {
-            _testState.value = newState
-        }
-    }
+    private val testScope = TestCoroutineScope()
 
     @Test
-    fun `App shows Loading screen when status is LOADING`() {
-        // Arrange
-        val initialState = AppState(gatewayStatus = GatewayStatus.LOADING)
-        val stateManager = FakeStateManager(initialState)
+    fun `App shows Loading screen when status is LOADING`() = testScope.runBlockingTest {
+        // Arrange: Create a real StateManager, but with fake dependencies.
+        val stateManager = StateManager(
+            gatewayManager = FakeGatewayManager(),
+            backupManager = FakeBackupManager,
+            graphLoader = GraphLoader("holons", JsonProvider.appJson), // This is safe, no side effects
+            actionExecutor = ActionExecutor(JsonProvider.appJson), // This is also safe
+            // --- FIX: Instantiate the ViewModel correctly without the trailing lambda ---
+            importExportViewModel = ImportExportViewModel(FakeImportExportManager(), testScope),
+            initialSettings = UserSettings(),
+            coroutineScope = testScope
+        )
+
+        // Set the specific state needed for this test
+        stateManager.updateStateForTesting(AppState(gatewayStatus = GatewayStatus.LOADING))
 
         // Act
         composeTestRule.setContent {
-            App(stateManager)
+            AppScreen(stateManager)
         }
 
         // Assert
@@ -47,15 +47,30 @@ class AppJvmTest {
     }
 
     @Test
-    fun `App shows Error screen when status is ERROR`() {
+    fun `App shows Error screen when status is ERROR`() = testScope.runBlockingTest {
         // Arrange
-        val initialState = AppState(gatewayStatus = GatewayStatus.ERROR, errorMessage = "Test Error Message")
-        val stateManager = FakeStateManager(initialState)
+        val stateManager = StateManager(
+            gatewayManager = FakeGatewayManager(),
+            backupManager = FakeBackupManager,
+            graphLoader = GraphLoader("holons", JsonProvider.appJson),
+            actionExecutor = ActionExecutor(JsonProvider.appJson),
+            // --- FIX: Instantiate the ViewModel correctly without the trailing lambda ---
+            importExportViewModel = ImportExportViewModel(FakeImportExportManager(), testScope),
+            initialSettings = UserSettings(),
+            coroutineScope = testScope
+        )
 
+        // Set the specific state needed for this test
+        stateManager.updateStateForTesting(
+            AppState(
+                gatewayStatus = GatewayStatus.ERROR,
+                errorMessage = "Test Error Message"
+            )
+        )
 
         // Act
         composeTestRule.setContent {
-            App(stateManager)
+            AppScreen(stateManager)
         }
 
         // Assert

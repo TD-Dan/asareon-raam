@@ -25,7 +25,7 @@ data class AIResponse(
     val rawContent: String
 )
 
-class GatewayManager(
+open class GatewayManager(
     private val apiKey: String,
     private val jsonParser: Json
 ) {

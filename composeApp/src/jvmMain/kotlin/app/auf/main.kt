@@ -1,5 +1,7 @@
 package app.auf
 
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
@@ -8,7 +10,7 @@ import java.io.File
 import java.util.Properties
 
 fun main() = application {
-    // --- MODIFIED: Proper settings management ---
+    // --- DI REFACTOR: main.kt is now the composition root ---
     val settingsDir = File(System.getProperty("user.home"), ".auf")
     val settingsManager = SettingsManager(settingsDir)
     val savedSettings = settingsManager.loadSettings() ?: UserSettings()
@@ -24,7 +26,36 @@ fun main() = application {
         println("WARNING: google.api.key not found in local.properties. AI will not function.")
     }
 
-    val stateManager = StateManager(apiKey, savedSettings)
+    // --- All dependencies are instantiated here ---
+    val coroutineScope = rememberCoroutineScope()
+    val stateManager = remember {
+        val gatewayManager = GatewayManager(apiKey, JsonProvider.appJson)
+        val backupManager = BackupManager("holons", File(System.getProperty("user.home"), ".auf"))
+        val graphLoader = GraphLoader("holons", JsonProvider.appJson)
+        val actionExecutor = ActionExecutor(JsonProvider.appJson)
+        val importExportManager = ImportExportManager("framework", JsonProvider.appJson)
+        val importExportViewModel = ImportExportViewModel(importExportManager, coroutineScope)
+
+        StateManager(
+            gatewayManager = gatewayManager,
+            backupManager = backupManager,
+            graphLoader = graphLoader,
+            actionExecutor = actionExecutor,
+            importExportViewModel = importExportViewModel,
+            initialSettings = savedSettings,
+            coroutineScope = coroutineScope
+        )
+    }
+
+    // Wire the callback after instantiation
+    stateManager.importExportViewModel.onImportComplete = {
+        stateManager.loadHolonGraph()
+        stateManager.setViewMode(ViewMode.CHAT)
+    }
+
+    // Trigger initial loading
+    stateManager.initialize()
+
 
     val windowState = rememberWindowState(
         width = savedSettings.windowWidth.dp,
@@ -33,6 +64,7 @@ fun main() = application {
 
     Window(
         onCloseRequest = {
+            // This now works correctly because stateManager is in scope.
             val currentState = stateManager.state.value
             val currentSettingsToSave = UserSettings(
                 windowWidth = windowState.size.width.value.toInt(),
@@ -47,6 +79,7 @@ fun main() = application {
         title = "AUF",
         state = windowState
     ) {
+        // --- The App composable now receives the fully-formed StateManager ---
         App(stateManager)
     }
 }
