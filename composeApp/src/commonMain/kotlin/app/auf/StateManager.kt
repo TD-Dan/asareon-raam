@@ -9,10 +9,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.modules.polymorphic
-import kotlinx.serialization.modules.subclass
-import kotlinx.serialization.json.*
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -26,28 +25,9 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
         private const val FRAMEWORK_BASE_PATH = "framework"
     }
 
-    private val actionModule = SerializersModule {
-        polymorphic(Action::class) {
-            subclass(CreateHolon::class, CreateHolon.serializer())
-            subclass(UpdateHolonContent::class, UpdateHolonContent.serializer())
-            subclass(CreateFile::class, CreateFile.serializer())
-        }
-        polymorphic(ContentBlock::class) {
-            subclass(TextBlock::class, TextBlock.serializer())
-            subclass(ActionBlock::class, ActionBlock.serializer())
-            subclass(FileContentBlock::class, FileContentBlock.serializer())
-            subclass(AppRequestBlock::class, AppRequestBlock.serializer())
-            subclass(AnchorBlock::class, AnchorBlock.serializer())
-        }
-    }
-    // --- FIX IS HERE: Removing the redundant 'classDiscriminator' property. ---
-    private val jsonParser = Json {
-        serializersModule = actionModule
-        isLenient = true
-        ignoreUnknownKeys = true
-        prettyPrint = true
-        // classDiscriminator = "type" // This is redundant with the @JsonClassDiscriminator annotation
-    }
+    // --- FIX APPLIED ---
+    // The rogue, locally-defined SerializersModule and jsonParser have been REMOVED.
+    // We will now exclusively use the canonical parser from JsonProvider.
 
     private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
         timeZone = TimeZone.getTimeZone("UTC")
@@ -66,11 +46,12 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
     private var activeJob: Job? = null
 
+    // --- FIX APPLIED: All manager instances now receive the one true parser. ---
     private val backupManager = BackupManager(HOLONS_BASE_PATH, File(System.getProperty("user.home"), ".auf"))
-    private val graphLoader = GraphLoader(HOLONS_BASE_PATH, jsonParser)
-    private val gatewayManager = GatewayManager(apiKey, jsonParser)
-    private val importExportManager = ImportExportManager(FRAMEWORK_BASE_PATH, jsonParser)
-    private val actionExecutor = ActionExecutor(jsonParser)
+    private val graphLoader = GraphLoader(HOLONS_BASE_PATH, JsonProvider.appJson)
+    private val gatewayManager = GatewayManager(apiKey, JsonProvider.appJson)
+    private val importExportManager = ImportExportManager(FRAMEWORK_BASE_PATH, JsonProvider.appJson)
+    private val actionExecutor = ActionExecutor(JsonProvider.appJson)
 
 
     init {
@@ -282,7 +263,8 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
 
             if (holonContent != null && holonHeader != null) {
                 if (holonHeader.type != "Quarantined_File") {
-                    val holonContentString = jsonParser.encodeToString(Holon.serializer(), holonContent)
+                    // --- FIX APPLIED: Using the canonical parser ---
+                    val holonContentString = JsonProvider.appJson.encodeToString(Holon.serializer(), holonContent)
                     messages.add(
                         ChatMessage(
                             Author.SYSTEM,
@@ -499,7 +481,8 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
                         payload = payload
                     )
                 } else {
-                    jsonParser.decodeFromString<Holon>(fileString)
+                    // --- FIX APPLIED: Using the canonical parser ---
+                    JsonProvider.appJson.decodeFromString<Holon>(fileString)
                 }; _state.update {
                     it.copy(
                         inspectedHolonId = holonId,
@@ -556,7 +539,8 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
             result.holonGraph.find { it.id == holonId }?.let { header ->
                 try {
                     val content = File(header.filePath).readText(); activeHolonsMap[holonId] =
-                        jsonParser.decodeFromString<Holon>(content)
+                            // --- FIX APPLIED: Using the canonical parser ---
+                        JsonProvider.appJson.decodeFromString<Holon>(content)
                 } catch (e: SerializationException) {
                     finalParsingErrors.add("Failed to load/parse content for active holon: $holonId. Error: ${e.message}")
                 } catch (e: Exception) {

@@ -4,10 +4,20 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.Json // This is the ONLY 'Json' import we need.
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
+/**
+ * Manages all communication with the external AI gateway (e.g., Gemini API).
+ * Its mandate is to:
+ * 1. Convert our internal `ChatMessage` list into the format required by the external API.
+ * 2. Send the request via the `Gateway` class.
+ * 3. Receive the raw response string from the API.
+ * 4. Parse the raw string into a structured list of `ContentBlock`s.
+ * 5. Return a clean `AIResponse` object to the `StateManager`.
+ * It does NOT modify the application state directly.
+ */
 data class AIResponse(
     val contentBlocks: List<ContentBlock>,
     val usageMetadata: UsageMetadata? = null,
@@ -19,7 +29,7 @@ class GatewayManager(
     private val apiKey: String,
     private val jsonParser: Json
 ) {
-    // The configured parser is now passed down to the Gateway instance.
+    // The configured parser is passed down to the Gateway instance.
     private val gateway = Gateway(jsonParser)
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
 
@@ -77,16 +87,15 @@ class GatewayManager(
             try {
                 when (tag) {
                     "ACTION_MANIFEST" -> {
-                        // --- FIX IS HERE: Clean the content string before parsing ---
                         val cleanContent = content.trim().removePrefix("```json").removePrefix("```").trim().removeSuffix("```")
                         val actions = jsonParser.decodeFromString<List<Action>>(cleanContent)
-                        blocks.add(ActionBlock(actions, "The AI proposes ${actions.size} action(s). Review and confirm."))
+                        blocks.add(ActionBlock(actions = actions))
                     }
                     "FILE_VIEW" -> {
                         blocks.add(FileContentBlock(fileName = params.trim(), content = content.trim()))
                     }
                     "APP_REQUEST" -> {
-                        blocks.add(AppRequestBlock(requestType = content.trim(), summary = "AI App Request: ${content.trim()}"))
+                        blocks.add(AppRequestBlock(requestType = content.trim()))
                     }
                     "STATE_ANCHOR" -> {
                         val jsonObject = jsonParser.decodeFromString<JsonObject>(content)

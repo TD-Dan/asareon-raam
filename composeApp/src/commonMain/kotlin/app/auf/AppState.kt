@@ -3,7 +3,7 @@ package app.auf
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
-import kotlinx.serialization.json.JsonObject // --- ADDED: Import for the correct payload type
+import kotlinx.serialization.json.JsonObject
 import java.io.File
 
 enum class ViewMode {
@@ -86,41 +86,61 @@ data class AppState(
     val importState: ImportState? = null
 )
 
+/**
+ * A sealed interface representing a single block of content within a ChatMessage.
+ * The AI's response is parsed into a list of these blocks.
+ */
 @Serializable
-sealed interface ContentBlock
+sealed interface ContentBlock {
+    // A human-readable summary of the block's content for UI display or logging.
+    val summary: String
+}
 
 @Serializable
 @SerialName("TextBlock")
-data class TextBlock(val text: String) : ContentBlock
+data class TextBlock(
+    val text: String,
+    // Provide a default summary derived from the content.
+    override val summary: String = "Text block: \"${text.take(50).replace("\n", " ")}...\""
+) : ContentBlock
 
 @Serializable
 @SerialName("ActionBlock")
 data class ActionBlock(
     val actions: List<Action>,
-    val summary: String,
+    // --- FIX APPLIED: Removed redundant summary. The summary is now computed from the contained actions. ---
     val isResolved: Boolean = false
-) : ContentBlock
+) : ContentBlock {
+    // The summary is now a computed property, not a stored one.
+    override val summary: String
+        get() = "Action Manifest (${actions.size} actions)"
+}
 
 @Serializable
 @SerialName("FileContentBlock")
 data class FileContentBlock(
     val fileName: String,
     val content: String,
-    val language: String? = null // Hint for syntax highlighting
+    val language: String? = null,
+    // --- FIX APPLIED: Added the missing 'summary' field. ---
+    override val summary: String = "File View: $fileName"
 ) : ContentBlock
 
 @Serializable
 @SerialName("AppRequestBlock")
 data class AppRequestBlock(
-    val requestType: String, // e.g., "START_DREAM_CYCLE"
-    val summary: String
+    val requestType: String,
+    // --- FIX APPLIED: Added the missing 'summary' field. ---
+    override val summary: String = "App Request: $requestType"
 ) : ContentBlock
 
 @Serializable
 @SerialName("AnchorBlock")
 data class AnchorBlock(
     val anchorId: String,
-    val content: JsonObject
+    val content: JsonObject,
+    // --- FIX APPLIED: Added the missing 'summary' field. ---
+    override val summary: String = "State Anchor: $anchorId"
 ) : ContentBlock
 
 
@@ -130,7 +150,6 @@ data class ChatMessage(
     val timestamp: Long = System.currentTimeMillis(),
     val contentBlocks: List<ContentBlock>,
     val usageMetadata: UsageMetadata? = null,
-    // For AI messages only, to store the original, pre-parsed output for debugging.
     val rawContent: String? = null
 )
 
@@ -142,7 +161,6 @@ enum class GatewayStatus {
     OK, IDLE, ERROR, LOADING
 }
 
-// --- MODIFIED: This data class now correctly matches the JSON file structure. ---
 @Serializable
 data class Holon(
     val header: HolonHeader,
