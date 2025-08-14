@@ -4,14 +4,35 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
-import java.io.File
+
+/**
+ * Defines the core, immutable data models for the entire AUF application state.
+ *
+ * ---
+ * ## Mandate
+ * This file is the single source of truth for the application's state structure. It contains
+ * all data classes that represent the UI, session data, and user settings. Its primary
+ * responsibility is to provide stable, serializable data contracts that the rest of the
+ * application can rely on for state management and UI rendering.
+ *
+ * ---
+ * ## Dependencies
+ * - `Action` (from ActionModels.kt): Used within the `ActionBlock` content type.
+ * - `kotlinx.serialization`: Used extensively for defining serializable data contracts.
+ *
+ * @version 1.1
+ * @since 2025-08-14
+ */
 
 enum class ViewMode {
     CHAT, EXPORT, IMPORT
 }
 
 data class ImportItem(
-    val sourceFile: File,
+    // --- KMP FIX: Replaced JVM-specific `java.io.File` with a platform-agnostic `String`.
+    // The responsibility of converting this path to a File object belongs to the
+    // platform-specific code that uses this model, not the common data class itself.
+    val sourcePath: String,
     val initialAction: ImportAction,
     val targetPath: String? = null
 )
@@ -27,6 +48,7 @@ enum class ImportActionType {
 }
 
 @Serializable
+@SerialName("Update")
 data class Update(
     val targetHolonId: String,
     override val type: ImportActionType = ImportActionType.UPDATE,
@@ -34,6 +56,7 @@ data class Update(
 ) : ImportAction
 
 @Serializable
+@SerialName("Integrate")
 data class Integrate(
     val parentHolonId: String,
     override val type: ImportActionType = ImportActionType.INTEGRATE,
@@ -41,6 +64,7 @@ data class Integrate(
 ) : ImportAction
 
 @Serializable
+@SerialName("AssignParent")
 data class AssignParent(
     var assignedParentId: String? = null,
     override val type: ImportActionType = ImportActionType.ASSIGN_PARENT,
@@ -48,6 +72,7 @@ data class AssignParent(
 ) : ImportAction
 
 @Serializable
+@SerialName("Quarantine")
 data class Quarantine(
     val reason: String,
     override val type: ImportActionType = ImportActionType.QUARANTINE,
@@ -55,6 +80,7 @@ data class Quarantine(
 ) : ImportAction
 
 @Serializable
+@SerialName("Ignore")
 data class Ignore(
     override val type: ImportActionType = ImportActionType.IGNORE,
     override val summary: String = "Do not import."
@@ -100,7 +126,6 @@ sealed interface ContentBlock {
 @SerialName("TextBlock")
 data class TextBlock(
     val text: String,
-    // Provide a default summary derived from the content.
     override val summary: String = "Text block: \"${text.take(50).replace("\n", " ")}...\""
 ) : ContentBlock
 
@@ -108,10 +133,9 @@ data class TextBlock(
 @SerialName("ActionBlock")
 data class ActionBlock(
     val actions: List<Action>,
-    // --- FIX APPLIED: Removed redundant summary. The summary is now computed from the contained actions. ---
     val isResolved: Boolean = false
 ) : ContentBlock {
-    // The summary is now a computed property, not a stored one.
+    // The summary is a computed property, not a stored one.
     override val summary: String
         get() = "Action Manifest (${actions.size} actions)"
 }
@@ -122,7 +146,6 @@ data class FileContentBlock(
     val fileName: String,
     val content: String,
     val language: String? = null,
-    // --- FIX APPLIED: Added the missing 'summary' field. ---
     override val summary: String = "File View: $fileName"
 ) : ContentBlock
 
@@ -130,7 +153,6 @@ data class FileContentBlock(
 @SerialName("AppRequestBlock")
 data class AppRequestBlock(
     val requestType: String,
-    // --- FIX APPLIED: Added the missing 'summary' field. ---
     override val summary: String = "App Request: $requestType"
 ) : ContentBlock
 
@@ -139,7 +161,6 @@ data class AppRequestBlock(
 data class AnchorBlock(
     val anchorId: String,
     val content: JsonObject,
-    // --- FIX APPLIED: Added the missing 'summary' field. ---
     override val summary: String = "State Anchor: $anchorId"
 ) : ContentBlock
 

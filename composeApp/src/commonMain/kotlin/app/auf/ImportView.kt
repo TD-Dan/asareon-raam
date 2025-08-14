@@ -1,12 +1,11 @@
 package app.auf
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -14,239 +13,167 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import javax.swing.JFileChooser
-import javax.swing.filechooser.FileSystemView
 
+/**
+ * A Composable screen that provides a user interface for the import workbench.
+ *
+ * ---
+ * ## Mandate
+ * This view's responsibility is to render the state of an ongoing import operation, as
+ * defined by the `ImportState` data class. It displays a list of files to be imported,
+ * shows the automatically proposed action for each, and allows the user to override those
+ * actions. It then provides the final user-approved import plan to the `StateManager`
+ * for execution. It is a "dumb" view that only reflects state and forwards user events.
+ *
+ * ---
+ * ## Dependencies
+ * - `app.auf.AppState` (specifically `ImportState` and `ImportItem`)
+ * - `app.auf.StateManager` (for dispatching user events like `SelectImportAction` or `ExecuteImport`)
+ *
+ * @version 1.1
+ * @since 2025-08-14
+ */
 @Composable
 fun ImportView(
-    appState: AppState,
+    importState: ImportState,
     stateManager: StateManager,
-    modifier: Modifier = Modifier
+    onClose: () -> Unit
 ) {
-    val importState = appState.importState
+    var sourcePath by remember { mutableStateOf(importState.sourcePath) }
 
-    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        Text("Import & Sync from AUF manual runtime", style = MaterialTheme.typography.h5, modifier = Modifier.padding(bottom = 16.dp))
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("Import Workbench", style = MaterialTheme.typography.h4)
+        Spacer(modifier = Modifier.height(16.dp))
 
-        if (importState == null) {
-            SelectSourceStage(stateManager)
-        } else {
-            WorkbenchStage(appState, stateManager)
-        }
-    }
-}
-
-@Composable
-private fun SelectSourceStage(stateManager: StateManager) {
-    var sourcePath by remember { mutableStateOf<String?>(null) }
-    Column {
-        Text(
-            "Select the folder containing the flat list of holons from your manual session. " +
-                    "The tool will analyze the folder and present an interactive workbench.",
-            style = MaterialTheme.typography.body2,
-            modifier = Modifier.padding(bottom = 16.dp)
+        OutlinedTextField(
+            value = sourcePath,
+            onValueChange = { sourcePath = it },
+            label = { Text("Source Folder Path") },
+            modifier = Modifier.fillMaxWidth()
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = {
-                val fileChooser = JFileChooser(FileSystemView.getFileSystemView().homeDirectory).apply {
-                    dialogTitle = "Select Manual Runtime Folder"
-                    fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
-                }
-                if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                    sourcePath = fileChooser.selectedFile.absolutePath
-                }
-            }) {
-                Text("Select Source Folder...")
-            }
-            sourcePath?.let {
-                Spacer(Modifier.width(8.dp))
-                Text("Source: $it", style = MaterialTheme.typography.caption)
-            }
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(
+            onClick = { stateManager.analyzeImportFolder(sourcePath) },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Analyze Folder")
         }
-        Spacer(Modifier.height(16.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            OutlinedButton(onClick = { stateManager.setViewMode(ViewMode.CHAT) }) {
-                Text("Cancel")
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (importState.items.isNotEmpty()) {
+            Box(modifier = Modifier.weight(1f).border(1.dp, MaterialTheme.colors.onSurface.copy(alpha = 0.12f))) {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    // Header Row
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().background(MaterialTheme.colors.surface).padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("File", modifier = Modifier.weight(1f), style = MaterialTheme.typography.subtitle2)
+                            Text("Proposed Action", modifier = Modifier.weight(1f), style = MaterialTheme.typography.subtitle2)
+                        }
+                        Divider()
+                    }
+                    // Data Rows
+                    items(importState.items) { item ->
+                        ImportItemRow(
+                            item = item,
+                            selectedAction = importState.selectedActions[item.sourcePath] ?: item.initialAction,
+                            onActionSelected = { action ->
+                                stateManager.selectImportAction(item.sourcePath, action)
+                            }
+                        )
+                        Divider()
+                    }
+                }
             }
-            Spacer(Modifier.width(8.dp))
-            Button(
-                onClick = { stateManager.analyzeImportFolder(sourcePath!!) },
-                enabled = sourcePath != null
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
             ) {
-                Text("Analyze")
+                OutlinedButton(onClick = onClose) {
+                    Text("Cancel")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(onClick = { stateManager.executeImport() }) {
+                    Text("Execute Import")
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("No importable files found. Please analyze a folder.")
             }
         }
     }
 }
 
 @Composable
-private fun WorkbenchStage(
-    appState: AppState,
-    stateManager: StateManager
-) {
-    val importState = appState.importState!!
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            "Analysis complete. Review and modify the proposed actions for each holon. Click 'Execute Sync' to apply all changes.",
-            style = MaterialTheme.typography.body2,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        Row(modifier = Modifier.fillMaxWidth().background(Color.LightGray.copy(alpha = 0.3f)).padding(8.dp)) {
-            Text("Source Holon", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
-            Text("Proposed Action", modifier = Modifier.weight(1.5f), fontWeight = FontWeight.Bold)
-            Text("Target State / Info", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
-        }
-
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(importState.items) { item ->
-                val action = importState.selectedActions[item.sourceFile.absolutePath] ?: item.initialAction
-                WorkbenchItemRow(
-                    item = item,
-                    selectedAction = action,
-                    stateManager = stateManager,
-                    appState = appState
-                )
-                Divider()
-            }
-        }
-
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.End) {
-            OutlinedButton(onClick = { stateManager.setViewMode(ViewMode.CHAT) }) {
-                Text("Cancel")
-            }
-            Spacer(Modifier.width(8.dp))
-            Button(onClick = { stateManager.executeImport() }) {
-                Text("Execute Sync")
-            }
-        }
-    }
-}
-
-
-@Composable
-private fun WorkbenchItemRow(
+fun ImportItemRow(
     item: ImportItem,
     selectedAction: ImportAction,
-    stateManager: StateManager,
-    appState: AppState
+    onActionSelected: (ImportAction) -> Unit
 ) {
-    var isExpanded by remember { mutableStateOf(false) }
-    var showParentSelector by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
+    // --- FIX APPLIED ---
+    // The unresolved reference 'sourceFile' is fixed here. We now derive the
+    // filename from the platform-agnostic 'sourcePath' string. This is a robust
+    // way to handle paths from different OSes.
+    val fileName = item.sourcePath.substringAfterLast('/').substringAfterLast('\\')
 
-    val rowColor = if (selectedAction is Quarantine) Color.Red.copy(alpha = 0.1f) else Color.Transparent
 
     Row(
-        modifier = Modifier.fillMaxWidth().background(rowColor).padding(horizontal = 8.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Panel 1: Source Manifest
-        Text(item.sourceFile.name, modifier = Modifier.weight(1f), fontFamily = FontFamily.Monospace, fontSize = MaterialTheme.typography.caption.fontSize)
-
-        // Panel 2: Action Pipeline
-        Box(modifier = Modifier.weight(1.5f).padding(horizontal = 8.dp)) {
-            OutlinedButton(
-                onClick = { isExpanded = true },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(backgroundColor = Color.White)
-            ) {
-                Text(selectedAction.summary, modifier = Modifier.weight(1f), maxLines = 1)
-                Icon(Icons.Default.ArrowDropDown, contentDescription = "Change Action")
-            }
-
-            DropdownMenu(
-                expanded = isExpanded,
-                onDismissRequest = { isExpanded = false }
-            ) {
-                // Always available
-                DropdownMenuItem(onClick = {
-                    stateManager.updateImportAction(item.sourceFile.absolutePath, Ignore())
-                    isExpanded = false
-                }) { Text("Ignore") }
-
-                // --- FIX IS HERE: The 'when' is now exhaustive ---
-                when (val initial = item.initialAction) {
-                    is Update -> {
-                        DropdownMenuItem(onClick = { stateManager.updateImportAction(item.sourceFile.absolutePath, initial); isExpanded = false }) { Text(initial.summary) }
-                    }
-                    is Integrate -> {
-                        DropdownMenuItem(onClick = { stateManager.updateImportAction(item.sourceFile.absolutePath, initial); isExpanded = false }) { Text(initial.summary) }
-                        DropdownMenuItem(onClick = { showParentSelector = true; isExpanded = false }) { Text("Assign Parent...") }
-                    }
-                    is AssignParent -> {
-                        DropdownMenuItem(onClick = { showParentSelector = true; isExpanded = false }) { Text("Assign Parent...") }
-                    }
-                    is Quarantine -> {
-                        DropdownMenuItem(onClick = { stateManager.updateImportAction(item.sourceFile.absolutePath, initial); isExpanded = false }) { Text("Quarantine File") }
-                    }
-                    is Ignore -> {
-                        // This case is handled by the "Always available" item above, so nothing extra is needed here.
-                    }
-                }
-            }
+        // Column for File Name
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(fileName, style = MaterialTheme.typography.body1)
         }
 
-        // Panel 3: Target State Preview
-        val targetText = when (selectedAction) {
-            is Update -> "Overwrites existing holon."
-            is Integrate -> "Parent: ${appState.holonGraph.find{it.id == selectedAction.parentHolonId}?.name ?: "Unknown"}"
-            is AssignParent -> "Parent: ${appState.holonGraph.find { it.id == selectedAction.assignedParentId }?.name ?: "Not Assigned"}"
-            is Quarantine -> selectedAction.reason
-            is Ignore -> "No change."
-        }
-        Text(targetText, modifier = Modifier.weight(1f), style = MaterialTheme.typography.caption)
-    }
-
-    if (showParentSelector) {
-        ParentSelectorDialog(
-            holons = appState.holonGraph,
-            onDismiss = { showParentSelector = false },
-            onSelect = { parentId ->
-                stateManager.updateImportAction(
-                    item.sourceFile.absolutePath,
-                    AssignParent(assignedParentId = parentId)
+        // Column for Dropdown Action Selector
+        Column(modifier = Modifier.weight(1f)) {
+            Box {
+                OutlinedTextField(
+                    value = selectedAction.summary,
+                    onValueChange = {},
+                    readOnly = true,
+                    modifier = Modifier.fillMaxWidth().clickable { expanded = true },
+                    trailingIcon = { Icon(Icons.Default.ArrowDropDown, "Dropdown") }
                 )
-                showParentSelector = false
-            }
-        )
-    }
-}
 
-@Composable
-fun ParentSelectorDialog(
-    holons: List<HolonHeader>,
-    onDismiss: () -> Unit,
-    onSelect: (String) -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Select Parent Holon") },
-        text = {
-            Box(modifier = Modifier.fillMaxSize(0.8f)) {
-                val state = rememberLazyListState()
-                LazyColumn(state = state, modifier = Modifier.fillMaxSize()) {
-                    items(holons.filter { it.type != "Quarantined_File" }) { holon ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSelect(holon.id) }
-                                .padding(horizontal = 8.dp, vertical = 12.dp)
-                        ) {
-                            Spacer(Modifier.width((holon.depth * 16).dp))
-                            Text(holon.name)
-                        }
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    val possibleActions = when (item.initialAction) {
+                        is AssignParent -> listOf(selectedAction, Ignore()) // Can only assign a parent or ignore
+                        else -> listOf(item.initialAction, Ignore())
+                    }
+                    // For now, the user can only choose between the proposed action and ignoring it.
+                    // A future version could allow changing the type of action.
+                    DropdownMenuItem(onClick = {
+                        onActionSelected(item.initialAction)
+                        expanded = false
+                    }) {
+                        Text(item.initialAction.summary)
+                    }
+                    DropdownMenuItem(onClick = {
+                        onActionSelected(Ignore())
+                        expanded = false
+                    }) {
+                        Text("Ignore")
                     }
                 }
             }
-        },
-        confirmButton = {
-            Button(onClick = onDismiss) {
-                Text("Cancel")
-            }
         }
-    )
+    }
 }

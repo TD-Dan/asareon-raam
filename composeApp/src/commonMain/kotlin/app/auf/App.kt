@@ -14,6 +14,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
+/**
+ * The root Composable for the entire AUF application.
+ *
+ * ---
+ * ## Mandate
+ * This component's sole responsibility is to act as the main router for the application's UI.
+ * It observes the top-level `AppState` and, based on the `gatewayStatus` and `currentViewMode`,
+ * decides which primary screen or view to render. It is responsible for wiring the
+ * `StateManager` into all top-level views.
+ *
+ * ---
+ * ## Dependencies
+ * - `app.auf.StateManager`
+ * - `app.auf.GlobalActionRibbon`
+ * - `app.auf.SessionView`
+ * - `app.auf.ChatView`
+ * - `app.auf.ExportView`
+ * - `app.auf.ImportView`
+ * - `app.auf.HolonInspectorView`
+ *
+ * @version 1.1
+ * @since 2025-08-14
+ */
 @Composable
 fun App(stateManager: StateManager) {
     val appState by stateManager.state.collectAsState()
@@ -57,7 +80,6 @@ fun App(stateManager: StateManager) {
                     Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
 
                     Box(modifier = Modifier.weight(1f)) {
-                        // --- MODIFIED: Added IMPORT case ---
                         when (appState.currentViewMode) {
                             ViewMode.CHAT -> ChatView(
                                 appState = appState,
@@ -67,13 +89,20 @@ fun App(stateManager: StateManager) {
                                 appState = appState,
                                 stateManager = stateManager
                             )
-                            ViewMode.IMPORT -> ImportView(
-                                appState = appState,
-                                stateManager = stateManager
-                            )
+                            ViewMode.IMPORT -> {
+                                // --- FIX APPLIED ---
+                                // Only render the ImportView if the importState is actually available.
+                                // Pass the specific 'importState' object and the required 'onClose' lambda.
+                                appState.importState?.let {
+                                    ImportView(
+                                        importState = it,
+                                        stateManager = stateManager,
+                                        onClose = { stateManager.setViewMode(ViewMode.CHAT) }
+                                    )
+                                }
+                            }
                         }
                     }
-
 
                     Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
 
