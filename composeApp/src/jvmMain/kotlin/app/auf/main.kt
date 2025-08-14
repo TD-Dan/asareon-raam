@@ -29,7 +29,9 @@ fun main() = application {
     // --- All dependencies are instantiated here ---
     val coroutineScope = rememberCoroutineScope()
     val stateManager = remember {
-        val gatewayManager = GatewayManager(apiKey, JsonProvider.appJson)
+        // --- FIX: Instantiate Gateway and pass it to GatewayManager ---
+        val gateway = Gateway(JsonProvider.appJson)
+        val gatewayManager = GatewayManager(gateway, JsonProvider.appJson, apiKey)
         val backupManager = BackupManager("holons", File(System.getProperty("user.home"), ".auf"))
         val graphLoader = GraphLoader("holons", JsonProvider.appJson)
         val actionExecutor = ActionExecutor(JsonProvider.appJson)

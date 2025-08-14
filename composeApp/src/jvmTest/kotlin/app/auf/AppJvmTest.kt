@@ -22,7 +22,7 @@ import org.junit.Test
  * - `app.auf.StateManager`
  * - All `Fake` manager implementations.
  *
- * @version 2.0
+ * @version 2.1
  * @since 2025-08-14
  */
 class AppJvmTest {
@@ -30,22 +30,29 @@ class AppJvmTest {
     @get:Rule
     val composeTestRule = createComposeRule()
 
-    private val testScope = TestCoroutineScope()
+    // --- FIX: Use a specific test dispatcher for better control ---
+    private val testDispatcher = kotlinx.coroutines.test.StandardTestDispatcher()
+    private val testScope = CoroutineScope(testDispatcher)
+
 
     // Helper function to create a StateManager with fake dependencies for testing.
     private fun createTestStateManager(): StateManager {
+        // --- FIX: Use the corrected FakeImportExportManager ---
+        val fakeImportExportManager = FakeImportExportManager()
         val importExportViewModel = ImportExportViewModel(
-            importExportManager = ImportExportManager("", JsonProvider.appJson),
+            importExportManager = fakeImportExportManager,
             coroutineScope = testScope
         )
         // Set the callback after instantiation, just like in main.kt
         importExportViewModel.onImportComplete = { }
 
+        // --- NOTE: This test setup is still inconsistent. GraphLoader and ActionExecutor are real.
+        // This is acceptable for now but should be addressed in a future hardening task.
         return StateManager(
             gatewayManager = FakeGatewayManager(),
             backupManager = FakeBackupManager(),
-            graphLoader = GraphLoader("holons", JsonProvider.appJson),
-            actionExecutor = ActionExecutor(JsonProvider.appJson),
+            graphLoader = GraphLoader("holons", JsonProvider.appJson), // REAL
+            actionExecutor = ActionExecutor(JsonProvider.appJson),     // REAL
             importExportViewModel = importExportViewModel,
             initialSettings = UserSettings(),
             coroutineScope = testScope
@@ -53,7 +60,7 @@ class AppJvmTest {
     }
 
     @Test
-    fun `App shows Loading screen when status is LOADING`() = runTest(testScope.coroutineContext) {
+    fun `App shows Loading screen when status is LOADING`() = runTest {
         // Arrange
         val stateManager = createTestStateManager()
 
@@ -62,7 +69,6 @@ class AppJvmTest {
 
         // Act
         composeTestRule.setContent {
-            // Use the correct Composable name: App
             App(stateManager)
         }
 
@@ -71,7 +77,7 @@ class AppJvmTest {
     }
 
     @Test
-    fun `App shows Error screen when status is ERROR`() = runTest(testScope.coroutineContext) {
+    fun `App shows Error screen when status is ERROR`() = runTest {
         // Arrange
         val stateManager = createTestStateManager()
 
@@ -85,7 +91,6 @@ class AppJvmTest {
 
         // Act
         composeTestRule.setContent {
-            // Use the correct Composable name: App
             App(stateManager)
         }
 

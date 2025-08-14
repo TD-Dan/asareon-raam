@@ -9,6 +9,17 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
+ * Represents a structured, clean response from the AI Gateway.
+ * This is the data object that the StateManager will receive.
+ */
+data class AIResponse(
+    val contentBlocks: List<ContentBlock>,
+    val rawContent: String?,
+    val usageMetadata: UsageMetadata?,
+    val errorMessage: String? = null
+)
+
+/**
  * Manages all communication with the external AI gateway (e.g., Gemini API).
  *
  * ---
@@ -27,27 +38,30 @@ import kotlinx.serialization.json.jsonPrimitive
  * - `app.auf.Gateway`
  * - `kotlinx.serialization.json.Json`
  *
- * @version 1.1
+ * @version 1.3
  * @since 2025-08-14
  */
 open class GatewayManager(
-    // --- DI REFACTOR: Inject the Gateway dependency instead of creating it internally. ---
+    // --- DI REFACTOR: Inject the Gateway dependency and pass config like the API key. ---
     private val gateway: Gateway,
-    private val jsonParser: Json
+    private val jsonParser: Json,
+    private val apiKey: String
 ) {
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
 
-    suspend fun sendMessage(selectedModel: String, messages: List<ChatMessage>): AIResponse {
+    open suspend fun sendMessage(selectedModel: String, messages: List<ChatMessage>): AIResponse {
         return withContext(coroutineScope.coroutineContext) {
             try {
                 val apiRequestContents = convertChatToApiContents(messages)
-                // --- DI REFACTOR: Use the injected gateway instance. ---
-                val response = gateway.generateContent("DUMMY_API_KEY", selectedModel, apiRequestContents) // API key is handled by Gateway
+                // --- DI REFACTOR: Use the injected gateway instance with the configured API key. ---
+                val response = gateway.generateContent(apiKey, selectedModel, apiRequestContents)
 
                 response.error?.let {
+                    // --- FIX: Explicitly name parameters and provide null for missing values. ---
                     return@withContext AIResponse(
                         contentBlocks = emptyList(),
                         rawContent = "API Error",
+                        usageMetadata = null,
                         errorMessage = "API Error: ${it.message} (Code: ${it.code})"
                     )
                 }
@@ -64,15 +78,21 @@ open class GatewayManager(
                     rawContent = rawTextResponse
                 )
             } catch (e: Exception) {
-                AIResponse(contentBlocks = emptyList(), rawContent = "Gateway Error", errorMessage = "Gateway Error: ${e.message}")
+                // --- FIX: Explicitly name parameters and provide null for missing values. ---
+                AIResponse(
+                    contentBlocks = emptyList(),
+                    rawContent = "Gateway Error",
+                    usageMetadata = null,
+                    errorMessage = "Gateway Error: ${e.message}"
+                )
             }
         }
     }
 
-    suspend fun listModels(): List<ModelInfo> {
+    open suspend fun listModels(): List<ModelInfo> {
         return withContext(coroutineScope.coroutineContext) {
-            // --- DI REFACTOR: Use the injected gateway instance. ---
-            gateway.listModels("DUMMY_API_KEY") // API key is handled by Gateway
+            // --- DI REFACTOR: Use the injected gateway instance with the configured API key. ---
+            gateway.listModels(apiKey)
         }
     }
 

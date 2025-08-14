@@ -22,7 +22,7 @@ import kotlinx.serialization.json.Json
  * @version 1.0
  * @since 2025-08-14
  */
-expect class ImportExportManager(
+open expect class ImportExportManager(
     frameworkBasePath: String,
     jsonParser: Json
 ) {
@@ -30,17 +30,17 @@ expect class ImportExportManager(
      * Analyzes a source folder against the current knowledge graph to determine
      * the initial proposed action for each file.
      */
-    fun analyzeFolder(sourcePath: String, currentGraph: List<HolonHeader>): List<ImportItem>
+    open fun analyzeFolder(sourcePath: String, currentGraph: List<HolonHeader>): List<ImportItem>
 
     /**
      * Executes the file copy operations for the export feature.
      */
-    fun executeExport(destinationPath: String, holonsToExport: List<HolonHeader>)
+    open fun executeExport(destinationPath: String, holonsToExport: List<HolonHeader>)
 
     /**
      * Executes all file modifications for the import feature based on the finalized actions.
      */
-    fun executeImport(
+    open fun executeImport(
         importState: ImportState,
         currentGraph: List<HolonHeader>,
         personaId: String,

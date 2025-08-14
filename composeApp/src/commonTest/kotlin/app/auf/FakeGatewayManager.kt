@@ -9,6 +9,7 @@ import kotlinx.serialization.json.Json
  * ## Mandate
  * This class inherits from the real `GatewayManager` to satisfy type constraints,
  * but overrides its core methods to prevent real network calls. It provides
+
  * controllable responses (`fakeResponse`) and spies (`sendMessageCalledWith`)
  * to allow tests to verify interactions with the gateway layer.
  *
@@ -16,11 +17,13 @@ import kotlinx.serialization.json.Json
  * ## Dependencies
  * - `app.auf.GatewayManager` (the class it inherits from)
  *
- * @version 1.1
+ * @version 1.2
  * @since 2025-08-14
  */
 class FakeGatewayManager : GatewayManager(
-    // Provide dummy values for the real constructor.
+    // --- FIX: Provide a real Gateway instance to satisfy the parent constructor. ---
+    // This is safe because the methods that would use it are overridden below.
+    gateway = Gateway(JsonProvider.appJson),
     apiKey = "fake-api-key",
     jsonParser = JsonProvider.appJson // Use the canonical parser
 ) {
@@ -30,7 +33,9 @@ class FakeGatewayManager : GatewayManager(
     // Control property to dictate the fake's behavior.
     var fakeResponse: AIResponse = AIResponse(
         contentBlocks = listOf(TextBlock("Default fake response")),
-        rawContent = "Default fake response"
+        rawContent = "Default fake response",
+        // --- FIX: Explicitly provide null for the missing parameter. ---
+        usageMetadata = null
     )
 
     /**

@@ -7,21 +7,23 @@ import kotlinx.serialization.json.Json
  *
  * ---
  * ## Mandate
- * This class provides a test double for the ImportExportManager. It conforms to the `expect`
- * contract but overrides all functions to prevent real file I/O during tests. It uses
- * "spy" properties (e.g., `analyzeFolderCalled`) to allow tests to verify that the
- * correct logic paths were triggered in the ViewModel.
+ * This class is a proper test double that inherits from the `ImportExportManager` expect class.
+ * It overrides all functions to prevent real file I/O during tests and uses "spy" properties
+ * (e.g., `analyzeFolderCalledWith`) to allow tests to verify that the correct logic paths
+ * were triggered in the ViewModel.
  *
  * ---
  * ## Dependencies
- * - `app.auf.ImportExportManager` (the `expect` class it implements)
+ * - `app.auf.ImportExportManager` (the `expect` class it inherits from)
  *
- * @version 1.0
+ * @version 2.0
  * @since 2025-08-14
  */
-actual class ImportExportManager actual constructor(
-    frameworkBasePath: String,
-    jsonParser: Json
+// --- FIX: This is now a regular class that INHERITS from the expect class. ---
+class FakeImportExportManager : ImportExportManager(
+    // These values are passed to the parent but are not used since we override all methods.
+    frameworkBasePath = "",
+    jsonParser = JsonProvider.appJson
 ) {
     // Spy properties
     var analyzeFolderCalledWith: Pair<String, List<HolonHeader>>? = null
@@ -31,16 +33,17 @@ actual class ImportExportManager actual constructor(
     // Control property
     var analysisResult: List<ImportItem> = emptyList()
 
-    actual fun analyzeFolder(sourcePath: String, currentGraph: List<HolonHeader>): List<ImportItem> {
+    // --- FIX: Use `override` keyword, not `actual`. ---
+    override fun analyzeFolder(sourcePath: String, currentGraph: List<HolonHeader>): List<ImportItem> {
         analyzeFolderCalledWith = sourcePath to currentGraph
         return analysisResult
     }
 
-    actual fun executeExport(destinationPath: String, holonsToExport: List<HolonHeader>) {
+    override fun executeExport(destinationPath: String, holonsToExport: List<HolonHeader>) {
         executeExportCalledWith = destinationPath to holonsToExport
     }
 
-    actual fun executeImport(
+    override fun executeImport(
         importState: ImportState,
         currentGraph: List<HolonHeader>,
         personaId: String,
