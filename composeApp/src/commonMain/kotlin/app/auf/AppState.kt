@@ -20,7 +20,7 @@ import kotlinx.serialization.json.JsonObject
  * - `Action` (from ActionModels.kt): Used within the `ActionBlock` content type.
  * - `kotlinx.serialization`: Used extensively for defining serializable data contracts.
  *
- * @version 1.1
+ * @version 1.2
  * @since 2025-08-14
  */
 
@@ -39,7 +39,8 @@ data class ImportItem(
 
 @Serializable
 sealed interface ImportAction {
-    val type: ImportActionType
+    // FIX: Renamed 'type' to 'actionType' to avoid collision with the default JSON discriminator.
+    val actionType: ImportActionType
     val summary: String
 }
 
@@ -51,7 +52,8 @@ enum class ImportActionType {
 @SerialName("Update")
 data class Update(
     val targetHolonId: String,
-    override val type: ImportActionType = ImportActionType.UPDATE,
+    // FIX: Renamed 'type' to 'actionType'.
+    override val actionType: ImportActionType = ImportActionType.UPDATE,
     override val summary: String = "Update existing holon."
 ) : ImportAction
 
@@ -59,7 +61,8 @@ data class Update(
 @SerialName("Integrate")
 data class Integrate(
     val parentHolonId: String,
-    override val type: ImportActionType = ImportActionType.INTEGRATE,
+    // FIX: Renamed 'type' to 'actionType'.
+    override val actionType: ImportActionType = ImportActionType.INTEGRATE,
     override val summary: String = "Integrate with known parent."
 ) : ImportAction
 
@@ -67,7 +70,8 @@ data class Integrate(
 @SerialName("AssignParent")
 data class AssignParent(
     var assignedParentId: String? = null,
-    override val type: ImportActionType = ImportActionType.ASSIGN_PARENT,
+    // FIX: Renamed 'type' to 'actionType'.
+    override val actionType: ImportActionType = ImportActionType.ASSIGN_PARENT,
     override val summary: String = "New holon - requires parent."
 ) : ImportAction
 
@@ -75,14 +79,16 @@ data class AssignParent(
 @SerialName("Quarantine")
 data class Quarantine(
     val reason: String,
-    override val type: ImportActionType = ImportActionType.QUARANTINE,
+    // FIX: Renamed 'type' to 'actionType'.
+    override val actionType: ImportActionType = ImportActionType.QUARANTINE,
     override val summary: String = "Quarantine File"
 ) : ImportAction
 
 @Serializable
 @SerialName("Ignore")
 data class Ignore(
-    override val type: ImportActionType = ImportActionType.IGNORE,
+    // FIX: Renamed 'type' to 'actionType'.
+    override val actionType: ImportActionType = ImportActionType.IGNORE,
     override val summary: String = "Do not import."
 ) : ImportAction
 

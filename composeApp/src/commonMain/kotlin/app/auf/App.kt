@@ -80,26 +80,16 @@ fun App(stateManager: StateManager) {
                             ViewMode.CHAT -> ChatView(appState = appState, stateManager = stateManager)
                             ViewMode.EXPORT -> ExportView(appState = appState, stateManager = stateManager)
                             ViewMode.IMPORT -> {
-                                // --- FIX APPLIED: Wires the dumb ImportView to the ViewModel and StateManager ---
-                                importState?.let {
-                                    ImportView(
-                                        importState = it,
-                                        onClose = { stateManager.setViewMode(ViewMode.CHAT) },
-                                        onAnalyze = { path ->
-                                            stateManager.importExportViewModel.analyzeFolder(path, appState.holonGraph)
-                                        },
-                                        onActionSelected = { itemPath, action ->
-                                            stateManager.importExportViewModel.updateImportAction(itemPath, action)
-                                        },
-                                        onExecute = {
-                                            stateManager.importExportViewModel.executeImport(
-                                                currentGraph = appState.holonGraph,
-                                                personaId = appState.aiPersonaId ?: "",
-                                                holonsBasePath = "holons" // This should probably come from a constant
-                                            )
-                                        }
-                                    )
-                                }
+                                // --- THIS IS THE FIX ---
+                                // We now pass the ViewModel and the required state directly to the
+                                // ImportView. The view itself will collect the specific importState
+                                // and handle its own lifecycle.
+                                ImportView(
+                                    viewModel = stateManager.importExportViewModel,
+                                    currentGraph = appState.holonGraph,
+                                    personaId = appState.aiPersonaId ?: "", // Provide a safe default
+                                    holonsBasePath = "holons" // TODO: This should come from a constant later
+                                )
                             }
                         }
                     }

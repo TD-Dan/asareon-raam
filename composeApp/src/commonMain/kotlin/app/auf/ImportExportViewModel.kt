@@ -26,27 +26,27 @@ import kotlinx.coroutines.launch
  * @version 1.0
  * @since 2025-08-14
  */
-class ImportExportViewModel(
+open class ImportExportViewModel(
     private val importExportManager: ImportExportManager,
     private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Default),
     private val onImportComplete: () -> Unit
 ) {
 
     private val _importState = MutableStateFlow<ImportState?>(null)
-    val importState = _importState.asStateFlow()
+    open val importState = _importState.asStateFlow()
 
     fun startImport(sourcePath: String = "") {
         _importState.value = ImportState(sourcePath)
     }
 
-    fun analyzeFolder(sourcePath: String, currentGraph: List<HolonHeader>) {
+    open fun analyzeFolder(sourcePath: String, currentGraph: List<HolonHeader>) {
         coroutineScope.launch(Dispatchers.IO) {
             val importItems = importExportManager.analyzeFolder(sourcePath, currentGraph)
             _importState.update { it?.copy(sourcePath = sourcePath, items = importItems) }
         }
     }
 
-    fun updateImportAction(sourceFilePath: String, newAction: ImportAction) {
+    open fun updateImportAction(sourceFilePath: String, newAction: ImportAction) {
         _importState.update { currentImportState ->
             currentImportState?.let {
                 val updatedActions = it.selectedActions.toMutableMap()
@@ -56,7 +56,7 @@ class ImportExportViewModel(
         }
     }
 
-    fun executeImport(currentGraph: List<HolonHeader>, personaId: String, holonsBasePath: String) {
+    open fun executeImport(currentGraph: List<HolonHeader>, personaId: String, holonsBasePath: String) {
         val currentState = _importState.value ?: return
         coroutineScope.launch(Dispatchers.IO) {
             importExportManager.executeImport(currentState, currentGraph, personaId, holonsBasePath)
@@ -65,7 +65,7 @@ class ImportExportViewModel(
         }
     }
 
-    fun cancelImport() {
+    open fun cancelImport() {
         _importState.value = null
     }
 }

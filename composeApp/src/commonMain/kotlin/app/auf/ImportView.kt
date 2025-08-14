@@ -1,170 +1,172 @@
 package app.auf
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 /**
- * A Composable screen that provides a user interface for the import workbench.
+ * A Composable screen for managing the import of Holons from an external source.
  *
  * ---
  * ## Mandate
- * This view is a "dumb component". Its only responsibility is to render the `ImportState`
- * and emit events (via lambdas) when the user interacts with it. It is fully decoupled
- * from the application's business logic and does not know about StateManager or any ViewModel.
- * This makes it highly reusable and easy to test.
+ * This view's responsibility is to render the `ImportState` provided by the
+ * `ImportExportViewModel` and to delegate all user actions (analyze, import, select action)
+ * back to that ViewModel. It is a "dumb" component that only knows how to display state
+ * and forward events.
  *
  * ---
  * ## Dependencies
- * - `app.auf.ImportState`
- * - `app.auf.ImportItem`
+ * - `app.auf.ImportExportViewModel`: The source of truth for the view's state and logic.
+ * - `app.auf.ImportState`: The data class that this view renders.
  *
  * @version 1.2
  * @since 2025-08-14
  */
 @Composable
 fun ImportView(
-    importState: ImportState,
-    onClose: () -> Unit,
-    onAnalyze: (path: String) -> Unit,
-    onActionSelected: (itemPath: String, action: ImportAction) -> Unit,
-    onExecute: () -> Unit
+    viewModel: ImportExportViewModel,
+    currentGraph: List<HolonHeader>,
+    personaId: String,
+    holonsBasePath: String
 ) {
-    var sourcePath by remember { mutableStateOf(importState.sourcePath) }
+    val importState by viewModel.importState.collectAsState()
+    val sourcePath = importState?.sourcePath ?: ""
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("Import Workbench", style = MaterialTheme.typography.h4)
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = sourcePath,
-            onValueChange = { sourcePath = it },
-            label = { Text("Source Folder Path") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        // --- FIX APPLIED: Emits an event instead of calling a manager ---
-        Button(
-            onClick = { onAnalyze(sourcePath) },
-            modifier = Modifier.fillMaxWidth()
+    // The entire import view is conditional on the state being non-null
+    importState?.let { state ->
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colors.background
         ) {
-            Text("Analyze Folder")
-        }
-        Spacer(modifier = Modifier.height(16.dp))
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Header Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Import Holons", style = MaterialTheme.typography.h5)
+                    IconButton(onClick = { viewModel.cancelImport() }) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
 
-        if (importState.items.isNotEmpty()) {
-            Box(modifier = Modifier.weight(1f).border(1.dp, MaterialTheme.colors.onSurface.copy(alpha = 0.12f))) {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().background(MaterialTheme.colors.surface).padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("File", modifier = Modifier.weight(1f), style = MaterialTheme.typography.subtitle2)
-                            Text("Proposed Action", modifier = Modifier.weight(1f), style = MaterialTheme.typography.subtitle2)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Source Path and Analyze Button
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = sourcePath,
+                        onValueChange = { /* We might want to allow editing this in the future */ },
+                        label = { Text("Source Folder") },
+                        modifier = Modifier.weight(1f),
+                        readOnly = true // for now
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(onClick = { viewModel.analyzeFolder(sourcePath, currentGraph) }) {
+                        Text("Analyze Folder")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Items List
+                if (state.items.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No importable files found. Please analyze a folder.")
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.weight(1f)) {
+                        items(state.items) { item ->
+                            ImportItemRow(
+                                item = item,
+                                selectedAction = state.selectedActions[item.sourcePath] ?: item.initialAction,
+                                onActionSelected = { newAction ->
+                                    viewModel.updateImportAction(item.sourcePath, newAction)
+                                }
+                            )
+                            Divider()
                         }
-                        Divider()
-                    }
-                    items(importState.items) { item ->
-                        ImportItemRow(
-                            item = item,
-                            selectedAction = importState.selectedActions[item.sourcePath] ?: item.initialAction,
-                            // --- FIX APPLIED: The row now correctly calls the lambda passed to the view ---
-                            onActionSelected = { action ->
-                                onActionSelected(item.sourcePath, action)
-                            }
-                        )
-                        Divider()
                     }
                 }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                OutlinedButton(onClick = onClose) {
-                    Text("Cancel")
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                // --- FIX APPLIED: Emits the 'onExecute' event ---
-                Button(onClick = onExecute) {
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Footer Action
+                Button(
+                    onClick = { viewModel.executeImport(currentGraph, personaId, holonsBasePath) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = state.items.isNotEmpty()
+                ) {
                     Text("Execute Import")
                 }
-            }
-        } else {
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("No importable files found. Please analyze a folder.")
             }
         }
     }
 }
 
 @Composable
-fun ImportItemRow(
+private fun ImportItemRow(
     item: ImportItem,
     selectedAction: ImportAction,
     onActionSelected: (ImportAction) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val fileName = item.sourcePath.substringAfterLast('/').substringAfterLast('\\')
-
+    val actions = ImportActionType.values().map { it.toInstance(item.initialAction) }
 
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-            Text(fileName, style = MaterialTheme.typography.body1)
-        }
+        // --- KMP FIX: Use a simple function to extract filename from path string. ---
+        Text(item.sourcePath.substringAfterLast('/').substringAfterLast('\\'), modifier = Modifier.weight(1f))
 
-        Column(modifier = Modifier.weight(1f)) {
-            Box {
-                OutlinedTextField(
-                    value = selectedAction.summary,
-                    onValueChange = {},
-                    readOnly = true,
-                    modifier = Modifier.fillMaxWidth().clickable { expanded = true },
-                    trailingIcon = { Icon(Icons.Default.ArrowDropDown, "Dropdown") }
-                )
+        Spacer(modifier = Modifier.width(16.dp))
 
-                DropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false }
-                ) {
-                    // For now, the user can only choose between the proposed action and ignoring it.
+        Box {
+            OutlinedButton(
+                onClick = { expanded = true },
+                modifier = Modifier.width(250.dp)
+            ){
+                Text(selectedAction.summary, modifier = Modifier.weight(1f))
+                Icon(Icons.Default.MoreVert, contentDescription = "Select Action") // Use a more descriptive CD
+            }
+
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                actions.forEach { action ->
                     DropdownMenuItem(onClick = {
-                        onActionSelected(item.initialAction)
+                        onActionSelected(action)
                         expanded = false
                     }) {
-                        Text(item.initialAction.summary)
-                    }
-                    DropdownMenuItem(onClick = {
-                        onActionSelected(Ignore())
-                        expanded = false
-                    }) {
-                        Text("Ignore")
+                        Text(action.summary)
                     }
                 }
             }
         }
+    }
+}
+
+private fun ImportActionType.toInstance(initialAction: ImportAction): ImportAction {
+    return when (this) {
+        ImportActionType.UPDATE -> if (initialAction is Update) initialAction else Update("")
+        ImportActionType.INTEGRATE -> if (initialAction is Integrate) initialAction else Integrate("")
+        ImportActionType.ASSIGN_PARENT -> AssignParent()
+        ImportActionType.QUARANTINE -> Quarantine("Manual Quarantine")
+        ImportActionType.IGNORE -> Ignore()
     }
 }

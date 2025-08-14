@@ -19,8 +19,9 @@ import kotlinx.serialization.modules.subclass
  * ## Dependencies
  * - `Action` (Sealed Interface from ActionModels.kt) and its subclasses.
  * - `ContentBlock` (Sealed Interface from AppState.kt) and its subclasses.
+ * - `ImportAction` (Sealed Interface from AppState.kt) and its subclasses.
  *
- * @version 1.1
+ * @version 1.2
  * @since 2025-08-14
  */
 object JsonProvider {
@@ -42,6 +43,14 @@ object JsonProvider {
                 subclass(FileContentBlock::class)
                 subclass(AppRequestBlock::class)
                 subclass(AnchorBlock::class)
+            }
+            // FIX: Add the missing ImportAction hierarchy to fulfill the provider's mandate.
+            polymorphic(ImportAction::class) {
+                subclass(Update::class)
+                subclass(Integrate::class)
+                subclass(AssignParent::class)
+                subclass(Quarantine::class)
+                subclass(Ignore::class)
             }
         }
     }

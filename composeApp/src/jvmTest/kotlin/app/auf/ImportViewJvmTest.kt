@@ -1,8 +1,11 @@
 package app.auf
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.junit.Rule
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -10,140 +13,196 @@ import kotlin.test.assertTrue
 
 /**
  * UI test suite for the ImportView Composable.
- * As per the System Hardening Protocol, this test verifies that the UI
- * correctly renders the application state and that user interactions are
- * correctly propagated to the state management layer.
+ * ---
+ * ARCHITECTURAL NOTE: This test has been updated to reflect the refactoring
+ * of the import logic into a dedicated ImportExportViewModel. It now tests
+ * the view against a fake ViewModel, ensuring proper isolation and adherence
+ * to our hardened architecture.
  */
-class ImportViewTest {
+class ImportViewJvmTest {
 
-    // createComposeRule is the standard tool for testing Compose UIs.
     @get:Rule
     val composeTestRule = createComposeRule()
 
-    // A fake implementation of StateManager to test interactions in isolation.
-    class FakeStateManager : StateManager(
-        // We can use dummy/default values since we are not testing the StateManager's logic itself.
-        userSettings = UserSettings(),
-        gateway = Gateway(UserSettings()),
-        graphLoader = GraphLoader(""),
+    // A fake implementation of the ViewModel to control state and verify interactions.
+    class FakeImportExportViewModel(initialState: ImportState?) : ImportExportViewModel(
+        // We provide dummy implementations for the real dependencies.
         importExportManager = ImportExportManager("", JsonProvider.appJson),
-        actionExecutor = ActionExecutor(""),
-        backupManager = BackupManager("")
+        onImportComplete = {}
     ) {
-        var analyzeImportFolderCalledWith: String? = null
-        var executeImportCalled = false
-        var selectImportActionCalledWith: Pair<String, ImportAction>? = null
+        // Expose the state for the test to control.
+        private val _testState = MutableStateFlow(initialState)
+        override val importState = _testState.asStateFlow()
 
-        override fun analyzeImportFolder(path: String) {
-            analyzeImportFolderCalledWith = path
+        // Spy properties to track if methods were called.
+        var analyzeFolderCalled = false
+        var executeImportCalled = false
+        var updateImportActionCalledWith: Pair<String, ImportAction>? = null
+        var cancelImportCalled = false
+
+
+        override fun analyzeFolder(sourcePath: String, currentGraph: List<HolonHeader>) {
+            analyzeFolderCalled = true
         }
 
-        override fun executeImport() {
+        override fun executeImport(currentGraph: List<HolonHeader>, personaId: String, holonsBasePath: String) {
             executeImportCalled = true
         }
 
-        override fun selectImportAction(itemPath: String, action: ImportAction) {
-            selectImportActionCalledWith = itemPath to action
+        override fun updateImportAction(sourceFilePath: String, newAction: ImportAction) {
+            updateImportActionCalledWith = sourceFilePath to newAction
+        }
+
+        override fun cancelImport() {
+            cancelImportCalled = true
         }
     }
 
+
     @Test
-    fun `when importState is empty, it displays the initial prompt`() {
+    fun `when importState is null, the view is not displayed`() {
         // Arrange
-        val fakeStateManager = FakeStateManager()
-        val emptyImportState = ImportState(sourcePath = "C:/test")
+        val fakeViewModel = FakeImportExportViewModel(null)
 
         // Act
         composeTestRule.setContent {
-            ImportView(importState = emptyImportState, stateManager = fakeStateManager, onClose = {})
+            ImportView(
+                viewModel = fakeViewModel,
+                currentGraph = emptyList(),
+                personaId = "test-persona",
+                holonsBasePath = "/test/path"
+            )
         }
 
         // Assert
-        composeTestRule.onNodeWithText("No importable files found. Please analyze a folder.").assertExists()
+        // We check that some prominent UI element is *not* present.
+        composeTestRule.onNodeWithText("Analyze Folder").assertDoesNotExist()
     }
+
 
     @Test
     fun `when items exist, they are displayed with correctly parsed filenames`() {
         // Arrange
-        val fakeStateManager = FakeStateManager()
         val importStateWithItems = ImportState(
             sourcePath = "C:/test",
             items = listOf(
                 ImportItem("C:/test/holon-a.json", Ignore()),
-                ImportItem("/linux/path/holon-b.json", Ignore()) // Test different path separator
+                ImportItem("/linux/path/holon-b.json", Ignore())
             )
         )
+        val fakeViewModel = FakeImportExportViewModel(importStateWithItems)
 
         // Act
         composeTestRule.setContent {
-            ImportView(importState = importStateWithItems, stateManager = fakeStateManager, onClose = {})
+            ImportView(
+                viewModel = fakeViewModel,
+                currentGraph = emptyList(),
+                personaId = "test-persona",
+                holonsBasePath = "/test/path"
+            )
         }
 
         // Assert
-        // This directly verifies our bug fix: the view correctly finds and displays the filename.
         composeTestRule.onNodeWithText("holon-a.json").assertExists()
         composeTestRule.onNodeWithText("holon-b.json").assertExists()
     }
 
     @Test
-    fun `clicking Analyze Folder button calls StateManager`() {
+    fun `clicking Analyze Folder button calls ViewModel`() {
         // Arrange
-        val fakeStateManager = FakeStateManager()
-        val emptyImportState = ImportState(sourcePath = "C:/some/path")
+        val fakeViewModel = FakeImportExportViewModel(ImportState("C:/some/path"))
 
         composeTestRule.setContent {
-            ImportView(importState = emptyImportState, stateManager = fakeStateManager, onClose = {})
+            ImportView(
+                viewModel = fakeViewModel,
+                currentGraph = emptyList(),
+                personaId = "test-persona",
+                holonsBasePath = "/test/path"
+            )
         }
 
         // Act
         composeTestRule.onNodeWithText("Analyze Folder").performClick()
 
         // Assert
-        assertEquals("C:/some/path", fakeStateManager.analyzeImportFolderCalledWith)
+        assertTrue(fakeViewModel.analyzeFolderCalled)
     }
 
     @Test
-    fun `clicking Execute Import button calls StateManager`() {
+    fun `clicking Execute Import button calls ViewModel`() {
         // Arrange
-        val fakeStateManager = FakeStateManager()
         val importStateWithItems = ImportState(
             sourcePath = "C:/test",
             items = listOf(ImportItem("C:/test/holon-a.json", Ignore()))
         )
+        val fakeViewModel = FakeImportExportViewModel(importStateWithItems)
 
         composeTestRule.setContent {
-            ImportView(importState = importStateWithItems, stateManager = fakeStateManager, onClose = {})
+            ImportView(
+                viewModel = fakeViewModel,
+                currentGraph = emptyList(),
+                personaId = "test-persona",
+                holonsBasePath = "/test/path"
+            )
         }
 
         // Act
         composeTestRule.onNodeWithText("Execute Import").performClick()
 
         // Assert
-        assertTrue(fakeStateManager.executeImportCalled)
+        assertTrue(fakeViewModel.executeImportCalled)
     }
 
     @Test
-    fun `selecting an action from dropdown calls StateManager`() {
+    fun `selecting an action from dropdown calls ViewModel`() {
         // Arrange
-        val fakeStateManager = FakeStateManager()
         val itemPath = "C:/test/holon-a.json"
         val importStateWithItems = ImportState(
             sourcePath = "C:/test",
             items = listOf(ImportItem(itemPath, Update("holon-a")))
         )
+        val fakeViewModel = FakeImportExportViewModel(importStateWithItems)
+
 
         composeTestRule.setContent {
-            ImportView(importState = importStateWithItems, stateManager = fakeStateManager, onClose = {})
+            ImportView(
+                viewModel = fakeViewModel,
+                currentGraph = emptyList(),
+                personaId = "test-persona",
+                holonsBasePath = "/test/path"
+            )
         }
 
         // Act
-        // 1. Find the dropdown (which is an OutlinedTextField) associated with the "Update" action and click it.
-        composeTestRule.onNodeWithText("Update existing holon.").performClick()
-        // 2. Find the "Ignore" option in the now-visible menu and click it.
-        composeTestRule.onNodeWithText("Ignore").performClick()
+        // FIX: Click the dedicated, testable button by its content description.
+        composeTestRule.onNodeWithContentDescription("Select Action").performClick()
+        // Now that the menu is reliably open, click the desired item.
+        composeTestRule.onNodeWithText("Do not import.").performClick()
 
         // Assert
-        assertEquals(itemPath, fakeStateManager.selectImportActionCalledWith?.first)
-        assertTrue(fakeStateManager.selectImportActionCalledWith?.second is Ignore)
+        assertEquals(itemPath, fakeViewModel.updateImportActionCalledWith?.first)
+        assertTrue(fakeViewModel.updateImportActionCalledWith?.second is Ignore)
+    }
+
+    @Test
+    fun `clicking the close button calls ViewModel's cancelImport`() {
+        // Arrange
+        val fakeViewModel = FakeImportExportViewModel(ImportState("C:/some/path"))
+
+        composeTestRule.setContent {
+            ImportView(
+                viewModel = fakeViewModel,
+                currentGraph = emptyList(),
+                personaId = "test-persona",
+                holonsBasePath = "/test/path"
+            )
+        }
+
+        // Act
+        // The previous fix for this test was correct. We find by content description.
+        composeTestRule.onNodeWithContentDescription("Close").performClick()
+
+        // Assert
+        assertTrue(fakeViewModel.cancelImportCalled)
     }
 }

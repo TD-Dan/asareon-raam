@@ -18,7 +18,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-class StateManager(apiKey: String, private val initialSettings: UserSettings) {
+open class StateManager(apiKey: String, private val initialSettings: UserSettings) {
 
     companion object {
         private const val HOLONS_BASE_PATH = "holons"
@@ -37,7 +37,7 @@ class StateManager(apiKey: String, private val initialSettings: UserSettings) {
             contextualHolonIds = initialSettings.activeContextualHolonIds
         )
     )
-    val state: StateFlow<AppState> = _state.asStateFlow()
+    open val state: StateFlow<AppState> = _state.asStateFlow()
 
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
     private var activeJob: Job? = null

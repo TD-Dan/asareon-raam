@@ -47,12 +47,11 @@ class JsonProviderTest {
                 actions = listOf(CreateFile("f2", "c2", "s4")),
                 isResolved = false
             ),
-            // --- FIX APPLIED: Correctly instantiating the models as per AppState.kt ---
             FileContentBlock("MyFile.kt", "fun main() {}"),
             AppRequestBlock("START_DREAM_CYCLE"),
             AnchorBlock(
                 "anchor-123",
-                buildJsonObject { put("status", "OK") } // Correctly pass a JsonObject
+                buildJsonObject { put("status", "OK") }
             )
         )
 
@@ -62,6 +61,7 @@ class JsonProviderTest {
 
         // Assert
         assertEquals(originalBlocks, deserializedBlocks)
+        // FIX: Access the element at index 1 BEFORE casting to ActionBlock.
         assertTrue((deserializedBlocks[1] as ActionBlock).actions.first() is CreateFile)
     }
 
@@ -70,9 +70,9 @@ class JsonProviderTest {
         // Arrange
         val jsonWithUnknownKey = """
             {
-                "type": "app.auf.TextBlock",
+                "type": "TextBlock",
                 "text": "Hello",
-                "someFutureProperty": 123 
+                "someFutureProperty": 123
             }
         """
 

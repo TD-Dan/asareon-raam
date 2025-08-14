@@ -1,5 +1,14 @@
 package app.auf
 
+import java.io.File
+import kotlin.io.path.createTempDirectory
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+
 /**
  * JVM-specific integration tests for the ImportExportManager.
  * This suite verifies the file system interactions of the `actual` implementation.
