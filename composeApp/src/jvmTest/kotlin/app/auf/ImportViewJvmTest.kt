@@ -4,8 +4,10 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.test.TestCoroutineScope
 import org.junit.Rule
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,10 +26,20 @@ class ImportViewJvmTest {
     @get:Rule
     val composeTestRule = createComposeRule()
 
-    // A fake implementation of the ViewModel to control state and verify interactions.
-    class FakeImportExportViewModel(initialState: ImportState?) : ImportExportViewModel(
-        // --- FIX: The constructor no longer requires a callback ---
-        importExportManager = FakeImportExportManager()
+    private val testScope = TestCoroutineScope()
+
+    /**
+     * A fake implementation of the ViewModel to control state and verify interactions.
+     * It inherits from the real ViewModel to satisfy type contracts, but overrides
+     * all its logic with spies and controllable state.
+     */
+    class FakeImportExportViewModel(
+        initialState: ImportState,
+        scope: CoroutineScope
+    ) : ImportExportViewModel(
+        // Pass a fake manager and the test coroutine scope to the real constructor.
+        importExportManager = ImportExportManager("", JsonProvider.appJson),
+        coroutineScope = scope
     ) {
         // Expose the state for the test to control.
         private val _testState = MutableStateFlow(initialState)
@@ -37,7 +49,7 @@ class ImportViewJvmTest {
         var analyzeFolderCalled = false
         var executeImportCalled = false
         var updateImportActionCalledWith: Pair<String, ImportAction>? = null
-        var cancelImportCalled = false
+        var setViewModeToChatCalled = false
 
 
         override fun analyzeFolder(sourcePath: String, currentGraph: List<HolonHeader>) {
@@ -52,30 +64,9 @@ class ImportViewJvmTest {
             updateImportActionCalledWith = sourceFilePath to newAction
         }
 
-        override fun cancelImport() {
-            cancelImportCalled = true
+        override fun setViewModeToChat() {
+            setViewModeToChatCalled = true
         }
-    }
-
-
-    @Test
-    fun `when importState is null, the view is not displayed`() {
-        // Arrange
-        val fakeViewModel = FakeImportExportViewModel(null)
-
-        // Act
-        composeTestRule.setContent {
-            ImportView(
-                viewModel = fakeViewModel,
-                currentGraph = emptyList(),
-                personaId = "test-persona",
-                holonsBasePath = "/test/path"
-            )
-        }
-
-        // Assert
-        // We check that some prominent UI element is *not* present.
-        composeTestRule.onNodeWithText("Analyze Folder").assertDoesNotExist()
     }
 
 
@@ -89,7 +80,7 @@ class ImportViewJvmTest {
                 ImportItem("/linux/path/holon-b.json", Ignore())
             )
         )
-        val fakeViewModel = FakeImportExportViewModel(importStateWithItems)
+        val fakeViewModel = FakeImportExportViewModel(importStateWithItems, testScope)
 
         // Act
         composeTestRule.setContent {
@@ -109,7 +100,7 @@ class ImportViewJvmTest {
     @Test
     fun `clicking Analyze Folder button calls ViewModel`() {
         // Arrange
-        val fakeViewModel = FakeImportExportViewModel(ImportState("C:/some/path"))
+        val fakeViewModel = FakeImportExportViewModel(ImportState("C:/some/path"), testScope)
 
         composeTestRule.setContent {
             ImportView(
@@ -134,7 +125,7 @@ class ImportViewJvmTest {
             sourcePath = "C:/test",
             items = listOf(ImportItem("C:/test/holon-a.json", Ignore()))
         )
-        val fakeViewModel = FakeImportExportViewModel(importStateWithItems)
+        val fakeViewModel = FakeImportExportViewModel(importStateWithItems, testScope)
 
         composeTestRule.setContent {
             ImportView(
@@ -160,7 +151,7 @@ class ImportViewJvmTest {
             sourcePath = "C:/test",
             items = listOf(ImportItem(itemPath, Update("holon-a")))
         )
-        val fakeViewModel = FakeImportExportViewModel(importStateWithItems)
+        val fakeViewModel = FakeImportExportViewModel(importStateWithItems, testScope)
 
 
         composeTestRule.setContent {
@@ -173,9 +164,7 @@ class ImportViewJvmTest {
         }
 
         // Act
-        // FIX: Click the dedicated, testable button by its content description.
         composeTestRule.onNodeWithContentDescription("Select Action").performClick()
-        // Now that the menu is reliably open, click the desired item.
         composeTestRule.onNodeWithText("Do not import.").performClick()
 
         // Assert
@@ -184,9 +173,9 @@ class ImportViewJvmTest {
     }
 
     @Test
-    fun `clicking the close button calls ViewModel's cancelImport`() {
+    fun `clicking the close button calls ViewModel's setViewModeToChat`() {
         // Arrange
-        val fakeViewModel = FakeImportExportViewModel(ImportState("C:/some/path"))
+        val fakeViewModel = FakeImportExportViewModel(ImportState("C:/some/path"), testScope)
 
         composeTestRule.setContent {
             ImportView(
@@ -198,10 +187,9 @@ class ImportViewJvmTest {
         }
 
         // Act
-        // The previous fix for this test was correct. We find by content description.
         composeTestRule.onNodeWithContentDescription("Close").performClick()
 
         // Assert
-        assertTrue(fakeViewModel.cancelImportCalled)
+        assertTrue(fakeViewModel.setViewModeToChatCalled)
     }
 }

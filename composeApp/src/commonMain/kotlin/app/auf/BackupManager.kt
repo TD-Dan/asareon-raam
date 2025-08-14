@@ -33,7 +33,7 @@ open class BackupManager(
      * This is a non-blocking operation launched in a background coroutine.
      * @param trigger A string to name the backup source (e.g., "on-launch", "pre-export")
      */
-    fun createBackup(trigger: String) {
+    open fun createBackup(trigger: String) {
         coroutineScope.launch(Dispatchers.IO) {
             try {
                 val sourceDir = File(holonsBasePath)
@@ -68,7 +68,7 @@ open class BackupManager(
     /**
      * Opens the user's backup folder in the default system file explorer.
      */
-    fun openBackupFolder() {
+    open fun openBackupFolder() {
         if (Desktop.isDesktopSupported() && backupsDir.exists()) {
             try {
                 Desktop.getDesktop().open(backupsDir)

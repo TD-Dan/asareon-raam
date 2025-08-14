@@ -7,14 +7,75 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-// --- MODIFIED: The Gateway now accepts a configured Json parser. ---
+// --- Data Contracts for the Gateway ---
+
+@Serializable
+data class GenerateContentRequest(
+    val contents: List<Content>
+)
+
+@Serializable
+data class GenerateContentResponse(
+    val candidates: List<Candidate>? = null,
+    val promptFeedback: PromptFeedback? = null,
+    val usageMetadata: UsageMetadata? = null,
+    val error: ApiError? = null
+)
+
+@Serializable
+data class Content(val role: String, val parts: List<Part>)
+
+@Serializable
+data class Part(val text: String)
+
+@Serializable
+data class Candidate(val content: Content)
+
+@Serializable
+data class PromptFeedback(val blockReason: String?)
+
+@Serializable
+data class UsageMetadata(val promptTokenCount: Int, val candidatesTokenCount: Int, val totalTokenCount: Int)
+
+@Serializable
+data class ApiError(val code: Int, val message: String, val status: String)
+
+@Serializable
+data class ListModelsResponse(val models: List<ModelInfo>)
+
+@Serializable
+data class ModelInfo(
+    val name: String,
+    val displayName: String? = null,
+    // --- FIX: Made version nullable to handle cases where it's not provided. ---
+    val version: String? = null
+)
+
+
+/**
+ * A thin client responsible for making direct, configured calls to the Google Generative AI API.
+ *
+ * ---
+ * ## Mandate
+ * This class's sole responsibility is to handle the raw HTTP communication with the Gemini API.
+ * It takes pre-formatted request objects and returns raw response objects. It uses a Ktor client
+ * configured with the provided JSON parser and timeouts. It does not contain business logic.
+ *
+ * ---
+ * ## Dependencies
+ * - `io.ktor.client.HttpClient`
+ * - `kotlinx.serialization.json.Json`
+ *
+ * @version 1.1
+ * @since 2025-08-14
+ */
 class Gateway(private val jsonParser: Json) {
 
     private val client = HttpClient {
         install(ContentNegotiation) {
-            // --- MODIFIED: It uses the provided parser instance, not a new default one. ---
             json(jsonParser)
         }
         install(HttpTimeout) {

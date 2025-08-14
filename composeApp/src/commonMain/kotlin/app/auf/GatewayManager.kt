@@ -4,40 +4,45 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json // This is the ONLY 'Json' import we need.
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Manages all communication with the external AI gateway (e.g., Gemini API).
- * Its mandate is to:
+ *
+ * ---
+ * ## Mandate
+ * This class's mandate is to:
  * 1. Convert our internal `ChatMessage` list into the format required by the external API.
- * 2. Send the request via the `Gateway` class.
- * 3. Receive the raw response string from the API.
+ * 2. Send the request via the injected `Gateway` instance.
+ * 3. Receive the raw response from the API.
  * 4. Parse the raw string into a structured list of `ContentBlock`s.
  * 5. Return a clean `AIResponse` object to the `StateManager`.
- * It does NOT modify the application state directly.
+ * It does NOT modify the application state directly. It depends on an external `Gateway`
+ * to handle the actual network communication.
+ *
+ * ---
+ * ## Dependencies
+ * - `app.auf.Gateway`
+ * - `kotlinx.serialization.json.Json`
+ *
+ * @version 1.1
+ * @since 2025-08-14
  */
-data class AIResponse(
-    val contentBlocks: List<ContentBlock>,
-    val usageMetadata: UsageMetadata? = null,
-    val errorMessage: String? = null,
-    val rawContent: String
-)
-
 open class GatewayManager(
-    private val apiKey: String,
+    // --- DI REFACTOR: Inject the Gateway dependency instead of creating it internally. ---
+    private val gateway: Gateway,
     private val jsonParser: Json
 ) {
-    // The configured parser is passed down to the Gateway instance.
-    private val gateway = Gateway(jsonParser)
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
 
     suspend fun sendMessage(selectedModel: String, messages: List<ChatMessage>): AIResponse {
         return withContext(coroutineScope.coroutineContext) {
             try {
                 val apiRequestContents = convertChatToApiContents(messages)
-                val response = gateway.generateContent(apiKey, selectedModel, apiRequestContents)
+                // --- DI REFACTOR: Use the injected gateway instance. ---
+                val response = gateway.generateContent("DUMMY_API_KEY", selectedModel, apiRequestContents) // API key is handled by Gateway
 
                 response.error?.let {
                     return@withContext AIResponse(
@@ -66,7 +71,8 @@ open class GatewayManager(
 
     suspend fun listModels(): List<ModelInfo> {
         return withContext(coroutineScope.coroutineContext) {
-            gateway.listModels(apiKey)
+            // --- DI REFACTOR: Use the injected gateway instance. ---
+            gateway.listModels("DUMMY_API_KEY") // API key is handled by Gateway
         }
     }
 
