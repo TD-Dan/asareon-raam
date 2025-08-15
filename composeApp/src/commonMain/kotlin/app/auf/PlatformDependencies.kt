@@ -7,34 +7,32 @@ data class FileEntry(val path: String, val isDirectory: Boolean)
 
 /**
  * Defines a platform-agnostic contract for ALL platform-specific functionalities.
- * This is the single, authoritative bridge between the shared business logic
- * and the host operating system.
+ * This class and its members are marked 'open' to allow for test fakes to inherit from it.
  *
- * @version 2.0
+ * @version 2.1
  * @since 2025-08-15
  */
-expect class PlatformDependencies {
-    /** A platform-specific character used to separate path components (e.g., '/' or '\'). */
-    val pathSeparator: Char
+expect open class PlatformDependencies() {
+    open val pathSeparator: Char
 
     // --- File & Directory I/O ---
-    fun readFileContent(path: String): String
-    fun writeFileContent(path: String, content: String)
-    fun fileExists(path: String): Boolean
-    fun listDirectory(path: String): List<FileEntry>
-    fun createDirectories(path: String)
-    fun copyFile(sourcePath: String, destinationPath: String)
-    fun deleteFile(path: String)
-    fun getBasePathFor(type: String): String
-    fun getFileName(path: String): String
-    fun getParentDirectory(path: String): String?
-    fun getLastModified(path: String): Long
+    open fun readFileContent(path: String): String
+    open fun writeFileContent(path: String, content: String)
+    open fun fileExists(path: String): Boolean
+    open fun listDirectory(path: String): List<FileEntry>
+    open fun createDirectories(path: String)
+    open fun copyFile(sourcePath: String, destinationPath: String)
+    open fun deleteFile(path: String)
+    open fun getBasePathFor(type: String): String
+    open fun getFileName(path: String): String
+    open fun getParentDirectory(path: String): String?
+    open fun getLastModified(path: String): Long
 
     // --- Complex Operations ---
-    fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String)
-    fun openFolderInExplorer(path: String)
+    open fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String)
+    open fun openFolderInExplorer(path: String)
 
     // --- System Utilities ---
-    fun getSystemTimeMillis(): Long
-    fun formatIsoTimestamp(timestamp: Long): String
+    open fun getSystemTimeMillis(): Long
+    open fun formatIsoTimestamp(timestamp: Long): String
 }

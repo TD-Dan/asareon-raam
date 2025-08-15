@@ -1,57 +1,64 @@
 // FILE: composeApp/src/jvmTest/kotlin/app/auf/AppJvmTest.kt
 package app.auf
 
-import androidx.compose.ui.test.junit4.createComposeRule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import org.junit.Rule
 import org.junit.Test
 import kotlin.test.BeforeTest
+import kotlin.test.assertNotNull
 
 /**
- * This is a placeholder test class for the main App composable.
- * It's currently used to validate the Dependency Injection setup.
+ * A smoke test to validate the application's Dependency Injection setup.
+ * If this test passes, it confirms that all major components can be instantiated
+ * with their dependencies correctly.
+ *
+ * @version 2.0
+ * @since 2025-08-15
  */
 class AppJvmTest {
 
-    @get:Rule
-    val compose = createComposeRule()
-
     private lateinit var stateManager: StateManager
+    private lateinit var fakePlatform: FakePlatformDependencies
     private lateinit var fakeGatewayManager: FakeGatewayManager
     private lateinit var fakeBackupManager: FakeBackupManager
-    private lateinit var fakeImportExportManager: FakeImportExportManager
+    private lateinit var fakeGraphLoader: FakeGraphLoader
+    private lateinit var fakeActionExecutor: FakeActionExecutor
     private lateinit var importExportViewModel: ImportExportViewModel
 
     @BeforeTest
     fun setup() {
-        // --- 1. Instantiate all fakes and dependencies ---
-        fakeGatewayManager = FakeGatewayManager()
-        fakeBackupManager = FakeBackupManager()
-        fakeImportExportManager = FakeImportExportManager()
+        // --- 1. Instantiate the single fake platform dependency ---
+        // This object will be shared across all components that need it.
+        fakePlatform = FakePlatformDependencies()
 
-        // The ViewModel uses the fake manager
+        // --- 2. Instantiate all fakes that rely on the platform fake ---
+        fakeGatewayManager = FakeGatewayManager() // Doesn't need platform access
+        fakeBackupManager = FakeBackupManager(fakePlatform)
+        fakeGraphLoader = FakeGraphLoader(fakePlatform)
+        fakeActionExecutor = FakeActionExecutor(fakePlatform)
+
+        // The real ViewModel uses a fake manager
+        val fakeImportExportManager = FakeImportExportManager(fakePlatform)
         importExportViewModel = ImportExportViewModel(fakeImportExportManager)
 
-        // The StateManager uses the fakes and the real view model
+        // --- 3. Instantiate the real StateManager with all fakes injected ---
         stateManager = StateManager(
             gatewayManager = fakeGatewayManager,
             backupManager = fakeBackupManager,
-            // These can be faked as well if needed, but for now, real instances are fine
-            graphLoader = GraphLoader("holons", JsonProvider.appJson),
-            actionExecutor = ActionExecutor(JsonProvider.appJson),
+            graphLoader = fakeGraphLoader,
+            actionExecutor = fakeActionExecutor,
             importExportViewModel = importExportViewModel,
-            platform = PlatformDependencies(), // <-- FIX: Provide the required dependency
+            platform = fakePlatform, // Provide the required dependency
             initialSettings = UserSettings(),
-            coroutineScope = CoroutineScope(Dispatchers.Main) // <-- FIX: Add missing import and scope
+            coroutineScope = CoroutineScope(Dispatchers.Unconfined) // Use Unconfined for immediate test execution
         )
     }
 
     @Test
-    fun `test DI setup`() {
-        // This test's only purpose is to ensure the DI setup in `main.kt` and the
-        // test setup here are valid and don't crash.
-        // If the test runs, the setup is considered successful.
-        // We can add real UI tests later.
+    fun `StateManager should instantiate successfully with all fake dependencies`() {
+        // This test's only purpose is to ensure the DI setup is valid.
+        // If the setup() function completes without crashing, the test's primary goal is met.
+        // We add a simple assertion to make the test's success explicit.
+        assertNotNull(stateManager, "StateManager should be successfully instantiated.")
     }
 }

@@ -2,13 +2,13 @@ package app.auf
 
 /**
  * A fake, in-memory implementation of the PlatformDependencies contract for use in unit tests.
- * It simulates a file system using mutable maps and sets, allowing for fast, predictable,
- * and isolated testing of managers without any actual disk I/O.
  *
- * @version 1.0
+ * --- FIX: Added `override` to all members to correctly inherit from the open PlatformDependencies class. ---
+ *
+ * @version 1.1
  * @since 2025-08-15
  */
-class FakePlatformDependencies : PlatformDependencies {
+class FakePlatformDependencies : PlatformDependencies() { // Note: Now calling the constructor
     val files = mutableMapOf<String, String>()
     val directories = mutableSetOf<String>()
     val copiedFiles = mutableMapOf<String, String>()
@@ -67,7 +67,7 @@ class FakePlatformDependencies : PlatformDependencies {
 
     override fun getFileName(path: String): String = path.substringAfterLast(pathSeparator)
     override fun getParentDirectory(path: String): String? = if (path.contains(pathSeparator)) path.substringBeforeLast(pathSeparator) else null
-    override fun getLastModified(path: String): Long = 123456789L // Return a constant for predictability
+    override fun getLastModified(path: String): Long = 123456789L
     override fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String) {
         zipArchiveCreated = sourceDirectoryPath to destinationZipPath
     }
@@ -87,4 +87,4 @@ class FakePlatformDependencies : PlatformDependencies {
         lastOpenedFolder = null
         zipArchiveCreated = null
     }
-}```
+}
