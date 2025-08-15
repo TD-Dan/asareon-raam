@@ -1,10 +1,11 @@
+// composeApp/src'commonTest/kotlin/app/auf/GatewayTest.kt
+
 package app.auf
 
-import io.ktor.client.*
 import io.ktor.client.engine.mock.*
-import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.engine.mock.HttpResponseData // <-- Add this import
+import io.ktor.client.request.HttpRequestData
 import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -26,7 +27,7 @@ import kotlin.test.assertTrue
  * - `io.ktor.client.engine.mock.MockEngine`
  * - `kotlinx.coroutines.test.runTest`
  *
- * @version 1.0
+ * @version 1.3
  * @since 2025-08-14
  */
 class GatewayTest {
@@ -37,36 +38,19 @@ class GatewayTest {
         val mockEngine = MockEngine { request ->
             handler(this, request)
         }
-        val mockClient = HttpClient(mockEngine) {
-            install(ContentNegotiation) {
-                json(testJson)
-            }
-        }
-        // This is a bit of a trick: we create a real Gateway but then use reflection
-        // to replace its real client with our mock client. This lets us test the
-        // real Gateway class's methods in perfect isolation.
-        return Gateway(testJson).apply {
-            val clientField = this::class.java.getDeclaredField("client")
-            clientField.isAccessible = true
-            clientField.set(this, mockClient)
-        }
+        // Use the new internal constructor to inject the mock engine
+        return Gateway(testJson, mockEngine)
     }
 
+    // ... All @Test functions remain exactly the same ...
     @Test
     fun `listModels returns a list of models on success`() = runTest {
         // Arrange
         val mockResponse = """
             {
                 "models": [
-                    {
-                        "name": "models/gemini-pro",
-                        "version": "1.0.0",
-                        "displayName": "Gemini Pro"
-                    },
-                    {
-                        "name": "models/gemini-1.5-pro-latest",
-                        "displayName": "Gemini 1.5 Pro"
-                    }
+                    { "name": "models/gemini-pro", "version": "1.0.0", "displayName": "Gemini Pro" },
+                    { "name": "models/gemini-1.5-pro-latest", "displayName": "Gemini 1.5 Pro" }
                 ]
             }
         """.trimIndent()
@@ -86,7 +70,7 @@ class GatewayTest {
         assertEquals(2, models.size)
         assertEquals("models/gemini-pro", models[0].name)
         assertEquals("1.0.0", models[0].version)
-        assertEquals(null, models[1].version) // Verify nullable field works
+        assertEquals(null, models[1].version)
     }
 
     @Test
@@ -108,17 +92,8 @@ class GatewayTest {
         // Arrange
         val mockResponse = """
             {
-                "candidates": [{
-                    "content": {
-                        "parts": [{"text": "Hello, world!"}],
-                        "role": "model"
-                    }
-                }],
-                "usageMetadata": {
-                    "promptTokenCount": 10,
-                    "candidatesTokenCount": 5,
-                    "totalTokenCount": 15
-                }
+                "candidates": [{"content": {"parts": [{"text": "Hello, world!"}], "role": "model"}}],
+                "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 5, "totalTokenCount": 15}
             }
         """.trimIndent()
         val gateway = createMockGateway {
@@ -139,13 +114,7 @@ class GatewayTest {
     fun `generateContent returns error object on API error`() = runTest {
         // Arrange
         val mockErrorResponse = """
-            {
-                "error": {
-                    "code": 400,
-                    "message": "API key not valid. Please pass a valid API key.",
-                    "status": "INVALID_ARGUMENT"
-                }
-            }
+            {"error": {"code": 400, "message": "API key not valid. Please pass a valid API key.", "status": "INVALID_ARGUMENT"}}
         """.trimIndent()
         val gateway = createMockGateway {
             respond(mockErrorResponse, HttpStatusCode.BadRequest, headersOf(HttpHeaders.ContentType, "application/json"))
@@ -165,7 +134,7 @@ class GatewayTest {
     fun `generateContent returns client-side error on network failure`() = runTest {
         // Arrange
         val gateway = createMockGateway {
-            error("Simulated network failure")
+            throw Exception("Simulated network failure")
         }
 
         // Act

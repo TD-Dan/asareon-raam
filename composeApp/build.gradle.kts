@@ -17,7 +17,7 @@ kotlin {
     androidTarget {
         @OptIn(ExperimentalKotlinGradlePluginApi::class)
         compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_11)
+            jvmTarget.set(JvmTarget.JVM_21)
         }
     }
 
@@ -32,7 +32,9 @@ kotlin {
         }
     }
 
-    jvm()
+    jvm {
+        compilerOptions.jvmTarget.set(JvmTarget.JVM_21)
+    }
 
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
@@ -121,8 +123,12 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_21 // <-- MODIFIED from VERSION_11 to VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21 // <-- MODIFIED from VERSION_11 to VERSION_21
+    }
+    // <-- MODIFIED: Added this block to align the Kotlin toolchain for Android
+    kotlin {
+        jvmToolchain(21)
     }
     dependencies {
         debugImplementation(compose.uiTooling)
