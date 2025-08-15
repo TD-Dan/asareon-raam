@@ -1,15 +1,14 @@
+// FILE: composeApp/src/commonMain/kotlin/app/auf/ExportView.kt
+
 package app.auf
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.Button
-import androidx.compose.material.Card
-import androidx.compose.material.OutlinedButton
-import androidx.compose.material.Text
-import androidx.compose.material.MaterialTheme // --- FIX IS HERE ---
+import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,25 +16,37 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import javax.swing.JFileChooser
-import javax.swing.filechooser.FileSystemView
 
 @Composable
 fun ExportView(
     appState: AppState,
     stateManager: StateManager,
+    platformDependencies: PlatformDependencies, // <-- Pass in dependency
     modifier: Modifier = Modifier
 ) {
-    var destinationPath by remember { mutableStateOf<String?>(null) }
+    // --- MODIFIED: Use the path from the global AppState ---
+    var destinationPath by remember { mutableStateOf(appState.lastUsedExportPath) }
     val exportList = remember(appState.holonIdsForExport, appState.holonGraph) {
         appState.holonGraph.filter { it.id in appState.holonIdsForExport }
     }
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        Text("Export for AUF Manual Runtime", style = MaterialTheme.typography.h5, modifier = Modifier.padding(bottom = 16.dp))
+        // --- MODIFIED: Consistent Header ---
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Export for AUF Manual Runtime", style = MaterialTheme.typography.h5)
+            IconButton(onClick = { stateManager.setViewMode(ViewMode.CHAT) }) {
+                Icon(Icons.Default.Close, contentDescription = "Close Export View")
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
         Text(
-            "Select holons from the Knowledge Graph on the left to add them to the export manifest below. " +
+            "Select holons from the Knowledge Graph on the left to add/remove them from the export manifest below. " +
                     "All selected holons will be copied as a flat list into the destination folder.",
             style = MaterialTheme.typography.body2,
             modifier = Modifier.padding(bottom = 16.dp)
@@ -59,7 +70,7 @@ fun ExportView(
                             modifier = Modifier.padding(bottom = 8.dp)
                         )
                     }
-                    items(exportList) { holon ->
+                    items(exportList.sortedBy { it.name }) { holon ->
                         Text("- ${holon.name} (${holon.id})", fontFamily = FontFamily.Monospace)
                     }
                 }
@@ -69,14 +80,10 @@ fun ExportView(
         Spacer(Modifier.height(16.dp))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // --- MODIFIED: Use the platform dependency to show folder picker ---
             Button(onClick = {
-                val fileChooser = JFileChooser(FileSystemView.getFileSystemView().homeDirectory).apply {
-                    dialogTitle = "Select Destination Folder"
-                    fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
-                    isAcceptAllFileFilterUsed = false
-                }
-                if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                    destinationPath = fileChooser.selectedFile.absolutePath
+                platformDependencies.showFolderPicker()?.let {
+                    destinationPath = it
                 }
             }) {
                 Text("Select Destination...")

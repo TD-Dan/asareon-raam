@@ -4,6 +4,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
+// kotlin.time imports are no longer needed here, as the responsibility has moved.
 
 /**
  * Defines the core, immutable data models for the entire AUF application state.
@@ -20,18 +21,16 @@ import kotlinx.serialization.json.JsonObject
  * - `Action` (from ActionModels.kt): Used within the `ActionBlock` content type.
  * - `kotlinx.serialization`: Used extensively for defining serializable data contracts.
  *
- * @version 1.2
- * @since 2025-08-14
+ * @version 1.6
+ * @since 2025-08-15
  */
 
+// ... (enums and other data classes remain the same) ...
 enum class ViewMode {
     CHAT, EXPORT, IMPORT
 }
 
 data class ImportItem(
-    // --- KMP FIX: Replaced JVM-specific `java.io.File` with a platform-agnostic `String`.
-    // The responsibility of converting this path to a File object belongs to the
-    // platform-specific code that uses this model, not the common data class itself.
     val sourcePath: String,
     val initialAction: ImportAction,
     val targetPath: String? = null
@@ -39,7 +38,6 @@ data class ImportItem(
 
 @Serializable
 sealed interface ImportAction {
-    // FIX: Renamed 'type' to 'actionType' to avoid collision with the default JSON discriminator.
     val actionType: ImportActionType
     val summary: String
 }
@@ -52,7 +50,6 @@ enum class ImportActionType {
 @SerialName("Update")
 data class Update(
     val targetHolonId: String,
-    // FIX: Renamed 'type' to 'actionType'.
     override val actionType: ImportActionType = ImportActionType.UPDATE,
     override val summary: String = "Update existing holon."
 ) : ImportAction
@@ -61,7 +58,6 @@ data class Update(
 @SerialName("Integrate")
 data class Integrate(
     val parentHolonId: String,
-    // FIX: Renamed 'type' to 'actionType'.
     override val actionType: ImportActionType = ImportActionType.INTEGRATE,
     override val summary: String = "Integrate with known parent."
 ) : ImportAction
@@ -70,7 +66,6 @@ data class Integrate(
 @SerialName("AssignParent")
 data class AssignParent(
     var assignedParentId: String? = null,
-    // FIX: Renamed 'type' to 'actionType'.
     override val actionType: ImportActionType = ImportActionType.ASSIGN_PARENT,
     override val summary: String = "New holon - requires parent."
 ) : ImportAction
@@ -79,7 +74,6 @@ data class AssignParent(
 @SerialName("Quarantine")
 data class Quarantine(
     val reason: String,
-    // FIX: Renamed 'type' to 'actionType'.
     override val actionType: ImportActionType = ImportActionType.QUARANTINE,
     override val summary: String = "Quarantine File"
 ) : ImportAction
@@ -87,7 +81,6 @@ data class Quarantine(
 @Serializable
 @SerialName("Ignore")
 data class Ignore(
-    // FIX: Renamed 'type' to 'actionType'.
     override val actionType: ImportActionType = ImportActionType.IGNORE,
     override val summary: String = "Do not import."
 ) : ImportAction
@@ -99,6 +92,7 @@ data class ImportState(
 )
 
 data class AppState(
+    // Graph and Holon State
     val holonGraph: List<HolonHeader> = emptyList(),
     val catalogueFilter: String? = null,
     val activeHolons: Map<String, Holon> = emptyMap(),
@@ -106,6 +100,8 @@ data class AppState(
     val aiPersonaId: String? = null,
     val contextualHolonIds: Set<String> = emptySet(),
     val inspectedHolonId: String? = null,
+
+    // Chat and AI State
     val chatHistory: List<ChatMessage> = emptyList(),
     val isSystemVisible: Boolean = false,
     val gatewayStatus: GatewayStatus = GatewayStatus.IDLE,
@@ -113,21 +109,21 @@ data class AppState(
     val availableModels: List<String> = emptyList(),
     val selectedModel: String = "gemini-1.5-flash-latest",
     val errorMessage: String? = null,
+
+    // UI and View State
     val currentViewMode: ViewMode = ViewMode.CHAT,
+
     val holonIdsForExport: Set<String> = emptySet(),
-    val importState: ImportState? = null
+    val lastUsedExportPath: String? = null,
+    val lastUsedImportPath: String? = null
 )
 
-/**
- * A sealed interface representing a single block of content within a ChatMessage.
- * The AI's response is parsed into a list of these blocks.
- */
 @Serializable
 sealed interface ContentBlock {
-    // A human-readable summary of the block's content for UI display or logging.
     val summary: String
 }
 
+// ... (ContentBlock subclasses remain the same) ...
 @Serializable
 @SerialName("TextBlock")
 data class TextBlock(
@@ -141,7 +137,6 @@ data class ActionBlock(
     val actions: List<Action>,
     val isResolved: Boolean = false
 ) : ContentBlock {
-    // The summary is a computed property, not a stored one.
     override val summary: String
         get() = "Action Manifest (${actions.size} actions)"
 }
@@ -174,12 +169,17 @@ data class AnchorBlock(
 data class ChatMessage(
     val author: Author,
     val title: String? = null,
-    val timestamp: Long = System.currentTimeMillis(),
+    // --- ARCHITECTURAL FIX ---
+    // The default value has been removed. The responsibility for generating the timestamp
+    // now lies with the creator of the ChatMessage instance (i.e., the StateManager),
+    // which centralizes the logic and the required experimental API opt-in.
+    val timestamp: Long,
     val contentBlocks: List<ContentBlock>,
     val usageMetadata: UsageMetadata? = null,
     val rawContent: String? = null
 )
 
+// ... (rest of the file remains the same) ...
 enum class Author {
     USER, AI, SYSTEM
 }

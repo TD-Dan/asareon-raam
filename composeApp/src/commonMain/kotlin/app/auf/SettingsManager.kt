@@ -1,47 +1,33 @@
+// FILE: composeApp/src/commonMain/kotlin/app/auf/SettingsManager.kt
+
 package app.auf
 
-import kotlinx.serialization.json.Json
-import java.io.File
-
 /**
- * Manages the loading and saving of user preferences to a plain text JSON file.
- * This class handles no sensitive data.
+ * Defines the contract for a service that handles loading and saving user preferences.
+ *
+ * ---
+ * ## Mandate
+ * This expect class defines a platform-agnostic contract for persisting the
+ * UserSettings object. It provides a stable API for the rest of the shared
+ * application logic, while delegating the platform-specific file I/O
+ * implementation to the `actual` class on each target platform.
+ *
+ * ---
+ * ## Dependencies
+ * - `app.auf.UserSettings`
+ *
+ * @version 1.0
+ * @since 2025-08-15
  */
-class SettingsManager(settingsDir: File) {
-
-    private val jsonParser = Json { prettyPrint = true }
-    private val settingsFile = File(settingsDir, "user_settings.json")
-
-    init {
-        // Ensure the settings directory exists on startup.
-        settingsDir.mkdirs()
-    }
+expect class SettingsManager {
+    /**
+     * Saves the provided UserSettings object to a persistent location.
+     */
+    fun saveSettings(settings: UserSettings)
 
     /**
-     * Saves the provided UserSettings object to user_settings.json.
+     * Loads UserSettings from a persistent location.
+     * Returns null if no settings are found, allowing the app to use defaults.
      */
-    fun saveSettings(settings: UserSettings) {
-        try {
-            val jsonString = jsonParser.encodeToString(UserSettings.serializer(), settings)
-            settingsFile.writeText(jsonString)
-        } catch (e: Exception) {
-            println("Error saving settings: ${e.message}")
-        }
-    }
-
-    /**
-     * Loads UserSettings from user_settings.json.
-     * Returns null if the file doesn't exist or is corrupt, allowing the app to use defaults.
-     */
-    fun loadSettings(): UserSettings? {
-        if (!settingsFile.exists()) return null
-
-        return try {
-            val jsonString = settingsFile.readText()
-            jsonParser.decodeFromString(UserSettings.serializer(), jsonString)
-        } catch (e: Exception) {
-            println("Error loading settings file. It might be corrupt. Using defaults. Error: ${e.message}")
-            null
-        }
-    }
+    fun loadSettings(): UserSettings?
 }

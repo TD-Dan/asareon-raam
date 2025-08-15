@@ -1,4 +1,3 @@
-// FILE: composeApp/src/jvmMain/kotlin/app/auf/main.kt
 package app.auf
 
 import androidx.compose.runtime.remember
@@ -10,10 +9,31 @@ import androidx.compose.ui.window.rememberWindowState
 import java.io.File
 import java.util.Properties
 
+/**
+ * The main entry point for the AUF application on the JVM platform.
+ *
+ * ---
+ * ## Mandate
+ * This file is responsible for setting up the application window, instantiating all
+ * platform-specific dependencies (like SettingsManager and PlatformDependencies),
+ * and wiring them together into the core StateManager. It also handles the graceful
+ * shutdown of the application, ensuring that the final user settings are saved.
+ *
+ * ---
+ * ## Dependencies
+ * - `app.auf.StateManager`: The core state management class.
+ * - `app.auf.SettingsManager`: Handles loading/saving of user settings.
+ * - `app.auf.PlatformDependencies`: Provides platform-specific implementations.
+ * - `java.io.File`: For locating the settings directory and local.properties.
+ *
+ * @version 1.2
+ * @since 2025-0.8-15
+ */
 fun main() = application {
-    val settingsDir = File(System.getProperty("user.home"), ".auf")
-    val settingsManager = SettingsManager(settingsDir)
+    // Platform-specific setup
+    val settingsManager = SettingsManager()
     val savedSettings = settingsManager.loadSettings() ?: UserSettings()
+    val platformDependencies = PlatformDependencies() // <-- Instantiate the platform-specific class
 
     val properties = Properties()
     val localPropertiesFile = File("local.properties")
@@ -27,16 +47,18 @@ fun main() = application {
     }
 
     val coroutineScope = rememberCoroutineScope()
+
+    // Core application state setup
     val stateManager = remember {
         // --- All dependencies are instantiated here ---
         val gateway = Gateway(JsonProvider.appJson)
         val gatewayManager = GatewayManager(gateway, JsonProvider.appJson, apiKey)
-        val backupManager = BackupManager("holons", File(System.getProperty("user.home"), ".auf"))
+        val backupManager = BackupManager("holons", "settings")
         val graphLoader = GraphLoader("holons", JsonProvider.appJson)
         val actionExecutor = ActionExecutor(JsonProvider.appJson)
         val importExportManager = ImportExportManager("framework", JsonProvider.appJson)
         val importExportViewModel = ImportExportViewModel(importExportManager, coroutineScope)
-        val platformDependencies = PlatformDependencies() // <-- INSTANTIATE THE NEW DEPENDENCY
+
 
         StateManager(
             gatewayManager = gatewayManager,
@@ -44,7 +66,7 @@ fun main() = application {
             graphLoader = graphLoader,
             actionExecutor = actionExecutor,
             importExportViewModel = importExportViewModel,
-            platform = platformDependencies, // <-- INJECT THE NEW DEPENDENCY
+            platform = platformDependencies,
             initialSettings = savedSettings,
             coroutineScope = coroutineScope
         )
@@ -59,7 +81,6 @@ fun main() = application {
     // Trigger initial loading
     stateManager.initialize()
 
-
     val windowState = rememberWindowState(
         width = savedSettings.windowWidth.dp,
         height = savedSettings.windowHeight.dp
@@ -73,7 +94,9 @@ fun main() = application {
                 windowHeight = windowState.size.height.value.toInt(),
                 selectedModel = currentState.selectedModel,
                 selectedAiPersonaId = currentState.aiPersonaId,
-                activeContextualHolonIds = currentState.contextualHolonIds
+                activeContextualHolonIds = currentState.contextualHolonIds,
+                lastUsedExportPath = currentState.lastUsedExportPath,
+                lastUsedImportPath = currentState.lastUsedImportPath
             )
             settingsManager.saveSettings(currentSettingsToSave)
             exitApplication()

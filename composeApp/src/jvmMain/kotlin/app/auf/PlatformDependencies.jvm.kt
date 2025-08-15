@@ -5,10 +5,27 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import javax.swing.JFileChooser
+import javax.swing.filechooser.FileSystemView
 
 /**
  * The actual JVM implementation of the PlatformDependencies contract.
- * It uses java.io and java.text to fulfill the requirements.
+ * It uses java.io, java.text, and javax.swing to fulfill the requirements.
+ *
+ * ---
+ * ## Mandate
+ * This class provides the concrete implementations for platform-specific operations on the JVM.
+ * It is responsible for all direct interactions with Java libraries for file system access
+ * and user interface dialogs like the folder picker.
+ *
+ * ---
+ * ## Dependencies
+ * - `java.io.File`: For file I/O.
+ * - `java.text.SimpleDateFormat`: For timestamp formatting.
+ * - `javax.swing.JFileChooser`: For the native folder picker dialog.
+ *
+ * @version 1.1
+ * @since 2025-08-15
  */
 actual class PlatformDependencies {
     private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
@@ -25,5 +42,18 @@ actual class PlatformDependencies {
 
     actual fun formatIsoTimestamp(timestamp: Long): String {
         return isoFormatter.format(Date(timestamp))
+    }
+
+    actual fun showFolderPicker(): String? {
+        val fileChooser = JFileChooser(FileSystemView.getFileSystemView().homeDirectory).apply {
+            dialogTitle = "Select Folder"
+            fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+            isAcceptAllFileFilterUsed = false
+        }
+        return if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+            fileChooser.selectedFile.absolutePath
+        } else {
+            null
+        }
     }
 }

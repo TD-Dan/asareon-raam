@@ -1,4 +1,7 @@
 // FILE: composeApp/src/commonMain/kotlin/app/auf/StateManager.kt
+
+@file:OptIn(kotlin.time.ExperimentalTime::class)
+
 package app.auf
 
 import kotlinx.coroutines.CoroutineScope
@@ -13,7 +16,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.JsonPrimitive
-
+import kotlin.time.Clock
 
 /**
  * The core state management class for the AUF application.
@@ -35,7 +38,7 @@ import kotlinx.serialization.json.JsonPrimitive
  * - `app.auf.PlatformDependencies`: Provides platform-specific file I/O and utilities.
  * - `kotlinx.coroutines.CoroutineScope`: The scope for launching background tasks.
  *
- * @version 2.1
+ * @version 2.2
  * @since 2025-08-15
  */
 open class StateManager(
@@ -44,7 +47,7 @@ open class StateManager(
     private val graphLoader: GraphLoader,
     private val actionExecutor: ActionExecutor,
     val importExportViewModel: ImportExportViewModel,
-    private val platform: PlatformDependencies, // <-- NEW DEPENDENCY
+    private val platform: PlatformDependencies,
     private val initialSettings: UserSettings,
     private val coroutineScope: CoroutineScope
 ) {
@@ -59,7 +62,10 @@ open class StateManager(
             gatewayStatus = GatewayStatus.IDLE,
             selectedModel = initialSettings.selectedModel,
             aiPersonaId = initialSettings.selectedAiPersonaId,
-            contextualHolonIds = initialSettings.activeContextualHolonIds
+            contextualHolonIds = initialSettings.activeContextualHolonIds,
+            // --- MODIFIED: Load last used paths from settings ---
+            lastUsedExportPath = initialSettings.lastUsedExportPath,
+            lastUsedImportPath = initialSettings.lastUsedImportPath
         )
     )
     open val state: StateFlow<AppState> = _state.asStateFlow()
@@ -77,7 +83,13 @@ open class StateManager(
 
         _state.update { it.copy(isProcessing = true, errorMessage = null) }
 
-        val userChatMessage = ChatMessage(Author.USER, title = "USER", contentBlocks = listOf(TextBlock(message)))
+        // --- MODIFIED: Timestamp generation moved here ---
+        val userChatMessage = ChatMessage(
+            author = Author.USER,
+            title = "USER",
+            contentBlocks = listOf(TextBlock(message)),
+            timestamp = Clock.System.now().toEpochMilliseconds()
+        )
 
         if (from == Author.USER) {
             _state.update { it.copy(chatHistory = it.chatHistory + userChatMessage) }
@@ -95,7 +107,9 @@ open class StateManager(
                 val errorChatMessage = ChatMessage(
                     author = Author.SYSTEM,
                     title = "Gateway Error",
-                    contentBlocks = listOf(TextBlock(response.errorMessage))
+                    contentBlocks = listOf(TextBlock(response.errorMessage)),
+                    // --- MODIFIED: Timestamp generation moved here ---
+                    timestamp = Clock.System.now().toEpochMilliseconds()
                 )
                 _state.update {
                     it.copy(
@@ -112,7 +126,9 @@ open class StateManager(
                 title = "AI",
                 contentBlocks = response.contentBlocks,
                 usageMetadata = response.usageMetadata,
-                rawContent = response.rawContent
+                rawContent = response.rawContent,
+                // --- MODIFIED: Timestamp generation moved here ---
+                timestamp = Clock.System.now().toEpochMilliseconds()
             )
 
             _state.update {
@@ -166,7 +182,9 @@ open class StateManager(
                     val dreamAnnouncement = ChatMessage(
                         author = Author.SYSTEM,
                         title = "System Request",
-                        contentBlocks = listOf(TextBlock("The AI has requested a dream cycle. Initiating..."))
+                        contentBlocks = listOf(TextBlock("The AI has requested a dream cycle. Initiating...")),
+                        // --- MODIFIED: Timestamp generation moved here ---
+                        timestamp = Clock.System.now().toEpochMilliseconds()
                     )
                     _state.update { it.copy(chatHistory = it.chatHistory + dreamAnnouncement) }
                     sendMessage(
@@ -205,13 +223,17 @@ open class StateManager(
                 is ActionExecutorResult.Success -> ChatMessage(
                     Author.SYSTEM,
                     contentBlocks = listOf(TextBlock(result.summary)),
-                    title = "Action Executed"
+                    title = "Action Executed",
+                    // --- MODIFIED: Timestamp generation moved here ---
+                    timestamp = Clock.System.now().toEpochMilliseconds()
                 )
 
                 is ActionExecutorResult.Failure -> ChatMessage(
                     Author.SYSTEM,
                     contentBlocks = listOf(TextBlock(result.error)),
-                    title = "Action Failed"
+                    title = "Action Failed",
+                    // --- MODIFIED: Timestamp generation moved here ---
+                    timestamp = Clock.System.now().toEpochMilliseconds()
                 )
             }
             updatedHistory.add(confirmationMessage)
@@ -232,7 +254,9 @@ open class StateManager(
         val rejectionMessage = ChatMessage(
             Author.SYSTEM,
             contentBlocks = listOf(TextBlock("User rejected the proposed Action Manifest.")),
-            title = "Action Rejected"
+            title = "Action Rejected",
+            // --- MODIFIED: Timestamp generation moved here ---
+            timestamp = Clock.System.now().toEpochMilliseconds()
         )
         val updatedHistory = _state.value.chatHistory.toMutableList()
 
@@ -246,9 +270,10 @@ open class StateManager(
         val newBlocks = message.contentBlocks.map { block ->
             if (block is ActionBlock) block.copy(isResolved = true) else block
         }
-        return message.copy(contentBlocks = newBlocks)
+        return message.copy(contentBlocks = newBlocks, timestamp = message.timestamp) // Keep original timestamp
     }
 
+    // ... (buildSystemContextMessages, generateDynamicToolManifest, getPromptAsString, getSystemContextPreview, openBackupFolder remain the same) ...
     private fun buildSystemContextMessages(): List<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
         val state = _state.value
@@ -256,16 +281,17 @@ open class StateManager(
         messages.add(
             ChatMessage(
                 Author.SYSTEM,
-                // --- REFACTOR: Use injected dependency ---
                 contentBlocks = listOf(TextBlock(platform.readFileContent("$FRAMEWORK_BASE_PATH/framework_protocol.md"))),
-                title = "framework_protocol.md"
+                title = "framework_protocol.md",
+                timestamp = 0L // System messages don't need a real timestamp
             )
         )
         messages.add(
             ChatMessage(
                 Author.SYSTEM,
                 contentBlocks = listOf(TextBlock(generateDynamicToolManifest())),
-                title = "Host Tool Manifest"
+                title = "Host Tool Manifest",
+                timestamp = 0L
             )
         )
 
@@ -281,8 +307,8 @@ open class StateManager(
                         ChatMessage(
                             Author.SYSTEM,
                             contentBlocks = listOf(TextBlock(holonContentString)),
-                            // --- REFACTOR: Use injected dependency to read file name ---
-                            title = platform.readFileContent(holonHeader.filePath) // Simple way to get name, can be improved
+                            title = holonHeader.filePath.substringAfterLast('/').substringAfterLast('\\'),
+                            timestamp = 0L
                         )
                     )
                 }
@@ -351,7 +377,6 @@ open class StateManager(
 
             when (message.author) {
                 Author.AI, Author.USER -> {
-                    // --- REFACTOR: Use injected dependency ---
                     val formattedTimestamp = platform.formatIsoTimestamp(message.timestamp)
                     "[${message.author.name.lowercase()} - $formattedTimestamp]\n$content"
                 }
@@ -371,16 +396,31 @@ open class StateManager(
         backupManager.createBackup("on-export-view"); backupManager.openBackupFolder()
     }
 
+
     fun setViewMode(mode: ViewMode) {
-        if (mode == ViewMode.CHAT) {
-            _state.update { it.copy(currentViewMode = mode, holonIdsForExport = emptySet()) }
-            importExportViewModel.cancelImport()
-        } else if (mode == ViewMode.IMPORT) {
-            _state.update { it.copy(currentViewMode = mode) }
-            importExportViewModel.startImport()
-        } else {
-            _state.update { it.copy(currentViewMode = mode) }
+        val currentState = _state.value
+        when (mode) {
+            ViewMode.CHAT -> {
+                _state.update { it.copy(currentViewMode = mode, holonIdsForExport = emptySet()) }
+                importExportViewModel.cancelImport()
+            }
+            ViewMode.IMPORT -> {
+                _state.update { it.copy(currentViewMode = mode) }
+                // --- MODIFIED: Pass the last used path to the view model ---
+                importExportViewModel.startImport(currentState.lastUsedImportPath ?: "")
+            }
+            ViewMode.EXPORT -> {
+                // --- MODIFIED: Pre-populate the export list with active holons ---
+                val activeIds = currentState.contextualHolonIds.toMutableSet()
+                currentState.aiPersonaId?.let { activeIds.add(it) }
+                _state.update { it.copy(currentViewMode = mode, holonIdsForExport = activeIds) }
+            }
         }
+    }
+
+    // --- NEW FUNCTION ---
+    fun updateLastUsedImportPath(path: String) {
+        _state.update { it.copy(lastUsedImportPath = path) }
     }
 
     fun onHolonClicked(holonId: String) {
@@ -410,6 +450,9 @@ open class StateManager(
     }
 
     fun executeExport(destinationPath: String) {
+        // --- MODIFIED: Update the last used path before executing ---
+        _state.update { it.copy(lastUsedExportPath = destinationPath) }
+
         backupManager.createBackup("pre-export")
         val holonsToExport =
             _state.value.holonGraph.filter { it.id in _state.value.holonIdsForExport }; if (holonsToExport.isEmpty()) return; coroutineScope.launch(
@@ -417,6 +460,7 @@ open class StateManager(
         ) { importExportViewModel.importExportManager.executeExport(destinationPath, holonsToExport); setViewMode(ViewMode.CHAT) }
     }
 
+    // ... (rest of the file remains largely the same) ...
     fun retryLoadHolonGraph() {
         loadHolonGraph()
     }
@@ -458,7 +502,6 @@ open class StateManager(
         val holonHeader =
             _state.value.holonGraph.find { it.id == holonId } ?: return; coroutineScope.launch(Dispatchers.Default) {
             try {
-                // --- REFACTOR: Use injected dependency ---
                 val fileString = platform.readFileContent(holonHeader.filePath)
                 val holonToShow = if (holonHeader.type == "Quarantined_File") {
                     val payload = buildJsonObject { put("raw_content", JsonPrimitive(fileString)) }; Holon(
@@ -516,7 +559,6 @@ open class StateManager(
             val finalParsingErrors = result.parsingErrors.toMutableList(); allActiveIds.forEach { holonId ->
             result.holonGraph.find { it.id == holonId }?.let { header ->
                 try {
-                    // --- REFACTOR: Use injected dependency ---
                     val content = platform.readFileContent(header.filePath); activeHolonsMap[holonId] =
                         JsonProvider.appJson.decodeFromString<Holon>(content)
                 } catch (e: SerializationException) {
@@ -548,9 +590,6 @@ open class StateManager(
         }
     }
 
-    /**
-     * Public accessor to update state directly, intended for use ONLY in test environments.
-     */
     fun updateStateForTesting(newState: AppState) {
         _state.value = newState
     }

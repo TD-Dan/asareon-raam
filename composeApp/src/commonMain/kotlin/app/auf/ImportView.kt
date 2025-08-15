@@ -1,3 +1,5 @@
+// FILE: composeApp/src/commonMain/kotlin/app/auf/ImportView.kt
+
 package app.auf
 
 import androidx.compose.foundation.layout.*
@@ -12,79 +14,78 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-/**
- * A Composable screen for managing the import of Holons from an external source.
- *
- * ---
- * ## Mandate
- * This view's responsibility is to render the `ImportState` provided by the
- * `ImportExportViewModel` and to delegate all user actions (analyze, import, select action)
- * back to that ViewModel. It is a "dumb" component that only knows how to display state
- * and forward events.
- *
- * ---
- * ## Dependencies
- * - `app.auf.ImportExportViewModel`: The source of truth for the view's state and logic.
- * - `app.auf.ImportState`: The data class that this view renders.
- *
- * @version 1.2
- * @since 2025-08-14
- */
 @Composable
 fun ImportView(
     viewModel: ImportExportViewModel,
+    stateManager: StateManager, // <-- Pass in StateManager
+    platformDependencies: PlatformDependencies, // <-- Pass in dependency
     currentGraph: List<HolonHeader>,
     personaId: String,
     holonsBasePath: String
 ) {
     val importState by viewModel.importState.collectAsState()
+    // The sourcePath is now the single source of truth from the ViewModel's state
     val sourcePath = importState?.sourcePath ?: ""
 
-    // The entire import view is conditional on the state being non-null
     importState?.let { state ->
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colors.background
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                // Header Row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Import Holons", style = MaterialTheme.typography.h5)
-                    IconButton(onClick = { viewModel.cancelImport() }) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    // --- MODIFIED: Consistent Close Button ---
+                    IconButton(onClick = {
+                        viewModel.cancelImport()
+                        stateManager.setViewMode(ViewMode.CHAT)
+                    }) {
+                        Icon(Icons.Default.Close, contentDescription = "Close Import View")
                     }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Source Path and Analyze Button
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = sourcePath,
-                        onValueChange = { /* We might want to allow editing this in the future */ },
-                        label = { Text("Source Folder") },
-                        modifier = Modifier.weight(1f),
-                        readOnly = true // for now
-                    )
+                    // --- MODIFIED: This is now a button like in the ExportView ---
+                    Button(onClick = {
+                        platformDependencies.showFolderPicker()?.let { selectedPath ->
+                            viewModel.setImportPath(selectedPath)
+                            stateManager.updateLastUsedImportPath(selectedPath)
+                        }
+                    }) {
+                        Text("Select Source...")
+                    }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = { viewModel.analyzeFolder(sourcePath, currentGraph) }) {
-                        Text("Analyze Folder")
+                    // Display the source path from the state
+                    if (sourcePath.isNotBlank()) {
+                        Text("Source: $sourcePath", style = MaterialTheme.typography.caption)
                     }
                 }
 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Analyze button is now separate
+                Button(
+                    onClick = { viewModel.analyzeFolder(sourcePath, currentGraph) },
+                    enabled = sourcePath.isNotBlank()
+                ) {
+                    Text("Analyze Folder")
+                }
+
+
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Items List
                 if (state.items.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxWidth().weight(1f),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("No importable files found. Please analyze a folder.")
+                        Text("Please select and analyze a folder.")
                     }
                 } else {
                     LazyColumn(modifier = Modifier.weight(1f)) {
@@ -103,19 +104,28 @@ fun ImportView(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Footer Action
-                Button(
-                    onClick = { viewModel.executeImport(currentGraph, personaId, holonsBasePath) },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = state.items.isNotEmpty()
-                ) {
-                    Text("Execute Import")
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    // --- MODIFIED: Consistent Cancel Button ---
+                    OutlinedButton(onClick = {
+                        viewModel.cancelImport()
+                        stateManager.setViewMode(ViewMode.CHAT)
+                    }) {
+                        Text("Cancel")
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = { viewModel.executeImport(currentGraph, personaId, holonsBasePath) },
+                        enabled = state.items.isNotEmpty()
+                    ) {
+                        Text("Execute Import")
+                    }
                 }
             }
         }
     }
 }
 
+// ... (ImportItemRow and other private functions remain the same) ...
 @Composable
 private fun ImportItemRow(
     item: ImportItem,
@@ -130,7 +140,6 @@ private fun ImportItemRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // --- KMP FIX: Use a simple function to extract filename from path string. ---
         Text(item.sourcePath.substringAfterLast('/').substringAfterLast('\\'), modifier = Modifier.weight(1f))
 
         Spacer(modifier = Modifier.width(16.dp))
@@ -141,7 +150,7 @@ private fun ImportItemRow(
                 modifier = Modifier.width(250.dp)
             ){
                 Text(selectedAction.summary, modifier = Modifier.weight(1f))
-                Icon(Icons.Default.MoreVert, contentDescription = "Select Action") // Use a more descriptive CD
+                Icon(Icons.Default.MoreVert, contentDescription = "Select Action")
             }
 
             DropdownMenu(
