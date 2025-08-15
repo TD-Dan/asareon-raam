@@ -1,4 +1,3 @@
-// FILE: composeApp/src/iosMain/kotlin/app/auf/PlatformDependencies.ios.kt
 package app.auf
 
 /**
