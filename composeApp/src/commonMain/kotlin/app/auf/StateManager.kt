@@ -22,20 +22,19 @@ import kotlinx.serialization.json.JsonPrimitive
  * ## Mandate
  * This class is the single source of truth for the application's UI state (AppState).
  * It orchestrates data loading, AI interaction, and user actions by delegating to
- * specialized service classes. It is designed with Dependency Injection to be
- * fully testable.
+ * specialized service classes. It is fully platform-agnostic and testable.
  *
  * ---
  * ## Dependencies
- * - `app.auf.GatewayManager`: Handles all communication with the AI model API.
- * - `app.auf.BackupManager`: Manages automatic and manual backups of the knowledge graph.
- * - `app.auf.GraphLoader`: Responsible for loading the Holon graph from the file system.
- * - `app.auf.ActionExecutor`: Executes `ActionManifest` requests from the AI.
- * - `app.auf.ImportExportViewModel`: Manages the state and logic for the import/export view.
- * - `app.auf.PlatformDependencies`: Provides platform-specific file I/O and utilities.
- * - `kotlinx.coroutines.CoroutineScope`: The scope for launching background tasks.
+ * - `app.auf.GatewayManager`
+ * - `app.auf.BackupManager`
+ * - `app.auf.GraphLoader`
+ * - `app.auf.ActionExecutor`
+ * - `app.auf.ImportExportViewModel`
+ * - `app.auf.PlatformDependencies`: The single bridge to the host OS.
+ * - `kotlinx.coroutines.CoroutineScope`
  *
- * @version 2.1
+ * @version 2.2
  * @since 2025-08-15
  */
 open class StateManager(
@@ -44,15 +43,10 @@ open class StateManager(
     private val graphLoader: GraphLoader,
     private val actionExecutor: ActionExecutor,
     val importExportViewModel: ImportExportViewModel,
-    private val platform: PlatformDependencies, // <-- NEW DEPENDENCY
+    private val platform: PlatformDependencies,
     private val initialSettings: UserSettings,
     private val coroutineScope: CoroutineScope
 ) {
-
-    companion object {
-        private const val HOLONS_BASE_PATH = "holons"
-        private const val FRAMEWORK_BASE_PATH = "framework"
-    }
 
     private val _state = MutableStateFlow(
         AppState(
@@ -77,7 +71,7 @@ open class StateManager(
 
         _state.update { it.copy(isProcessing = true, errorMessage = null) }
 
-        val userChatMessage = ChatMessage(Author.USER, title = "USER", contentBlocks = listOf(TextBlock(message)))
+        val userChatMessage = ChatMessage(Author.USER, title = "USER", contentBlocks = listOf(TextBlock(message)), timestamp = platform.getSystemTimeMillis())
 
         if (from == Author.USER) {
             _state.update { it.copy(chatHistory = it.chatHistory + userChatMessage) }
@@ -95,7 +89,8 @@ open class StateManager(
                 val errorChatMessage = ChatMessage(
                     author = Author.SYSTEM,
                     title = "Gateway Error",
-                    contentBlocks = listOf(TextBlock(response.errorMessage))
+                    contentBlocks = listOf(TextBlock(response.errorMessage)),
+                    timestamp = platform.getSystemTimeMillis()
                 )
                 _state.update {
                     it.copy(
@@ -112,7 +107,8 @@ open class StateManager(
                 title = "AI",
                 contentBlocks = response.contentBlocks,
                 usageMetadata = response.usageMetadata,
-                rawContent = response.rawContent
+                rawContent = response.rawContent,
+                timestamp = platform.getSystemTimeMillis()
             )
 
             _state.update {
@@ -166,7 +162,8 @@ open class StateManager(
                     val dreamAnnouncement = ChatMessage(
                         author = Author.SYSTEM,
                         title = "System Request",
-                        contentBlocks = listOf(TextBlock("The AI has requested a dream cycle. Initiating..."))
+                        contentBlocks = listOf(TextBlock("The AI has requested a dream cycle. Initiating...")),
+                        timestamp = platform.getSystemTimeMillis()
                     )
                     _state.update { it.copy(chatHistory = it.chatHistory + dreamAnnouncement) }
                     sendMessage(
@@ -193,7 +190,6 @@ open class StateManager(
         coroutineScope.launch(Dispatchers.Default) {
             val result = actionExecutor.execute(
                 actionBlock.actions,
-                HOLONS_BASE_PATH,
                 _state.value.aiPersonaId!!,
                 _state.value.holonGraph
             )
@@ -205,20 +201,31 @@ open class StateManager(
                 is ActionExecutorResult.Success -> ChatMessage(
                     Author.SYSTEM,
                     contentBlocks = listOf(TextBlock(result.summary)),
-                    title = "Action Executed"
+                    title = "Action Executed",
+                    timestamp = platform.getSystemTimeMillis()
                 )
 
                 is ActionExecutorResult.Failure -> ChatMessage(
                     Author.SYSTEM,
                     contentBlocks = listOf(TextBlock(result.error)),
-                    title = "Action Failed"
+                    title = "Action Failed",
+                    timestamp = platform.getSystemTimeMillis()
                 )
             }
             updatedHistory.add(confirmationMessage)
 
-            loadHolonGraph()
+            // Reload the graph to reflect the changes from the action.
+            val loadResult = graphLoader.loadGraph(_state.value.aiPersonaId)
 
-            _state.update { it.copy(chatHistory = updatedHistory, isProcessing = false) }
+            _state.update {
+                it.copy(
+                    chatHistory = updatedHistory,
+                    isProcessing = false,
+                    // Update graph state from the load result
+                    holonGraph = loadResult.holonGraph,
+                    errorMessage = if (loadResult.parsingErrors.isNotEmpty()) "Warning: ${loadResult.parsingErrors.size} holons failed to parse after action." else null
+                )
+            }
         }
     }
 
@@ -232,7 +239,8 @@ open class StateManager(
         val rejectionMessage = ChatMessage(
             Author.SYSTEM,
             contentBlocks = listOf(TextBlock("User rejected the proposed Action Manifest.")),
-            title = "Action Rejected"
+            title = "Action Rejected",
+            timestamp = platform.getSystemTimeMillis()
         )
         val updatedHistory = _state.value.chatHistory.toMutableList()
 
@@ -252,20 +260,23 @@ open class StateManager(
     private fun buildSystemContextMessages(): List<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
         val state = _state.value
+        val frameworkBasePath = platform.getBasePathFor("framework")
+        val protocolPath = frameworkBasePath + platform.pathSeparator + "framework_protocol.md"
 
         messages.add(
             ChatMessage(
                 Author.SYSTEM,
-                // --- REFACTOR: Use injected dependency ---
-                contentBlocks = listOf(TextBlock(platform.readFileContent("$FRAMEWORK_BASE_PATH/framework_protocol.md"))),
-                title = "framework_protocol.md"
+                contentBlocks = listOf(TextBlock(platform.readFileContent(protocolPath))),
+                title = "framework_protocol.md",
+                timestamp = platform.getSystemTimeMillis()
             )
         )
         messages.add(
             ChatMessage(
                 Author.SYSTEM,
                 contentBlocks = listOf(TextBlock(generateDynamicToolManifest())),
-                title = "Host Tool Manifest"
+                title = "Host Tool Manifest",
+                timestamp = platform.getSystemTimeMillis()
             )
         )
 
@@ -281,8 +292,8 @@ open class StateManager(
                         ChatMessage(
                             Author.SYSTEM,
                             contentBlocks = listOf(TextBlock(holonContentString)),
-                            // --- REFACTOR: Use injected dependency to read file name ---
-                            title = platform.readFileContent(holonHeader.filePath) // Simple way to get name, can be improved
+                            title = platform.getFileName(holonHeader.filePath),
+                            timestamp = platform.getSystemTimeMillis()
                         )
                     )
                 }
@@ -351,7 +362,6 @@ open class StateManager(
 
             when (message.author) {
                 Author.AI, Author.USER -> {
-                    // --- REFACTOR: Use injected dependency ---
                     val formattedTimestamp = platform.formatIsoTimestamp(message.timestamp)
                     "[${message.author.name.lowercase()} - $formattedTimestamp]\n$content"
                 }
@@ -368,7 +378,8 @@ open class StateManager(
     }
 
     fun openBackupFolder() {
-        backupManager.createBackup("on-export-view"); backupManager.openBackupFolder()
+        backupManager.createBackup("on-export-view")
+        backupManager.openBackupFolder()
     }
 
     fun setViewMode(mode: ViewMode) {
@@ -458,7 +469,6 @@ open class StateManager(
         val holonHeader =
             _state.value.holonGraph.find { it.id == holonId } ?: return; coroutineScope.launch(Dispatchers.Default) {
             try {
-                // --- REFACTOR: Use injected dependency ---
                 val fileString = platform.readFileContent(holonHeader.filePath)
                 val holonToShow = if (holonHeader.type == "Quarantined_File") {
                     val payload = buildJsonObject { put("raw_content", JsonPrimitive(fileString)) }; Holon(
@@ -516,7 +526,6 @@ open class StateManager(
             val finalParsingErrors = result.parsingErrors.toMutableList(); allActiveIds.forEach { holonId ->
             result.holonGraph.find { it.id == holonId }?.let { header ->
                 try {
-                    // --- REFACTOR: Use injected dependency ---
                     val content = platform.readFileContent(header.filePath); activeHolonsMap[holonId] =
                         JsonProvider.appJson.decodeFromString<Holon>(content)
                 } catch (e: SerializationException) {

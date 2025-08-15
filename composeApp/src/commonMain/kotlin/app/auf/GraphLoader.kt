@@ -3,8 +3,6 @@ package app.auf
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import java.io.File
-
 
 @Serializable
 private data class HolonFileContent(
@@ -24,12 +22,25 @@ data class GraphLoadResult(
 )
 
 /**
+ * ---
+ * ## Mandate
  * Handles all logic related to discovering and loading the Holon Knowledge Graph from the file system.
+ * It contains only business logic for graph traversal and data parsing. It delegates all actual
+ * file I/O (reading files, listing directories) to the injected `PlatformDependencies` instance.
+ *
+ * ---
+ * ## Dependencies
+ * - `app.auf.PlatformDependencies`: The contract for all platform-specific I/O.
+ * - `kotlinx.serialization.json.Json`: For parsing Holon files.
+ *
+ * @version 2.0
+ * @since 2025-08-15
  */
 class GraphLoader(
-    private val holonsBasePath: String,
+    private val platform: PlatformDependencies,
     private val jsonParser: Json
 ) {
+    private val holonsBasePath = platform.getBasePathFor("holons")
 
     /**
      * The primary public method to load the entire graph for a given persona.
@@ -40,12 +51,11 @@ class GraphLoader(
     fun loadGraph(currentPersonaId: String?): GraphLoadResult {
         val parsingErrors = mutableListOf<String>()
         try {
-            val holonsDir = File(holonsBasePath)
-            if (!holonsDir.exists() || !holonsDir.isDirectory) {
-                return GraphLoadResult(fatalError = "Holon directory not found at resolved path: ${holonsDir.absolutePath}")
+            if (!platform.fileExists(holonsBasePath)) {
+                return GraphLoadResult(fatalError = "Holon directory not found at resolved path: $holonsBasePath")
             }
 
-            val availablePersonas = discoverAvailablePersonas(holonsDir)
+            val availablePersonas = discoverAvailablePersonas(holonsBasePath)
             val determinedPersonaId = determinePersonaToLoad(currentPersonaId, availablePersonas)
 
             if (determinedPersonaId == null) {
@@ -54,32 +64,30 @@ class GraphLoader(
             }
 
             val graph = mutableListOf<HolonHeader>()
-            val rootDirectory = File(holonsDir, determinedPersonaId)
-            traverseAndLoad(rootDirectory, null, 0, graph, parsingErrors)
+            val rootDirectoryPath = holonsBasePath + platform.pathSeparator + determinedPersonaId
+            traverseAndLoad(rootDirectoryPath, null, 0, graph, parsingErrors)
 
             // --- Scan and add quarantined files ---
-            val quarantineDir = File(rootDirectory, "quarantined-imports")
-            if (quarantineDir.exists() && quarantineDir.isDirectory) {
-                quarantineDir.listFiles()?.forEach { file ->
+            val quarantineDirPath = rootDirectoryPath + platform.pathSeparator + "quarantined-imports"
+            if (platform.fileExists(quarantineDirPath)) {
+                platform.listDirectory(quarantineDirPath).forEach { fileEntry ->
                     val dummyHeader = HolonHeader(
-                        id = file.name, // Use filename as a temporary ID
+                        id = platform.getFileName(fileEntry.path),
                         type = "Quarantined_File",
-                        name = file.name,
+                        name = platform.getFileName(fileEntry.path),
                         summary = "This file is in quarantine. Inspect it to see its raw content. It may be malformed or fail schema validation.",
-                        // --- BUG-004 FIX: Use absolutePath for robustness ---
-                        filePath = file.absolutePath,
-                        depth = 1 // Appear just under the root
+                        filePath = fileEntry.path,
+                        depth = 1
                     )
                     graph.add(dummyHeader)
                 }
             }
 
-
             if (graph.isEmpty()) {
                 return GraphLoadResult(
                     availableAiPersonas = availablePersonas,
                     determinedPersonaId = determinedPersonaId,
-                    fatalError = "Failed to load any holons from root: ${rootDirectory.absolutePath}"
+                    fatalError = "Failed to load any holons from root: $rootDirectoryPath"
                 )
             }
 
@@ -96,72 +104,67 @@ class GraphLoader(
         }
     }
 
-    private fun discoverAvailablePersonas(holonsDir: File): List<HolonHeader> {
-        return holonsDir.listFiles { file ->
-            file.isDirectory
-        }?.mapNotNull { dir ->
-            val holonFile = File(dir, "${dir.name}.json")
-            if (holonFile.exists()) {
+    private fun discoverAvailablePersonas(holonsDirPath: String): List<HolonHeader> {
+        return platform.listDirectory(holonsDirPath).filter { it.isDirectory }.mapNotNull { dirEntry ->
+            val dirName = platform.getFileName(dirEntry.path)
+            val holonFilePath = dirEntry.path + platform.pathSeparator + "$dirName.json"
+            if (platform.fileExists(holonFilePath)) {
                 try {
-                    val content = holonFile.readText()
+                    val content = platform.readFileContent(holonFilePath)
                     val header = jsonParser.decodeFromString<HolonFileContent>(content).header
-                    // --- BUG-004 FIX: Use absolutePath for robustness ---
-                    if (header.type == "AI_Persona_Root") header.copy(filePath = holonFile.absolutePath) else null
+                    if (header.type == "AI_Persona_Root") header.copy(filePath = holonFilePath) else null
                 } catch (e: Exception) {
-                    println("Warning: Malformed persona found and ignored in dir: ${dir.name}")
+                    println("Warning: Malformed persona found and ignored in dir: $dirName")
                     null
                 }
             } else null
-        } ?: emptyList()
+        }
     }
 
     private fun determinePersonaToLoad(currentId: String?, personas: List<HolonHeader>): String? {
         return if (personas.none { it.id == currentId }) {
-            // If current selection is invalid, auto-select if there's only one option
             if (personas.size == 1) personas.first().id else null
         } else {
             currentId
         }
     }
 
-
     private fun traverseAndLoad(
-        holonDirectory: File,
+        holonDirectoryPath: String,
         parentId: String?,
         depth: Int,
         graph: MutableList<HolonHeader>,
         parsingErrors: MutableList<String>
     ) {
-        if (!holonDirectory.exists() || !holonDirectory.isDirectory) {
+        if (!platform.fileExists(holonDirectoryPath)) {
             return
         }
 
-        val holonId = holonDirectory.name
-        val holonFile = File(holonDirectory, "$holonId.json")
+        val holonId = platform.getFileName(holonDirectoryPath)
+        val holonFilePath = holonDirectoryPath + platform.pathSeparator + "$holonId.json"
 
         if (holonId == "quarantined-imports") return
 
-        if (!holonFile.exists()) {
-            parsingErrors.add("File not found for dir: ${holonDirectory.path}")
+        if (!platform.fileExists(holonFilePath)) {
+            parsingErrors.add("File not found for dir: $holonDirectoryPath")
             return
         }
 
         try {
-            val fileContentString = holonFile.readText()
+            val fileContentString = platform.readFileContent(holonFilePath)
             val parsedFile = jsonParser.decodeFromString<HolonFileContent>(fileContentString)
             var header = parsedFile.header
 
             header = header.copy(
-                // --- BUG-004 FIX: Use absolutePath for robustness ---
-                filePath = holonFile.absolutePath,
+                filePath = holonFilePath,
                 parentId = parentId,
                 depth = depth
             )
             graph.add(header)
 
             header.subHolons.forEach { subRef ->
-                val subHolonDirectory = File(holonDirectory, subRef.id)
-                traverseAndLoad(subHolonDirectory, header.id, depth + 1, graph, parsingErrors)
+                val subHolonDirectoryPath = holonDirectoryPath + platform.pathSeparator + subRef.id
+                traverseAndLoad(subHolonDirectoryPath, header.id, depth + 1, graph, parsingErrors)
             }
         } catch (e: Exception) {
             val error = "Parse failed for $holonId: ${e.message?.substringBefore('\n')}"

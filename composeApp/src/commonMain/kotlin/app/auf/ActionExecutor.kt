@@ -1,7 +1,7 @@
+// FILE: composeApp/src/commonMain/kotlin/app/auf/ActionExecutor.kt
 package app.auf
 
 import kotlinx.serialization.json.Json
-import java.io.File
 import java.io.IOException
 
 /**
@@ -13,37 +13,48 @@ sealed interface ActionExecutorResult {
 }
 
 /**
- * This class is responsible for safely executing a manifest of AI-proposed actions
- * against the file system. It is designed to be transactional on a per-action basis
- * and to provide clear, unambiguous feedback on its outcome.
+ * ---
+ * ## Mandate
+ * This class is responsible for safely executing a manifest of AI-proposed actions.
+ * It contains only business logic for processing `Action` objects. It is designed to be
+ * transactional on a per-action basis and provides clear feedback. All file system
+ * interactions are delegated to the injected `PlatformDependencies` instance.
+ *
+ * ---
+ * ## Dependencies
+ * - `app.auf.PlatformDependencies`: The contract for all platform-specific I/O.
+ * - `kotlinx.serialization.json.Json`: For parsing and writing Holon files.
+ *
+ * @version 2.0
+ * @since 2025-08-15
  */
-class ActionExecutor(private val jsonParser: Json) {
+class ActionExecutor(
+    private val platform: PlatformDependencies,
+    private val jsonParser: Json
+) {
 
     /**
      * Executes a list of actions sequentially. Implements a "fail-fast" strategy:
      * if any action fails, the process halts and returns a failure result.
      *
      * @param manifest The list of [Action] objects to execute.
-     * @param holonsBasePath The base path of the "holons" directory.
      * @param personaId The ID of the currently active persona.
-     * @param currentGraph The current, in-memory representation of the holon graph, used for lookups.
+     * @param currentGraph The current, in-memory representation of the holon graph.
      * @return An [ActionExecutorResult] indicating success or failure.
      */
     fun execute(
         manifest: List<Action>,
-        holonsBasePath: String,
         personaId: String,
         currentGraph: List<HolonHeader>
     ): ActionExecutorResult {
         val successfulSummaries = mutableListOf<String>()
-        val personaRootPath = File(holonsBasePath, personaId).absolutePath
 
         for (action in manifest) {
             try {
                 when (action) {
-                    is CreateHolon -> handleCreateHolon(action, personaRootPath, currentGraph)
+                    is CreateHolon -> handleCreateHolon(action, currentGraph)
                     is UpdateHolonContent -> handleUpdateHolonContent(action, currentGraph)
-                    is CreateFile -> handleCreateFile(action, personaRootPath)
+                    is CreateFile -> handleCreateFile(action, personaId)
                 }
                 successfulSummaries.add(action.summary)
             } catch (e: Exception) {
@@ -59,18 +70,17 @@ class ActionExecutor(private val jsonParser: Json) {
     }
 
     /**
-     * Handles the creation of a new Holon. This is a critical transaction that involves
-     * creating the new holon file and updating its parent's sub_holons array.
+     * Handles the creation of a new Holon.
      */
-    private fun handleCreateHolon(action: CreateHolon, personaRootPath: String, currentGraph: List<HolonHeader>) {
+    private fun handleCreateHolon(action: CreateHolon, currentGraph: List<HolonHeader>) {
         val parentHeader = currentGraph.find { it.id == action.parentId }
             ?: throw IOException("Parent holon with ID '${action.parentId}' not found in the current graph.")
 
-        val parentFile = File(parentHeader.filePath)
-        if (!parentFile.exists()) throw IOException("Parent holon file does not exist at path: ${parentFile.path}")
+        val parentPath = parentHeader.filePath
+        if (!platform.fileExists(parentPath)) throw IOException("Parent holon file does not exist at path: $parentPath")
 
         // 1. Read parent and prepare the updated version in-memory first.
-        val parentHolon = jsonParser.decodeFromString<Holon>(parentFile.readText())
+        val parentHolon = jsonParser.decodeFromString<Holon>(platform.readFileContent(parentPath))
         val newHolonContent = jsonParser.decodeFromString<Holon>(action.content)
         val newHolonHeader = newHolonContent.header
 
@@ -88,22 +98,22 @@ class ActionExecutor(private val jsonParser: Json) {
         val updatedParentJsonString = jsonParser.encodeToString(Holon.serializer(), updatedParentHolon)
 
         // 2. Define path and create the new holon file on disk.
-        val newHolonDir = File(parentFile.parentFile, newHolonHeader.id)
-        val newHolonFile = File(newHolonDir, "${newHolonHeader.id}.json")
+        val parentDir = platform.getParentDirectory(parentPath)!!
+        val newHolonDir = parentDir + platform.pathSeparator + newHolonHeader.id
+        val newHolonPath = newHolonDir + platform.pathSeparator + "${newHolonHeader.id}.json"
 
-        if (newHolonFile.exists()) throw IOException("Holon file already exists at path: ${newHolonFile.path}")
-        newHolonDir.mkdirs()
+        if (platform.fileExists(newHolonPath)) throw IOException("Holon file already exists at path: $newHolonPath")
+        platform.createDirectories(newHolonDir)
 
         // This is the first disk write.
-        newHolonFile.writeText(action.content)
+        platform.writeFileContent(newHolonPath, action.content)
 
         // 3. If and only if the new file was written successfully, update the parent file.
         try {
-            parentFile.writeText(updatedParentJsonString)
+            platform.writeFileContent(parentPath, updatedParentJsonString)
         } catch (e: Exception) {
             // Attempt a micro-rollback: delete the orphaned child file if the parent update fails.
-            newHolonFile.delete()
-            newHolonDir.delete()
+            platform.deleteFile(newHolonPath)
             throw IOException("Failed to update parent holon '${parentHeader.id}' after creating child. Attempted to clean up orphaned file.", e)
         }
     }
@@ -115,26 +125,25 @@ class ActionExecutor(private val jsonParser: Json) {
         val holonHeader = currentGraph.find { it.id == action.holonId }
             ?: throw IOException("Holon with ID '${action.holonId}' not found in the current graph.")
 
-        val holonFile = File(holonHeader.filePath)
-        if (!holonFile.exists()) throw IOException("Holon file does not exist at path: ${holonFile.path}")
+        val holonPath = holonHeader.filePath
+        if (!platform.fileExists(holonPath)) throw IOException("Holon file does not exist at path: $holonPath")
 
         // Validate that the new content is at least valid JSON
         jsonParser.parseToJsonElement(action.newContent)
 
-        holonFile.writeText(action.newContent)
+        platform.writeFileContent(holonPath, action.newContent)
     }
 
     /**
      * Handles creating an arbitrary non-Holon file, like a dream transcript.
      */
-    private fun handleCreateFile(action: CreateFile, personaRootPath: String) {
-        val targetFile = File(personaRootPath, action.filePath)
+    private fun handleCreateFile(action: CreateFile, personaId: String) {
+        val holonsBasePath = platform.getBasePathFor("holons")
+        val personaRootPath = holonsBasePath + platform.pathSeparator + personaId
+        val targetPath = personaRootPath + platform.pathSeparator + action.filePath.replace('/', platform.pathSeparator)
 
-        // Ensure parent directories exist
-        targetFile.parentFile.mkdirs()
+        if (platform.fileExists(targetPath)) throw IOException("File already exists at specified path: ${action.filePath}")
 
-        if (targetFile.exists()) throw IOException("File already exists at specified path: ${action.filePath}")
-
-        targetFile.writeText(action.content)
+        platform.writeFileContent(targetPath, action.content)
     }
 }

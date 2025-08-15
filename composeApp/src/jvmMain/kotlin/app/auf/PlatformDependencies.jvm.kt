@@ -1,4 +1,3 @@
-// FILE: composeApp/src/jvmMain/kotlin/app/auf/PlatformDependencies.jvm.kt
 package app.auf
 
 import java.awt.Desktop

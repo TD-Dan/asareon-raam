@@ -1,4 +1,3 @@
-// FILE: composeApp/src/jvmMain/kotlin/app/auf/main.kt
 package app.auf
 
 import androidx.compose.runtime.remember
@@ -11,53 +10,64 @@ import java.io.File
 import java.util.Properties
 
 fun main() = application {
-    val settingsDir = File(System.getProperty("user.home"), ".auf")
-    val settingsManager = SettingsManager(settingsDir)
-    val savedSettings = settingsManager.loadSettings() ?: UserSettings()
+    val coroutineScope = rememberCoroutineScope()
 
-    val properties = Properties()
-    val localPropertiesFile = File("local.properties")
-    val apiKey = if (localPropertiesFile.exists()) {
-        properties.load(localPropertiesFile.inputStream())
-        properties.getProperty("google.api.key", "")
-    } else { "" }
+    // --- Dependency Injection Root ---
+    // All dependencies are instantiated once, here at the top level.
+    val platformDependencies = remember { PlatformDependencies() } // The one and only platform-specific instance
+    val jsonParser = remember { JsonProvider.appJson }
+
+    val settingsManager = remember { SettingsManager(platformDependencies, jsonParser) }
+    val savedSettings = remember { settingsManager.loadSettings() ?: UserSettings() }
+
+    val properties = remember { Properties() }
+    val apiKey = remember {
+        val localPropertiesFile = File("local.properties")
+        if (localPropertiesFile.exists()) {
+            properties.load(localPropertiesFile.inputStream())
+            properties.getProperty("google.api.key", "")
+        } else {
+            ""
+        }
+    }
 
     if (apiKey.isBlank()) {
         println("WARNING: google.api.key not found in local.properties. AI will not function.")
     }
 
-    val coroutineScope = rememberCoroutineScope()
     val stateManager = remember {
-        // --- All dependencies are instantiated here ---
-        val gateway = Gateway(JsonProvider.appJson)
-        val gatewayManager = GatewayManager(gateway, JsonProvider.appJson, apiKey)
-        val backupManager = BackupManager("holons", File(System.getProperty("user.home"), ".auf"))
-        val graphLoader = GraphLoader("holons", JsonProvider.appJson)
-        val actionExecutor = ActionExecutor(JsonProvider.appJson)
-        val importExportManager = ImportExportManager("framework", JsonProvider.appJson)
+        // --- Instantiate all platform-agnostic managers, injecting the platform dependency ---
+        val gateway = Gateway(jsonParser)
+        val gatewayManager = GatewayManager(gateway, jsonParser, apiKey)
+        val backupManager = BackupManager(platformDependencies)
+        val graphLoader = GraphLoader(platformDependencies, jsonParser)
+        val actionExecutor = ActionExecutor(platformDependencies, jsonParser)
+        val importExportManager = ImportExportManager(platformDependencies, jsonParser)
         val importExportViewModel = ImportExportViewModel(importExportManager, coroutineScope)
-        val platformDependencies = PlatformDependencies() // <-- INSTANTIATE THE NEW DEPENDENCY
 
+        // --- Instantiate the main StateManager with all its dependencies ---
         StateManager(
             gatewayManager = gatewayManager,
             backupManager = backupManager,
             graphLoader = graphLoader,
             actionExecutor = actionExecutor,
             importExportViewModel = importExportViewModel,
-            platform = platformDependencies, // <-- INJECT THE NEW DEPENDENCY
+            platform = platformDependencies, // Pass the platform dependency
             initialSettings = savedSettings,
             coroutineScope = coroutineScope
         )
     }
 
     // Wire the callback after instantiation
-    stateManager.importExportViewModel.onImportComplete = {
-        stateManager.loadHolonGraph()
-        stateManager.setViewMode(ViewMode.CHAT)
+    remember {
+        stateManager.importExportViewModel.onImportComplete = {
+            stateManager.loadHolonGraph()
+            stateManager.setViewMode(ViewMode.CHAT)
+        }
     }
 
     // Trigger initial loading
-    stateManager.initialize()
+    remember { stateManager.initialize() }
 
 
     val windowState = rememberWindowState(
