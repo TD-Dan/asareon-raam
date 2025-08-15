@@ -36,7 +36,7 @@ data class GraphLoadResult(
  * @version 2.0
  * @since 2025-08-15
  */
-class GraphLoader(
+open class GraphLoader(
     private val platform: PlatformDependencies,
     private val jsonParser: Json
 ) {
@@ -48,7 +48,7 @@ class GraphLoader(
      * @param currentPersonaId The currently selected persona ID from the app state, can be null.
      * @return A [GraphLoadResult] containing the complete outcome of the operation.
      */
-    fun loadGraph(currentPersonaId: String?): GraphLoadResult {
+    open fun loadGraph(currentPersonaId: String?): GraphLoadResult {
         val parsingErrors = mutableListOf<String>()
         try {
             if (!platform.fileExists(holonsBasePath)) {

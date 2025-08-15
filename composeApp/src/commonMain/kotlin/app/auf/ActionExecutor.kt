@@ -28,7 +28,7 @@ sealed interface ActionExecutorResult {
  * @version 2.0
  * @since 2025-08-15
  */
-class ActionExecutor(
+open class ActionExecutor(
     private val platform: PlatformDependencies,
     private val jsonParser: Json
 ) {
@@ -42,7 +42,7 @@ class ActionExecutor(
      * @param currentGraph The current, in-memory representation of the holon graph.
      * @return An [ActionExecutorResult] indicating success or failure.
      */
-    fun execute(
+    open fun execute(
         manifest: List<Action>,
         personaId: String,
         currentGraph: List<HolonHeader>

@@ -12,7 +12,7 @@ import kotlin.test.assertNotNull
  * If this test passes, it confirms that all major components can be instantiated
  * with their dependencies correctly.
  *
- * @version 2.0
+ * @version 2.2
  * @since 2025-08-15
  */
 class AppJvmTest {
@@ -31,13 +31,14 @@ class AppJvmTest {
         // This object will be shared across all components that need it.
         fakePlatform = FakePlatformDependencies()
 
-        // --- 2. Instantiate all fakes that rely on the platform fake ---
+        // --- 2. Instantiate all fakes that rely on the single platform fake ---
         fakeGatewayManager = FakeGatewayManager() // Doesn't need platform access
         fakeBackupManager = FakeBackupManager(fakePlatform)
         fakeGraphLoader = FakeGraphLoader(fakePlatform)
         fakeActionExecutor = FakeActionExecutor(fakePlatform)
 
-        // The real ViewModel uses a fake manager
+        // The real ViewModel uses a fake manager, which also gets the shared fake platform
+        // --- FIX IS HERE: The FakeImportExportManager is now correctly injected with the shared fakePlatform. ---
         val fakeImportExportManager = FakeImportExportManager(fakePlatform)
         importExportViewModel = ImportExportViewModel(fakeImportExportManager)
 
@@ -48,7 +49,7 @@ class AppJvmTest {
             graphLoader = fakeGraphLoader,
             actionExecutor = fakeActionExecutor,
             importExportViewModel = importExportViewModel,
-            platform = fakePlatform, // Provide the required dependency
+            platform = fakePlatform, // The real StateManager also gets the shared platform dependency
             initialSettings = UserSettings(),
             coroutineScope = CoroutineScope(Dispatchers.Unconfined) // Use Unconfined for immediate test execution
         )
