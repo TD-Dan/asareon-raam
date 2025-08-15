@@ -366,11 +366,11 @@ fun ChatView(
                 value = userMessage,
                 onValueChange = { userMessage = it },
                 modifier = Modifier.weight(1f).onKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown && (event.isCtrlPressed || event.isShiftPressed) && event.key == Key.Enter) {
+                    if (event.type == KeyEventType.KeyDown && (event.isCtrlPressed) && event.key == Key.Enter) {
                         sendMessageAction(); true
                     } else false
                 },
-                placeholder = { Text("Enter message... (Shift+Enter or Ctrl+Enter to send)") },
+                placeholder = { Text("Enter message... (Ctrl+Enter to send)") },
                 enabled = !appState.isProcessing && appState.gatewayStatus == GatewayStatus.OK
             )
             Spacer(modifier = Modifier.width(8.dp))
