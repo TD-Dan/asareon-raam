@@ -1,18 +1,40 @@
 package app.auf
 
 /**
- * Defines a platform-agnostic contract for platform-specific functionalities
- * that the shared business logic (like StateManager) needs.
+ * A simple, platform-agnostic description of a file system entry.
+ */
+data class FileEntry(val path: String, val isDirectory: Boolean)
+
+/**
+ * Defines a platform-agnostic contract for ALL platform-specific functionalities.
+ * This is the single, authoritative bridge between the shared business logic
+ * and the host operating system.
+ *
+ * @version 2.0
+ * @since 2025-08-15
  */
 expect class PlatformDependencies {
-    /**
-     * Reads the entire content of a file as a string.
-     * The path is relative to the application's root.
-     */
-    fun readFileContent(filePath: String): String
+    /** A platform-specific character used to separate path components (e.g., '/' or '\'). */
+    val pathSeparator: Char
 
-    /**
-     * Formats a millisecond timestamp into a standard ISO 8601 string (UTC).
-     */
+    // --- File & Directory I/O ---
+    fun readFileContent(path: String): String
+    fun writeFileContent(path: String, content: String)
+    fun fileExists(path: String): Boolean
+    fun listDirectory(path: String): List<FileEntry>
+    fun createDirectories(path: String)
+    fun copyFile(sourcePath: String, destinationPath: String)
+    fun deleteFile(path: String)
+    fun getBasePathFor(type: String): String
+    fun getFileName(path: String): String
+    fun getParentDirectory(path: String): String?
+    fun getLastModified(path: String): Long
+
+    // --- Complex Operations ---
+    fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String)
+    fun openFolderInExplorer(path: String)
+
+    // --- System Utilities ---
+    fun getSystemTimeMillis(): Long
     fun formatIsoTimestamp(timestamp: Long): String
 }
