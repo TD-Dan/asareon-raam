@@ -1,5 +1,3 @@
-// composeApp/src'commonTest/kotlin/app/auf/GatewayTest.kt
-
 package app.auf
 
 import io.ktor.client.engine.mock.*

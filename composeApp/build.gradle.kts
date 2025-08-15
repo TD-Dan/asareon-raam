@@ -89,6 +89,7 @@ kotlin {
         jvmTest.dependencies {
             implementation(kotlin("test-junit"))
             implementation(libs.compose.ui.test.junit4)
+            implementation(libs.ktor.client.cio)
         }
         listOf("iosX64Main", "iosArm64Main", "iosSimulatorArm64Main").forEach {
             getByName(it).dependencies {
