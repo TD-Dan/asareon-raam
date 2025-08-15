@@ -23,16 +23,10 @@ import java.io.File
  * @version 1.0
  * @since 2025-08-15
  */
-actual class SettingsManager {
+actual class SettingsManager(settingsDir: File) {
 
+    private val settingsFile: File = File(settingsDir, "user_settings.json")
     private val jsonParser = Json { prettyPrint = true }
-    private val settingsFile: File
-
-    init {
-        val settingsDir = File(System.getProperty("user.home"), ".auf")
-        settingsDir.mkdirs()
-        settingsFile = File(settingsDir, "user_settings.json")
-    }
 
     actual fun saveSettings(settings: UserSettings) {
         try {

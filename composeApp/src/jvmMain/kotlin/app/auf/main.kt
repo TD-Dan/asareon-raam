@@ -30,10 +30,19 @@ import java.util.Properties
  * @since 2025-0.8-15
  */
 fun main() = application {
-    // Platform-specific setup
-    val settingsManager = SettingsManager()
+    // Hook to filesystem
+    val settingsDir = File(System.getProperty("user.home"), ".auf")
+    settingsDir.mkdirs()
+    val holonsDir = File(System.getProperty("user.dir"), "holons")
+    holonsDir.mkdirs()
+    val backupsDir = File(System.getProperty("user.dir"), "hkg_backups")
+    backupsDir.mkdirs()
+
+    // Get user settings
+    val settingsManager = SettingsManager(settingsDir)
     val savedSettings = settingsManager.loadSettings() ?: UserSettings()
-    val platformDependencies = PlatformDependencies() // <-- Instantiate the platform-specific class
+
+    val platformDependencies = PlatformDependencies()
 
     val properties = Properties()
     val localPropertiesFile = File("local.properties")
