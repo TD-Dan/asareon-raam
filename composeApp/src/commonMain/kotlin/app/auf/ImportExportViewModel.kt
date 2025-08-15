@@ -48,7 +48,7 @@ open class ImportExportViewModel(
     }
 
     open fun analyzeFolder(sourcePath: String, currentGraph: List<HolonHeader>) {
-        coroutineScope.launch(Dispatchers.IO) {
+        coroutineScope.launch(Dispatchers.Default) {
             val importItems = importExportManager.analyzeFolder(sourcePath, currentGraph)
             _importState.update { it?.copy(sourcePath = sourcePath, items = importItems) }
         }
@@ -66,7 +66,7 @@ open class ImportExportViewModel(
 
     open fun executeImport(currentGraph: List<HolonHeader>, personaId: String, holonsBasePath: String) {
         val currentState = _importState.value ?: return
-        coroutineScope.launch(Dispatchers.IO) {
+        coroutineScope.launch(Dispatchers.Default) {
             importExportManager.executeImport(currentState, currentGraph, personaId, holonsBasePath)
             // Signal completion to the parent manager by invoking the public callback.
             onImportComplete()

@@ -34,7 +34,7 @@ open class BackupManager(
      * @param trigger A string to name the backup source (e.g., "on-launch", "pre-export")
      */
     open fun createBackup(trigger: String) {
-        coroutineScope.launch(Dispatchers.IO) {
+        coroutineScope.launch(Dispatchers.Default) {
             try {
                 val sourceDir = File(holonsBasePath)
                 if (!sourceDir.exists() || !sourceDir.isDirectory) {

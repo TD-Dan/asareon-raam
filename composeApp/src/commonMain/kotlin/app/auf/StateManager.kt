@@ -190,7 +190,7 @@ open class StateManager(
         backupManager.createBackup("pre-action-manifest")
         _state.update { it.copy(isProcessing = true) }
 
-        coroutineScope.launch(Dispatchers.IO) {
+        coroutineScope.launch(Dispatchers.Default) {
             val result = actionExecutor.execute(
                 actionBlock.actions,
                 HOLONS_BASE_PATH,
@@ -413,7 +413,7 @@ open class StateManager(
         backupManager.createBackup("pre-export")
         val holonsToExport =
             _state.value.holonGraph.filter { it.id in _state.value.holonIdsForExport }; if (holonsToExport.isEmpty()) return; coroutineScope.launch(
-            Dispatchers.IO
+            Dispatchers.Default
         ) { importExportViewModel.importExportManager.executeExport(destinationPath, holonsToExport); setViewMode(ViewMode.CHAT) }
     }
 
@@ -456,7 +456,7 @@ open class StateManager(
             _state.update { it.copy(inspectedHolonId = null) }; return
         }; if (holonId == _state.value.inspectedHolonId && !forceLoad) return
         val holonHeader =
-            _state.value.holonGraph.find { it.id == holonId } ?: return; coroutineScope.launch(Dispatchers.IO) {
+            _state.value.holonGraph.find { it.id == holonId } ?: return; coroutineScope.launch(Dispatchers.Default) {
             try {
                 // --- REFACTOR: Use injected dependency ---
                 val fileString = platform.readFileContent(holonHeader.filePath)
@@ -494,7 +494,7 @@ open class StateManager(
     }
 
     fun loadHolonGraph() {
-        coroutineScope.launch(Dispatchers.IO) {
+        coroutineScope.launch(Dispatchers.Default) {
             _state.update {
                 it.copy(
                     gatewayStatus = GatewayStatus.LOADING,
