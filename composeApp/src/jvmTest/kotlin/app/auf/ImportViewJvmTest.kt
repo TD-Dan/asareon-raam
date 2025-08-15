@@ -64,7 +64,7 @@ class ImportViewJvmTest {
             updateImportActionCalledWith = sourceFilePath to newAction
         }
 
-        override fun setViewModeToChat() {
+        override fun cancelImport() {
             setViewModeToChatCalled = true
         }
     }
