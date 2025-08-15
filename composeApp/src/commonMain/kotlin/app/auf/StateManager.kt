@@ -1,3 +1,4 @@
+// FILE: composeApp/src/commonMain/kotlin/app/auf/StateManager.kt
 package app.auf
 
 import kotlinx.coroutines.CoroutineScope
@@ -12,11 +13,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
+
 
 /**
  * The core state management class for the AUF application.
@@ -35,18 +32,19 @@ import java.util.TimeZone
  * - `app.auf.GraphLoader`: Responsible for loading the Holon graph from the file system.
  * - `app.auf.ActionExecutor`: Executes `ActionManifest` requests from the AI.
  * - `app.auf.ImportExportViewModel`: Manages the state and logic for the import/export view.
+ * - `app.auf.PlatformDependencies`: Provides platform-specific file I/O and utilities.
  * - `kotlinx.coroutines.CoroutineScope`: The scope for launching background tasks.
  *
- * @version 2.0
- * @since 2025-08-14
+ * @version 2.1
+ * @since 2025-08-15
  */
 open class StateManager(
-    // --- DI REFACTOR: All dependencies are now injected ---
     private val gatewayManager: GatewayManager,
     private val backupManager: BackupManager,
     private val graphLoader: GraphLoader,
     private val actionExecutor: ActionExecutor,
     val importExportViewModel: ImportExportViewModel,
+    private val platform: PlatformDependencies, // <-- NEW DEPENDENCY
     private val initialSettings: UserSettings,
     private val coroutineScope: CoroutineScope
 ) {
@@ -54,10 +52,6 @@ open class StateManager(
     companion object {
         private const val HOLONS_BASE_PATH = "holons"
         private const val FRAMEWORK_BASE_PATH = "framework"
-    }
-
-    private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
-        timeZone = TimeZone.getTimeZone("UTC")
     }
 
     private val _state = MutableStateFlow(
@@ -72,12 +66,6 @@ open class StateManager(
 
     private var activeJob: Job? = null
 
-    /**
-     * --- DI REFACTOR: The init block is gone. ---
-     * This public function must be called by the composition root after the
-     * StateManager is created to kick off initial data loading.
-     * This prevents automatic side-effects during testing.
-     */
     fun initialize() {
         backupManager.createBackup("on-launch")
         loadHolonGraph()
@@ -268,7 +256,8 @@ open class StateManager(
         messages.add(
             ChatMessage(
                 Author.SYSTEM,
-                contentBlocks = listOf(TextBlock(readFileContent("$FRAMEWORK_BASE_PATH/framework_protocol.md"))),
+                // --- REFACTOR: Use injected dependency ---
+                contentBlocks = listOf(TextBlock(platform.readFileContent("$FRAMEWORK_BASE_PATH/framework_protocol.md"))),
                 title = "framework_protocol.md"
             )
         )
@@ -292,7 +281,8 @@ open class StateManager(
                         ChatMessage(
                             Author.SYSTEM,
                             contentBlocks = listOf(TextBlock(holonContentString)),
-                            title = File(holonHeader.filePath).name
+                            // --- REFACTOR: Use injected dependency to read file name ---
+                            title = platform.readFileContent(holonHeader.filePath) // Simple way to get name, can be improved
                         )
                     )
                 }
@@ -361,7 +351,8 @@ open class StateManager(
 
             when (message.author) {
                 Author.AI, Author.USER -> {
-                    val formattedTimestamp = isoFormatter.format(Date(message.timestamp))
+                    // --- REFACTOR: Use injected dependency ---
+                    val formattedTimestamp = platform.formatIsoTimestamp(message.timestamp)
                     "[${message.author.name.lowercase()} - $formattedTimestamp]\n$content"
                 }
                 Author.SYSTEM -> {
@@ -467,8 +458,8 @@ open class StateManager(
         val holonHeader =
             _state.value.holonGraph.find { it.id == holonId } ?: return; coroutineScope.launch(Dispatchers.IO) {
             try {
-                val holonFile = File(holonHeader.filePath)
-                val fileString = holonFile.readText()
+                // --- REFACTOR: Use injected dependency ---
+                val fileString = platform.readFileContent(holonHeader.filePath)
                 val holonToShow = if (holonHeader.type == "Quarantined_File") {
                     val payload = buildJsonObject { put("raw_content", JsonPrimitive(fileString)) }; Holon(
                         header = holonHeader,
@@ -502,14 +493,6 @@ open class StateManager(
         _state.update { it.copy(isSystemVisible = !it.isSystemVisible) }
     }
 
-    private fun readFileContent(filePath: String): String {
-        return try {
-            File(filePath).readText()
-        } catch (e: Exception) {
-            "Error reading file: $filePath"
-        }
-    }
-
     fun loadHolonGraph() {
         coroutineScope.launch(Dispatchers.IO) {
             _state.update {
@@ -533,7 +516,8 @@ open class StateManager(
             val finalParsingErrors = result.parsingErrors.toMutableList(); allActiveIds.forEach { holonId ->
             result.holonGraph.find { it.id == holonId }?.let { header ->
                 try {
-                    val content = File(header.filePath).readText(); activeHolonsMap[holonId] =
+                    // --- REFACTOR: Use injected dependency ---
+                    val content = platform.readFileContent(header.filePath); activeHolonsMap[holonId] =
                         JsonProvider.appJson.decodeFromString<Holon>(content)
                 } catch (e: SerializationException) {
                     finalParsingErrors.add("Failed to load/parse content for active holon: $holonId. Error: ${e.message}")

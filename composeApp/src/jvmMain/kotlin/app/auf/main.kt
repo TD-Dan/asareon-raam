@@ -1,3 +1,4 @@
+// FILE: composeApp/src/jvmMain/kotlin/app/auf/main.kt
 package app.auf
 
 import androidx.compose.runtime.remember
@@ -10,7 +11,6 @@ import java.io.File
 import java.util.Properties
 
 fun main() = application {
-    // --- DI REFACTOR: main.kt is now the composition root ---
     val settingsDir = File(System.getProperty("user.home"), ".auf")
     val settingsManager = SettingsManager(settingsDir)
     val savedSettings = settingsManager.loadSettings() ?: UserSettings()
@@ -26,10 +26,9 @@ fun main() = application {
         println("WARNING: google.api.key not found in local.properties. AI will not function.")
     }
 
-    // --- All dependencies are instantiated here ---
     val coroutineScope = rememberCoroutineScope()
     val stateManager = remember {
-        // --- FIX: Instantiate Gateway and pass it to GatewayManager ---
+        // --- All dependencies are instantiated here ---
         val gateway = Gateway(JsonProvider.appJson)
         val gatewayManager = GatewayManager(gateway, JsonProvider.appJson, apiKey)
         val backupManager = BackupManager("holons", File(System.getProperty("user.home"), ".auf"))
@@ -37,6 +36,7 @@ fun main() = application {
         val actionExecutor = ActionExecutor(JsonProvider.appJson)
         val importExportManager = ImportExportManager("framework", JsonProvider.appJson)
         val importExportViewModel = ImportExportViewModel(importExportManager, coroutineScope)
+        val platformDependencies = PlatformDependencies() // <-- INSTANTIATE THE NEW DEPENDENCY
 
         StateManager(
             gatewayManager = gatewayManager,
@@ -44,6 +44,7 @@ fun main() = application {
             graphLoader = graphLoader,
             actionExecutor = actionExecutor,
             importExportViewModel = importExportViewModel,
+            platform = platformDependencies, // <-- INJECT THE NEW DEPENDENCY
             initialSettings = savedSettings,
             coroutineScope = coroutineScope
         )
@@ -66,7 +67,6 @@ fun main() = application {
 
     Window(
         onCloseRequest = {
-            // This now works correctly because stateManager is in scope.
             val currentState = stateManager.state.value
             val currentSettingsToSave = UserSettings(
                 windowWidth = windowState.size.width.value.toInt(),
@@ -81,7 +81,6 @@ fun main() = application {
         title = "AUF",
         state = windowState
     ) {
-        // --- The App composable now receives the fully-formed StateManager ---
         App(stateManager)
     }
 }
