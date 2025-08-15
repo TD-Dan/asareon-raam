@@ -34,7 +34,6 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun App(stateManager: StateManager) {
     val appState by stateManager.state.collectAsState()
-    val importState by stateManager.importExportViewModel.importState.collectAsState()
 
     MaterialTheme {
         when (appState.gatewayStatus) {

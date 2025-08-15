@@ -409,7 +409,7 @@ open class StateManager(
     }
 
     private fun toggleHolonForExport(holonId: String) {
-        val currentSelection = _state.value.holonIdsForExport;
+        val currentSelection = _state.value.holonIdsForExport
         val newSelection =
             if (currentSelection.contains(holonId)) currentSelection - holonId else currentSelection + holonId; _state.update {
             it.copy(
@@ -419,7 +419,7 @@ open class StateManager(
     }
 
     fun executeExport(destinationPath: String) {
-        backupManager.createBackup("pre-export");
+        backupManager.createBackup("pre-export")
         val holonsToExport =
             _state.value.holonGraph.filter { it.id in _state.value.holonIdsForExport }; if (holonsToExport.isEmpty()) return; coroutineScope.launch(
             Dispatchers.IO
@@ -432,7 +432,7 @@ open class StateManager(
 
     fun toggleHolonActive(holonId: String) {
         val state =
-            _state.value; if (holonId == state.aiPersonaId || _state.value.holonGraph.find { it.id == holonId }?.type == "Quarantined_File") return;
+            _state.value; if (holonId == state.aiPersonaId || _state.value.holonGraph.find { it.id == holonId }?.type == "Quarantined_File") return
         val newContextIds =
             if (state.contextualHolonIds.contains(holonId)) state.contextualHolonIds - holonId else state.contextualHolonIds + holonId; _state.update {
             it.copy(
@@ -463,12 +463,12 @@ open class StateManager(
     fun inspectHolon(holonId: String?, forceLoad: Boolean = false) {
         if (holonId == null) {
             _state.update { it.copy(inspectedHolonId = null) }; return
-        }; if (holonId == _state.value.inspectedHolonId && !forceLoad) return;
+        }; if (holonId == _state.value.inspectedHolonId && !forceLoad) return
         val holonHeader =
             _state.value.holonGraph.find { it.id == holonId } ?: return; coroutineScope.launch(Dispatchers.IO) {
             try {
-                val holonFile = File(holonHeader.filePath);
-                val fileString = holonFile.readText();
+                val holonFile = File(holonHeader.filePath)
+                val fileString = holonFile.readText()
                 val holonToShow = if (holonHeader.type == "Quarantined_File") {
                     val payload = buildJsonObject { put("raw_content", JsonPrimitive(fileString)) }; Holon(
                         header = holonHeader,
@@ -518,7 +518,7 @@ open class StateManager(
                     errorMessage = null,
                     holonGraph = emptyList()
                 )
-            };
+            }
             val result = graphLoader.loadGraph(_state.value.aiPersonaId); if (result.fatalError != null) {
             _state.update {
                 it.copy(
@@ -527,9 +527,9 @@ open class StateManager(
                     availableAiPersonas = result.availableAiPersonas
                 )
             }; return@launch
-        };
-            val activeHolonsMap = mutableMapOf<String, Holon>();
-            val allActiveIds = (initialSettings.activeContextualHolonIds + result.determinedPersonaId!!).toSet();
+        }
+            val activeHolonsMap = mutableMapOf<String, Holon>()
+            val allActiveIds = (initialSettings.activeContextualHolonIds + result.determinedPersonaId!!).toSet()
             val finalParsingErrors = result.parsingErrors.toMutableList(); allActiveIds.forEach { holonId ->
             result.holonGraph.find { it.id == holonId }?.let { header ->
                 try {

@@ -11,12 +11,12 @@ import java.nio.file.StandardCopyOption
  * JVM-specific implementation of the ImportExportManager.
  * This class handles all file system interactions using java.io.File.
  */
-open actual class ImportExportManager actual constructor(
+actual open class ImportExportManager actual constructor(
     private val frameworkBasePath: String,
     private val jsonParser: Json
 ) {
 
-    open actual fun analyzeFolder(sourcePath: String, currentGraph: List<HolonHeader>): List<ImportItem> {
+    actual open fun analyzeFolder(sourcePath: String, currentGraph: List<HolonHeader>): List<ImportItem> {
         val sourceDir = File(sourcePath)
         if (!sourceDir.exists() || !sourceDir.isDirectory) {
             return emptyList()
@@ -62,7 +62,7 @@ open actual class ImportExportManager actual constructor(
         }
     }
 
-    open actual fun executeExport(destinationPath: String, holonsToExport: List<HolonHeader>) {
+    actual open fun executeExport(destinationPath: String, holonsToExport: List<HolonHeader>) {
         val destDir = File(destinationPath)
         if (!destDir.exists()) destDir.mkdirs()
         try {
@@ -88,7 +88,7 @@ open actual class ImportExportManager actual constructor(
         }
     }
 
-    open actual fun executeImport(
+    actual open fun executeImport(
         importState: ImportState,
         currentGraph: List<HolonHeader>,
         personaId: String,

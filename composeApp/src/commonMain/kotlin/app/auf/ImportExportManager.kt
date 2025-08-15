@@ -22,7 +22,7 @@ import kotlinx.serialization.json.Json
  * @version 1.0
  * @since 2025-08-14
  */
-open expect class ImportExportManager(
+expect open class ImportExportManager(
     frameworkBasePath: String,
     jsonParser: Json
 ) {
