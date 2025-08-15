@@ -28,8 +28,8 @@ import androidx.compose.ui.unit.dp
  * ## Dependencies
  * - `app.auf.StateManager`
  *
- * @version 2.2
- * @since 2025-08-14
+ * @version 2.3
+ * @since 2025-08-15
  */
 @Composable
 fun App(stateManager: StateManager) {
@@ -81,8 +81,8 @@ fun App(stateManager: StateManager) {
                                 ImportView(
                                     viewModel = stateManager.importExportViewModel,
                                     currentGraph = appState.holonGraph,
-                                    personaId = appState.aiPersonaId ?: "", // Provide a safe default
-                                    holonsBasePath = "holons" // TODO: This should come from a constant later
+                                    personaId = appState.aiPersonaId ?: "",
+                                    // --- FIX IS HERE: `holonsBasePath` argument removed. ---
                                 )
                             }
                         }

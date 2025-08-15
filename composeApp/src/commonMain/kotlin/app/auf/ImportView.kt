@@ -27,27 +27,25 @@ import androidx.compose.ui.unit.dp
  * - `app.auf.ImportExportViewModel`: The source of truth for the view's state and logic.
  * - `app.auf.ImportState`: The data class that this view renders.
  *
- * @version 1.2
- * @since 2025-08-14
+ * @version 1.3
+ * @since 2025-08-15
  */
 @Composable
 fun ImportView(
     viewModel: ImportExportViewModel,
     currentGraph: List<HolonHeader>,
     personaId: String,
-    holonsBasePath: String
+    // --- FIX IS HERE: `holonsBasePath` parameter removed. ---
 ) {
     val importState by viewModel.importState.collectAsState()
     val sourcePath = importState?.sourcePath ?: ""
 
-    // The entire import view is conditional on the state being non-null
     importState?.let { state ->
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colors.background
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                // Header Row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -61,14 +59,13 @@ fun ImportView(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Source Path and Analyze Button
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = sourcePath,
-                        onValueChange = { /* We might want to allow editing this in the future */ },
+                        onValueChange = { /* No-op */ },
                         label = { Text("Source Folder") },
                         modifier = Modifier.weight(1f),
-                        readOnly = true // for now
+                        readOnly = true
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(onClick = { viewModel.analyzeFolder(sourcePath, currentGraph) }) {
@@ -78,7 +75,6 @@ fun ImportView(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Items List
                 if (state.items.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxWidth().weight(1f),
@@ -103,9 +99,9 @@ fun ImportView(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Footer Action
                 Button(
-                    onClick = { viewModel.executeImport(currentGraph, personaId, holonsBasePath) },
+                    // --- FIX IS HERE: `holonsBasePath` argument removed from the call. ---
+                    onClick = { viewModel.executeImport(currentGraph, personaId) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = state.items.isNotEmpty()
                 ) {
@@ -130,7 +126,6 @@ private fun ImportItemRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // --- KMP FIX: Use a simple function to extract filename from path string. ---
         Text(item.sourcePath.substringAfterLast('/').substringAfterLast('\\'), modifier = Modifier.weight(1f))
 
         Spacer(modifier = Modifier.width(16.dp))
@@ -141,7 +136,7 @@ private fun ImportItemRow(
                 modifier = Modifier.width(250.dp)
             ){
                 Text(selectedAction.summary, modifier = Modifier.weight(1f))
-                Icon(Icons.Default.MoreVert, contentDescription = "Select Action") // Use a more descriptive CD
+                Icon(Icons.Default.MoreVert, contentDescription = "Select Action")
             }
 
             DropdownMenu(

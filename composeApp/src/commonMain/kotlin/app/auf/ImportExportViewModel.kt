@@ -23,24 +23,17 @@ import kotlinx.coroutines.launch
  * - `app.auf.ImportState`
  * - `app.auf.HolonHeader`
  *
- * @version 1.1
- * @since 2025-08-14
+ * @version 1.2
+ * @since 2025-08-15
  */
 open class ImportExportViewModel(
     val importExportManager: ImportExportManager,
     private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Default)
-    // --- FIX: The onImportComplete callback has been removed from the constructor ---
 ) {
 
     private val _importState = MutableStateFlow<ImportState?>(null)
     open val importState = _importState.asStateFlow()
 
-    /**
-     * --- FIX: This is now a public, settable property. ---
-     * The owner of this ViewModel (e.g., StateManager) can assign a lambda to this
-     * property to be notified when the import process is complete. It defaults to
-     * an empty block for safety.
-     */
     var onImportComplete: () -> Unit = {}
 
     fun startImport(sourcePath: String = "") {
@@ -64,11 +57,11 @@ open class ImportExportViewModel(
         }
     }
 
-    open fun executeImport(currentGraph: List<HolonHeader>, personaId: String, holonsBasePath: String) {
+    open fun executeImport(currentGraph: List<HolonHeader>, personaId: String) {
         val currentState = _importState.value ?: return
         coroutineScope.launch(Dispatchers.Default) {
-            importExportManager.executeImport(currentState, currentGraph, personaId, holonsBasePath)
-            // Signal completion to the parent manager by invoking the public callback.
+            // --- FIX IS HERE: `holonsBasePath` argument removed from the call. ---
+            importExportManager.executeImport(currentState, currentGraph, personaId)
             onImportComplete()
         }
     }
