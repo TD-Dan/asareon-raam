@@ -16,12 +16,8 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun ImportView(
-    viewModel: ImportExportViewModel,
-    stateManager: StateManager, // <-- Pass in StateManager
-    platformDependencies: PlatformDependencies, // <-- Pass in dependency
-    currentGraph: List<HolonHeader>,
-    personaId: String,
-    holonsBasePath: String
+    appState: AppState,
+    stateManager: StateManager
 ) {
     val importState by viewModel.importState.collectAsState()
     // The sourcePath is now the single source of truth from the ViewModel's state
@@ -53,7 +49,7 @@ fun ImportView(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // --- MODIFIED: This is now a button like in the ExportView ---
                     Button(onClick = {
-                        platformDependencies.showFolderPicker()?.let { selectedPath ->
+                        stateManager.platform.showFolderPicker()?.let { selectedPath ->
                             viewModel.setImportPath(selectedPath)
                             stateManager.updateLastUsedImportPath(selectedPath)
                         }

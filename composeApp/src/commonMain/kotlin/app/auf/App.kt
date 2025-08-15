@@ -75,15 +75,9 @@ fun App(stateManager: StateManager) {
 
                     Box(modifier = Modifier.weight(1f)) {
                         when (appState.currentViewMode) {
-                            ViewMode.CHAT -> ChatView(appState = appState, stateManager = stateManager)
-                            ViewMode.EXPORT -> ExportView(appState = appState, stateManager = stateManager)
-                            ViewMode.IMPORT -> {
-                                ImportView(
-                                    viewModel = stateManager.importExportViewModel,
-                                    currentGraph = appState.holonGraph,
-                                    personaId = appState.aiPersonaId ?: "", // Provide a safe default
-                                    holonsBasePath = "holons" // TODO: This should come from a constant later
-                                )
+                            ViewMode.CHAT -> ChatView(appState, stateManager)
+                            ViewMode.EXPORT -> ExportView(appState, stateManager)
+                            ViewMode.IMPORT -> ImportView(appState, stateManager)
                             }
                         }
                     }

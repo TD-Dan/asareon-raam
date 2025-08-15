@@ -19,7 +19,7 @@ package app.auf
  * @version 1.0
  * @since 2025-08-15
  */
-expect class SettingsManager {
+expect class SettingsManager(platform: PlatformDependencies) {
     /**
      * Saves the provided UserSettings object to a persistent location.
      */

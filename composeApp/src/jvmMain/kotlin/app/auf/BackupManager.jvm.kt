@@ -29,8 +29,7 @@ import java.util.zip.ZipOutputStream
  * @since 2025-08-15
  */
 actual open class BackupManager(
-    private val holonsBasePath: String,
-    private val settingsDir: File
+    private val platform: PlatformDependencies
 ) {
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
     private val backupsDir = File(settingsDir, "backups")

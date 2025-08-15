@@ -30,19 +30,11 @@ import java.util.Properties
  * @since 2025-0.8-15
  */
 fun main() = application {
-    // Hook to filesystem
-    val settingsDir = File(System.getProperty("user.home"), ".auf")
-    settingsDir.mkdirs()
-    val holonsDir = File(System.getProperty("user.dir"), "holons")
-    holonsDir.mkdirs()
-    val backupsDir = File(System.getProperty("user.dir"), "hkg_backups")
-    backupsDir.mkdirs()
 
-    // Get user settings
-    val settingsManager = SettingsManager(settingsDir)
+    val platform = PlatformDependencies()
+
+    val settingsManager = SettingsManager(platform)
     val savedSettings = settingsManager.loadSettings() ?: UserSettings()
-
-    val platformDependencies = PlatformDependencies()
 
     val properties = Properties()
     val localPropertiesFile = File("local.properties")
@@ -62,7 +54,7 @@ fun main() = application {
         // --- All dependencies are instantiated here ---
         val gateway = Gateway(JsonProvider.appJson)
         val gatewayManager = GatewayManager(gateway, JsonProvider.appJson, apiKey)
-        val backupManager = BackupManager("holons", "settings")
+        val backupManager = BackupManager(platform)
         val graphLoader = GraphLoader("holons", JsonProvider.appJson)
         val actionExecutor = ActionExecutor(JsonProvider.appJson)
         val importExportManager = ImportExportManager("framework", JsonProvider.appJson)
@@ -75,7 +67,7 @@ fun main() = application {
             graphLoader = graphLoader,
             actionExecutor = actionExecutor,
             importExportViewModel = importExportViewModel,
-            platform = platformDependencies,
+            platform,
             initialSettings = savedSettings,
             coroutineScope = coroutineScope
         )

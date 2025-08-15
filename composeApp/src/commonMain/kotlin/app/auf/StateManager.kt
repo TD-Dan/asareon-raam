@@ -47,7 +47,7 @@ open class StateManager(
     private val graphLoader: GraphLoader,
     private val actionExecutor: ActionExecutor,
     val importExportViewModel: ImportExportViewModel,
-    private val platform: PlatformDependencies,
+    val platform: PlatformDependencies,
     private val initialSettings: UserSettings,
     private val coroutineScope: CoroutineScope
 ) {

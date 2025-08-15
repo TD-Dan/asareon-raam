@@ -1,12 +1,18 @@
+@file:OptIn(ExperimentalTime::class)
+
 package app.auf
 
 import java.io.File
+import java.sql.Timestamp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileSystemView
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 /**
  * The actual JVM implementation of the PlatformDependencies contract.
@@ -32,6 +38,21 @@ actual class PlatformDependencies {
         timeZone = TimeZone.getTimeZone("UTC")
     }
 
+    actual val user_home: String = System.getProperty("user.home")
+    actual val data_dir: String = System.getProperty("user.dir")
+
+    actual fun settingsDirPath(): String {
+        return System.getProperty( File(user_home, ".auf/" + DefaultPaths.SETTINGS_FILE).absolutePath)
+    }
+
+    actual fun holonsDirPath(): String {
+        return System.getProperty(File(data_dir, DefaultPaths.HOLONS_DIR).absolutePath)
+    }
+
+    actual fun backupsDirPath(): String {
+        return System.getProperty(File(data_dir, DefaultPaths.BACKUPS_DIR).absolutePath)
+    }
+
     actual fun readFileContent(filePath: String): String {
         return try {
             File(filePath).readText()
@@ -40,8 +61,12 @@ actual class PlatformDependencies {
         }
     }
 
-    actual fun formatIsoTimestamp(timestamp: Long): String {
-        return isoFormatter.format(Date(timestamp))
+    actual fun getTimeMilliseconds(): Long {
+        return Clock.System.now().toEpochMilliseconds()
+    }
+
+    actual fun formatIsoTimestamp(timeMilliseconds : Long): String {
+        return isoFormatter.format(timeMilliseconds)
     }
 
     actual fun showFolderPicker(): String? {
@@ -56,4 +81,6 @@ actual class PlatformDependencies {
             null
         }
     }
+
+
 }

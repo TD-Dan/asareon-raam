@@ -1,5 +1,3 @@
-// FILE: composeApp/src/jvmMain/kotlin/app/auf/SettingsManager.jvm.kt
-
 package app.auf
 
 import kotlinx.serialization.json.Json
@@ -23,9 +21,9 @@ import java.io.File
  * @version 1.0
  * @since 2025-08-15
  */
-actual class SettingsManager(settingsDir: File) {
+actual class SettingsManager actual constructor(platform: PlatformDependencies) {
 
-    private val settingsFile: File = File(settingsDir, "user_settings.json")
+    private val settingsFile: File = File(platform.settingsDirPath(), DefaultPaths.SETTINGS_FILE)
     private val jsonParser = Json { prettyPrint = true }
 
     actual fun saveSettings(settings: UserSettings) {

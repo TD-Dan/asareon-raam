@@ -21,7 +21,6 @@ import androidx.compose.ui.unit.dp
 fun ExportView(
     appState: AppState,
     stateManager: StateManager,
-    platformDependencies: PlatformDependencies, // <-- Pass in dependency
     modifier: Modifier = Modifier
 ) {
     // --- MODIFIED: Use the path from the global AppState ---
@@ -82,7 +81,7 @@ fun ExportView(
         Row(verticalAlignment = Alignment.CenterVertically) {
             // --- MODIFIED: Use the platform dependency to show folder picker ---
             Button(onClick = {
-                platformDependencies.showFolderPicker()?.let {
+                stateManager.platform.showFolderPicker()?.let {
                     destinationPath = it
                 }
             }) {
