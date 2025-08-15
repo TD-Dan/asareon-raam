@@ -15,16 +15,18 @@ import kotlin.test.assertTrue
  *
  * ---
  * ## Mandate
- * This suite verifies the file system interactions of the `BackupManager`.
- * It uses a temporary directory to test the creation and integrity of backup
- * zip archives in an isolated environment, ensuring the core backup logic is correct.
+ * This suite verifies the file system interactions of the `actual class BackupManager`
+ * for the JVM target. It uses a temporary directory to test the creation and integrity
+ * of backup zip archives in an isolated environment, ensuring the core backup logic
+ * is correct and robust on this platform.
  *
  * ---
  * ## Dependencies
  * - `java.io.File` for temporary directory management.
+ * - `org.junit.*` for test lifecycle management.
  *
- * @version 1.0
- * @since 2025-08-14
+ * @version 1.1
+ * @since 2025-08-15
  */
 class BackupManagerJvmTest {
 
