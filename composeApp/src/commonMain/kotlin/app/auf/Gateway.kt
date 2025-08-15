@@ -50,7 +50,6 @@ data class ListModelsResponse(val models: List<ModelInfo>)
 data class ModelInfo(
     val name: String,
     val displayName: String? = null,
-    // --- FIX: Made version nullable to handle cases where it's not provided. ---
     val version: String? = null
 )
 
