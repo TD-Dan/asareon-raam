@@ -16,9 +16,6 @@ import java.util.zip.ZipOutputStream
 /**
  * The actual JVM implementation of the PlatformDependencies contract.
  *
- * --- FIX: Re-added the `override` keyword to all members to correctly implement
- * the `open` modality from the `expect` class. ---
- *
  * @version 2.3
  * @since 2025-08-15
  */
@@ -64,11 +61,12 @@ actual open class PlatformDependencies {
         File(path).delete()
     }
 
-    actual open fun getBasePathFor(type: String): String {
+    actual open fun getBasePathFor(type: BasePath): String {
         return when (type) {
-            "settings" -> File(System.getProperty("user.home"), ".auf").absolutePath
-            "backups" -> File(getBasePathFor("settings"), "backups").absolutePath
-            else -> File(type).absolutePath
+            BasePath.SETTINGS -> File(System.getProperty("user.home"), ".auf").absolutePath
+            BasePath.BACKUPS -> File(getBasePathFor(BasePath.SETTINGS), "backups").absolutePath
+            BasePath.HOLONS -> File("holons").absolutePath
+            BasePath.FRAMEWORK -> File("framework").absolutePath
         }
     }
 

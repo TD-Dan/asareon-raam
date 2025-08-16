@@ -25,7 +25,7 @@ class SettingsManager(
     private val settingsFilePath: String
 
     init {
-        val settingsDir = platform.getBasePathFor("settings")
+        val settingsDir = platform.getBasePathFor(BasePath.SETTINGS)
         platform.createDirectories(settingsDir)
         settingsFilePath = settingsDir + platform.pathSeparator + "user_settings.json"
     }

@@ -138,7 +138,7 @@ open class ActionExecutor(
      * Handles creating an arbitrary non-Holon file, like a dream transcript.
      */
     private fun handleCreateFile(action: CreateFile, personaId: String) {
-        val holonsBasePath = platform.getBasePathFor("holons")
+        val holonsBasePath = platform.getBasePathFor(BasePath.HOLONS)
         val personaRootPath = holonsBasePath + platform.pathSeparator + personaId
         val targetPath = personaRootPath + platform.pathSeparator + action.filePath.replace('/', platform.pathSeparator)
 

@@ -57,11 +57,12 @@ class FakePlatformDependencies : PlatformDependencies() { // Note: Now calling t
         files.remove(path)
     }
 
-    override fun getBasePathFor(type: String): String {
+    override fun getBasePathFor(type: BasePath): String {
         return when (type) {
-            "settings" -> "/user/home/.auf"
-            "backups" -> "/user/home/.auf/backups"
-            else -> type
+            BasePath.SETTINGS -> "/user/home/.auf"
+            BasePath.BACKUPS -> "/user/home/.auf/backups"
+            BasePath.HOLONS -> "holons"
+            BasePath.FRAMEWORK -> "framework"
         }
     }
 

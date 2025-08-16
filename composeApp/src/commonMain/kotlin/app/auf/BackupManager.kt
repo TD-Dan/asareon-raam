@@ -33,8 +33,8 @@ open class BackupManager(
     open fun createBackup(trigger: String) {
         coroutineScope.launch {
             try {
-                val holonsPath = platform.getBasePathFor("holons")
-                val backupsPath = platform.getBasePathFor("backups")
+                val holonsPath = platform.getBasePathFor(BasePath.HOLONS)
+                val backupsPath = platform.getBasePathFor(BasePath.BACKUPS)
                 platform.createDirectories(backupsPath)
 
                 if (!platform.fileExists(holonsPath)) {
@@ -65,6 +65,6 @@ open class BackupManager(
      * Opens the user's backup folder in the default system file explorer.
      */
     open fun openBackupFolder() {
-        platform.openFolderInExplorer(platform.getBasePathFor("backups"))
+        platform.openFolderInExplorer(platform.getBasePathFor(BasePath.BACKUPS))
     }
 }

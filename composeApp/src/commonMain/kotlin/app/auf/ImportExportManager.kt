@@ -77,7 +77,7 @@ open class ImportExportManager(
     open fun executeExport(destinationPath: String, holonsToExport: List<HolonHeader>) {
         if (!platform.fileExists(destinationPath)) platform.createDirectories(destinationPath)
         try {
-            val manualProtocolPath = platform.getBasePathFor("framework") + platform.pathSeparator + "framework_protocol_manual.md"
+            val manualProtocolPath = platform.getBasePathFor(BasePath.FRAMEWORK) + platform.pathSeparator + "framework_protocol_manual.md"
             if (platform.fileExists(manualProtocolPath)) {
                 val destPath = destinationPath + platform.pathSeparator + "framework_protocol_manual.md"
                 platform.copyFile(manualProtocolPath, destPath)
@@ -104,7 +104,7 @@ open class ImportExportManager(
         currentGraph: List<HolonHeader>,
         personaId: String
     ) {
-        val holonsBasePath = platform.getBasePathFor("holons")
+        val holonsBasePath = platform.getBasePathFor(BasePath.HOLONS)
         val personaRootPath = holonsBasePath + platform.pathSeparator + personaId
         val quarantineDirPath = personaRootPath + platform.pathSeparator + "quarantined-imports"
         platform.createDirectories(quarantineDirPath)

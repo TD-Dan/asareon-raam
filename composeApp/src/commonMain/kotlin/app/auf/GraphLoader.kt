@@ -40,7 +40,7 @@ open class GraphLoader(
     private val platform: PlatformDependencies,
     private val jsonParser: Json
 ) {
-    private val holonsBasePath = platform.getBasePathFor("holons")
+    private val holonsBasePath by lazy { platform.getBasePathFor(BasePath.HOLONS) }
 
     /**
      * The primary public method to load the entire graph for a given persona.

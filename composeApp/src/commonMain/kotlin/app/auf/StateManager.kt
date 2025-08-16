@@ -260,7 +260,7 @@ open class StateManager(
     private fun buildSystemContextMessages(): List<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
         val state = _state.value
-        val frameworkBasePath = platform.getBasePathFor("framework")
+        val frameworkBasePath = platform.getBasePathFor(BasePath.FRAMEWORK)
         val protocolPath = frameworkBasePath + platform.pathSeparator + "framework_protocol.md"
 
         messages.add(
