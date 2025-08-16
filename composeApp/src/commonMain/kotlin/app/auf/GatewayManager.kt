@@ -1,9 +1,3 @@
-// FILE: composeApp/src/commonMain/kotlin/app/auf/GatewayManager.kt
-// VERDICT: UPDATE (with temporary diagnostics)
-// REASON: Added detailed println statements to the parsing function to diagnose
-// why the regex is failing to match multi-line content in the test environment.
-// This will give us the data needed to craft the final, correct solution.
-
 package app.auf
 
 import kotlinx.coroutines.CoroutineScope
@@ -72,41 +66,23 @@ open class GatewayManager(
     }
 
     private fun parseRawContentToBlocks(rawText: String): List<ContentBlock> {
+        val normalizedText = rawText.replace("\r\n", "\n")
         val blocks = mutableListOf<ContentBlock>()
-        val regex = Regex("""\[AUF_([A-Z_]+)(?::\s*(.*?))?\]\s*([\s\S]*?)\s*\[/AUF_\1\]""", setOf(RegexOption.MULTILINE))
+
+        val regex = Regex("""\[AUF_([A-Z_]+)(?::\s*(.*?))?]\s*([\s\S]*?)\s*\[/AUF_\1]""", setOf(RegexOption.MULTILINE))
+
         var lastIndex = 0
 
-        // --- START OF DIAGNOSTIC BLOCK ---
-        println("\n\n--- DIAGNOSTICS: Parsing Raw Text ---")
-        println(">>> RAW TEXT (length: ${rawText.length}):")
-        println("=======================================")
-        println(rawText)
-        println("=======================================")
-        var matchesFound = 0
-        // --- END OF DIAGNOSTIC BLOCK ---
-
-        regex.findAll(rawText).forEach { matchResult ->
-            // --- START OF DIAGNOSTIC BLOCK ---
-            matchesFound++
-            println(">>> Regex Match #$matchesFound Found!")
-            println("    Full Match Range: ${matchResult.range}")
-            println("    Group Count: ${matchResult.groupValues.size - 1}")
-            matchResult.groupValues.forEachIndexed { index, value ->
-                if (index > 0) println("    Group [$index]: \"$value\"")
-            }
-            // --- END OF DIAGNOSTIC BLOCK ---
-
+        // Use the normalized text for all subsequent operations.
+        regex.findAll(normalizedText).forEach { matchResult ->
             if (matchResult.range.first > lastIndex) {
-                val precedingText = rawText.substring(lastIndex, matchResult.range.first).trim()
+                val precedingText = normalizedText.substring(lastIndex, matchResult.range.first).trim()
                 if (precedingText.isNotEmpty()) {
                     blocks.add(TextBlock(precedingText))
                 }
             }
 
-            val tag = matchResult.groupValues[1]
-            val params = matchResult.groupValues[2]
-            val content = matchResult.groupValues[3]
-
+            val (tag, params, content) = matchResult.destructured
             try {
                 when (tag) {
                     "ACTION_MANIFEST" -> {
@@ -133,31 +109,21 @@ open class GatewayManager(
             lastIndex = matchResult.range.last + 1
         }
 
-        // --- START OF DIAGNOSTIC BLOCK ---
-        println(">>> Total Matches Found: $matchesFound")
-        // --- END OF DIAGNOSTIC BLOCK ---
-
-        if (lastIndex < rawText.length) {
-            val trailingText = rawText.substring(lastIndex).trim()
+        if (lastIndex < normalizedText.length) {
+            val trailingText = normalizedText.substring(lastIndex).trim()
             if (trailingText.isNotEmpty()) {
                 blocks.add(TextBlock(trailingText))
             }
         }
 
-        if (blocks.isEmpty() && rawText.isNotBlank()) {
-            blocks.add(TextBlock(rawText))
+        if (blocks.isEmpty() && normalizedText.isNotBlank()) {
+            blocks.add(TextBlock(normalizedText))
         }
-
-        // --- START OF DIAGNOSTIC BLOCK ---
-        println(">>> Final Block Count: ${blocks.size}")
-        println("--- END OF DIAGNOSTICS ---\n\n")
-        // --- END OF DIAGNOSTIC BLOCK ---
 
         return blocks
     }
 
     private fun convertChatToApiContents(messages: List<ChatMessage>): List<Content> {
-        // ... (rest of the file is unchanged) ...
         val apiContents = mutableListOf<Content>()
         messages.forEach { msg ->
             val reconstructedContent = msg.contentBlocks.joinToString(separator = "\n") { block ->
