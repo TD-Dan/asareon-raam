@@ -8,7 +8,7 @@ import androidx.compose.material.Button
 import androidx.compose.material.Card
 import androidx.compose.material.OutlinedButton
 import androidx.compose.material.Text
-import androidx.compose.material.MaterialTheme // --- FIX IS HERE ---
+import androidx.compose.material.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,7 +30,8 @@ fun ExportView(
 ) {
     var destinationPath by remember { mutableStateOf<String?>(null) }
     val exportList = remember(appState.holonIdsForExport, appState.holonGraph) {
-        appState.holonGraph.filter { it.id in appState.holonIdsForExport }
+        // --- FIX IS HERE: Filter based on holon.header.id ---
+        appState.holonGraph.filter { it.header.id in appState.holonIdsForExport }
     }
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
@@ -61,7 +62,8 @@ fun ExportView(
                         )
                     }
                     items(exportList) { holon ->
-                        Text("- ${holon.name} (${holon.id})", fontFamily = FontFamily.Monospace)
+                        // --- FIX IS HERE: Access .header for name and id ---
+                        Text("- ${holon.header.name} (${holon.header.id})", fontFamily = FontFamily.Monospace)
                     }
                 }
             }
@@ -96,6 +98,7 @@ fun ExportView(
             }
             Spacer(Modifier.width(8.dp))
             Button(
+                // --- FIX IS HERE: Call the new function on StateManager ---
                 onClick = { stateManager.executeExport(destinationPath!!) },
                 enabled = destinationPath != null && exportList.isNotEmpty()
             ) {

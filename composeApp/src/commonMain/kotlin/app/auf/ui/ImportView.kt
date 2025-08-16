@@ -3,10 +3,10 @@ package app.auf.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,8 +43,7 @@ import app.auf.core.Update
 fun ImportView(
     viewModel: ImportExportViewModel,
     currentGraph: List<HolonHeader>,
-    personaId: String,
-    // --- FIX IS HERE: `holonsBasePath` parameter removed. ---
+    personaId: String
 ) {
     val importState by viewModel.importState.collectAsState()
     val sourcePath = importState?.sourcePath ?: ""
@@ -52,7 +51,7 @@ fun ImportView(
     importState?.let { state ->
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colors.background
+            //color = MaterialTheme.colorScheme.background
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -60,7 +59,7 @@ fun ImportView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Import Holons", style = MaterialTheme.typography.h5)
+                    Text("Import Holons", style = MaterialTheme.typography.headlineMedium)
                     IconButton(onClick = { viewModel.cancelImport() }) {
                         Icon(Icons.Default.Close, contentDescription = "Close")
                     }
@@ -109,7 +108,6 @@ fun ImportView(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Button(
-                    // --- FIX IS HERE: `holonsBasePath` argument removed from the call. ---
                     onClick = { viewModel.executeImport(currentGraph, personaId) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = state.items.isNotEmpty()
@@ -147,20 +145,20 @@ private fun ImportItemRow(
                 Text(selectedAction.summary, modifier = Modifier.weight(1f))
                 Icon(Icons.Default.MoreVert, contentDescription = "Select Action")
             }
-
+/*
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false }
             ) {
                 actions.forEach { action ->
-                    DropdownMenuItem(onClick = {
+                    DropdownMenuItem(action.summary, onClick = {
                         onActionSelected(action)
                         expanded = false
                     }) {
                         Text(action.summary)
                     }
                 }
-            }
+            }*/
         }
     }
 }

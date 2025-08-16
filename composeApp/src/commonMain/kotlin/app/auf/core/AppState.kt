@@ -22,8 +22,8 @@ import kotlinx.serialization.json.JsonObject
  * - `Action` (from ActionModels.kt): Used within the `ActionBlock` content type.
  * - `kotlinx.serialization`: Used extensively for defining serializable data contracts.
  *
- * @version 1.3
- * @since 2025-08-16
+ * @version 1.4
+ * @since 2025-08-17
  */
 
 data class GatewayResponse(
@@ -34,7 +34,7 @@ data class GatewayResponse(
 )
 
 data class GraphLoadResult(
-    val holonGraph: List<HolonHeader> = emptyList(),
+    val holonGraph: List<Holon> = emptyList(),
     val parsingErrors: List<String> = emptyList(),
     val fatalError: String? = null,
     val availableAiPersonas: List<HolonHeader> = emptyList(),
@@ -46,9 +46,6 @@ enum class ViewMode {
 }
 
 data class ImportItem(
-    // --- KMP FIX: Replaced JVM-specific `java.io.File` with a platform-agnostic `String`.
-    // The responsibility of converting this path to a File object belongs to the
-    // platform-specific code that uses this model, not the common data class itself.
     val sourcePath: String,
     val initialAction: ImportAction,
     val targetPath: String? = null
@@ -56,7 +53,6 @@ data class ImportItem(
 
 @Serializable
 sealed interface ImportAction {
-    // FIX: Renamed 'type' to 'actionType' to avoid collision with the default JSON discriminator.
     val actionType: ImportActionType
     val summary: String
 }
@@ -69,7 +65,6 @@ enum class ImportActionType {
 @SerialName("Update")
 data class Update(
     val targetHolonId: String,
-    // FIX: Renamed 'type' to 'actionType'.
     override val actionType: ImportActionType = ImportActionType.UPDATE,
     override val summary: String = "Update existing holon."
 ) : ImportAction
@@ -78,7 +73,6 @@ data class Update(
 @SerialName("Integrate")
 data class Integrate(
     val parentHolonId: String,
-    // FIX: Renamed 'type' to 'actionType'.
     override val actionType: ImportActionType = ImportActionType.INTEGRATE,
     override val summary: String = "Integrate with known parent."
 ) : ImportAction
@@ -87,7 +81,6 @@ data class Integrate(
 @SerialName("AssignParent")
 data class AssignParent(
     var assignedParentId: String? = null,
-    // FIX: Renamed 'type' to 'actionType'.
     override val actionType: ImportActionType = ImportActionType.ASSIGN_PARENT,
     override val summary: String = "New holon - requires parent."
 ) : ImportAction
@@ -96,7 +89,6 @@ data class AssignParent(
 @SerialName("Quarantine")
 data class Quarantine(
     val reason: String,
-    // FIX: Renamed 'type' to 'actionType'.
     override val actionType: ImportActionType = ImportActionType.QUARANTINE,
     override val summary: String = "Quarantine File"
 ) : ImportAction
@@ -104,7 +96,6 @@ data class Quarantine(
 @Serializable
 @SerialName("Ignore")
 data class Ignore(
-    // FIX: Renamed 'type' to 'actionType'.
     override val actionType: ImportActionType = ImportActionType.IGNORE,
     override val summary: String = "Do not import."
 ) : ImportAction
@@ -116,7 +107,7 @@ data class ImportState(
 )
 
 data class AppState(
-    val holonGraph: List<HolonHeader> = emptyList(),
+    val holonGraph: List<Holon> = emptyList(),
     val catalogueFilter: String? = null,
     val activeHolons: Map<String, Holon> = emptyMap(),
     val availableAiPersonas: List<HolonHeader> = emptyList(),
@@ -135,13 +126,8 @@ data class AppState(
     val importState: ImportState? = null
 )
 
-/**
- * A sealed interface representing a single block of content within a ChatMessage.
- * The AI's response is parsed into a list of these blocks.
- */
 @Serializable
 sealed interface ContentBlock {
-    // A human-readable summary of the block's content for UI display or logging.
     val summary: String
 }
 
@@ -158,7 +144,6 @@ data class ActionBlock(
     val actions: List<Action>,
     val isResolved: Boolean = false
 ) : ContentBlock {
-    // The summary is a computed property, not a stored one.
     override val summary: String
         get() = "Action Manifest (${actions.size} actions)"
 }

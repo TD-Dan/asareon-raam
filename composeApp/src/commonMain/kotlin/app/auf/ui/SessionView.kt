@@ -30,16 +30,17 @@ fun SessionView(
     val activeContextualHolonIds = appState.contextualHolonIds
     val activeAiPersonaId = appState.aiPersonaId
     val activeFilter = appState.catalogueFilter
-    // --- ADDED: Get export selection state ---
     val holonIdsForExport = appState.holonIdsForExport
     val currentViewMode = appState.currentViewMode
 
 
-    val holonTypes = holonGraph.map { it.type }.distinct().sorted()
+    // --- FIX IS HERE: Access .header.type for each holon ---
+    val holonTypes = holonGraph.map { it.header.type }.distinct().sorted()
     val filteredGraph = if (activeFilter == null) {
         holonGraph
     } else {
-        holonGraph.filter { it.type == activeFilter }
+        // --- FIX IS HERE: Access .header.type for filtering ---
+        holonGraph.filter { it.header.type == activeFilter }
     }
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
@@ -92,28 +93,27 @@ fun SessionView(
 
         LazyColumn {
             items(filteredGraph) { holon ->
-                val isTheActiveAgent = activeAiPersonaId == holon.id
-                val isInChatContext = activeContextualHolonIds.contains(holon.id)
-                // --- ADDED: Check if selected for export ---
-                val isSelectedForExport = holonIdsForExport.contains(holon.id)
+                // --- FIX IS HERE: All properties are now accessed via holon.header ---
+                val isTheActiveAgent = activeAiPersonaId == holon.header.id
+                val isInChatContext = activeContextualHolonIds.contains(holon.header.id)
+                val isSelectedForExport = holonIdsForExport.contains(holon.header.id)
 
                 val backgroundColor = when {
-                    // --- MODIFIED: Prioritize export selection color ---
-                    currentViewMode == ViewMode.EXPORT && isSelectedForExport -> Color(0xFFC5CAE9) // Light Indigo for Export
+                    currentViewMode == ViewMode.EXPORT && isSelectedForExport -> Color(0xFFC5CAE9)
                     isTheActiveAgent -> Color(0xFFD3D3D3)
                     isInChatContext -> Color(0xFFE0E0E0)
                     else -> Color.Transparent
                 }
                 val fontWeight = if (isTheActiveAgent || (currentViewMode == ViewMode.CHAT && isInChatContext) || (currentViewMode == ViewMode.EXPORT && isSelectedForExport)) FontWeight.Bold else FontWeight.Normal
                 val fontStyle = if (isTheActiveAgent) FontStyle.Italic else FontStyle.Normal
-                val displayText = if (isTheActiveAgent) "${holon.name} (Active Agent)" else holon.name
-                val indentation = (holon.depth * 16).dp
+                val displayText = if (isTheActiveAgent) "${holon.header.name} (Active Agent)" else holon.header.name
+                val indentation = (holon.header.depth * 16).dp
 
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(backgroundColor)
-                        .clickable { onHolonSelected(holon.id) }
+                        .clickable { onHolonSelected(holon.header.id) }
                         .padding(start = indentation, top = 8.dp, bottom = 8.dp, end = 4.dp)
                 ){
                     Text(

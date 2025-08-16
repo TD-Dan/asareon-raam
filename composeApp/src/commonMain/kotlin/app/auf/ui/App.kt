@@ -31,8 +31,8 @@ import app.auf.core.ViewMode
  * ## Dependencies
  * - `app.auf.StateManager`
  *
- * @version 2.3
- * @since 2025-08-15
+ * @version 2.5
+ * @since 2025-08-17
  */
 @Composable
 fun App(stateManager: StateManager) {
@@ -83,9 +83,8 @@ fun App(stateManager: StateManager) {
                             ViewMode.IMPORT -> {
                                 ImportView(
                                     viewModel = stateManager.importExportViewModel,
-                                    currentGraph = appState.holonGraph,
+                                    currentGraph = appState.holonGraph.map { it.header },
                                     personaId = appState.aiPersonaId ?: "",
-                                    // --- FIX IS HERE: `holonsBasePath` argument removed. ---
                                 )
                             }
                         }

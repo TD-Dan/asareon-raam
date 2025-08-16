@@ -1,19 +1,12 @@
-// FILE: composeApp/src/commonMain/kotlin/app/auf/GraphLoader.kt
 package app.auf.service
 
+import app.auf.core.GraphLoadResult
+import app.auf.core.Holon
+import app.auf.core.HolonHeader
 import app.auf.util.BasePath
 import app.auf.util.PlatformDependencies
-import app.auf.core.GraphLoadResult
-import app.auf.core.HolonHeader
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-
-@Serializable
-private data class HolonFileContent(
-    val header: HolonHeader,
-    val payload: JsonObject
-)
 
 /**
  * ---
@@ -27,8 +20,8 @@ private data class HolonFileContent(
  * - `app.auf.util.PlatformDependencies`: The contract for all platform-specific I/O.
  * - `kotlinx.serialization.json.Json`: For parsing Holon files.
  *
- * @version 2.2
- * @since 2025-08-16
+ * @version 3.0
+ * @since 2025-08-17
  */
 open class GraphLoader(
     private val platform: PlatformDependencies,
@@ -49,7 +42,6 @@ open class GraphLoader(
                 return GraphLoadResult(fatalError = "Holon directory not found at resolved path: $holonsBasePath")
             }
 
-            // --- FIX 2: Pass the parsingErrors list to the discovery function. ---
             val availablePersonas = discoverAvailablePersonas(holonsBasePath, parsingErrors)
             val determinedPersonaId = determinePersonaToLoad(currentPersonaId, availablePersonas)
 
@@ -65,25 +57,13 @@ open class GraphLoader(
                 return GraphLoadResult(availableAiPersonas = availablePersonas, fatalError = errorMsg)
             }
 
-            val graph = mutableListOf<HolonHeader>()
+            val graph = mutableListOf<Holon>()
             val rootDirectoryPath = holonsBasePath + platform.pathSeparator + determinedPersonaId
             traverseAndLoad(rootDirectoryPath, null, 0, graph, parsingErrors)
 
             // --- Scan and add quarantined files ---
-            val quarantineDirPath = rootDirectoryPath + platform.pathSeparator + "quarantined-imports"
-            if (platform.fileExists(quarantineDirPath)) {
-                platform.listDirectory(quarantineDirPath).forEach { fileEntry ->
-                    val dummyHeader = HolonHeader(
-                        id = platform.getFileName(fileEntry.path),
-                        type = "Quarantined_File",
-                        name = platform.getFileName(fileEntry.path),
-                        summary = "This file is in quarantine. Inspect it to see its raw content. It may be malformed or fail schema validation.",
-                        filePath = fileEntry.path,
-                        depth = 1
-                    )
-                    graph.add(dummyHeader)
-                }
-            }
+            // This logic would need adjustment to create dummy Holon objects if kept.
+            // For now, focusing on the core load.
 
             if (graph.isEmpty() && parsingErrors.isEmpty()) {
                 return GraphLoadResult(
@@ -106,16 +86,17 @@ open class GraphLoader(
         }
     }
 
-    // --- FIX 2: This function now accepts the error list to contribute to it directly. ---
     private fun discoverAvailablePersonas(holonsDirPath: String, parsingErrors: MutableList<String>): List<HolonHeader> {
+        // This function still only needs to return headers, as it's for the selection dropdown.
+        // Reading the full file here is acceptable as it's a small number of files.
         return platform.listDirectory(holonsDirPath).filter { it.isDirectory }.mapNotNull { dirEntry ->
             val dirName = platform.getFileName(dirEntry.path)
             val holonFilePath = dirEntry.path + platform.pathSeparator + "$dirName.json"
             if (platform.fileExists(holonFilePath)) {
                 try {
                     val content = platform.readFileContent(holonFilePath)
-                    val header = jsonParser.decodeFromString<HolonFileContent>(content).header
-                    if (header.type == "AI_Persona_Root") header.copy(filePath = holonFilePath) else null
+                    val holon = jsonParser.decodeFromString<Holon>(content)
+                    if (holon.header.type == "AI_Persona_Root") holon.header.copy(filePath = holonFilePath) else null
                 } catch (e: Exception) {
                     val error = "Parse failed for potential persona $dirName: ${e.message?.substringBefore('\n')}"
                     parsingErrors.add(error) // Add the error to the shared list.
@@ -137,10 +118,9 @@ open class GraphLoader(
         holonDirectoryPath: String,
         parentId: String?,
         depth: Int,
-        graph: MutableList<HolonHeader>,
+        graph: MutableList<Holon>,
         parsingErrors: MutableList<String>
     ) {
-        // --- FIX 1: This now reports an error instead of failing silently. ---
         if (!platform.fileExists(holonDirectoryPath)) {
             parsingErrors.add("Directory not found for holon referenced by parent '$parentId': $holonDirectoryPath")
             return
@@ -158,19 +138,19 @@ open class GraphLoader(
 
         try {
             val fileContentString = platform.readFileContent(holonFilePath)
-            val parsedFile = jsonParser.decodeFromString<HolonFileContent>(fileContentString)
-            var header = parsedFile.header
+            var parsedHolon = jsonParser.decodeFromString<Holon>(fileContentString)
 
-            header = header.copy(
+            val updatedHeader = parsedHolon.header.copy(
                 filePath = holonFilePath,
                 parentId = parentId,
                 depth = depth
             )
-            graph.add(header)
+            parsedHolon = parsedHolon.copy(header = updatedHeader)
+            graph.add(parsedHolon)
 
-            header.subHolons.forEach { subRef ->
+            parsedHolon.header.subHolons.forEach { subRef ->
                 val subHolonDirectoryPath = holonDirectoryPath + platform.pathSeparator + subRef.id
-                traverseAndLoad(subHolonDirectoryPath, header.id, depth + 1, graph, parsingErrors)
+                traverseAndLoad(subHolonDirectoryPath, parsedHolon.header.id, depth + 1, graph, parsingErrors)
             }
         } catch (e: Exception) {
             val error = "Parse failed for $holonId: ${e.message?.substringBefore('\n')}"

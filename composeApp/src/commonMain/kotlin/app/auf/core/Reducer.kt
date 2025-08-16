@@ -17,8 +17,8 @@ import app.auf.core.AppAction
  * - `app.auf.core.AppState`: The state object it operates on.
  * - `app.auf.core.AppAction`: The actions it responds to.
  *
- * @version 1.0
- * @since 2025-08-16
+ * @version 1.1
+ * @since 2025-08-17
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
     return when (action) {
@@ -31,16 +31,17 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         )
         is AppAction.LoadGraphSuccess -> {
             val result = action.result
-            val finalParsingErrors = result.parsingErrors.toMutableList()
-            // This logic for loading active holons on graph load success would be
-            // handled by a service, but for now, we'll represent the state change here.
+            // Find the persona holon from the full graph to make it active by default.
+            val personaHolon = result.holonGraph.find { it.header.id == result.determinedPersonaId }
+            val initialActiveHolons = if (personaHolon != null) mapOf(personaHolon.header.id to personaHolon) else emptyMap()
+
             state.copy(
                 holonGraph = result.holonGraph,
                 gatewayStatus = GatewayStatus.OK,
                 availableAiPersonas = result.availableAiPersonas,
                 aiPersonaId = result.determinedPersonaId,
-                // activeHolons will be loaded by a service that dispatches its own action.
-                errorMessage = if (finalParsingErrors.isNotEmpty()) "Warning: ${finalParsingErrors.size} holons failed to parse." else null
+                activeHolons = initialActiveHolons,
+                errorMessage = if (result.parsingErrors.isNotEmpty()) "Warning: ${result.parsingErrors.size} holons failed to parse." else null
             )
         }
         is AppAction.LoadGraphFailure -> state.copy(
@@ -52,7 +53,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         is AppAction.AddUserMessage -> {
             val userMessage = ChatMessage(
                 author = Author.USER,
-                timestamp = action.timestamp, // Use timestamp from action
+                timestamp = action.timestamp,
                 contentBlocks = listOf(TextBlock(action.message))
             )
             state.copy(chatHistory = state.chatHistory + userMessage)
@@ -68,7 +69,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                 contentBlocks = action.response.contentBlocks,
                 usageMetadata = action.response.usageMetadata,
                 rawContent = action.response.rawContent,
-                timestamp = action.timestamp // Use timestamp from action
+                timestamp = action.timestamp
             )
             state.copy(
                 isProcessing = false,
@@ -80,7 +81,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                 author = Author.SYSTEM,
                 title = "Gateway Error",
                 contentBlocks = listOf(TextBlock(action.error)),
-                timestamp = action.timestamp // Use timestamp from action
+                timestamp = action.timestamp
             )
             state.copy(
                 isProcessing = false,
@@ -96,28 +97,33 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         // --- UI & View ---
         is AppAction.SetViewMode -> state.copy(
             currentViewMode = action.mode,
-            // Reset export selection when moving back to chat
             holonIdsForExport = if (action.mode == ViewMode.CHAT) emptySet() else state.holonIdsForExport
         )
         is AppAction.InspectHolon -> state.copy(
             inspectedHolonId = action.holonId
         )
-        is AppAction.HolonInspectionSuccess -> state.copy(
-            activeHolons = state.activeHolons + (action.holon.header.id to action.holon)
-        )
-        is AppAction.HolonInspectionFailure -> {
-            // Future enhancement: show a specific error for the failed holon.
-            println("Reducer handled HolonInspectionFailure: ${action.error}")
-            state
-        }
         is AppAction.ToggleHolonActive -> {
             if (action.holonId == state.aiPersonaId) return state // Cannot deactivate persona
-            val newContextIds = if (state.contextualHolonIds.contains(action.holonId)) {
-                state.contextualHolonIds - action.holonId
+
+            val newContextIds: Set<String>
+            val newActiveHolons: Map<String, Holon>
+
+            if (state.contextualHolonIds.contains(action.holonId)) {
+                // Remove from context
+                newContextIds = state.contextualHolonIds - action.holonId
+                newActiveHolons = state.activeHolons - action.holonId
             } else {
-                state.contextualHolonIds + action.holonId
+                // Add to context
+                val holonToAdd = state.holonGraph.find { it.header.id == action.holonId }
+                if (holonToAdd != null) {
+                    newContextIds = state.contextualHolonIds + action.holonId
+                    newActiveHolons = state.activeHolons + (action.holonId to holonToAdd)
+                } else {
+                    // Holon not found in graph, do nothing.
+                    return state
+                }
             }
-            state.copy(contextualHolonIds = newContextIds)
+            state.copy(contextualHolonIds = newContextIds, activeHolons = newActiveHolons)
         }
         is AppAction.SetCatalogueFilter -> state.copy(
             catalogueFilter = action.type
