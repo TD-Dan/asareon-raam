@@ -12,17 +12,6 @@ private data class HolonFileContent(
 )
 
 /**
- * A result class to holistically capture the outcome of a graph loading operation.
- */
-data class GraphLoadResult(
-    val holonGraph: List<HolonHeader> = emptyList(),
-    val availableAiPersonas: List<HolonHeader> = emptyList(),
-    val parsingErrors: List<String> = emptyList(),
-    val determinedPersonaId: String? = null,
-    val fatalError: String? = null
-)
-
-/**
  * ---
  * ## Mandate
  * Handles all logic related to discovering and loading the Holon Knowledge Graph from the file system.
@@ -34,7 +23,7 @@ data class GraphLoadResult(
  * - `app.auf.PlatformDependencies`: The contract for all platform-specific I/O.
  * - `kotlinx.serialization.json.Json`: For parsing Holon files.
  *
- * @version 2.1
+ * @version 2.2
  * @since 2025-08-16
  */
 open class GraphLoader(
@@ -46,7 +35,7 @@ open class GraphLoader(
     /**
      * The primary public method to load the entire graph for a given persona.
      * It discovers available personas, determines which one to load, and then traverses its directory.
-     * @param currentPersonaId The currently selected persona ID from the app state, can be null.
+     * @param currentPersonaId The currently selected persona ID from the app state can be null.
      * @return A [GraphLoadResult] containing the complete outcome of the operation.
      */
     open fun loadGraph(currentPersonaId: String?): GraphLoadResult {

@@ -1,3 +1,4 @@
+// FILE: composeApp/src/commonMain/kotlin/app/auf/GatewayManager.kt
 package app.auf
 
 import kotlinx.coroutines.CoroutineScope
@@ -8,13 +9,24 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-data class AIResponse(
-    val contentBlocks: List<ContentBlock>,
-    val rawContent: String?,
-    val usageMetadata: UsageMetadata?,
-    val errorMessage: String? = null
-)
+// REMOVED: The AIResponse data class is no longer defined here.
+// It has been replaced by the top-level GatewayResponse class in AppState.kt.
 
+/**
+ * ---
+ * ## Mandate
+ * Orchestrates all communication with the external AI service (e.g., Google AI).
+ * It is responsible for formatting requests, sending them via the `Gateway` interface,
+ * and parsing the raw response into the application's structured `ContentBlock` format.
+ *
+ * ---
+ * ## Dependencies
+ * - `app.auf.Gateway`: The platform-specific implementation of the AI service client.
+ * - `kotlinx.serialization.json.Json`: For parsing structured blocks from the AI response.
+ *
+ * @version 2.0
+ * @since 2025-08-16
+ */
 open class GatewayManager(
     private val gateway: Gateway,
     private val jsonParser: Json,
@@ -22,14 +34,14 @@ open class GatewayManager(
 ) {
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
 
-    open suspend fun sendMessage(selectedModel: String, messages: List<ChatMessage>): AIResponse {
+    open suspend fun sendMessage(selectedModel: String, messages: List<ChatMessage>): GatewayResponse {
         return withContext(coroutineScope.coroutineContext) {
             try {
                 val apiRequestContents = convertChatToApiContents(messages)
                 val response = gateway.generateContent(apiKey, selectedModel, apiRequestContents)
 
                 response.error?.let {
-                    return@withContext AIResponse(
+                    return@withContext GatewayResponse(
                         contentBlocks = emptyList(),
                         rawContent = "API Error",
                         usageMetadata = null,
@@ -43,13 +55,13 @@ open class GatewayManager(
 
                 val parsedBlocks = parseRawContentToBlocks(rawTextResponse)
 
-                AIResponse(
+                GatewayResponse(
                     contentBlocks = parsedBlocks,
                     usageMetadata = response.usageMetadata,
                     rawContent = rawTextResponse
                 )
             } catch (e: Exception) {
-                AIResponse(
+                GatewayResponse(
                     contentBlocks = emptyList(),
                     rawContent = "Gateway Error",
                     usageMetadata = null,

@@ -1,3 +1,4 @@
+// FILE: composeApp/src/jvmMain/kotlin/app/auf/main.kt
 package app.auf
 
 import androidx.compose.runtime.remember
@@ -35,6 +36,16 @@ fun main() = application {
         println("WARNING: google.api.key not found in local.properties. AI will not function.")
     }
 
+    // --- UDF Components ---
+    // Instantiate the new Store, providing the initial state, reducer function, and coroutine scope.
+    val store = remember {
+        Store(
+            initialState = AppState(),
+            reducer = ::appReducer,
+            coroutineScope = coroutineScope
+        )
+    }
+
     val stateManager = remember {
         // --- Instantiate all platform-agnostic managers, injecting the platform dependency ---
         val gateway = Gateway(jsonParser)
@@ -45,8 +56,10 @@ fun main() = application {
         val importExportManager = ImportExportManager(platformDependencies, jsonParser)
         val importExportViewModel = ImportExportViewModel(importExportManager, coroutineScope)
 
+
         // --- Instantiate the main StateManager with all its dependencies ---
         StateManager(
+            store = store, // CORRECTED: The new Store is now injected.
             gatewayManager = gatewayManager,
             backupManager = backupManager,
             graphLoader = graphLoader,

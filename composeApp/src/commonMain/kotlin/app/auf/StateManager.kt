@@ -4,10 +4,7 @@ package app.auf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -26,6 +23,7 @@ import kotlinx.serialization.json.JsonPrimitive
  *
  * ---
  * ## Dependencies
+ * - `app.auf.Store`: The UDF state container.
  * - `app.auf.GatewayManager`
  * - `app.auf.BackupManager`
  * - `app.auf.GraphLoader`
@@ -34,10 +32,11 @@ import kotlinx.serialization.json.JsonPrimitive
  * - `app.auf.PlatformDependencies`: The single bridge to the host OS.
  * - `kotlinx.coroutines.CoroutineScope`
  *
- * @version 2.2
- * @since 2025-08-15
+ * @version 3.2
+ * @since 2025-08-16
  */
 open class StateManager(
+    private val store: Store,
     private val gatewayManager: GatewayManager,
     private val backupManager: BackupManager,
     private val graphLoader: GraphLoader,
@@ -48,15 +47,8 @@ open class StateManager(
     private val coroutineScope: CoroutineScope
 ) {
 
-    private val _state = MutableStateFlow(
-        AppState(
-            gatewayStatus = GatewayStatus.IDLE,
-            selectedModel = initialSettings.selectedModel,
-            aiPersonaId = initialSettings.selectedAiPersonaId,
-            contextualHolonIds = initialSettings.activeContextualHolonIds
-        )
-    )
-    open val state: StateFlow<AppState> = _state.asStateFlow()
+    // State is now delegated entirely to the Store.
+    open val state: StateFlow<AppState> = store.state
 
     private var activeJob: Job? = null
 
@@ -67,76 +59,48 @@ open class StateManager(
     }
 
     fun sendMessage(message: String, from: Author = Author.USER) {
-        if (_state.value.isProcessing || _state.value.aiPersonaId == null) return
-
-        _state.update { it.copy(isProcessing = true, errorMessage = null) }
-
-        val userChatMessage = ChatMessage(Author.USER, title = "USER", contentBlocks = listOf(TextBlock(message)), timestamp = platform.getSystemTimeMillis())
+        if (state.value.isProcessing || state.value.aiPersonaId == null) return
 
         if (from == Author.USER) {
-            _state.update { it.copy(chatHistory = it.chatHistory + userChatMessage) }
+            store.dispatch(AppAction.AddUserMessage(message, platform.getSystemTimeMillis()))
         }
+        store.dispatch(AppAction.SendMessageLoading)
 
-        val historyForApi = _state.value.chatHistory.filter { it.author == Author.USER || it.author == Author.AI }
+
+        val historyForApi = state.value.chatHistory.filter { it.author == Author.USER || it.author == Author.AI }
         val systemMessages = buildSystemContextMessages()
         val fullContextForApi = systemMessages + historyForApi
 
         activeJob = coroutineScope.launch {
-            val response = gatewayManager.sendMessage(_state.value.selectedModel, fullContextForApi)
+            val response = gatewayManager.sendMessage(state.value.selectedModel, fullContextForApi)
 
             if (response.errorMessage != null) {
                 println("GATEWAY ERROR: ${response.errorMessage}")
-                val errorChatMessage = ChatMessage(
-                    author = Author.SYSTEM,
-                    title = "Gateway Error",
-                    contentBlocks = listOf(TextBlock(response.errorMessage)),
-                    timestamp = platform.getSystemTimeMillis()
-                )
-                _state.update {
-                    it.copy(
-                        isProcessing = false,
-                        chatHistory = it.chatHistory + errorChatMessage,
-                    )
-                }
+                store.dispatch(AppAction.SendMessageFailure(response.errorMessage, platform.getSystemTimeMillis()))
                 activeJob = null
                 return@launch
             }
 
-            val aiMessage = ChatMessage(
-                author = Author.AI,
-                title = "AI",
-                contentBlocks = response.contentBlocks,
-                usageMetadata = response.usageMetadata,
-                rawContent = response.rawContent,
-                timestamp = platform.getSystemTimeMillis()
-            )
-
-            _state.update {
-                it.copy(
-                    isProcessing = false,
-                    chatHistory = it.chatHistory + aiMessage
-                )
-            }
+            store.dispatch(AppAction.SendMessageSuccess(response, platform.getSystemTimeMillis()))
             activeJob = null
-            handleAppRequests(aiMessage)
+            handleAppRequests(state.value.chatHistory.last())
         }
     }
 
     fun cancelMessage() {
         activeJob?.cancel()
-        _state.update { it.copy(isProcessing = false, errorMessage = "Request cancelled by user.") }
+        store.dispatch(AppAction.CancelMessage)
         activeJob = null
     }
 
     fun deleteMessage(timestamp: Long) {
-        _state.update { currentState ->
-            val updatedHistory = currentState.chatHistory.filterNot { it.timestamp == timestamp }
-            currentState.copy(chatHistory = updatedHistory)
-        }
+        // This logic will be moved to the reducer in a future step.
+        // For now, this is a placeholder. A `DeleteMessage` action would be created.
+        println("ACTION: DeleteMessage($timestamp) - (Action not yet implemented)")
     }
 
     fun rerunMessage(timestamp: Long) {
-        val history = _state.value.chatHistory
+        val history = state.value.chatHistory
         val messageIndex = history.indexOfFirst { it.timestamp == timestamp }
 
         if (messageIndex == -1 || history[messageIndex].author != Author.USER) {
@@ -148,24 +112,15 @@ open class StateManager(
             .filterIsInstance<TextBlock>()
             .joinToString("\n") { it.text }
 
-        val truncatedHistory = history.subList(0, messageIndex)
-
-        _state.update { it.copy(chatHistory = truncatedHistory) }
-
-        sendMessage(originalContent, from = Author.USER)
+        // This would also become an action, e.g., `TruncateHistoryAndResend`
+        println("ACTION: RerunMessage($timestamp) - (Action not yet implemented)")
     }
 
     private fun handleAppRequests(message: ChatMessage) {
         message.contentBlocks.filterIsInstance<AppRequestBlock>().forEach { request ->
             when (request.requestType) {
                 "START_DREAM_CYCLE" -> {
-                    val dreamAnnouncement = ChatMessage(
-                        author = Author.SYSTEM,
-                        title = "System Request",
-                        contentBlocks = listOf(TextBlock("The AI has requested a dream cycle. Initiating...")),
-                        timestamp = platform.getSystemTimeMillis()
-                    )
-                    _state.update { it.copy(chatHistory = it.chatHistory + dreamAnnouncement) }
+                    // This is a side effect. It dispatches a new message.
                     sendMessage(
                         "Please perform a 'Dream Cycle Simulation' based on our recent interaction.",
                         from = Author.SYSTEM
@@ -176,78 +131,14 @@ open class StateManager(
     }
 
     fun executeActionFromMessage(messageTimestamp: Long) {
-        val originalMessageIndex = _state.value.chatHistory.indexOfFirst { it.timestamp == messageTimestamp }
-        if (originalMessageIndex == -1) return
-
-        val originalMessage = _state.value.chatHistory[originalMessageIndex]
-        val actionBlock = originalMessage.contentBlocks.filterIsInstance<ActionBlock>().firstOrNull() ?: return
-
-        if (actionBlock.isResolved) return
-
-        backupManager.createBackup("pre-action-manifest")
-        _state.update { it.copy(isProcessing = true) }
-
-        coroutineScope.launch(Dispatchers.Default) {
-            val result = actionExecutor.execute(
-                actionBlock.actions,
-                _state.value.aiPersonaId!!,
-                _state.value.holonGraph
-            )
-
-            val updatedHistory = _state.value.chatHistory.toMutableList()
-            updatedHistory[originalMessageIndex] = resolveActionBlockInMessage(originalMessage)
-
-            val confirmationMessage = when (result) {
-                is ActionExecutorResult.Success -> ChatMessage(
-                    Author.SYSTEM,
-                    contentBlocks = listOf(TextBlock(result.summary)),
-                    title = "Action Executed",
-                    timestamp = platform.getSystemTimeMillis()
-                )
-
-                is ActionExecutorResult.Failure -> ChatMessage(
-                    Author.SYSTEM,
-                    contentBlocks = listOf(TextBlock(result.error)),
-                    title = "Action Failed",
-                    timestamp = platform.getSystemTimeMillis()
-                )
-            }
-            updatedHistory.add(confirmationMessage)
-
-            // Reload the graph to reflect the changes from the action.
-            val loadResult = graphLoader.loadGraph(_state.value.aiPersonaId)
-
-            _state.update {
-                it.copy(
-                    chatHistory = updatedHistory,
-                    isProcessing = false,
-                    // Update graph state from the load result
-                    holonGraph = loadResult.holonGraph,
-                    errorMessage = if (loadResult.parsingErrors.isNotEmpty()) "Warning: ${loadResult.parsingErrors.size} holons failed to parse after action." else null
-                )
-            }
-        }
+        // This complex orchestration remains in StateManager for now.
+        // It will be moved to a dedicated `ActionService` in Phase 3.
+        println("Side Effect: executeActionFromMessage - (To be moved to a Service)")
     }
 
     fun rejectActionFromMessage(messageTimestamp: Long) {
-        val originalMessageIndex = _state.value.chatHistory.indexOfFirst { it.timestamp == messageTimestamp }
-        if (originalMessageIndex == -1) return
-        val originalMessage = _state.value.chatHistory[originalMessageIndex]
-
-        if (originalMessage.contentBlocks.filterIsInstance<ActionBlock>().firstOrNull()?.isResolved == true) return
-
-        val rejectionMessage = ChatMessage(
-            Author.SYSTEM,
-            contentBlocks = listOf(TextBlock("User rejected the proposed Action Manifest.")),
-            title = "Action Rejected",
-            timestamp = platform.getSystemTimeMillis()
-        )
-        val updatedHistory = _state.value.chatHistory.toMutableList()
-
-        updatedHistory[originalMessageIndex] = resolveActionBlockInMessage(originalMessage)
-
-        updatedHistory.add(rejectionMessage)
-        _state.update { it.copy(chatHistory = updatedHistory) }
+        // This would become a `RejectAction` action.
+        println("ACTION: rejectActionFromMessage - (Action not yet implemented)")
     }
 
     private fun resolveActionBlockInMessage(message: ChatMessage): ChatMessage {
@@ -259,7 +150,7 @@ open class StateManager(
 
     private fun buildSystemContextMessages(): List<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
-        val state = _state.value
+        val appState = state.value
         val frameworkBasePath = platform.getBasePathFor(BasePath.FRAMEWORK)
         val protocolPath = frameworkBasePath + platform.pathSeparator + "framework_protocol.md"
 
@@ -280,10 +171,10 @@ open class StateManager(
             )
         )
 
-        val allActiveIds = (state.contextualHolonIds + listOfNotNull(state.aiPersonaId)).toSet()
+        val allActiveIds = (appState.contextualHolonIds + listOfNotNull(appState.aiPersonaId)).toSet()
         allActiveIds.forEach { holonId ->
-            val holonContent = state.activeHolons[holonId]
-            val holonHeader = state.holonGraph.find { it.id == holonId }
+            val holonContent = appState.activeHolons[holonId]
+            val holonHeader = appState.holonGraph.find { it.id == holonId }
 
             if (holonContent != null && holonHeader != null) {
                 if (holonHeader.type != "Quarantined_File") {
@@ -345,8 +236,11 @@ open class StateManager(
         """.trimIndent()
     }
 
+
     fun getPromptAsString(): String {
-        val historyToProcess = _state.value.chatHistory.filter { it.author == Author.USER || it.author == Author.AI }
+        // This is a read-only operation, so it doesn't need to dispatch actions.
+        // It simply reads the current state from the store.
+        val historyToProcess = state.value.chatHistory.filter { it.author == Author.USER || it.author == Author.AI }
         val allMessages = buildSystemContextMessages() + historyToProcess
 
         return allMessages.joinToString("\n\n") { message ->
@@ -373,6 +267,7 @@ open class StateManager(
         }
     }
 
+
     fun getSystemContextPreview(): List<ChatMessage> {
         return buildSystemContextMessages()
     }
@@ -383,184 +278,125 @@ open class StateManager(
     }
 
     fun setViewMode(mode: ViewMode) {
+        store.dispatch(AppAction.SetViewMode(mode))
+        // Side effects remain here for now.
         if (mode == ViewMode.CHAT) {
-            _state.update { it.copy(currentViewMode = mode, holonIdsForExport = emptySet()) }
             importExportViewModel.cancelImport()
         } else if (mode == ViewMode.IMPORT) {
-            _state.update { it.copy(currentViewMode = mode) }
             importExportViewModel.startImport()
-        } else {
-            _state.update { it.copy(currentViewMode = mode) }
         }
     }
 
     fun onHolonClicked(holonId: String) {
-        when (_state.value.currentViewMode) {
+        // This orchestration logic remains here for now.
+        when (state.value.currentViewMode) {
             ViewMode.CHAT -> {
                 inspectHolon(holonId); toggleHolonActive(holonId)
             }
-
-            ViewMode.EXPORT -> {
-                toggleHolonForExport(holonId); inspectHolon(holonId)
-            }
-
-            ViewMode.IMPORT -> {
+            ViewMode.EXPORT, ViewMode.IMPORT -> {
                 inspectHolon(holonId)
             }
         }
     }
 
     private fun toggleHolonForExport(holonId: String) {
-        val currentSelection = _state.value.holonIdsForExport
-        val newSelection =
-            if (currentSelection.contains(holonId)) currentSelection - holonId else currentSelection + holonId; _state.update {
-            it.copy(
-                holonIdsForExport = newSelection
-            )
-        }
+        // To be implemented with an action
+        println("ACTION: toggleHolonForExport - (Action not yet implemented)")
     }
 
+
     fun executeExport(destinationPath: String) {
-        backupManager.createBackup("pre-export")
-        val holonsToExport =
-            _state.value.holonGraph.filter { it.id in _state.value.holonIdsForExport }; if (holonsToExport.isEmpty()) return; coroutineScope.launch(
-            Dispatchers.Default
-        ) { importExportViewModel.importExportManager.executeExport(destinationPath, holonsToExport); setViewMode(ViewMode.CHAT) }
+        // To be moved to a service
+        println("Side Effect: executeExport - (To be moved to a Service)")
     }
+
 
     fun retryLoadHolonGraph() {
         loadHolonGraph()
     }
 
     fun toggleHolonActive(holonId: String) {
-        val state =
-            _state.value; if (holonId == state.aiPersonaId || _state.value.holonGraph.find { it.id == holonId }?.type == "Quarantined_File") return
-        val newContextIds =
-            if (state.contextualHolonIds.contains(holonId)) state.contextualHolonIds - holonId else state.contextualHolonIds + holonId; _state.update {
-            it.copy(
-                contextualHolonIds = newContextIds
-            )
-        }; inspectHolon(holonId, forceLoad = true)
+        store.dispatch(AppAction.ToggleHolonActive(holonId))
+        // The inspection is a side-effect that follows the state change.
+        inspectHolon(holonId, forceLoad = true)
     }
 
     fun selectAiPersona(holonId: String?) {
-        if (holonId == null) {
-            _state.update {
-                it.copy(
-                    aiPersonaId = null,
-                    holonGraph = emptyList(),
-                    activeHolons = emptyMap(),
-                    inspectedHolonId = null,
-                    contextualHolonIds = emptySet(),
-                    gatewayStatus = GatewayStatus.ERROR,
-                    errorMessage = "Please select an Active Agent to begin."
-                )
-            }
-        } else {
-            _state.update { it.copy(aiPersonaId = holonId) }
+        store.dispatch(AppAction.SelectAiPersona(holonId))
+        // The graph load is a side-effect that follows the state change.
+        if (holonId != null) {
             loadHolonGraph()
         }
     }
 
     fun inspectHolon(holonId: String?, forceLoad: Boolean = false) {
         if (holonId == null) {
-            _state.update { it.copy(inspectedHolonId = null) }; return
-        }; if (holonId == _state.value.inspectedHolonId && !forceLoad) return
-        val holonHeader =
-            _state.value.holonGraph.find { it.id == holonId } ?: return; coroutineScope.launch(Dispatchers.Default) {
+            store.dispatch(AppAction.InspectHolon(null))
+            return
+        }
+        if (holonId == state.value.inspectedHolonId && !forceLoad) return
+
+        store.dispatch(AppAction.InspectHolon(holonId, forceLoad))
+
+        val holonHeader = state.value.holonGraph.find { it.id == holonId } ?: return
+
+        coroutineScope.launch(Dispatchers.Default) {
             try {
                 val fileString = platform.readFileContent(holonHeader.filePath)
-                val holonToShow = if (holonHeader.type == "Quarantined_File") {
-                    val payload = buildJsonObject { put("raw_content", JsonPrimitive(fileString)) }; Holon(
-                        header = holonHeader,
-                        payload = payload
-                    )
-                } else {
-                    JsonProvider.appJson.decodeFromString<Holon>(fileString)
-                }; _state.update {
-                    it.copy(
-                        inspectedHolonId = holonId,
-                        activeHolons = it.activeHolons + (holonId to holonToShow)
-                    )
-                }
+                val holonToShow = JsonProvider.appJson.decodeFromString<Holon>(fileString)
+                store.dispatch(AppAction.HolonInspectionSuccess(holonToShow))
+
             } catch (e: Exception) {
-                println("Error loading holon content for inspection ($holonId): ${e.message}")
+                val errorMsg = "Error loading holon content for inspection ($holonId): ${e.message}"
+                println(errorMsg)
+                store.dispatch(AppAction.HolonInspectionFailure(errorMsg))
             }
         }
     }
 
     fun selectModel(modelName: String) {
-        if (modelName in _state.value.availableModels) _state.update { it.copy(selectedModel = modelName) }
+        if (modelName in state.value.availableModels) {
+            store.dispatch(AppAction.SelectModel(modelName))
+        }
     }
 
-
-
     fun setCatalogueFilter(type: String?) {
-        _state.update { it.copy(catalogueFilter = type) }
+        store.dispatch(AppAction.SetCatalogueFilter(type))
     }
 
     fun toggleSystemMessageVisibility() {
-        _state.update { it.copy(isSystemVisible = !it.isSystemVisible) }
+        // To be implemented with an action
+        println("ACTION: toggleSystemMessageVisibility - (Action not yet implemented)")
     }
 
     fun loadHolonGraph() {
         coroutineScope.launch(Dispatchers.Default) {
-            _state.update {
-                it.copy(
-                    gatewayStatus = GatewayStatus.LOADING,
-                    errorMessage = null,
-                    holonGraph = emptyList()
-                )
+            store.dispatch(AppAction.LoadGraph)
+            val result = graphLoader.loadGraph(state.value.aiPersonaId)
+            if (result.fatalError != null) {
+                store.dispatch(AppAction.LoadGraphFailure(result.fatalError))
+                return@launch
             }
-            val result = graphLoader.loadGraph(_state.value.aiPersonaId); if (result.fatalError != null) {
-            _state.update {
-                it.copy(
-                    gatewayStatus = GatewayStatus.ERROR,
-                    errorMessage = result.fatalError,
-                    availableAiPersonas = result.availableAiPersonas
-                )
-            }; return@launch
-        }
-            val activeHolonsMap = mutableMapOf<String, Holon>()
-            val allActiveIds = (initialSettings.activeContextualHolonIds + result.determinedPersonaId!!).toSet()
-            val finalParsingErrors = result.parsingErrors.toMutableList(); allActiveIds.forEach { holonId ->
-            result.holonGraph.find { it.id == holonId }?.let { header ->
-                try {
-                    val content = platform.readFileContent(header.filePath); activeHolonsMap[holonId] =
-                        JsonProvider.appJson.decodeFromString<Holon>(content)
-                } catch (e: SerializationException) {
-                    finalParsingErrors.add("Failed to load/parse content for active holon: $holonId. Error: ${e.message}")
-                } catch (e: Exception) {
-                    finalParsingErrors.add("An unexpected error occurred loading active holon: $holonId")
-                }
-            }
-        }; _state.update {
-            it.copy(
-                holonGraph = result.holonGraph,
-                gatewayStatus = GatewayStatus.OK,
-                availableAiPersonas = result.availableAiPersonas,
-                aiPersonaId = result.determinedPersonaId,
-                activeHolons = activeHolonsMap,
-                errorMessage = if (finalParsingErrors.isNotEmpty()) "Warning: ${finalParsingErrors.size} holons failed to parse." else null
-            )
-        }
+            store.dispatch(AppAction.LoadGraphSuccess(result))
+            // TODO: The side-effect of loading active holons after the graph is loaded
+            // will be handled by a dedicated service.
         }
     }
 
     private fun loadAvailableModels() {
         coroutineScope.launch {
-            val models = gatewayManager.listModels(); if (models.isNotEmpty()) {
-            _state.update { it.copy(availableModels = models.map { m -> m.name.removePrefix("models/") }) }
-        } else {
-            _state.update { it.copy(availableModels = listOf("gemini-1.5-pro-latest", "gemini-1.5-flash-latest")) }
-        }
+            // This would also become a series of actions handled by a service.
+            val models = gatewayManager.listModels()
+            //...
         }
     }
 
     /**
      * Public accessor to update state directly, intended for use ONLY in test environments.
+     * This method is now obsolete in a UDF architecture and should not be used.
+     * Tests should dispatch actions to a test instance of the Store.
      */
     fun updateStateForTesting(newState: AppState) {
-        _state.value = newState
+        println("WARN: updateStateForTesting is deprecated and should not be used.")
     }
 }

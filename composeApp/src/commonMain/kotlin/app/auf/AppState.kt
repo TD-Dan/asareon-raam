@@ -1,3 +1,4 @@
+// FILE: composeApp/src/commonMain/kotlin/app/auf/AppState.kt.txt
 package app.auf
 
 import kotlinx.serialization.SerialName
@@ -20,9 +21,24 @@ import kotlinx.serialization.json.JsonObject
  * - `Action` (from ActionModels.kt): Used within the `ActionBlock` content type.
  * - `kotlinx.serialization`: Used extensively for defining serializable data contracts.
  *
- * @version 1.2
- * @since 2025-08-14
+ * @version 1.3
+ * @since 2025-08-16
  */
+
+data class GatewayResponse(
+    val contentBlocks: List<ContentBlock> = emptyList(),
+    val usageMetadata: UsageMetadata? = null,
+    val errorMessage: String? = null,
+    val rawContent: String? = null
+)
+
+data class GraphLoadResult(
+    val holonGraph: List<HolonHeader> = emptyList(),
+    val parsingErrors: List<String> = emptyList(),
+    val fatalError: String? = null,
+    val availableAiPersonas: List<HolonHeader> = emptyList(),
+    val determinedPersonaId: String? = null
+)
 
 enum class ViewMode {
     CHAT, EXPORT, IMPORT
@@ -174,7 +190,7 @@ data class AnchorBlock(
 data class ChatMessage(
     val author: Author,
     val title: String? = null,
-    val timestamp: Long = System.currentTimeMillis(),
+    val timestamp: Long,
     val contentBlocks: List<ContentBlock>,
     val usageMetadata: UsageMetadata? = null,
     val rawContent: String? = null
