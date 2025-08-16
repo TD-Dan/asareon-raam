@@ -7,6 +7,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import app.auf.core.AppState
+import app.auf.core.Store
+import app.auf.core.ViewMode
+import app.auf.core.appReducer
+import app.auf.model.UserSettings
+import app.auf.service.ActionExecutor
+import app.auf.service.BackupManager
+import app.auf.service.Gateway
+import app.auf.service.GatewayManager
+import app.auf.service.GraphLoader
+import app.auf.service.ImportExportManager
+import app.auf.service.SettingsManager
+import app.auf.ui.ImportExportViewModel
+import app.auf.util.JsonProvider
+import app.auf.util.PlatformDependencies
 import java.io.File
 import java.util.Properties
 

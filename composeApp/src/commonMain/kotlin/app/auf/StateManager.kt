@@ -1,15 +1,32 @@
 // FILE: composeApp/src/commonMain/kotlin/app/auf/StateManager.kt
 package app.auf
 
+import app.auf.core.ActionBlock
+import app.auf.core.AnchorBlock
+import app.auf.core.AppAction
+import app.auf.core.AppRequestBlock
+import app.auf.core.AppState
+import app.auf.core.Author
+import app.auf.core.ChatMessage
+import app.auf.core.FileContentBlock
+import app.auf.core.Holon
+import app.auf.core.Store
+import app.auf.core.TextBlock
+import app.auf.core.ViewMode
+import app.auf.model.UserSettings
+import app.auf.service.ActionExecutor
+import app.auf.service.BackupManager
+import app.auf.service.GatewayManager
+import app.auf.service.GraphLoader
+import app.auf.ui.ImportExportViewModel
+import app.auf.util.BasePath
+import app.auf.util.JsonProvider
+import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.JsonPrimitive
 
 
 /**
@@ -23,13 +40,13 @@ import kotlinx.serialization.json.JsonPrimitive
  *
  * ---
  * ## Dependencies
- * - `app.auf.Store`: The UDF state container.
- * - `app.auf.GatewayManager`
- * - `app.auf.BackupManager`
- * - `app.auf.GraphLoader`
- * - `app.auf.ActionExecutor`
- * - `app.auf.ImportExportViewModel`
- * - `app.auf.PlatformDependencies`: The single bridge to the host OS.
+ * - `app.auf.core.Store`: The UDF state container.
+ * - `app.auf.service.GatewayManager`
+ * - `app.auf.service.BackupManager`
+ * - `app.auf.service.GraphLoader`
+ * - `app.auf.service.ActionExecutor`
+ * - `app.auf.ui.ImportExportViewModel`
+ * - `app.auf.util.PlatformDependencies`: The single bridge to the host OS.
  * - `kotlinx.coroutines.CoroutineScope`
  *
  * @version 3.2
