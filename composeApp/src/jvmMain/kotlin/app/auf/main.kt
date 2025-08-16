@@ -1,4 +1,3 @@
-// FILE: composeApp/src/jvmMain/kotlin/app/auf/main.kt
 package app.auf
 
 import androidx.compose.runtime.remember
@@ -17,8 +16,10 @@ import app.auf.service.BackupManager
 import app.auf.service.Gateway
 import app.auf.service.GatewayManager
 import app.auf.service.GraphLoader
+import app.auf.service.GraphService
 import app.auf.service.ImportExportManager
 import app.auf.service.SettingsManager
+import app.auf.ui.App
 import app.auf.ui.ImportExportViewModel
 import app.auf.util.JsonProvider
 import app.auf.util.PlatformDependencies
@@ -66,21 +67,26 @@ fun main() = application {
         val gateway = Gateway(jsonParser)
         val gatewayManager = GatewayManager(gateway, jsonParser, apiKey)
         val backupManager = BackupManager(platformDependencies)
-        val graphLoader = GraphLoader(platformDependencies, jsonParser)
         val actionExecutor = ActionExecutor(platformDependencies, jsonParser)
         val importExportManager = ImportExportManager(platformDependencies, jsonParser)
         val importExportViewModel = ImportExportViewModel(importExportManager, coroutineScope)
 
+        // --- Instantiate Services ---
+        // These services contain the actual business logic and side effects.
+        val graphLoader = GraphLoader(platformDependencies, jsonParser)
+        val graphService = GraphService(graphLoader)
+
 
         // --- Instantiate the main StateManager with all its dependencies ---
         StateManager(
-            store = store, // CORRECTED: The new Store is now injected.
+            store = store,
             gatewayManager = gatewayManager,
             backupManager = backupManager,
-            graphLoader = graphLoader,
+            // MODIFIED: Inject the new GraphService, removing the direct GraphLoader dependency.
+            graphService = graphService,
             actionExecutor = actionExecutor,
             importExportViewModel = importExportViewModel,
-            platform = platformDependencies, // Pass the platform dependency
+            platform = platformDependencies,
             initialSettings = savedSettings,
             coroutineScope = coroutineScope
         )

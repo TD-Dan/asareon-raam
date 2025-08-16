@@ -1,4 +1,3 @@
-// FILE: composeApp/src/commonMain/kotlin/app/auf/StateManager.kt
 package app.auf
 
 import app.auf.core.ActionBlock
@@ -17,7 +16,7 @@ import app.auf.model.UserSettings
 import app.auf.service.ActionExecutor
 import app.auf.service.BackupManager
 import app.auf.service.GatewayManager
-import app.auf.service.GraphLoader
+import app.auf.service.GraphService
 import app.auf.ui.ImportExportViewModel
 import app.auf.util.BasePath
 import app.auf.util.JsonProvider
@@ -43,20 +42,20 @@ import kotlinx.coroutines.launch
  * - `app.auf.core.Store`: The UDF state container.
  * - `app.auf.service.GatewayManager`
  * - `app.auf.service.BackupManager`
- * - `app.auf.service.GraphLoader`
+ * - `app.auf.service.GraphService`: The new service for graph logic.
  * - `app.auf.service.ActionExecutor`
  * - `app.auf.ui.ImportExportViewModel`
  * - `app.auf.util.PlatformDependencies`: The single bridge to the host OS.
  * - `kotlinx.coroutines.CoroutineScope`
  *
- * @version 3.2
+ * @version 3.3
  * @since 2025-08-16
  */
 open class StateManager(
     private val store: Store,
     private val gatewayManager: GatewayManager,
     private val backupManager: BackupManager,
-    private val graphLoader: GraphLoader,
+    private val graphService: GraphService,
     private val actionExecutor: ActionExecutor,
     val importExportViewModel: ImportExportViewModel,
     private val platform: PlatformDependencies,
@@ -73,6 +72,24 @@ open class StateManager(
         backupManager.createBackup("on-launch")
         loadHolonGraph()
         loadAvailableModels()
+    }
+
+    // --- MODIFIED: The core logic of graph loading is now in this single, refactored method. ---
+    fun loadHolonGraph() {
+        coroutineScope.launch(Dispatchers.Default) {
+            // 1. Dispatch the initial action to notify the UI we are loading.
+            store.dispatch(AppAction.LoadGraph)
+            // 2. Call the dedicated service to perform the asynchronous work.
+            val result = graphService.loadGraph(state.value.aiPersonaId)
+            // 3. Dispatch the result to the store to update the state.
+            if (result.fatalError != null) {
+                store.dispatch(AppAction.LoadGraphFailure(result.fatalError))
+            } else {
+                store.dispatch(AppAction.LoadGraphSuccess(result))
+                // TODO: The side-effect of loading active holons after the graph is loaded
+                // will be handled by a dedicated HolonService.
+            }
+        }
     }
 
     fun sendMessage(message: String, from: Author = Author.USER) {
@@ -328,6 +345,7 @@ open class StateManager(
     }
 
 
+    // MODIFIED: This method now just calls the single, authoritative load method.
     fun retryLoadHolonGraph() {
         loadHolonGraph()
     }
@@ -342,6 +360,7 @@ open class StateManager(
         store.dispatch(AppAction.SelectAiPersona(holonId))
         // The graph load is a side-effect that follows the state change.
         if (holonId != null) {
+            // MODIFIED: This now calls the single, authoritative load method.
             loadHolonGraph()
         }
     }
@@ -386,19 +405,7 @@ open class StateManager(
         println("ACTION: toggleSystemMessageVisibility - (Action not yet implemented)")
     }
 
-    fun loadHolonGraph() {
-        coroutineScope.launch(Dispatchers.Default) {
-            store.dispatch(AppAction.LoadGraph)
-            val result = graphLoader.loadGraph(state.value.aiPersonaId)
-            if (result.fatalError != null) {
-                store.dispatch(AppAction.LoadGraphFailure(result.fatalError))
-                return@launch
-            }
-            store.dispatch(AppAction.LoadGraphSuccess(result))
-            // TODO: The side-effect of loading active holons after the graph is loaded
-            // will be handled by a dedicated service.
-        }
-    }
+    // REMOVED: The old loadHolonGraph method is gone, replaced by the new one above.
 
     private fun loadAvailableModels() {
         coroutineScope.launch {

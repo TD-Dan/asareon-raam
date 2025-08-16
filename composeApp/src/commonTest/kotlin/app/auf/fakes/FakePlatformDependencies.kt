@@ -1,8 +1,8 @@
-package app.auf
+package app.auf.fakes
 
-import app.auf.util.BasePath
 import app.auf.util.FileEntry
 import app.auf.util.PlatformDependencies
+import app.auf.util.BasePath
 
 /**
  * A fake, in-memory implementation of the PlatformDependencies contract for use in unit tests.
