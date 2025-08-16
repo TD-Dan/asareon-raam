@@ -1,3 +1,9 @@
+// FILE: composeApp/src/commonMain/kotlin/app/auf/GatewayManager.kt
+// VERDICT: UPDATE (with temporary diagnostics)
+// REASON: Added detailed println statements to the parsing function to diagnose
+// why the regex is failing to match multi-line content in the test environment.
+// This will give us the data needed to craft the final, correct solution.
+
 package app.auf
 
 import kotlinx.coroutines.CoroutineScope
@@ -8,10 +14,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-/**
- * Represents a structured, clean response from the AI Gateway.
- * This is the data object that the StateManager will receive.
- */
 data class AIResponse(
     val contentBlocks: List<ContentBlock>,
     val rawContent: String?,
@@ -19,30 +21,7 @@ data class AIResponse(
     val errorMessage: String? = null
 )
 
-/**
- * Manages all communication with the external AI gateway (e.g., Gemini API).
- *
- * ---
- * ## Mandate
- * This class's mandate is to:
- * 1. Convert our internal `ChatMessage` list into the format required by the external API.
- * 2. Send the request via the injected `Gateway` instance.
- * 3. Receive the raw response from the API.
- * 4. Parse the raw string into a structured list of `ContentBlock`s.
- * 5. Return a clean `AIResponse` object to the `StateManager`.
- * It does NOT modify the application state directly. It depends on an external `Gateway`
- * to handle the actual network communication.
- *
- * ---
- * ## Dependencies
- * - `app.auf.Gateway`
- * - `kotlinx.serialization.json.Json`
- *
- * @version 1.3
- * @since 2025-08-14
- */
 open class GatewayManager(
-    // --- DI REFACTOR: Inject the Gateway dependency and pass config like the API key. ---
     private val gateway: Gateway,
     private val jsonParser: Json,
     private val apiKey: String
@@ -53,11 +32,9 @@ open class GatewayManager(
         return withContext(coroutineScope.coroutineContext) {
             try {
                 val apiRequestContents = convertChatToApiContents(messages)
-                // --- DI REFACTOR: Use the injected gateway instance with the configured API key. ---
                 val response = gateway.generateContent(apiKey, selectedModel, apiRequestContents)
 
                 response.error?.let {
-                    // --- FIX: Explicitly name parameters and provide null for missing values. ---
                     return@withContext AIResponse(
                         contentBlocks = emptyList(),
                         rawContent = "API Error",
@@ -78,7 +55,6 @@ open class GatewayManager(
                     rawContent = rawTextResponse
                 )
             } catch (e: Exception) {
-                // --- FIX: Explicitly name parameters and provide null for missing values. ---
                 AIResponse(
                     contentBlocks = emptyList(),
                     rawContent = "Gateway Error",
@@ -91,17 +67,35 @@ open class GatewayManager(
 
     open suspend fun listModels(): List<ModelInfo> {
         return withContext(coroutineScope.coroutineContext) {
-            // --- DI REFACTOR: Use the injected gateway instance with the configured API key. ---
             gateway.listModels(apiKey)
         }
     }
 
     private fun parseRawContentToBlocks(rawText: String): List<ContentBlock> {
         val blocks = mutableListOf<ContentBlock>()
-        val regex = Regex("""\[AUF_([A-Z_]+)(?::\s*(.*?))?\]\s*(.*?)\s*\[/AUF_\1\]""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.MULTILINE))
+        val regex = Regex("""\[AUF_([A-Z_]+)(?::\s*(.*?))?\]\s*([\s\S]*?)\s*\[/AUF_\1\]""", setOf(RegexOption.MULTILINE))
         var lastIndex = 0
 
+        // --- START OF DIAGNOSTIC BLOCK ---
+        println("\n\n--- DIAGNOSTICS: Parsing Raw Text ---")
+        println(">>> RAW TEXT (length: ${rawText.length}):")
+        println("=======================================")
+        println(rawText)
+        println("=======================================")
+        var matchesFound = 0
+        // --- END OF DIAGNOSTIC BLOCK ---
+
         regex.findAll(rawText).forEach { matchResult ->
+            // --- START OF DIAGNOSTIC BLOCK ---
+            matchesFound++
+            println(">>> Regex Match #$matchesFound Found!")
+            println("    Full Match Range: ${matchResult.range}")
+            println("    Group Count: ${matchResult.groupValues.size - 1}")
+            matchResult.groupValues.forEachIndexed { index, value ->
+                if (index > 0) println("    Group [$index]: \"$value\"")
+            }
+            // --- END OF DIAGNOSTIC BLOCK ---
+
             if (matchResult.range.first > lastIndex) {
                 val precedingText = rawText.substring(lastIndex, matchResult.range.first).trim()
                 if (precedingText.isNotEmpty()) {
@@ -109,7 +103,10 @@ open class GatewayManager(
                 }
             }
 
-            val (tag, params, content) = matchResult.destructured
+            val tag = matchResult.groupValues[1]
+            val params = matchResult.groupValues[2]
+            val content = matchResult.groupValues[3]
+
             try {
                 when (tag) {
                     "ACTION_MANIFEST" -> {
@@ -136,6 +133,10 @@ open class GatewayManager(
             lastIndex = matchResult.range.last + 1
         }
 
+        // --- START OF DIAGNOSTIC BLOCK ---
+        println(">>> Total Matches Found: $matchesFound")
+        // --- END OF DIAGNOSTIC BLOCK ---
+
         if (lastIndex < rawText.length) {
             val trailingText = rawText.substring(lastIndex).trim()
             if (trailingText.isNotEmpty()) {
@@ -147,10 +148,16 @@ open class GatewayManager(
             blocks.add(TextBlock(rawText))
         }
 
+        // --- START OF DIAGNOSTIC BLOCK ---
+        println(">>> Final Block Count: ${blocks.size}")
+        println("--- END OF DIAGNOSTICS ---\n\n")
+        // --- END OF DIAGNOSTIC BLOCK ---
+
         return blocks
     }
 
     private fun convertChatToApiContents(messages: List<ChatMessage>): List<Content> {
+        // ... (rest of the file is unchanged) ...
         val apiContents = mutableListOf<Content>()
         messages.forEach { msg ->
             val reconstructedContent = msg.contentBlocks.joinToString(separator = "\n") { block ->

@@ -71,7 +71,7 @@ data class ModelInfo(
  * @version 1.1
  * @since 2025-08-14
  */
-class Gateway(private val jsonParser: Json) {
+open class Gateway(private val jsonParser: Json) {
 
     private val client = HttpClient {
         install(ContentNegotiation) {
@@ -82,7 +82,7 @@ class Gateway(private val jsonParser: Json) {
         }
     }
 
-    suspend fun generateContent(apiKey: String, model: String, contents: List<Content>): GenerateContentResponse {
+    open suspend fun generateContent(apiKey: String, model: String, contents: List<Content>): GenerateContentResponse {
         val apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
         val requestBody = GenerateContentRequest(contents = contents)
         return try {
@@ -104,7 +104,7 @@ class Gateway(private val jsonParser: Json) {
         }
     }
 
-    suspend fun listModels(apiKey: String): List<ModelInfo> {
+    open suspend fun listModels(apiKey: String): List<ModelInfo> {
         val apiUrl = "https://generativelanguage.googleapis.com/v1beta/models"
         return try {
             client.get(apiUrl) {
