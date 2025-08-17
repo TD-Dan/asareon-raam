@@ -1,11 +1,15 @@
 package app.auf
 
 import app.auf.core.GraphLoadResult
+import app.auf.core.Holon
+import app.auf.core.HolonHeader
 import app.auf.service.GraphLoader
 import app.auf.service.GraphService
 import app.auf.util.JsonProvider
 import app.auf.fakes.FakePlatformDependencies
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.BeforeTest
 import kotlin.test.assertEquals
@@ -47,8 +51,8 @@ class FakeGraphLoader : GraphLoader(FakePlatformDependencies(), JsonProvider.app
  * - **Act: ** The `graphService.loadGraph()` method is called.
  * - **Assert: ** Verify that the `GraphService` returned the exact result from the fake loader and that the fake loader was called with the correct parameters.
  *
- * @version 1.0
- * @since 2025-08-16
+ * @version 1.1
+ * @since 2025-08-17
  */
 class GraphServiceTest {
 
@@ -66,8 +70,9 @@ class GraphServiceTest {
     fun `loadGraph should call loader and return its success result`() = runTest {
         // Arrange: Prepare a successful result object for the fake loader to return.
         val expectedResult = GraphLoadResult(
-            holonGraph = listOf(FakeHolon.header),
-            determinedPersonaId = FakeHolon.header.id
+            // --- FIX IS HERE: Use the full Holon object ---
+            holonGraph = listOf(FakeHolon.holon),
+            determinedPersonaId = FakeHolon.holon.header.id
         )
         fakeGraphLoader.resultToReturn = expectedResult
         val testPersonaId = "test-persona-id"
@@ -116,10 +121,20 @@ class GraphServiceTest {
 
 // A simple object to provide fake data for tests, avoiding magic strings.
 object FakeHolon {
-    val header = app.auf.core.HolonHeader(
+    private val header = HolonHeader(
         id = "test-holon-1",
         type = "Test_Type",
         name = "Test Holon",
         summary = "A test holon"
+    )
+
+    private val payload = buildJsonObject {
+        put("test_key", "test_value")
+    }
+
+    // --- FIX IS HERE: A full Holon object for testing ---
+    val holon = Holon(
+        header = header,
+        payload = payload
     )
 }

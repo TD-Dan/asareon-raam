@@ -20,7 +20,7 @@ import kotlinx.serialization.json.JsonObject
  * - `app.auf.util.PlatformDependencies`: The contract for all platform-specific I/O.
  * - `kotlinx.serialization.json.Json`: For parsing Holon files.
  *
- * @version 3.0
+ * @version 3.1
  * @since 2025-08-17
  */
 open class GraphLoader(
@@ -46,7 +46,6 @@ open class GraphLoader(
             val determinedPersonaId = determinePersonaToLoad(currentPersonaId, availablePersonas)
 
             if (determinedPersonaId == null) {
-                // If there were parsing errors during discovery, they are more important than this message.
                 if (parsingErrors.isNotEmpty()) {
                     return GraphLoadResult(
                         parsingErrors = parsingErrors,
@@ -61,9 +60,6 @@ open class GraphLoader(
             val rootDirectoryPath = holonsBasePath + platform.pathSeparator + determinedPersonaId
             traverseAndLoad(rootDirectoryPath, null, 0, graph, parsingErrors)
 
-            // --- Scan and add quarantined files ---
-            // This logic would need adjustment to create dummy Holon objects if kept.
-            // For now, focusing on the core load.
 
             if (graph.isEmpty() && parsingErrors.isEmpty()) {
                 return GraphLoadResult(
@@ -87,8 +83,6 @@ open class GraphLoader(
     }
 
     private fun discoverAvailablePersonas(holonsDirPath: String, parsingErrors: MutableList<String>): List<HolonHeader> {
-        // This function still only needs to return headers, as it's for the selection dropdown.
-        // Reading the full file here is acceptable as it's a small number of files.
         return platform.listDirectory(holonsDirPath).filter { it.isDirectory }.mapNotNull { dirEntry ->
             val dirName = platform.getFileName(dirEntry.path)
             val holonFilePath = dirEntry.path + platform.pathSeparator + "$dirName.json"
@@ -99,7 +93,9 @@ open class GraphLoader(
                     if (holon.header.type == "AI_Persona_Root") holon.header.copy(filePath = holonFilePath) else null
                 } catch (e: Exception) {
                     val error = "Parse failed for potential persona $dirName: ${e.message?.substringBefore('\n')}"
-                    parsingErrors.add(error) // Add the error to the shared list.
+                    // --- FIX IS HERE: Explicit console print for immediate debugging ---
+                    println("GRAPHLOADER_ERROR: $error")
+                    parsingErrors.add(error)
                     null
                 }
             } else null
@@ -154,6 +150,8 @@ open class GraphLoader(
             }
         } catch (e: Exception) {
             val error = "Parse failed for $holonId: ${e.message?.substringBefore('\n')}"
+            // --- FIX IS HERE: Explicit console print for immediate debugging ---
+            println("GRAPHLOADER_ERROR: $error")
             parsingErrors.add(error)
             e.printStackTrace()
         }

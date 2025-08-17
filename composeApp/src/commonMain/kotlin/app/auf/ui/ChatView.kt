@@ -44,19 +44,19 @@ import java.util.*
 
 @Composable
 fun MessageCard(message: ChatMessage, stateManager: StateManager) {
-    var isCollapsed by remember { mutableStateOf(message.author == Author.SYSTEM && message.title != "Gateway Error") }
+    var isCollapsed by remember { mutableStateOf(message.author == Author.SYSTEM && message.title != "Gateway Error" && message.title != "Graph Parsing Warning") }
     val clipboardManager = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
 
     val cardColor = when {
-        message.title == "Gateway Error" -> Color.Red.copy(alpha = 0.1f)
+        message.title == "Gateway Error" || message.title == "Graph Parsing Warning" -> Color.Red.copy(alpha = 0.1f)
         message.author == Author.USER -> Color.White
         message.author == Author.AI -> Color.White
         message.author == Author.SYSTEM -> Color.LightGray.copy(alpha = 0.2f)
         else -> Color.White
     }
     val borderColor = when {
-        message.title == "Gateway Error" -> Color.Red.copy(alpha = 0.4f)
+        message.title == "Gateway Error" || message.title == "Graph Parsing Warning" -> Color.Red.copy(alpha = 0.4f)
         else -> Color.LightGray.copy(alpha = 0.5f)
     }
 
@@ -129,7 +129,7 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                                 }
                             }
 
-                            val deleteText = if (message.title == "Gateway Error") "Dismiss" else "Delete"
+                            val deleteText = if (message.title?.contains("Error") == true || message.title?.contains("Warning") == true) "Dismiss" else "Delete"
                             DropdownMenuItem(onClick = {
                                 stateManager.deleteMessage(message.timestamp)
                                 showMenu = false
@@ -294,14 +294,7 @@ fun ChatView(
             }
         }
 
-        appState.errorMessage?.let {
-            Text(
-                text = it,
-                color = Color.Red,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.fillMaxWidth().background(Color.Red.copy(alpha=0.1f)).padding(8.dp)
-            )
-        }
+        // --- FIX IS HERE: The generic error message banner has been removed. ---
 
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
@@ -321,7 +314,6 @@ fun ChatView(
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = {
                     val fullPrompt = stateManager.getPromptAsString()
-                    // --- MODIFIED: Added copy guards ---
                     val guardedPrompt = "---START OF COPY:---\n$fullPrompt\n--- END OF COPY---"
                     clipboardManager.setText(AnnotatedString(guardedPrompt))
                 }) {
@@ -384,7 +376,6 @@ fun ChatView(
                 enabled = !appState.isProcessing && appState.gatewayStatus == GatewayStatus.OK
             )
             Spacer(modifier = Modifier.width(8.dp))
-            // --- MODIFIED: Conditional Send/Stop button ---
             Button(
                 onClick = { if (appState.isProcessing) stateManager.cancelMessage() else sendMessageAction() },
                 modifier = Modifier.height(56.dp),

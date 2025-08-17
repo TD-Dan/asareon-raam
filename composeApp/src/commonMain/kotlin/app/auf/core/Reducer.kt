@@ -17,7 +17,7 @@ import app.auf.core.AppAction
  * - `app.auf.core.AppState`: The state object it operates on.
  * - `app.auf.core.AppAction`: The actions it responds to.
  *
- * @version 1.1
+ * @version 1.4
  * @since 2025-08-17
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
@@ -31,9 +31,21 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         )
         is AppAction.LoadGraphSuccess -> {
             val result = action.result
-            // Find the persona holon from the full graph to make it active by default.
             val personaHolon = result.holonGraph.find { it.header.id == result.determinedPersonaId }
             val initialActiveHolons = if (personaHolon != null) mapOf(personaHolon.header.id to personaHolon) else emptyMap()
+
+            val newChatHistory = state.chatHistory.toMutableList()
+            if (result.parsingErrors.isNotEmpty()) {
+                val errorContent = "The following ${result.parsingErrors.size} files could not be parsed and were excluded from the graph:\n\n" +
+                        result.parsingErrors.joinToString("\n") { "- $it" }
+                val errorMessage = ChatMessage(
+                    author = Author.SYSTEM,
+                    title = "Graph Parsing Warning",
+                    contentBlocks = listOf(TextBlock(errorContent)),
+                    timestamp = action.timestamp
+                )
+                newChatHistory.add(errorMessage)
+            }
 
             state.copy(
                 holonGraph = result.holonGraph,
@@ -41,7 +53,8 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                 availableAiPersonas = result.availableAiPersonas,
                 aiPersonaId = result.determinedPersonaId,
                 activeHolons = initialActiveHolons,
-                errorMessage = if (result.parsingErrors.isNotEmpty()) "Warning: ${result.parsingErrors.size} holons failed to parse." else null
+                chatHistory = newChatHistory,
+                errorMessage = null
             )
         }
         is AppAction.LoadGraphFailure -> state.copy(
@@ -92,7 +105,10 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             isProcessing = false,
             errorMessage = "Request cancelled by user."
         )
-
+        // --- FIX IS HERE: Add new case for deleting a message ---
+        is AppAction.DeleteMessage -> state.copy(
+            chatHistory = state.chatHistory.filterNot { it.timestamp == action.timestamp }
+        )
 
         // --- UI & View ---
         is AppAction.SetViewMode -> state.copy(

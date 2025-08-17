@@ -14,14 +14,14 @@ package app.auf.core
  * ## Dependencies
  * - `app.auf.core.AppState`: Many actions carry payload data defined in AppState.kt.
  *
- * @version 1.1
+ * @version 1.3
  * @since 2025-08-17
  */
 sealed interface AppAction {
 
     // --- Graph Loading Actions ---
     data object LoadGraph : AppAction
-    data class LoadGraphSuccess(val result: GraphLoadResult) : AppAction
+    data class LoadGraphSuccess(val result: GraphLoadResult, val timestamp: Long) : AppAction
     data class LoadGraphFailure(val error: String) : AppAction
 
     // --- Chat & Gateway Actions ---
@@ -30,6 +30,7 @@ sealed interface AppAction {
     data class SendMessageSuccess(val response: GatewayResponse, val timestamp: Long) : AppAction
     data class SendMessageFailure(val error: String, val timestamp: Long) : AppAction
     data object CancelMessage : AppAction
+    data class DeleteMessage(val timestamp: Long) : AppAction
 
     // --- UI & View Actions ---
     data class SetViewMode(val mode: ViewMode) : AppAction

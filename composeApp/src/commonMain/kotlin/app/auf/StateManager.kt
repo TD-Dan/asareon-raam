@@ -48,7 +48,7 @@ import kotlinx.coroutines.launch
  * - `app.auf.util.PlatformDependencies`: The single bridge to the host OS.
  * - `kotlinx.coroutines.CoroutineScope`
  *
- * @version 3.6
+ * @version 3.8
  * @since 2025-08-17
  */
 open class StateManager(
@@ -80,7 +80,7 @@ open class StateManager(
             if (result.fatalError != null) {
                 store.dispatch(AppAction.LoadGraphFailure(result.fatalError))
             } else {
-                store.dispatch(AppAction.LoadGraphSuccess(result))
+                store.dispatch(AppAction.LoadGraphSuccess(result, platform.getSystemTimeMillis()))
             }
         }
     }
@@ -121,7 +121,8 @@ open class StateManager(
     }
 
     fun deleteMessage(timestamp: Long) {
-        println("ACTION: DeleteMessage($timestamp) - (Action not yet implemented)")
+        // --- FIX IS HERE: Dispatch the DeleteMessage action ---
+        store.dispatch(AppAction.DeleteMessage(timestamp))
     }
 
     fun rerunMessage(timestamp: Long) {
@@ -313,6 +314,7 @@ open class StateManager(
     private fun loadAvailableModels() {
         coroutineScope.launch {
             val models = gatewayManager.listModels()
+            //...
         }
     }
 }
