@@ -25,7 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import app.auf.StateManager
+import app.auf.core.StateManager
 import app.auf.core.GatewayStatus
 import app.auf.core.ViewMode
 
@@ -41,7 +41,7 @@ import app.auf.core.ViewMode
  *
  * ---
  * ## Dependencies
- * - `app.auf.StateManager`
+ * - `app.auf.core.StateManager`
  *
  * @version 2.6
  * @since 2025-08-17

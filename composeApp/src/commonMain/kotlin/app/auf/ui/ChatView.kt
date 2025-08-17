@@ -26,7 +26,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.auf.StateManager
+import app.auf.core.StateManager
 import app.auf.core.ActionBlock
 import app.auf.core.AnchorBlock
 import app.auf.core.AppRequestBlock

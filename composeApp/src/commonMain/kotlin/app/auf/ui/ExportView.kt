@@ -16,7 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import app.auf.StateManager
+import app.auf.core.StateManager
 import app.auf.core.AppState
 import app.auf.core.ViewMode
 import javax.swing.JFileChooser

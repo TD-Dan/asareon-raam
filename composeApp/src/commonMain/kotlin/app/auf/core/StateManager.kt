@@ -1,11 +1,5 @@
-package app.auf
+package app.auf.core
 
-import app.auf.core.AppAction
-import app.auf.core.AppState
-import app.auf.core.Author
-import app.auf.core.ChatMessage
-import app.auf.core.Store
-import app.auf.core.ViewMode
 import app.auf.model.UserSettings
 import app.auf.service.ActionExecutor
 import app.auf.service.BackupManager
@@ -19,7 +13,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-
 
 /**
  * The core state management class for the AUF application.

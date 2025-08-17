@@ -7,6 +7,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import app.auf.core.AppState
+import app.auf.core.StateManager
 import app.auf.core.Store
 import app.auf.core.ViewMode
 import app.auf.core.appReducer
