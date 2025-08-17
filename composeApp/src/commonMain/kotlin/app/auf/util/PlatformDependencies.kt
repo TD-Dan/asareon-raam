@@ -20,7 +20,7 @@ enum class BasePath {
  * Defines a platform-agnostic contract for ALL platform-specific functionalities.
  * This class and its members are marked 'open' to allow for test fakes to inherit from it.
  *
- * @version 2.3
+ * @version 2.4
  * @since 2025-08-17
  */
 expect open class PlatformDependencies() {
@@ -42,10 +42,11 @@ expect open class PlatformDependencies() {
     // --- Complex Operations ---
     open fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String)
     open fun openFolderInExplorer(path: String)
+    open fun selectDirectoryPath(): String?
 
     // --- System Utilities ---
     open fun getSystemTimeMillis(): Long
     open fun formatIsoTimestamp(timestamp: Long): String
-    open fun formatDisplayTimestamp(timestamp: Long): String // <<< MODIFIED: Added this line
+    open fun formatDisplayTimestamp(timestamp: Long): String
     open fun copyToClipboard(text: String)
 }

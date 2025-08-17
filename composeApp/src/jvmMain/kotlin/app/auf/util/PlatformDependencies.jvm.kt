@@ -14,11 +14,13 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import javax.swing.JFileChooser
+import javax.swing.filechooser.FileSystemView
 
 /**
  * The actual JVM implementation of the PlatformDependencies contract.
  *
- * @version 2.5
+ * @version 2.6
  * @since 2025-08-17
  */
 actual open class PlatformDependencies {
@@ -26,7 +28,6 @@ actual open class PlatformDependencies {
     private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
         timeZone = TimeZone.getTimeZone("UTC")
     }
-    // --- MODIFIED: Added a formatter for the UI ---
     private val displayFormatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
 
@@ -117,6 +118,20 @@ actual open class PlatformDependencies {
         }
     }
 
+    // --- MODIFIED: Implemented the new function ---
+    actual open fun selectDirectoryPath(): String? {
+        val fileChooser = JFileChooser(FileSystemView.getFileSystemView().homeDirectory).apply {
+            dialogTitle = "Select Directory"
+            fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+            isAcceptAllFileFilterUsed = false
+        }
+        return if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+            fileChooser.selectedFile.absolutePath
+        } else {
+            null
+        }
+    }
+
     // --- System Utilities ---
 
     actual open fun getSystemTimeMillis(): Long = System.currentTimeMillis()
@@ -125,7 +140,6 @@ actual open class PlatformDependencies {
         return isoFormatter.format(Date(timestamp))
     }
 
-    // --- MODIFIED: Implemented the new function ---
     actual open fun formatDisplayTimestamp(timestamp: Long): String {
         return displayFormatter.format(Date(timestamp))
     }
