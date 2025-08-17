@@ -17,7 +17,7 @@ import app.auf.core.AppAction
  * - `app.auf.core.AppState`: The state object it operates on.
  * - `app.auf.core.AppAction`: The actions it responds to.
  *
- * @version 1.6
+ * @version 1.8
  * @since 2025-08-17
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
@@ -71,7 +71,6 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             )
             state.copy(chatHistory = state.chatHistory + userMessage)
         }
-        // --- MODIFIED: Added handler for the new action ---
         is AppAction.AddSystemMessage -> {
             val systemMessage = ChatMessage(
                 author = Author.SYSTEM,
@@ -158,6 +157,9 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         )
         is AppAction.ClearToast -> state.copy(
             toastMessage = null
+        )
+        is AppAction.ToggleSystemVisibility -> state.copy(
+            isSystemVisible = !state.isSystemVisible
         )
 
         // --- Persona & Model ---

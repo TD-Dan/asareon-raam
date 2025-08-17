@@ -1,4 +1,3 @@
-// --- FILE: commonMain/kotlin/app/auf/ui/ChatView.kt ---
 package app.auf.ui
 
 import androidx.compose.animation.AnimatedVisibility
@@ -40,8 +39,6 @@ import app.auf.core.TextBlock
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import java.text.SimpleDateFormat
-import java.util.*
 
 @Composable
 fun MessageCard(message: ChatMessage, stateManager: StateManager) {
@@ -69,9 +66,9 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
     val titleForCopy = message.title ?: "untitled"
     val guardedCopyContent = "---COPY of ${titleForCopy}:---\n$contentToCopy\n---END OF COPY of ${titleForCopy}---"
 
+    // --- MODIFIED: Use the platform-agnostic formatter from StateManager ---
     val formattedTimestamp = remember(message.timestamp) {
-        val sdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
-        sdf.format(Date(message.timestamp))
+        stateManager.formatDisplayTimestamp(message.timestamp)
     }
 
     Card(
@@ -258,8 +255,16 @@ fun ChatView(
 
     val lastTransactionTokens = appState.chatHistory.lastOrNull { it.author == Author.AI }?.usageMetadata
 
-    // --- FIX IS HERE: Simplified message list logic. ---
-    val displayedMessages = appState.chatHistory
+    // --- MODIFIED: Re-implemented display logic using the new StateManager functions ---
+    val displayedMessages by remember(appState.isSystemVisible, appState.chatHistory, appState.activeHolons) {
+        derivedStateOf {
+            if (appState.isSystemVisible) {
+                stateManager.getSystemContextForDisplay() + appState.chatHistory
+            } else {
+                appState.chatHistory
+            }
+        }
+    }
 
     LaunchedEffect(displayedMessages.size) {
         coroutineScope.launch {
@@ -284,7 +289,6 @@ fun ChatView(
         ) {
             items(
                 items = displayedMessages,
-                // --- FIX IS HERE: Key lambda is now safe. ---
                 key = { message -> "${message.timestamp}-${message.author}-${message.contentBlocks.firstOrNull()?.summary}" }
             ) { message ->
                 MessageCard(message = message, stateManager = stateManager)
@@ -296,11 +300,27 @@ fun ChatView(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // --- FIX IS HERE: Removed the defunct buttons ---
-            // The empty Row is kept to balance the layout with the token count on the other side.
+            // --- MODIFIED: Re-added the buttons with correct logic ---
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // This space is intentionally left blank.
+                val systemButtonColors = if (appState.isSystemVisible) {
+                    ButtonDefaults.buttonColors(backgroundColor = Color.DarkGray, contentColor = Color.White)
+                } else {
+                    ButtonDefaults.buttonColors(backgroundColor = Color.LightGray.copy(alpha = 0.4f), contentColor = Color.Black)
+                }
+                Button(onClick = { stateManager.toggleSystemMessageVisibility() }, colors = systemButtonColors) {
+                    Text("Show System")
+                }
+
+                Spacer(Modifier.width(8.dp))
+                OutlinedButton(onClick = {
+                    val fullPrompt = stateManager.getPromptForClipboard()
+                    val guardedPrompt = "---START OF COPY:---\n$fullPrompt\n--- END OF COPY---"
+                    clipboardManager.setText(AnnotatedString(guardedPrompt))
+                }) {
+                    Text("Copy Prompt")
+                }
             }
+
 
             lastTransactionTokens?.let {
                 Text(

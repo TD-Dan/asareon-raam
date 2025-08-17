@@ -1,5 +1,4 @@
-// --- NEW FILE: commonMain/kotlin/app/auf/service/ChatService.kt ---
-
+// --- FILE: commonMain/kotlin/app/auf/service/ChatService.kt ---
 package app.auf.service
 
 import app.auf.core.AppAction
@@ -16,6 +15,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import app.auf.model.Action
+import kotlinx.serialization.builtins.ListSerializer
+import app.auf.core.ActionBlock // <<< MODIFIED: Added this line
 
 /**
  * Service dedicated to handling all business logic related to AI chat interactions.
@@ -33,7 +35,7 @@ import kotlinx.coroutines.launch
  * - `app.auf.util.PlatformDependencies`: For platform-specific utilities like timestamps.
  * - `kotlinx.coroutines.CoroutineScope`: To manage asynchronous tasks.
  *
- * @version 1.0
+ * @version 1.2
  * @since 2025-08-17
  */
 class ChatService(
@@ -90,28 +92,7 @@ class ChatService(
         activeJob = null
     }
 
-    /**
-     * Adds a system-level message to the chat history, then triggers the AI.
-     * Used for automated processes like dream cycles.
-     */
-    private fun sendSystemMessage(message: String) {
-        store.dispatch(AppAction.AddSystemMessage(message, platform.getSystemTimeMillis()))
-        sendMessage()
-    }
-
-    private fun handleAppRequests(message: ChatMessage) {
-        message.contentBlocks.filterIsInstance<AppRequestBlock>().forEach { request ->
-            when (request.requestType) {
-                "START_DREAM_CYCLE" -> {
-                    sendSystemMessage(
-                        "Please perform a 'Dream Cycle Simulation' based on our recent interaction."
-                    )
-                }
-            }
-        }
-    }
-
-    private fun buildSystemContextMessages(): List<ChatMessage> {
+    fun buildSystemContextMessages(): List<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
         val appState = store.state.value
         val frameworkBasePath = platform.getBasePathFor(BasePath.FRAMEWORK)
@@ -148,6 +129,54 @@ class ChatService(
             }
         }
         return messages
+    }
+
+    fun buildFullPromptAsString(): String {
+        val state = store.state.value
+        val historyForApi = state.chatHistory.filter { it.author == Author.USER || it.author == Author.AI }
+        val systemMessages = buildSystemContextMessages()
+        val fullContext = systemMessages + historyForApi
+
+        return fullContext.joinToString("\n\n") { msg ->
+            val reconstructedContent = msg.contentBlocks.joinToString(separator = "\n") { block ->
+                when (block) {
+                    is TextBlock -> block.text
+                    is ActionBlock -> "[AUF_ACTION_MANIFEST]\n${JsonProvider.appJson.encodeToString(ListSerializer(Action.serializer()), block.actions)}\n[/AUF_ACTION_MANIFEST]"
+                    else -> "[System placeholder for block type: ${block::class.simpleName}]"
+                }
+            }
+            when (msg.author) {
+                Author.USER, Author.AI -> {
+                    val role = if (msg.author == Author.AI) "AI" else "USER"
+                    "--- $role MESSAGE ---\n$reconstructedContent"
+                }
+                Author.SYSTEM -> {
+                    "--- START OF FILE ${msg.title} ---\n$reconstructedContent"
+                }
+            }
+        }
+    }
+
+
+    /**
+     * Adds a system-level message to the chat history, then triggers the AI.
+     * Used for automated processes like dream cycles.
+     */
+    private fun sendSystemMessage(message: String) {
+        store.dispatch(AppAction.AddSystemMessage(message, platform.getSystemTimeMillis()))
+        sendMessage()
+    }
+
+    private fun handleAppRequests(message: ChatMessage) {
+        message.contentBlocks.filterIsInstance<AppRequestBlock>().forEach { request ->
+            when (request.requestType) {
+                "START_DREAM_CYCLE" -> {
+                    sendSystemMessage(
+                        "Please perform a 'Dream Cycle Simulation' based on our recent interaction."
+                    )
+                }
+            }
+        }
     }
 
     private fun generateDynamicToolManifest(): String {

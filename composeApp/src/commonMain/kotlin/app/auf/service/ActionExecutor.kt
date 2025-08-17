@@ -1,4 +1,3 @@
-// FILE: composeApp/src/commonMain/kotlin/app/auf/ActionExecutor.kt
 package app.auf.service
 
 import app.auf.model.Action

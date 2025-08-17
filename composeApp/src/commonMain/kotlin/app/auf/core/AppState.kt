@@ -1,5 +1,3 @@
-// --- FILE: commonMain/kotlin/app/auf/core/AppState.kt ---
-
 package app.auf.core
 
 import app.auf.model.Action

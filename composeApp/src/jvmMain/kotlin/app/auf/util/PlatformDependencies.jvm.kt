@@ -18,7 +18,7 @@ import java.util.zip.ZipOutputStream
 /**
  * The actual JVM implementation of the PlatformDependencies contract.
  *
- * @version 2.4
+ * @version 2.5
  * @since 2025-08-17
  */
 actual open class PlatformDependencies {
@@ -26,6 +26,9 @@ actual open class PlatformDependencies {
     private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
         timeZone = TimeZone.getTimeZone("UTC")
     }
+    // --- MODIFIED: Added a formatter for the UI ---
+    private val displayFormatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+
 
     actual open val pathSeparator: Char = File.separatorChar
 
@@ -120,6 +123,11 @@ actual open class PlatformDependencies {
 
     actual open fun formatIsoTimestamp(timestamp: Long): String {
         return isoFormatter.format(Date(timestamp))
+    }
+
+    // --- MODIFIED: Implemented the new function ---
+    actual open fun formatDisplayTimestamp(timestamp: Long): String {
+        return displayFormatter.format(Date(timestamp))
     }
 
     actual open fun copyToClipboard(text: String) {

@@ -1,5 +1,3 @@
-// --- NEW FILE: commonMain/kotlin/app/auf/service/SourceCodeService.kt ---
-
 package app.auf.service
 
 import app.auf.util.PlatformDependencies

@@ -3,6 +3,7 @@ package app.auf
 import app.auf.core.AppAction
 import app.auf.core.AppState
 import app.auf.core.Author
+import app.auf.core.ChatMessage
 import app.auf.core.Store
 import app.auf.core.ViewMode
 import app.auf.model.UserSettings
@@ -40,7 +41,7 @@ import kotlinx.coroutines.launch
  * - `app.auf.util.PlatformDependencies`: The single bridge to the host OS.
  * - `kotlinx.coroutines.CoroutineScope`
  *
- * @version 4.0
+ * @version 4.1
  * @since 2025-08-17
  */
 open class StateManager(
@@ -61,7 +62,6 @@ open class StateManager(
     fun initialize() {
         backupManager.createBackup("on-launch")
         loadHolonGraph()
-        // MODIFIED: loadAvailableModels is now part of the ChatService logic
     }
 
     fun loadHolonGraph() {
@@ -76,7 +76,7 @@ open class StateManager(
         }
     }
 
-    // --- MODIFIED: All chat logic is now delegated to ChatService ---
+    // --- Chat Logic Delegation ---
     fun sendMessage(message: String) {
         if (state.value.isProcessing || state.value.aiPersonaId == null) return
         store.dispatch(AppAction.AddUserMessage(message, platform.getSystemTimeMillis()))
@@ -85,6 +85,19 @@ open class StateManager(
 
     fun cancelMessage() {
         chatService.cancelMessage()
+    }
+
+    // --- MODIFIED: Added UI-facing helper functions ---
+    fun getSystemContextForDisplay(): List<ChatMessage> {
+        return chatService.buildSystemContextMessages()
+    }
+
+    fun getPromptForClipboard(): String {
+        return chatService.buildFullPromptAsString()
+    }
+
+    fun formatDisplayTimestamp(timestamp: Long): String {
+        return platform.formatDisplayTimestamp(timestamp)
     }
     // --- END MODIFICATION ---
 
@@ -160,7 +173,8 @@ open class StateManager(
     }
 
     fun toggleSystemMessageVisibility() {
-        println("ACTION: toggleSystemMessageVisibility - (Action not yet implemented)")
+        // --- MODIFIED: Dispatch the new action ---
+        store.dispatch(AppAction.ToggleSystemVisibility)
     }
 
     fun executeExport(destinationPath: String) {
