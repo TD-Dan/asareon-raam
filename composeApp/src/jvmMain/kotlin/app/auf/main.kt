@@ -129,7 +129,6 @@ fun main() = application {
         title = "AUF",
         state = windowState
     ) {
-        // No need for a separate theme wrapper here since App() handles it now.
         App(stateManager)
     }
 }
