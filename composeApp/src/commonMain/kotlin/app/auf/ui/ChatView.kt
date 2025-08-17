@@ -46,17 +46,18 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
     val clipboardManager = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
 
+    // --- MODIFIED: Use theme colors instead of hardcoded values ---
     val cardColor = when {
-        message.title == "Gateway Error" || message.title == "Graph Parsing Warning" -> Color.Red.copy(alpha = 0.1f)
-        message.author == Author.USER -> Color.White
-        message.author == Author.AI -> Color.White
-        message.author == Author.SYSTEM -> Color.LightGray.copy(alpha = 0.2f)
-        else -> Color.White
+        message.title == "Gateway Error" || message.title == "Graph Parsing Warning" -> MaterialTheme.colors.error.copy(alpha = 0.1f)
+        message.author == Author.SYSTEM -> MaterialTheme.colors.surface
+        else -> MaterialTheme.colors.surface
     }
     val borderColor = when {
-        message.title == "Gateway Error" || message.title == "Graph Parsing Warning" -> Color.Red.copy(alpha = 0.4f)
-        else -> Color.LightGray.copy(alpha = 0.5f)
+        message.title == "Gateway Error" || message.title == "Graph Parsing Warning" -> MaterialTheme.colors.error.copy(alpha = 0.4f)
+        message.author == Author.SYSTEM -> MaterialTheme.colors.onSurface.copy(alpha = 0.12f)
+        else -> Color.Transparent // No border for user/ai messages
     }
+    // --- END MODIFICATION ---
 
     val contentToCopy = when {
         message.rawContent != null -> message.rawContent
@@ -66,7 +67,6 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
     val titleForCopy = message.title ?: "untitled"
     val guardedCopyContent = "---COPY of ${titleForCopy}:---\n$contentToCopy\n---END OF COPY of ${titleForCopy}---"
 
-    // --- MODIFIED: Use the platform-agnostic formatter from StateManager ---
     val formattedTimestamp = remember(message.timestamp) {
         stateManager.formatDisplayTimestamp(message.timestamp)
     }
@@ -75,7 +75,7 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         backgroundColor = cardColor,
         border = BorderStroke(1.dp, borderColor),
-        elevation = 0.dp
+        elevation = if (message.author == Author.SYSTEM) 0.dp else 1.dp
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -97,7 +97,7 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                     Text(
                         text = "($formattedTimestamp)",
                         fontSize = 11.sp,
-                        color = Color.Gray
+                        color = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium)
                     )
                 }
 
@@ -106,13 +106,13 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                         IconButton(onClick = {
                             clipboardManager.setText(AnnotatedString(guardedCopyContent))
                         }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy Message Content", tint = Color.Gray)
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy Message Content", tint = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium))
                         }
                     }
 
                     Box {
                         IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = Color.Gray)
+                            Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium))
                         }
                         DropdownMenu(
                             expanded = showMenu,
@@ -169,14 +169,20 @@ fun RenderTextBlock(block: TextBlock) {
 
 @Composable
 fun RenderActionBlock(block: ActionBlock, onConfirm: () -> Unit, onReject: () -> Unit) {
+    // --- MODIFIED: Use theme colors ---
+    val backgroundColor = if (block.isResolved) MaterialTheme.colors.onSurface.copy(alpha=0.1f) else MaterialTheme.colors.primary.copy(alpha = 0.1f)
+    val borderColor = if (block.isResolved) MaterialTheme.colors.onSurface.copy(alpha=0.3f) else MaterialTheme.colors.primary
+    val textColor = if (block.isResolved) MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium) else MaterialTheme.colors.primary
+    // --- END MODIFICATION ---
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        backgroundColor = if (block.isResolved) Color.LightGray.copy(alpha=0.3f) else Color(0xFFE8EAF6),
-        border = BorderStroke(1.dp, if (block.isResolved) Color.Gray else Color(0xFF3F51B5)),
+        backgroundColor = backgroundColor,
+        border = BorderStroke(1.dp, borderColor),
         elevation = 0.dp
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(block.summary, fontWeight = FontWeight.Bold, color = if (block.isResolved) Color.Gray else Color(0xFF303F9F))
+            Text(block.summary, fontWeight = FontWeight.Bold, color = textColor)
             AnimatedVisibility(visible = !block.isResolved) {
                 Column {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -199,7 +205,7 @@ fun RenderActionBlock(block: ActionBlock, onConfirm: () -> Unit, onReject: () ->
 fun RenderFileContentBlock(block: FileContentBlock) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        border = BorderStroke(1.dp, Color.Gray),
+        border = BorderStroke(1.dp, MaterialTheme.colors.onSurface.copy(alpha = 0.12f)),
         elevation = 0.dp
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -212,12 +218,13 @@ fun RenderFileContentBlock(block: FileContentBlock) {
 
 @Composable
 fun RenderAppRequestBlock(block: AppRequestBlock) {
-    Row(modifier = Modifier.fillMaxWidth().background(Color.Yellow.copy(alpha=0.2f)).padding(8.dp),
+    // --- MODIFIED: Use theme colors ---
+    Row(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colors.secondary.copy(alpha=0.2f)).padding(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(Icons.Default.Warning, contentDescription = "App Request", tint = Color.DarkGray)
+        Icon(Icons.Default.Warning, contentDescription = "App Request", tint = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium))
         Spacer(Modifier.width(8.dp))
-        Text(block.summary, fontStyle = FontStyle.Italic, color = Color.DarkGray)
+        Text(block.summary, fontStyle = FontStyle.Italic, color = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium))
     }
 }
 
@@ -226,7 +233,7 @@ fun RenderAnchorBlock(block: AnchorBlock) {
     val jsonPrettyPrinter = remember { Json { prettyPrint = true } }
     Card(
         modifier = Modifier.fillMaxWidth(),
-        backgroundColor = Color.Black.copy(alpha = 0.05f)
+        backgroundColor = MaterialTheme.colors.onSurface.copy(alpha = 0.05f)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text("State Anchor Created: ${block.anchorId}", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
@@ -255,7 +262,6 @@ fun ChatView(
 
     val lastTransactionTokens = appState.chatHistory.lastOrNull { it.author == Author.AI }?.usageMetadata
 
-    // --- MODIFIED: Re-implemented display logic using the new StateManager functions ---
     val displayedMessages by remember(appState.isSystemVisible, appState.chatHistory, appState.activeHolons) {
         derivedStateOf {
             if (appState.isSystemVisible) {
@@ -300,16 +306,24 @@ fun ChatView(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // --- MODIFIED: Re-added the buttons with correct logic ---
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // --- MODIFIED: Use theme colors for the button ---
                 val systemButtonColors = if (appState.isSystemVisible) {
-                    ButtonDefaults.buttonColors(backgroundColor = Color.DarkGray, contentColor = Color.White)
+                    ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.primary)
                 } else {
-                    ButtonDefaults.buttonColors(backgroundColor = Color.LightGray.copy(alpha = 0.4f), contentColor = Color.Black)
+                    ButtonDefaults.outlinedButtonColors()
                 }
-                Button(onClick = { stateManager.toggleSystemMessageVisibility() }, colors = systemButtonColors) {
+                val systemButtonBorder = if (appState.isSystemVisible) null else BorderStroke(1.dp, MaterialTheme.colors.onSurface.copy(alpha = 0.12f))
+
+                Button(
+                    onClick = { stateManager.toggleSystemMessageVisibility() },
+                    colors = systemButtonColors,
+                    border = systemButtonBorder,
+                    elevation = ButtonDefaults.elevation(defaultElevation = 0.dp)
+                ) {
                     Text("Show System")
                 }
+                // --- END MODIFICATION ---
 
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = {
@@ -326,7 +340,7 @@ fun ChatView(
                 Text(
                     text = "Last Tx: ${it.promptTokenCount}p / ${it.candidatesTokenCount}o / ${it.totalTokenCount}t",
                     fontSize = 11.sp,
-                    color = Color.Gray,
+                    color = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium),
                     fontStyle = FontStyle.Italic
                 )
             }
@@ -381,7 +395,7 @@ fun ChatView(
                 onClick = { if (appState.isProcessing) stateManager.cancelMessage() else sendMessageAction() },
                 modifier = Modifier.height(56.dp),
                 enabled = appState.gatewayStatus == GatewayStatus.OK,
-                colors = if (appState.isProcessing) ButtonDefaults.buttonColors(backgroundColor = Color.Red, contentColor = Color.White) else ButtonDefaults.buttonColors()
+                colors = if (appState.isProcessing) ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error) else ButtonDefaults.buttonColors()
             ) {
                 if (appState.isProcessing) {
                     Row(verticalAlignment = Alignment.CenterVertically) {

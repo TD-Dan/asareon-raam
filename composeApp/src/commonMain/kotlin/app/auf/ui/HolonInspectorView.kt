@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -16,7 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.AppState
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject // --- ADDED: Import for the serializer
+import kotlinx.serialization.json.JsonObject
 
 @Composable
 fun HolonInspectorView(
@@ -50,12 +51,12 @@ fun HolonInspectorView(
                     color = Color.Gray,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
-                // --- FIX IS HERE: Explicitly providing the serializer for JsonObject. ---
+                // --- MODIFIED: Use theme color for background ---
                 Text(
                     text = jsonPrettyPrinter.encodeToString(JsonObject.serializer(), inspectedHolon.payload),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
-                    modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha=0.05f)).padding(8.dp)
+                    modifier = Modifier.fillMaxWidth().background(MaterialTheme.colors.onSurface.copy(alpha=0.05f)).padding(8.dp)
                 )
             }
         } else {

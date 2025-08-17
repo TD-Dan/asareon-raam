@@ -30,7 +30,6 @@ fun ExportView(
 ) {
     var destinationPath by remember { mutableStateOf<String?>(null) }
     val exportList = remember(appState.holonIdsForExport, appState.holonGraph) {
-        // --- FIX IS HERE: Filter based on holon.header.id ---
         appState.holonGraph.filter { it.header.id in appState.holonIdsForExport }
     }
 
@@ -45,7 +44,8 @@ fun ExportView(
 
         Card(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            border = BorderStroke(1.dp, Color.LightGray),
+            // --- MODIFIED: Use theme color for border ---
+            border = BorderStroke(1.dp, MaterialTheme.colors.onSurface.copy(alpha = 0.12f)),
             elevation = 0.dp
         ) {
             if (exportList.isEmpty()) {
@@ -62,7 +62,6 @@ fun ExportView(
                         )
                     }
                     items(exportList) { holon ->
-                        // --- FIX IS HERE: Access .header for name and id ---
                         Text("- ${holon.header.name} (${holon.header.id})", fontFamily = FontFamily.Monospace)
                     }
                 }
@@ -98,7 +97,6 @@ fun ExportView(
             }
             Spacer(Modifier.width(8.dp))
             Button(
-                // --- FIX IS HERE: Call the new function on StateManager ---
                 onClick = { stateManager.executeExport(destinationPath!!) },
                 enabled = destinationPath != null && exportList.isNotEmpty()
             ) {
