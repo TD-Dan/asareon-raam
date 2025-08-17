@@ -35,7 +35,7 @@ import kotlinx.coroutines.launch
  * - `app.auf.util.PlatformDependencies`: The single bridge to the host OS.
  * - `kotlinx.coroutines.CoroutineScope`
  *
- * @version 4.4
+ * @version 4.5
  * @since 2025-08-17
  */
 open class StateManager(
@@ -74,7 +74,6 @@ open class StateManager(
 
     private fun loadAvailableModels() {
         coroutineScope.launch(Dispatchers.Default) {
-            // --- MODIFIED: Delegate filtering to the GatewayManager ---
             val modelNames = gatewayService.listTextModels()
             store.dispatch(AppAction.SetAvailableModels(modelNames))
         }
@@ -136,13 +135,10 @@ open class StateManager(
     }
 
     fun onHolonClicked(holonId: String) {
-        when (state.value.currentViewMode) {
-            ViewMode.CHAT -> {
-                inspectHolon(holonId); toggleHolonActive(holonId)
-            }
-            ViewMode.EXPORT, ViewMode.IMPORT -> {
-                inspectHolon(holonId)
-            }
+        // --- MODIFIED: Simplified logic ---
+        inspectHolon(holonId)
+        if (state.value.currentViewMode == ViewMode.CHAT) {
+            toggleHolonActive(holonId)
         }
     }
 
@@ -153,6 +149,10 @@ open class StateManager(
     fun toggleHolonActive(holonId: String) {
         store.dispatch(AppAction.ToggleHolonActive(holonId))
         inspectHolon(holonId)
+    }
+
+    fun toggleHolonForExport(holonId: String) {
+        store.dispatch(AppAction.ToggleHolonExport(holonId))
     }
 
     fun selectAiPersona(holonId: String?) {

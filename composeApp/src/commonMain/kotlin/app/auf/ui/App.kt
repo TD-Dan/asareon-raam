@@ -44,7 +44,7 @@ import app.auf.core.ViewMode
  * ## Dependencies
  * - `app.auf.core.StateManager`
  *
- * @version 3.0
+ * @version 3.1
  * @since 2025-08-17
  */
 @Composable
@@ -110,6 +110,7 @@ fun App(stateManager: StateManager) {
                                             viewModel = stateManager.importExportViewModel,
                                             currentGraph = appState.holonGraph.map { it.header },
                                             personaId = appState.aiPersonaId ?: "",
+                                            onCancel = { stateManager.setViewMode(ViewMode.CHAT) }
                                         )
                                     }
                                 }

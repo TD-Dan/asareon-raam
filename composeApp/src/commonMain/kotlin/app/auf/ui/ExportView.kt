@@ -1,14 +1,12 @@
 package app.auf.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -19,7 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import app.auf.core.AppState
 import app.auf.core.StateManager
@@ -32,13 +30,9 @@ fun ExportView(
     stateManager: StateManager,
     modifier: Modifier = Modifier
 ) {
-    // This is a temporary solution for dependency injection.
-    // In a full DI framework, this would be provided.
     val platformDependencies = remember { PlatformDependencies() }
     var destinationPath by remember { mutableStateOf<String?>(null) }
-    val exportList = remember(appState.holonIdsForExport, appState.holonGraph) {
-        appState.holonGraph.filter { it.header.id in appState.holonIdsForExport }
-    }
+    val exportListIds = appState.holonIdsForExport
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         // Top Bar
@@ -54,39 +48,42 @@ fun ExportView(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "Select holons from the Knowledge Graph to add them to the manifest. All selected holons will be copied as a flat list into the destination folder.",
+            "Select holons to include in the export. The currently active context has been pre-selected. All selected holons will be copied into the destination folder.",
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        // Manifest Card
-        Card(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            elevation = CardDefaults.cardElevation(0.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        // Holon Checklist
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth()
         ) {
-            if (exportList.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No holons selected for export.")
-                }
-            } else {
-                LazyColumn(modifier = Modifier.padding(12.dp)) {
-                    item {
-                        Text(
-                            "Export Manifest (${exportList.size} items)",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        Divider()
-                    }
-                    items(exportList) { holon ->
-                        Text(
-                            "- ${holon.header.name} (${holon.header.id})",
-                            fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
-                    }
+            item {
+                Text(
+                    "Export Manifest (${exportListIds.size} / ${appState.holonGraph.size} items)",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Divider()
+            }
+            items(appState.holonGraph, key = { it.header.id }) { holon ->
+                val isSelected = holon.header.id in exportListIds
+                val isPersona = holon.header.id == appState.aiPersonaId
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { stateManager.toggleHolonForExport(holon.header.id) },
+                        enabled = !isPersona // Disable checkbox for the persona root
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = holon.header.name,
+                        fontStyle = if (isPersona) FontStyle.Italic else FontStyle.Normal,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (isPersona) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         }
@@ -120,7 +117,7 @@ fun ExportView(
             Spacer(Modifier.width(8.dp))
             Button(
                 onClick = { stateManager.executeExport(destinationPath!!) },
-                enabled = destinationPath != null && exportList.isNotEmpty()
+                enabled = destinationPath != null && exportListIds.isNotEmpty()
             ) {
                 Text("Execute Export")
             }

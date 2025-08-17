@@ -37,14 +37,15 @@ import app.auf.util.PlatformDependencies
  * - `app.auf.ui.ImportExportViewModel`: The source of truth for the view's state and logic.
  * - `app.auf.core.ImportState`: The data class that this view renders.
  *
- * @version 2.0
+ * @version 2.1
  * @since 2025-08-17
  */
 @Composable
 fun ImportView(
     viewModel: ImportExportViewModel,
     currentGraph: List<HolonHeader>,
-    personaId: String
+    personaId: String,
+    onCancel: () -> Unit // <<< MODIFIED: Added this parameter
 ) {
     val platformDependencies = remember { PlatformDependencies() }
     val importState by viewModel.importState.collectAsState()
@@ -59,7 +60,8 @@ fun ImportView(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Import & Sync Holons", style = MaterialTheme.typography.headlineSmall)
-                IconButton(onClick = { viewModel.cancelImport() }) {
+                // --- MODIFIED: Use the onCancel callback ---
+                IconButton(onClick = onCancel) {
                     Icon(Icons.Default.Close, contentDescription = "Close Import View")
                 }
             }
@@ -111,7 +113,8 @@ fun ImportView(
 
             // Action Buttons
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                OutlinedButton(onClick = { viewModel.cancelImport() }) {
+                // --- MODIFIED: Use the onCancel callback ---
+                OutlinedButton(onClick = onCancel) {
                     Text("Cancel")
                 }
                 Spacer(modifier = Modifier.width(8.dp))

@@ -15,7 +15,7 @@ package app.auf.core
  * - `app.auf.core.AppState`: The state object it operates on.
  * - `app.auf.core.AppAction`: The actions it responds to.
  *
- * @version 1.9
+ * @version 2.0
  * @since 2025-08-17
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
@@ -117,10 +117,19 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         )
 
         // --- UI & View ---
-        is AppAction.SetViewMode -> state.copy(
-            currentViewMode = action.mode,
-            holonIdsForExport = if (action.mode == ViewMode.CHAT) emptySet() else state.holonIdsForExport
-        )
+        is AppAction.SetViewMode -> {
+            if (action.mode == ViewMode.EXPORT) {
+                state.copy(
+                    currentViewMode = action.mode,
+                    holonIdsForExport = state.activeHolons.keys
+                )
+            } else {
+                state.copy(
+                    currentViewMode = action.mode,
+                    holonIdsForExport = emptySet() // Clear list when leaving export mode
+                )
+            }
+        }
         is AppAction.InspectHolon -> state.copy(
             inspectedHolonId = action.holonId
         )
@@ -141,7 +150,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                     newContextIds = state.contextualHolonIds + action.holonId
                     newActiveHolons = state.activeHolons + (action.holonId to holonToAdd)
                 } else {
-                    // Holon not found in graph, do nothing.
+                    // TODO: Holon not found in graph, do nothing. Should output atleast a warning
                     return state
                 }
             }
@@ -159,6 +168,16 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         is AppAction.ToggleSystemVisibility -> state.copy(
             isSystemVisible = !state.isSystemVisible
         )
+        is AppAction.ToggleHolonExport -> {
+            if (action.holonId == state.aiPersonaId) return state // Cannot deselect persona
+            val newExportIds = if (state.holonIdsForExport.contains(action.holonId)) {
+                state.holonIdsForExport - action.holonId
+            } else {
+                state.holonIdsForExport + action.holonId
+            }
+            state.copy(holonIdsForExport = newExportIds)
+        }
+
 
         // --- Persona & Model ---
         is AppAction.SelectAiPersona -> {
@@ -179,7 +198,6 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         is AppAction.SelectModel -> state.copy(
             selectedModel = action.modelName
         )
-        // --- MODIFIED: Added this block ---
         is AppAction.SetAvailableModels -> {
             val defaultModel = "gemini-1.5-flash-latest"
             val newSelectedModel = if (state.selectedModel in action.models) {
@@ -194,6 +212,5 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                 selectedModel = newSelectedModel
             )
         }
-        // --- END MODIFICATION ---
     }
 }

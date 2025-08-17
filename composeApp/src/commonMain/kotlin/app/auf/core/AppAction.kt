@@ -14,7 +14,7 @@ package app.auf.core
  * ## Dependencies
  * - `app.auf.core.AppState`: Many actions carry payload data defined in AppState.kt.
  *
- * @version 1.7
+ * @version 1.8
  * @since 2025-08-17
  */
 sealed interface AppAction {
@@ -41,9 +41,10 @@ sealed interface AppAction {
     data class ShowToast(val message: String) : AppAction
     data object ClearToast : AppAction
     data object ToggleSystemVisibility : AppAction
+    data class ToggleHolonExport(val holonId: String) : AppAction
 
     // --- Persona & Model Selection ---
     data class SelectAiPersona(val holonId: String?) : AppAction
     data class SelectModel(val modelName: String) : AppAction
-    data class SetAvailableModels(val models: List<String>) : AppAction // <<< MODIFIED: Added this line
+    data class SetAvailableModels(val models: List<String>) : AppAction
 }
