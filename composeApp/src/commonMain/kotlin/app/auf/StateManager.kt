@@ -17,6 +17,7 @@ import app.auf.service.ActionExecutor
 import app.auf.service.BackupManager
 import app.auf.service.GatewayManager
 import app.auf.service.GraphService
+import app.auf.service.SourceCodeService
 import app.auf.ui.ImportExportViewModel
 import app.auf.util.BasePath
 import app.auf.util.JsonProvider
@@ -43,12 +44,13 @@ import kotlinx.coroutines.launch
  * - `app.auf.service.GatewayManager`
  * - `app.auf.service.BackupManager`
  * - `app.auf.service.GraphService`: The new service for graph logic.
+ * - `app.auf.service.SourceCodeService`: The service for codebase analysis.
  * - `app.auf.service.ActionExecutor`
  * - `app.auf.ui.ImportExportViewModel`
  * - `app.auf.util.PlatformDependencies`: The single bridge to the host OS.
  * - `kotlinx.coroutines.CoroutineScope`
  *
- * @version 3.8
+ * @version 3.9
  * @since 2025-08-17
  */
 open class StateManager(
@@ -56,6 +58,7 @@ open class StateManager(
     private val gatewayManager: GatewayManager,
     private val backupManager: BackupManager,
     private val graphService: GraphService,
+    private val sourceCodeService: SourceCodeService,
     private val actionExecutor: ActionExecutor,
     val importExportViewModel: ImportExportViewModel,
     private val platform: PlatformDependencies,
@@ -121,7 +124,6 @@ open class StateManager(
     }
 
     fun deleteMessage(timestamp: Long) {
-        // --- FIX IS HERE: Dispatch the DeleteMessage action ---
         store.dispatch(AppAction.DeleteMessage(timestamp))
     }
 
@@ -173,7 +175,6 @@ open class StateManager(
             )
         )
 
-        // Now iterates over the activeHolons map directly
         appState.activeHolons.values.forEach { holon ->
             if (holon.header.type != "Quarantined_File") {
                 val holonContentString = JsonProvider.appJson.encodeToString(Holon.serializer(), holon)
@@ -181,7 +182,7 @@ open class StateManager(
                     ChatMessage(
                         Author.SYSTEM,
                         contentBlocks = listOf(TextBlock(holonContentString)),
-                        title = platform.getFileName(holon.header.filePath),
+                        title = platform.getFileName(holon.header.id + ".json"),
                         timestamp = platform.getSystemTimeMillis()
                     )
                 )
@@ -316,5 +317,21 @@ open class StateManager(
             val models = gatewayManager.listModels()
             //...
         }
+    }
+
+    fun copyCodebaseToClipboard() {
+        coroutineScope.launch(Dispatchers.Default) {
+            val codebaseString = sourceCodeService.collateKtFilesToString()
+            if (codebaseString.startsWith("ERROR:")) {
+                store.dispatch(AppAction.ShowToast(codebaseString))
+            } else {
+                platform.copyToClipboard(codebaseString)
+                store.dispatch(AppAction.ShowToast("Source code copied to clipboard!"))
+            }
+        }
+    }
+
+    fun clearToast() {
+        store.dispatch(AppAction.ClearToast)
     }
 }

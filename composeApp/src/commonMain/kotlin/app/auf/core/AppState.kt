@@ -1,3 +1,5 @@
+// --- FILE: commonMain/kotlin/app/auf/core/AppState.kt ---
+
 package app.auf.core
 
 import app.auf.model.Action
@@ -22,7 +24,7 @@ import kotlinx.serialization.json.JsonObject
  * - `Action` (from ActionModels.kt): Used within the `ActionBlock` content type.
  * - `kotlinx.serialization`: Used extensively for defining serializable data contracts.
  *
- * @version 1.4
+ * @version 1.5
  * @since 2025-08-17
  */
 
@@ -123,7 +125,8 @@ data class AppState(
     val errorMessage: String? = null,
     val currentViewMode: ViewMode = ViewMode.CHAT,
     val holonIdsForExport: Set<String> = emptySet(),
-    val importState: ImportState? = null
+    val importState: ImportState? = null,
+    val toastMessage: String? = null // <<< THIS IS THE ONLY ADDED LINE
 )
 
 @Serializable

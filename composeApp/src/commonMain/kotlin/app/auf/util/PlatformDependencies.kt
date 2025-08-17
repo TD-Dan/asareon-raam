@@ -20,8 +20,8 @@ enum class BasePath {
  * Defines a platform-agnostic contract for ALL platform-specific functionalities.
  * This class and its members are marked 'open' to allow for test fakes to inherit from it.
  *
- * @version 2.1
- * @since 2025-08-15
+ * @version 2.2
+ * @since 2025-08-17
  */
 expect open class PlatformDependencies() {
     open val pathSeparator: Char
@@ -46,4 +46,5 @@ expect open class PlatformDependencies() {
     // --- System Utilities ---
     open fun getSystemTimeMillis(): Long
     open fun formatIsoTimestamp(timestamp: Long): String
+    open fun copyToClipboard(text: String)
 }

@@ -1,6 +1,8 @@
 package app.auf.util
 
 import java.awt.Desktop
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -16,8 +18,8 @@ import java.util.zip.ZipOutputStream
 /**
  * The actual JVM implementation of the PlatformDependencies contract.
  *
- * @version 2.3
- * @since 2025-08-15
+ * @version 2.4
+ * @since 2025-08-17
  */
 actual open class PlatformDependencies {
 
@@ -118,5 +120,11 @@ actual open class PlatformDependencies {
 
     actual open fun formatIsoTimestamp(timestamp: Long): String {
         return isoFormatter.format(Date(timestamp))
+    }
+
+    actual open fun copyToClipboard(text: String) {
+        val selection = StringSelection(text)
+        val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+        clipboard.setContents(selection, selection)
     }
 }

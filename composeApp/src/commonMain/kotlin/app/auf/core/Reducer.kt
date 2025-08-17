@@ -17,7 +17,7 @@ import app.auf.core.AppAction
  * - `app.auf.core.AppState`: The state object it operates on.
  * - `app.auf.core.AppAction`: The actions it responds to.
  *
- * @version 1.4
+ * @version 1.5
  * @since 2025-08-17
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
@@ -105,7 +105,6 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             isProcessing = false,
             errorMessage = "Request cancelled by user."
         )
-        // --- FIX IS HERE: Add new case for deleting a message ---
         is AppAction.DeleteMessage -> state.copy(
             chatHistory = state.chatHistory.filterNot { it.timestamp == action.timestamp }
         )
@@ -143,6 +142,12 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         }
         is AppAction.SetCatalogueFilter -> state.copy(
             catalogueFilter = action.type
+        )
+        is AppAction.ShowToast -> state.copy(
+            toastMessage = action.message
+        )
+        is AppAction.ClearToast -> state.copy(
+            toastMessage = null
         )
 
         // --- Persona & Model ---

@@ -19,6 +19,7 @@ import app.auf.service.GraphLoader
 import app.auf.service.GraphService
 import app.auf.service.ImportExportManager
 import app.auf.service.SettingsManager
+import app.auf.service.SourceCodeService
 import app.auf.ui.App
 import app.auf.ui.ImportExportViewModel
 import app.auf.util.JsonProvider
@@ -75,6 +76,7 @@ fun main() = application {
         // These services contain the actual business logic and side effects.
         val graphLoader = GraphLoader(platformDependencies, jsonParser)
         val graphService = GraphService(graphLoader)
+        val sourceCodeService = SourceCodeService(platformDependencies)
 
 
         // --- Instantiate the main StateManager with all its dependencies ---
@@ -82,8 +84,8 @@ fun main() = application {
             store = store,
             gatewayManager = gatewayManager,
             backupManager = backupManager,
-            // MODIFIED: Inject the new GraphService, removing the direct GraphLoader dependency.
             graphService = graphService,
+            sourceCodeService = sourceCodeService,
             actionExecutor = actionExecutor,
             importExportViewModel = importExportViewModel,
             platform = platformDependencies,

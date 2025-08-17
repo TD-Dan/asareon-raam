@@ -8,6 +8,7 @@ import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -41,12 +42,19 @@ fun GlobalActionRibbon(
                 }) {
                     Text("Export for AUF manual runtime")
                 }
-                // --- MODIFIED: Enabled and implemented ---
                 DropdownMenuItem(onClick = {
                     stateManager.setViewMode(ViewMode.IMPORT)
                     isMenuExpanded = false
                 }) {
                     Text("Import & Sync from manual runtime")
+                }
+                Divider()
+                DropdownMenuItem(onClick = {
+                    stateManager.copyCodebaseToClipboard()
+                    isMenuExpanded = false
+                }) {
+                    Icon(Icons.Default.Code, contentDescription = "Copy Codebase", modifier = Modifier.size(18.dp).padding(end = 4.dp))
+                    Text("Copy codebase to clipboard")
                 }
                 Divider()
                 DropdownMenuItem(onClick = {
