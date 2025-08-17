@@ -1,3 +1,4 @@
+// --- FILE: commonMain/kotlin/app/auf/ui/ChatView.kt ---
 package app.auf.ui
 
 import androidx.compose.animation.AnimatedVisibility
@@ -257,13 +258,8 @@ fun ChatView(
 
     val lastTransactionTokens = appState.chatHistory.lastOrNull { it.author == Author.AI }?.usageMetadata
 
-    val systemContextPreview = if (appState.isSystemVisible) {
-        remember(appState.contextualHolonIds, appState.aiPersonaId, appState.activeHolons) {
-            stateManager.getSystemContextPreview()
-        }
-    } else emptyList()
-
-    val displayedMessages = systemContextPreview + appState.chatHistory
+    // --- FIX IS HERE: Simplified message list logic. ---
+    val displayedMessages = appState.chatHistory
 
     LaunchedEffect(displayedMessages.size) {
         coroutineScope.launch {
@@ -288,37 +284,22 @@ fun ChatView(
         ) {
             items(
                 items = displayedMessages,
-                key = { message -> "${message.timestamp}-${message.title}" }
+                // --- FIX IS HERE: Key lambda is now safe. ---
+                key = { message -> "${message.timestamp}-${message.author}-${message.contentBlocks.firstOrNull()?.summary}" }
             ) { message ->
                 MessageCard(message = message, stateManager = stateManager)
             }
         }
-
-        // --- FIX IS HERE: The generic error message banner has been removed. ---
 
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            // --- FIX IS HERE: Removed the defunct buttons ---
+            // The empty Row is kept to balance the layout with the token count on the other side.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val systemButtonColors = if (appState.isSystemVisible) {
-                    ButtonDefaults.buttonColors(backgroundColor = Color.DarkGray, contentColor = Color.White)
-                } else {
-                    ButtonDefaults.buttonColors(backgroundColor = Color.LightGray.copy(alpha = 0.4f), contentColor = Color.Black)
-                }
-                Button(onClick = { stateManager.toggleSystemMessageVisibility() }, colors = systemButtonColors) {
-                    Text("Show System")
-                }
-
-                Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick = {
-                    val fullPrompt = stateManager.getPromptAsString()
-                    val guardedPrompt = "---START OF COPY:---\n$fullPrompt\n--- END OF COPY---"
-                    clipboardManager.setText(AnnotatedString(guardedPrompt))
-                }) {
-                    Text("Copy Prompt")
-                }
+                // This space is intentionally left blank.
             }
 
             lastTransactionTokens?.let {
