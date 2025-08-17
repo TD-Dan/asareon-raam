@@ -43,7 +43,7 @@ import app.auf.core.ViewMode
  * ## Dependencies
  * - `app.auf.core.StateManager`
  *
- * @version 2.6
+ * @version 2.7
  * @since 2025-08-17
  */
 @Composable
@@ -58,7 +58,8 @@ fun App(stateManager: StateManager) {
         }
     }
 
-    MaterialTheme {
+    // --- MODIFICATION: Use our new AUFTheme wrapper ---
+    AUFTheme {
         Scaffold(scaffoldState = scaffoldState) { paddingValues ->
             Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
                 when (appState.gatewayStatus) {
@@ -74,7 +75,7 @@ fun App(stateManager: StateManager) {
                     GatewayStatus.ERROR -> {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Error", color = Color.Red, style = MaterialTheme.typography.h4)
+                                Text("Error", color = MaterialTheme.colors.error, style = MaterialTheme.typography.h4)
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(appState.errorMessage ?: "An unknown error occurred.")
                                 Spacer(modifier = Modifier.height(24.dp))
