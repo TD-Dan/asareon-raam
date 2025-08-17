@@ -8,16 +8,15 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -46,18 +45,23 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
     val clipboardManager = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
 
-    // --- MODIFIED: Use theme colors instead of hardcoded values ---
-    val cardColor = when {
-        message.title == "Gateway Error" || message.title == "Graph Parsing Warning" -> MaterialTheme.colors.error.copy(alpha = 0.1f)
-        message.author == Author.SYSTEM -> MaterialTheme.colors.surface
-        else -> MaterialTheme.colors.surface
+    val cardColors = when {
+        message.title == "Gateway Error" || message.title == "Graph Parsing Warning" -> CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        )
+        message.author == Author.SYSTEM -> CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+        )
+        else -> CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
     }
     val borderColor = when {
-        message.title == "Gateway Error" || message.title == "Graph Parsing Warning" -> MaterialTheme.colors.error.copy(alpha = 0.4f)
-        message.author == Author.SYSTEM -> MaterialTheme.colors.onSurface.copy(alpha = 0.12f)
-        else -> Color.Transparent // No border for user/ai messages
+        message.title == "Gateway Error" || message.title == "Graph Parsing Warning" -> MaterialTheme.colorScheme.error
+        message.author == Author.SYSTEM -> MaterialTheme.colorScheme.outlineVariant
+        else -> MaterialTheme.colorScheme.surface // Effectively no border for user/ai messages
     }
-    // --- END MODIFICATION ---
+    val elevation = if (message.author == Author.SYSTEM) 0.dp else 2.dp
 
     val contentToCopy = when {
         message.rawContent != null -> message.rawContent
@@ -73,9 +77,9 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        backgroundColor = cardColor,
-        border = BorderStroke(1.dp, borderColor),
-        elevation = if (message.author == Author.SYSTEM) 0.dp else 1.dp
+        colors = cardColors,
+        border = if (borderColor != MaterialTheme.colorScheme.surface) BorderStroke(1.dp, borderColor) else null,
+        elevation = CardDefaults.cardElevation(defaultElevation = elevation)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -91,13 +95,14 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                         text = message.title ?: message.author.name,
                         fontWeight = FontWeight.Bold,
                         fontStyle = if (message.author == Author.SYSTEM) FontStyle.Italic else FontStyle.Normal,
-                        fontSize = 14.sp
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = "($formattedTimestamp)",
                         fontSize = 11.sp,
-                        color = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
@@ -106,34 +111,36 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                         IconButton(onClick = {
                             clipboardManager.setText(AnnotatedString(guardedCopyContent))
                         }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy Message Content", tint = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium))
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy Message Content", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 
                     Box {
                         IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium))
+                            Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         DropdownMenu(
                             expanded = showMenu,
                             onDismissRequest = { showMenu = false }
                         ) {
                             if (message.author == Author.USER) {
-                                DropdownMenuItem(onClick = {
-                                    stateManager.rerunMessage(message.timestamp)
-                                    showMenu = false
-                                }) {
-                                    Text("Rerun")
-                                }
+                                DropdownMenuItem(
+                                    text = { Text("Rerun") },
+                                    onClick = {
+                                        stateManager.rerunMessage(message.timestamp)
+                                        showMenu = false
+                                    }
+                                )
                             }
 
                             val deleteText = if (message.title?.contains("Error") == true || message.title?.contains("Warning") == true) "Dismiss" else "Delete"
-                            DropdownMenuItem(onClick = {
-                                stateManager.deleteMessage(message.timestamp)
-                                showMenu = false
-                            }) {
-                                Text(deleteText)
-                            }
+                            DropdownMenuItem(
+                                text = { Text(deleteText) },
+                                onClick = {
+                                    stateManager.deleteMessage(message.timestamp)
+                                    showMenu = false
+                                }
+                            )
                         }
                     }
                 }
@@ -164,22 +171,24 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
 
 @Composable
 fun RenderTextBlock(block: TextBlock) {
-    Text(block.text, fontFamily = FontFamily.Default, fontSize = 14.sp)
+    Text(block.text, fontFamily = FontFamily.Default, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
 }
 
 @Composable
 fun RenderActionBlock(block: ActionBlock, onConfirm: () -> Unit, onReject: () -> Unit) {
-    // --- MODIFIED: Use theme colors ---
-    val backgroundColor = if (block.isResolved) MaterialTheme.colors.onSurface.copy(alpha=0.1f) else MaterialTheme.colors.primary.copy(alpha = 0.1f)
-    val borderColor = if (block.isResolved) MaterialTheme.colors.onSurface.copy(alpha=0.3f) else MaterialTheme.colors.primary
-    val textColor = if (block.isResolved) MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium) else MaterialTheme.colors.primary
-    // --- END MODIFICATION ---
+    val cardColors = if (block.isResolved) CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+    ) else CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.primaryContainer
+    )
+    val borderColor = if (block.isResolved) MaterialTheme.colorScheme.outlineVariant else MaterialTheme.colorScheme.primary
+    val textColor = if (block.isResolved) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimaryContainer
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        backgroundColor = backgroundColor,
+        colors = cardColors,
         border = BorderStroke(1.dp, borderColor),
-        elevation = 0.dp
+        elevation = CardDefaults.cardElevation(0.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(block.summary, fontWeight = FontWeight.Bold, color = textColor)
@@ -187,11 +196,11 @@ fun RenderActionBlock(block: ActionBlock, onConfirm: () -> Unit, onReject: () ->
                 Column {
                     Spacer(modifier = Modifier.height(8.dp))
                     block.actions.forEach { action ->
-                        Text("- ${action.summary}", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                        Text("- ${action.summary}", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = textColor)
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        OutlinedButton(onClick = onReject, colors = ButtonDefaults.outlinedButtonColors()) { Text("Reject") }
+                        OutlinedButton(onClick = onReject) { Text("Reject") }
                         Spacer(modifier = Modifier.width(8.dp))
                         Button(onClick = onConfirm) { Text("Confirm") }
                     }
@@ -205,12 +214,12 @@ fun RenderActionBlock(block: ActionBlock, onConfirm: () -> Unit, onReject: () ->
 fun RenderFileContentBlock(block: FileContentBlock) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        border = BorderStroke(1.dp, MaterialTheme.colors.onSurface.copy(alpha = 0.12f)),
-        elevation = 0.dp
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(0.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(block.fileName, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-            Divider(modifier=Modifier.padding(vertical=8.dp))
+            HorizontalDivider(modifier=Modifier.padding(vertical=8.dp))
             Text(block.content, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
         }
     }
@@ -218,13 +227,12 @@ fun RenderFileContentBlock(block: FileContentBlock) {
 
 @Composable
 fun RenderAppRequestBlock(block: AppRequestBlock) {
-    // --- MODIFIED: Use theme colors ---
-    Row(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colors.secondary.copy(alpha=0.2f)).padding(8.dp),
+    Row(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer).padding(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(Icons.Default.Warning, contentDescription = "App Request", tint = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium))
+        Icon(Icons.Default.Warning, contentDescription = "App Request", tint = MaterialTheme.colorScheme.onSecondaryContainer)
         Spacer(Modifier.width(8.dp))
-        Text(block.summary, fontStyle = FontStyle.Italic, color = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium))
+        Text(block.summary, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSecondaryContainer)
     }
 }
 
@@ -233,11 +241,11 @@ fun RenderAnchorBlock(block: AnchorBlock) {
     val jsonPrettyPrinter = remember { Json { prettyPrint = true } }
     Card(
         modifier = Modifier.fillMaxWidth(),
-        backgroundColor = MaterialTheme.colors.onSurface.copy(alpha = 0.05f)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text("State Anchor Created: ${block.anchorId}", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-            Divider(modifier=Modifier.padding(vertical=8.dp))
+            HorizontalDivider(modifier=Modifier.padding(vertical=8.dp))
             Text(jsonPrettyPrinter.encodeToString(JsonObject.serializer(), block.content), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
     }
@@ -307,23 +315,19 @@ fun ChatView(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // --- MODIFIED: Use theme colors for the button ---
-                val systemButtonColors = if (appState.isSystemVisible) {
-                    ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.primary)
-                } else {
-                    ButtonDefaults.outlinedButtonColors()
+                val systemButton: @Composable () -> Unit = {
+                    if (appState.isSystemVisible) {
+                        Button(onClick = { stateManager.toggleSystemMessageVisibility() }) {
+                            Text("Show System")
+                        }
+                    } else {
+                        OutlinedButton(onClick = { stateManager.toggleSystemMessageVisibility() }) {
+                            Text("Show System")
+                        }
+                    }
                 }
-                val systemButtonBorder = if (appState.isSystemVisible) null else BorderStroke(1.dp, MaterialTheme.colors.onSurface.copy(alpha = 0.12f))
+                systemButton()
 
-                Button(
-                    onClick = { stateManager.toggleSystemMessageVisibility() },
-                    colors = systemButtonColors,
-                    border = systemButtonBorder,
-                    elevation = ButtonDefaults.elevation(defaultElevation = 0.dp)
-                ) {
-                    Text("Show System")
-                }
-                // --- END MODIFICATION ---
 
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = {
@@ -340,7 +344,7 @@ fun ChatView(
                 Text(
                     text = "Last Tx: ${it.promptTokenCount}p / ${it.candidatesTokenCount}o / ${it.totalTokenCount}t",
                     fontSize = 11.sp,
-                    color = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontStyle = FontStyle.Italic
                 )
             }
@@ -355,9 +359,9 @@ fun ChatView(
                     Box {
                         Button(onClick = { isAgentSelectorExpanded = true }) { Text(selectedAiPersonaName) }
                         DropdownMenu(expanded = isAgentSelectorExpanded, onDismissRequest = { isAgentSelectorExpanded = false }) {
-                            DropdownMenuItem(onClick = { stateManager.selectAiPersona(null); isAgentSelectorExpanded = false }) { Text("None") }
+                            DropdownMenuItem(text = { Text("None") }, onClick = { stateManager.selectAiPersona(null); isAgentSelectorExpanded = false })
                             aiPersonas.forEach { persona ->
-                                DropdownMenuItem(onClick = { stateManager.selectAiPersona(persona.id); isAgentSelectorExpanded = false }) { Text(persona.name) }
+                                DropdownMenuItem(text = { Text(persona.name) }, onClick = { stateManager.selectAiPersona(persona.id); isAgentSelectorExpanded = false })
                             }
                         }
                     }
@@ -370,7 +374,7 @@ fun ChatView(
                         Button(onClick = { isModelSelectorExpanded = true }) { Text(selectedModel, maxLines = 1) }
                         DropdownMenu(expanded = isModelSelectorExpanded, onDismissRequest = { isModelSelectorExpanded = false }) {
                             availableModels.forEach { modelName ->
-                                DropdownMenuItem(onClick = { stateManager.selectModel(modelName); isModelSelectorExpanded = false }) { Text(modelName) }
+                                DropdownMenuItem(text = { Text(modelName) }, onClick = { stateManager.selectModel(modelName); isModelSelectorExpanded = false })
                             }
                         }
                     }
@@ -395,7 +399,7 @@ fun ChatView(
                 onClick = { if (appState.isProcessing) stateManager.cancelMessage() else sendMessageAction() },
                 modifier = Modifier.height(56.dp),
                 enabled = appState.gatewayStatus == GatewayStatus.OK,
-                colors = if (appState.isProcessing) ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error) else ButtonDefaults.buttonColors()
+                colors = if (appState.isProcessing) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
             ) {
                 if (appState.isProcessing) {
                     Row(verticalAlignment = Alignment.CenterVertically) {

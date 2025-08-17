@@ -1,4 +1,3 @@
---- MODIFY androidMain/kotlin/app/auf/MainActivity.kt ---
 package app.auf
 
 import android.os.Bundle

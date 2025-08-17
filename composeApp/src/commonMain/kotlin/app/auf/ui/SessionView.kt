@@ -2,14 +2,21 @@ package app.auf.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.Button
-import androidx.compose.material.ButtonDefaults
-import androidx.compose.material.ContentAlpha
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Text
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,11 +53,11 @@ fun SessionView(
         appState.errorMessage?.let { error ->
             Text(
                 text = error,
-                color = MaterialTheme.colors.error,
+                color = MaterialTheme.colorScheme.error,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colors.error.copy(alpha = 0.1f))
+                    .background(MaterialTheme.colorScheme.errorContainer)
                     .padding(8.dp)
                     .padding(bottom = 12.dp)
             )
@@ -58,8 +65,7 @@ fun SessionView(
 
         Text(
             text = "Knowledge Graph",
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.padding(bottom = 12.dp)
         )
 
@@ -68,55 +74,61 @@ fun SessionView(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            val buttonPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-            val buttonFontSize = 12.sp
-            // --- MODIFIED: Use theme colors for filter buttons ---
-            val allButtonColors = if (activeFilter == null) ButtonDefaults.buttonColors() else ButtonDefaults.outlinedButtonColors()
-            val allButtonBorder = if (activeFilter == null) null else ButtonDefaults.outlinedBorder
-            Button(
-                onClick = { onFilter(null) },
-                contentPadding = buttonPadding,
-                colors = allButtonColors,
-                border = allButtonBorder,
-                elevation = ButtonDefaults.elevation(defaultElevation = 0.dp)
-            ) { Text("All", fontSize = buttonFontSize) }
+            val buttonPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+            val buttonTextStyle = MaterialTheme.typography.labelSmall
+
+            // --- MODIFIED: Use distinct M3 Button and OutlinedButton for active/inactive states ---
+            if (activeFilter == null) {
+                Button(onClick = { onFilter(null) }, contentPadding = buttonPadding) {
+                    Text("All", style = buttonTextStyle)
+                }
+            } else {
+                OutlinedButton(onClick = { onFilter(null) }, contentPadding = buttonPadding) {
+                    Text("All", style = buttonTextStyle)
+                }
+            }
 
             holonTypes.forEach { type ->
-                val typeButtonColors = if (activeFilter == type) ButtonDefaults.buttonColors() else ButtonDefaults.outlinedButtonColors()
-                val typeButtonBorder = if (activeFilter == type) null else ButtonDefaults.outlinedBorder
-                Button(
-                    onClick = { onFilter(type) },
-                    contentPadding = buttonPadding,
-                    colors = typeButtonColors,
-                    border = typeButtonBorder,
-                    elevation = ButtonDefaults.elevation(defaultElevation = 0.dp)
-                ) { Text(type, fontSize = buttonFontSize) }
+                if (activeFilter == type) {
+                    Button(onClick = { onFilter(type) }, contentPadding = buttonPadding) {
+                        Text(type, style = buttonTextStyle)
+                    }
+                } else {
+                    OutlinedButton(onClick = { onFilter(type) }, contentPadding = buttonPadding) {
+                        Text(type, style = buttonTextStyle)
+                    }
+                }
             }
             // --- END MODIFICATION ---
         }
 
         LazyColumn {
-            items(filteredGraph) { holon ->
+            items(
+                items = filteredGraph,
+                key = { holon -> holon.header.id }
+            ) { holon ->
                 val isTheActiveAgent = activeAiPersonaId == holon.header.id
                 val isInChatContext = activeContextualHolonIds.contains(holon.header.id)
                 val isSelectedForExport = holonIdsForExport.contains(holon.header.id)
 
-                // --- MODIFIED: Use theme colors for row backgrounds ---
+                // --- MODIFIED: Use M3 theme colors for row backgrounds ---
                 val backgroundColor = when {
-                    currentViewMode == ViewMode.EXPORT && isSelectedForExport -> MaterialTheme.colors.primary.copy(alpha = 0.1f)
-                    isTheActiveAgent -> MaterialTheme.colors.onSurface.copy(alpha = 0.2f)
-                    isInChatContext -> MaterialTheme.colors.onSurface.copy(alpha = 0.1f)
+                    currentViewMode == ViewMode.EXPORT && isSelectedForExport -> MaterialTheme.colorScheme.primaryContainer
+                    isTheActiveAgent -> MaterialTheme.colorScheme.surfaceVariant
+                    isInChatContext -> MaterialTheme.colorScheme.surfaceContainerHigh
                     else -> Color.Transparent
                 }
                 // --- END MODIFICATION ---
+
                 val fontWeight = if (isTheActiveAgent || (currentViewMode == ViewMode.CHAT && isInChatContext) || (currentViewMode == ViewMode.EXPORT && isSelectedForExport)) FontWeight.Bold else FontWeight.Normal
                 val fontStyle = if (isTheActiveAgent) FontStyle.Italic else FontStyle.Normal
                 val displayText = if (isTheActiveAgent) "${holon.header.name} (Active Agent)" else holon.header.name
                 val indentation = (holon.header.depth * 16).dp
-                // --- MODIFIED: Use theme colors for text ---
+
+                // --- MODIFIED: Use M3 theme colors for text ---
                 val textColor = when {
-                    isTheActiveAgent -> MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium)
-                    else -> MaterialTheme.colors.onSurface
+                    isTheActiveAgent -> MaterialTheme.colorScheme.onSurfaceVariant
+                    else -> MaterialTheme.colorScheme.onSurface
                 }
                 // --- END MODIFICATION ---
 
@@ -132,6 +144,7 @@ fun SessionView(
                         fontWeight = fontWeight,
                         fontStyle = fontStyle,
                         color = textColor,
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
             }

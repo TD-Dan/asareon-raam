@@ -9,21 +9,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.Button
-import androidx.compose.material.CircularProgressIndicator
-import androidx.compose.material.Divider
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Scaffold
-import androidx.compose.material.SnackbarDuration
-import androidx.compose.material.Text
-import androidx.compose.material.rememberScaffoldState
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import app.auf.core.StateManager
 import app.auf.core.GatewayStatus
@@ -43,24 +44,25 @@ import app.auf.core.ViewMode
  * ## Dependencies
  * - `app.auf.core.StateManager`
  *
- * @version 2.7
+ * @version 3.0
  * @since 2025-08-17
  */
 @Composable
 fun App(stateManager: StateManager) {
     val appState by stateManager.state.collectAsState()
-    val scaffoldState = rememberScaffoldState()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     appState.toastMessage?.let { message ->
         LaunchedEffect(message) {
-            scaffoldState.snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
+            snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
             stateManager.clearToast()
         }
     }
 
-    // --- MODIFICATION: Use our new AUFTheme wrapper ---
     AUFTheme {
-        Scaffold(scaffoldState = scaffoldState) { paddingValues ->
+        Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) }
+        ) { paddingValues ->
             Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
                 when (appState.gatewayStatus) {
                     GatewayStatus.LOADING -> {
@@ -75,7 +77,7 @@ fun App(stateManager: StateManager) {
                     GatewayStatus.ERROR -> {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Error", color = MaterialTheme.colors.error, style = MaterialTheme.typography.h4)
+                                Text("Error", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.headlineMedium)
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(appState.errorMessage ?: "An unknown error occurred.")
                                 Spacer(modifier = Modifier.height(24.dp))
@@ -88,7 +90,7 @@ fun App(stateManager: StateManager) {
                     GatewayStatus.OK, GatewayStatus.IDLE -> {
                         Row(Modifier.fillMaxSize()) {
                             GlobalActionRibbon(stateManager)
-                            Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
+                            VerticalDivider()
 
                             SessionView(
                                 appState = appState,
@@ -97,7 +99,7 @@ fun App(stateManager: StateManager) {
                                 modifier = Modifier.width(320.dp)
                             )
 
-                            Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
+                            VerticalDivider()
 
                             Box(modifier = Modifier.weight(1f)) {
                                 when (appState.currentViewMode) {
@@ -113,7 +115,7 @@ fun App(stateManager: StateManager) {
                                 }
                             }
 
-                            Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
+                            VerticalDivider()
 
                             HolonInspectorView(appState = appState, modifier = Modifier.width(320.dp))
                         }
