@@ -13,6 +13,7 @@ import app.auf.core.appReducer
 import app.auf.model.UserSettings
 import app.auf.service.ActionExecutor
 import app.auf.service.BackupManager
+import app.auf.service.ChatService
 import app.auf.service.Gateway
 import app.auf.service.GatewayManager
 import app.auf.service.GraphLoader
@@ -54,7 +55,6 @@ fun main() = application {
     }
 
     // --- UDF Components ---
-    // Instantiate the new Store, providing the initial state, reducer function, and coroutine scope.
     val store = remember {
         Store(
             initialState = AppState(),
@@ -64,7 +64,6 @@ fun main() = application {
     }
 
     val stateManager = remember {
-        // --- Instantiate all platform-agnostic managers, injecting the platform dependency ---
         val gateway = Gateway(jsonParser)
         val gatewayManager = GatewayManager(gateway, jsonParser, apiKey)
         val backupManager = BackupManager(platformDependencies)
@@ -73,19 +72,20 @@ fun main() = application {
         val importExportViewModel = ImportExportViewModel(importExportManager, coroutineScope)
 
         // --- Instantiate Services ---
-        // These services contain the actual business logic and side effects.
         val graphLoader = GraphLoader(platformDependencies, jsonParser)
         val graphService = GraphService(graphLoader)
         val sourceCodeService = SourceCodeService(platformDependencies)
+        // --- MODIFIED: Instantiate the new ChatService ---
+        val chatService = ChatService(store, gatewayManager, platformDependencies, coroutineScope)
 
 
         // --- Instantiate the main StateManager with all its dependencies ---
         StateManager(
             store = store,
-            gatewayManager = gatewayManager,
             backupManager = backupManager,
             graphService = graphService,
             sourceCodeService = sourceCodeService,
+            chatService = chatService, // <<< MODIFIED: Inject ChatService
             actionExecutor = actionExecutor,
             importExportViewModel = importExportViewModel,
             platform = platformDependencies,
