@@ -10,6 +10,7 @@ import app.auf.model.UserSettings
 import app.auf.service.ActionExecutor
 import app.auf.service.BackupManager
 import app.auf.service.ChatService
+import app.auf.service.GatewayManager
 import app.auf.service.GraphService
 import app.auf.service.SourceCodeService
 import app.auf.ui.ImportExportViewModel
@@ -41,7 +42,7 @@ import kotlinx.coroutines.launch
  * - `app.auf.util.PlatformDependencies`: The single bridge to the host OS.
  * - `kotlinx.coroutines.CoroutineScope`
  *
- * @version 4.1
+ * @version 4.4
  * @since 2025-08-17
  */
 open class StateManager(
@@ -50,6 +51,7 @@ open class StateManager(
     private val graphService: GraphService,
     private val sourceCodeService: SourceCodeService,
     private val chatService: ChatService,
+    private val gatewayManager: GatewayManager,
     private val actionExecutor: ActionExecutor,
     val importExportViewModel: ImportExportViewModel,
     private val platform: PlatformDependencies,
@@ -62,6 +64,7 @@ open class StateManager(
     fun initialize() {
         backupManager.createBackup("on-launch")
         loadHolonGraph()
+        loadAvailableModels()
     }
 
     fun loadHolonGraph() {
@@ -76,6 +79,14 @@ open class StateManager(
         }
     }
 
+    private fun loadAvailableModels() {
+        coroutineScope.launch(Dispatchers.Default) {
+            // --- MODIFIED: Delegate filtering to the GatewayManager ---
+            val modelNames = gatewayManager.listTextModels()
+            store.dispatch(AppAction.SetAvailableModels(modelNames))
+        }
+    }
+
     // --- Chat Logic Delegation ---
     fun sendMessage(message: String) {
         if (state.value.isProcessing || state.value.aiPersonaId == null) return
@@ -87,7 +98,6 @@ open class StateManager(
         chatService.cancelMessage()
     }
 
-    // --- MODIFIED: Added UI-facing helper functions ---
     fun getSystemContextForDisplay(): List<ChatMessage> {
         return chatService.buildSystemContextMessages()
     }
@@ -99,7 +109,6 @@ open class StateManager(
     fun formatDisplayTimestamp(timestamp: Long): String {
         return platform.formatDisplayTimestamp(timestamp)
     }
-    // --- END MODIFICATION ---
 
     fun deleteMessage(timestamp: Long) {
         store.dispatch(AppAction.DeleteMessage(timestamp))
@@ -112,6 +121,8 @@ open class StateManager(
     fun executeActionFromMessage(messageTimestamp: Long) {
         println("Side Effect: executeActionFromMessage - (To be moved to a Service)")
     }
+
+
 
     fun rejectActionFromMessage(messageTimestamp: Long) {
         println("ACTION: rejectActionFromMessage - (Action not yet implemented)")
@@ -173,7 +184,6 @@ open class StateManager(
     }
 
     fun toggleSystemMessageVisibility() {
-        // --- MODIFIED: Dispatch the new action ---
         store.dispatch(AppAction.ToggleSystemVisibility)
     }
 

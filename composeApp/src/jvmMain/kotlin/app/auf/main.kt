@@ -75,7 +75,6 @@ fun main() = application {
         val graphLoader = GraphLoader(platformDependencies, jsonParser)
         val graphService = GraphService(graphLoader)
         val sourceCodeService = SourceCodeService(platformDependencies)
-        // --- MODIFIED: Instantiate the new ChatService ---
         val chatService = ChatService(store, gatewayManager, platformDependencies, coroutineScope)
 
 
@@ -85,7 +84,8 @@ fun main() = application {
             backupManager = backupManager,
             graphService = graphService,
             sourceCodeService = sourceCodeService,
-            chatService = chatService, // <<< MODIFIED: Inject ChatService
+            chatService = chatService,
+            gatewayManager = gatewayManager, // <<< MODIFIED: Inject GatewayManager
             actionExecutor = actionExecutor,
             importExportViewModel = importExportViewModel,
             platform = platformDependencies,

@@ -46,12 +46,16 @@ data class ApiError(val code: Int, val message: String, val status: String)
 @Serializable
 data class ListModelsResponse(val models: List<ModelInfo>)
 
+// --- MODIFIED: Updated the ModelInfo data class ---
 @Serializable
 data class ModelInfo(
     val name: String,
     val displayName: String? = null,
-    val version: String? = null
+    val version: String? = null,
+    // This is the key field for robust filtering. It tells us what the model can actually do.
+    val supportedGenerationMethods: List<String> = emptyList()
 )
+// --- END MODIFICATION ---
 
 
 /**
@@ -68,8 +72,8 @@ data class ModelInfo(
  * - `io.ktor.client.HttpClient`
  * - `kotlinx.serialization.json.Json`
  *
- * @version 1.1
- * @since 2025-08-14
+ * @version 1.2
+ * @since 2025-08-17
  */
 open class Gateway(private val jsonParser: Json) {
 

@@ -23,15 +23,16 @@ import kotlinx.serialization.json.jsonPrimitive
  * ## Mandate
  * Orchestrates all communication with the external AI service (e.g., Google AI).
  * It is responsible for formatting requests, sending them via the `Gateway` interface,
- * and parsing the raw response into the application's structured `ContentBlock` format.
+ * parsing the raw response into the application's structured `ContentBlock` format,
+ * and providing lists of available models based on their capabilities.
  *
  * ---
  * ## Dependencies
  * - `app.auf.service.Gateway`: The platform-specific implementation of the AI service client.
  * - `kotlinx.serialization.json.Json`: For parsing structured blocks from the AI response.
  *
- * @version 2.0
- * @since 2025-08-16
+ * @version 2.2
+ * @since 2025-08-17
  */
 open class GatewayManager(
     private val gateway: Gateway,
@@ -77,9 +78,13 @@ open class GatewayManager(
         }
     }
 
-    open suspend fun listModels(): List<ModelInfo> {
+    open suspend fun listTextModels(): List<String> {
         return withContext(coroutineScope.coroutineContext) {
             gateway.listModels(apiKey)
+                // --- MODIFIED: This is the robust, capability-based filter ---
+                .filter { "generateContent" in it.supportedGenerationMethods }
+                .map { it.name.replace("models/", "") }
+                .sorted()
         }
     }
 

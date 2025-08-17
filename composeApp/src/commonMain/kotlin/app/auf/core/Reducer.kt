@@ -1,7 +1,5 @@
 package app.auf.core
 
-import app.auf.core.AppAction
-
 /**
  * The Reducer function for the Unidirectional Data Flow (UDF) architecture.
  *
@@ -17,7 +15,7 @@ import app.auf.core.AppAction
  * - `app.auf.core.AppState`: The state object it operates on.
  * - `app.auf.core.AppAction`: The actions it responds to.
  *
- * @version 1.8
+ * @version 1.9
  * @since 2025-08-17
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
@@ -181,5 +179,21 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         is AppAction.SelectModel -> state.copy(
             selectedModel = action.modelName
         )
+        // --- MODIFIED: Added this block ---
+        is AppAction.SetAvailableModels -> {
+            val defaultModel = "gemini-1.5-flash-latest"
+            val newSelectedModel = if (state.selectedModel in action.models) {
+                state.selectedModel
+            } else if (defaultModel in action.models) {
+                defaultModel
+            } else {
+                action.models.firstOrNull() ?: state.selectedModel
+            }
+            state.copy(
+                availableModels = action.models,
+                selectedModel = newSelectedModel
+            )
+        }
+        // --- END MODIFICATION ---
     }
 }
