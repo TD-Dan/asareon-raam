@@ -40,7 +40,7 @@ import app.auf.core.ActionBlock // <<< MODIFIED: Added this line
  */
 class ChatService(
     private val store: Store,
-    private val gatewayManager: GatewayManager,
+    private val gatewayService: GatewayService,
     private val platform: PlatformDependencies,
     private val coroutineScope: CoroutineScope
 ) {
@@ -62,7 +62,7 @@ class ChatService(
         val fullContextForApi = systemMessages + historyForApi
 
         activeJob = coroutineScope.launch(Dispatchers.Default) {
-            val response = gatewayManager.sendMessage(state.selectedModel, fullContextForApi)
+            val response = gatewayService.sendMessage(state.selectedModel, fullContextForApi)
 
             if (response.errorMessage != null) {
                 println("GATEWAY ERROR: ${response.errorMessage}")

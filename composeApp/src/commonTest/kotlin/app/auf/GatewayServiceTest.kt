@@ -20,32 +20,32 @@ class FakeGateway : Gateway(JsonProvider.appJson) {
 }
 
 /**
- * Unit tests for the GatewayManager.
+ * Unit tests for the GatewayService.
  *
  * ---
  * ## Mandate
- * This suite verifies the business logic of the GatewayManager, particularly its ability
+ * This suite verifies the business logic of the GatewayService, particularly its ability
  * to correctly filter and format the list of available AI models based on their
  * declared capabilities, not on their names.
  *
  * ---
  * ## Test Strategy
  * - **Arrange:** A `FakeGateway` is instantiated and configured to return a specific, predefined list of `ModelInfo` objects for each test scenario.
- * - **Act:** The `gatewayManager.listTextModels()` method is called.
+ * - **Act:** The `gatewayService.listTextModels()` method is called.
  * - **Assert:** Verify that the returned list of strings is correctly filtered (only includes models supporting "generateContent"), formatted (the "models/" prefix is removed), and sorted alphabetically.
  *
  * @version 1.0
  * @since 2025-08-17
  */
-class GatewayManagerTest {
+class GatewayServiceTest {
 
     private lateinit var fakeGateway: FakeGateway
-    private lateinit var gatewayManager: GatewayManager
+    private lateinit var gatewayService: GatewayService
 
     @BeforeTest
     fun setup() {
         fakeGateway = FakeGateway()
-        gatewayManager = GatewayManager(fakeGateway, JsonProvider.appJson, "dummy-api-key")
+        gatewayService = GatewayService(fakeGateway, JsonProvider.appJson, "dummy-api-key")
     }
 
     @Test
@@ -66,7 +66,7 @@ class GatewayManagerTest {
         )
 
         // Act
-        val actual = gatewayManager.listTextModels()
+        val actual = gatewayService.listTextModels()
 
         // Assert
         assertEquals(expected, actual, "The list should be filtered by capability, have its prefix removed, and be sorted alphabetically.")
@@ -81,7 +81,7 @@ class GatewayManagerTest {
         )
 
         // Act
-        val actual = gatewayManager.listTextModels()
+        val actual = gatewayService.listTextModels()
 
         // Assert
         assertTrue(actual.isEmpty(), "The list should be empty if no models match the capability.")
@@ -93,7 +93,7 @@ class GatewayManagerTest {
         fakeGateway.modelsToReturn = emptyList()
 
         // Act
-        val actual = gatewayManager.listTextModels()
+        val actual = gatewayService.listTextModels()
 
         // Assert
         assertTrue(actual.isEmpty(), "The list should be empty if the gateway provides no models.")
@@ -109,7 +109,7 @@ class GatewayManagerTest {
         val expected = listOf("gemini-1.5-pro-latest")
 
         // Act
-        val actual = gatewayManager.listTextModels()
+        val actual = gatewayService.listTextModels()
 
         // Assert
         assertEquals(expected, actual, "Models with no supported methods should be filtered out.")

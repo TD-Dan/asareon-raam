@@ -16,7 +16,7 @@ import app.auf.service.ActionExecutor
 import app.auf.service.BackupManager
 import app.auf.service.ChatService
 import app.auf.service.Gateway
-import app.auf.service.GatewayManager
+import app.auf.service.GatewayService
 import app.auf.service.GraphLoader
 import app.auf.service.GraphService
 import app.auf.service.ImportExportManager
@@ -66,7 +66,7 @@ fun main() = application {
 
     val stateManager = remember {
         val gateway = Gateway(jsonParser)
-        val gatewayManager = GatewayManager(gateway, jsonParser, apiKey)
+        val gatewayService = GatewayService(gateway, jsonParser, apiKey)
         val backupManager = BackupManager(platformDependencies)
         val actionExecutor = ActionExecutor(platformDependencies, jsonParser)
         val importExportManager = ImportExportManager(platformDependencies, jsonParser)
@@ -76,7 +76,7 @@ fun main() = application {
         val graphLoader = GraphLoader(platformDependencies, jsonParser)
         val graphService = GraphService(graphLoader)
         val sourceCodeService = SourceCodeService(platformDependencies)
-        val chatService = ChatService(store, gatewayManager, platformDependencies, coroutineScope)
+        val chatService = ChatService(store, gatewayService, platformDependencies, coroutineScope)
 
 
         // --- Instantiate the main StateManager with all its dependencies ---
@@ -86,7 +86,7 @@ fun main() = application {
             graphService = graphService,
             sourceCodeService = sourceCodeService,
             chatService = chatService,
-            gatewayManager = gatewayManager, // <<< MODIFIED: Inject GatewayManager
+            gatewayService = gatewayService, // <<< MODIFIED: Inject GatewayManager
             actionExecutor = actionExecutor,
             importExportViewModel = importExportViewModel,
             platform = platformDependencies,

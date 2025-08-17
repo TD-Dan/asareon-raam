@@ -4,7 +4,7 @@ import app.auf.model.UserSettings
 import app.auf.service.ActionExecutor
 import app.auf.service.BackupManager
 import app.auf.service.ChatService
-import app.auf.service.GatewayManager
+import app.auf.service.GatewayService
 import app.auf.service.GraphService
 import app.auf.service.SourceCodeService
 import app.auf.ui.ImportExportViewModel
@@ -44,7 +44,7 @@ open class StateManager(
     private val graphService: GraphService,
     private val sourceCodeService: SourceCodeService,
     private val chatService: ChatService,
-    private val gatewayManager: GatewayManager,
+    private val gatewayService: GatewayService,
     private val actionExecutor: ActionExecutor,
     val importExportViewModel: ImportExportViewModel,
     private val platform: PlatformDependencies,
@@ -75,7 +75,7 @@ open class StateManager(
     private fun loadAvailableModels() {
         coroutineScope.launch(Dispatchers.Default) {
             // --- MODIFIED: Delegate filtering to the GatewayManager ---
-            val modelNames = gatewayManager.listTextModels()
+            val modelNames = gatewayService.listTextModels()
             store.dispatch(AppAction.SetAvailableModels(modelNames))
         }
     }

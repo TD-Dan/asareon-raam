@@ -34,7 +34,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * @version 2.2
  * @since 2025-08-17
  */
-open class GatewayManager(
+open class GatewayService(
     private val gateway: Gateway,
     private val jsonParser: Json,
     private val apiKey: String
