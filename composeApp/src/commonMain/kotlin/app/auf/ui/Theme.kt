@@ -31,18 +31,18 @@ private val LightColors = lightColorScheme(
  * with colors inspired by the content-brand holon.
  */
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF7986CB), // A lighter, softer version of 'Host LLM Blue' for dark mode
-    onPrimary = Color(0xFF102485),
+    primary = Color(0xFF17afb4), // 'Idea Flow cyan'
+    onPrimary = Color(0xFF00363D),
     secondary = Color(0xFF4DD0E1), // A brighter version of 'Idea-Flow Cyan' for dark mode
     onSecondary = Color(0xFF00363D),
     tertiary = Color(0xFFF48FB1), // A softer 'Framework Pink' for dark mode
     onTertiary = Color(0xFF5C002B),
-    error = Color(0xFFCF6679), // A standard dark theme 'Hazard Red'
-    onError = Color(0xFF141212),
+    error = Color(0xFFCC354B), // 'Crab red'
+    onError = Color(0xFF2B131B),
     background = Color(0xFF121212), // A near-black for the main background
-    onBackground = Color(0xFFE6E1E5),
-    surface = Color(0xFF1E1E1E), // A slightly lighter gray for cards and surfaces
-    onSurface = Color(0xFFE6E1E5),
+    onBackground = Color(0xFFE7E7E7),
+    surface = Color(0xFF232323), // A slightly lighter gray for cards and surfaces
+    onSurface = Color(0xFF2D2D2D),
 )
 
 /**

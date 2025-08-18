@@ -171,7 +171,7 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
 
 @Composable
 fun RenderTextBlock(block: TextBlock) {
-    Text(block.text, fontFamily = FontFamily.Default, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
+    Text(block.text, fontFamily = FontFamily.Default, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
 }
 
 @Composable
@@ -295,7 +295,12 @@ fun ChatView(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
+    Column(modifier = modifier
+        .fillMaxSize()
+        .padding(16.dp)
+        .background(MaterialTheme.colorScheme.surface)
+    )
+    {
         LazyColumn(
             state = lazyListState,
             modifier = Modifier.weight(1f).padding(bottom = 8.dp),
@@ -352,7 +357,7 @@ fun ChatView(
             var isModelSelectorExpanded by remember { mutableStateOf(false) }
             var isAgentSelectorExpanded by remember { mutableStateOf(false) }
 
-            Column(horizontalAlignment = Alignment.End) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Agent:", fontSize = 12.sp)
                     Spacer(Modifier.width(8.dp))
@@ -371,7 +376,10 @@ fun ChatView(
                     Text("Model:", fontSize = 12.sp)
                     Spacer(Modifier.width(8.dp))
                     Box {
-                        Button(onClick = { isModelSelectorExpanded = true }) { Text(selectedModel, maxLines = 1) }
+                        Button(
+                            onClick = { isModelSelectorExpanded = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                        ) { Text(selectedModel, maxLines = 1) }
                         DropdownMenu(expanded = isModelSelectorExpanded, onDismissRequest = { isModelSelectorExpanded = false }) {
                             availableModels.forEach { modelName ->
                                 DropdownMenuItem(text = { Text(modelName) }, onClick = { stateManager.selectModel(modelName); isModelSelectorExpanded = false })
@@ -399,7 +407,7 @@ fun ChatView(
                 onClick = { if (appState.isProcessing) stateManager.cancelMessage() else sendMessageAction() },
                 modifier = Modifier.height(56.dp),
                 enabled = appState.gatewayStatus == GatewayStatus.OK,
-                colors = if (appState.isProcessing) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
+                colors = if (appState.isProcessing) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.inversePrimary) else ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 if (appState.isProcessing) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
