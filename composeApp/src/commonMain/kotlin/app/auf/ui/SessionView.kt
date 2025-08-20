@@ -8,9 +8,12 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -33,7 +36,8 @@ fun SessionView(
     appState: AppState,
     onFilter: (String?) -> Unit,
     onHolonSelected: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier : Modifier = Modifier
+        .background(color = MaterialTheme.colorScheme.surfaceContainer)
 ) {
     val holonGraph = appState.holonGraph
     val activeContextualHolonIds = appState.contextualHolonIds
@@ -50,19 +54,6 @@ fun SessionView(
     }
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        appState.errorMessage?.let { error ->
-            Text(
-                text = error,
-                color = MaterialTheme.colorScheme.error,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.errorContainer)
-                    .padding(8.dp)
-                    .padding(bottom = 12.dp)
-            )
-        }
-
         Text(
             text = "Knowledge Graph",
             style = MaterialTheme.typography.titleLarge,
@@ -77,7 +68,6 @@ fun SessionView(
             val buttonPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
             val buttonTextStyle = MaterialTheme.typography.labelSmall
 
-            // --- MODIFIED: Use distinct M3 Button and OutlinedButton for active/inactive states ---
             if (activeFilter == null) {
                 Button(onClick = { onFilter(null) }, contentPadding = buttonPadding) {
                     Text("All", style = buttonTextStyle)

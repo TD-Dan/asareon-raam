@@ -56,11 +56,13 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
             containerColor = MaterialTheme.colorScheme.surface
         )
     }
+    val borderColor = null
+    /*
     val borderColor = when {
         message.title == "Gateway Error" || message.title == "Graph Parsing Warning" -> MaterialTheme.colorScheme.error
         message.author == Author.SYSTEM -> MaterialTheme.colorScheme.outlineVariant
         else -> MaterialTheme.colorScheme.surface // Effectively no border for user/ai messages
-    }
+    }*/
     val elevation = if (message.author == Author.SYSTEM) 0.dp else 2.dp
 
     val contentToCopy = when {
@@ -78,7 +80,8 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         colors = cardColors,
-        border = if (borderColor != MaterialTheme.colorScheme.surface) BorderStroke(1.dp, borderColor) else null,
+        border = if (borderColor != null) BorderStroke(1.dp, color=borderColor) else null,
+        //border = if (borderColor != MaterialTheme.colorScheme.surface) BorderStroke(1.dp, borderColor) else null,
         elevation = CardDefaults.cardElevation(defaultElevation = elevation)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {

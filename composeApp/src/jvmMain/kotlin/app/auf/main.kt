@@ -127,7 +127,8 @@ fun main() = application {
             exitApplication()
         },
         title = "AUF",
-        state = windowState
+        state = windowState,
+        //undecorated = true,
     ) {
         App(stateManager)
     }
