@@ -22,7 +22,7 @@ import app.auf.service.GraphService
 import app.auf.service.ImportExportManager
 import app.auf.service.SettingsManager
 import app.auf.service.SourceCodeService
-import app.auf.ui.AUFTheme
+import app.auf.ui.AppTheme
 import app.auf.ui.App
 import app.auf.ui.ImportExportViewModel
 import app.auf.util.JsonProvider

@@ -2,47 +2,88 @@ package app.auf.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 
-/**
- * The private, internal Material 3 ColorScheme for the light theme,
- * with colors inspired by the content-brand holon.
- */
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF3F51B5), // A strong, accessible version of 'Host LLM Blue'
-    onPrimary = Color(0xFFFFFFFF),
-    secondary = Color(0xFF0097A7), // A professional, deep version of 'Idea-Flow Cyan'
-    onSecondary = Color(0xFFFFFFFF),
-    tertiary = Color(0xFFE91E63), // A vibrant, accessible version of 'Framework Pink'
-    onTertiary = Color(0xFFFFFFFF),
-    error = Color(0xFFB00020), // 'Hazard Red'
-    onError = Color(0xFFFFFFFF),
-    background = Color(0xFFF5F5F5), // A slightly off-white for comfort
-    onBackground = Color(0xFF1C1B1F),
-    surface = Color(0xFFFFFFFF), // Pure white for cards and surfaces
-    onSurface = Color(0xFF1C1B1F),
+private val lightScheme = lightColorScheme(
+    primary = primaryLight,
+    onPrimary = onPrimaryLight,
+    primaryContainer = primaryContainerLight,
+    onPrimaryContainer = onPrimaryContainerLight,
+    secondary = secondaryLight,
+    onSecondary = onSecondaryLight,
+    secondaryContainer = secondaryContainerLight,
+    onSecondaryContainer = onSecondaryContainerLight,
+    tertiary = tertiaryLight,
+    onTertiary = onTertiaryLight,
+    tertiaryContainer = tertiaryContainerLight,
+    onTertiaryContainer = onTertiaryContainerLight,
+    error = errorLight,
+    onError = onErrorLight,
+    errorContainer = errorContainerLight,
+    onErrorContainer = onErrorContainerLight,
+    background = backgroundLight,
+    onBackground = onBackgroundLight,
+    surface = surfaceLight,
+    onSurface = onSurfaceLight,
+    surfaceVariant = surfaceVariantLight,
+    onSurfaceVariant = onSurfaceVariantLight,
+    outline = outlineLight,
+    outlineVariant = outlineVariantLight,
+    scrim = scrimLight,
+    inverseSurface = inverseSurfaceLight,
+    inverseOnSurface = inverseOnSurfaceLight,
+    inversePrimary = inversePrimaryLight,
+    surfaceDim = surfaceDimLight,
+    surfaceBright = surfaceBrightLight,
+    surfaceContainerLowest = surfaceContainerLowestLight,
+    surfaceContainerLow = surfaceContainerLowLight,
+    surfaceContainer = surfaceContainerLight,
+    surfaceContainerHigh = surfaceContainerHighLight,
+    surfaceContainerHighest = surfaceContainerHighestLight,
 )
 
-/**
- * The private, internal Material 3 ColorScheme for the dark theme,
- * with colors inspired by the content-brand holon.
- */
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFF17afb4), // 'Idea Flow cyan'
-    onPrimary = Color(0xFF00363D),
-    secondary = Color(0xFF4DD0E1), // A brighter version of 'Idea-Flow Cyan' for dark mode
-    onSecondary = Color(0xFF00363D),
-    tertiary = Color(0xFFF48FB1), // A softer 'Framework Pink' for dark mode
-    onTertiary = Color(0xFF5C002B),
-    error = Color(0xFFCC354B), // 'Crab red'
-    onError = Color(0xFF2B131B),
-    background = Color(0xFF121212), // A near-black for the main background
-    onBackground = Color(0xFFE7E7E7),
-    surface = Color(0xFF232323), // A slightly lighter gray for cards and surfaces
-    onSurface = Color(0xFF2D2D2D),
+private val darkScheme = darkColorScheme(
+    primary = primaryDark,
+    onPrimary = onPrimaryDark,
+    primaryContainer = primaryContainerDark,
+    onPrimaryContainer = onPrimaryContainerDark,
+    secondary = secondaryDark,
+    onSecondary = onSecondaryDark,
+    secondaryContainer = secondaryContainerDark,
+    onSecondaryContainer = onSecondaryContainerDark,
+    tertiary = tertiaryDark,
+    onTertiary = onTertiaryDark,
+    tertiaryContainer = tertiaryContainerDark,
+    onTertiaryContainer = onTertiaryContainerDark,
+    error = errorDark,
+    onError = onErrorDark,
+    errorContainer = errorContainerDark,
+    onErrorContainer = onErrorContainerDark,
+    background = backgroundDark,
+    onBackground = onBackgroundDark,
+    surface = surfaceDark,
+    onSurface = onSurfaceDark,
+    surfaceVariant = surfaceVariantDark,
+    onSurfaceVariant = onSurfaceVariantDark,
+    outline = outlineDark,
+    outlineVariant = outlineVariantDark,
+    scrim = scrimDark,
+    inverseSurface = inverseSurfaceDark,
+    inverseOnSurface = inverseOnSurfaceDark,
+    inversePrimary = inversePrimaryDark,
+    surfaceDim = surfaceDimDark,
+    surfaceBright = surfaceBrightDark,
+    surfaceContainerLowest = surfaceContainerLowestDark,
+    surfaceContainerLow = surfaceContainerLowDark,
+    surfaceContainer = surfaceContainerDark,
+    surfaceContainerHigh = surfaceContainerHighDark,
+    surfaceContainerHighest = surfaceContainerHighestDark,
 )
 
 /**
@@ -50,14 +91,14 @@ private val DarkColors = darkColorScheme(
  * It automatically selects between the Dark and Light color schemes based on the system theme.
  */
 @Composable
-fun AUFTheme(
+fun AppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) {
-        DarkColors
+        darkScheme
     } else {
-        LightColors
+        lightScheme
     }
 
     MaterialTheme(
@@ -67,3 +108,4 @@ fun AUFTheme(
         content = content
     )
 }
+

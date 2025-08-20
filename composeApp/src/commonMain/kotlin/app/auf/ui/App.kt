@@ -59,7 +59,7 @@ fun App(stateManager: StateManager) {
         }
     }
 
-    AUFTheme {
+    AppTheme {
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) }
         ) { paddingValues ->
