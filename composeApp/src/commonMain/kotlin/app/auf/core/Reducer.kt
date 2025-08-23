@@ -65,7 +65,8 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             val userMessage = ChatMessage(
                 author = Author.USER,
                 timestamp = action.timestamp,
-                contentBlocks = listOf(TextBlock(action.message))
+                // --- MODIFIED: Use the pre-parsed blocks directly ---
+                contentBlocks = action.contentBlocks
             )
             state.copy(chatHistory = state.chatHistory + userMessage)
         }
@@ -74,7 +75,8 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                 author = Author.SYSTEM,
                 title = "System Request",
                 timestamp = action.timestamp,
-                contentBlocks = listOf(TextBlock(action.message))
+                // --- MODIFIED: Use the pre-parsed blocks directly ---
+                contentBlocks = action.contentBlocks
             )
             state.copy(chatHistory = state.chatHistory + systemMessage)
         }

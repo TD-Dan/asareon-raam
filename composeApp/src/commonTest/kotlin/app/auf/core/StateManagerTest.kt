@@ -13,6 +13,7 @@ import app.auf.model.Action
 import app.auf.model.CreateFile
 import app.auf.model.UserSettings
 import app.auf.service.ActionExecutorResult
+import app.auf.service.AufTextParser
 import app.auf.ui.ImportExportViewModel
 import app.auf.util.JsonProvider
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -35,8 +36,10 @@ class StateManagerTest {
         val graphService = FakeGraphService()
         val sourceCodeService = FakeSourceCodeService(platform)
         val gatewayService = FakeGatewayService(scope)
-        val chatService = FakeChatService(store, gatewayService, platform, scope)
         val jsonParser = JsonProvider.appJson
+        val parser = AufTextParser(jsonParser) // <<< FIX: Instantiate the parser
+        // --- MODIFIED: Pass the parser to the FakeChatService ---
+        val chatService = FakeChatService(store, gatewayService, platform, parser, scope)
         val actionExecutor = FakeActionExecutor(platform, jsonParser)
         val importExportManager = FakeImportExportManager(platform, jsonParser)
         val importExportViewModel = ImportExportViewModel(importExportManager, scope)
@@ -49,6 +52,7 @@ class StateManagerTest {
             chatService = chatService,
             gatewayService = gatewayService,
             actionExecutor = actionExecutor,
+            parser = parser, // <<< FIX: Provide the parser to the StateManager
             importExportViewModel = importExportViewModel,
             platform = platform,
             initialSettings = UserSettings(),
@@ -72,7 +76,7 @@ class StateManagerTest {
 
         stateManager.executeActionFromMessage(12345L)
 
-        runCurrent() // <<< THE FIX: Execute pending coroutines now.
+        runCurrent()
 
         val dispatchedActions = store.dispatchedActions
         assertEquals(5, dispatchedActions.size, "Expected 5 actions: Execute, Resolve, Success, Load, LoadSuccess")
@@ -98,7 +102,7 @@ class StateManagerTest {
 
         stateManager.executeActionFromMessage(12345L)
 
-        runCurrent() // <<< THE FIX: Execute pending coroutines now.
+        runCurrent()
 
         val dispatchedActions = store.dispatchedActions
         assertEquals(2, dispatchedActions.size)

@@ -1,3 +1,4 @@
+// --- FILE: composeApp/src/jvmMain/kotlin/app/auf/main.kt ---
 package app.auf
 
 import androidx.compose.runtime.LaunchedEffect
@@ -75,7 +76,8 @@ fun main() = application {
         val graphLoader = GraphLoader(platformDependencies, jsonParser)
         val graphService = GraphService(graphLoader)
         val sourceCodeService = SourceCodeService(platformDependencies)
-        val chatService = ChatService(store, gatewayService, platformDependencies, coroutineScope)
+        // --- MODIFIED: Provide the parser to the ChatService constructor ---
+        val chatService = ChatService(store, gatewayService, platformDependencies, aufTextParser, coroutineScope)
 
         StateManager(
             store = store,
@@ -85,6 +87,7 @@ fun main() = application {
             chatService = chatService,
             gatewayService = gatewayService,
             actionExecutor = actionExecutor,
+            parser = aufTextParser,
             importExportViewModel = importExportViewModel,
             platform = platformDependencies,
             initialSettings = savedSettings,

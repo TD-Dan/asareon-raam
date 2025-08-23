@@ -3,6 +3,7 @@ package app.auf.service
 import app.auf.core.Holon
 import app.auf.core.HolonHeader
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.model.CreateFile
 import app.auf.model.CreateHolon
 import app.auf.model.UpdateHolonContent
 import app.auf.util.JsonProvider
@@ -95,6 +96,31 @@ class ActionExecutorTest {
         val subRef = updatedParentHolon.header.subHolons.first()
         assertEquals("new-child-1", subRef.id)
         assertEquals("Task", subRef.type)
+    }
+
+    // --- NEW TEST ---
+    @Test
+    fun `execute CreateFile success path`() {
+        // ARRANGE
+        val (actionExecutor, platform) = setupTestEnvironment()
+        val personaId = "sage-v4-5"
+        val manifest = listOf(
+            CreateFile(
+                filePath = "dreams/dream-transcript.md",
+                content = "# Dream\nThis is a dream.",
+                summary = "Create dream transcript"
+            )
+        )
+        // The expected path is relative to the persona's root directory.
+        val expectedPath = "holons/sage-v4-5/dreams/dream-transcript.md"
+
+        // ACT
+        val result = actionExecutor.execute(manifest, personaId, emptyList())
+
+        // ASSERT
+        assertIs<ActionExecutorResult.Success>(result)
+        assertTrue(platform.files.containsKey(expectedPath), "The new file should exist at the correct path.")
+        assertEquals("# Dream\nThis is a dream.", platform.files[expectedPath])
     }
 
     @Test

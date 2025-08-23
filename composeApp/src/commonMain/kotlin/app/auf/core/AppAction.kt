@@ -25,8 +25,8 @@ sealed interface AppAction {
     data class LoadGraphFailure(val error: String) : AppAction
 
     // --- Chat & Gateway Actions ---
-    data class AddUserMessage(val message: String, val timestamp: Long) : AppAction
-    data class AddSystemMessage(val message: String, val timestamp: Long) : AppAction
+    data class AddUserMessage(val contentBlocks: List<ContentBlock>, val timestamp: Long) : AppAction
+    data class AddSystemMessage(val contentBlocks: List<ContentBlock>, val timestamp: Long) : AppAction
     data object SendMessageLoading : AppAction
     data class SendMessageSuccess(val response: GatewayResponse, val timestamp: Long) : AppAction
     data class SendMessageFailure(val error: String, val timestamp: Long) : AppAction

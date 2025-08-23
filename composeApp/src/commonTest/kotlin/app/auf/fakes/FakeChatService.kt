@@ -1,8 +1,8 @@
-// --- FILE: composeApp/src/commonTest/kotlin/app/auf/fakes/FakeChatService.kt ---
 package app.auf.fakes
 
 import app.auf.core.ChatMessage
 import app.auf.core.Store
+import app.auf.service.AufTextParser
 import app.auf.service.ChatService
 import app.auf.service.GatewayService
 import app.auf.util.PlatformDependencies
@@ -12,8 +12,9 @@ class FakeChatService(
     store: Store,
     gatewayService: GatewayService,
     platform: PlatformDependencies,
+    parser: AufTextParser, // <<< FIX: Added the parser parameter
     coroutineScope: CoroutineScope
-) : ChatService(store, gatewayService, platform, coroutineScope) {
+) : ChatService(store, gatewayService, platform, parser, coroutineScope) { // <<< FIX: Pass parser to super()
 
     var sendMessageCalled = false
     var cancelMessageCalled = false

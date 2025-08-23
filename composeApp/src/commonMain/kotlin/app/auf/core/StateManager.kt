@@ -13,6 +13,7 @@ import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import app.auf.service.AufTextParser
 
 /**
  * The core state management class for the AUF application.
@@ -46,6 +47,7 @@ open class StateManager(
     private val chatService: ChatService,
     private val gatewayService: GatewayService,
     private val actionExecutor: ActionExecutor,
+    private val parser: AufTextParser,
     val importExportViewModel: ImportExportViewModel,
     private val platform: PlatformDependencies,
     private val initialSettings: UserSettings,
@@ -61,7 +63,7 @@ open class StateManager(
     }
 
     fun loadHolonGraph() {
-        coroutineScope.launch { // <<< MODIFIED: Removed Dispatchers.Default
+        coroutineScope.launch {
             store.dispatch(AppAction.LoadGraph)
             val result = graphService.loadGraph(state.value.aiPersonaId)
             if (result.fatalError != null) {
@@ -73,7 +75,7 @@ open class StateManager(
     }
 
     private fun loadAvailableModels() {
-        coroutineScope.launch { // <<< MODIFIED: Removed Dispatchers.Default
+        coroutineScope.launch {
             val modelNames = gatewayService.listTextModels()
             store.dispatch(AppAction.SetAvailableModels(modelNames))
         }
@@ -82,7 +84,8 @@ open class StateManager(
     // --- Chat Logic Delegation ---
     fun sendMessage(message: String) {
         if (state.value.isProcessing || state.value.aiPersonaId == null) return
-        store.dispatch(AppAction.AddUserMessage(message, platform.getSystemTimeMillis()))
+        val contentBlocks = parser.parse(message)
+        store.dispatch(AppAction.AddUserMessage(contentBlocks, platform.getSystemTimeMillis()))
         chatService.sendMessage()
     }
 
@@ -113,7 +116,7 @@ open class StateManager(
     fun executeActionFromMessage(messageTimestamp: Long) {
         if (state.value.isProcessing) return // Prevent concurrent executions
 
-        coroutineScope.launch { // <<< MODIFIED: Removed Dispatchers.Default
+        coroutineScope.launch {
             val message = state.value.chatHistory.find { it.timestamp == messageTimestamp }
             val actionBlock = message?.contentBlocks?.filterIsInstance<ActionBlock>()?.firstOrNull()
 
@@ -134,7 +137,7 @@ open class StateManager(
                 is ActionExecutorResult.Success -> {
                     store.dispatch(AppAction.ResolveActionInMessage(messageTimestamp))
                     store.dispatch(AppAction.ExecuteActionManifestSuccess(result.summary, messageTimestamp))
-                    // This is critical for data consistency: reload the graph from disk.
+                    // This is critical for data consistency: reload the graph from the disk.
                     loadHolonGraph()
                 }
                 is ActionExecutorResult.Failure -> {
@@ -217,7 +220,7 @@ open class StateManager(
     }
 
     fun copyCodebaseToClipboard() {
-        coroutineScope.launch { // <<< MODIFIED: Removed Dispatchers.Default
+        coroutineScope.launch {
             val codebaseString = sourceCodeService.collateKtFilesToString()
             if (codebaseString.startsWith("ERROR:")) {
                 store.dispatch(AppAction.ShowToast(codebaseString))
