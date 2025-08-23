@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
  * - `app.auf.core.ImportState`
  * - `app.auf.core.HolonHeader`
  *
- * @version 1.2
+ * @version 1.3
  * @since 2025-08-15
  */
 open class ImportExportViewModel(
@@ -64,9 +64,23 @@ open class ImportExportViewModel(
     open fun executeImport(currentGraph: List<HolonHeader>, personaId: String) {
         val currentState = _importState.value ?: return
         coroutineScope.launch(Dispatchers.Default) {
-            // --- FIX IS HERE: `holonsBasePath` argument removed from the call. ---
-            importExportManager.executeImport(currentState, currentGraph, personaId)
-            onImportComplete()
+            // MODIFIED: Calling the updated suspend function with the correct parameters
+            // and handling the Result.
+            val result = importExportManager.executeImport(
+                sourcePath = currentState.sourcePath,
+                actions = currentState.selectedActions,
+                graph = currentGraph,
+                personaId = personaId
+            )
+
+            result.onSuccess {
+                // This callback is defined in main.kt and will reload the graph and switch views.
+                onImportComplete()
+            }.onFailure {
+                // TODO: A future improvement would be to show this error in the UI.
+                // For now, we print it to the console to ensure errors are not silent.
+                println("Import failed: ${it.message}")
+            }
         }
     }
 

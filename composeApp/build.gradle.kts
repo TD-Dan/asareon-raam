@@ -101,6 +101,8 @@ kotlin {
             implementation(kotlin("test-junit"))
             implementation(libs.compose.ui.test.junit4)
             implementation(libs.ktor.client.cio)
+            implementation(libs.jna)
+            implementation(libs.jna.platform)
         }
         listOf("iosX64Main", "iosArm64Main", "iosSimulatorArm64Main").forEach {
             getByName(it).dependencies {
