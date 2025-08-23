@@ -7,12 +7,14 @@ import app.auf.service.AufTextParser
 import app.auf.service.Gateway
 import app.auf.service.GatewayService
 import app.auf.util.JsonProvider
+import kotlinx.coroutines.CoroutineScope
 
-class FakeGatewayService : GatewayService(
+// <<< MODIFIED: Updated constructor to accept CoroutineScope
+class FakeGatewayService(coroutineScope: CoroutineScope) : GatewayService(
     gateway = Gateway(JsonProvider.appJson),
-    // --- MODIFICATION: Provide the AufTextParser the service now requires ---
     parser = AufTextParser(JsonProvider.appJson),
-    apiKey = "fake-api-key"
+    apiKey = "fake-api-key",
+    coroutineScope = coroutineScope // <<< MODIFIED: Pass the scope to the super constructor
 ) {
     var sendMessageCalledWith: List<ChatMessage>? = null
     var nextResponse = GatewayResponse()

@@ -1,3 +1,4 @@
+// --- FILE: composeApp/src/commonTest/kotlin/app/auf/fakes/FakeChatService.kt ---
 package app.auf.fakes
 
 import app.auf.core.ChatMessage
@@ -6,13 +7,12 @@ import app.auf.service.ChatService
 import app.auf.service.GatewayService
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 
 class FakeChatService(
     store: Store,
-    gatewayService: GatewayService = FakeGatewayService(),
-    platform: PlatformDependencies = FakePlatformDependencies(),
-    coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Unconfined)
+    gatewayService: GatewayService,
+    platform: PlatformDependencies,
+    coroutineScope: CoroutineScope
 ) : ChatService(store, gatewayService, platform, coroutineScope) {
 
     var sendMessageCalled = false

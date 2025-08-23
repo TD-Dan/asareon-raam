@@ -11,7 +11,6 @@ import app.auf.service.SourceCodeService
 import app.auf.ui.ImportExportViewModel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
@@ -36,7 +35,7 @@ import kotlinx.coroutines.launch
  * - `app.auf.util.PlatformDependencies`: The single bridge to the host OS.
  * - `kotlinx.coroutines.CoroutineScope`
  *
- * @version 4.6
+ * @version 4.7
  * @since 2025-08-17
  */
 open class StateManager(
@@ -62,7 +61,7 @@ open class StateManager(
     }
 
     fun loadHolonGraph() {
-        coroutineScope.launch(Dispatchers.Default) {
+        coroutineScope.launch { // <<< MODIFIED: Removed Dispatchers.Default
             store.dispatch(AppAction.LoadGraph)
             val result = graphService.loadGraph(state.value.aiPersonaId)
             if (result.fatalError != null) {
@@ -74,7 +73,7 @@ open class StateManager(
     }
 
     private fun loadAvailableModels() {
-        coroutineScope.launch(Dispatchers.Default) {
+        coroutineScope.launch { // <<< MODIFIED: Removed Dispatchers.Default
             val modelNames = gatewayService.listTextModels()
             store.dispatch(AppAction.SetAvailableModels(modelNames))
         }
@@ -114,7 +113,7 @@ open class StateManager(
     fun executeActionFromMessage(messageTimestamp: Long) {
         if (state.value.isProcessing) return // Prevent concurrent executions
 
-        coroutineScope.launch(Dispatchers.Default) {
+        coroutineScope.launch { // <<< MODIFIED: Removed Dispatchers.Default
             val message = state.value.chatHistory.find { it.timestamp == messageTimestamp }
             val actionBlock = message?.contentBlocks?.filterIsInstance<ActionBlock>()?.firstOrNull()
 
@@ -218,7 +217,7 @@ open class StateManager(
     }
 
     fun copyCodebaseToClipboard() {
-        coroutineScope.launch(Dispatchers.Default) {
+        coroutineScope.launch { // <<< MODIFIED: Removed Dispatchers.Default
             val codebaseString = sourceCodeService.collateKtFilesToString()
             if (codebaseString.startsWith("ERROR:")) {
                 store.dispatch(AppAction.ShowToast(codebaseString))

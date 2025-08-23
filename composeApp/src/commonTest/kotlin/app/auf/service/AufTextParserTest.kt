@@ -1,4 +1,3 @@
-// --- FILE: composeApp/src/commonTest/kotlin/app/auf/service/AufTextParserTest.kt ---
 package app.auf.service
 
 import app.auf.core.ActionBlock

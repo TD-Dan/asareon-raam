@@ -1,4 +1,3 @@
-// --- FILE: composeApp/src/jvmMain/kotlin/app/auf/main.kt ---
 package app.auf
 
 import androidx.compose.runtime.LaunchedEffect
@@ -38,7 +37,7 @@ fun main() = application {
     // --- Dependency Injection Root ---
     val platformDependencies = remember { PlatformDependencies() }
     val jsonParser = remember { JsonProvider.appJson }
-    val aufTextParser = remember { AufTextParser(jsonParser) } // <<< MODIFIED: Instantiate the new parser
+    val aufTextParser = remember { AufTextParser(jsonParser) }
 
     val settingsManager = remember { SettingsManager(platformDependencies, jsonParser) }
     val savedSettings = remember { settingsManager.loadSettings() ?: UserSettings() }
@@ -68,8 +67,7 @@ fun main() = application {
 
     val stateManager = remember {
         val gateway = Gateway(jsonParser)
-        // <<< MODIFIED: Pass the aufTextParser instance instead of the raw jsonParser
-        val gatewayService = GatewayService(gateway, aufTextParser, apiKey)
+        val gatewayService = GatewayService(gateway, aufTextParser, apiKey, coroutineScope)
         val backupManager = BackupManager(platformDependencies)
         val actionExecutor = ActionExecutor(platformDependencies, jsonParser)
         val importExportManager = ImportExportManager(platformDependencies, jsonParser)

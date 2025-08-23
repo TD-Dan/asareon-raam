@@ -1,10 +1,10 @@
+// --- FILE: composeApp/src/commonMain/kotlin/app/auf/service/GatewayService.kt ---
 package app.auf.service
 
 import app.auf.core.ChatMessage
 import app.auf.core.GatewayResponse
 import app.auf.core.Author
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
@@ -21,15 +21,16 @@ import kotlinx.coroutines.withContext
  * - `app.auf.service.Gateway`: The client for the AI service API.
  * - `app.auf.service.AufTextParser`: The canonical parser for the AUF tagged-text format.
  *
- * @version 3.0
+ * @version 3.1
  * @since 2025-08-17
  */
 open class GatewayService(
     private val gateway: Gateway,
     private val parser: AufTextParser,
-    private val apiKey: String
+    private val apiKey: String,
+    private val coroutineScope: CoroutineScope // <<< MODIFIED: Injected CoroutineScope
 ) {
-    private val coroutineScope = CoroutineScope(Dispatchers.Default)
+    // <<< MODIFIED: Removed internal coroutineScope definition
 
     open suspend fun sendMessage(selectedModel: String, messages: List<ChatMessage>): GatewayResponse {
         return withContext(coroutineScope.coroutineContext) {
@@ -47,7 +48,6 @@ open class GatewayService(
                     ?: response.promptFeedback?.blockReason?.let { "Blocked: $it" }
                     ?: "No content received, but no error was reported."
 
-                // --- MODIFIED: Delegation to the new parser ---
                 val parsedBlocks = parser.parse(rawTextResponse)
 
                 GatewayResponse(

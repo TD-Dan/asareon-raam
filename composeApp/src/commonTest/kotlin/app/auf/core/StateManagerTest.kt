@@ -15,12 +15,13 @@ import app.auf.model.UserSettings
 import app.auf.service.ActionExecutorResult
 import app.auf.ui.ImportExportViewModel
 import app.auf.util.JsonProvider
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertTrue
 
 class StateManagerTest {
 
@@ -33,8 +34,8 @@ class StateManagerTest {
         val backupManager = FakeBackupManager(platform)
         val graphService = FakeGraphService()
         val sourceCodeService = FakeSourceCodeService(platform)
-        val chatService = FakeChatService(store)
-        val gatewayService = FakeGatewayService()
+        val gatewayService = FakeGatewayService(scope)
+        val chatService = FakeChatService(store, gatewayService, platform, scope)
         val jsonParser = JsonProvider.appJson
         val actionExecutor = FakeActionExecutor(platform, jsonParser)
         val importExportManager = FakeImportExportManager(platform, jsonParser)
@@ -57,6 +58,7 @@ class StateManagerTest {
     }
 
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `executeActionFromMessage success path dispatches correct actions and reloads graph`() = runTest {
         val manifest = listOf(CreateFile("test.txt", "content", "Create test file"))
@@ -70,6 +72,8 @@ class StateManagerTest {
 
         stateManager.executeActionFromMessage(12345L)
 
+        runCurrent() // <<< THE FIX: Execute pending coroutines now.
+
         val dispatchedActions = store.dispatchedActions
         assertEquals(5, dispatchedActions.size, "Expected 5 actions: Execute, Resolve, Success, Load, LoadSuccess")
         assertIs<AppAction.ExecuteActionManifest>(dispatchedActions[0])
@@ -80,6 +84,7 @@ class StateManagerTest {
         assertEquals(manifest, fakeActionExecutor.lastExecutedManifest)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `executeActionFromMessage failure path dispatches failure action`() = runTest {
         val manifest = listOf<Action>(CreateFile("test.txt", "content", "Create test file"))
@@ -92,6 +97,8 @@ class StateManagerTest {
         fakeActionExecutor.nextResult = ActionExecutorResult.Failure("File not found.")
 
         stateManager.executeActionFromMessage(12345L)
+
+        runCurrent() // <<< THE FIX: Execute pending coroutines now.
 
         val dispatchedActions = store.dispatchedActions
         assertEquals(2, dispatchedActions.size)

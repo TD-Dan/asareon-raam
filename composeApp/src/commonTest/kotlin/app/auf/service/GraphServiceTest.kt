@@ -1,4 +1,4 @@
-package app.auf
+package app.auf.service
 
 import app.auf.core.GraphLoadResult
 import app.auf.core.Holon
