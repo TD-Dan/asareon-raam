@@ -19,7 +19,7 @@ import app.auf.core.GraphLoadResult
  * @version 1.0
  * @since 2025-08-16
  */
-class GraphService(
+open class GraphService(
     private val graphLoader: GraphLoader
 ) {
     /**
@@ -29,7 +29,7 @@ class GraphService(
      * @param currentPersonaId The ID of the persona to load. Can be null.
      * @return A [GraphLoadResult] containing the outcome of the load operation.
      */
-    suspend fun loadGraph(currentPersonaId: String?): GraphLoadResult {
+    open suspend fun loadGraph(currentPersonaId: String?): GraphLoadResult {
         return graphLoader.loadGraph(currentPersonaId)
     }
 }

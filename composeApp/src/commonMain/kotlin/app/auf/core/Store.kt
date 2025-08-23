@@ -26,7 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * @version 1.0
  * @since 2025-08-16
  */
-class Store(
+open class Store(
     initialState: AppState,
     private val reducer: (AppState, AppAction) -> AppState,
     private val coroutineScope: CoroutineScope
@@ -35,7 +35,7 @@ class Store(
     private val _state = MutableStateFlow(initialState)
     val state = _state.asStateFlow()
 
-    fun dispatch(action: AppAction) {
+    open fun dispatch(action: AppAction) {
         // The core of UDF: calculate the new state using the reducer.
         val newState = reducer(_state.value, action)
         _state.value = newState

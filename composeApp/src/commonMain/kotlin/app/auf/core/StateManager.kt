@@ -2,6 +2,7 @@ package app.auf.core
 
 import app.auf.model.UserSettings
 import app.auf.service.ActionExecutor
+import app.auf.service.ActionExecutorResult
 import app.auf.service.BackupManager
 import app.auf.service.ChatService
 import app.auf.service.GatewayService
@@ -35,7 +36,7 @@ import kotlinx.coroutines.launch
  * - `app.auf.util.PlatformDependencies`: The single bridge to the host OS.
  * - `kotlinx.coroutines.CoroutineScope`
  *
- * @version 4.5
+ * @version 4.6
  * @since 2025-08-17
  */
 open class StateManager(
@@ -111,13 +112,43 @@ open class StateManager(
     }
 
     fun executeActionFromMessage(messageTimestamp: Long) {
-        println("Side Effect: executeActionFromMessage - (To be moved to a Service)")
+        if (state.value.isProcessing) return // Prevent concurrent executions
+
+        coroutineScope.launch(Dispatchers.Default) {
+            val message = state.value.chatHistory.find { it.timestamp == messageTimestamp }
+            val actionBlock = message?.contentBlocks?.filterIsInstance<ActionBlock>()?.firstOrNull()
+
+            if (actionBlock == null || actionBlock.isResolved) {
+                store.dispatch(AppAction.ExecuteActionManifestFailure("Action block not found or already resolved."))
+                return@launch
+            }
+
+            store.dispatch(AppAction.ExecuteActionManifest(messageTimestamp))
+
+            val manifest = actionBlock.actions
+            val personaId = state.value.aiPersonaId ?: ""
+            val currentGraphHeaders = state.value.holonGraph.map { it.header }
+
+            val result = actionExecutor.execute(manifest, personaId, currentGraphHeaders)
+
+            when (result) {
+                is ActionExecutorResult.Success -> {
+                    store.dispatch(AppAction.ResolveActionInMessage(messageTimestamp))
+                    store.dispatch(AppAction.ExecuteActionManifestSuccess(result.summary, messageTimestamp))
+                    // This is critical for data consistency: reload the graph from disk.
+                    loadHolonGraph()
+                }
+                is ActionExecutorResult.Failure -> {
+                    store.dispatch(AppAction.ExecuteActionManifestFailure(result.error))
+                }
+            }
+        }
     }
 
-
-
     fun rejectActionFromMessage(messageTimestamp: Long) {
-        println("ACTION: rejectActionFromMessage - (Action not yet implemented)")
+        // Mark the action as resolved without executing it.
+        store.dispatch(AppAction.ResolveActionInMessage(messageTimestamp))
+        store.dispatch(AppAction.ShowToast("Action Manifest Rejected."))
     }
 
     fun openBackupFolder() {

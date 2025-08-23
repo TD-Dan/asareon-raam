@@ -15,7 +15,7 @@ package app.auf.core
  * - `app.auf.core.AppState`: The state object it operates on.
  * - `app.auf.core.AppAction`: The actions it responds to.
  *
- * @version 2.0
+ * @version 2.1
  * @since 2025-08-17
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
@@ -211,6 +211,36 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                 availableModels = action.models,
                 selectedModel = newSelectedModel
             )
+        }
+
+        // --- Action Manifest Execution ---
+        is AppAction.ExecuteActionManifest -> state.copy(
+            isProcessing = true
+        )
+        is AppAction.ExecuteActionManifestSuccess -> state.copy(
+            isProcessing = false,
+            toastMessage = action.summary
+        )
+        is AppAction.ExecuteActionManifestFailure -> state.copy(
+            isProcessing = false,
+            toastMessage = "ERROR: ${action.error}" // Prepending ERROR for UI visibility
+        )
+        is AppAction.ResolveActionInMessage -> {
+            val updatedHistory = state.chatHistory.map { message ->
+                if (message.timestamp == action.messageTimestamp) {
+                    val updatedBlocks = message.contentBlocks.map { block ->
+                        if (block is ActionBlock) {
+                            block.copy(isResolved = true)
+                        } else {
+                            block
+                        }
+                    }
+                    message.copy(contentBlocks = updatedBlocks)
+                } else {
+                    message
+                }
+            }
+            state.copy(chatHistory = updatedHistory)
         }
     }
 }

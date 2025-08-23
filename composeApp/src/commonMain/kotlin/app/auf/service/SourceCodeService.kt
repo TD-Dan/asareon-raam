@@ -10,13 +10,13 @@ import app.auf.util.PlatformDependencies
  * ## Dependencies
  * - `app.auf.util.PlatformDependencies`: To access the file system.
  */
-class SourceCodeService(private val platform: PlatformDependencies) {
+open class SourceCodeService(private val platform: PlatformDependencies) {
 
     /**
      * Scans the 'src' directory, reads all .kt files, and collates them into a
      * single, formatted string.
      */
-    fun collateKtFilesToString(): String {
+    open fun collateKtFilesToString(): String {
         val srcRootPath = "src" // Assumes the app runs from the project root.
         val srcDir = platform.getBasePathFor(app.auf.util.BasePath.FRAMEWORK).replace("framework", srcRootPath)
 

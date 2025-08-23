@@ -38,7 +38,7 @@ import app.auf.core.ActionBlock // <<< MODIFIED: Added this line
  * @version 1.2
  * @since 2025-08-17
  */
-class ChatService(
+open class ChatService(
     private val store: Store,
     private val gatewayService: GatewayService,
     private val platform: PlatformDependencies,
@@ -51,7 +51,7 @@ class ChatService(
      * Initiates sending the current chat history to the AI.
      * It reads the current state from the Store to build the context.
      */
-    fun sendMessage() {
+    open fun sendMessage() {
         val state = store.state.value
         if (state.isProcessing || state.aiPersonaId == null) return
 
@@ -86,13 +86,13 @@ class ChatService(
     /**
      * Cancels the currently active AI message request.
      */
-    fun cancelMessage() {
+    open fun cancelMessage() {
         activeJob?.cancel()
         store.dispatch(AppAction.CancelMessage)
         activeJob = null
     }
 
-    fun buildSystemContextMessages(): List<ChatMessage> {
+    open fun buildSystemContextMessages(): List<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
         val appState = store.state.value
         val frameworkBasePath = platform.getBasePathFor(BasePath.FRAMEWORK)
@@ -131,7 +131,7 @@ class ChatService(
         return messages
     }
 
-    fun buildFullPromptAsString(): String {
+    open fun buildFullPromptAsString(): String {
         val state = store.state.value
         val historyForApi = state.chatHistory.filter { it.author == Author.USER || it.author == Author.AI }
         val systemMessages = buildSystemContextMessages()

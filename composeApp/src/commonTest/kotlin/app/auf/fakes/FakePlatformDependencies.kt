@@ -1,22 +1,23 @@
 package app.auf.fakes
 
+import app.auf.util.BasePath
 import app.auf.util.FileEntry
 import app.auf.util.PlatformDependencies
-import app.auf.util.BasePath
 
 /**
  * A fake, in-memory implementation of the PlatformDependencies contract for use in unit tests.
  *
- * --- FIX: Added `override` to all members to correctly inherit from the open PlatformDependencies class. ---
+ * --- FIX: Added `override` to all members and implemented missing functions from the contract. ---
  *
- * @version 1.1
- * @since 2025-08-15
+ * @version 1.2
+ * @since 2025-08-23
  */
-class FakePlatformDependencies : PlatformDependencies() { // Note: Now calling the constructor
+class FakePlatformDependencies : PlatformDependencies() {
     val files = mutableMapOf<String, String>()
     val directories = mutableSetOf<String>()
     val copiedFiles = mutableMapOf<String, String>()
     var lastOpenedFolder: String? = null
+    var lastCopiedToClipboard: String? = null
     var zipArchiveCreated: Pair<String, String>? = null
 
     override val pathSeparator: Char = '/'
@@ -46,8 +47,10 @@ class FakePlatformDependencies : PlatformDependencies() { // Note: Now calling t
     override fun createDirectories(path: String) {
         var current = ""
         path.split(pathSeparator).forEach { part ->
-            current += part + pathSeparator
-            directories.add(current.removeSuffix(pathSeparator.toString()))
+            if (part.isNotEmpty()) {
+                current += part + pathSeparator
+                directories.add(current.removeSuffix(pathSeparator.toString()))
+            }
         }
     }
 
@@ -81,8 +84,27 @@ class FakePlatformDependencies : PlatformDependencies() { // Note: Now calling t
         lastOpenedFolder = path
     }
 
+    // --- NEWLY IMPLEMENTED TO MATCH CONTRACT ---
+    override fun selectDirectoryPath(): String? {
+        return "/fake/selected/directory"
+    }
+
     override fun getSystemTimeMillis(): Long = 123456789L
     override fun formatIsoTimestamp(timestamp: Long): String = "1973-11-29T21:33:09Z"
+
+    override fun formatDisplayTimestamp(timestamp: Long): String {
+        return "21:33:09"
+    }
+
+    override fun copyToClipboard(text: String) {
+        lastCopiedToClipboard = text
+    }
+
+
+
+    override fun applyNativeWindowDecorations(window: Any) {
+        // No-op in fake
+    }
 
     // Helper for test assertions
     fun clear() {
@@ -91,5 +113,6 @@ class FakePlatformDependencies : PlatformDependencies() { // Note: Now calling t
         copiedFiles.clear()
         lastOpenedFolder = null
         zipArchiveCreated = null
+        lastCopiedToClipboard = null
     }
 }
