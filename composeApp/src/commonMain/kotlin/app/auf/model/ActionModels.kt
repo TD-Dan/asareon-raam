@@ -1,5 +1,6 @@
 package app.auf.model
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -19,6 +20,7 @@ sealed interface Action {
  * updating the parent Holon's `sub_holons` array to include a reference to this new Holon.
  */
 @Serializable
+@SerialName("CreateHolon") // <<< FIX: Explicitly define the serial name for polymorphism.
 data class CreateHolon(
     val parentId: String,
     // The AI provides the full, valid JSON content for the new holon as a string.
@@ -32,6 +34,7 @@ data class CreateHolon(
  * error-prone than granular JSON path operations.
  */
 @Serializable
+@SerialName("UpdateHolonContent") // <<< FIX: Explicitly define the serial name for polymorphism.
 data class UpdateHolonContent(
     val holonId: String,
     val newContent: String,
@@ -44,6 +47,7 @@ data class UpdateHolonContent(
  * to the holon catalogue.
  */
 @Serializable
+@SerialName("CreateFile") // <<< FIX: Explicitly define the serial name for polymorphism.
 data class CreateFile(
     // The full, relative path for the new file (e.g., "./dreams/dream-transcript-XYZ.md")
     val filePath: String,

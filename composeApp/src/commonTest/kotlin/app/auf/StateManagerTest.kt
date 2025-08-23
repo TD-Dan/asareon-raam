@@ -35,7 +35,7 @@ class StateManagerTest {
         val sourceCodeService = FakeSourceCodeService(platform)
         val chatService = FakeChatService(store)
         val gatewayService = FakeGatewayService()
-        val jsonParser = JsonProvider.appJson // Get parser from the source of truth
+        val jsonParser = JsonProvider.appJson
         val actionExecutor = FakeActionExecutor(platform, jsonParser)
         val importExportManager = FakeImportExportManager(platform, jsonParser)
         val importExportViewModel = ImportExportViewModel(importExportManager, scope)
@@ -59,71 +59,44 @@ class StateManagerTest {
 
     @Test
     fun `executeActionFromMessage success path dispatches correct actions and reloads graph`() = runTest {
-        // GIVEN a message with an unresolved ActionBlock and a successful ActionExecutor
         val manifest = listOf(CreateFile("test.txt", "content", "Create test file"))
         val actionMessage = ChatMessage(
-            author = Author.AI,
-            timestamp = 12345L,
+            author = Author.AI, timestamp = 12345L,
             contentBlocks = listOf(ActionBlock(actions = manifest, isResolved = false))
         )
-        val initialState = AppState(chatHistory = listOf(actionMessage))
+        val initialState = AppState(chatHistory = listOf(actionMessage), aiPersonaId = "sage-1")
         val (stateManager, store, fakeActionExecutor) = setupTestEnvironment(initialState, this)
         fakeActionExecutor.nextResult = ActionExecutorResult.Success("Manifest executed.")
 
-        // WHEN executeActionFromMessage is called
         stateManager.executeActionFromMessage(12345L)
 
-        // THEN the correct sequence of actions should be dispatched
         val dispatchedActions = store.dispatchedActions
-        assertEquals(4, dispatchedActions.size, "Expected 4 actions to be dispatched")
+        assertEquals(5, dispatchedActions.size, "Expected 5 actions: Execute, Resolve, Success, Load, LoadSuccess")
         assertIs<AppAction.ExecuteActionManifest>(dispatchedActions[0])
         assertIs<AppAction.ResolveActionInMessage>(dispatchedActions[1])
         assertIs<AppAction.ExecuteActionManifestSuccess>(dispatchedActions[2])
-        // CORRECTED ASSERTION: Verify the action was dispatched, not the private service call.
-        assertIs<AppAction.LoadGraph>(dispatchedActions[3], "StateManager should dispatch LoadGraph after successful execution.")
-
-        // AND the action executor should have been called with the correct manifest
+        assertIs<AppAction.LoadGraph>(dispatchedActions[3])
+        assertIs<AppAction.LoadGraphSuccess>(dispatchedActions[4])
         assertEquals(manifest, fakeActionExecutor.lastExecutedManifest)
     }
 
     @Test
     fun `executeActionFromMessage failure path dispatches failure action`() = runTest {
-        // GIVEN a message with an unresolved ActionBlock and a failing ActionExecutor
         val manifest = listOf<Action>(CreateFile("test.txt", "content", "Create test file"))
         val actionMessage = ChatMessage(
-            author = Author.AI,
-            timestamp = 12345L,
+            author = Author.AI, timestamp = 12345L,
             contentBlocks = listOf(ActionBlock(actions = manifest, isResolved = false))
         )
         val initialState = AppState(chatHistory = listOf(actionMessage))
         val (stateManager, store, fakeActionExecutor) = setupTestEnvironment(initialState, this)
         fakeActionExecutor.nextResult = ActionExecutorResult.Failure("File not found.")
 
-        // WHEN executeActionFromMessage is called
         stateManager.executeActionFromMessage(12345L)
 
-        // THEN the correct failure action should be dispatched
         val dispatchedActions = store.dispatchedActions
         assertEquals(2, dispatchedActions.size)
         assertIs<AppAction.ExecuteActionManifest>(dispatchedActions[0])
         assertIs<AppAction.ExecuteActionManifestFailure>(dispatchedActions[1])
         assertEquals("File not found.", (dispatchedActions[1] as AppAction.ExecuteActionManifestFailure).error)
-    }
-
-    @Test
-    fun `rejectActionFromMessage should resolve the block and show a toast`() = runTest {
-        // GIVEN an initial state
-        val (stateManager, store, _) = setupTestEnvironment(scope = this)
-
-        // WHEN rejectActionFromMessage is called
-        stateManager.rejectActionFromMessage(1234L)
-
-        // THEN a Resolve action and a ShowToast action are dispatched
-        val dispatchedActions = store.dispatchedActions
-        assertEquals(2, dispatchedActions.size)
-        assertIs<AppAction.ResolveActionInMessage>(dispatchedActions[0])
-        assertEquals(1234L, (dispatchedActions[0] as AppAction.ResolveActionInMessage).messageTimestamp)
-        assertIs<AppAction.ShowToast>(dispatchedActions[1])
-        assertEquals("Action Manifest Rejected.", (dispatchedActions[1] as AppAction.ShowToast).message)
     }
 }

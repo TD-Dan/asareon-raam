@@ -1,29 +1,5 @@
 package app.auf
 
-import app.auf.core.ActionBlock
-import app.auf.core.AnchorBlock
-import app.auf.core.AppRequestBlock
-import app.auf.core.AssignParent
-import app.auf.core.ContentBlock
-import app.auf.core.FileContentBlock
-import app.auf.core.Ignore
-import app.auf.core.ImportAction
-import app.auf.core.Integrate
-import app.auf.core.Quarantine
-import app.auf.core.TextBlock
-import app.auf.core.Update
-import app.auf.model.Action
-import app.auf.model.CreateFile
-import app.auf.model.CreateHolon
-import app.auf.model.UpdateHolonContent
-import app.auf.util.JsonProvider
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.fail
-
 /**
  * Canonization test suite for the JsonProvider singleton.
  *

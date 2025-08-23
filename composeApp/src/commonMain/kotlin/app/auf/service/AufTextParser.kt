@@ -16,8 +16,6 @@ import kotlinx.serialization.json.jsonPrimitive
 class AufTextParser(private val jsonParser: Json) {
 
     private enum class State { DEFAULT, IN_BLOCK }
-    private val startTagRegex = Regex("""^\[AUF_([A-Z_]+)(?::\s*(.*?))?]\s*$""")
-    private val endTagRegex = Regex("""^\[/AUF_([A-Z_]+)]\s*$""")
 
     fun parse(rawText: String): List<ContentBlock> {
         val blocks = mutableListOf<ContentBlock>()
@@ -35,33 +33,40 @@ class AufTextParser(private val jsonParser: Json) {
         }
 
         rawText.lines().forEach { line ->
-            val startMatch = startTagRegex.find(line)
-            val endMatch = endTagRegex.find(line)
+            val trimmedLine = line.trim()
+
+            val isStartTag = trimmedLine.startsWith("[AUF_") && trimmedLine.endsWith("]")
+            val isEndTag = trimmedLine.startsWith("[/AUF_") && trimmedLine.endsWith("]")
 
             when (currentState) {
                 State.DEFAULT -> {
-                    if (startMatch != null) {
+                    if (isStartTag) {
                         flushTextBuffer()
                         currentState = State.IN_BLOCK
-                        currentTag = startMatch.groupValues[1]
-                        currentParams = startMatch.groupValues.getOrNull(2)
+                        val tagContent = trimmedLine.substring(5, trimmedLine.length - 1) // Corrected slicing
+                        val parts = tagContent.split(':', limit = 2)
+                        currentTag = parts[0]
+                        currentParams = if (parts.size > 1) parts[1].trim() else null
                     } else {
                         textBuffer.appendLine(line)
                     }
                 }
                 State.IN_BLOCK -> {
-                    if (endMatch != null && endMatch.groupValues[1] == currentTag) {
-                        blocks.add(processBlock(currentTag!!, currentParams, contentBuffer.toString()))
+                    val endTagMatch = if (isEndTag) trimmedLine.substring(6, trimmedLine.length - 1) else null
+                    if (endTagMatch == currentTag) {
+                        blocks.add(processBlock(currentTag!!, currentParams, contentBuffer.toString().trim()))
                         contentBuffer.clear()
                         currentState = State.DEFAULT
                         currentTag = null
                         currentParams = null
-                    } else if (startMatch != null) {
-                        val errorContent = "Detected nested start tag '${startMatch.value}' inside an open '$currentTag' block."
+                    } else if (isStartTag) {
+                        val errorContent = "Detected nested start tag '$trimmedLine' inside an open '$currentTag' block."
                         blocks.add(ParseErrorBlock(currentTag!!, contentBuffer.toString(), errorContent))
                         contentBuffer.clear()
-                        currentTag = startMatch.groupValues[1]
-                        currentParams = startMatch.groupValues.getOrNull(2)
+                        val tagContent = trimmedLine.substring(5, trimmedLine.length - 1)
+                        val parts = tagContent.split(':', limit = 2)
+                        currentTag = parts[0]
+                        currentParams = if (parts.size > 1) parts[1].trim() else null
                     } else {
                         contentBuffer.appendLine(line)
                     }
@@ -76,19 +81,21 @@ class AufTextParser(private val jsonParser: Json) {
             blocks.add(ParseErrorBlock(currentTag!!, contentBuffer.toString(), errorContent))
         }
 
-        return blocks
+        return blocks.filter { block ->
+            (block as? TextBlock)?.text?.isNotBlank() ?: true
+        }
     }
 
     private fun processBlock(tag: String, params: String?, content: String): ContentBlock {
         return try {
             when (tag) {
                 "ACTION_MANIFEST" -> {
-                    val cleanContent = content.trim().removePrefix("```json").removePrefix("```").trim().removeSuffix("```")
-                    val actions = jsonParser.decodeFromString<List<Action>>(cleanContent)
+                    val cleanContent = content.removePrefix("```json").removeSuffix("```").trim()
+                    val actions = jsonParser.decodeFromString(ListSerializer(Action.serializer()), cleanContent)
                     ActionBlock(actions = actions)
                 }
-                "FILE_VIEW" -> FileContentBlock(fileName = params?.trim() ?: "unknown file", content = content.trim())
-                "APP_REQUEST" -> AppRequestBlock(requestType = content.trim())
+                "FILE_VIEW" -> FileContentBlock(fileName = params ?: "unknown file", content = content)
+                "APP_REQUEST" -> AppRequestBlock(requestType = content)
                 "STATE_ANCHOR" -> {
                     val jsonObject = jsonParser.decodeFromString<JsonObject>(content)
                     val anchorId = jsonObject["anchorId"]?.jsonPrimitive?.content ?: "unknown-anchor"
@@ -97,7 +104,7 @@ class AufTextParser(private val jsonParser: Json) {
                 else -> ParseErrorBlock(tag, content, "Unknown AUF Tag '$tag'")
             }
         } catch (e: Exception) {
-            ParseErrorBlock(tag, content, e.message ?: "An unknown deserialization error occurred.")
+            ParseErrorBlock(tag, content, "A deserialization error occurred: ${e.message}")
         }
     }
 }
