@@ -1,5 +1,6 @@
 package app.auf
 
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.unit.dp
@@ -127,9 +128,13 @@ fun main() = application {
             exitApplication()
         },
         title = "AUF",
-        state = windowState,
-        //undecorated = true,
+        state = windowState
     ) {
+        // This effect runs once and asks our platform dependency provider
+        // to apply any native decorations. The logic is now fully encapsulated.
+        LaunchedEffect(Unit) {
+            platformDependencies.applyNativeWindowDecorations(window)
+        }
         App(stateManager)
     }
 }

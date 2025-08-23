@@ -49,4 +49,12 @@ expect open class PlatformDependencies() {
     open fun formatIsoTimestamp(timestamp: Long): String
     open fun formatDisplayTimestamp(timestamp: Long): String
     open fun copyToClipboard(text: String)
+    /**
+     * Applies any available native window decorations, such as enabling a dark
+     * mode title bar on Windows. This function is a no-op on platforms where
+     * such decorations are not available or not implemented.
+     *
+     * @param window The platform-specific window object (e.g., java.awt.Window).
+     */
+    open fun applyNativeWindowDecorations(window: Any)
 }

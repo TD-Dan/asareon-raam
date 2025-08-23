@@ -3,6 +3,7 @@ package app.auf.util
 import java.awt.Desktop
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
+import java.awt.Window
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -16,6 +17,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileSystemView
+import com.sun.jna.Platform
 
 /**
  * The actual JVM implementation of the PlatformDependencies contract.
@@ -148,5 +150,15 @@ actual open class PlatformDependencies {
         val selection = StringSelection(text)
         val clipboard = Toolkit.getDefaultToolkit().systemClipboard
         clipboard.setContents(selection, selection)
+    }
+    /**
+     * On the JVM, this function checks if the OS is Windows and if the passed
+     * object is a valid AWT Window. If so, it invokes our JNA utility to
+     * enable the dark mode title bar. On other OSes (macOS, Linux), it does nothing.
+     */
+    actual open fun applyNativeWindowDecorations(window: Any) {
+        if (Platform.isWindows() && window is Window) {
+            WindowsDarkMode.enable(window)
+        }
     }
 }

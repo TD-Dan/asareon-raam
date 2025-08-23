@@ -94,6 +94,8 @@ kotlin {
             implementation(compose.desktop.currentOs)
             implementation(libs.ktor.client.cio)
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing")
+            implementation(libs.jna)
+            implementation(libs.jna.platform)
         }
         jvmTest.dependencies {
             implementation(kotlin("test-junit"))
