@@ -156,7 +156,7 @@ compose.desktop {
             packageName = "app.auf"
             packageVersion = "1.0.0"
             windows {
-                iconFile.set(project.file("src/jvmMain/res/icon.ico"))
+                iconFile.set(project.file("src/jvmMain/resources/icon.ico"))
             }
         }
     }
