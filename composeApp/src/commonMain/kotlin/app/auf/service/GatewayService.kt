@@ -1,42 +1,32 @@
 package app.auf.service
 
-import app.auf.model.Action
-import app.auf.core.ActionBlock
-import app.auf.core.AnchorBlock
-import app.auf.core.AppRequestBlock
-import app.auf.core.Author
 import app.auf.core.ChatMessage
-import app.auf.core.ContentBlock
-import app.auf.core.FileContentBlock
 import app.auf.core.GatewayResponse
-import app.auf.core.TextBlock
+import app.auf.core.Author
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * ---
  * ## Mandate
  * Orchestrates all communication with the external AI service (e.g., Google AI).
- * It is responsible for formatting requests, sending them via the `Gateway` interface,
- * parsing the raw response into the application's structured `ContentBlock` format,
- * and providing lists of available models based on their capabilities.
+ * It is responsible for formatting requests from the app's data model into the API's
+ * required format, sending them via the `Gateway`, and providing lists of available models
+ * based on their capabilities. It delegates the parsing of the raw response string to
+ * the `AufTextParser`.
  *
  * ---
  * ## Dependencies
- * - `app.auf.service.Gateway`: The platform-specific implementation of the AI service client.
- * - `kotlinx.serialization.json.Json`: For parsing structured blocks from the AI response.
+ * - `app.auf.service.Gateway`: The client for the AI service API.
+ * - `app.auf.service.AufTextParser`: The canonical parser for the AUF tagged-text format.
  *
- * @version 2.2
+ * @version 3.0
  * @since 2025-08-17
  */
 open class GatewayService(
     private val gateway: Gateway,
-    private val jsonParser: Json,
+    private val parser: AufTextParser,
     private val apiKey: String
 ) {
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
@@ -49,9 +39,6 @@ open class GatewayService(
 
                 response.error?.let {
                     return@withContext GatewayResponse(
-                        contentBlocks = emptyList(),
-                        rawContent = "API Error",
-                        usageMetadata = null,
                         errorMessage = "API Error: ${it.message} (Code: ${it.code})"
                     )
                 }
@@ -60,7 +47,8 @@ open class GatewayService(
                     ?: response.promptFeedback?.blockReason?.let { "Blocked: $it" }
                     ?: "No content received, but no error was reported."
 
-                val parsedBlocks = parseRawContentToBlocks(rawTextResponse)
+                // --- MODIFIED: Delegation to the new parser ---
+                val parsedBlocks = parser.parse(rawTextResponse)
 
                 GatewayResponse(
                     contentBlocks = parsedBlocks,
@@ -69,9 +57,6 @@ open class GatewayService(
                 )
             } catch (e: Exception) {
                 GatewayResponse(
-                    contentBlocks = emptyList(),
-                    rawContent = "Gateway Error",
-                    usageMetadata = null,
                     errorMessage = "Gateway Error: ${e.message}"
                 )
             }
@@ -81,69 +66,10 @@ open class GatewayService(
     open suspend fun listTextModels(): List<String> {
         return withContext(coroutineScope.coroutineContext) {
             gateway.listModels(apiKey)
-                // --- MODIFIED: This is the robust, capability-based filter ---
                 .filter { "generateContent" in it.supportedGenerationMethods }
                 .map { it.name.replace("models/", "") }
                 .sorted()
         }
-    }
-
-    private fun parseRawContentToBlocks(rawText: String): List<ContentBlock> {
-        val normalizedText = rawText.replace("\r\n", "\n")
-        val blocks = mutableListOf<ContentBlock>()
-
-        val regex = Regex("""\[AUF_([A-Z_]+)(?::\s*(.*?))?]\s*([\s\S]*?)\s*\[/AUF_\1]""", setOf(RegexOption.MULTILINE))
-
-        var lastIndex = 0
-
-        // Use the normalized text for all subsequent operations.
-        regex.findAll(normalizedText).forEach { matchResult ->
-            if (matchResult.range.first > lastIndex) {
-                val precedingText = normalizedText.substring(lastIndex, matchResult.range.first).trim()
-                if (precedingText.isNotEmpty()) {
-                    blocks.add(TextBlock(precedingText))
-                }
-            }
-
-            val (tag, params, content) = matchResult.destructured
-            try {
-                when (tag) {
-                    "ACTION_MANIFEST" -> {
-                        val cleanContent = content.trim().removePrefix("```json").removePrefix("```").trim().removeSuffix("```")
-                        val actions = jsonParser.decodeFromString<List<Action>>(cleanContent)
-                        blocks.add(ActionBlock(actions = actions))
-                    }
-                    "FILE_VIEW" -> {
-                        blocks.add(FileContentBlock(fileName = params.trim(), content = content.trim()))
-                    }
-                    "APP_REQUEST" -> {
-                        blocks.add(AppRequestBlock(requestType = content.trim()))
-                    }
-                    "STATE_ANCHOR" -> {
-                        val jsonObject = jsonParser.decodeFromString<JsonObject>(content)
-                        val anchorId = jsonObject["anchorId"]?.jsonPrimitive?.content ?: "unknown-anchor"
-                        blocks.add(AnchorBlock(anchorId, jsonObject))
-                    }
-                }
-            } catch (e: Exception) {
-                blocks.add(TextBlock("--- ERROR PARSING BLOCK ---\nTAG: $tag\nERROR: ${e.message}\nCONTENT:\n$content\n--- END ERROR ---"))
-            }
-
-            lastIndex = matchResult.range.last + 1
-        }
-
-        if (lastIndex < normalizedText.length) {
-            val trailingText = normalizedText.substring(lastIndex).trim()
-            if (trailingText.isNotEmpty()) {
-                blocks.add(TextBlock(trailingText))
-            }
-        }
-
-        if (blocks.isEmpty() && normalizedText.isNotBlank()) {
-            blocks.add(TextBlock(normalizedText))
-        }
-
-        return blocks
     }
 
     private fun convertChatToApiContents(messages: List<ChatMessage>): List<Content> {
@@ -151,8 +77,8 @@ open class GatewayService(
         messages.forEach { msg ->
             val reconstructedContent = msg.contentBlocks.joinToString(separator = "\n") { block ->
                 when (block) {
-                    is TextBlock -> block.text
-                    is ActionBlock -> "[AUF_ACTION_MANIFEST]\n${jsonParser.encodeToString(ListSerializer(Action.serializer()), block.actions)}\n[/AUF_ACTION_MANIFEST]"
+                    is app.auf.core.TextBlock -> block.text
+                    // We only need to handle TextBlock here because user/system messages are always TextBlocks.
                     else -> "[System placeholder for block type: ${block::class.simpleName}]"
                 }
             }

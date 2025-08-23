@@ -1,3 +1,4 @@
+// --- FILE: composeApp/src/jvmMain/kotlin/app/auf/main.kt ---
 package app.auf
 
 import androidx.compose.runtime.LaunchedEffect
@@ -14,6 +15,7 @@ import app.auf.core.ViewMode
 import app.auf.core.appReducer
 import app.auf.model.UserSettings
 import app.auf.service.ActionExecutor
+import app.auf.service.AufTextParser
 import app.auf.service.BackupManager
 import app.auf.service.ChatService
 import app.auf.service.Gateway
@@ -23,7 +25,6 @@ import app.auf.service.GraphService
 import app.auf.service.ImportExportManager
 import app.auf.service.SettingsManager
 import app.auf.service.SourceCodeService
-import app.auf.ui.AppTheme
 import app.auf.ui.App
 import app.auf.ui.ImportExportViewModel
 import app.auf.util.JsonProvider
@@ -35,9 +36,9 @@ fun main() = application {
     val coroutineScope = rememberCoroutineScope()
 
     // --- Dependency Injection Root ---
-    // All dependencies are instantiated once, here at the top level.
-    val platformDependencies = remember { PlatformDependencies() } // The one and only platform-specific instance
+    val platformDependencies = remember { PlatformDependencies() }
     val jsonParser = remember { JsonProvider.appJson }
+    val aufTextParser = remember { AufTextParser(jsonParser) } // <<< MODIFIED: Instantiate the new parser
 
     val settingsManager = remember { SettingsManager(platformDependencies, jsonParser) }
     val savedSettings = remember { settingsManager.loadSettings() ?: UserSettings() }
@@ -57,7 +58,6 @@ fun main() = application {
         println("WARNING: google.api.key not found in local.properties. AI will not function.")
     }
 
-    // --- UDF Components ---
     val store = remember {
         Store(
             initialState = AppState(),
@@ -68,27 +68,24 @@ fun main() = application {
 
     val stateManager = remember {
         val gateway = Gateway(jsonParser)
-        val gatewayService = GatewayService(gateway, jsonParser, apiKey)
+        // <<< MODIFIED: Pass the aufTextParser instance instead of the raw jsonParser
+        val gatewayService = GatewayService(gateway, aufTextParser, apiKey)
         val backupManager = BackupManager(platformDependencies)
         val actionExecutor = ActionExecutor(platformDependencies, jsonParser)
         val importExportManager = ImportExportManager(platformDependencies, jsonParser)
         val importExportViewModel = ImportExportViewModel(importExportManager, coroutineScope)
-
-        // --- Instantiate Services ---
         val graphLoader = GraphLoader(platformDependencies, jsonParser)
         val graphService = GraphService(graphLoader)
         val sourceCodeService = SourceCodeService(platformDependencies)
         val chatService = ChatService(store, gatewayService, platformDependencies, coroutineScope)
 
-
-        // --- Instantiate the main StateManager with all its dependencies ---
         StateManager(
             store = store,
             backupManager = backupManager,
             graphService = graphService,
             sourceCodeService = sourceCodeService,
             chatService = chatService,
-            gatewayService = gatewayService, // <<< MODIFIED: Inject GatewayManager
+            gatewayService = gatewayService,
             actionExecutor = actionExecutor,
             importExportViewModel = importExportViewModel,
             platform = platformDependencies,
@@ -97,7 +94,6 @@ fun main() = application {
         )
     }
 
-    // Wire the callback after instantiation
     remember {
         stateManager.importExportViewModel.onImportComplete = {
             stateManager.loadHolonGraph()
@@ -105,9 +101,7 @@ fun main() = application {
         }
     }
 
-    // Trigger initial loading
     remember { stateManager.initialize() }
-
 
     val windowState = rememberWindowState(
         width = savedSettings.windowWidth.dp,
@@ -130,8 +124,6 @@ fun main() = application {
         title = "AUF",
         state = windowState
     ) {
-        // This effect runs once and asks our platform dependency provider
-        // to apply any native decorations. The logic is now fully encapsulated.
         LaunchedEffect(Unit) {
             platformDependencies.applyNativeWindowDecorations(window)
         }

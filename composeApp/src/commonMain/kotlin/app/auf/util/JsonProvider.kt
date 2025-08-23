@@ -9,6 +9,7 @@ import app.auf.core.FileContentBlock
 import app.auf.core.Ignore
 import app.auf.core.ImportAction
 import app.auf.core.Integrate
+import app.auf.core.ParseErrorBlock
 import app.auf.core.Quarantine
 import app.auf.core.TextBlock
 import app.auf.core.Update
@@ -59,6 +60,7 @@ object JsonProvider {
                 subclass(FileContentBlock::class)
                 subclass(AppRequestBlock::class)
                 subclass(AnchorBlock::class)
+                subclass(ParseErrorBlock::class)
             }
             // FIX: Add the missing ImportAction hierarchy to fulfill the provider's mandate.
             polymorphic(ImportAction::class) {

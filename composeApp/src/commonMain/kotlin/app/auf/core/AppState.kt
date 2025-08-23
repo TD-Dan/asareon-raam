@@ -173,6 +173,14 @@ data class AnchorBlock(
     override val summary: String = "State Anchor: $anchorId"
 ) : ContentBlock
 
+@Serializable
+@SerialName("ParseErrorBlock")
+data class ParseErrorBlock(
+    val originalTag: String,
+    val rawContent: String,
+    val errorMessage: String,
+    override val summary: String = "Parse Error: $originalTag"
+) : ContentBlock
 
 data class ChatMessage(
     val author: Author,

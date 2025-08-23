@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
  */
 class FakeGateway : Gateway(JsonProvider.appJson) {
     var modelsToReturn: List<ModelInfo> = emptyList()
-
+    // We only override the method we need for this test suite.
     override suspend fun listModels(apiKey: String): List<ModelInfo> {
         return modelsToReturn
     }
@@ -34,7 +34,7 @@ class FakeGateway : Gateway(JsonProvider.appJson) {
  * - **Act:** The `gatewayService.listTextModels()` method is called.
  * - **Assert:** Verify that the returned list of strings is correctly filtered (only includes models supporting "generateContent"), formatted (the "models/" prefix is removed), and sorted alphabetically.
  *
- * @version 1.0
+ * @version 1.1
  * @since 2025-08-17
  */
 class GatewayServiceTest {
@@ -45,7 +45,9 @@ class GatewayServiceTest {
     @BeforeTest
     fun setup() {
         fakeGateway = FakeGateway()
-        gatewayService = GatewayService(fakeGateway, JsonProvider.appJson, "dummy-api-key")
+        // --- MODIFICATION: Instantiate AufTextParser and pass it to the service ---
+        val aufTextParser = AufTextParser(JsonProvider.appJson)
+        gatewayService = GatewayService(fakeGateway, aufTextParser, "dummy-api-key")
     }
 
     @Test

@@ -34,6 +34,7 @@ import app.auf.core.Author
 import app.auf.core.ChatMessage
 import app.auf.core.FileContentBlock
 import app.auf.core.GatewayStatus
+import app.auf.core.ParseErrorBlock
 import app.auf.core.TextBlock
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -163,6 +164,7 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                                 is FileContentBlock -> RenderFileContentBlock(block)
                                 is AppRequestBlock -> RenderAppRequestBlock(block)
                                 is AnchorBlock -> RenderAnchorBlock(block)
+                                is ParseErrorBlock -> RenderParseErrorBlock(block)
                             }
                         }
                     }
@@ -250,6 +252,43 @@ fun RenderAnchorBlock(block: AnchorBlock) {
             Text("State Anchor Created: ${block.anchorId}", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
             HorizontalDivider(modifier=Modifier.padding(vertical=8.dp))
             Text(jsonPrettyPrinter.encodeToString(JsonObject.serializer(), block.content), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+fun RenderParseErrorBlock(block: ParseErrorBlock) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = "Parse Error: [AUF_${block.originalTag}]",
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.error)
+            Text(
+                text = "Error: ${block.errorMessage}",
+                fontStyle = FontStyle.Italic,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "--- Raw Content ---",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
+            )
+            Text(
+                text = block.rawContent,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
         }
     }
 }
