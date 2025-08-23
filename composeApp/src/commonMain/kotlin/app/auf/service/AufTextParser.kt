@@ -35,37 +35,56 @@ class AufTextParser(private val jsonParser: Json) {
         rawText.lines().forEach { line ->
             val trimmedLine = line.trim()
 
-            val isStartTag = trimmedLine.startsWith("[AUF_") && trimmedLine.endsWith("]")
-            val isEndTag = trimmedLine.startsWith("[/AUF_") && trimmedLine.endsWith("]")
+            // --- MODIFIED: More robust tag detection ---
+            val isStartTag = trimmedLine.startsWith("[AUF") && trimmedLine.contains("]")
+            val endTagIdentifier = if (currentTag != null) "[/AUF_${currentTag}]" else null
+
+            // --- MODIFIED: Single-line block handling ---
+            if (isStartTag && endTagIdentifier != null && trimmedLine.endsWith(endTagIdentifier)) {
+                flushTextBuffer()
+                val tagContent = trimmedLine.substring(1, trimmedLine.length - 1)
+                val fullTagPart = tagContent.substringBefore(']')
+                val innerContent = tagContent.substringAfter(']').substringBefore(endTagIdentifier)
+
+                val parts = fullTagPart.substring(3).split(':', limit = 2) // Start after "AUF"
+                val tagName = parts[0].trim().let { if(it.startsWith("_")) it.drop(1) else it }
+                val tagParams = if (parts.size > 1) parts[1].trim() else null
+
+                blocks.add(processBlock(tagName, tagParams, innerContent.trim()))
+                return@forEach // Continue to next line
+            }
+
+            val isProperStartTag = isStartTag && !trimmedLine.startsWith("[/AUF")
+            val isEndTag = trimmedLine.startsWith("[/AUF") && trimmedLine.endsWith("]")
 
             when (currentState) {
                 State.DEFAULT -> {
-                    if (isStartTag) {
+                    if (isProperStartTag) {
                         flushTextBuffer()
                         currentState = State.IN_BLOCK
-                        val tagContent = trimmedLine.substring(5, trimmedLine.length - 1) // Corrected slicing
+                        val tagContent = trimmedLine.substring(4, trimmedLine.length - 1)
                         val parts = tagContent.split(':', limit = 2)
-                        currentTag = parts[0]
+                        currentTag = parts[0].let { if(it.startsWith("_")) it.drop(1) else it }
                         currentParams = if (parts.size > 1) parts[1].trim() else null
                     } else {
                         textBuffer.appendLine(line)
                     }
                 }
                 State.IN_BLOCK -> {
-                    val endTagMatch = if (isEndTag) trimmedLine.substring(6, trimmedLine.length - 1) else null
+                    val endTagMatch = if (isEndTag) trimmedLine.substring(5, trimmedLine.length - 1) else null
                     if (endTagMatch == currentTag) {
                         blocks.add(processBlock(currentTag!!, currentParams, contentBuffer.toString().trim()))
                         contentBuffer.clear()
                         currentState = State.DEFAULT
                         currentTag = null
                         currentParams = null
-                    } else if (isStartTag) {
+                    } else if (isProperStartTag) {
                         val errorContent = "Detected nested start tag '$trimmedLine' inside an open '$currentTag' block."
                         blocks.add(ParseErrorBlock(currentTag!!, contentBuffer.toString(), errorContent))
                         contentBuffer.clear()
-                        val tagContent = trimmedLine.substring(5, trimmedLine.length - 1)
+                        val tagContent = trimmedLine.substring(4, trimmedLine.length - 1)
                         val parts = tagContent.split(':', limit = 2)
-                        currentTag = parts[0]
+                        currentTag = parts[0].let { if(it.startsWith("_")) it.drop(1) else it }
                         currentParams = if (parts.size > 1) parts[1].trim() else null
                     } else {
                         contentBuffer.appendLine(line)

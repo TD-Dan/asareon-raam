@@ -11,6 +11,7 @@ import androidx.compose.ui.window.rememberWindowState
 import app.auf.core.AppState
 import app.auf.core.StateManager
 import app.auf.core.Store
+import app.auf.core.Version
 import app.auf.core.ViewMode
 import app.auf.core.appReducer
 import app.auf.model.UserSettings
@@ -76,7 +77,6 @@ fun main() = application {
         val graphLoader = GraphLoader(platformDependencies, jsonParser)
         val graphService = GraphService(graphLoader)
         val sourceCodeService = SourceCodeService(platformDependencies)
-        // --- MODIFIED: Provide the parser to the ChatService constructor ---
         val chatService = ChatService(store, gatewayService, platformDependencies, aufTextParser, coroutineScope)
 
         StateManager(
@@ -122,7 +122,7 @@ fun main() = application {
             settingsManager.saveSettings(currentSettingsToSave)
             exitApplication()
         },
-        title = "AUF",
+        title = "AUF v${Version.APP_VERSION}",
         state = windowState
     ) {
         LaunchedEffect(Unit) {

@@ -1,4 +1,3 @@
-// --- FILE: commonMain/kotlin/app/auf/service/ChatService.kt ---
 package app.auf.service
 
 import app.auf.core.AppAction
@@ -9,6 +8,7 @@ import app.auf.core.ContentBlock
 import app.auf.core.Holon
 import app.auf.core.Store
 import app.auf.core.TextBlock
+import app.auf.core.Version
 import app.auf.util.BasePath
 import app.auf.util.JsonProvider
 import app.auf.util.PlatformDependencies
@@ -19,23 +19,56 @@ import kotlinx.coroutines.launch
 import app.auf.model.Action
 import kotlinx.serialization.builtins.ListSerializer
 import app.auf.core.ActionBlock
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+
+/**
+ * A data class to hold the self-documenting definition of a host tool.
+ * This structure is the single source of truth for generating the tool manifest.
+ */
+private data class ToolDefinition(
+    val name: String,
+    val description: String,
+    val format: String,
+    val availableSubtypes: String? = null
+)
 
 /**
  * Service dedicated to handling all business logic related to AI chat interactions.
  *
- * @version 1.5
+ * @version 1.6
  * @since 2025-08-17
  */
 open class ChatService(
     private val store: Store,
     private val gatewayService: GatewayService,
     private val platform: PlatformDependencies,
-    private val parser: AufTextParser, // <<< MODIFIED: Re-introduced the parser dependency
+    private val parser: AufTextParser,
     private val coroutineScope: CoroutineScope
 ) {
+
+    private val toolRegistry: List<ToolDefinition> = listOf(
+        ToolDefinition(
+            name = "Atomic Change Manifest",
+            description = "Use this tool to propose any changes to the file system.",
+            format = "Enclose a JSON array of `Action` objects within `[AUF_ACTION_MANIFEST]` and `[/AUF_ACTION_MANIFEST]` tags.",
+            availableSubtypes = "Action Types: `CreateHolon`, `UpdateHolonContent`, `CreateFile`. Each action object *must* include a `\"type\"` field with the action's class name."
+        ),
+        ToolDefinition(
+            name = "Application Request",
+            description = "Use this to request the host application to perform a pre-defined action.",
+            format = "Enclose the request type string within `[AUF_APP_REQUEST]` and `[/AUF_APP_REQUEST]` tags.",
+            availableSubtypes = "Available Requests: `START_DREAM_CYCLE`"
+        ),
+        ToolDefinition(
+            name = "File Content View",
+            description = "Use this tool to display the content of a non-Holon file within the chat.",
+            format = "Use `[AUF_FILE_VIEW: path/to/your/file.kt]` followed by the content and `[/AUF_FILE_VIEW]`."
+        ),
+        ToolDefinition(
+            name = "State Anchor",
+            description = "Use this to create a persistent, context-immune memory waypoint.",
+            format = "Use `[AUF_STATE_ANCHOR]` and enclose a JSON object with at least an `anchorId`."
+        )
+    )
 
     private var activeJob: Job? = null
 
@@ -90,11 +123,12 @@ open class ChatService(
                 timestamp = platform.getSystemTimeMillis()
             )
         )
+        // --- MODIFIED: Replaced JSON with natural language system status ---
         messages.add(
             ChatMessage(
                 Author.SYSTEM,
-                contentBlocks = listOf(TextBlock(generateSystemStatusJson())),
-                title = "system_state.json",
+                contentBlocks = listOf(TextBlock(generateSystemStatusMessage())),
+                title = "REAL TIME SYSTEM STATUS",
                 timestamp = platform.getSystemTimeMillis()
             )
         )
@@ -139,7 +173,7 @@ open class ChatService(
             }
             when (msg.author) {
                 Author.USER, Author.AI -> {
-                    val role = if (msg.author == Author.AI) "model" else "user"
+                    val role = if (msg.author == Author.AI) "model" else "USER"
                     "--- $role MESSAGE ---\n$reconstructedContent"
                 }
                 Author.SYSTEM -> {
@@ -167,50 +201,30 @@ open class ChatService(
         }
     }
 
-    private fun generateSystemStatusJson(): String {
+    private fun generateSystemStatusMessage(): String {
         val state = store.state.value
+        val personaName = state.availableAiPersonas.find { it.id == state.aiPersonaId }?.name ?: "Unknown"
         val lastTx = state.chatHistory.lastOrNull { it.author == Author.AI }?.usageMetadata
-        val statusObject = buildJsonObject {
-            put("host_llm", state.selectedModel)
-            put("runtime", "AUF App v1.0")
-            put("active_agent_id", state.aiPersonaId)
-            put("timestamp_iso", platform.formatIsoTimestamp(platform.getSystemTimeMillis()))
-            lastTx?.let {
-                put("last_transaction_tokens", buildJsonObject {
-                    put("prompt", it.promptTokenCount)
-                    put("output", it.candidatesTokenCount)
-                    put("total", it.totalTokenCount)
-                })
-            }
-        }
-        return JsonProvider.appJson.encodeToString(JsonObject.serializer(), statusObject)
+        val tokenInfo = lastTx?.totalTokenCount?.let { "Approximate context window size of last transaction: $it tokens." }
+            ?: "Token count for the last transaction is not available."
+
+        return """
+        *   You are running on host LLM: `${state.selectedModel}`
+        *   Your current runtime platform is '${Version.APP_VERSION}'
+        *   You are embodying the persona: '$personaName' (holon: ${state.aiPersonaId})
+        *   The time of this request is: `${platform.formatIsoTimestamp(platform.getSystemTimeMillis())}`
+        *   $tokenInfo
+        """.trimIndent()
     }
 
     private fun generateDynamicToolManifest(): String {
-        val tools = listOf(
+        return toolRegistry.joinToString("\n\n") { tool ->
+            val subtypes = if (tool.availableSubtypes != null) "\n*   **${tool.availableSubtypes}**" else ""
             """
-            **Tool: Atomic Change Manifest**
-            *   **Description:** Use this tool to propose any changes to the file system.
-            *   **Format:** Enclose a JSON array of `Action` objects within `[AUF_ACTION_MANIFEST]` and `[/AUF_ACTION_MANIFEST]` tags.
-            *   **Action Types:** `CreateHolon`, `UpdateHolonContent`, `CreateFile`. Each action object *must* include a `"type"` field with the action's class name.
-            """.trimIndent(),
-            """
-            **Tool: Application Request**
-            *   **Description:** Use this to request the host application to perform a pre-defined action.
-            *   **Format:** Enclose the request type string within `[AUF_APP_REQUEST]` and `[/AUF_APP_REQUEST]` tags.
-            *   **Available Requests:** `START_DREAM_CYCLE`
-            """.trimIndent(),
-            """
-            **Tool: File Content View**
-            *   **Description:** Use this tool to display the content of a non-Holon file within the chat.
-            *   **Format:** Use `[AUF_FILE_VIEW: path/to/your/file.kt]` followed by the content and `[/AUF_FILE_VIEW]`.
-            """.trimIndent(),
-            """
-            **Tool: State Anchor**
-            *   **Description:** Use this to create a persistent, context-immune memory waypoint.
-            *   **Format:** Use `[AUF_STATE_ANCHOR]` and enclose a JSON object with at least an `anchorId`.
+            **Tool: ${tool.name}**
+            *   **Description:** ${tool.description}
+            *   **Format:** ${tool.format}$subtypes
             """.trimIndent()
-        )
-        return tools.joinToString("\n\n")
+        }
     }
 }
