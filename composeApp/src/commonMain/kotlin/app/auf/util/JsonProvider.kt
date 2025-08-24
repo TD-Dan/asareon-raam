@@ -11,6 +11,7 @@ import app.auf.core.ImportAction
 import app.auf.core.Integrate
 import app.auf.core.ParseErrorBlock
 import app.auf.core.Quarantine
+import app.auf.core.SentinelBlock
 import app.auf.core.TextBlock
 import app.auf.core.Update
 import app.auf.model.Action
@@ -23,7 +24,7 @@ import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 
 /**
- * Provides a single, correctly configured instance of the Json parser for the entire application.
+ * Provides a single, correctly configured instance of the JSON parser for the entire application.
  *
  * ---
  * ## Mandate
@@ -38,7 +39,7 @@ import kotlinx.serialization.modules.subclass
  * - `ContentBlock` (Sealed Interface from AppState.kt) and its subclasses.
  * - `ImportAction` (Sealed Interface from AppState.kt) and its subclasses.
  *
- * @version 1.2
+ * @version 1.3
  * @since 2025-08-14
  */
 object JsonProvider {
@@ -61,8 +62,9 @@ object JsonProvider {
                 subclass(AppRequestBlock::class)
                 subclass(AnchorBlock::class)
                 subclass(ParseErrorBlock::class)
+                // --- NEW: Register the new SentinelBlock ---
+                subclass(SentinelBlock::class)
             }
-            // FIX: Add the missing ImportAction hierarchy to fulfill the provider's mandate.
             polymorphic(ImportAction::class) {
                 subclass(Update::class)
                 subclass(Integrate::class)

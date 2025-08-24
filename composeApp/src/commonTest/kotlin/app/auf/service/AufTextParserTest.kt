@@ -86,7 +86,11 @@ class AufTextParserTest {
             [/AUF_FILE_VIEW]
         """.trimIndent()
         val result = parser.parse(rawResponse)
-        assertEquals(3, result.size, "Expected three blocks: Error, Action, and trailing Text")
+
+        // After the fix, the parser should create an error for the nested tag,
+        // then correctly start parsing the NEW tag, but it will be unterminated.
+        // The final [/AUF_FILE_VIEW] will just be text.
+        assertEquals(3, result.size, "Expected three blocks: Error, the now-unterminated Action block, and trailing Text")
 
         assertIs<ParseErrorBlock>(result[0])
         val errorBlock = result[0] as ParseErrorBlock
@@ -94,9 +98,12 @@ class AufTextParserTest {
         assertTrue(errorBlock.errorMessage.contains("nested start tag"))
         assertEquals("Outer content.", errorBlock.rawContent.trim())
 
-        assertIs<ActionBlock>(result[1])
-        assertEquals(1, (result[1] as ActionBlock).actions.size)
-        assertEquals("Inner", (result[1] as ActionBlock).actions[0].summary)
+        // The second block is now another error block because the inner tag is also not closed correctly
+        assertIs<ParseErrorBlock>(result[1])
+        val innerErrorBlock = result[1] as ParseErrorBlock
+        assertEquals("ACTION_MANIFEST", innerErrorBlock.originalTag)
+        assertTrue(innerErrorBlock.errorMessage.contains("not properly closed"))
+
 
         assertIs<TextBlock>(result[2])
         assertEquals("[/AUF_FILE_VIEW]", (result[2] as TextBlock).text.trim())
@@ -116,5 +123,76 @@ class AufTextParserTest {
         val errorBlock = result[0] as ParseErrorBlock
         assertEquals("ACTION_MANIFEST", errorBlock.originalTag)
         assertTrue(errorBlock.errorMessage.contains("deserialization error"))
+    }
+
+    // --- NEW HARDENING TEST SUITE ---
+
+    @Test
+    fun `should correctly parse a valid single-line action block`() {
+        val parser = setupTestEnvironment()
+        val rawResponse = """Leading text. [AUF_ACTION_MANIFEST][{"type":"CreateFile","filePath":"test.txt","content":"Hello","summary":"Create"}][/AUF_ACTION_MANIFEST] Trailing text."""
+        val result = parser.parse(rawResponse)
+
+        assertEquals(3, result.size)
+        assertIs<TextBlock>(result[0])
+        assertEquals("Leading text.", (result[0] as TextBlock).text.trim())
+        assertIs<ActionBlock>(result[1])
+        assertEquals(1, (result[1] as ActionBlock).actions.size)
+        assertIs<TextBlock>(result[2])
+        assertEquals("Trailing text.", (result[2] as TextBlock).text.trim())
+    }
+
+    @Test
+    fun `should correctly parse a tag without an underscore`() {
+        val parser = setupTestEnvironment()
+        val rawResponse = """
+            [AUFACTION_MANIFEST]
+            [{"type":"CreateFile","filePath":"test.txt","content":"Hello","summary":"Create"}]
+            [/AUFACTION_MANIFEST]
+        """.trimIndent()
+        val result = parser.parse(rawResponse)
+        assertEquals(1, result.size)
+        assertIs<ActionBlock>(result[0])
+        assertEquals(1, (result[0] as ActionBlock).actions.size)
+    }
+
+    @Test
+    fun `should sanitize json markdown fences before parsing action block`() {
+        val parser = setupTestEnvironment()
+        val rawResponse = """
+            [AUF_ACTION_MANIFEST]
+            ```json
+            [{"type":"CreateFile","filePath":"test.txt","content":"Hello","summary":"Create"}]
+            ```
+            [/AUF_ACTION_MANIFEST]
+        """.trimIndent()
+        val result = parser.parse(rawResponse)
+        assertEquals(1, result.size)
+        assertIs<ActionBlock>(result[0])
+        val actionBlock = result[0] as ActionBlock
+        assertEquals(1, actionBlock.actions.size)
+        assertIs<CreateFile>(actionBlock.actions[0])
+    }
+
+    @Test
+    fun `should handle single-line block with no other text`() {
+        val parser = setupTestEnvironment()
+        val rawResponse = "[AUF_APP_REQUEST]DO_STUFF[/AUF_APP_REQUEST]"
+        val result = parser.parse(rawResponse)
+        assertEquals(1, result.size)
+        assertIs<app.auf.core.AppRequestBlock>(result[0])
+        assertEquals("DO_STUFF", (result[0] as app.auf.core.AppRequestBlock).requestType)
+    }
+
+    @Test
+    fun `should handle tag with params correctly`() {
+        val parser = setupTestEnvironment()
+        val rawResponse = "[AUF_FILE_VIEW:path/to/file.kt]\ncontent\n[/AUF_FILE_VIEW]"
+        val result = parser.parse(rawResponse)
+        assertEquals(1, result.size)
+        assertIs<app.auf.core.FileContentBlock>(result[0])
+        val fileBlock = result[0] as app.auf.core.FileContentBlock
+        assertEquals("path/to/file.kt", fileBlock.fileName)
+        assertEquals("content", fileBlock.content)
     }
 }

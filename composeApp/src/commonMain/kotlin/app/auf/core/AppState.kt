@@ -22,7 +22,7 @@ import kotlinx.serialization.json.JsonObject
  * - `Action` (from ActionModels.kt): Used within the `ActionBlock` content type.
  * - `kotlinx.serialization`: Used extensively for defining serializable data contracts.
  *
- * @version 1.5
+ * @version 1.6
  * @since 2025-08-17
  */
 
@@ -124,7 +124,7 @@ data class AppState(
     val currentViewMode: ViewMode = ViewMode.CHAT,
     val holonIdsForExport: Set<String> = emptySet(),
     val importState: ImportState? = null,
-    val toastMessage: String? = null // <<< THIS IS THE ONLY ADDED LINE
+    val toastMessage: String? = null
 )
 
 @Serializable
@@ -143,11 +143,22 @@ data class TextBlock(
 @SerialName("ActionBlock")
 data class ActionBlock(
     val actions: List<Action>,
-    val isResolved: Boolean = false
+    // --- MODIFIED: The isResolved flag is now managed by a new ActionStatus field ---
+    var status: ActionStatus = ActionStatus.PENDING
 ) : ContentBlock {
     override val summary: String
         get() = "Action Manifest (${actions.size} actions)"
 }
+
+/**
+ * Represents the lifecycle of an executable ActionBlock within the UI.
+ */
+enum class ActionStatus {
+    PENDING, // Awaiting user confirmation
+    EXECUTED, // Confirmed and successfully executed by the ActionExecutor
+    REJECTED // Explicitly rejected by the user
+}
+
 
 @Serializable
 @SerialName("FileContentBlock")
@@ -180,6 +191,16 @@ data class ParseErrorBlock(
     val rawContent: String,
     val errorMessage: String,
     override val summary: String = "Parse Error: $originalTag"
+) : ContentBlock
+
+/**
+ * A dedicated block for displaying system warnings or feedback to the AI
+ */
+@Serializable
+@SerialName("SentinelBlock")
+data class SentinelBlock(
+    val message: String,
+    override val summary: String = "Parser Sentinel"
 ) : ContentBlock
 
 data class ChatMessage(
