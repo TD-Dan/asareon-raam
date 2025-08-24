@@ -71,13 +71,22 @@ import kotlinx.serialization.json.JsonObject
  */
 @Composable
 fun MessageCard(message: ChatMessage, stateManager: StateManager) {
-    var isCollapsed by remember { mutableStateOf(message.author == Author.SYSTEM && message.title != "Gateway Error" && message.title != "Graph Parsing Warning") }
+    // MODIFICATION: Ensure ParseErrorBlock is not collapsed by default.
+    val hasParseErrorBlock = message.contentBlocks.any { it is ParseErrorBlock }
+    var isCollapsed by remember {
+        mutableStateOf(
+            message.author == Author.SYSTEM &&
+                    !hasParseErrorBlock && // Don't collapse if it contains a ParseErrorBlock
+                    message.title != "Gateway Error" &&
+                    message.title != "Graph Parsing Warning"
+        )
+    }
     var showRaw by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
 
     val cardColors = when {
-        message.title == "Gateway Error" || message.title == "Graph Parsing Warning" -> CardDefaults.cardColors(
+        message.title == "Gateway Error" || message.title == "Graph Parsing Warning" || hasParseErrorBlock -> CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.errorContainer
         )
         message.author == Author.SYSTEM -> CardDefaults.cardColors(
@@ -348,11 +357,9 @@ fun RenderParseErrorBlock(block: ParseErrorBlock) {
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
-                text = """
-                        <!-- PARSE ERROR: Unknown tool command. | RAW:  -->
-                    """,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onErrorContainer
+                text = "PARSE ERROR: ${block.originalTag.uppercase()}", // Corrected to use originalTag
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onErrorContainer
             )
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.error)
             Text(

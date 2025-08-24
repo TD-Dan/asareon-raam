@@ -1,4 +1,3 @@
-// --- FILE: composeApp/src/commonTest/kotlin/app/auf/fakes/FakePlatformDependencies.kt ---
 package app.auf.fakes
 
 import app.auf.util.BasePath
@@ -42,9 +41,9 @@ class FakePlatformDependencies : PlatformDependencies() {
     override fun listDirectory(path: String): List<FileEntry> {
         val normalizedPath = if (path.endsWith(pathSeparator)) path else "$path$pathSeparator"
         return files.keys.filter { it.startsWith(normalizedPath) && !it.substring(normalizedPath.length).contains(pathSeparator) }
-            .map { FileEntry(it, isDirectory = false) } +
+            .map { FileEntry(it.removePrefix(normalizedPath), isDirectory = false) } + // MODIFIED: Get just the file name
                 directories.filter { it.startsWith(normalizedPath) && !it.substring(normalizedPath.length).contains(pathSeparator) }
-                    .map { FileEntry(it, isDirectory = true) }
+                    .map { FileEntry(it.removePrefix(normalizedPath), isDirectory = true) } // MODIFIED: Get just the directory name
     }
 
     override fun createDirectories(path: String) {

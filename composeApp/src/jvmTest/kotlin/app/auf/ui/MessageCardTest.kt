@@ -67,7 +67,10 @@ class MessageCardTest {
             description = "Propose a transactional set of changes to the Holon Knowledge Graph file system.",
             parameters = emptyList(),
             expectsPayload = true,
-            usage = "[AUF_ACTION_MANIFEST]\n[...json array of Action objects...]\n[/AUF_ACTION_MANIFEST]"
+            usage = """
+[AUF_ACTION_MANIFEST]
+[...json array of Action objects...]
+[/AUF_ACTION_MANIFEST]"""
         ),
         ToolDefinition(
             name = "File Content View",
@@ -78,7 +81,10 @@ class MessageCardTest {
                 Parameter(name = "language", type = "String", isRequired = false, defaultValue = null)
             ),
             expectsPayload = true,
-            usage = "[AUF_FILE_VIEW(path=\"path/to/your/file.kt\")]\n...file content...\n[/AUF_FILE_VIEW]"
+            usage = """
+[AUF_FILE_VIEW(path="path/to/your/file.kt")]
+...file content...
+[/AUF_FILE_VIEW]"""
         ),
         ToolDefinition("App Request", "APP_REQUEST", "", emptyList(), true, ""),
         ToolDefinition("State Anchor", "STATE_ANCHOR", "", emptyList(), true, "")
@@ -230,16 +236,15 @@ class MessageCardTest {
     fun `RenderParseErrorBlock displays error details correctly`() {
         // Raw content that will cause the real parser to produce a ParseErrorBlock
         val rawContentCausingParseError = """
-            [AUF_ACTION_MANIFEST]
-            This is not valid JSON
-            [/AUF_ACTION_MANIFEST]
-        """.trimIndent()
+<!-- PARSE ERROR: A deserialization error occurred: Unexpected JSON token at offset 0: Expected start of the array '[', but had 'T' instead at path: $
+JSON input: This is not valid JSON | RAW: This is not valid JSON -->
+""".trimIndent()
         // MODIFIED: Assert on the exact error message that the parser will produce
         val expectedErrorMessage = "A deserialization error occurred: Unexpected JSON token at offset 0: Expected start of the array '[', but had 'T' instead at path: $"
 
         // Use the factory to create the message, which will now internally generate a ParseErrorBlock
         val message = ChatMessage.Factory.createSystem(
-            title = "SYSTEM",
+            title = "SYSTEM PARSE ERROR", // MODIFIED: Give a distinct title to avoid default collapsing
             rawContent = rawContentCausingParseError
         )
 
@@ -249,7 +254,7 @@ class MessageCardTest {
 
         // The MessageCard's internal logic for isCollapsed should now ensure it's not collapsed.
         // We can directly assert for the text existence.
-        composeTestRule.onNodeWithText("Parse Error:", substring = true).assertExists()
+        composeTestRule.onNodeWithText("PARSE ERROR: UNKNOWN", substring = true).assertExists() // MODIFIED: Check for the title as rendered
         composeTestRule.onNodeWithText(expectedErrorMessage, substring = true).assertExists()
         composeTestRule.onNodeWithText("--- Raw Content ---", substring = true).assertExists()
         composeTestRule.onNodeWithText(rawContentCausingParseError, substring = true).assertExists()

@@ -47,37 +47,51 @@ open class AufTextParser(
         var activeCommandForEndTag: String = ""
         var activeParams: Map<String, String> = emptyMap()
 
+        // Handle initial text before any tag
+        val firstTagStart = rawText.indexOf("[AUF_")
+        if (firstTagStart > 0) {
+            val leadingText = rawText.substring(0, firstTagStart).trim()
+            if (leadingText.isNotBlank()) {
+                blocks.add(TextBlock(leadingText))
+            }
+        } else if (firstTagStart == -1) { // No tags at all, treat as single text block
+            if (rawText.isNotBlank()) {
+                blocks.add(TextBlock(rawText.trim()))
+            }
+            return blocks.filter { (it as? TextBlock)?.text?.isNotBlank() ?: true }
+        }
+
+
         while (currentIndex < rawText.length) {
             when (currentState) {
                 State.SCANNING -> {
-                    val nextTagStart = rawText.indexOf("[AUF_", startIndex = currentIndex)
-                    if (nextTagStart == -1) {
-                        val remainingText = rawText.substring(currentIndex)
+                    val tagContentStart = rawText.indexOf("[AUF_", startIndex = currentIndex)
+                    if (tagContentStart == -1) {
+                        // No more start tags, add remaining as TextBlock if any
+                        val remainingText = rawText.substring(currentIndex).trim()
                         if (remainingText.isNotBlank()) {
                             blocks.add(TextBlock(remainingText))
                         }
-                        currentIndex = rawText.length
+                        currentIndex = rawText.length // End parsing
                         continue
                     }
 
-                    // Add preceding text as a TextBlock
-                    if (nextTagStart > currentIndex) {
-                        val text = rawText.substring(currentIndex, nextTagStart)
-                        if (text.isNotBlank()) {
-                            blocks.add(TextBlock(text))
+                    // Add any text found before the current tag as a TextBlock
+                    if (tagContentStart > currentIndex) {
+                        val leadingText = rawText.substring(currentIndex, tagContentStart).trim()
+                        if (leadingText.isNotBlank()) {
+                            blocks.add(TextBlock(leadingText))
                         }
                     }
 
-                    // Parse the tag content
-                    val tagContentStart = nextTagStart + 4 // Skip "[AUF_"
                     val tagContentEnd = rawText.indexOf("]", startIndex = tagContentStart)
                     if (tagContentEnd == -1) {
-                        blocks.add(ParseErrorBlock("UNKNOWN", rawText.substring(nextTagStart), "Unclosed start tag found."))
+                        blocks.add(ParseErrorBlock("UNKNOWN", rawText.substring(tagContentStart), "Unclosed start tag found."))
                         currentIndex = rawText.length
                         continue
                     }
 
-                    val fullTagContent = rawText.substring(nextTagStart + 4, tagContentEnd)
+                    val fullTagContent = rawText.substring(tagContentStart + 5, tagContentEnd) // +5 for "[AUF_"
                     val paramStartIndex = fullTagContent.indexOf('(')
 
                     val commandString = (if (paramStartIndex != -1) {
@@ -92,7 +106,7 @@ open class AufTextParser(
                     val tool = toolRegistry.find { it.command.replace("_", "").uppercase() == normalizedCommand }
 
                     if (tool == null) {
-                        blocks.add(ParseErrorBlock(commandString, "", "Unknown tool command."))
+                        blocks.add(ParseErrorBlock(commandString, rawText.substring(tagContentStart, tagContentEnd + 1), "Unknown tool command."))
                         currentIndex = tagContentEnd + 1
                         continue
                     }
@@ -126,7 +140,7 @@ open class AufTextParser(
 
                 State.TOOL_ACTIVE -> {
                     val tool = activeTool ?: break
-                    val endTag = "[/AUF${activeCommandForEndTag}]"
+                    val endTag = "[/AUF_${activeCommandForEndTag}]" // Use activeCommandForEndTag
                     val endTagIndex = rawText.indexOf(endTag, startIndex = currentIndex, ignoreCase = true)
 
                     if (endTagIndex == -1) {

@@ -1,5 +1,7 @@
+
 package app.auf.fakes
 
+import app.auf.core.Author
 import app.auf.core.ChatMessage
 import app.auf.core.GatewayResponse
 import app.auf.model.ToolDefinition
@@ -20,6 +22,7 @@ class FakeGatewayService(
     coroutineScope = coroutineScope
 ) {
     var sendMessageCalledWith: List<ChatMessage>? = null
+
     var nextResponse = GatewayResponse()
 
     override suspend fun sendMessage(selectedModel: String, messages: List<ChatMessage>): GatewayResponse {

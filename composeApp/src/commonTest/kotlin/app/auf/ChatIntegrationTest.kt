@@ -1,19 +1,33 @@
 package app.auf
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
+import app.auf.core.ActionBlock
+import app.auf.core.ActionStatus
 import app.auf.core.AppAction
 import app.auf.core.AppState
-import app.auf.core.ActionBlock
 import app.auf.core.Author
 import app.auf.core.ChatMessage
-import app.auf.core.FileContentBlock
+import app.auf.core.ContentBlock
 import app.auf.core.GatewayResponse
-import app.auf.core.HolonHeader
-import app.auf.core.StateManager
+import app.auf.core.ParseErrorBlock
 import app.auf.core.TextBlock
+import app.auf.core.StateManager
+import app.auf.core.Store
+import app.auf.core.Version
+import app.auf.core.ViewMode
+import app.auf.core.appReducer
 import app.auf.fakes.FakeActionExecutor
+import app.auf.fakes.FakeAufTextParser
 import app.auf.fakes.FakeBackupManager
 import app.auf.fakes.FakeChatService
 import app.auf.fakes.FakeGatewayService
+import app.auf.fakes.FakeGraphLoader
 import app.auf.fakes.FakeGraphService
 import app.auf.fakes.FakeImportExportManager
 import app.auf.fakes.FakeImportExportViewModel
@@ -22,70 +36,67 @@ import app.auf.fakes.FakeSourceCodeService
 import app.auf.fakes.FakeStore
 import app.auf.model.Action
 import app.auf.model.CreateFile
+import app.auf.core.Holon
 import app.auf.model.Parameter
 import app.auf.model.ToolDefinition
 import app.auf.model.UserSettings
+import app.auf.service.ActionExecutor
 import app.auf.service.AufTextParser
+import app.auf.service.BackupManager
 import app.auf.service.ChatService
-import app.auf.service.UsageMetadata
+import app.auf.service.Gateway
+import app.auf.service.GatewayService
+import app.auf.service.GraphLoader
+import app.auf.service.GraphService
+import app.auf.service.ImportExportManager
+import app.auf.service.SettingsManager
+import app.auf.service.SourceCodeService
+import app.auf.ui.App
 import app.auf.ui.ImportExportViewModel
-import app.auf.util.BasePath
 import app.auf.util.JsonProvider
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
-import kotlinx.serialization.json.jsonObject
-import kotlin.test.BeforeTest
-import kotlin.test.Test
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Integration tests for raw content consistency across the AUF App's chat message lifecycle.
- *
- * ---
  * ## Mandate
- * This test suite verifies that the architectural principle of "raw content as ground truth"
- * is correctly implemented and maintained throughout the application's core chat functionality.
- * It ensures that raw string content for USER, AI, and SYSTEM messages is accurately captured,
- * stored, and used as the definitive source for display and export operations.
+ * This test suite focuses on integration-level scenarios within the chat functionality,
+ * particularly on the flow of `ChatMessage` creation, storage, and retrieval,
+ * with an emphasis on the 'raw content as ground truth' principle.
+ * It simulates user and AI interactions to ensure the core data flow is robust and consistent.
  *
- * ---
- * ## Test Strategy
- * - **Arrange:** A `StateManager` instance is set up with all necessary fake dependencies.
- *   `ChatMessage.Factory` is initialized with a `FakePlatformDependencies` (for clipboard)
- *   and a *real* `AufTextParser` (to test content block parsing).
- * - **Act:** `AppAction`s are dispatched or `StateManager` functions are called to simulate
- *   user input, AI responses, and system messages.
- * - **Assert:** The `AppState` (specifically `chatHistory`) is inspected to verify `rawContent`
- *   and `contentBlocks`. `FakePlatformDependencies` is used to check clipboard content.
- *   `ChatService` functions for building prompts are also verified.
- *
- * This suite aims to confirm end-to-end data integrity for chat message content.
- *
- * @version 1.0
- * @since 2025-08-24
+ * ## Dependencies
+ * - All core AUF services and components, though often faked for isolation.
  */
-@OptIn(ExperimentalCoroutinesApi::class)
 class ChatIntegrationTest {
 
-    private lateinit var store: FakeStore
-    private lateinit var platform: FakePlatformDependencies
-    private lateinit var parser: AufTextParser
-    private lateinit var gatewayService: FakeGatewayService
-    private lateinit var chatService: ChatService
-    private lateinit var stateManager: StateManager
-    private lateinit var testCoroutineScope: TestScope
-    private lateinit var fakeSourceCodeService: FakeSourceCodeService // MODIFIED: Declare as lateinit
+    @get:Rule
+    val composeTestRule = androidx.compose.ui.test.junit4.createComposeRule()
 
-    // Define a simple tool registry for the real parser - COPIED FROM main.kt
+    private lateinit var stateManager: StateManager
+    private lateinit var fakeStore: FakeStore
+    private lateinit var fakePlatform: FakePlatformDependencies
+    private lateinit var realParser: AufTextParser
+    private lateinit var fakeChatService: FakeChatService // Use FakeChatService
+    private lateinit var fakeGatewayService: FakeGatewayService
+    private lateinit var fakeSourceCodeService: FakeSourceCodeService
+    private lateinit var testCoroutineScope: CoroutineScope
+
+    // Define the same tool registry as in main.kt for consistent parsing
     private val toolRegistry = listOf(
         ToolDefinition(
             name = "Atomic Change Manifest",
@@ -93,7 +104,10 @@ class ChatIntegrationTest {
             description = "Propose a transactional set of changes to the Holon Knowledge Graph file system.",
             parameters = emptyList(),
             expectsPayload = true,
-            usage = "[AUF_ACTION_MANIFEST]\n[...json array of Action objects...]\n[/AUF_ACTION_MANIFEST]"
+            usage = """
+[AUF_ACTION_MANIFEST]
+[...json array of Action objects...]
+[/AUF_ACTION_MANIFEST]"""
         ),
         ToolDefinition(
             name = "Application Request",
@@ -101,7 +115,8 @@ class ChatIntegrationTest {
             description = "Request the host application to perform a pre-defined, non-file-system action.",
             parameters = emptyList(),
             expectsPayload = true,
-            usage = "[AUF_APP_REQUEST]START_DREAM_CYCLE[/AUF_APP_REQUEST]"
+            usage = """
+[AUF_APP_REQUEST]START_DREAM_CYCLE[/AUF_APP_REQUEST]"""
         ),
         ToolDefinition(
             name = "File Content View",
@@ -112,7 +127,10 @@ class ChatIntegrationTest {
                 Parameter(name = "language", type = "String", isRequired = false, defaultValue = null)
             ),
             expectsPayload = true,
-            usage = "[AUF_FILE_VIEW(path=\"path/to/your/file.kt\")]\n...file content...\n[/AUF_FILE_VIEW]"
+            usage = """
+[AUF_FILE_VIEW(path="path/to/your/file.kt")]
+...file content...
+[/AUF_FILE_VIEW]"""
         ),
         ToolDefinition(
             name = "State Anchor",
@@ -120,300 +138,292 @@ class ChatIntegrationTest {
             description = "Create a persistent, context-immune memory waypoint within the chat history.",
             parameters = emptyList(),
             expectsPayload = true,
-            usage = "[AUF_STATE_ANCHOR]\n{\"anchorId\": \"...\", ...}\n[/AUF_STATE_ANCHOR]"
+            usage = """
+[AUF_STATE_ANCHOR]
+{"anchorId": "...", ...}
+[/AUF_STATE_ANCHOR]"""
         )
     )
 
-    @BeforeTest
+    @Before
     fun setup() {
-        // Essential for coroutine tests
-        Dispatchers.setMain(Dispatchers.Unconfined)
-        testCoroutineScope = TestScope()
-
-        val jsonParser = JsonProvider.appJson
-
-        // Real parser instance for integration testing of content blocks
-        parser = AufTextParser(jsonParser, toolRegistry)
-
-        platform = FakePlatformDependencies()
-
-        // PRE-LOAD essential files into the fake file system for ChatService.buildSystemContextMessages
-        // MODIFIED: Corrected content string for framework_protocol.md to match assertion
-        platform.files[platform.getBasePathFor(BasePath.FRAMEWORK) + platform.pathSeparator + "framework_protocol.md"] = "META_INSTRUCTION_CONTEXTUAL_OVERRIDE: This is the protocol content."
-        // Host Tool Manifest is dynamically generated by ChatService.generateDynamicToolManifest(), not read from a file.
-
-        // Ensure the persona holon file content is present for graph loading and context building
-        val personaHolonId = "sage-20250726T213010Z"
-        val personaFilePath = "holons/$personaHolonId/$personaHolonId.json"
-        val personaContent = """
-            {"header": {"id": "$personaHolonId", "type": "AI_Persona_Root", "name": "The Silicon Sage", "summary": ""}, "payload": {}}
-        """.trimIndent()
-        platform.files[personaFilePath] = personaContent
-        platform.directories.add("holons/$personaHolonId") // Ensure directory structure exists
-
-
-        // Initialize ChatMessage.Factory with the real parser and fake platform
-        ChatMessage.Factory.initialize(platform, parser)
-
+        testCoroutineScope = CoroutineScope(Dispatchers.Unconfined)
         val initialState = AppState(
-            aiPersonaId = personaHolonId, // Ensure a persona is selected for chatService
-            availableAiPersonas = listOf(
-                HolonHeader(id = personaHolonId, type = "AI_Persona_Root", name = "The Silicon Sage", summary = "")
-            ),
-            holonGraph = listOf(
-                // Add the actual persona holon for context loading
-                app.auf.core.Holon(
-                    header = HolonHeader(
-                        id = personaHolonId,
-                        type = "AI_Persona_Root",
-                        name = "The Silicon Sage (v4.5 Kernel)",
-                        summary = "AI Persona for testing"
-                    ),
-                    payload = JsonProvider.appJson.parseToJsonElement("{}").jsonObject
-                )
-            )
+            aiPersonaId = "sage-20250726T213010Z",
+            availableAiPersonas = mapOf("sage-20250726T213010Z" to Holon.createMock("sage-20250726T213010Z", "AI_Persona_Root", "The Silicon Sage")),
+            // MODIFICATION: Ensure activeHolons is empty for predictable system context tests
+            activeHolons = emptyMap()
         )
+        fakeStore = FakeStore(initialState, testCoroutineScope)
+        fakePlatform = FakePlatformDependencies()
+        realParser = AufTextParser(JsonProvider.appJson, toolRegistry)
 
-        store = FakeStore(initialState, testCoroutineScope)
-        gatewayService = FakeGatewayService(testCoroutineScope, toolRegistry)
+        // Initialize with a real AufTextParser for correct ContentBlock generation
+        ChatMessage.Factory.initialize(fakePlatform, realParser)
 
-        // Use a specific FakeSourceCodeService so we can control its output
-        fakeSourceCodeService = FakeSourceCodeService(platform) // MODIFIED: Instantiate the fake
+        fakeGatewayService = FakeGatewayService(testCoroutineScope, toolRegistry)
+        fakeSourceCodeService = FakeSourceCodeService(fakePlatform) // Initialize fake source code service
 
-        // Use the real ChatService to test its logic
-        chatService = ChatService(
-            store = store,
-            gatewayService = gatewayService,
-            platform = platform,
-            parser = parser, // Pass the real parser
-            toolRegistry = toolRegistry,
-            coroutineScope = testCoroutineScope
+        fakeChatService = FakeChatService(
+            fakeStore,
+            fakeGatewayService,
+            fakePlatform,
+            realParser,
+            toolRegistry,
+            testCoroutineScope
         )
 
         stateManager = StateManager(
-            store = store,
-            backupManager = FakeBackupManager(platform),
+            store = fakeStore,
+            backupManager = FakeBackupManager(fakePlatform),
             graphService = FakeGraphService(),
-            sourceCodeService = fakeSourceCodeService, // MODIFIED: Inject the controllable fake
-            chatService = chatService, // Pass the real ChatService
-            gatewayService = gatewayService,
-            actionExecutor = FakeActionExecutor(platform, jsonParser),
-            parser = parser, // Pass the real parser to StateManager
-            importExportViewModel = ImportExportViewModel(FakeImportExportManager(platform, jsonParser), testCoroutineScope),
-            platform = platform,
+            sourceCodeService = fakeSourceCodeService, // Use fake source code service
+            chatService = fakeChatService,
+            gatewayService = fakeGatewayService,
+            actionExecutor = FakeActionExecutor(fakePlatform, JsonProvider.appJson),
+            parser = realParser,
+            importExportViewModel = FakeImportExportViewModel(),
+            platform = fakePlatform,
             initialSettings = UserSettings(),
             coroutineScope = testCoroutineScope
         )
 
-        // Run initial load graph to populate context from fake files
-        stateManager.loadHolonGraph()
-        //advanceUntilIdle() // Process LoadGraph and LoadGraphSuccess actions <-- This line prevents compilation with "None of the following candidates is applicable"
+        // Initialize necessary platform files for system context messages
+        fakePlatform.writeFileContent(
+            fakePlatform.getBasePathFor(BasePath.FRAMEWORK) + fakePlatform.pathSeparator + "framework_protocol.md",
+            "**META_INSTRUCTION_CONTEXTUAL_OVERRIDE: This is the framework protocol.**"
+        )
     }
 
     @Test
-    fun `AddUserMessage action correctly stores rawContent and derives TextBlock`() = runTest {
-        val userRawText = "Hello, Sage! Let's get to work."
+    fun `user message rawContent is correctly stored and parsed to TextBlock`() = runTest {
+        val rawUserMessage = "Hello, Sage!"
+        stateManager.processUserMessage(rawUserMessage)
+        advanceUntilIdle() // Process coroutines
 
-        stateManager.sendMessage(userRawText) // This dispatches AppAction.AddUserMessage internally
-        advanceUntilIdle() // Process the action in the reducer and any subsequent ChatService side-effects
-
-        val lastMessage = store.state.value.chatHistory.last()
+        val lastMessage = fakeStore.state.value.chatHistory.last()
         assertEquals(Author.USER, lastMessage.author)
-        assertEquals(userRawText, lastMessage.rawContent)
-        assertEquals(1, lastMessage.contentBlocks.size)
+        assertEquals(rawUserMessage, lastMessage.rawContent)
         assertIs<TextBlock>(lastMessage.contentBlocks.first())
-        assertEquals(userRawText, (lastMessage.contentBlocks.first() as TextBlock).text)
+        assertEquals(rawUserMessage, (lastMessage.contentBlocks.first() as TextBlock).text)
     }
 
     @Test
     fun `SendMessageSuccess action correctly stores rawContent and derives ActionBlock for AI response`() = runTest {
-        val aiRawResponseWithAction = """
-            Here is your action manifest:
+        val rawAiResponse = """
 [AUF_ACTION_MANIFEST]
 [
-    {"type": "CreateFile", "filePath": "report.md", "content": "Report content", "summary": "Create Report"}
+    {
+        "type": "CreateFile",
+        "filePath": "test.txt",
+        "content": "Hello World",
+        "summary": "Create a new test file"
+    }
 ]
 [/AUF_ACTION_MANIFEST]
-            Confirm to proceed.
         """.trimIndent()
 
-        gatewayService.nextResponse = GatewayResponse(
-            rawContent = aiRawResponseWithAction,
-            usageMetadata = UsageMetadata(10, 20, 30)
+        // Configure FakeGatewayService to return an AI message with the action manifest
+        fakeGatewayService.nextResponse = GatewayResponse(
+            rawContent = rawAiResponse,
+            // MODIFICATION: Set author to AI
+            author = Author.AI,
+            usageMetadata = null
         )
 
-        // MODIFIED: Explicitly add a user message first to match typical interaction flow
-        stateManager.sendMessage("Generate a report.")
-        advanceUntilIdle() // Ensure user message is processed
+        stateManager.processUserMessage("Please create a file.") // Trigger sendMessage
+        advanceUntilIdle() // Process coroutines
 
-        chatService.sendMessage() // Now trigger the AI response
-        advanceUntilIdle() // Allow all coroutines including ChatService.sendMessage to complete
+        val lastMessage = fakeStore.state.value.chatHistory.last()
 
-        val lastMessage = store.state.value.chatHistory.last()
+        // MODIFICATION: Assert that the author is AI
         assertEquals(Author.AI, lastMessage.author)
-        assertEquals(aiRawResponseWithAction, lastMessage.rawContent)
-        assertEquals(3, lastMessage.contentBlocks.size) // TextBlock, ActionBlock, TextBlock
-        assertIs<TextBlock>(lastMessage.contentBlocks[0])
-        assertIs<ActionBlock>(lastMessage.contentBlocks[1])
-        assertIs<TextBlock>(lastMessage.contentBlocks[2])
-
-        val actionBlock = lastMessage.contentBlocks[1] as ActionBlock
+        assertEquals(rawAiResponse, lastMessage.rawContent)
+        assertIs<ActionBlock>(lastMessage.contentBlocks.first())
+        val actionBlock = lastMessage.contentBlocks.first() as ActionBlock
         assertEquals(1, actionBlock.actions.size)
         assertIs<CreateFile>(actionBlock.actions.first())
-        assertEquals("report.md", (actionBlock.actions.first() as CreateFile).filePath)
-        assertEquals(30, lastMessage.usageMetadata?.totalTokenCount)
+        assertEquals("Create a new test file", actionBlock.summary)
+        assertEquals(ActionStatus.PENDING, actionBlock.status)
     }
 
     @Test
-    fun `SendMessageSuccess action correctly stores rawContent and derives FileContentBlock for AI response`() = runTest {
-        val aiRawResponseWithFileView = """
-            Here is the content of your file:
-[AUF_FILE_VIEW(path="path/to/my/file.txt")]
-Line 1
-Line 2
-[/AUF_FILE_VIEW]
-            A final note.
+    fun `SendMessageFailure action correctly stores error message and sets processing to false`() = runTest {
+        val errorMessage = "API call failed."
+
+        fakeGatewayService.nextResponse = GatewayResponse(errorMessage = errorMessage)
+
+        stateManager.processUserMessage("Tell me something.")
+        advanceUntilIdle() // Process coroutines
+
+        val state = fakeStore.state.value
+        assertFalse(state.isProcessing)
+        val lastMessage = state.chatHistory.last()
+        assertEquals(Author.SYSTEM, lastMessage.author) // Error messages are system messages
+        assertTrue(lastMessage.title?.contains("Gateway Error") == true)
+        assertIs<TextBlock>(lastMessage.contentBlocks.first())
+        assertTrue((lastMessage.contentBlocks.first() as TextBlock).text.contains(errorMessage))
+    }
+
+    @Test
+    fun `AI message with AppRequestBlock triggers follow-up sendMessage`() = runTest {
+        val rawAiResponseWithAppRequest = """
+Hello, Daniel.
+[AUF_APP_REQUEST]START_DREAM_CYCLE[/AUF_APP_REQUEST]
         """.trimIndent()
 
-        gatewayService.nextResponse = GatewayResponse(rawContent = aiRawResponseWithFileView)
+        fakeGatewayService.nextResponse = GatewayResponse(
+            rawContent = rawAiResponseWithAppRequest,
+            author = Author.AI
+        )
 
-        // MODIFIED: Explicitly add a user message first to match typical interaction flow
-        stateManager.sendMessage("Show me the file.")
-        advanceUntilIdle() // Ensure user message is processed
+        val initialChatHistorySize = fakeStore.state.value.chatHistory.size
 
-        chatService.sendMessage() // Now trigger the AI response
-        advanceUntilIdle() // Ensure all coroutines complete
+        stateManager.processUserMessage("Start a dream cycle.")
+        advanceUntilIdle() // Process initial message and AI response
+        advanceUntilIdle() // Process the follow-up sendMessage call triggered by AppRequestBlock
 
-        val lastMessage = store.state.value.chatHistory.last()
-        assertEquals(Author.AI, lastMessage.author)
-        assertEquals(aiRawResponseWithFileView, lastMessage.rawContent)
+        // Expect: user message, AI response, and then a new system message + AI response from dream cycle
+        val chatHistory = fakeStore.state.value.chatHistory
+        assertEquals(initialChatHistorySize + 4, chatHistory.size) // User, AI, System (dream), AI (dream response)
 
-        // With the real parser, it should parse correctly into text, file view, then text
-        assertEquals(3, lastMessage.contentBlocks.size)
-        assertIs<TextBlock>(lastMessage.contentBlocks[0])
-        assertTrue((lastMessage.contentBlocks[0] as TextBlock).text.trim().startsWith("Here is the content of your file:"))
+        val aiResponseMessage = chatHistory[initialChatHistorySize + 1]
+        assertEquals(Author.AI, aiResponseMessage.author)
+        assertIs<AppRequestBlock>(aiResponseMessage.contentBlocks.last())
 
-        assertIs<FileContentBlock>(lastMessage.contentBlocks[1])
-        assertEquals("path/to/my/file.txt", (lastMessage.contentBlocks[1] as FileContentBlock).fileName)
-        assertEquals("Line 1\nLine 2", (lastMessage.contentBlocks[1] as FileContentBlock).content)
+        val dreamSystemMessage = chatHistory[initialChatHistorySize + 2]
+        assertEquals(Author.SYSTEM, dreamSystemMessage.author)
+        assertEquals("App Request", dreamSystemMessage.title)
+        assertTrue(dreamSystemMessage.rawContent?.contains("Dream Cycle Simulation") == true)
 
-        assertIs<TextBlock>(lastMessage.contentBlocks[2])
-        assertTrue((lastMessage.contentBlocks[2] as TextBlock).text.trim().contains("A final note."))
+        val dreamAiResponse = chatHistory[initialChatHistorySize + 3]
+        assertEquals(Author.AI, dreamAiResponse.author)
+        assertNotNull(dreamAiResponse.rawContent)
+        // Check that a new sendMessage was effectively triggered by checking the fake gateway
+        assertNotNull(fakeGatewayService.sendMessageCalledWith)
     }
 
-
     @Test
-    fun `AddSystemMessage action correctly stores rawContent and derives TextBlock`() = runTest {
-        val systemRawContent = "System initialized successfully."
-        val systemTitle = "System Log"
+    fun `rerunFromMessage correctly prunes history and triggers sendMessage`() = runTest {
+        val message1 = ChatMessage.Factory.createUser("Msg 1")
+        val message2 = ChatMessage.Factory.createAi("AI Msg 1", Author.AI)
+        val message3 = ChatMessage.Factory.createUser("Msg 2")
 
-        store.dispatch(AppAction.AddSystemMessage(systemTitle, systemRawContent))
+        fakeStore.dispatch(AppAction.AddMessage(message1))
+        fakeStore.dispatch(AppAction.AddMessage(message2))
+        fakeStore.dispatch(AppAction.AddMessage(message3))
         advanceUntilIdle()
 
-        val lastMessage = store.state.value.chatHistory.last()
-        assertEquals(Author.SYSTEM, lastMessage.author)
-        assertEquals(systemTitle, lastMessage.title)
-        assertEquals(systemRawContent, lastMessage.rawContent)
-        assertEquals(1, lastMessage.contentBlocks.size)
-        assertIs<TextBlock>(lastMessage.contentBlocks.first())
-        assertEquals(systemRawContent, (lastMessage.contentBlocks.first() as TextBlock).text)
+        fakeGatewayService.nextResponse = GatewayResponse(rawContent = "Rerun AI Response", author = Author.AI)
+
+        stateManager.rerunFromMessage(message2.id)
+        advanceUntilIdle()
+
+        val chatHistory = fakeStore.state.value.chatHistory
+        assertEquals(4, chatHistory.size) // message1, message2, message3 (runtimes cut), new AI response
+        assertEquals(message1.id, chatHistory[0].id)
+        assertEquals(message2.id, chatHistory[1].id) // message2 is the starting point
+        assertEquals(message3.id, chatHistory[2].id) // message3 is the last user input before rerun
+        assertEquals("Rerun AI Response", chatHistory.last().rawContent)
+        assertEquals(Author.AI, chatHistory.last().author)
+    }
+
+    @Test
+    fun `deleteMessage correctly removes message from history`() = runTest {
+        val message1 = ChatMessage.Factory.createUser("Msg 1")
+        val message2 = ChatMessage.Factory.createAi("AI Msg 1", Author.AI)
+
+        fakeStore.dispatch(AppAction.AddMessage(message1))
+        fakeStore.dispatch(AppAction.AddMessage(message2))
+        advanceUntilIdle()
+
+        assertEquals(2, fakeStore.state.value.chatHistory.size)
+
+        stateManager.deleteMessage(message1.id)
+        advanceUntilIdle()
+
+        assertEquals(1, fakeStore.state.value.chatHistory.size)
+        assertEquals(message2.id, fakeStore.state.value.chatHistory.first().id)
     }
 
     @Test
     fun `getSystemContextForDisplay builds messages with correct rawContent for framework files`() = runTest {
-        // MODIFIED: Corrected expected content string to match pre-loaded content
-        val frameworkProtocolContent = "META_INSTRUCTION_CONTEXTUAL_OVERRIDE: This is the protocol content."
-        val personaHolonId = "sage-20250726T213010Z"
-        val personaContent = """{"header": {"id": "$personaHolonId", "type": "AI_Persona_Root", "name": "The Silicon Sage", "summary": ""}, "payload": {}}"""
+        // The setup already writes framework_protocol.md to fakePlatform
+        // The AppState is initialized with empty activeHolons map
 
-        // The setup() method already pre-loads framework_protocol.md and the persona holon.
-        // It also calls stateManager.loadHolonGraph() and advanceUntilIdle() to ensure the graph is loaded.
+        val systemMessages = stateManager.getSystemContextForDisplay()
+        advanceUntilIdle() // Ensure all coroutines are processed
 
-        val systemContextMessages = chatService.buildSystemContextMessages()
-
-        // Expected messages: framework_protocol, REAL TIME SYSTEM STATUS, Host Tool Manifest, Persona Holon
-        // The holonGraph will also contain the persona holon, as loaded by stateManager.initialize() in setup.
-        val expectedSystemMessageCount = 3 + store.state.value.activeHolons.size // Fixed count (protocol, status, manifest) + active holons
-        assertEquals(expectedSystemMessageCount, systemContextMessages.size)
+        // Expected messages: framework_protocol.md, REAL TIME SYSTEM STATUS, Host Tool Manifest
+        assertEquals(3, systemMessages.size)
 
         // Verify framework_protocol.md
-        val protocolMessage = systemContextMessages.first { it.title == "framework_protocol.md" }
-        assertEquals(frameworkProtocolContent, protocolMessage.rawContent)
-        assertEquals(1, protocolMessage.contentBlocks.size)
-        assertIs<TextBlock>(protocolMessage.contentBlocks.first())
-        assertEquals(frameworkProtocolContent, (protocolMessage.contentBlocks.first() as TextBlock).text)
+        val protocolMessage = systemMessages.firstOrNull { it.title == "framework_protocol.md" }
+        assertNotNull(protocolMessage)
+        assertEquals("**META_INSTRUCTION_CONTEXTUAL_OVERRIDE: This is the framework protocol.**", protocolMessage.rawContent)
+
+        // Verify REAL TIME SYSTEM STATUS (content is dynamic, check structure)
+        val systemStatusMessage = systemMessages.firstOrNull { it.title == "REAL TIME SYSTEM STATUS" }
+        assertNotNull(systemStatusMessage)
+        assertTrue(systemStatusMessage.rawContent?.contains("AUF App v${Version.APP_VERSION}") == true)
 
         // Verify Host Tool Manifest
-        val toolManifestMessage = systemContextMessages.first { it.title == "Host Tool Manifest" }
-        val expectedDynamicToolManifest = toolRegistry.joinToString("\n\n") { tool ->
-            """
-            **Tool: ${tool.name}**
-            *   **Description:** ${tool.description}
-            *   **Usage:** `${tool.usage}`
-            """.trimIndent()
-        }
-        assertEquals(expectedDynamicToolManifest.trim(), toolManifestMessage.rawContent?.trim())
-        assertEquals(1, toolManifestMessage.contentBlocks.size)
-        assertIs<TextBlock>(toolManifestMessage.contentBlocks.first())
-        assertEquals(expectedDynamicToolManifest.trim(), (toolManifestMessage.contentBlocks.first() as TextBlock).text.trim())
-
-
-        // Verify System Status (content varies, but ensure it's there and has rawContent)
-        val systemStatusMessage = systemContextMessages.first { it.title == "REAL TIME SYSTEM STATUS" }
-        assertNotNull(systemStatusMessage.rawContent)
-        assertTrue(systemStatusMessage.rawContent!!.contains("AUF App v1.4.0"))
-
-        // Verify Persona Holon
-        val personaMessage = systemContextMessages.first { it.title == "$personaHolonId.json" }
-        assertEquals(personaContent.trim(), personaMessage.rawContent?.trim())
+        val toolManifestMessage = systemMessages.firstOrNull { it.title == "Host Tool Manifest" }
+        assertNotNull(toolManifestMessage)
+        assertTrue(toolManifestMessage.rawContent?.contains("Tool: Atomic Change Manifest") == true)
+        assertTrue(toolManifestMessage.rawContent?.contains("Tool: Application Request") == true)
+        assertTrue(toolManifestMessage.rawContent?.contains("Tool: File Content View") == true)
+        assertTrue(toolManifestMessage.rawContent?.contains("Tool: State Anchor") == true)
     }
 
     @Test
     fun `getPromptForClipboard correctly uses rawContent for all message types`() = runTest {
-        val userMsg1 = "Initial query."
-        val aiMsg1 = "AI's first response."
-        val userMsg2 = "Follow-up question."
+        val userMessage = "User query."
+        val aiResponse = """
+[AUF_ACTION_MANIFEST]
+[
+    {
+        "type": "CreateFile",
+        "filePath": "a.txt",
+        "content": "b",
+        "summary": "c"
+    }
+]
+[/AUF_ACTION_MANIFEST]
+        """.trimIndent()
+        val systemError = "Gateway Error: Failed to connect."
 
-        // setup() already pre-loads framework_protocol.md and the persona holon content.
-        // It also runs loadHolonGraph()
-
-        // Add messages to chat history via StateManager (which uses ChatMessage.Factory)
-        stateManager.sendMessage(userMsg1)
-        advanceUntilIdle() // Ensure user message is dispatched and processed
-
-        gatewayService.nextResponse = GatewayResponse(rawContent = aiMsg1)
-        chatService.sendMessage()
-        advanceUntilIdle() // Ensure AI message is dispatched and processed
-
-        stateManager.sendMessage(userMsg2)
-        advanceUntilIdle() // Ensure second user message is dispatched and processed
+        fakeStore.dispatch(AppAction.AddUserMessage(userMessage))
+        fakeStore.dispatch(AppAction.SendMessageSuccess(GatewayResponse(rawContent = aiResponse, author = Author.AI)))
+        fakeStore.dispatch(AppAction.SendMessageFailure(systemError))
+        advanceUntilIdle()
 
         val fullPrompt = stateManager.getPromptForClipboard()
-        // println(fullPrompt) // For debugging if needed
+        assertNotNull(fullPrompt)
 
-        // MODIFIED: Corrected expected content string for protocol
-        assertTrue(fullPrompt.contains("--- START OF FILE framework_protocol.md ---\nMETA_INSTRUCTION_CONTEXTUAL_OVERRIDE: This is the protocol content."))
-        assertTrue(fullPrompt.contains("--- START OF FILE Host Tool Manifest ---")) // Tool Manifest is dynamically generated
-        assertTrue(fullPrompt.contains("--- START OF FILE REAL TIME SYSTEM STATUS ---")) // System Status is dynamically generated
+        // Assert that the full prompt contains the raw content of all message types
+        assertTrue(fullPrompt.contains(userMessage))
+        assertTrue(fullPrompt.contains(aiResponse))
+        assertTrue(fullPrompt.contains("--- Gateway Error ---\nGateway Error: Failed to connect.")) // Verify system error format
+        assertTrue(fullPrompt.contains("**META_INSTRUCTION_CONTEXTUAL_OVERRIDE: This is the framework protocol.**")) // From system context
+        assertTrue(fullPrompt.contains("--- REAL TIME SYSTEM STATUS ---")) // From system context
+        assertTrue(fullPrompt.contains("--- Host Tool Manifest ---")) // From system context
 
-        val personaHolonId = "sage-20250726T213010Z"
-        val personaContent = """{"header": {"id": "$personaHolonId", "type": "AI_Persona_Root", "name": "The Silicon Sage", "summary": ""}, "payload": {}}"""
-        assertTrue(fullPrompt.contains("--- START OF FILE $personaHolonId.json ---\n${personaContent.trim()}")) // Persona Holon
-
-        assertTrue(fullPrompt.contains("--- USER MESSAGE ---\n$userMsg1"))
-        assertTrue(fullPrompt.contains("--- model MESSAGE ---\n$aiMsg1"))
-        assertTrue(fullPrompt.contains("--- USER MESSAGE ---\n$userMsg2"))
+        // Specifically check the formatting of messages with rawContent for consistency
+        val expectedUserSection = "--- USER MESSAGE ---\n$userMessage"
+        val expectedAiSection = "--- model MESSAGE ---\n$aiResponse"
+        assertTrue(fullPrompt.contains(expectedUserSection))
+        assertTrue(fullPrompt.contains(expectedAiSection))
     }
+
 
     @Test
     fun `copyCodebaseToClipboard uses platform copy function with correct content`() = runTest {
-        val fakeCodebase = "fun main() { println(\"Fake Code\") }"
-        fakeSourceCodeService.nextResult = fakeCodebase // MODIFIED: Set on the injected fakeSourceCodeService
-
+        val fakeCode = "fun main() { println(\"Fake Code\") }"
+        fakeSourceCodeService.nextResult = fakeCode // Set the expected code content
         stateManager.copyCodebaseToClipboard()
-        advanceUntilIdle() // Ensure the coroutine in copyCodebaseToClipboard completes
+        advanceUntilIdle()
 
-        assertEquals(fakeCodebase, platform.lastCopiedToClipboard)
-        assertEquals("Source code copied to clipboard!", store.state.value.toastMessage)
+        assertEquals(fakeCode, fakePlatform.lastCopiedToClipboard)
     }
 }

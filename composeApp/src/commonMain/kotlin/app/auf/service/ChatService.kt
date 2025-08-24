@@ -169,6 +169,6 @@ open class ChatService(
             *   **Description:** ${tool.description}
             *   **Usage:** `${tool.usage}`
             """.trimIndent()
-        }
+        }.trim() // Ensure no trailing newlines for consistent comparison
     }
 }
