@@ -23,6 +23,7 @@ import app.auf.fakes.FakeSourceCodeService
 import app.auf.fakes.FakeStore
 import app.auf.model.Action
 import app.auf.model.CreateFile
+import app.auf.model.Parameter
 import app.auf.model.ToolDefinition
 import app.auf.model.UserSettings
 import app.auf.service.AufTextParser
@@ -34,6 +35,7 @@ import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * Unit tests for the MessageCard Composable and its sub-renderers.
@@ -53,18 +55,46 @@ class MessageCardTest {
 
     private lateinit var stateManager: StateManager
     private lateinit var fakeStore: FakeStore
+    private lateinit var fakePlatform: FakePlatformDependencies
+    private lateinit var realParser: AufTextParser // Use a real parser here for factory
     private val testCoroutineScope = CoroutineScope(Dispatchers.Unconfined)
+
+    // Define the same tool registry as in main.kt/ChatIntegrationTest.kt for consistent parsing
+    private val toolRegistry = listOf(
+        ToolDefinition(
+            name = "Atomic Change Manifest",
+            command = "ACTION_MANIFEST",
+            description = "Propose a transactional set of changes to the Holon Knowledge Graph file system.",
+            parameters = emptyList(),
+            expectsPayload = true,
+            usage = "[AUF_ACTION_MANIFEST]\n[...json array of Action objects...]\n[/AUF_ACTION_MANIFEST]"
+        ),
+        ToolDefinition(
+            name = "File Content View",
+            command = "FILE_VIEW",
+            description = "Display the content of a non-Holon file within the chat.",
+            parameters = listOf(
+                Parameter(name = "path", type = "String", isRequired = true, defaultValue = null),
+                Parameter(name = "language", type = "String", isRequired = false, defaultValue = null)
+            ),
+            expectsPayload = true,
+            usage = "[AUF_FILE_VIEW(path=\"path/to/your/file.kt\")]\n...file content...\n[/AUF_FILE_VIEW]"
+        ),
+        ToolDefinition("App Request", "APP_REQUEST", "", emptyList(), true, ""),
+        ToolDefinition("State Anchor", "STATE_ANCHOR", "", emptyList(), true, "")
+    )
 
     @Before
     fun setup() {
         val initialState = AppState()
         fakeStore = FakeStore(initialState, testCoroutineScope)
-        val fakePlatform = FakePlatformDependencies()
+        fakePlatform = FakePlatformDependencies()
 
-        val fakeParser = AufTextParser(JsonProvider.appJson, emptyList<ToolDefinition>())
+        // Initialize with a real AufTextParser for correct ContentBlock generation
+        realParser = AufTextParser(JsonProvider.appJson, toolRegistry)
 
-        // MODIFICATION: Pass the parser to the factory initializer.
-        ChatMessage.Factory.initialize(fakePlatform, fakeParser)
+        // Pass the real parser to the factory initializer.
+        ChatMessage.Factory.initialize(fakePlatform, realParser)
 
         val fakeGatewayService = FakeGatewayService(testCoroutineScope)
 
@@ -77,13 +107,13 @@ class MessageCardTest {
                 fakeStore,
                 fakeGatewayService,
                 fakePlatform,
-                fakeParser,
-                emptyList(),
+                realParser, // Use real parser here
+                toolRegistry,
                 testCoroutineScope
             ),
             gatewayService = fakeGatewayService,
             actionExecutor = FakeActionExecutor(fakePlatform, JsonProvider.appJson),
-            parser = fakeParser,
+            parser = realParser, // Use real parser here
             importExportViewModel = FakeImportExportViewModel(),
             platform = fakePlatform,
             initialSettings = UserSettings(),
@@ -94,7 +124,7 @@ class MessageCardTest {
     @Test
     fun `RenderTextBlock should display the correct text`() {
         val testMessage = "This is a test message."
-        // MODIFICATION: Use the factory to create the test message from rawContent
+        // Use the factory to create the test message from rawContent
         val message = ChatMessage.Factory.createUser(
             rawContent = testMessage
         )
@@ -108,14 +138,22 @@ class MessageCardTest {
 
     @Test
     fun `RenderActionBlock shows Confirm and Reject buttons when PENDING`() {
-        val action = CreateFile("a.txt", "b", "c")
-        // MODIFICATION: Use the factory to create the test message from rawContent
+        // Raw content that the real parser will correctly convert into an ActionBlock
+        val rawActionContent = """
+[AUF_ACTION_MANIFEST]
+[
+    {
+        "type": "CreateFile",
+        "filePath": "a.txt",
+        "content": "b",
+        "summary": "c"
+    }
+]
+[/AUF_ACTION_MANIFEST]
+""".trimIndent()
+        // Use the factory to create the test message from rawContent
         val message = ChatMessage.Factory.createAi(
-            rawContent = """
-                [AUF_ACTION_MANIFEST]
-                [{"type":"CreateFile","filePath":"a.txt","content":"b","summary":"c"}]
-                [/AUF_ACTION_MANIFEST]
-            """.trimIndent(),
+            rawContent = rawActionContent,
             usageMetadata = null
         )
 
@@ -130,13 +168,21 @@ class MessageCardTest {
     @Test
     fun `RenderActionBlock hides buttons when EXECUTED`() {
         val action = CreateFile("a.txt", "b", "c")
-        // MODIFICATION: Use the factory to create the test message from rawContent
+        val rawActionContent = """
+[AUF_ACTION_MANIFEST]
+[
+    {
+        "type": "CreateFile",
+        "filePath": "a.txt",
+        "content": "b",
+        "summary": "c"
+    }
+]
+[/AUF_ACTION_MANIFEST]
+""".trimIndent()
+        // Create the message as PENDING, then manually set status to EXECUTED for the test
         val message = ChatMessage.Factory.createAi(
-            rawContent = """
-                [AUF_ACTION_MANIFEST]
-                [{"type":"CreateFile","filePath":"a.txt","content":"b","summary":"c"}]
-                [/AUF_ACTION_MANIFEST]
-            """.trimIndent(),
+            rawContent = rawActionContent,
             usageMetadata = null
         ).copy(contentBlocks = listOf(ActionBlock(listOf<Action>(action), status = ActionStatus.EXECUTED)))
 
@@ -153,13 +199,21 @@ class MessageCardTest {
     @Test
     fun `RenderActionBlock hides buttons when REJECTED`() {
         val action = CreateFile("a.txt", "b", "c")
-        // MODIFICATION: Use the factory to create the test message from rawContent
+        val rawActionContent = """
+[AUF_ACTION_MANIFEST]
+[
+    {
+        "type": "CreateFile",
+        "filePath": "a.txt",
+        "content": "b",
+        "summary": "c"
+    }
+]
+[/AUF_ACTION_MANIFEST]
+""".trimIndent()
+        // Create the message as PENDING, then manually set status to REJECTED for the test
         val message = ChatMessage.Factory.createAi(
-            rawContent = """
-                [AUF_ACTION_MANIFEST]
-                [{"type":"CreateFile","filePath":"a.txt","content":"b","summary":"c"}]
-                [/AUF_ACTION_MANIFEST]
-            """.trimIndent(),
+            rawContent = rawActionContent,
             usageMetadata = null
         ).copy(contentBlocks = listOf(ActionBlock(listOf<Action>(action), status = ActionStatus.REJECTED)))
 
@@ -174,12 +228,18 @@ class MessageCardTest {
 
     @Test
     fun `RenderParseErrorBlock displays error details correctly`() {
-        val errorMessage = "Something went wrong."
-        val rawContent = "{malformed json}"
-        // MODIFICATION: Use the factory to create the test message from rawContent
+        val errorMessage = "A deserialization error occurred: Unexpected JSON token."
+        // Raw content that will cause the real parser to produce a ParseErrorBlock
+        val rawContentCausingParseError = """
+            [AUF_ACTION_MANIFEST]
+            This is not valid JSON
+            [/AUF_ACTION_MANIFEST]
+        """.trimIndent()
+
+        // Use the factory to create the message, which will now internally generate a ParseErrorBlock
         val message = ChatMessage.Factory.createSystem(
             title = "SYSTEM",
-            rawContent = "<!-- PARSE ERROR: TEST_TAG | RAW: $rawContent -->" // Simulating the raw content of a ParseErrorBlock
+            rawContent = rawContentCausingParseError
         )
 
         composeTestRule.setContent {
@@ -191,14 +251,15 @@ class MessageCardTest {
 
         composeTestRule.onNodeWithText("Parse Error:", substring = true).assertExists()
         composeTestRule.onNodeWithText(errorMessage, substring = true).assertExists()
-        composeTestRule.onNodeWithText(rawContent).assertExists()
+        composeTestRule.onNodeWithText("--- Raw Content ---", substring = true).assertExists()
+        composeTestRule.onNodeWithText(rawContentCausingParseError, substring = true).assertExists()
     }
 
     @Test
     fun `deleteMenuItemClick should dispatch DeleteAction`() {
         // ARRANGE:
         val rawMessageContent = "Delete me"
-        // MODIFICATION: Dispatch the raw content, simulating the new flow.
+        // Dispatch the raw content, simulating the new flow.
         fakeStore.dispatch(
             AppAction.AddUserMessage(rawMessageContent)
         )

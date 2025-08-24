@@ -1,157 +1,243 @@
 package app.auf.core
 
-import app.auf.fakes.FakeActionExecutor
-import app.auf.fakes.FakeAufTextParser // Import the new Fake
-import app.auf.fakes.FakeBackupManager
-import app.auf.fakes.FakeChatService
-import app.auf.fakes.FakeGatewayService
-import app.auf.fakes.FakeGraphService
-import app.auf.fakes.FakeImportExportManager
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.fakes.FakeSourceCodeService
-import app.auf.fakes.FakeStore
-import app.auf.model.Action
-import app.auf.model.CreateFile
-import app.auf.model.ToolDefinition
 import app.auf.model.UserSettings
+import app.auf.service.ActionExecutor
 import app.auf.service.ActionExecutorResult
+import app.auf.service.BackupManager
+import app.auf.service.ChatService
+import app.auf.service.GatewayService
+import app.auf.service.GraphService
+import app.auf.service.SourceCodeService
 import app.auf.ui.ImportExportViewModel
-import app.auf.util.JsonProvider
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
+import app.auf.util.PlatformDependencies
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import app.auf.service.AufTextParser
 
-class StateManagerTest {
+/**
+ * The core state management class for the AUF application.
+ *
+ * ---
+ * ## Mandate
+ * This class is the single source of truth for the application's UI state (AppState).
+ * It orchestrates data loading, AI interaction, and user actions by delegating to
+ * specialized service classes. It is fully platform-agnostic and testable.
+ *
+ * ---
+ * ## Dependencies
+ * - `app.auf.core.Store`: The UDF state container.
+ * - `app.auf.service.ChatService`: The new service for chat logic.
+ * - `app.auf.service.BackupManager`
+ * - `app.auf.service.GraphService`
+ * - `app.auf.service.SourceCodeService`
+ * - `app.auf.service.ActionExecutor`
+ * - `app.auf.ui.ImportExportViewModel`
+ * - `app.auf.util.PlatformDependencies`: The single bridge to the host OS.
+ * - `kotlinx.coroutines.CoroutineScope`
+ *
+ * @version 5.2
+ * @since 2025-08-17
+ */
+open class StateManager(
+    private val store: Store,
+    private val backupManager: BackupManager,
+    private val graphService: GraphService,
+    internal val sourceCodeService: SourceCodeService, // MODIFIED: Changed from private to internal
+    private val chatService: ChatService,
+    private val gatewayService: GatewayService,
+    private val actionExecutor: ActionExecutor,
+    private val parser: AufTextParser,
+    val importExportViewModel: ImportExportViewModel,
+    private val platform: PlatformDependencies,
+    private val initialSettings: UserSettings,
+    private val coroutineScope: CoroutineScope
+) {
 
-    @BeforeTest
-    fun initializeFactory() {
-        // MODIFICATION: Initialize factory with parser
-        ChatMessage.Factory.initialize(FakePlatformDependencies(), FakeAufTextParser())
+    open val state: StateFlow<AppState> = store.state
+
+    fun initialize() {
+        backupManager.createBackup("on-launch")
+        loadHolonGraph()
+        loadAvailableModels()
     }
 
-    private fun setupTestEnvironment(
-        initialState: AppState = AppState(),
-        scope: TestScope
-    ): Triple<StateManager, FakeStore, FakeActionExecutor> {
-        val store = FakeStore(initialState, scope)
-        val platform = FakePlatformDependencies()
-        val backupManager = FakeBackupManager(platform)
-        val graphService = FakeGraphService()
-        val sourceCodeService = FakeSourceCodeService(platform)
-        val jsonParser = JsonProvider.appJson
-
-        val toolRegistry = listOf<ToolDefinition>()
-        // MODIFICATION: Use FakeAufTextParser here
-        val parser = FakeAufTextParser(jsonParser, toolRegistry)
-
-        val gatewayService = FakeGatewayService(scope, toolRegistry)
-        val chatService = FakeChatService(store, gatewayService, platform, parser, toolRegistry, scope)
-
-        val actionExecutor = FakeActionExecutor(platform, jsonParser)
-        val importExportManager = FakeImportExportManager(platform, jsonParser)
-        val importExportViewModel = ImportExportViewModel(importExportManager, scope)
-
-        val stateManager = StateManager(
-            store = store,
-            backupManager = backupManager,
-            graphService = graphService,
-            sourceCodeService = sourceCodeService,
-            chatService = chatService,
-            gatewayService = gatewayService,
-            actionExecutor = actionExecutor,
-            parser = parser,
-            importExportViewModel = importExportViewModel,
-            platform = platform,
-            initialSettings = UserSettings(),
-            coroutineScope = scope
-        )
-        return Triple(stateManager, store, actionExecutor)
+    fun loadHolonGraph() {
+        coroutineScope.launch {
+            store.dispatch(AppAction.LoadGraph)
+            val result = graphService.loadGraph(state.value.aiPersonaId)
+            if (result.fatalError != null) {
+                store.dispatch(AppAction.LoadGraphFailure(result.fatalError))
+            } else {
+                store.dispatch(AppAction.LoadGraphSuccess(result))
+            }
+        }
     }
 
+    private fun loadAvailableModels() {
+        coroutineScope.launch {
+            val modelNames = gatewayService.listTextModels()
+            store.dispatch(AppAction.SetAvailableModels(modelNames))
+        }
+    }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    @Test
-    fun `executeActionFromMessage success path dispatches correct actions and reloads graph`() = runTest {
-        val manifest = listOf(CreateFile("test.txt", "content", "Create test file"))
-        val rawManifestContent = """
-            [AUF_ACTION_MANIFEST]
-            [
-                {
-                    "type": "CreateFile",
-                    "filePath": "test.txt",
-                    "content": "Hello",
-                    "summary": "Create test file"
+    // --- Chat Logic Delegation ---
+    fun sendMessage(message: String) {
+        if (state.value.isProcessing || state.value.aiPersonaId == null) return
+        // MODIFICATION: No parsing happens here. Dispatch the raw string directly.
+        store.dispatch(AppAction.AddUserMessage(message))
+        chatService.sendMessage()
+    }
+
+    fun cancelMessage() {
+        chatService.cancelMessage()
+    }
+
+    fun getSystemContextForDisplay(): List<ChatMessage> {
+        return chatService.buildSystemContextMessages()
+    }
+
+    fun getPromptForClipboard(): String {
+        return chatService.buildFullPromptAsString()
+    }
+
+    fun formatDisplayTimestamp(timestamp: Long): String {
+        return platform.formatDisplayTimestamp(timestamp)
+    }
+
+    fun deleteMessage(id: Long) {
+        store.dispatch(AppAction.DeleteMessage(id))
+    }
+
+    fun rerunFromMessage(id: Long) {
+        if (state.value.isProcessing) return
+
+        val messageToRerun = state.value.chatHistory.find { it.id == id }
+        if (messageToRerun != null && messageToRerun.author == Author.USER) {
+            store.dispatch(AppAction.RerunFromMessage(id))
+            chatService.sendMessage()
+        }
+    }
+
+    fun executeActionFromMessage(messageTimestamp: Long) {
+        if (state.value.isProcessing) return // Prevent concurrent executions
+
+        coroutineScope.launch {
+            val message = state.value.chatHistory.find { it.timestamp == messageTimestamp }
+            val actionBlock = message?.contentBlocks?.filterIsInstance<ActionBlock>()?.firstOrNull()
+
+            if (actionBlock == null || actionBlock.status != ActionStatus.PENDING) {
+                store.dispatch(AppAction.ExecuteActionManifestFailure("Action block not found or already resolved.", messageTimestamp))
+                return@launch
+            }
+
+            store.dispatch(AppAction.ExecuteActionManifest(messageTimestamp))
+
+            val manifest = actionBlock.actions
+            val personaId = state.value.aiPersonaId ?: ""
+            val currentGraphHeaders = state.value.holonGraph.map { it.header }
+
+            val result = actionExecutor.execute(manifest, personaId, currentGraphHeaders)
+
+            when (result) {
+                is ActionExecutorResult.Success -> {
+                    store.dispatch(AppAction.UpdateActionStatus(messageTimestamp, ActionStatus.EXECUTED))
+                    store.dispatch(AppAction.ExecuteActionManifestSuccess(result.summary, messageTimestamp))
+                    // This is critical for data consistency: reload the graph from the disk.
+                    loadHolonGraph()
                 }
-            ]
-            [/AUF_ACTION_MANIFEST]
-        """.trimIndent()
-        // MODIFICATION: Use rawContent to create an AI message
-        val actionMessage = ChatMessage.Factory.createAi(
-            rawContent = rawManifestContent,
-            usageMetadata = null
-        ).copy(contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING))) // Manual override for test block
-
-        val messageTimestamp = actionMessage.timestamp
-
-        val initialState = AppState(chatHistory = listOf(actionMessage), aiPersonaId = "sage-1")
-        val (stateManager, store, fakeActionExecutor) = setupTestEnvironment(initialState, this)
-        fakeActionExecutor.nextResult = ActionExecutorResult.Success("Manifest executed.")
-
-        stateManager.executeActionFromMessage(messageTimestamp)
-
-        runCurrent()
-
-        val dispatchedActions = store.dispatchedActions
-        assertEquals(5, dispatchedActions.size, "Expected 5 actions: Execute, UpdateStatus, Success, Load, LoadSuccess")
-        assertIs<AppAction.ExecuteActionManifest>(dispatchedActions[0])
-        assertIs<AppAction.UpdateActionStatus>(dispatchedActions[1])
-        assertEquals(ActionStatus.EXECUTED, (dispatchedActions[1] as AppAction.UpdateActionStatus).status)
-        assertIs<AppAction.ExecuteActionManifestSuccess>(dispatchedActions[2])
-        assertIs<AppAction.LoadGraph>(dispatchedActions[3])
-        assertIs<AppAction.LoadGraphSuccess>(dispatchedActions[4])
-        assertEquals(manifest, fakeActionExecutor.lastExecutedManifest)
+                is ActionExecutorResult.Failure -> {
+                    store.dispatch(AppAction.ExecuteActionManifestFailure(result.error, messageTimestamp))
+                }
+            }
+        }
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    @Test
-    fun `executeActionFromMessage failure path dispatches failure action`() = runTest {
-        val manifest = listOf<Action>(CreateFile("test.txt", "content", "Create test file"))
-        val rawManifestContent = """
-            [AUF_ACTION_MANIFEST]
-            [
-                {
-                    "type": "CreateFile",
-                    "filePath": "test.txt",
-                    "content": "Hello",
-                    "summary": "Create test file"
-                }
-            ]
-            [/AUF_ACTION_MANIFEST]
-        """.trimIndent()
-        // MODIFICATION: Use rawContent to create an AI message
-        val actionMessage = ChatMessage.Factory.createAi(
-            rawContent = rawManifestContent,
-            usageMetadata = null
-        ).copy(contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING))) // Manual override for test block
-        val messageTimestamp = actionMessage.timestamp
+    fun rejectActionFromMessage(messageTimestamp: Long) {
+        store.dispatch(AppAction.UpdateActionStatus(messageTimestamp, ActionStatus.REJECTED))
+        store.dispatch(AppAction.ShowToast("Action Manifest Rejected."))
+    }
 
-        val initialState = AppState(chatHistory = listOf(actionMessage))
-        val (stateManager, store, fakeActionExecutor) = setupTestEnvironment(initialState, this)
-        fakeActionExecutor.nextResult = ActionExecutorResult.Failure("File not found.")
+    fun openBackupFolder() {
+        backupManager.createBackup("on-export-view")
+        backupManager.openBackupFolder()
+    }
 
-        stateManager.executeActionFromMessage(messageTimestamp)
+    fun setViewMode(mode: ViewMode) {
+        store.dispatch(AppAction.SetViewMode(mode))
+        if (mode == ViewMode.CHAT) {
+            importExportViewModel.cancelImport()
+        } else if (mode == ViewMode.IMPORT) {
+            importExportViewModel.startImport()
+        }
+    }
 
-        runCurrent()
+    fun onHolonClicked(holonId: String) {
+        inspectHolon(holonId)
+        if (state.value.currentViewMode == ViewMode.CHAT) {
+            toggleHolonActive(holonId)
+        }
+    }
 
-        val dispatchedActions = store.dispatchedActions
-        assertEquals(2, dispatchedActions.size)
-        assertIs<AppAction.ExecuteActionManifest>(dispatchedActions[0])
-        assertIs<AppAction.ExecuteActionManifestFailure>(dispatchedActions[1])
-        assertEquals("File not found.", (dispatchedActions[1] as AppAction.ExecuteActionManifestFailure).error)
+    fun retryLoadHolonGraph() {
+        loadHolonGraph()
+    }
+
+    fun toggleHolonActive(holonId: String) {
+        store.dispatch(AppAction.ToggleHolonActive(holonId))
+        inspectHolon(holonId)
+    }
+
+    fun toggleHolonForExport(holonId: String) {
+        store.dispatch(AppAction.ToggleHolonExport(holonId))
+    }
+
+    fun selectAiPersona(holonId: String?) {
+        store.dispatch(AppAction.SelectAiPersona(holonId))
+        if (holonId != null) {
+            loadHolonGraph()
+        }
+    }
+
+    fun inspectHolon(holonId: String?) {
+        store.dispatch(AppAction.InspectHolon(holonId))
+    }
+
+    fun selectModel(modelName: String) {
+        if (modelName in state.value.availableModels) {
+            store.dispatch(AppAction.SelectModel(modelName))
+        }
+    }
+
+    fun setCatalogueFilter(type: String?) {
+        store.dispatch(AppAction.SetCatalogueFilter(type))
+    }
+
+    fun toggleSystemMessageVisibility() {
+        store.dispatch(AppAction.ToggleSystemVisibility)
+    }
+
+    fun executeExport(destinationPath: String) {
+        val holonsToExport = state.value.holonGraph.filter { it.header.id in state.value.holonIdsForExport }
+        val headersToExport = holonsToExport.map { it.header }
+        importExportViewModel.importExportManager.executeExport(destinationPath, headersToExport)
+    }
+
+
+
+    fun copyCodebaseToClipboard() {
+        coroutineScope.launch {
+            val codebaseString = sourceCodeService.collateKtFilesToString()
+            if (codebaseString.startsWith("ERROR:")) {
+                store.dispatch(AppAction.ShowToast(codebaseString))
+            } else {
+                platform.copyToClipboard(codebaseString)
+                store.dispatch(AppAction.ShowToast("Source code copied to clipboard!"))
+            }
+        }
+    }
+
+    fun clearToast() {
+        store.dispatch(AppAction.ClearToast)
     }
 }

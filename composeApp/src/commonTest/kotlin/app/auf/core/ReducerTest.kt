@@ -1,7 +1,11 @@
 package app.auf.core
 
-import app.auf.fakes.FakeAufTextParser // Import the new Fake
+import app.auf.fakes.FakeAufTextParser
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.model.CreateFile
+import app.auf.model.ToolDefinition
+import app.auf.service.AufTextParser
+import app.auf.util.JsonProvider
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -9,10 +13,13 @@ import kotlin.test.assertNotEquals
 
 class ReducerTest {
 
+    private lateinit var fakeParser: FakeAufTextParser // Make FakeAufTextParser accessible
+
     @BeforeTest
     fun initializeFactory() {
-        // MODIFICATION: Initialize factory with parser
-        ChatMessage.Factory.initialize(FakePlatformDependencies(), FakeAufTextParser())
+        // Initialize the fake parser here
+        fakeParser = FakeAufTextParser(JsonProvider.appJson, emptyList<ToolDefinition>())
+        ChatMessage.Factory.initialize(FakePlatformDependencies(), fakeParser)
     }
 
     private val initialState = AppState()
@@ -23,21 +30,29 @@ class ReducerTest {
         var state = initialState
         val actionMessageRawContent = """
             Here is a plan.
-            [AUF_ACTION_MANIFEST]
-            []
-            [/AUF_ACTION_MANIFEST]
-        """.trimIndent()
+[AUF_ACTION_MANIFEST]
+[]
+[/AUF_ACTION_MANIFEST]
+""".trimIndent()
         val userMessageRawContent = "Do it."
 
+        // Configure fakeParser to return an ActionBlock for the AI response
+        fakeParser.nextParseResult = listOf(
+            TextBlock("Here is a plan."),
+            ActionBlock(actions = listOf(CreateFile("test.txt", "Hello", "Create")), status = ActionStatus.PENDING)
+        )
+
         // Dispatch actions to add messages, letting the reducer handle ID and timestamp generation.
-        // MODIFICATION: Pass rawContent to createAi
         state = appReducer(state, AppAction.SendMessageSuccess(GatewayResponse(rawContent = actionMessageRawContent)))
-        // MODIFICATION: Pass rawContent to AddUserMessage
+
+        // Reset fakeParser for the next message (user message is just text)
+        fakeParser.nextParseResult = listOf(TextBlock(userMessageRawContent))
         state = appReducer(state, AppAction.AddUserMessage(userMessageRawContent))
 
         // Get the timestamp of the message we want to modify.
-        val messageToUpdate = state.chatHistory.first()
-        val otherMessage = state.chatHistory.last()
+        // We expect the first message in chatHistory to be the AI message containing the ActionBlock.
+        val messageToUpdate = state.chatHistory.first { it.author == Author.AI }
+        val otherMessage = state.chatHistory.first { it.author == Author.USER }
 
         // ACT: Dispatch the action to update the status.
         val action = AppAction.UpdateActionStatus(messageToUpdate.timestamp, ActionStatus.EXECUTED)
@@ -50,7 +65,6 @@ class ReducerTest {
 
         // AND other messages should remain unchanged.
         val unchangedMessage = newState.chatHistory.find { it.id == otherMessage.id }
-        // MODIFICATION: Assert on rawContent for consistency
         assertEquals(otherMessage.rawContent, unchangedMessage?.rawContent)
     }
 
@@ -59,13 +73,17 @@ class ReducerTest {
         // ARRANGE: Create the initial message using the reducer.
         var state = initialState
         val actionMessageRawContent = """
-            [AUF_ACTION_MANIFEST]
-            []
-            [/AUF_ACTION_MANIFEST]
-        """.trimIndent()
-        // MODIFICATION: Pass rawContent to createAi
+[AUF_ACTION_MANIFEST]
+[]
+[/AUF_ACTION_MANIFEST]
+""".trimIndent()
+        // Configure fakeParser to return an ActionBlock for the AI response
+        fakeParser.nextParseResult = listOf(
+            ActionBlock(actions = listOf(CreateFile("test.txt", "Hello", "Create")), status = ActionStatus.PENDING)
+        )
+
         state = appReducer(state, AppAction.SendMessageSuccess(GatewayResponse(rawContent = actionMessageRawContent)))
-        val messageToTest = state.chatHistory.first()
+        val messageToTest = state.chatHistory.first { it.author == Author.AI } // Get the AI message
 
         // ACT: Dispatch an action with a non-matching timestamp.
         val action = AppAction.UpdateActionStatus(99999L, ActionStatus.EXECUTED)
@@ -82,11 +100,20 @@ class ReducerTest {
     fun `DeleteMessage should remove the correct message by its unique ID`() {
         // ARRANGE: Create a series of messages using the reducer.
         var state = initialState
-        // MODIFICATION: Pass rawContent to AddUserMessage
+        // Configure parser for the first message (User)
+        fakeParser.nextParseResult = listOf(TextBlock("Message 1"))
         state = appReducer(state, AppAction.AddUserMessage("Message 1"))
-        // MODIFICATION: Pass rawContent to SendMessageSuccess
+
+        // Configure parser for the second message (AI with ActionBlock)
+        fakeParser.nextParseResult = listOf(
+            ActionBlock(actions = listOf(CreateFile("ai.txt", "AI content", "AI file")), status = ActionStatus.PENDING)
+        )
         state = appReducer(state, AppAction.SendMessageSuccess(GatewayResponse(rawContent = "Message 2")))
+
+        // Configure parser for the third message (User)
+        fakeParser.nextParseResult = listOf(TextBlock("Message 3"))
         state = appReducer(state, AppAction.AddUserMessage("Message 3"))
+
 
         // Get the unique ID of the message to delete.
         val messageToDelete = state.chatHistory[1] // The AI's message
@@ -101,7 +128,6 @@ class ReducerTest {
         assertEquals(2, newState.chatHistory.size, "The chat history should have one less message.")
         val messageStillExists = newState.chatHistory.any { it.id == idToDelete }
         assertEquals(false, messageStillExists, "The message with the specified ID should be gone.")
-        // MODIFICATION: Assert on rawContent
         assertEquals("Message 1", newState.chatHistory[0].rawContent)
         assertEquals("Message 3", newState.chatHistory[1].rawContent)
     }
