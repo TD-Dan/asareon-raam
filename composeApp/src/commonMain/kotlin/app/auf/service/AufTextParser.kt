@@ -44,7 +44,7 @@ open class AufTextParser(
         var currentIndex = 0
 
         var activeTool: ToolDefinition? = null
-        var activeCommandForEndTag: String = ""
+        var activeCommandForEndTag = ""
         var activeParams: Map<String, String> = emptyMap()
 
         // Handle initial text before any tag
@@ -112,7 +112,7 @@ open class AufTextParser(
                         continue
                     }
 
-                    var params: Map<String, String>? = emptyMap()
+                    var params: Map<String, String>?
                     if (paramStartIndex != -1) {
                         val paramEndIndex = fullTagContent.lastIndexOf(')')
                         if (paramEndIndex == -1 || paramEndIndex < paramStartIndex) {
@@ -183,7 +183,7 @@ open class AufTextParser(
                     if (!valueWithQuotes.startsWith('"') || !valueWithQuotes.endsWith('"')) return null
                     parsed[key] = valueWithQuotes.substring(1, valueWithQuotes.length - 1)
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 return null
             }
         }

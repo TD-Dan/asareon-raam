@@ -27,7 +27,7 @@ open class ChatService(
     private val store: Store,
     private val gatewayService: GatewayService,
     private val platform: PlatformDependencies,
-    //private val parser: AufTextParser,
+    private val parser: AufTextParser,
     private val toolRegistry: List<ToolDefinition>,
     private val coroutineScope: CoroutineScope
 ) {

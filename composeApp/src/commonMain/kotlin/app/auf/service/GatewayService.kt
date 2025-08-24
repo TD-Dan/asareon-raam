@@ -73,7 +73,7 @@ open class GatewayService(
         if (messages.isEmpty()) return emptyList()
 
         val mergedContents = mutableListOf<Content>()
-        var currentParts = mutableListOf<String>()
+        val currentParts = mutableListOf<String>()
         var currentRole = when (messages.first().author) {
             Author.AI -> "model"
             else -> "user"
