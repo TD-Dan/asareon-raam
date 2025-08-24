@@ -28,7 +28,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * - `app.auf.model.ToolDefinition`: The schema for available tools.
  * - `kotlinx.serialization.json.Json`: For parsing JSON payloads in specific blocks.
  *
- * @version 3.0
+ * @version 3.1
  * @since 2025-08-24
  */
 open class AufTextParser(
@@ -54,6 +54,7 @@ open class AufTextParser(
             if (leadingText.isNotBlank()) {
                 blocks.add(TextBlock(leadingText))
             }
+            currentIndex = firstTagStart
         } else if (firstTagStart == -1) { // No tags at all, treat as single text block
             if (rawText.isNotBlank()) {
                 blocks.add(TextBlock(rawText.trim()))

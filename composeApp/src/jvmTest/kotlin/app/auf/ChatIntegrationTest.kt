@@ -1,66 +1,36 @@
 package app.auf
 
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Window
-import androidx.compose.ui.window.application
-import androidx.compose.ui.window.rememberWindowState
 import app.auf.core.ActionBlock
 import app.auf.core.ActionStatus
 import app.auf.core.AppAction
+import app.auf.core.AppRequestBlock
 import app.auf.core.AppState
 import app.auf.core.Author
 import app.auf.core.ChatMessage
-import app.auf.core.ContentBlock
 import app.auf.core.GatewayResponse
-import app.auf.core.ParseErrorBlock
+import app.auf.core.HolonHeader
 import app.auf.core.TextBlock
 import app.auf.core.StateManager
-import app.auf.core.Store
 import app.auf.core.Version
-import app.auf.core.ViewMode
-import app.auf.core.appReducer
 import app.auf.fakes.FakeActionExecutor
-import app.auf.fakes.FakeAufTextParser
 import app.auf.fakes.FakeBackupManager
 import app.auf.fakes.FakeChatService
 import app.auf.fakes.FakeGatewayService
-import app.auf.fakes.FakeGraphLoader
 import app.auf.fakes.FakeGraphService
-import app.auf.fakes.FakeImportExportManager
 import app.auf.fakes.FakeImportExportViewModel
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeSourceCodeService
 import app.auf.fakes.FakeStore
-import app.auf.model.Action
 import app.auf.model.CreateFile
-import app.auf.core.Holon
 import app.auf.model.Parameter
 import app.auf.model.ToolDefinition
 import app.auf.model.UserSettings
-import app.auf.service.ActionExecutor
 import app.auf.service.AufTextParser
-import app.auf.service.BackupManager
-import app.auf.service.ChatService
-import app.auf.service.Gateway
-import app.auf.service.GatewayService
-import app.auf.service.GraphLoader
-import app.auf.service.GraphService
-import app.auf.service.ImportExportManager
-import app.auf.service.SettingsManager
-import app.auf.service.SourceCodeService
-import app.auf.ui.App
-import app.auf.ui.ImportExportViewModel
+import app.auf.util.BasePath
 import app.auf.util.JsonProvider
-import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -148,9 +118,16 @@ class ChatIntegrationTest {
     @Before
     fun setup() {
         testCoroutineScope = CoroutineScope(Dispatchers.Unconfined)
+        // MODIFICATION: Correctly initialize availableAiPersonas as List<HolonHeader>
+        val initialPersonaHeader = HolonHeader(
+            id = "sage-20250726T213010Z",
+            type = "AI_Persona_Root",
+            name = "The Silicon Sage (v4.5 Kernel)",
+            summary = "Fake persona for testing"
+        )
         val initialState = AppState(
-            aiPersonaId = "sage-20250726T213010Z",
-            availableAiPersonas = mapOf("sage-20250726T213010Z" to Holon.createMock("sage-20250726T213010Z", "AI_Persona_Root", "The Silicon Sage")),
+            aiPersonaId = initialPersonaHeader.id,
+            availableAiPersonas = listOf(initialPersonaHeader), // MODIFIED: Correct type and content
             // MODIFICATION: Ensure activeHolons is empty for predictable system context tests
             activeHolons = emptyMap()
         )
@@ -195,10 +172,11 @@ class ChatIntegrationTest {
         )
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `user message rawContent is correctly stored and parsed to TextBlock`() = runTest {
         val rawUserMessage = "Hello, Sage!"
-        stateManager.processUserMessage(rawUserMessage)
+        stateManager.sendMessage(rawUserMessage) // MODIFIED: Use sendMessage
         advanceUntilIdle() // Process coroutines
 
         val lastMessage = fakeStore.state.value.chatHistory.last()
@@ -208,6 +186,7 @@ class ChatIntegrationTest {
         assertEquals(rawUserMessage, (lastMessage.contentBlocks.first() as TextBlock).text)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `SendMessageSuccess action correctly stores rawContent and derives ActionBlock for AI response`() = runTest {
         val rawAiResponse = """
@@ -221,22 +200,20 @@ class ChatIntegrationTest {
     }
 ]
 [/AUF_ACTION_MANIFEST]
-        """.trimIndent()
+""".trimIndent()
 
         // Configure FakeGatewayService to return an AI message with the action manifest
         fakeGatewayService.nextResponse = GatewayResponse(
             rawContent = rawAiResponse,
-            // MODIFICATION: Set author to AI
-            author = Author.AI,
             usageMetadata = null
         )
 
-        stateManager.processUserMessage("Please create a file.") // Trigger sendMessage
+        stateManager.sendMessage("Please create a file.") // MODIFIED: Use sendMessage
         advanceUntilIdle() // Process coroutines
 
         val lastMessage = fakeStore.state.value.chatHistory.last()
 
-        // MODIFICATION: Assert that the author is AI
+        // MODIFICATION: Assert that the author is AI (inferred from reducer/factory)
         assertEquals(Author.AI, lastMessage.author)
         assertEquals(rawAiResponse, lastMessage.rawContent)
         assertIs<ActionBlock>(lastMessage.contentBlocks.first())
@@ -247,13 +224,14 @@ class ChatIntegrationTest {
         assertEquals(ActionStatus.PENDING, actionBlock.status)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `SendMessageFailure action correctly stores error message and sets processing to false`() = runTest {
         val errorMessage = "API call failed."
 
         fakeGatewayService.nextResponse = GatewayResponse(errorMessage = errorMessage)
 
-        stateManager.processUserMessage("Tell me something.")
+        stateManager.sendMessage("Tell me something.") // MODIFIED: Use sendMessage
         advanceUntilIdle() // Process coroutines
 
         val state = fakeStore.state.value
@@ -265,21 +243,23 @@ class ChatIntegrationTest {
         assertTrue((lastMessage.contentBlocks.first() as TextBlock).text.contains(errorMessage))
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `AI message with AppRequestBlock triggers follow-up sendMessage`() = runTest {
         val rawAiResponseWithAppRequest = """
 Hello, Daniel.
 [AUF_APP_REQUEST]START_DREAM_CYCLE[/AUF_APP_REQUEST]
-        """.trimIndent()
+""".trimIndent()
 
         fakeGatewayService.nextResponse = GatewayResponse(
             rawContent = rawAiResponseWithAppRequest,
-            author = Author.AI
+            // MODIFIED: Removed author parameter
+            usageMetadata = null
         )
 
         val initialChatHistorySize = fakeStore.state.value.chatHistory.size
 
-        stateManager.processUserMessage("Start a dream cycle.")
+        stateManager.sendMessage("Start a dream cycle.") // MODIFIED: Use sendMessage
         advanceUntilIdle() // Process initial message and AI response
         advanceUntilIdle() // Process the follow-up sendMessage call triggered by AppRequestBlock
 
@@ -303,49 +283,54 @@ Hello, Daniel.
         assertNotNull(fakeGatewayService.sendMessageCalledWith)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `rerunFromMessage correctly prunes history and triggers sendMessage`() = runTest {
-        val message1 = ChatMessage.Factory.createUser("Msg 1")
-        val message2 = ChatMessage.Factory.createAi("AI Msg 1", Author.AI)
-        val message3 = ChatMessage.Factory.createUser("Msg 2")
-
-        fakeStore.dispatch(AppAction.AddMessage(message1))
-        fakeStore.dispatch(AppAction.AddMessage(message2))
-        fakeStore.dispatch(AppAction.AddMessage(message3))
+        // MODIFICATION: Dispatch proper AppActions
+        fakeStore.dispatch(AppAction.AddUserMessage("Msg 1"))
+        fakeStore.dispatch(AppAction.SendMessageSuccess(GatewayResponse(rawContent = "AI Msg 1")))
+        fakeStore.dispatch(AppAction.AddUserMessage("Msg 2"))
         advanceUntilIdle()
 
-        fakeGatewayService.nextResponse = GatewayResponse(rawContent = "Rerun AI Response", author = Author.AI)
+        val messages = fakeStore.state.value.chatHistory
+        assertEquals(3, messages.size) // User 1, AI 1, User 2
+        val messageToRerunId = messages[1].id // AI Msg 1's ID
 
-        stateManager.rerunFromMessage(message2.id)
+        fakeGatewayService.nextResponse = GatewayResponse(rawContent = "Rerun AI Response")
+
+        stateManager.rerunFromMessage(messageToRerunId)
         advanceUntilIdle()
 
         val chatHistory = fakeStore.state.value.chatHistory
-        assertEquals(4, chatHistory.size) // message1, message2, message3 (runtimes cut), new AI response
-        assertEquals(message1.id, chatHistory[0].id)
-        assertEquals(message2.id, chatHistory[1].id) // message2 is the starting point
-        assertEquals(message3.id, chatHistory[2].id) // message3 is the last user input before rerun
+        // Expected: User 1, AI 1, User 2 (rerun message), new AI response
+        assertEquals(4, chatHistory.size)
+        assertEquals(messages[0].id, chatHistory[0].id)
+        assertEquals(messages[1].id, chatHistory[1].id) // message2 is the starting point
+        assertEquals(messages[2].id, chatHistory[2].id) // message3 is the last user input before rerun
         assertEquals("Rerun AI Response", chatHistory.last().rawContent)
         assertEquals(Author.AI, chatHistory.last().author)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `deleteMessage correctly removes message from history`() = runTest {
-        val message1 = ChatMessage.Factory.createUser("Msg 1")
-        val message2 = ChatMessage.Factory.createAi("AI Msg 1", Author.AI)
-
-        fakeStore.dispatch(AppAction.AddMessage(message1))
-        fakeStore.dispatch(AppAction.AddMessage(message2))
+        // MODIFICATION: Dispatch proper AppActions
+        fakeStore.dispatch(AppAction.AddUserMessage("Msg 1"))
+        fakeStore.dispatch(AppAction.SendMessageSuccess(GatewayResponse(rawContent = "AI Msg 1")))
         advanceUntilIdle()
 
-        assertEquals(2, fakeStore.state.value.chatHistory.size)
+        val messages = fakeStore.state.value.chatHistory
+        assertEquals(2, messages.size)
+        val messageToDeleteId = messages[0].id // User message 1
 
-        stateManager.deleteMessage(message1.id)
+        stateManager.deleteMessage(messageToDeleteId)
         advanceUntilIdle()
 
         assertEquals(1, fakeStore.state.value.chatHistory.size)
-        assertEquals(message2.id, fakeStore.state.value.chatHistory.first().id)
+        assertEquals(messages[1].id, fakeStore.state.value.chatHistory.first().id)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `getSystemContextForDisplay builds messages with correct rawContent for framework files`() = runTest {
         // The setup already writes framework_protocol.md to fakePlatform
@@ -376,6 +361,7 @@ Hello, Daniel.
         assertTrue(toolManifestMessage.rawContent?.contains("Tool: State Anchor") == true)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `getPromptForClipboard correctly uses rawContent for all message types`() = runTest {
         val userMessage = "User query."
@@ -390,11 +376,12 @@ Hello, Daniel.
     }
 ]
 [/AUF_ACTION_MANIFEST]
-        """.trimIndent()
+""".trimIndent()
         val systemError = "Gateway Error: Failed to connect."
 
+        // MODIFICATION: Dispatch proper AppActions
         fakeStore.dispatch(AppAction.AddUserMessage(userMessage))
-        fakeStore.dispatch(AppAction.SendMessageSuccess(GatewayResponse(rawContent = aiResponse, author = Author.AI)))
+        fakeStore.dispatch(AppAction.SendMessageSuccess(GatewayResponse(rawContent = aiResponse)))
         fakeStore.dispatch(AppAction.SendMessageFailure(systemError))
         advanceUntilIdle()
 
@@ -417,6 +404,7 @@ Hello, Daniel.
     }
 
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `copyCodebaseToClipboard uses platform copy function with correct content`() = runTest {
         val fakeCode = "fun main() { println(\"Fake Code\") }"
