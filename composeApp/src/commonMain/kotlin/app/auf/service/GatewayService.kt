@@ -70,7 +70,6 @@ open class GatewayService(
         }
     }
 
-    // --- FIX: Rewritten for author-aware merging ---
     private fun convertChatToApiContents(messages: List<ChatMessage>): List<Content> {
         if (messages.isEmpty()) return emptyList()
 

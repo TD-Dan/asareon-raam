@@ -176,7 +176,7 @@ open class ChatService(
 
         return """
         *   You are running on host LLM: `${state.selectedModel}`
-        *   Your current runtime platform is '${Version.APP_VERSION}'
+        *   Your current runtime platform is 'AUF App v${Version.APP_VERSION}'
         *   You are embodying the persona: '$personaName' (holon: ${state.aiPersonaId})
         *   The time of this request is: `${platform.formatIsoTimestamp(platform.getSystemTimeMillis())}`
         *   $tokenInfo
