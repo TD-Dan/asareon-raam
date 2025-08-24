@@ -37,8 +37,7 @@ class StateManagerTest {
         val sourceCodeService = FakeSourceCodeService(platform)
         val gatewayService = FakeGatewayService(scope)
         val jsonParser = JsonProvider.appJson
-        val parser = AufTextParser(jsonParser) // <<< FIX: Instantiate the parser
-        // --- MODIFIED: Pass the parser to the FakeChatService ---
+        val parser = AufTextParser(jsonParser)
         val chatService = FakeChatService(store, gatewayService, platform, parser, scope)
         val actionExecutor = FakeActionExecutor(platform, jsonParser)
         val importExportManager = FakeImportExportManager(platform, jsonParser)
@@ -52,7 +51,7 @@ class StateManagerTest {
             chatService = chatService,
             gatewayService = gatewayService,
             actionExecutor = actionExecutor,
-            parser = parser, // <<< FIX: Provide the parser to the StateManager
+            parser = parser,
             importExportViewModel = importExportViewModel,
             platform = platform,
             initialSettings = UserSettings(),
@@ -68,7 +67,8 @@ class StateManagerTest {
         val manifest = listOf(CreateFile("test.txt", "content", "Create test file"))
         val actionMessage = ChatMessage(
             author = Author.AI, timestamp = 12345L,
-            contentBlocks = listOf(ActionBlock(actions = manifest, isResolved = false))
+            // --- MODIFIED: Use new status field ---
+            contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING))
         )
         val initialState = AppState(chatHistory = listOf(actionMessage), aiPersonaId = "sage-1")
         val (stateManager, store, fakeActionExecutor) = setupTestEnvironment(initialState, this)
@@ -79,9 +79,10 @@ class StateManagerTest {
         runCurrent()
 
         val dispatchedActions = store.dispatchedActions
-        assertEquals(5, dispatchedActions.size, "Expected 5 actions: Execute, Resolve, Success, Load, LoadSuccess")
+        assertEquals(5, dispatchedActions.size, "Expected 5 actions: Execute, UpdateStatus, Success, Load, LoadSuccess")
         assertIs<AppAction.ExecuteActionManifest>(dispatchedActions[0])
-        assertIs<AppAction.ResolveActionInMessage>(dispatchedActions[1])
+        assertIs<AppAction.UpdateActionStatus>(dispatchedActions[1])
+        assertEquals(ActionStatus.EXECUTED, (dispatchedActions[1] as AppAction.UpdateActionStatus).status)
         assertIs<AppAction.ExecuteActionManifestSuccess>(dispatchedActions[2])
         assertIs<AppAction.LoadGraph>(dispatchedActions[3])
         assertIs<AppAction.LoadGraphSuccess>(dispatchedActions[4])
@@ -94,7 +95,8 @@ class StateManagerTest {
         val manifest = listOf<Action>(CreateFile("test.txt", "content", "Create test file"))
         val actionMessage = ChatMessage(
             author = Author.AI, timestamp = 12345L,
-            contentBlocks = listOf(ActionBlock(actions = manifest, isResolved = false))
+            // --- MODIFIED: Use new status field ---
+            contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING))
         )
         val initialState = AppState(chatHistory = listOf(actionMessage))
         val (stateManager, store, fakeActionExecutor) = setupTestEnvironment(initialState, this)

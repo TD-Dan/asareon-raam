@@ -36,7 +36,7 @@ import app.auf.service.AufTextParser
  * - `app.auf.util.PlatformDependencies`: The single bridge to the host OS.
  * - `kotlinx.coroutines.CoroutineScope`
  *
- * @version 4.7
+ * @version 4.8
  * @since 2025-08-17
  */
 open class StateManager(
@@ -120,8 +120,8 @@ open class StateManager(
             val message = state.value.chatHistory.find { it.timestamp == messageTimestamp }
             val actionBlock = message?.contentBlocks?.filterIsInstance<ActionBlock>()?.firstOrNull()
 
-            if (actionBlock == null || actionBlock.isResolved) {
-                store.dispatch(AppAction.ExecuteActionManifestFailure("Action block not found or already resolved."))
+            if (actionBlock == null || actionBlock.status != ActionStatus.PENDING) {
+                store.dispatch(AppAction.ExecuteActionManifestFailure("Action block not found or already resolved.", messageTimestamp))
                 return@launch
             }
 
@@ -135,21 +135,22 @@ open class StateManager(
 
             when (result) {
                 is ActionExecutorResult.Success -> {
-                    store.dispatch(AppAction.ResolveActionInMessage(messageTimestamp))
+                    // --- MODIFIED: Dispatch new, specific action ---
+                    store.dispatch(AppAction.UpdateActionStatus(messageTimestamp, ActionStatus.EXECUTED))
                     store.dispatch(AppAction.ExecuteActionManifestSuccess(result.summary, messageTimestamp))
                     // This is critical for data consistency: reload the graph from the disk.
                     loadHolonGraph()
                 }
                 is ActionExecutorResult.Failure -> {
-                    store.dispatch(AppAction.ExecuteActionManifestFailure(result.error))
+                    store.dispatch(AppAction.ExecuteActionManifestFailure(result.error, messageTimestamp))
                 }
             }
         }
     }
 
     fun rejectActionFromMessage(messageTimestamp: Long) {
-        // Mark the action as resolved without executing it.
-        store.dispatch(AppAction.ResolveActionInMessage(messageTimestamp))
+        // --- MODIFIED: Dispatch new, specific action ---
+        store.dispatch(AppAction.UpdateActionStatus(messageTimestamp, ActionStatus.REJECTED))
         store.dispatch(AppAction.ShowToast("Action Manifest Rejected."))
     }
 
@@ -168,7 +169,6 @@ open class StateManager(
     }
 
     fun onHolonClicked(holonId: String) {
-        // --- MODIFIED: Simplified logic ---
         inspectHolon(holonId)
         if (state.value.currentViewMode == ViewMode.CHAT) {
             toggleHolonActive(holonId)

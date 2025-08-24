@@ -15,7 +15,7 @@ package app.auf.core
  * - `app.auf.core.AppState`: The state object it operates on.
  * - `app.auf.core.AppAction`: The actions it responds to.
  *
- * @version 2.1
+ * @version 2.2
  * @since 2025-08-17
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
@@ -65,7 +65,6 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             val userMessage = ChatMessage(
                 author = Author.USER,
                 timestamp = action.timestamp,
-                // --- MODIFIED: Use the pre-parsed blocks directly ---
                 contentBlocks = action.contentBlocks
             )
             state.copy(chatHistory = state.chatHistory + userMessage)
@@ -75,7 +74,6 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                 author = Author.SYSTEM,
                 title = "System Request",
                 timestamp = action.timestamp,
-                // --- MODIFIED: Use the pre-parsed blocks directly ---
                 contentBlocks = action.contentBlocks
             )
             state.copy(chatHistory = state.chatHistory + systemMessage)
@@ -152,7 +150,6 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                     newContextIds = state.contextualHolonIds + action.holonId
                     newActiveHolons = state.activeHolons + (action.holonId to holonToAdd)
                 } else {
-                    // TODO: Holon not found in graph, do nothing. Should output atleast a warning
                     return state
                 }
             }
@@ -225,14 +222,14 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         )
         is AppAction.ExecuteActionManifestFailure -> state.copy(
             isProcessing = false,
-            toastMessage = "ERROR: ${action.error}" // Prepending ERROR for UI visibility
+            toastMessage = "ERROR: ${action.error}"
         )
-        is AppAction.ResolveActionInMessage -> {
+        is AppAction.UpdateActionStatus -> {
             val updatedHistory = state.chatHistory.map { message ->
                 if (message.timestamp == action.messageTimestamp) {
                     val updatedBlocks = message.contentBlocks.map { block ->
                         if (block is ActionBlock) {
-                            block.copy(isResolved = true)
+                            block.copy(status = action.status)
                         } else {
                             block
                         }

@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.StateManager
 import app.auf.core.ActionBlock
+import app.auf.core.ActionStatus
 import app.auf.core.AnchorBlock
 import app.auf.core.AppRequestBlock
 import app.auf.core.AppState
@@ -35,6 +36,7 @@ import app.auf.core.ChatMessage
 import app.auf.core.FileContentBlock
 import app.auf.core.GatewayStatus
 import app.auf.core.ParseErrorBlock
+import app.auf.core.SentinelBlock
 import app.auf.core.TextBlock
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -58,12 +60,6 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
         )
     }
     val borderColor = null
-    /*
-    val borderColor = when {
-        message.title == "Gateway Error" || message.title == "Graph Parsing Warning" -> MaterialTheme.colorScheme.error
-        message.author == Author.SYSTEM -> MaterialTheme.colorScheme.outlineVariant
-        else -> MaterialTheme.colorScheme.surface // Effectively no border for user/ai messages
-    }*/
     val elevation = if (message.author == Author.SYSTEM) 0.dp else 2.dp
 
     val contentToCopy = when {
@@ -82,7 +78,6 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         colors = cardColors,
         border = if (borderColor != null) BorderStroke(1.dp, color=borderColor) else null,
-        //border = if (borderColor != MaterialTheme.colorScheme.surface) BorderStroke(1.dp, borderColor) else null,
         elevation = CardDefaults.cardElevation(defaultElevation = elevation)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -165,6 +160,7 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                                 is AppRequestBlock -> RenderAppRequestBlock(block)
                                 is AnchorBlock -> RenderAnchorBlock(block)
                                 is ParseErrorBlock -> RenderParseErrorBlock(block)
+                                is SentinelBlock -> RenderSentinelBlock(block)
                             }
                         }
                     }
@@ -181,13 +177,29 @@ fun RenderTextBlock(block: TextBlock) {
 
 @Composable
 fun RenderActionBlock(block: ActionBlock, onConfirm: () -> Unit, onReject: () -> Unit) {
-    val cardColors = if (block.isResolved) CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-    ) else CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.primaryContainer
-    )
-    val borderColor = if (block.isResolved) MaterialTheme.colorScheme.outlineVariant else MaterialTheme.colorScheme.primary
-    val textColor = if (block.isResolved) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimaryContainer
+    // --- MODIFIED: Rendering logic now depends on the ActionStatus enum ---
+    val isResolved = block.status != ActionStatus.PENDING
+    val cardColors = when(block.status) {
+        ActionStatus.PENDING -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        ActionStatus.EXECUTED -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+        ActionStatus.REJECTED -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+    }
+    val borderColor = when(block.status) {
+        ActionStatus.PENDING -> MaterialTheme.colorScheme.primary
+        ActionStatus.EXECUTED -> MaterialTheme.colorScheme.tertiary
+        ActionStatus.REJECTED -> MaterialTheme.colorScheme.outlineVariant
+    }
+    val textColor = when(block.status) {
+        ActionStatus.PENDING -> MaterialTheme.colorScheme.onPrimaryContainer
+        ActionStatus.EXECUTED -> MaterialTheme.colorScheme.onTertiaryContainer
+        ActionStatus.REJECTED -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val titleText = when(block.status) {
+        ActionStatus.PENDING -> block.summary
+        ActionStatus.EXECUTED -> "${block.summary} - Executed"
+        ActionStatus.REJECTED -> "${block.summary} - Rejected"
+    }
+
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -196,8 +208,8 @@ fun RenderActionBlock(block: ActionBlock, onConfirm: () -> Unit, onReject: () ->
         elevation = CardDefaults.cardElevation(0.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(block.summary, fontWeight = FontWeight.Bold, color = textColor)
-            AnimatedVisibility(visible = !block.isResolved) {
+            Text(titleText, fontWeight = FontWeight.Bold, color = textColor)
+            AnimatedVisibility(visible = !isResolved) {
                 Column {
                     Spacer(modifier = Modifier.height(8.dp))
                     block.actions.forEach { action ->
@@ -290,6 +302,30 @@ fun RenderParseErrorBlock(block: ParseErrorBlock) {
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
         }
+    }
+}
+
+// --- NEW ---
+@Composable
+fun RenderSentinelBlock(block: SentinelBlock) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Default.Warning,
+            contentDescription = "Parser Sentinel",
+            tint = MaterialTheme.colorScheme.onSecondaryContainer
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = block.message,
+            fontStyle = FontStyle.Italic,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            fontSize = 13.sp
+        )
     }
 }
 

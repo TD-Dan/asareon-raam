@@ -14,7 +14,7 @@ package app.auf.core
  * ## Dependencies
  * - `app.auf.core.AppState`: Many actions carry payload data defined in AppState.kt.
  *
- * @version 1.9
+ * @version 2.0
  * @since 2025-08-17
  */
 sealed interface AppAction {
@@ -51,6 +51,6 @@ sealed interface AppAction {
     // --- Action Manifest Execution ---
     data class ExecuteActionManifest(val messageTimestamp: Long) : AppAction
     data class ExecuteActionManifestSuccess(val summary: String, val messageTimestamp: Long) : AppAction
-    data class ExecuteActionManifestFailure(val error: String) : AppAction
-    data class ResolveActionInMessage(val messageTimestamp: Long) : AppAction
+    data class ExecuteActionManifestFailure(val error: String, val messageTimestamp: Long) : AppAction // Added timestamp
+    data class UpdateActionStatus(val messageTimestamp: Long, val status: ActionStatus) : AppAction
 }
