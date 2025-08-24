@@ -41,8 +41,6 @@ fun main() = application {
     val platformDependencies = remember { PlatformDependencies() }
     val jsonParser = remember { JsonProvider.appJson }
 
-    remember { ChatMessage.Factory.initialize(platformDependencies) }
-
     val toolRegistry = remember {
         listOf(
             ToolDefinition(
@@ -84,6 +82,10 @@ fun main() = application {
     }
 
     val aufTextParser = remember { AufTextParser(jsonParser, toolRegistry) }
+
+    // MODIFICATION: Initialize the factory with all its dependencies, including the parser.
+    remember { ChatMessage.Factory.initialize(platformDependencies, aufTextParser) }
+
     val settingsManager = remember { SettingsManager(platformDependencies, jsonParser) }
     val savedSettings = remember { settingsManager.loadSettings() ?: UserSettings() }
 

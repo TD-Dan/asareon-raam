@@ -1,6 +1,8 @@
+
 package app.auf.core
 
 import app.auf.model.Action
+import app.auf.service.AufTextParser
 import app.auf.service.UsageMetadata
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.SerialName
@@ -215,13 +217,15 @@ data class ChatMessage internal constructor(
     companion object Factory {
         private var nextId = 0L
         private var platform: PlatformDependencies? = null
+        private var parser: AufTextParser? = null
 
         /**
-         * Initializes the factory with the necessary platform dependency.
+         * Initializes the factory with the necessary dependencies.
          * This MUST be called once at application startup.
          */
-        fun initialize(platform: PlatformDependencies) {
+        fun initialize(platform: PlatformDependencies, parser: AufTextParser) {
             this.platform = platform
+            this.parser = parser
         }
 
         private fun getTimestamp(): Long {
@@ -229,55 +233,62 @@ data class ChatMessage internal constructor(
                 ?: throw IllegalStateException("ChatMessage.Factory has not been initialized. Call Factory.initialize() at app startup.")
         }
 
+        private fun getParser(): AufTextParser {
+            return parser
+                ?: throw IllegalStateException("ChatMessage.Factory has not been initialized with a parser.")
+        }
+
         /**
-         * Creates a new message from the USER.
+         * Creates a new message from the USER's raw text input.
+         * The rawContent is the source of truth.
          */
-        fun createUser(contentBlocks: List<ContentBlock>): ChatMessage {
+        fun createUser(rawContent: String): ChatMessage {
             return ChatMessage(
                 id = ++nextId,
                 author = Author.USER,
                 title = null,
                 timestamp = getTimestamp(),
-                contentBlocks = contentBlocks,
+                contentBlocks = getParser().parse(rawContent),
                 usageMetadata = null,
-                rawContent = null // User messages are built from blocks, no raw content.
+                rawContent = rawContent
             )
         }
 
         /**
-         * Creates a new message from the AI.
+         * Creates a new message from the AI's raw text response.
+         * The rawContent is the source of truth.
          */
         fun createAi(
-            contentBlocks: List<ContentBlock>,
-            usageMetadata: UsageMetadata?,
-            rawContent: String?
+            rawContent: String,
+            usageMetadata: UsageMetadata?
         ): ChatMessage {
             return ChatMessage(
                 id = ++nextId,
                 author = Author.AI,
                 title = "AI",
                 timestamp = getTimestamp(),
-                contentBlocks = contentBlocks,
+                contentBlocks = getParser().parse(rawContent),
                 usageMetadata = usageMetadata,
                 rawContent = rawContent
             )
         }
 
         /**
-         * Creates a new SYSTEM message.
+         * Creates a new SYSTEM message from a raw text source (e.g., a file).
+         * The rawContent is the source of truth.
          */
         fun createSystem(
             title: String,
-            contentBlocks: List<ContentBlock>
+            rawContent: String
         ): ChatMessage {
             return ChatMessage(
                 id = ++nextId,
                 author = Author.SYSTEM,
                 title = title,
                 timestamp = getTimestamp(),
-                contentBlocks = contentBlocks,
+                contentBlocks = getParser().parse(rawContent),
                 usageMetadata = null,
-                rawContent = null
+                rawContent = rawContent
             )
         }
     }

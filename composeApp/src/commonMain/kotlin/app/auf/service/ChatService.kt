@@ -1,20 +1,13 @@
 package app.auf.service
 
-import app.auf.core.ActionBlock
-import app.auf.core.AnchorBlock
 import app.auf.core.AppAction
 import app.auf.core.AppRequestBlock
 import app.auf.core.Author
 import app.auf.core.ChatMessage
-import app.auf.core.ContentBlock
-import app.auf.core.FileContentBlock
 import app.auf.core.Holon
-import app.auf.core.ParseErrorBlock
-import app.auf.core.SentinelBlock
 import app.auf.core.Store
 import app.auf.core.TextBlock
 import app.auf.core.Version
-import app.auf.model.Action
 import app.auf.model.ToolDefinition
 import app.auf.util.BasePath
 import app.auf.util.JsonProvider
@@ -23,21 +16,18 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.JsonObject
 
 /**
  * Service dedicated to handling all business logic related to AI chat interactions.
- * It uses a provided tool registry to generate manifests and understand AI commands.
  *
- * @version 2.3
+ * @version 2.5
  * @since 2025-08-17
  */
 open class ChatService(
     private val store: Store,
     private val gatewayService: GatewayService,
     private val platform: PlatformDependencies,
-    private val parser: AufTextParser,
+    private val parser: AufTextParser, // Still needed for parsing content blocks for system status display for example, but NOT for reconstruction
     private val toolRegistry: List<ToolDefinition>,
     private val coroutineScope: CoroutineScope
 ) {
@@ -58,14 +48,13 @@ open class ChatService(
             val response = gatewayService.sendMessage(state.selectedModel, fullContextForApi)
 
             if (response.errorMessage != null) {
-                println("GATEWAY ERROR: ${response.errorMessage}")
                 store.dispatch(AppAction.SendMessageFailure(response.errorMessage))
-                activeJob = null
-                return@launch
+            } else {
+                store.dispatch(AppAction.SendMessageSuccess(response))
             }
-            store.dispatch(AppAction.SendMessageSuccess(response))
             activeJob = null
 
+            // MODIFICATION: Check for app requests *after* the AI message has been added
             val latestState = store.state.value
             val lastMessage = latestState.chatHistory.lastOrNull()
             if (lastMessage != null && lastMessage.author == Author.AI) {
@@ -89,19 +78,19 @@ open class ChatService(
         messages.add(
             ChatMessage.createSystem(
                 title = "framework_protocol.md",
-                contentBlocks = listOf(TextBlock(platform.readFileContent(protocolPath)))
+                rawContent = platform.readFileContent(protocolPath)
             )
         )
         messages.add(
             ChatMessage.createSystem(
                 title = "REAL TIME SYSTEM STATUS",
-                contentBlocks = listOf(TextBlock(generateSystemStatusMessage()))
+                rawContent = generateSystemStatusMessage()
             )
         )
         messages.add(
             ChatMessage.createSystem(
                 title = "Host Tool Manifest",
-                contentBlocks = listOf(TextBlock(generateDynamicToolManifest()))
+                rawContent = generateDynamicToolManifest()
             )
         )
 
@@ -111,7 +100,7 @@ open class ChatService(
                 messages.add(
                     ChatMessage.createSystem(
                         title = platform.getFileName(holon.header.id + ".json"),
-                        contentBlocks = listOf(TextBlock(holonContentString))
+                        rawContent = holonContentString
                     )
                 )
             }
@@ -126,34 +115,32 @@ open class ChatService(
         val fullContext = systemMessages + historyForApi
 
         return fullContext.joinToString("\n\n") { msg ->
-            val reconstructedContent = msg.rawContent ?: msg.contentBlocks.joinToString(separator = "\n") { block ->
-                reconstructBlockToString(block)
-            }
+            // MODIFICATION: Logic simplified. Prioritize rawContent, fall back to TextBlocks only if rawContent is null.
+            val content = msg.rawContent ?: msg.contentBlocks.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
             when (msg.author) {
                 Author.USER, Author.AI -> {
                     val role = if (msg.author == Author.AI) "model" else "USER"
-                    "--- $role MESSAGE ---\n$reconstructedContent"
+                    "--- $role MESSAGE ---\n$content"
                 }
-                Author.SYSTEM -> {
-                    "--- START OF FILE ${msg.title} ---\n$reconstructedContent"
-                }
+                Author.SYSTEM -> "--- START OF FILE ${msg.title} ---\n$content"
             }
         }
     }
 
-    private fun sendSystemMessage(message: String) {
-        val contentBlocks: List<ContentBlock> = parser.parse(message)
-        store.dispatch(AppAction.AddSystemMessage(contentBlocks))
-        sendMessage()
-    }
+    // DELETED: sendSystemMessage helper function is removed as AppAction.AddSystemMessage is now direct.
 
     private fun handleAppRequests(message: ChatMessage) {
         message.contentBlocks.filterIsInstance<AppRequestBlock>().forEach { request ->
             when (request.requestType) {
                 "START_DREAM_CYCLE" -> {
-                    sendSystemMessage(
-                        "Please perform a 'Dream Cycle Simulation' based on our recent interaction."
+                    // MODIFICATION: Dispatch the new AddSystemMessage action directly, providing title and raw content.
+                    store.dispatch(
+                        AppAction.AddSystemMessage(
+                            title = "App Request", // Provide a descriptive title for this system message
+                            rawContent = "Please perform a 'Dream Cycle Simulation' based on our recent interaction."
+                        )
                     )
+                    sendMessage() // Send the new system message to the AI
                 }
             }
         }
@@ -182,33 +169,6 @@ open class ChatService(
             *   **Description:** ${tool.description}
             *   **Usage:** `${tool.usage}`
             """.trimIndent()
-        }
-    }
-
-    private fun reconstructBlockToString(block: ContentBlock): String {
-        return when (block) {
-            is TextBlock -> block.text
-            is ActionBlock -> {
-                val command = toolRegistry.find { it.name == "Action Manifest" }?.command ?: "ACTION_MANIFEST"
-                val content = JsonProvider.appJson.encodeToString(ListSerializer(Action.serializer()), block.actions)
-                "[AUF_${command}]\n$content\n[/AUF_${command}]"
-            }
-            is FileContentBlock -> {
-                val command = toolRegistry.find { it.name == "File View" }?.command ?: "FILE_VIEW"
-                val langParam = block.language?.let { ", language=\"$it\"" } ?: ""
-                "[AUF_${command}(path=\"${block.fileName}\"$langParam)]\n${block.content}\n[/AUF_${command}]"
-            }
-            is AppRequestBlock -> {
-                val command = toolRegistry.find { it.name == "App Request" }?.command ?: "APP_REQUEST"
-                "[AUF_${command}]${block.requestType}[/AUF_${command}]"
-            }
-            is AnchorBlock -> {
-                val command = toolRegistry.find { it.name == "State Anchor" }?.command ?: "STATE_ANCHOR"
-                val content = JsonProvider.appJson.encodeToString(JsonObject.serializer(), block.content)
-                "[AUF_${command}]\n$content\n[/AUF_${command}]"
-            }
-            is ParseErrorBlock -> "<!-- PARSE ERROR: ${block.errorMessage} | RAW: ${block.rawContent} -->"
-            is SentinelBlock -> "<!-- SENTINEL: ${block.message} -->"
         }
     }
 }

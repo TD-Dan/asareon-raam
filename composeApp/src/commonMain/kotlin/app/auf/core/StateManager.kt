@@ -1,4 +1,3 @@
-// --- FILE: commonMain/kotlin/app/auf/core/StateManager.kt ---
 package app.auf.core
 
 import app.auf.model.UserSettings
@@ -37,7 +36,7 @@ import app.auf.service.AufTextParser
  * - `app.auf.util.PlatformDependencies`: The single bridge to the host OS.
  * - `kotlinx.coroutines.CoroutineScope`
  *
- * @version 5.1
+ * @version 5.2
  * @since 2025-08-17
  */
 open class StateManager(
@@ -85,8 +84,8 @@ open class StateManager(
     // --- Chat Logic Delegation ---
     fun sendMessage(message: String) {
         if (state.value.isProcessing || state.value.aiPersonaId == null) return
-        val contentBlocks = parser.parse(message)
-        store.dispatch(AppAction.AddUserMessage(contentBlocks))
+        // MODIFICATION: No parsing happens here. Dispatch the raw string directly.
+        store.dispatch(AppAction.AddUserMessage(message))
         chatService.sendMessage()
     }
 

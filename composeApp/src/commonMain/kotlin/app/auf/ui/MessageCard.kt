@@ -62,17 +62,11 @@ import kotlinx.serialization.json.JsonObject
 
 /**
  * ## Mandate
- * This file contains the `MessageCard` Composable and its various sub-renderers
- * (`RenderTextBlock`, `RenderActionBlock`, etc.). Its responsibility is to display a single
- * `ChatMessage` from the application state. It is a "dumb" component that receives state
- * and emits events (e.g., button clicks) up to the `StateManager`.
+ * This file contains the `MessageCard` Composable. Its responsibility is to display a single
+ * `ChatMessage`. It is a "dumb" component that receives state and emits events.
+ * It uses the message's `rawContent` as the source of truth for display and copy actions.
  *
- * ---
- * ## Dependencies
- * - `app.auf.core.StateManager`: To format timestamps and dispatch actions.
- * - `app.auf.core.AppState`: For the various `ContentBlock` and `ChatMessage` models.
- *
- * @version 1.3
+ * @version 1.5
  * @since 2025-08-24
  */
 @Composable
@@ -96,12 +90,14 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
     val borderColor = null
     val elevation = if (message.author == Author.SYSTEM) 0.dp else 2.dp
 
-    val contentToCopy = when {
-        message.rawContent != null -> message.rawContent
-        else -> message.contentBlocks.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
+    // MODIFICATION: The logic for copying content is now unified and authoritative
+    val contentToCopy = remember(message) {
+        // Prioritize rawContent. If null, fall back to joining TextBlocks.
+        // This should theoretically only occur for internal system messages if they aren't provided with rawContent.
+        message.rawContent ?: message.contentBlocks.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
     }
     val showCopyButton = contentToCopy.isNotBlank()
-    val titleForCopy = message.title ?: "untitled"
+    val titleForCopy = message.title ?: message.author.name
     val guardedCopyContent = "---COPY of ${titleForCopy}:---\n$contentToCopy\n---END OF COPY of ${titleForCopy}---"
 
     val formattedTimestamp = remember(message.timestamp) {
@@ -140,10 +136,13 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { showRaw = !showRaw }, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.Code, contentDescription = "View Raw Content", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // Only show raw view if raw content exists for this message
+                    if (message.rawContent != null) {
+                        IconButton(onClick = { showRaw = !showRaw }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.Code, contentDescription = "View Raw Content", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Spacer(Modifier.width(4.dp))
                     }
-                    Spacer(Modifier.width(4.dp))
                     if (showCopyButton) {
                         IconButton(onClick = {
                             clipboardManager.setText(AnnotatedString(guardedCopyContent))
@@ -187,8 +186,9 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
             AnimatedVisibility(visible = !isCollapsed) {
                 Column {
                     Spacer(Modifier.height(8.dp))
-                    if (showRaw) {
-                        RenderRawContent(message)
+                    // MODIFICATION: RenderRawContent now takes the string directly
+                    if (showRaw && message.rawContent != null) {
+                        RenderRawContent(message.rawContent)
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             message.contentBlocks.forEach { block ->
@@ -214,36 +214,9 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
     }
 }
 
-private fun getRawContentForDisplay(message: ChatMessage): String {
-    if (message.rawContent != null) return message.rawContent
-
-    val jsonPrettyPrinter = Json { prettyPrint = true }
-
-    return message.contentBlocks.joinToString("\n\n") { block ->
-        when (block) {
-            is TextBlock -> block.text
-            is ActionBlock -> {
-                val content = jsonPrettyPrinter.encodeToString(ListSerializer(Action.serializer()), block.actions)
-                "[AUF_ACTION_MANIFEST]\n$content\n[/AUF_ACTION_MANIFEST]"
-            }
-            is FileContentBlock -> {
-                val langParam = block.language?.let { ", language=\"$it\"" } ?: ""
-                "[AUF_FILE_VIEW(path=\"${block.fileName}\"$langParam)]\n${block.content}\n[/AUF_FILE_VIEW]"
-            }
-            is AppRequestBlock -> "[AUF_APP_REQUEST]${block.requestType}[/AUF_APP_REQUEST]"
-            is AnchorBlock -> {
-                val content = jsonPrettyPrinter.encodeToString(JsonObject.serializer(), block.content)
-                "[AUF_STATE_ANCHOR]\n$content\n[/AUF_STATE_ANCHOR]"
-            }
-            is ParseErrorBlock -> "<!-- PARSE ERROR: ${block.errorMessage} | ORIGINAL TAG: ${block.originalTag} -->\n${block.rawContent}"
-            is SentinelBlock -> "<!-- SENTINEL: ${block.message} -->"
-        }
-    }
-}
-
+// MODIFICATION: RenderRawContent now takes the string directly
 @Composable
-fun RenderRawContent(message: ChatMessage) {
-    val rawContent = remember(message) { getRawContentForDisplay(message) }
+fun RenderRawContent(rawContent: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -375,9 +348,11 @@ fun RenderParseErrorBlock(block: ParseErrorBlock) {
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
-                text = "Parse Error: [AUF_${block.originalTag}]",
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onErrorContainer
+                text = """
+                        <!-- PARSE ERROR: Unknown tool command. | RAW:  -->
+                    """,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onErrorContainer
             )
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.error)
             Text(

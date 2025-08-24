@@ -14,8 +14,8 @@ package app.auf.core
  * ## Dependencies
  * - `app.auf.core.AppState`: Many actions carry payload data defined in AppState.kt.
  *
- * @version 2.4
- * @since 2025-08-17
+ * @version 2.5
+ * @since 2025-08-24
  */
 sealed interface AppAction {
 
@@ -26,7 +26,7 @@ sealed interface AppAction {
 
     // --- Chat & Gateway Actions ---
     data class AddUserMessage(val rawContent: String) : AppAction
-    data class AddSystemMessage(val contentBlocks: List<ContentBlock>) : AppAction
+    data class AddSystemMessage(val title: String, val rawContent: String) : AppAction
     data object SendMessageLoading : AppAction
     data class SendMessageSuccess(val response: GatewayResponse) : AppAction
     data class SendMessageFailure(val error: String) : AppAction

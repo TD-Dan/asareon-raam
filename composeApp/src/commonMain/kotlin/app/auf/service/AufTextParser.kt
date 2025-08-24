@@ -20,16 +20,15 @@ import kotlinx.serialization.json.jsonPrimitive
  * ---
  * ## Mandate
  * This class's sole responsibility is to convert a raw string from an AI into a structured
- * list of `ContentBlock`s. It implements a state machine to handle the `[AUF_COMMAND(...)]...[/AUF]`
- * syntax, validating against a provided tool registry. It must be resilient to syntax variations
- * and provide clear error reporting.
+ * list of `ContentBlock`s. It is the single source of truth for interpreting the AUF
+ * tagged-text data contract.
  *
  * ---
  * ## Dependencies
  * - `app.auf.model.ToolDefinition`: The schema for available tools.
  * - `kotlinx.serialization.json.Json`: For parsing JSON payloads in specific blocks.
  *
- * @version 2.4
+ * @version 3.0
  * @since 2025-08-24
  */
 class AufTextParser(
@@ -51,30 +50,34 @@ class AufTextParser(
         while (currentIndex < rawText.length) {
             when (currentState) {
                 State.SCANNING -> {
-                    val nextTagIndex = rawText.indexOf("[AUF", startIndex = currentIndex, ignoreCase = true)
-
-                    if (nextTagIndex == -1) {
+                    val nextTagStart = rawText.indexOf("[AUF_", startIndex = currentIndex)
+                    if (nextTagStart == -1) {
                         val remainingText = rawText.substring(currentIndex)
                         if (remainingText.isNotBlank()) {
-                            blocks.add(TextBlock(remainingText.trim()))
+                            blocks.add(TextBlock(remainingText))
                         }
                         currentIndex = rawText.length
                         continue
                     }
 
-                    val textBeforeTag = rawText.substring(currentIndex, nextTagIndex)
-                    if (textBeforeTag.isNotBlank()) {
-                        blocks.add(TextBlock(textBeforeTag.trim()))
+                    // Add preceding text as a TextBlock
+                    if (nextTagStart > currentIndex) {
+                        val text = rawText.substring(currentIndex, nextTagStart)
+                        if (text.isNotBlank()) {
+                            blocks.add(TextBlock(text))
+                        }
                     }
 
-                    val tagContentEnd = rawText.indexOf(']', startIndex = nextTagIndex)
+                    // Parse the tag content
+                    val tagContentStart = nextTagStart + 4 // Skip "[AUF_"
+                    val tagContentEnd = rawText.indexOf("]", startIndex = tagContentStart)
                     if (tagContentEnd == -1) {
-                        blocks.add(ParseErrorBlock("UNKNOWN", rawText.substring(nextTagIndex), "Unclosed start tag found."))
+                        blocks.add(ParseErrorBlock("UNKNOWN", rawText.substring(nextTagStart), "Unclosed start tag found."))
                         currentIndex = rawText.length
                         continue
                     }
 
-                    val fullTagContent = rawText.substring(nextTagIndex + 4, tagContentEnd)
+                    val fullTagContent = rawText.substring(nextTagStart + 4, tagContentEnd)
                     val paramStartIndex = fullTagContent.indexOf('(')
 
                     val commandString = (if (paramStartIndex != -1) {
@@ -110,6 +113,7 @@ class AufTextParser(
                             continue
                         }
                     } else {
+                        // If no explicit parameters are provided, apply defaults if any
                         params = tool.parameters.filter { it.defaultValue != null }
                             .associate { it.name to it.defaultValue.toString() }
                     }
@@ -145,6 +149,7 @@ class AufTextParser(
         }
         return blocks.filter { (it as? TextBlock)?.text?.isNotBlank() ?: true }
     }
+
 
     private fun parseParameters(paramString: String, tool: ToolDefinition): Map<String, String>? {
         val parsed = mutableMapOf<String, String>()

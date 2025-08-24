@@ -15,7 +15,7 @@ package app.auf.core
  * - `app.auf.core.AppState`: The state object it operates on.
  * - `app.auf.core.AppAction`: The actions it responds to.
  *
- * @version 2.6
+ * @version 2.7
  * @since 2025-08-17
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
@@ -40,7 +40,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
 
                 val errorMessage = ChatMessage.createSystem(
                     title = "Graph Parsing Warning",
-                    contentBlocks = listOf(TextBlock(errorContent))
+                    rawContent = errorContent
                 )
                 newChatHistory = newChatHistory + errorMessage
             }
@@ -62,17 +62,17 @@ fun appReducer(state: AppState, action: AppAction): AppState {
 
         // --- Chat & Gateway ---
         is AppAction.AddUserMessage -> {
-            val userMessage = ChatMessage.createUser(
-                contentBlocks = action.contentBlocks
-            )
+            // MODIFICATION: Create the user message from the raw string in the action.
+            val userMessage = ChatMessage.createUser(rawContent = action.rawContent)
             state.copy(
                 chatHistory = state.chatHistory + userMessage
             )
         }
         is AppAction.AddSystemMessage -> {
+            // MODIFICATION: Create the system message from the raw string in the action.
             val systemMessage = ChatMessage.createSystem(
-                title = "System Request",
-                contentBlocks = action.contentBlocks
+                title = action.title,
+                rawContent = action.rawContent
             )
             state.copy(
                 chatHistory = state.chatHistory + systemMessage
@@ -83,10 +83,10 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             errorMessage = null
         )
         is AppAction.SendMessageSuccess -> {
+            // MODIFICATION: Use the updated factory, providing a fallback for safety.
             val aiMessage = ChatMessage.createAi(
-                contentBlocks = action.response.contentBlocks,
-                usageMetadata = action.response.usageMetadata,
-                rawContent = action.response.rawContent
+                rawContent = action.response.rawContent ?: "Error: AI response was null.",
+                usageMetadata = action.response.usageMetadata
             )
             state.copy(
                 isProcessing = false,
@@ -94,9 +94,10 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             )
         }
         is AppAction.SendMessageFailure -> {
+            // MODIFICATION: Use the updated factory.
             val errorChatMessage = ChatMessage.createSystem(
                 title = "Gateway Error",
-                contentBlocks = listOf(TextBlock(action.error))
+                rawContent = action.error
             )
             state.copy(
                 isProcessing = false,
