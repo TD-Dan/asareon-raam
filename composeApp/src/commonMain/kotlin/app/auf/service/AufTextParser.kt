@@ -29,7 +29,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * - `app.auf.model.ToolDefinition`: The schema for available tools.
  * - `kotlinx.serialization.json.Json`: For parsing JSON payloads in specific blocks.
  *
- * @version 2.1
+ * @version 2.4
  * @since 2025-08-24
  */
 class AufTextParser(
@@ -43,8 +43,10 @@ class AufTextParser(
         val blocks = mutableListOf<ContentBlock>()
         var currentState = State.SCANNING
         var currentIndex = 0
+
         var activeTool: ToolDefinition? = null
-        var activeTagFormat: String = "" // Stores the original format, e.g., "_ACTION_MANIFEST"
+        var activeCommandForEndTag: String = ""
+        var activeParams: Map<String, String> = emptyMap()
 
         while (currentIndex < rawText.length) {
             when (currentState) {
@@ -72,28 +74,55 @@ class AufTextParser(
                         continue
                     }
 
-                    val fullTagContent = rawText.substring(nextTagIndex + 1, tagContentEnd)
-                    val commandPart = fullTagContent.substringAfter("AUF").trim()
-                    activeTagFormat = commandPart // Store original format for end tag search
+                    val fullTagContent = rawText.substring(nextTagIndex + 4, tagContentEnd)
+                    val paramStartIndex = fullTagContent.indexOf('(')
 
-                    val normalizedCommand = commandPart.replace("_", "").replace(" ", "").uppercase()
+                    val commandString = (if (paramStartIndex != -1) {
+                        fullTagContent.substring(0, paramStartIndex)
+                    } else {
+                        fullTagContent
+                    }).trim()
+
+                    activeCommandForEndTag = commandString // Store exact command for end tag
+
+                    val normalizedCommand = commandString.replace("_", "").replace(" ", "").uppercase()
                     val tool = toolRegistry.find { it.command.replace("_", "").uppercase() == normalizedCommand }
 
                     if (tool == null) {
-                        blocks.add(ParseErrorBlock(commandPart, "", "Unknown tool command."))
+                        blocks.add(ParseErrorBlock(commandString, "", "Unknown tool command."))
                         currentIndex = tagContentEnd + 1
                         continue
                     }
 
+                    var params: Map<String, String>? = emptyMap()
+                    if (paramStartIndex != -1) {
+                        val paramEndIndex = fullTagContent.lastIndexOf(')')
+                        if (paramEndIndex == -1 || paramEndIndex < paramStartIndex) {
+                            blocks.add(ParseErrorBlock(commandString, fullTagContent, "Malformed parameters: Unclosed parenthesis."))
+                            currentIndex = tagContentEnd + 1
+                            continue
+                        }
+                        val paramContent = fullTagContent.substring(paramStartIndex + 1, paramEndIndex)
+                        params = parseParameters(paramContent, tool)
+                        if (params == null) {
+                            blocks.add(ParseErrorBlock(commandString, paramContent, "Failed to parse parameters. Check syntax (key=\"value\")."))
+                            currentIndex = tagContentEnd + 1
+                            continue
+                        }
+                    } else {
+                        params = tool.parameters.filter { it.defaultValue != null }
+                            .associate { it.name to it.defaultValue.toString() }
+                    }
+
                     activeTool = tool
+                    activeParams = params
                     currentState = State.TOOL_ACTIVE
                     currentIndex = tagContentEnd + 1
                 }
 
                 State.TOOL_ACTIVE -> {
                     val tool = activeTool ?: break
-                    // Use the original format to find the closing tag
-                    val endTag = "[/AUF${activeTagFormat}]"
+                    val endTag = "[/AUF${activeCommandForEndTag}]"
                     val endTagIndex = rawText.indexOf(endTag, startIndex = currentIndex, ignoreCase = true)
 
                     if (endTagIndex == -1) {
@@ -104,15 +133,47 @@ class AufTextParser(
                     }
 
                     val payload = rawText.substring(currentIndex, endTagIndex).trim()
-                    blocks.add(processBlock(tool, emptyMap(), payload))
+                    blocks.add(processBlock(tool, activeParams, payload))
 
                     currentIndex = endTagIndex + endTag.length
                     activeTool = null
+                    activeParams = emptyMap()
+                    activeCommandForEndTag = ""
                     currentState = State.SCANNING
                 }
             }
         }
         return blocks.filter { (it as? TextBlock)?.text?.isNotBlank() ?: true }
+    }
+
+    private fun parseParameters(paramString: String, tool: ToolDefinition): Map<String, String>? {
+        val parsed = mutableMapOf<String, String>()
+        if (paramString.isBlank()) {
+            // Still need to apply defaults even if params are empty
+        } else {
+            try {
+                paramString.split(',').forEach { pair ->
+                    if (pair.isBlank()) return@forEach
+                    val parts = pair.split('=', limit = 2)
+                    if (parts.size != 2) return null
+
+                    val key = parts[0].trim()
+                    val valueWithQuotes = parts[1].trim()
+
+                    if (!valueWithQuotes.startsWith('"') || !valueWithQuotes.endsWith('"')) return null
+                    parsed[key] = valueWithQuotes.substring(1, valueWithQuotes.length - 1)
+                }
+            } catch (e: Exception) {
+                return null
+            }
+        }
+
+        tool.parameters.forEach { paramDef ->
+            if (!parsed.containsKey(paramDef.name) && paramDef.defaultValue != null) {
+                parsed[paramDef.name] = paramDef.defaultValue.toString()
+            }
+        }
+        return parsed
     }
 
     private fun processBlock(tool: ToolDefinition, params: Map<String, String>, content: String): ContentBlock {
@@ -123,7 +184,11 @@ class AufTextParser(
                     val actions = jsonParser.decodeFromString(ListSerializer(Action.serializer()), cleanContent)
                     ActionBlock(actions = actions)
                 }
-                "FILEVIEW" -> FileContentBlock(fileName = params["path"] ?: "unknown file", content = content, language = params["language"])
+                "FILEVIEW" -> FileContentBlock(
+                    fileName = params["path"] ?: "unknown file",
+                    content = content,
+                    language = params["language"]
+                )
                 "APPREQUEST" -> AppRequestBlock(requestType = content)
                 "STATEANCHOR" -> {
                     val jsonObject = jsonParser.decodeFromString<JsonObject>(content)
