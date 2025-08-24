@@ -1,4 +1,3 @@
-// --- FILE: commonMain/kotlin/app/auf/core/AppAction.kt ---
 package app.auf.core
 
 /**
@@ -15,7 +14,7 @@ package app.auf.core
  * ## Dependencies
  * - `app.auf.core.AppState`: Many actions carry payload data defined in AppState.kt.
  *
- * @version 2.3
+ * @version 2.4
  * @since 2025-08-17
  */
 sealed interface AppAction {
@@ -26,7 +25,7 @@ sealed interface AppAction {
     data class LoadGraphFailure(val error: String) : AppAction
 
     // --- Chat & Gateway Actions ---
-    data class AddUserMessage(val contentBlocks: List<ContentBlock>) : AppAction
+    data class AddUserMessage(val rawContent: String) : AppAction
     data class AddSystemMessage(val contentBlocks: List<ContentBlock>) : AppAction
     data object SendMessageLoading : AppAction
     data class SendMessageSuccess(val response: GatewayResponse) : AppAction
