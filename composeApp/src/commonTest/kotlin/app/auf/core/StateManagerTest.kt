@@ -21,11 +21,17 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 class StateManagerTest {
+
+    @BeforeTest
+    fun initializeFactory() {
+        ChatMessage.Factory.initialize(FakePlatformDependencies())
+    }
 
     private fun setupTestEnvironment(
         initialState: AppState = AppState(),
@@ -36,16 +42,12 @@ class StateManagerTest {
         val backupManager = FakeBackupManager(platform)
         val graphService = FakeGraphService()
         val sourceCodeService = FakeSourceCodeService(platform)
-        val gatewayService = FakeGatewayService(scope)
         val jsonParser = JsonProvider.appJson
 
-        // --- FIX: Create the toolRegistry first ---
-        val toolRegistry = listOf<ToolDefinition>() // An empty list is sufficient for these tests
-
-        // --- FIX: Inject the toolRegistry into the parser ---
+        val toolRegistry = listOf<ToolDefinition>()
         val parser = AufTextParser(jsonParser, toolRegistry)
 
-        // --- FIX: Inject the toolRegistry into the chat service ---
+        val gatewayService = FakeGatewayService(scope, toolRegistry)
         val chatService = FakeChatService(store, gatewayService, platform, parser, toolRegistry, scope)
 
         val actionExecutor = FakeActionExecutor(platform, jsonParser)
@@ -74,15 +76,18 @@ class StateManagerTest {
     @Test
     fun `executeActionFromMessage success path dispatches correct actions and reloads graph`() = runTest {
         val manifest = listOf(CreateFile("test.txt", "content", "Create test file"))
-        val actionMessage = ChatMessage(
-            author = Author.AI, timestamp = 12345L,
-            contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING))
+        val actionMessage = ChatMessage.Factory.createAi(
+            contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING)),
+            usageMetadata = null,
+            rawContent = null
         )
+        val messageTimestamp = actionMessage.timestamp
+
         val initialState = AppState(chatHistory = listOf(actionMessage), aiPersonaId = "sage-1")
         val (stateManager, store, fakeActionExecutor) = setupTestEnvironment(initialState, this)
         fakeActionExecutor.nextResult = ActionExecutorResult.Success("Manifest executed.")
 
-        stateManager.executeActionFromMessage(12345L)
+        stateManager.executeActionFromMessage(messageTimestamp)
 
         runCurrent()
 
@@ -101,15 +106,18 @@ class StateManagerTest {
     @Test
     fun `executeActionFromMessage failure path dispatches failure action`() = runTest {
         val manifest = listOf<Action>(CreateFile("test.txt", "content", "Create test file"))
-        val actionMessage = ChatMessage(
-            author = Author.AI, timestamp = 12345L,
-            contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING))
+        val actionMessage = ChatMessage.Factory.createAi(
+            contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING)),
+            usageMetadata = null,
+            rawContent = null
         )
+        val messageTimestamp = actionMessage.timestamp
+
         val initialState = AppState(chatHistory = listOf(actionMessage))
         val (stateManager, store, fakeActionExecutor) = setupTestEnvironment(initialState, this)
         fakeActionExecutor.nextResult = ActionExecutorResult.Failure("File not found.")
 
-        stateManager.executeActionFromMessage(12345L)
+        stateManager.executeActionFromMessage(messageTimestamp)
 
         runCurrent()
 

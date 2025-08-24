@@ -14,24 +14,25 @@ package app.auf.core
  * ## Dependencies
  * - `app.auf.core.AppState`: Many actions carry payload data defined in AppState.kt.
  *
- * @version 2.0
+ * @version 2.1
  * @since 2025-08-17
  */
 sealed interface AppAction {
 
     // --- Graph Loading Actions ---
     data object LoadGraph : AppAction
-    data class LoadGraphSuccess(val result: GraphLoadResult, val timestamp: Long) : AppAction
+    // --- MODIFIED: Timestamp is no longer needed; the factory will generate it. ---
+    data class LoadGraphSuccess(val result: GraphLoadResult) : AppAction
     data class LoadGraphFailure(val error: String) : AppAction
 
     // --- Chat & Gateway Actions ---
-    data class AddUserMessage(val contentBlocks: List<ContentBlock>, val timestamp: Long) : AppAction
-    data class AddSystemMessage(val contentBlocks: List<ContentBlock>, val timestamp: Long) : AppAction
+    data class AddUserMessage(val contentBlocks: List<ContentBlock>) : AppAction
+    data class AddSystemMessage(val contentBlocks: List<ContentBlock>) : AppAction
     data object SendMessageLoading : AppAction
-    data class SendMessageSuccess(val response: GatewayResponse, val timestamp: Long) : AppAction
-    data class SendMessageFailure(val error: String, val timestamp: Long) : AppAction
+    data class SendMessageSuccess(val response: GatewayResponse) : AppAction
+    data class SendMessageFailure(val error: String) : AppAction
     data object CancelMessage : AppAction
-    data class DeleteMessage(val timestamp: Long) : AppAction
+    data class DeleteMessage(val id: Long) : AppAction
 
     // --- UI & View Actions ---
     data class SetViewMode(val mode: ViewMode) : AppAction
@@ -51,6 +52,6 @@ sealed interface AppAction {
     // --- Action Manifest Execution ---
     data class ExecuteActionManifest(val messageTimestamp: Long) : AppAction
     data class ExecuteActionManifestSuccess(val summary: String, val messageTimestamp: Long) : AppAction
-    data class ExecuteActionManifestFailure(val error: String, val messageTimestamp: Long) : AppAction // Added timestamp
+    data class ExecuteActionManifestFailure(val error: String, val messageTimestamp: Long) : AppAction
     data class UpdateActionStatus(val messageTimestamp: Long, val status: ActionStatus) : AppAction
 }

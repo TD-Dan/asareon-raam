@@ -36,7 +36,7 @@ import app.auf.service.AufTextParser
  * - `app.auf.util.PlatformDependencies`: The single bridge to the host OS.
  * - `kotlinx.coroutines.CoroutineScope`
  *
- * @version 4.8
+ * @version 4.9
  * @since 2025-08-17
  */
 open class StateManager(
@@ -69,7 +69,7 @@ open class StateManager(
             if (result.fatalError != null) {
                 store.dispatch(AppAction.LoadGraphFailure(result.fatalError))
             } else {
-                store.dispatch(AppAction.LoadGraphSuccess(result, platform.getSystemTimeMillis()))
+                store.dispatch(AppAction.LoadGraphSuccess(result))
             }
         }
     }
@@ -85,7 +85,7 @@ open class StateManager(
     fun sendMessage(message: String) {
         if (state.value.isProcessing || state.value.aiPersonaId == null) return
         val contentBlocks = parser.parse(message)
-        store.dispatch(AppAction.AddUserMessage(contentBlocks, platform.getSystemTimeMillis()))
+        store.dispatch(AppAction.AddUserMessage(contentBlocks))
         chatService.sendMessage()
     }
 
@@ -105,8 +105,8 @@ open class StateManager(
         return platform.formatDisplayTimestamp(timestamp)
     }
 
-    fun deleteMessage(timestamp: Long) {
-        store.dispatch(AppAction.DeleteMessage(timestamp))
+    fun deleteMessage(id: Long) {
+        store.dispatch(AppAction.DeleteMessage(id))
     }
 
     fun rerunMessage(timestamp: Long) {
@@ -135,7 +135,6 @@ open class StateManager(
 
             when (result) {
                 is ActionExecutorResult.Success -> {
-                    // --- MODIFIED: Dispatch new, specific action ---
                     store.dispatch(AppAction.UpdateActionStatus(messageTimestamp, ActionStatus.EXECUTED))
                     store.dispatch(AppAction.ExecuteActionManifestSuccess(result.summary, messageTimestamp))
                     // This is critical for data consistency: reload the graph from the disk.
@@ -149,7 +148,6 @@ open class StateManager(
     }
 
     fun rejectActionFromMessage(messageTimestamp: Long) {
-        // --- MODIFIED: Dispatch new, specific action ---
         store.dispatch(AppAction.UpdateActionStatus(messageTimestamp, ActionStatus.REJECTED))
         store.dispatch(AppAction.ShowToast("Action Manifest Rejected."))
     }
@@ -218,6 +216,8 @@ open class StateManager(
         val headersToExport = holonsToExport.map { it.header }
         importExportViewModel.importExportManager.executeExport(destinationPath, headersToExport)
     }
+
+
 
     fun copyCodebaseToClipboard() {
         coroutineScope.launch {

@@ -9,9 +9,13 @@ import app.auf.service.GatewayService
 import app.auf.util.JsonProvider
 import kotlinx.coroutines.CoroutineScope
 
-class FakeGatewayService(coroutineScope: CoroutineScope) : GatewayService(
+class FakeGatewayService(
+    coroutineScope: CoroutineScope,
+    toolRegistry: List<ToolDefinition> = emptyList()
+) : GatewayService(
     gateway = Gateway(JsonProvider.appJson),
-    parser = AufTextParser(JsonProvider.appJson, emptyList<ToolDefinition>()),
+    parser = AufTextParser(JsonProvider.appJson, toolRegistry),
+    toolRegistry = toolRegistry,
     apiKey = "fake-api-key",
     coroutineScope = coroutineScope
 ) {

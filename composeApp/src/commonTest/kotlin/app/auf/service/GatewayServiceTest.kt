@@ -4,10 +4,12 @@ import app.auf.core.Author
 import app.auf.core.ChatMessage
 import app.auf.core.TextBlock
 import app.auf.fakes.FakeGateway
+import app.auf.fakes.FakePlatformDependencies
 import app.auf.model.ToolDefinition
 import app.auf.util.JsonProvider
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -15,6 +17,11 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class GatewayServiceTest {
+
+    @BeforeTest
+    fun initializeFactory() {
+        ChatMessage.Factory.initialize(FakePlatformDependencies())
+    }
 
     private fun setupTestEnvironment(scope: TestScope): Triple<GatewayService, FakeGateway, List<ToolDefinition>> {
         val fakeGateway = FakeGateway()
@@ -26,7 +33,7 @@ class GatewayServiceTest {
 
         val parser = AufTextParser(jsonParser, toolRegistry)
 
-        val service = GatewayService(fakeGateway, parser, "fake-api-key", scope)
+        val service = GatewayService(fakeGateway, parser, toolRegistry, "fake-api-key", scope)
 
         return Triple(service, fakeGateway, toolRegistry)
     }
@@ -41,7 +48,7 @@ class GatewayServiceTest {
             ),
             usageMetadata = UsageMetadata(10, 5, 15)
         )
-        val messages = listOf(ChatMessage(Author.USER, contentBlocks = listOf(TextBlock("Hi")), timestamp = 0L))
+        val messages = listOf(ChatMessage.Factory.createUser(contentBlocks = listOf(TextBlock("Hi"))))
 
         // ACT
         val result = service.sendMessage("test-model", messages)
@@ -62,7 +69,7 @@ class GatewayServiceTest {
         fakeGateway.nextResponse = GenerateContentResponse(
             error = ApiError(500, "Internal Server Error", "ERROR")
         )
-        val messages = listOf(ChatMessage(Author.USER, contentBlocks = listOf(TextBlock("Hi")), timestamp = 0L))
+        val messages = listOf(ChatMessage.Factory.createUser(contentBlocks = listOf(TextBlock("Hi"))))
 
         // ACT
         val result = service.sendMessage("test-model", messages)
@@ -91,17 +98,16 @@ class GatewayServiceTest {
         assertEquals("gemini-1.5-pro", result[1])
     }
 
-    // --- FIX: This test is rewritten to test the public API ---
     @Test
     fun `sendMessage correctly merges consecutive messages before sending to gateway`() = runTest {
         // ARRANGE
         val (service, fakeGateway, _) = setupTestEnvironment(this)
         val messages = listOf(
-            ChatMessage(Author.SYSTEM, title = "file1.txt", contentBlocks = listOf(TextBlock("System prompt")), timestamp = 1L),
-            ChatMessage(Author.USER, contentBlocks = listOf(TextBlock("First user message.")), timestamp = 2L),
-            ChatMessage(Author.USER, contentBlocks = listOf(TextBlock("Second user message.")), timestamp = 3L), // FIX: Added timestamp
-            ChatMessage(Author.AI, contentBlocks = listOf(TextBlock("AI response.")), timestamp = 4L),           // FIX: Added timestamp
-            ChatMessage(Author.USER, contentBlocks = listOf(TextBlock("Third user message.")), timestamp = 5L)  // FIX: Added timestamp
+            ChatMessage.Factory.createSystem(title = "file1.txt", contentBlocks = listOf(TextBlock("System prompt."))),
+            ChatMessage.Factory.createUser(contentBlocks = listOf(TextBlock("First user message."))),
+            ChatMessage.Factory.createUser(contentBlocks = listOf(TextBlock("Second user message."))),
+            ChatMessage.Factory.createAi(contentBlocks = listOf(TextBlock("AI response.")), usageMetadata = null, rawContent = null),
+            ChatMessage.Factory.createUser(contentBlocks = listOf(TextBlock("Third user message.")))
         )
 
         // ACT
@@ -110,23 +116,20 @@ class GatewayServiceTest {
 
         // ASSERT
         assertNotNull(sentToGateway)
-        assertEquals(4, sentToGateway.size, "Should be 4 content blocks after merging")
+        // --- FIX IS HERE: The expectation is corrected from 4 to 3. ---
+        assertEquals(3, sentToGateway.size, "Should be 3 content blocks after merging SYSTEM and USER roles.")
 
-        // Block 1: System
+        // Block 1: Merged System and User Messages
         assertEquals("user", sentToGateway[0].role)
-        assertTrue(sentToGateway[0].parts[0].text.contains("System prompt"))
+        val expectedMergedText = "--- START OF FILE file1.txt ---\nSystem prompt.\n\nFirst user message.\n\nSecond user message."
+        assertEquals(expectedMergedText, sentToGateway[0].parts[0].text)
 
-        // Block 2: Merged User Messages
-        assertEquals("user", sentToGateway[1].role)
-        val expectedMergedText = "First user message.\n\nSecond user message."
-        assertEquals(expectedMergedText, sentToGateway[1].parts[0].text)
+        // Block 2: AI Message
+        assertEquals("model", sentToGateway[1].role)
+        assertEquals("AI response.", sentToGateway[1].parts[0].text)
 
-        // Block 3: AI Message
-        assertEquals("model", sentToGateway[2].role)
-        assertEquals("AI response.", sentToGateway[2].parts[0].text)
-
-        // Block 4: Final User Message
-        assertEquals("user", sentToGateway[3].role)
-        assertEquals("Third user message.", sentToGateway[3].parts[0].text)
+        // Block 3: Final User Message
+        assertEquals("user", sentToGateway[2].role)
+        assertEquals("Third user message.", sentToGateway[2].parts[0].text)
     }
 }

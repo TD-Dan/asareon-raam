@@ -2,6 +2,7 @@ package app.auf.core
 
 import app.auf.model.Action
 import app.auf.service.UsageMetadata
+import app.auf.util.PlatformDependencies
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -22,7 +23,7 @@ import kotlinx.serialization.json.JsonObject
  * - `Action` (from ActionModels.kt): Used within the `ActionBlock` content type.
  * - `kotlinx.serialization`: Used extensively for defining serializable data contracts.
  *
- * @version 1.8
+ * @version 1.9
  * @since 2025-08-17
  */
 
@@ -115,8 +116,6 @@ data class AppState(
     val contextualHolonIds: Set<String> = emptySet(),
     val inspectedHolonId: String? = null,
     val chatHistory: List<ChatMessage> = emptyList(),
-    // --- FIX IS HERE (1/2) ---
-    val messageIdCounter: Long = 0, // Counter to generate unique IDs.
     val isSystemVisible: Boolean = false,
     val gatewayStatus: GatewayStatus = GatewayStatus.IDLE,
     val isProcessing: Boolean = false,
@@ -204,16 +203,86 @@ data class SentinelBlock(
     override val summary: String = "Parser Sentinel"
 ) : ContentBlock
 
-data class ChatMessage(
-    // --- FIX IS HERE (2/2) ---
-    val id: Long, // A unique, non-nullable identifier for this message.
+data class ChatMessage internal constructor(
+    val id: Long,
     val author: Author,
-    val title: String? = null,
+    val title: String?,
     val timestamp: Long,
     val contentBlocks: List<ContentBlock>,
-    val usageMetadata: UsageMetadata? = null,
-    val rawContent: String? = null
-)
+    val usageMetadata: UsageMetadata?,
+    val rawContent: String?
+) {
+    companion object Factory {
+        private var nextId = 0L
+        private var platform: PlatformDependencies? = null
+
+        /**
+         * Initializes the factory with the necessary platform dependency.
+         * This MUST be called once at application startup.
+         */
+        fun initialize(platform: PlatformDependencies) {
+            this.platform = platform
+        }
+
+        private fun getTimestamp(): Long {
+            return platform?.getSystemTimeMillis()
+                ?: throw IllegalStateException("ChatMessage.Factory has not been initialized. Call Factory.initialize() at app startup.")
+        }
+
+        /**
+         * Creates a new message from the USER.
+         */
+        fun createUser(contentBlocks: List<ContentBlock>): ChatMessage {
+            return ChatMessage(
+                id = ++nextId,
+                author = Author.USER,
+                title = null,
+                timestamp = getTimestamp(),
+                contentBlocks = contentBlocks,
+                usageMetadata = null,
+                rawContent = null // User messages are built from blocks, no raw content.
+            )
+        }
+
+        /**
+         * Creates a new message from the AI.
+         */
+        fun createAi(
+            contentBlocks: List<ContentBlock>,
+            usageMetadata: UsageMetadata?,
+            rawContent: String?
+        ): ChatMessage {
+            return ChatMessage(
+                id = ++nextId,
+                author = Author.AI,
+                title = "AI",
+                timestamp = getTimestamp(),
+                contentBlocks = contentBlocks,
+                usageMetadata = usageMetadata,
+                rawContent = rawContent
+            )
+        }
+
+        /**
+         * Creates a new SYSTEM message.
+         */
+        fun createSystem(
+            title: String,
+            contentBlocks: List<ContentBlock>
+        ): ChatMessage {
+            return ChatMessage(
+                id = ++nextId,
+                author = Author.SYSTEM,
+                title = title,
+                timestamp = getTimestamp(),
+                contentBlocks = contentBlocks,
+                usageMetadata = null,
+                rawContent = null
+            )
+        }
+    }
+}
+
 
 enum class Author {
     USER, AI, SYSTEM

@@ -57,6 +57,10 @@ class MessageCardTest {
         val initialState = AppState()
         fakeStore = FakeStore(initialState, testCoroutineScope)
         val fakePlatform = FakePlatformDependencies()
+
+        // --- MODIFIED: Initialize the factory before creating the StateManager ---
+        ChatMessage.Factory.initialize(fakePlatform)
+
         val fakeGatewayService = FakeGatewayService(testCoroutineScope)
         val fakeParser = AufTextParser(JsonProvider.appJson, emptyList<ToolDefinition>())
 
@@ -86,9 +90,8 @@ class MessageCardTest {
     @Test
     fun `RenderTextBlock should display the correct text`() {
         val testMessage = "This is a test message."
-        val message = ChatMessage(
-            author = Author.USER,
-            timestamp = 1L,
+        // --- MODIFIED: Use the factory to create the test message ---
+        val message = ChatMessage.Factory.createUser(
             contentBlocks = listOf(TextBlock(testMessage))
         )
 
@@ -102,10 +105,11 @@ class MessageCardTest {
     @Test
     fun `RenderActionBlock shows Confirm and Reject buttons when PENDING`() {
         val action = CreateFile("a.txt", "b", "c")
-        val message = ChatMessage(
-            author = Author.AI,
-            timestamp = 1L,
-            contentBlocks = listOf(ActionBlock(listOf<Action>(action), status = ActionStatus.PENDING))
+        // --- MODIFIED: Use the factory to create the test message ---
+        val message = ChatMessage.Factory.createAi(
+            contentBlocks = listOf(ActionBlock(listOf<Action>(action), status = ActionStatus.PENDING)),
+            usageMetadata = null,
+            rawContent = null
         )
 
         composeTestRule.setContent {
@@ -119,10 +123,11 @@ class MessageCardTest {
     @Test
     fun `RenderActionBlock hides buttons when EXECUTED`() {
         val action = CreateFile("a.txt", "b", "c")
-        val message = ChatMessage(
-            author = Author.AI,
-            timestamp = 1L,
-            contentBlocks = listOf(ActionBlock(listOf<Action>(action), status = ActionStatus.EXECUTED))
+        // --- MODIFIED: Use the factory to create the test message ---
+        val message = ChatMessage.Factory.createAi(
+            contentBlocks = listOf(ActionBlock(listOf<Action>(action), status = ActionStatus.EXECUTED)),
+            usageMetadata = null,
+            rawContent = null
         )
 
         composeTestRule.setContent {
@@ -137,10 +142,11 @@ class MessageCardTest {
     @Test
     fun `RenderActionBlock hides buttons when REJECTED`() {
         val action = CreateFile("a.txt", "b", "c")
-        val message = ChatMessage(
-            author = Author.AI,
-            timestamp = 1L,
-            contentBlocks = listOf(ActionBlock(listOf<Action>(action), status = ActionStatus.REJECTED))
+        // --- MODIFIED: Use the factory to create the test message ---
+        val message = ChatMessage.Factory.createAi(
+            contentBlocks = listOf(ActionBlock(listOf<Action>(action), status = ActionStatus.REJECTED)),
+            usageMetadata = null,
+            rawContent = null
         )
 
         composeTestRule.setContent {
@@ -156,10 +162,9 @@ class MessageCardTest {
     fun `RenderParseErrorBlock displays error details correctly`() {
         val errorMessage = "Something went wrong."
         val rawContent = "{malformed json}"
-        val message = ChatMessage(
-            author = Author.SYSTEM,
-            timestamp = 1L,
-            title = null, // Explicitly null to trigger collapse
+        // --- MODIFIED: Use the factory to create the test message ---
+        val message = ChatMessage.Factory.createSystem(
+            title = "SYSTEM",
             contentBlocks = listOf(
                 ParseErrorBlock(
                     originalTag = "TEST_TAG",

@@ -30,7 +30,7 @@ import kotlinx.serialization.json.JsonObject
  * Service dedicated to handling all business logic related to AI chat interactions.
  * It uses a provided tool registry to generate manifests and understand AI commands.
  *
- * @version 2.2
+ * @version 2.3
  * @since 2025-08-17
  */
 open class ChatService(
@@ -59,12 +59,11 @@ open class ChatService(
 
             if (response.errorMessage != null) {
                 println("GATEWAY ERROR: ${response.errorMessage}")
-                store.dispatch(AppAction.SendMessageFailure(response.errorMessage, platform.getSystemTimeMillis()))
+                store.dispatch(AppAction.SendMessageFailure(response.errorMessage))
                 activeJob = null
                 return@launch
             }
-
-            store.dispatch(AppAction.SendMessageSuccess(response, platform.getSystemTimeMillis()))
+            store.dispatch(AppAction.SendMessageSuccess(response))
             activeJob = null
 
             val latestState = store.state.value
@@ -87,45 +86,32 @@ open class ChatService(
         val frameworkBasePath = platform.getBasePathFor(BasePath.FRAMEWORK)
         val protocolPath = frameworkBasePath + platform.pathSeparator + "framework_protocol.md"
 
-        // --- FIX: Add the required 'id' parameter to all ChatMessage constructors ---
         messages.add(
-            ChatMessage(
-                id = platform.getSystemTimeMillis(), // Placeholder ID
-                author = Author.SYSTEM,
-                contentBlocks = listOf(TextBlock(platform.readFileContent(protocolPath))),
+            ChatMessage.createSystem(
                 title = "framework_protocol.md",
-                timestamp = platform.getSystemTimeMillis()
+                contentBlocks = listOf(TextBlock(platform.readFileContent(protocolPath)))
             )
         )
         messages.add(
-            ChatMessage(
-                id = platform.getSystemTimeMillis() + 1, // Placeholder ID
-                author = Author.SYSTEM,
-                contentBlocks = listOf(TextBlock(generateSystemStatusMessage())),
+            ChatMessage.createSystem(
                 title = "REAL TIME SYSTEM STATUS",
-                timestamp = platform.getSystemTimeMillis()
+                contentBlocks = listOf(TextBlock(generateSystemStatusMessage()))
             )
         )
         messages.add(
-            ChatMessage(
-                id = platform.getSystemTimeMillis() + 2, // Placeholder ID
-                author = Author.SYSTEM,
-                contentBlocks = listOf(TextBlock(generateDynamicToolManifest())),
+            ChatMessage.createSystem(
                 title = "Host Tool Manifest",
-                timestamp = platform.getSystemTimeMillis()
+                contentBlocks = listOf(TextBlock(generateDynamicToolManifest()))
             )
         )
 
-        appState.activeHolons.values.forEachIndexed { index, holon ->
+        appState.activeHolons.values.forEach { holon ->
             if (holon.header.type != "Quarantined_File") {
                 val holonContentString = JsonProvider.appJson.encodeToString(Holon.serializer(), holon)
                 messages.add(
-                    ChatMessage(
-                        id = platform.getSystemTimeMillis() + 3 + index, // Placeholder ID
-                        author = Author.SYSTEM,
-                        contentBlocks = listOf(TextBlock(holonContentString)),
+                    ChatMessage.createSystem(
                         title = platform.getFileName(holon.header.id + ".json"),
-                        timestamp = platform.getSystemTimeMillis()
+                        contentBlocks = listOf(TextBlock(holonContentString))
                     )
                 )
             }
@@ -140,7 +126,6 @@ open class ChatService(
         val fullContext = systemMessages + historyForApi
 
         return fullContext.joinToString("\n\n") { msg ->
-            // --- FIX: Use rawContent first, then fall back to robust reconstruction ---
             val reconstructedContent = msg.rawContent ?: msg.contentBlocks.joinToString(separator = "\n") { block ->
                 reconstructBlockToString(block)
             }
@@ -158,7 +143,7 @@ open class ChatService(
 
     private fun sendSystemMessage(message: String) {
         val contentBlocks: List<ContentBlock> = parser.parse(message)
-        store.dispatch(AppAction.AddSystemMessage(contentBlocks, platform.getSystemTimeMillis()))
+        store.dispatch(AppAction.AddSystemMessage(contentBlocks))
         sendMessage()
     }
 
@@ -200,7 +185,6 @@ open class ChatService(
         }
     }
 
-    // --- NEW HELPER FUNCTION ---
     private fun reconstructBlockToString(block: ContentBlock): String {
         return when (block) {
             is TextBlock -> block.text

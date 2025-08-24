@@ -8,6 +8,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import app.auf.core.AppState
+import app.auf.core.ChatMessage
 import app.auf.core.StateManager
 import app.auf.core.Store
 import app.auf.core.Version
@@ -40,6 +41,9 @@ fun main() = application {
     // --- Dependency Injection Root ---
     val platformDependencies = remember { PlatformDependencies() }
     val jsonParser = remember { JsonProvider.appJson }
+
+    // --- MODIFICATION: Initialize the ChatMessage factory once at startup ---
+    remember { ChatMessage.Factory.initialize(platformDependencies) }
 
     // --- CORRECTED INITIALIZATION ORDER ---
 
