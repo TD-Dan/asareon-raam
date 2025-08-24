@@ -1,3 +1,4 @@
+// --- FILE: commonMain/kotlin/app/auf/ui/MessageCard.kt ---
 package app.auf.ui
 
 import androidx.compose.animation.AnimatedVisibility
@@ -54,7 +55,6 @@ import app.auf.core.ParseErrorBlock
 import app.auf.core.SentinelBlock
 import app.auf.core.StateManager
 import app.auf.core.TextBlock
-import app.auf.util.JsonProvider
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
@@ -70,7 +70,7 @@ import kotlinx.serialization.json.JsonObject
  * - `app.auf.core.StateManager`: To format timestamps and dispatch actions.
  * - `app.auf.core.AppState`: For the various `ContentBlock` and `ChatMessage` models.
  *
- * @version 1.0
+ * @version 1.1
  * @since 2025-08-24
  */
 @Composable
@@ -167,7 +167,9 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                             DropdownMenuItem(
                                 text = { Text(deleteText) },
                                 onClick = {
-                                    stateManager.deleteMessage(message.timestamp)
+                                    // --- FIX IS HERE ---
+                                    // Was incorrectly passing message.timestamp
+                                    stateManager.deleteMessage(message.id)
                                     showMenu = false
                                 }
                             )
@@ -285,7 +287,7 @@ fun RenderAppRequestBlock(block: AppRequestBlock) {
 
 @Composable
 fun RenderAnchorBlock(block: AnchorBlock) {
-    val jsonPrettyPrinter = remember { JsonProvider.appJson }
+    val jsonPrettyPrinter = remember { Json { prettyPrint = true } }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))

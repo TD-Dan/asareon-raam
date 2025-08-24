@@ -1,10 +1,13 @@
+// --- FILE: jvmTest/kotlin/app/auf/ui/MessageCardTest.kt ---
 package app.auf.ui
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import app.auf.core.ActionBlock
 import app.auf.core.ActionStatus
+import app.auf.core.AppAction
 import app.auf.core.AppState
 import app.auf.core.Author
 import app.auf.core.ChatMessage
@@ -31,6 +34,8 @@ import kotlinx.coroutines.Dispatchers
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
 
 /**
  * Unit tests for the MessageCard Composable and its sub-renderers.
@@ -183,5 +188,36 @@ class MessageCardTest {
         composeTestRule.onNodeWithText("Parse Error: [AUF_TEST_TAG]", substring = true).assertExists()
         composeTestRule.onNodeWithText(errorMessage, substring = true).assertExists()
         composeTestRule.onNodeWithText(rawContent).assertExists()
+    }
+
+    @Test
+    fun `deleteMenuItemClick should dispatch DeleteAction`() {
+        // ARRANGE: Create a message to be deleted.
+        val messageToDelete = ChatMessage.Factory.createUser(
+            contentBlocks = listOf(TextBlock("Delete me"))
+        )
+        // Set the initial state in the fake store.
+        fakeStore.dispatch(
+            AppAction.AddUserMessage(
+                (messageToDelete.contentBlocks)
+            )
+        )
+        // The message in the store will have a new ID, so we need to get it.
+        val messageInState = fakeStore.state.value.chatHistory.first()
+
+
+        composeTestRule.setContent {
+            MessageCard(message = messageInState, stateManager = stateManager)
+        }
+
+        // ACT: Simulate the user clicks.
+        composeTestRule.onNodeWithContentDescription("More options").performClick()
+        composeTestRule.onNodeWithText("Delete").performClick()
+
+        // ASSERT: Check the actions dispatched to the store.
+        assertEquals(2, fakeStore.dispatchedActions.size) // Initial Add + Delete
+        val dispatchedAction = fakeStore.dispatchedActions.last()
+        assertIs<AppAction.DeleteMessage>(dispatchedAction)
+        assertEquals(messageInState.id, dispatchedAction.id)
     }
 }
