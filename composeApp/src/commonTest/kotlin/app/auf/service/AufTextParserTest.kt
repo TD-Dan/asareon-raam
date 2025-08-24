@@ -1,6 +1,7 @@
 package app.auf.service
 
 import app.auf.core.ActionBlock
+import app.auf.core.FileContentBlock
 import app.auf.core.ParseErrorBlock
 import app.auf.core.TextBlock
 import app.auf.model.CreateFile
@@ -15,7 +16,6 @@ class AufTextParserTest {
 
     private fun setupTestEnvironment(): AufTextParser {
         val jsonParser = JsonProvider.appJson
-        // --- FIX: Create a sample tool registry for the parser to use during tests ---
         val toolRegistry = listOf(
             ToolDefinition("Action Manifest", "ACTION_MANIFEST", "", emptyList(), true, ""),
             ToolDefinition("File View", "FILE_VIEW", "", emptyList(), true, ""),
@@ -79,10 +79,14 @@ class AufTextParserTest {
         assertIs<ParseErrorBlock>(result[1])
         val errorBlock = result[1] as ParseErrorBlock
         assertEquals("ACTION_MANIFEST", errorBlock.originalTag)
-        assertTrue(errorBlock.errorMessage.contains("Closing tag not found"))
+        // --- FIX: Update the assertion to match the new, more specific error message ---
+        val expectedErrorMessageContent = "Closing tag '[/AUF_ACTION_MANIFEST]' not found."
+        assertTrue(
+            errorBlock.errorMessage == expectedErrorMessageContent,
+            "Error message should be specific. Was: '${errorBlock.errorMessage}'"
+        )
     }
 
-    // This test's expectation is updated. The new parser is simpler and doesn't support nesting by design.
     @Test
     fun `should treat nested tags as part of the payload`() {
         val parser = setupTestEnvironment()
@@ -97,8 +101,8 @@ class AufTextParserTest {
         val result = parser.parse(rawResponse)
 
         assertEquals(1, result.size, "Expected a single FileContentBlock")
-        assertIs<app.auf.core.FileContentBlock>(result[0])
-        val fileBlock = result[0] as app.auf.core.FileContentBlock
+        assertIs<FileContentBlock>(result[0])
+        val fileBlock = result[0] as FileContentBlock
         assertTrue(fileBlock.content.contains("[AUF_ACTION_MANIFEST]"), "The inner tag should be treated as literal text content.")
     }
 
