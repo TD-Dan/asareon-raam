@@ -1,4 +1,3 @@
-// --- FILE: jvmTest/kotlin/app/auf/ui/MessageCardTest.kt ---
 package app.auf.ui
 
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -9,7 +8,6 @@ import app.auf.core.ActionBlock
 import app.auf.core.ActionStatus
 import app.auf.core.AppAction
 import app.auf.core.AppState
-import app.auf.core.Author
 import app.auf.core.ChatMessage
 import app.auf.core.ParseErrorBlock
 import app.auf.core.StateManager
