@@ -22,7 +22,7 @@ import kotlinx.serialization.json.JsonObject
  * - `Action` (from ActionModels.kt): Used within the `ActionBlock` content type.
  * - `kotlinx.serialization`: Used extensively for defining serializable data contracts.
  *
- * @version 1.6
+ * @version 1.7
  * @since 2025-08-17
  */
 
@@ -143,7 +143,6 @@ data class TextBlock(
 @SerialName("ActionBlock")
 data class ActionBlock(
     val actions: List<Action>,
-    // --- MODIFIED: The isResolved flag is now managed by a new ActionStatus field ---
     var status: ActionStatus = ActionStatus.PENDING
 ) : ContentBlock {
     override val summary: String

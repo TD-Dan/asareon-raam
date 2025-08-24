@@ -1,4 +1,3 @@
-// --- FILE: composeApp/src/jvmMain/kotlin/app/auf/main.kt ---
 package app.auf
 
 import androidx.compose.runtime.LaunchedEffect
@@ -14,6 +13,8 @@ import app.auf.core.Store
 import app.auf.core.Version
 import app.auf.core.ViewMode
 import app.auf.core.appReducer
+import app.auf.model.Parameter
+import app.auf.model.ToolDefinition
 import app.auf.model.UserSettings
 import app.auf.service.ActionExecutor
 import app.auf.service.AufTextParser
@@ -39,7 +40,52 @@ fun main() = application {
     // --- Dependency Injection Root ---
     val platformDependencies = remember { PlatformDependencies() }
     val jsonParser = remember { JsonProvider.appJson }
-    val aufTextParser = remember { AufTextParser(jsonParser) }
+
+    // --- CORRECTED INITIALIZATION ORDER ---
+
+    // 1. Define the ToolRegistry as the single source of truth.
+    val toolRegistry = remember {
+        listOf(
+            ToolDefinition(
+                name = "Atomic Change Manifest",
+                command = "ACTION_MANIFEST",
+                description = "Propose a transactional set of changes to the Holon Knowledge Graph file system.",
+                parameters = emptyList(),
+                expectsPayload = true,
+                usage = "[AUF_ACTION_MANIFEST]\n[...json array of Action objects...]\n[/AUF_ACTION_MANIFEST]"
+            ),
+            ToolDefinition(
+                name = "Application Request",
+                command = "APP_REQUEST",
+                description = "Request the host application to perform a pre-defined, non-file-system action.",
+                parameters = emptyList(),
+                expectsPayload = true,
+                usage = "[AUF_APP_REQUEST]START_DREAM_CYCLE[/AUF_APP_REQUEST]"
+            ),
+            ToolDefinition(
+                name = "File Content View",
+                command = "FILE_VIEW",
+                description = "Display the content of a non-Holon file within the chat.",
+                parameters = listOf(
+                    Parameter(name = "path", type = "String", isRequired = true, defaultValue = null),
+                    Parameter(name = "language", type = "String", isRequired = false, defaultValue = null)
+                ),
+                expectsPayload = true,
+                usage = "[AUF_FILE_VIEW(path=\"path/to/your/file.kt\")]\n...file content...\n[/AUF_FILE_VIEW]"
+            ),
+            ToolDefinition(
+                name = "State Anchor",
+                command = "STATE_ANCHOR",
+                description = "Create a persistent, context-immune memory waypoint within the chat history.",
+                parameters = emptyList(),
+                expectsPayload = true,
+                usage = "[AUF_STATE_ANCHOR]\n{\"anchorId\": \"...\", ...}\n[/AUF_STATE_ANCHOR]"
+            )
+        )
+    }
+
+    // 2. Create the parser, injecting the tool registry.
+    val aufTextParser = remember { AufTextParser(jsonParser, toolRegistry) }
 
     val settingsManager = remember { SettingsManager(platformDependencies, jsonParser) }
     val savedSettings = remember { settingsManager.loadSettings() ?: UserSettings() }
@@ -50,23 +96,15 @@ fun main() = application {
         if (localPropertiesFile.exists()) {
             properties.load(localPropertiesFile.inputStream())
             properties.getProperty("google.api.key", "")
-        } else {
-            ""
-        }
+        } else ""
     }
-
     if (apiKey.isBlank()) {
         println("WARNING: google.api.key not found in local.properties. AI will not function.")
     }
 
-    val store = remember {
-        Store(
-            initialState = AppState(),
-            reducer = ::appReducer,
-            coroutineScope = coroutineScope
-        )
-    }
+    val store = remember { Store(AppState(), ::appReducer, coroutineScope) }
 
+    // 3. Construct all services with their dependencies now clearly defined.
     val stateManager = remember {
         val gateway = Gateway(jsonParser)
         val gatewayService = GatewayService(gateway, aufTextParser, apiKey, coroutineScope)
@@ -77,7 +115,7 @@ fun main() = application {
         val graphLoader = GraphLoader(platformDependencies, jsonParser)
         val graphService = GraphService(graphLoader)
         val sourceCodeService = SourceCodeService(platformDependencies)
-        val chatService = ChatService(store, gatewayService, platformDependencies, aufTextParser, coroutineScope)
+        val chatService = ChatService(store, gatewayService, platformDependencies, aufTextParser, toolRegistry, coroutineScope)
 
         StateManager(
             store = store,
@@ -104,10 +142,7 @@ fun main() = application {
 
     remember { stateManager.initialize() }
 
-    val windowState = rememberWindowState(
-        width = savedSettings.windowWidth.dp,
-        height = savedSettings.windowHeight.dp
-    )
+    val windowState = rememberWindowState(width = savedSettings.windowWidth.dp, height = savedSettings.windowHeight.dp)
 
     Window(
         onCloseRequest = {

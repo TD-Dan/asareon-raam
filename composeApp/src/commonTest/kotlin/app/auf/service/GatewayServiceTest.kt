@@ -1,129 +1,132 @@
 package app.auf.service
 
+import app.auf.core.Author
+import app.auf.core.ChatMessage
+import app.auf.core.TextBlock
+import app.auf.fakes.FakeGateway
+import app.auf.model.ToolDefinition
 import app.auf.util.JsonProvider
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-/**
- * A fake implementation of the Gateway for testing purposes.
- * It allows us to control the output of `listModels` to test the manager's logic.
- */
-class FakeGateway : Gateway(JsonProvider.appJson) {
-    var modelsToReturn: List<ModelInfo> = emptyList()
-    // We only override the method we need for this test suite.
-    override suspend fun listModels(apiKey: String): List<ModelInfo> {
-        return modelsToReturn
-    }
-}
-
-/**
- * Unit tests for the GatewayService.
- *
- * ---
- * ## Mandate
- * This suite verifies the business logic of the GatewayService, particularly its ability
- * to correctly filter and format the list of available AI models based on their
- * declared capabilities, not on their names.
- *
- * ---
- * ## Test Strategy
- * - **Arrange:** A `FakeGateway` is instantiated and configured to return a specific, predefined list of `ModelInfo` objects for each test scenario.
- * - **Act:** The `gatewayService.listTextModels()` method is called.
- * - **Assert:** Verify that the returned list of strings is correctly filtered (only includes models supporting "generateContent"), formatted (the "models/" prefix is removed), and sorted alphabetically.
- *
- * @version 1.2
- * @since 2025-08-17
- */
 class GatewayServiceTest {
 
-    // <<< MODIFIED: Removed @BeforeTest and class-level properties for services.
-    // Instantiation will happen inside each test to correctly capture the TestScope.
-
-    @Test
-    fun `listTextModels should return only models supporting generateContent and be sorted`() = runTest {
-        // Arrange
+    private fun setupTestEnvironment(scope: TestScope): Triple<GatewayService, FakeGateway, List<ToolDefinition>> {
         val fakeGateway = FakeGateway()
-        val aufTextParser = AufTextParser(JsonProvider.appJson)
-        // <<< MODIFIED: Pass 'this' (the TestScope) to the constructor.
-        val gatewayService = GatewayService(fakeGateway, aufTextParser, "dummy-api-key", this)
+        val jsonParser = JsonProvider.appJson
 
-        fakeGateway.modelsToReturn = listOf(
-            ModelInfo(name = "models/gemini-1.5-pro-latest", supportedGenerationMethods = listOf("generateContent")),
-            ModelInfo(name = "models/embedding-001", supportedGenerationMethods = listOf("embedContent")),
-            ModelInfo(name = "models/aqa", supportedGenerationMethods = listOf("generateAnswer")),
-            ModelInfo(name = "models/gemma-7b", supportedGenerationMethods = listOf("generateContent", "otherMethod")),
-            ModelInfo(name = "models/gemini-1.0-pro", supportedGenerationMethods = listOf("generateContent"))
+        val toolRegistry = listOf(
+            ToolDefinition("Action Manifest", "ACTION_MANIFEST", "", emptyList(), true, "")
         )
 
-        val expected = listOf(
-            "gemini-1.0-pro",
-            "gemini-1.5-pro-latest",
-            "gemma-7b"
-        )
+        val parser = AufTextParser(jsonParser, toolRegistry)
 
-        // Act
-        val actual = gatewayService.listTextModels()
+        val service = GatewayService(fakeGateway, parser, "fake-api-key", scope)
 
-        // Assert
-        assertEquals(expected, actual, "The list should be filtered by capability, have its prefix removed, and be sorted alphabetically.")
+        return Triple(service, fakeGateway, toolRegistry)
     }
 
     @Test
-    fun `listTextModels should return an empty list when no models support generateContent`() = runTest {
-        // Arrange
-        val fakeGateway = FakeGateway()
-        val aufTextParser = AufTextParser(JsonProvider.appJson)
-        val gatewayService = GatewayService(fakeGateway, aufTextParser, "dummy-api-key", this)
-
-        fakeGateway.modelsToReturn = listOf(
-            ModelInfo(name = "models/embedding-001", supportedGenerationMethods = listOf("embedContent")),
-            ModelInfo(name = "models/aqa", supportedGenerationMethods = listOf("generateAnswer"))
+    fun `sendMessage success path parses response correctly`() = runTest {
+        // ARRANGE
+        val (service, fakeGateway, _) = setupTestEnvironment(this)
+        fakeGateway.nextResponse = GenerateContentResponse(
+            candidates = listOf(
+                Candidate(content = Content("model", listOf(Part("Hello, this is a test."))))
+            ),
+            usageMetadata = UsageMetadata(10, 5, 15)
         )
+        val messages = listOf(ChatMessage(Author.USER, contentBlocks = listOf(TextBlock("Hi")), timestamp = 0L))
 
-        // Act
-        val actual = gatewayService.listTextModels()
+        // ACT
+        val result = service.sendMessage("test-model", messages)
 
-        // Assert
-        assertTrue(actual.isEmpty(), "The list should be empty if no models match the capability.")
+        // ASSERT
+        assertNotNull(result)
+        assertEquals(1, result.contentBlocks.size)
+        assertIs<TextBlock>(result.contentBlocks[0])
+        assertEquals("Hello, this is a test.", (result.contentBlocks[0] as TextBlock).text)
+        assertEquals(15, result.usageMetadata?.totalTokenCount)
+        assertEquals(1, fakeGateway.generateContentCallCount)
     }
 
     @Test
-    fun `listTextModels should return an empty list when the gateway returns an empty list`() = runTest {
-        // Arrange
-        val fakeGateway = FakeGateway()
-        val aufTextParser = AufTextParser(JsonProvider.appJson)
-        val gatewayService = GatewayService(fakeGateway, aufTextParser, "dummy-api-key", this)
+    fun `sendMessage handles API error gracefully`() = runTest {
+        // ARRANGE
+        val (service, fakeGateway, _) = setupTestEnvironment(this)
+        fakeGateway.nextResponse = GenerateContentResponse(
+            error = ApiError(500, "Internal Server Error", "ERROR")
+        )
+        val messages = listOf(ChatMessage(Author.USER, contentBlocks = listOf(TextBlock("Hi")), timestamp = 0L))
 
-        fakeGateway.modelsToReturn = emptyList()
+        // ACT
+        val result = service.sendMessage("test-model", messages)
 
-        // Act
-        val actual = gatewayService.listTextModels()
-
-        // Assert
-        assertTrue(actual.isEmpty(), "The list should be empty if the gateway provides no models.")
+        // ASSERT
+        assertNotNull(result.errorMessage)
+        assertTrue(result.errorMessage!!.contains("API Error: Internal Server Error"))
     }
 
-
-
     @Test
-    fun `listTextModels should handle models with empty supportedGenerationMethods lists`() = runTest {
-        // Arrange
-        val fakeGateway = FakeGateway()
-        val aufTextParser = AufTextParser(JsonProvider.appJson)
-        val gatewayService = GatewayService(fakeGateway, aufTextParser, "dummy-api-key", this)
-
-        fakeGateway.modelsToReturn = listOf(
-            ModelInfo(name = "models/gemini-1.5-pro-latest", supportedGenerationMethods = listOf("generateContent")),
-            ModelInfo(name = "models/legacy-model", supportedGenerationMethods = emptyList())
+    fun `listTextModels filters and returns correct model names`() = runTest {
+        // ARRANGE
+        val (service, fakeGateway, _) = setupTestEnvironment(this)
+        fakeGateway.modelsResponse = listOf(
+            ModelInfo(name = "models/gemini-1.5-pro", supportedGenerationMethods = listOf("generateContent")),
+            ModelInfo(name = "models/text-embedding-004", supportedGenerationMethods = listOf("embedContent")),
+            ModelInfo(name = "models/gemini-1.5-flash", supportedGenerationMethods = listOf("generateContent", "countTokens"))
         )
-        val expected = listOf("gemini-1.5-pro-latest")
 
-        // Act
-        val actual = gatewayService.listTextModels()
+        // ACT
+        val result = service.listTextModels()
 
-        // Assert
-        assertEquals(expected, actual, "Models with no supported methods should be filtered out.")
+        // ASSERT
+        assertEquals(2, result.size)
+        assertEquals("gemini-1.5-flash", result[0]) // Sorted alphabetically
+        assertEquals("gemini-1.5-pro", result[1])
+    }
+
+    // --- FIX: This test is rewritten to test the public API ---
+    @Test
+    fun `sendMessage correctly merges consecutive messages before sending to gateway`() = runTest {
+        // ARRANGE
+        val (service, fakeGateway, _) = setupTestEnvironment(this)
+        val messages = listOf(
+            ChatMessage(Author.SYSTEM, title = "file1.txt", contentBlocks = listOf(TextBlock("System prompt")), timestamp = 1L),
+            ChatMessage(Author.USER, contentBlocks = listOf(TextBlock("First user message.")), timestamp = 2L),
+            ChatMessage(Author.USER, contentBlocks = listOf(TextBlock("Second user message.")), timestamp = 3L), // FIX: Added timestamp
+            ChatMessage(Author.AI, contentBlocks = listOf(TextBlock("AI response.")), timestamp = 4L),           // FIX: Added timestamp
+            ChatMessage(Author.USER, contentBlocks = listOf(TextBlock("Third user message.")), timestamp = 5L)  // FIX: Added timestamp
+        )
+
+        // ACT
+        service.sendMessage("test-model", messages)
+        val sentToGateway = fakeGateway.lastRequest?.contents
+
+        // ASSERT
+        assertNotNull(sentToGateway)
+        assertEquals(4, sentToGateway.size, "Should be 4 content blocks after merging")
+
+        // Block 1: System
+        assertEquals("user", sentToGateway[0].role)
+        assertTrue(sentToGateway[0].parts[0].text.contains("System prompt"))
+
+        // Block 2: Merged User Messages
+        assertEquals("user", sentToGateway[1].role)
+        val expectedMergedText = "First user message.\n\nSecond user message."
+        assertEquals(expectedMergedText, sentToGateway[1].parts[0].text)
+
+        // Block 3: AI Message
+        assertEquals("model", sentToGateway[2].role)
+        assertEquals("AI response.", sentToGateway[2].parts[0].text)
+
+        // Block 4: Final User Message
+        assertEquals("user", sentToGateway[3].role)
+        assertEquals("Third user message.", sentToGateway[3].parts[0].text)
     }
 }

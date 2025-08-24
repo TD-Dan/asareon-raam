@@ -19,61 +19,23 @@ import kotlinx.coroutines.launch
 import app.auf.model.Action
 import kotlinx.serialization.builtins.ListSerializer
 import app.auf.core.ActionBlock
-import app.auf.model.Parameter
 import app.auf.model.ToolDefinition
 
 /**
  * Service dedicated to handling all business logic related to AI chat interactions.
- * It is the single source of truth for available host tools.
+ * It uses a provided tool registry to generate manifests and understand AI commands.
  *
- * @version 2.0
+ * @version 2.1
  * @since 2025-08-17
  */
 open class ChatService(
     private val store: Store,
     private val gatewayService: GatewayService,
     private val platform: PlatformDependencies,
-    private val parser: AufTextParser, // This will be replaced by the new parser
+    private val parser: AufTextParser,
+    private val toolRegistry: List<ToolDefinition>, // <<< MODIFIED: Injected dependency
     private val coroutineScope: CoroutineScope
 ) {
-
-    // --- NEW: The definitive, structured Tool Registry ---
-    val toolRegistry: List<ToolDefinition> = listOf(
-        ToolDefinition(
-            name = "Atomic Change Manifest",
-            command = "ACTION_MANIFEST",
-            description = "Propose a transactional set of changes to the Holon Knowledge Graph file system.",
-            parameters = emptyList(), // Parameters are implicit in the JSON payload
-            expectsPayload = true,
-            usage = "[AUF_ACTION_MANIFEST]\n[...json array of Action objects...]\n[/AUF_ACTION_MANIFEST]"
-        ),
-        ToolDefinition(
-            name = "Application Request",
-            command = "APP_REQUEST",
-            description = "Request the host application to perform a pre-defined, non-file-system action.",
-            parameters = emptyList(),
-            expectsPayload = true,
-            usage = "[AUF_APP_REQUEST]START_DREAM_CYCLE[/AUF_APP_REQUEST]"
-        ),
-        ToolDefinition(
-            name = "File Content View",
-            command = "FILE_VIEW",
-            description = "Display the content of a non-Holon file within the chat.",
-            parameters = listOf(
-                Parameter(name = "path", type = "String", isRequired = true, defaultValue = null)
-            ),
-            expectsPayload = true,
-            usage = "[AUF_FILE_VIEW(path=\"path/to/your/file.kt\")]\n...file content...\n[/AUF_FILE_VIEW]"
-        ),
-        ToolDefinition(
-            name = "State Anchor",
-            command = "STATE_ANCHOR",
-            description = "Create a persistent, context-immune memory waypoint within the chat history.",
-            parameters = emptyList(),
-            expectsPayload = true,
-            usage = "[AUF_STATE_ANCHOR]\n{\"anchorId\": \"...\", ...}\n[/AUF_STATE_ANCHOR]"
-        )
-    )
 
     private var activeJob: Job? = null
 

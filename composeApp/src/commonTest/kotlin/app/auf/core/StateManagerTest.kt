@@ -11,6 +11,7 @@ import app.auf.fakes.FakeSourceCodeService
 import app.auf.fakes.FakeStore
 import app.auf.model.Action
 import app.auf.model.CreateFile
+import app.auf.model.ToolDefinition
 import app.auf.model.UserSettings
 import app.auf.service.ActionExecutorResult
 import app.auf.service.AufTextParser
@@ -37,8 +38,16 @@ class StateManagerTest {
         val sourceCodeService = FakeSourceCodeService(platform)
         val gatewayService = FakeGatewayService(scope)
         val jsonParser = JsonProvider.appJson
-        val parser = AufTextParser(jsonParser)
-        val chatService = FakeChatService(store, gatewayService, platform, parser, scope)
+
+        // --- FIX: Create the toolRegistry first ---
+        val toolRegistry = listOf<ToolDefinition>() // An empty list is sufficient for these tests
+
+        // --- FIX: Inject the toolRegistry into the parser ---
+        val parser = AufTextParser(jsonParser, toolRegistry)
+
+        // --- FIX: Inject the toolRegistry into the chat service ---
+        val chatService = FakeChatService(store, gatewayService, platform, parser, toolRegistry, scope)
+
         val actionExecutor = FakeActionExecutor(platform, jsonParser)
         val importExportManager = FakeImportExportManager(platform, jsonParser)
         val importExportViewModel = ImportExportViewModel(importExportManager, scope)
@@ -67,7 +76,6 @@ class StateManagerTest {
         val manifest = listOf(CreateFile("test.txt", "content", "Create test file"))
         val actionMessage = ChatMessage(
             author = Author.AI, timestamp = 12345L,
-            // --- MODIFIED: Use new status field ---
             contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING))
         )
         val initialState = AppState(chatHistory = listOf(actionMessage), aiPersonaId = "sage-1")
@@ -95,7 +103,6 @@ class StateManagerTest {
         val manifest = listOf<Action>(CreateFile("test.txt", "content", "Create test file"))
         val actionMessage = ChatMessage(
             author = Author.AI, timestamp = 12345L,
-            // --- MODIFIED: Use new status field ---
             contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING))
         )
         val initialState = AppState(chatHistory = listOf(actionMessage))
