@@ -228,13 +228,14 @@ class MessageCardTest {
 
     @Test
     fun `RenderParseErrorBlock displays error details correctly`() {
-        val errorMessage = "A deserialization error occurred: Unexpected JSON token."
         // Raw content that will cause the real parser to produce a ParseErrorBlock
         val rawContentCausingParseError = """
             [AUF_ACTION_MANIFEST]
             This is not valid JSON
             [/AUF_ACTION_MANIFEST]
         """.trimIndent()
+        // MODIFIED: Assert on the exact error message that the parser will produce
+        val expectedErrorMessage = "A deserialization error occurred: Unexpected JSON token at offset 0: Expected start of the array '[', but had 'T' instead at path: $"
 
         // Use the factory to create the message, which will now internally generate a ParseErrorBlock
         val message = ChatMessage.Factory.createSystem(
@@ -246,11 +247,10 @@ class MessageCardTest {
             MessageCard(message = message, stateManager = stateManager)
         }
 
-        // To see the error content, we need to ensure the system message is expanded, as it defaults to collapsed
-        composeTestRule.onNodeWithText("SYSTEM").performClick()
-
+        // The MessageCard's internal logic for isCollapsed should now ensure it's not collapsed.
+        // We can directly assert for the text existence.
         composeTestRule.onNodeWithText("Parse Error:", substring = true).assertExists()
-        composeTestRule.onNodeWithText(errorMessage, substring = true).assertExists()
+        composeTestRule.onNodeWithText(expectedErrorMessage, substring = true).assertExists()
         composeTestRule.onNodeWithText("--- Raw Content ---", substring = true).assertExists()
         composeTestRule.onNodeWithText(rawContentCausingParseError, substring = true).assertExists()
     }
