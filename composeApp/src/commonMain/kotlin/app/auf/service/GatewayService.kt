@@ -1,4 +1,3 @@
-// --- FILE: composeApp/src/commonMain/kotlin/app/auf/service/GatewayService.kt ---
 package app.auf.service
 
 import app.auf.core.ChatMessage
@@ -21,16 +20,15 @@ import kotlinx.coroutines.withContext
  * - `app.auf.service.Gateway`: The client for the AI service API.
  * - `app.auf.service.AufTextParser`: The canonical parser for the AUF tagged-text format.
  *
- * @version 3.1
- * @since 2025-08-17
+ * @version 3.2
+ * @since 2025-08-24
  */
 open class GatewayService(
     private val gateway: Gateway,
     private val parser: AufTextParser,
     private val apiKey: String,
-    private val coroutineScope: CoroutineScope // <<< MODIFIED: Injected CoroutineScope
+    private val coroutineScope: CoroutineScope
 ) {
-    // <<< MODIFIED: Removed internal coroutineScope definition
 
     open suspend fun sendMessage(selectedModel: String, messages: List<ChatMessage>): GatewayResponse {
         return withContext(coroutineScope.coroutineContext) {
@@ -72,44 +70,48 @@ open class GatewayService(
         }
     }
 
+    // --- FIX: Rewritten for author-aware merging ---
     private fun convertChatToApiContents(messages: List<ChatMessage>): List<Content> {
-        val apiContents = mutableListOf<Content>()
-        messages.forEach { msg ->
+        if (messages.isEmpty()) return emptyList()
+
+        val mergedContents = mutableListOf<Content>()
+        var currentParts = mutableListOf<String>()
+        var currentAuthor = messages.first().author
+
+        fun commitCurrentBlock() {
+            if (currentParts.isNotEmpty()) {
+                val role = when (currentAuthor) {
+                    Author.AI -> "model"
+                    Author.USER, Author.SYSTEM -> "user"
+                }
+                val combinedText = currentParts.joinToString("\n\n")
+                mergedContents.add(Content(role, listOf(Part(combinedText))))
+                currentParts.clear()
+            }
+        }
+
+        for (msg in messages) {
+            if (msg.author != currentAuthor) {
+                commitCurrentBlock()
+                currentAuthor = msg.author
+            }
+
             val reconstructedContent = msg.contentBlocks.joinToString(separator = "\n") { block ->
                 when (block) {
                     is app.auf.core.TextBlock -> block.text
-                    // We only need to handle TextBlock here because user/system messages are always TextBlocks.
                     else -> "[System placeholder for block type: ${block::class.simpleName}]"
                 }
             }
 
-            when (msg.author) {
-                Author.USER, Author.AI -> {
-                    val role = if (msg.author == Author.AI) "model" else "user"
-                    apiContents.add(Content(role, listOf(Part(reconstructedContent))))
-                }
-                Author.SYSTEM -> {
-                    val fullContent = "--- START OF FILE ${msg.title} ---\n$reconstructedContent"
-                    apiContents.add(Content("user", listOf(Part(fullContent))))
-                }
+            val contentToAdd = if (msg.author == Author.SYSTEM) {
+                "--- START OF FILE ${msg.title} ---\n$reconstructedContent"
+            } else {
+                reconstructedContent
             }
+            currentParts.add(contentToAdd)
         }
-        val mergedContents = mutableListOf<Content>()
-        if (apiContents.isNotEmpty()) {
-            var currentRole = apiContents.first().role
-            val currentParts = mutableListOf<String>()
-            apiContents.forEach { content ->
-                if (content.role == currentRole) {
-                    currentParts.add(content.parts.first().text)
-                } else {
-                    mergedContents.add(Content(currentRole, listOf(Part(currentParts.joinToString("\n\n")))))
-                    currentRole = content.role
-                    currentParts.clear()
-                    currentParts.add(content.parts.first().text)
-                }
-            }
-            mergedContents.add(Content(currentRole, listOf(Part(currentParts.joinToString("\n\n")))))
-        }
+
+        commitCurrentBlock() // Commit the last block
         return mergedContents
     }
 }
