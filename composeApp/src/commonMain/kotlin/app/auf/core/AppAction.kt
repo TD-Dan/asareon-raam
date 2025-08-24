@@ -1,3 +1,4 @@
+// --- FILE: commonMain/kotlin/app/auf/core/AppAction.kt ---
 package app.auf.core
 
 /**
@@ -14,14 +15,13 @@ package app.auf.core
  * ## Dependencies
  * - `app.auf.core.AppState`: Many actions carry payload data defined in AppState.kt.
  *
- * @version 2.1
+ * @version 2.3
  * @since 2025-08-17
  */
 sealed interface AppAction {
 
     // --- Graph Loading Actions ---
     data object LoadGraph : AppAction
-    // --- MODIFIED: Timestamp is no longer needed; the factory will generate it. ---
     data class LoadGraphSuccess(val result: GraphLoadResult) : AppAction
     data class LoadGraphFailure(val error: String) : AppAction
 
@@ -33,6 +33,7 @@ sealed interface AppAction {
     data class SendMessageFailure(val error: String) : AppAction
     data object CancelMessage : AppAction
     data class DeleteMessage(val id: Long) : AppAction
+    data class RerunFromMessage(val id: Long) : AppAction
 
     // --- UI & View Actions ---
     data class SetViewMode(val mode: ViewMode) : AppAction

@@ -15,7 +15,7 @@ package app.auf.core
  * - `app.auf.core.AppState`: The state object it operates on.
  * - `app.auf.core.AppAction`: The actions it responds to.
  *
- * @version 2.4
+ * @version 2.6
  * @since 2025-08-17
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
@@ -110,6 +110,16 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         is AppAction.DeleteMessage -> state.copy(
             chatHistory = state.chatHistory.filterNot { it.id == action.id }
         )
+        is AppAction.RerunFromMessage -> {
+            val messageIndex = state.chatHistory.indexOfFirst { it.id == action.id }
+            if (messageIndex != -1) {
+                // Truncate the history to include only messages up to the point of the rerun.
+                val truncatedHistory = state.chatHistory.subList(0, messageIndex + 1)
+                state.copy(chatHistory = truncatedHistory)
+            } else {
+                state // If message not found, do nothing.
+            }
+        }
 
         // --- UI & View ---
         is AppAction.SetViewMode -> {

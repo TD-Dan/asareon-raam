@@ -1,4 +1,3 @@
-// --- FILE: commonMain/kotlin/app/auf/ui/MessageCard.kt ---
 package app.auf.ui
 
 import androidx.compose.animation.AnimatedVisibility
@@ -155,9 +154,9 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                         ) {
                             if (message.author == Author.USER) {
                                 DropdownMenuItem(
-                                    text = { Text("Rerun") },
+                                    text = { Text("Rerun from here") },
                                     onClick = {
-                                        stateManager.rerunMessage(message.timestamp)
+                                        stateManager.rerunFromMessage(message.id)
                                         showMenu = false
                                     }
                                 )
@@ -167,8 +166,6 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                             DropdownMenuItem(
                                 text = { Text(deleteText) },
                                 onClick = {
-                                    // --- FIX IS HERE ---
-                                    // Was incorrectly passing message.timestamp
                                     stateManager.deleteMessage(message.id)
                                     showMenu = false
                                 }

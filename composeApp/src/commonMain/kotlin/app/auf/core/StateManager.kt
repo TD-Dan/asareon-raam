@@ -1,3 +1,4 @@
+// --- FILE: commonMain/kotlin/app/auf/core/StateManager.kt ---
 package app.auf.core
 
 import app.auf.model.UserSettings
@@ -36,7 +37,7 @@ import app.auf.service.AufTextParser
  * - `app.auf.util.PlatformDependencies`: The single bridge to the host OS.
  * - `kotlinx.coroutines.CoroutineScope`
  *
- * @version 4.9
+ * @version 5.1
  * @since 2025-08-17
  */
 open class StateManager(
@@ -109,8 +110,14 @@ open class StateManager(
         store.dispatch(AppAction.DeleteMessage(id))
     }
 
-    fun rerunMessage(timestamp: Long) {
-        println("ACTION: RerunMessage($timestamp) - (Action not yet implemented)")
+    fun rerunFromMessage(id: Long) {
+        if (state.value.isProcessing) return
+
+        val messageToRerun = state.value.chatHistory.find { it.id == id }
+        if (messageToRerun != null && messageToRerun.author == Author.USER) {
+            store.dispatch(AppAction.RerunFromMessage(id))
+            chatService.sendMessage()
+        }
     }
 
     fun executeActionFromMessage(messageTimestamp: Long) {
