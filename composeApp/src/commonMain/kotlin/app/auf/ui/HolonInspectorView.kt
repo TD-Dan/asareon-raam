@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.AppState
+import app.auf.util.JsonProvider
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
@@ -28,7 +29,7 @@ fun HolonInspectorView(
     modifier: Modifier = Modifier
 ) {
     val inspectedHolon = appState.inspectedHolonId?.let { appState.activeHolons[it] }
-    val jsonPrettyPrinter = remember { Json { prettyPrint = true } }
+    val jsonPrettyPrinter = remember { JsonProvider.appJson }
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         if (inspectedHolon != null) {

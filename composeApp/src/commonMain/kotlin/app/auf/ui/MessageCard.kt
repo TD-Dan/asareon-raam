@@ -54,6 +54,7 @@ import app.auf.core.ParseErrorBlock
 import app.auf.core.SentinelBlock
 import app.auf.core.StateManager
 import app.auf.core.TextBlock
+import app.auf.util.JsonProvider
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
@@ -284,7 +285,7 @@ fun RenderAppRequestBlock(block: AppRequestBlock) {
 
 @Composable
 fun RenderAnchorBlock(block: AnchorBlock) {
-    val jsonPrettyPrinter = remember { Json { prettyPrint = true } }
+    val jsonPrettyPrinter = remember { JsonProvider.appJson }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
