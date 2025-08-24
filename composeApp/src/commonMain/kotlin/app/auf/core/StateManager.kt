@@ -43,7 +43,7 @@ open class StateManager(
     private val store: Store,
     private val backupManager: BackupManager,
     private val graphService: GraphService,
-    private val sourceCodeService: SourceCodeService,
+    internal val sourceCodeService: SourceCodeService,
     private val chatService: ChatService,
     private val gatewayService: GatewayService,
     private val actionExecutor: ActionExecutor,
