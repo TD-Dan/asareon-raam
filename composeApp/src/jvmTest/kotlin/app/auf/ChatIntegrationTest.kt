@@ -356,9 +356,9 @@ Hello, Daniel.
         val toolManifestMessage = systemMessages.firstOrNull { it.title == "Host Tool Manifest" }
         assertNotNull(toolManifestMessage)
         assertTrue(toolManifestMessage.rawContent?.contains("Tool: Atomic Change Manifest") == true)
-        assertTrue(toolManifestMessage.rawContent?.contains("Tool: Application Request") == true)
-        assertTrue(toolManifestMessage.rawContent?.contains("Tool: File Content View") == true)
-        assertTrue(toolManifestMessage.rawContent?.contains("Tool: State Anchor") == true)
+        assertTrue(toolManifestMessage.rawContent.contains("Tool: Application Request") == true)
+        assertTrue(toolManifestMessage.rawContent.contains("Tool: File Content View") == true)
+        assertTrue(toolManifestMessage.rawContent.contains("Tool: State Anchor") == true)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)

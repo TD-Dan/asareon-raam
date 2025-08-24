@@ -205,6 +205,7 @@ data class SentinelBlock(
     override val summary: String = "Parser Sentinel"
 ) : ContentBlock
 
+@ConsistentCopyVisibility
 data class ChatMessage internal constructor(
     val id: Long,
     val author: Author,
