@@ -29,99 +29,103 @@ import kotlinx.serialization.json.jsonPrimitive
  * - `app.auf.model.ToolDefinition`: The schema for available tools.
  * - `kotlinx.serialization.json.Json`: For parsing JSON payloads in specific blocks.
  *
- * @version 1.0
- * @since 2025-08-23
+ * @version 2.1
+ * @since 2025-08-24
  */
 class AufTextParser(
     private val jsonParser: Json,
     private val toolRegistry: List<ToolDefinition>
 ) {
 
-    private enum class State { SCANNING, DETECT_TOOL, READ_PARAMETERS, TOOL_ACTIVE }
+    private enum class State { SCANNING, TOOL_ACTIVE }
 
     fun parse(rawText: String): List<ContentBlock> {
         val blocks = mutableListOf<ContentBlock>()
+        var currentState = State.SCANNING
         var currentIndex = 0
+        var activeTool: ToolDefinition? = null
+        var activeTagFormat: String = "" // Stores the original format, e.g., "_ACTION_MANIFEST"
 
         while (currentIndex < rawText.length) {
-            val nextTagIndex = rawText.indexOf("[AUF", startIndex = currentIndex, ignoreCase = true)
+            when (currentState) {
+                State.SCANNING -> {
+                    val nextTagIndex = rawText.indexOf("[AUF", startIndex = currentIndex, ignoreCase = true)
 
-            if (nextTagIndex == -1) {
-                // No more tags, add the rest of the text and finish
-                val remainingText = rawText.substring(currentIndex)
-                if (remainingText.isNotBlank()) {
-                    blocks.add(TextBlock(remainingText.trim()))
-                }
-                break
-            }
+                    if (nextTagIndex == -1) {
+                        val remainingText = rawText.substring(currentIndex)
+                        if (remainingText.isNotBlank()) {
+                            blocks.add(TextBlock(remainingText.trim()))
+                        }
+                        currentIndex = rawText.length
+                        continue
+                    }
 
-            // Add the text between the current position and the new tag
-            val textBeforeTag = rawText.substring(currentIndex, nextTagIndex)
-            if (textBeforeTag.isNotBlank()) {
-                blocks.add(TextBlock(textBeforeTag.trim()))
-            }
+                    val textBeforeTag = rawText.substring(currentIndex, nextTagIndex)
+                    if (textBeforeTag.isNotBlank()) {
+                        blocks.add(TextBlock(textBeforeTag.trim()))
+                    }
 
-            // Move past the text we just processed
-            currentIndex = nextTagIndex
+                    val tagContentEnd = rawText.indexOf(']', startIndex = nextTagIndex)
+                    if (tagContentEnd == -1) {
+                        blocks.add(ParseErrorBlock("UNKNOWN", rawText.substring(nextTagIndex), "Unclosed start tag found."))
+                        currentIndex = rawText.length
+                        continue
+                    }
 
-            // --- Begin parsing the tag itself ---
-            val tagContentEnd = rawText.indexOf(']', startIndex = currentIndex)
-            if (tagContentEnd == -1) {
-                blocks.add(ParseErrorBlock("UNKNOWN", rawText.substring(currentIndex), "Unclosed start tag found."))
-                break // Fatal parsing error for the rest of the string
-            }
+                    val fullTagContent = rawText.substring(nextTagIndex + 1, tagContentEnd)
+                    val commandPart = fullTagContent.substringAfter("AUF").trim()
+                    activeTagFormat = commandPart // Store original format for end tag search
 
-            val fullTagContent = rawText.substring(currentIndex + 4, tagContentEnd).trim() // Content between [AUF and ]
-            val paramsStartIndex = fullTagContent.indexOf('(')
-            val commandString = if (paramsStartIndex != -1) fullTagContent.substring(0, paramsStartIndex) else fullTagContent
-            val normalizedCommand = commandString.replace("_", "").replace(" ", "").uppercase()
+                    val normalizedCommand = commandPart.replace("_", "").replace(" ", "").uppercase()
+                    val tool = toolRegistry.find { it.command.replace("_", "").uppercase() == normalizedCommand }
 
-            val tool = toolRegistry.find { it.command == normalizedCommand }
-            if (tool == null) {
-                blocks.add(ParseErrorBlock(normalizedCommand, "", "Unknown tool command."))
-                currentIndex = tagContentEnd + 1
-                continue
-            }
+                    if (tool == null) {
+                        blocks.add(ParseErrorBlock(commandPart, "", "Unknown tool command."))
+                        currentIndex = tagContentEnd + 1
+                        continue
+                    }
 
-            // TODO: Implement parameter parsing logic here in a future step
-            val params = emptyMap<String, String>()
-
-            if (!tool.expectsPayload) {
-                // This tool is a simple, self-closing tag. We don't have this type yet, but the architecture supports it.
-                // For now, we assume all tools have payloads.
-                blocks.add(ParseErrorBlock(tool.command, "", "Self-closing tags are not yet supported."))
-                currentIndex = tagContentEnd + 1
-                continue
-
-            } else {
-                val endTag = "[/AUF${normalizedCommand}]"
-                val endTagIndex = rawText.indexOf(endTag, startIndex = tagContentEnd, ignoreCase = true)
-
-                if (endTagIndex == -1) {
-                    blocks.add(ParseErrorBlock(tool.command, rawText.substring(tagContentEnd + 1), "Closing tag not found."))
-                    break // Fatal error, can't recover
+                    activeTool = tool
+                    currentState = State.TOOL_ACTIVE
+                    currentIndex = tagContentEnd + 1
                 }
 
-                val payload = rawText.substring(tagContentEnd + 1, endTagIndex).trim()
-                blocks.add(processBlock(tool, params, payload))
-                currentIndex = endTagIndex + endTag.length
+                State.TOOL_ACTIVE -> {
+                    val tool = activeTool ?: break
+                    // Use the original format to find the closing tag
+                    val endTag = "[/AUF${activeTagFormat}]"
+                    val endTagIndex = rawText.indexOf(endTag, startIndex = currentIndex, ignoreCase = true)
+
+                    if (endTagIndex == -1) {
+                        val remainingContent = rawText.substring(currentIndex)
+                        blocks.add(ParseErrorBlock(tool.command, remainingContent, "Closing tag '$endTag' not found."))
+                        currentIndex = rawText.length
+                        continue
+                    }
+
+                    val payload = rawText.substring(currentIndex, endTagIndex).trim()
+                    blocks.add(processBlock(tool, emptyMap(), payload))
+
+                    currentIndex = endTagIndex + endTag.length
+                    activeTool = null
+                    currentState = State.SCANNING
+                }
             }
         }
-
         return blocks.filter { (it as? TextBlock)?.text?.isNotBlank() ?: true }
     }
 
     private fun processBlock(tool: ToolDefinition, params: Map<String, String>, content: String): ContentBlock {
         return try {
-            when (tool.command) {
-                "ACTION_MANIFEST" -> {
+            when (tool.command.replace("_", "").uppercase()) {
+                "ACTIONMANIFEST" -> {
                     val cleanContent = content.removePrefix("```json").removeSuffix("```").trim()
                     val actions = jsonParser.decodeFromString(ListSerializer(Action.serializer()), cleanContent)
                     ActionBlock(actions = actions)
                 }
-                "FILE_VIEW" -> FileContentBlock(fileName = params["path"] ?: "unknown file", content = content, language = params["language"])
-                "APP_REQUEST" -> AppRequestBlock(requestType = content)
-                "STATE_ANCHOR" -> {
+                "FILEVIEW" -> FileContentBlock(fileName = params["path"] ?: "unknown file", content = content, language = params["language"])
+                "APPREQUEST" -> AppRequestBlock(requestType = content)
+                "STATEANCHOR" -> {
                     val jsonObject = jsonParser.decodeFromString<JsonObject>(content)
                     val anchorId = jsonObject["anchorId"]?.jsonPrimitive?.content ?: "unknown-anchor"
                     AnchorBlock(anchorId, jsonObject)
