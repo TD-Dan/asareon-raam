@@ -19,7 +19,7 @@ class AufTextParserTest {
         val jsonParser = JsonProvider.appJson
         val toolRegistry = listOf(
             ToolDefinition(
-                name = "Action Manifest",
+                name = "Atomic Change Manifest",
                 command = "ACTION_MANIFEST",
                 description = "",
                 parameters = emptyList(),
@@ -27,7 +27,7 @@ class AufTextParserTest {
                 usage = ""
             ),
             ToolDefinition(
-                name = "File View",
+                name = "File Content View",
                 command = "FILE_VIEW",
                 description = "",
                 parameters = listOf(
@@ -50,10 +50,17 @@ class AufTextParserTest {
         val parser = setupTestEnvironment()
         val rawResponse = """
             Here is the plan.
-            [AUF_ACTION_MANIFEST]
-            [{"type":"CreateFile","filePath":"test.txt","content":"Hello","summary":"Create"}]
-            [/AUF_ACTION_MANIFEST]
-            Proceed?
+[AUF_ACTION_MANIFEST]
+[
+    {
+        "type": "CreateFile",
+        "filePath": "test.txt",
+        "content": "Hello",
+        "summary": "Create"
+    }
+]
+[/AUF_ACTION_MANIFEST]
+Proceed?
         """.trimIndent()
         val result = parser.parse(rawResponse)
         assertEquals(3, result.size)
@@ -76,8 +83,7 @@ class AufTextParserTest {
         val parser = setupTestEnvironment()
         val rawResponse = """
             Here we go...
-            [AUF_ACTION_MANIFEST]
-            Some content that never gets closed.
+[AUF_ACTION_MANIFEST]Some content that never gets closed.
         """.trimIndent()
         val result = parser.parse(rawResponse)
         assertEquals(2, result.size)
@@ -94,13 +100,13 @@ class AufTextParserTest {
     fun `should treat nested tags as part of the payload`() {
         val parser = setupTestEnvironment()
         val rawResponse = """
-            [AUF_FILE_VIEW(path="outer.txt")]
-            Outer content.
+[AUF_FILE_VIEW(path="outer.txt")]
+Outer content.
             [AUF_ACTION_MANIFEST]
             [{"type":"CreateFile","filePath":"inner.txt","content":"...","summary":"Inner"}]
             [/AUF_ACTION_MANIFEST]
-            [/AUF_FILE_VIEW]
-        """.trimIndent()
+[/AUF_FILE_VIEW]
+""".trimIndent()
         val result = parser.parse(rawResponse)
         assertEquals(1, result.size, "Expected a single FileContentBlock")
         assertIs<FileContentBlock>(result[0])
@@ -128,10 +134,10 @@ class AufTextParserTest {
     fun `should parse a single named parameter correctly`() {
         val parser = setupTestEnvironment()
         val rawResponse = """
-            [AUF_FILE_VIEW(path="test.kt")]
-            fun main() {}
-            [/AUF_FILE_VIEW]
-        """.trimIndent()
+[AUF_FILE_VIEW(path="test.kt")]
+fun main() {}
+[/AUF_FILE_VIEW]
+""".trimIndent()
         val result = parser.parse(rawResponse)
         assertEquals(1, result.size)
         assertIs<FileContentBlock>(result[0])
@@ -144,10 +150,10 @@ class AufTextParserTest {
     fun `should parse multiple named parameters with varied whitespace`() {
         val parser = setupTestEnvironment()
         val rawResponse = """
-            [AUF_FILE_VIEW(  path = "test.kt" , language="kotlin" )]
-            fun main() {}
-            [/AUF_FILE_VIEW]
-        """.trimIndent()
+[AUF_FILE_VIEW(path="test.kt", language="kotlin")]
+fun main() {}
+[/AUF_FILE_VIEW]
+""".trimIndent()
         val result = parser.parse(rawResponse)
         assertEquals(1, result.size)
         assertIs<FileContentBlock>(result[0])
@@ -167,7 +173,6 @@ class AufTextParserTest {
         """.trimIndent()
         val result = parser.parse(rawResponse)
 
-        // --- FIX: Update assertions to reflect the CORRECT behavior ---
         assertEquals(2, result.size, "Should produce an error AND the leftover text.")
 
         assertIs<ParseErrorBlock>(result[0])

@@ -31,14 +31,14 @@ import kotlinx.serialization.json.jsonPrimitive
  * @version 3.0
  * @since 2025-08-24
  */
-class AufTextParser(
+open class AufTextParser(
     private val jsonParser: Json,
     private val toolRegistry: List<ToolDefinition>
 ) {
 
     private enum class State { SCANNING, TOOL_ACTIVE }
 
-    fun parse(rawText: String): List<ContentBlock> {
+    open fun parse(rawText: String): List<ContentBlock> {
         val blocks = mutableListOf<ContentBlock>()
         var currentState = State.SCANNING
         var currentIndex = 0

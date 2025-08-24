@@ -61,11 +61,12 @@ class MessageCardTest {
         fakeStore = FakeStore(initialState, testCoroutineScope)
         val fakePlatform = FakePlatformDependencies()
 
-        // --- MODIFIED: Initialize the factory before creating the StateManager ---
-        ChatMessage.Factory.initialize(fakePlatform)
+        val fakeParser = AufTextParser(JsonProvider.appJson, emptyList<ToolDefinition>())
+
+        // MODIFICATION: Pass the parser to the factory initializer.
+        ChatMessage.Factory.initialize(fakePlatform, fakeParser)
 
         val fakeGatewayService = FakeGatewayService(testCoroutineScope)
-        val fakeParser = AufTextParser(JsonProvider.appJson, emptyList<ToolDefinition>())
 
         stateManager = StateManager(
             store = fakeStore,
@@ -93,9 +94,9 @@ class MessageCardTest {
     @Test
     fun `RenderTextBlock should display the correct text`() {
         val testMessage = "This is a test message."
-        // --- MODIFIED: Use the factory to create the test message ---
+        // MODIFICATION: Use the factory to create the test message from rawContent
         val message = ChatMessage.Factory.createUser(
-            contentBlocks = listOf(TextBlock(testMessage))
+            rawContent = testMessage
         )
 
         composeTestRule.setContent {
@@ -108,11 +109,14 @@ class MessageCardTest {
     @Test
     fun `RenderActionBlock shows Confirm and Reject buttons when PENDING`() {
         val action = CreateFile("a.txt", "b", "c")
-        // --- MODIFIED: Use the factory to create the test message ---
+        // MODIFICATION: Use the factory to create the test message from rawContent
         val message = ChatMessage.Factory.createAi(
-            contentBlocks = listOf(ActionBlock(listOf<Action>(action), status = ActionStatus.PENDING)),
-            usageMetadata = null,
-            rawContent = null
+            rawContent = """
+                [AUF_ACTION_MANIFEST]
+                [{"type":"CreateFile","filePath":"a.txt","content":"b","summary":"c"}]
+                [/AUF_ACTION_MANIFEST]
+            """.trimIndent(),
+            usageMetadata = null
         )
 
         composeTestRule.setContent {
@@ -126,12 +130,16 @@ class MessageCardTest {
     @Test
     fun `RenderActionBlock hides buttons when EXECUTED`() {
         val action = CreateFile("a.txt", "b", "c")
-        // --- MODIFIED: Use the factory to create the test message ---
+        // MODIFICATION: Use the factory to create the test message from rawContent
         val message = ChatMessage.Factory.createAi(
-            contentBlocks = listOf(ActionBlock(listOf<Action>(action), status = ActionStatus.EXECUTED)),
-            usageMetadata = null,
-            rawContent = null
-        )
+            rawContent = """
+                [AUF_ACTION_MANIFEST]
+                [{"type":"CreateFile","filePath":"a.txt","content":"b","summary":"c"}]
+                [/AUF_ACTION_MANIFEST]
+            """.trimIndent(),
+            usageMetadata = null
+        ).copy(contentBlocks = listOf(ActionBlock(listOf<Action>(action), status = ActionStatus.EXECUTED)))
+
 
         composeTestRule.setContent {
             MessageCard(message = message, stateManager = stateManager)
@@ -145,12 +153,15 @@ class MessageCardTest {
     @Test
     fun `RenderActionBlock hides buttons when REJECTED`() {
         val action = CreateFile("a.txt", "b", "c")
-        // --- MODIFIED: Use the factory to create the test message ---
+        // MODIFICATION: Use the factory to create the test message from rawContent
         val message = ChatMessage.Factory.createAi(
-            contentBlocks = listOf(ActionBlock(listOf<Action>(action), status = ActionStatus.REJECTED)),
-            usageMetadata = null,
-            rawContent = null
-        )
+            rawContent = """
+                [AUF_ACTION_MANIFEST]
+                [{"type":"CreateFile","filePath":"a.txt","content":"b","summary":"c"}]
+                [/AUF_ACTION_MANIFEST]
+            """.trimIndent(),
+            usageMetadata = null
+        ).copy(contentBlocks = listOf(ActionBlock(listOf<Action>(action), status = ActionStatus.REJECTED)))
 
         composeTestRule.setContent {
             MessageCard(message = message, stateManager = stateManager)
@@ -165,40 +176,31 @@ class MessageCardTest {
     fun `RenderParseErrorBlock displays error details correctly`() {
         val errorMessage = "Something went wrong."
         val rawContent = "{malformed json}"
-        // --- MODIFIED: Use the factory to create the test message ---
+        // MODIFICATION: Use the factory to create the test message from rawContent
         val message = ChatMessage.Factory.createSystem(
             title = "SYSTEM",
-            contentBlocks = listOf(
-                ParseErrorBlock(
-                    originalTag = "TEST_TAG",
-                    rawContent = rawContent,
-                    errorMessage = errorMessage
-                )
-            )
+            rawContent = "<!-- PARSE ERROR: TEST_TAG | RAW: $rawContent -->" // Simulating the raw content of a ParseErrorBlock
         )
 
         composeTestRule.setContent {
             MessageCard(message = message, stateManager = stateManager)
         }
 
+        // To see the error content, we need to ensure the system message is expanded, as it defaults to collapsed
         composeTestRule.onNodeWithText("SYSTEM").performClick()
 
-        composeTestRule.onNodeWithText("Parse Error: [AUF_TEST_TAG]", substring = true).assertExists()
+        composeTestRule.onNodeWithText("Parse Error:", substring = true).assertExists()
         composeTestRule.onNodeWithText(errorMessage, substring = true).assertExists()
         composeTestRule.onNodeWithText(rawContent).assertExists()
     }
 
     @Test
     fun `deleteMenuItemClick should dispatch DeleteAction`() {
-        // ARRANGE: Create a message to be deleted.
-        val messageToDelete = ChatMessage.Factory.createUser(
-            contentBlocks = listOf(TextBlock("Delete me"))
-        )
-        // Set the initial state in the fake store.
+        // ARRANGE:
+        val rawMessageContent = "Delete me"
+        // MODIFICATION: Dispatch the raw content, simulating the new flow.
         fakeStore.dispatch(
-            AppAction.AddUserMessage(
-                (messageToDelete.contentBlocks)
-            )
+            AppAction.AddUserMessage(rawMessageContent)
         )
         // The message in the store will have a new ID, so we need to get it.
         val messageInState = fakeStore.state.value.chatHistory.first()

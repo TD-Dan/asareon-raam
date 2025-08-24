@@ -1,6 +1,7 @@
 package app.auf.core
 
 import app.auf.fakes.FakeActionExecutor
+import app.auf.fakes.FakeAufTextParser // Import the new Fake
 import app.auf.fakes.FakeBackupManager
 import app.auf.fakes.FakeChatService
 import app.auf.fakes.FakeGatewayService
@@ -14,7 +15,6 @@ import app.auf.model.CreateFile
 import app.auf.model.ToolDefinition
 import app.auf.model.UserSettings
 import app.auf.service.ActionExecutorResult
-import app.auf.service.AufTextParser
 import app.auf.ui.ImportExportViewModel
 import app.auf.util.JsonProvider
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -30,7 +30,8 @@ class StateManagerTest {
 
     @BeforeTest
     fun initializeFactory() {
-        ChatMessage.Factory.initialize(FakePlatformDependencies())
+        // MODIFICATION: Initialize factory with parser
+        ChatMessage.Factory.initialize(FakePlatformDependencies(), FakeAufTextParser())
     }
 
     private fun setupTestEnvironment(
@@ -45,7 +46,8 @@ class StateManagerTest {
         val jsonParser = JsonProvider.appJson
 
         val toolRegistry = listOf<ToolDefinition>()
-        val parser = AufTextParser(jsonParser, toolRegistry)
+        // MODIFICATION: Use FakeAufTextParser here
+        val parser = FakeAufTextParser(jsonParser, toolRegistry)
 
         val gatewayService = FakeGatewayService(scope, toolRegistry)
         val chatService = FakeChatService(store, gatewayService, platform, parser, toolRegistry, scope)
@@ -76,11 +78,24 @@ class StateManagerTest {
     @Test
     fun `executeActionFromMessage success path dispatches correct actions and reloads graph`() = runTest {
         val manifest = listOf(CreateFile("test.txt", "content", "Create test file"))
+        val rawManifestContent = """
+            [AUF_ACTION_MANIFEST]
+            [
+                {
+                    "type": "CreateFile",
+                    "filePath": "test.txt",
+                    "content": "Hello",
+                    "summary": "Create test file"
+                }
+            ]
+            [/AUF_ACTION_MANIFEST]
+        """.trimIndent()
+        // MODIFICATION: Use rawContent to create an AI message
         val actionMessage = ChatMessage.Factory.createAi(
-            contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING)),
-            usageMetadata = null,
-            rawContent = null
-        )
+            rawContent = rawManifestContent,
+            usageMetadata = null
+        ).copy(contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING))) // Manual override for test block
+
         val messageTimestamp = actionMessage.timestamp
 
         val initialState = AppState(chatHistory = listOf(actionMessage), aiPersonaId = "sage-1")
@@ -106,11 +121,23 @@ class StateManagerTest {
     @Test
     fun `executeActionFromMessage failure path dispatches failure action`() = runTest {
         val manifest = listOf<Action>(CreateFile("test.txt", "content", "Create test file"))
+        val rawManifestContent = """
+            [AUF_ACTION_MANIFEST]
+            [
+                {
+                    "type": "CreateFile",
+                    "filePath": "test.txt",
+                    "content": "Hello",
+                    "summary": "Create test file"
+                }
+            ]
+            [/AUF_ACTION_MANIFEST]
+        """.trimIndent()
+        // MODIFICATION: Use rawContent to create an AI message
         val actionMessage = ChatMessage.Factory.createAi(
-            contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING)),
-            usageMetadata = null,
-            rawContent = null
-        )
+            rawContent = rawManifestContent,
+            usageMetadata = null
+        ).copy(contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING))) // Manual override for test block
         val messageTimestamp = actionMessage.timestamp
 
         val initialState = AppState(chatHistory = listOf(actionMessage))

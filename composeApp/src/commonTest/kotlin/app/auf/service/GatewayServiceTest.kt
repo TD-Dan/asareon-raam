@@ -3,6 +3,7 @@ package app.auf.service
 import app.auf.core.Author
 import app.auf.core.ChatMessage
 import app.auf.core.TextBlock
+import app.auf.fakes.FakeAufTextParser // Import the new Fake
 import app.auf.fakes.FakeGateway
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.model.ToolDefinition
@@ -20,7 +21,8 @@ class GatewayServiceTest {
 
     @BeforeTest
     fun initializeFactory() {
-        ChatMessage.Factory.initialize(FakePlatformDependencies())
+        // MODIFICATION: Initialize factory with parser
+        ChatMessage.Factory.initialize(FakePlatformDependencies(), FakeAufTextParser())
     }
 
     private fun setupTestEnvironment(scope: TestScope): Triple<GatewayService, FakeGateway, List<ToolDefinition>> {
@@ -31,8 +33,10 @@ class GatewayServiceTest {
             ToolDefinition("Action Manifest", "ACTION_MANIFEST", "", emptyList(), true, "")
         )
 
-        val parser = AufTextParser(jsonParser, toolRegistry)
+        // MODIFICATION: Use FakeAufTextParser here
+        val parser = FakeAufTextParser(jsonParser, toolRegistry)
 
+        // MODIFICATION: Pass the parser to FakeGatewayService constructor
         val service = GatewayService(fakeGateway, parser, toolRegistry, "fake-api-key", scope)
 
         return Triple(service, fakeGateway, toolRegistry)
@@ -42,13 +46,15 @@ class GatewayServiceTest {
     fun `sendMessage success path parses response correctly`() = runTest {
         // ARRANGE
         val (service, fakeGateway, _) = setupTestEnvironment(this)
+        val aiRawResponse = "Hello, this is a test."
         fakeGateway.nextResponse = GenerateContentResponse(
             candidates = listOf(
-                Candidate(content = Content("model", listOf(Part("Hello, this is a test."))))
+                Candidate(content = Content("model", listOf(Part(aiRawResponse))))
             ),
             usageMetadata = UsageMetadata(10, 5, 15)
         )
-        val messages = listOf(ChatMessage.Factory.createUser(contentBlocks = listOf(TextBlock("Hi"))))
+        // MODIFICATION: Use rawContent for createUser
+        val messages = listOf(ChatMessage.Factory.createUser(rawContent = "Hi"))
 
         // ACT
         val result = service.sendMessage("test-model", messages)
@@ -58,6 +64,7 @@ class GatewayServiceTest {
         assertEquals(1, result.contentBlocks.size)
         assertIs<TextBlock>(result.contentBlocks[0])
         assertEquals("Hello, this is a test.", (result.contentBlocks[0] as TextBlock).text)
+        assertEquals(aiRawResponse, result.rawContent) // Verify rawContent is preserved
         assertEquals(15, result.usageMetadata?.totalTokenCount)
         assertEquals(1, fakeGateway.generateContentCallCount)
     }
@@ -69,7 +76,8 @@ class GatewayServiceTest {
         fakeGateway.nextResponse = GenerateContentResponse(
             error = ApiError(500, "Internal Server Error", "ERROR")
         )
-        val messages = listOf(ChatMessage.Factory.createUser(contentBlocks = listOf(TextBlock("Hi"))))
+        // MODIFICATION: Use rawContent for createUser
+        val messages = listOf(ChatMessage.Factory.createUser(rawContent = "Hi"))
 
         // ACT
         val result = service.sendMessage("test-model", messages)
@@ -103,11 +111,12 @@ class GatewayServiceTest {
         // ARRANGE
         val (service, fakeGateway, _) = setupTestEnvironment(this)
         val messages = listOf(
-            ChatMessage.Factory.createSystem(title = "file1.txt", contentBlocks = listOf(TextBlock("System prompt."))),
-            ChatMessage.Factory.createUser(contentBlocks = listOf(TextBlock("First user message."))),
-            ChatMessage.Factory.createUser(contentBlocks = listOf(TextBlock("Second user message."))),
-            ChatMessage.Factory.createAi(contentBlocks = listOf(TextBlock("AI response.")), usageMetadata = null, rawContent = null),
-            ChatMessage.Factory.createUser(contentBlocks = listOf(TextBlock("Third user message.")))
+            // MODIFICATION: Use rawContent for createSystem and createUser/createAi
+            ChatMessage.Factory.createSystem(title = "file1.txt", rawContent = "System prompt."),
+            ChatMessage.Factory.createUser(rawContent = "First user message."),
+            ChatMessage.Factory.createUser(rawContent = "Second user message."),
+            ChatMessage.Factory.createAi(rawContent = "AI response.", usageMetadata = null),
+            ChatMessage.Factory.createUser(rawContent = "Third user message.")
         )
 
         // ACT
@@ -116,7 +125,6 @@ class GatewayServiceTest {
 
         // ASSERT
         assertNotNull(sentToGateway)
-        // --- FIX IS HERE: The expectation is corrected from 4 to 3. ---
         assertEquals(3, sentToGateway.size, "Should be 3 content blocks after merging SYSTEM and USER roles.")
 
         // Block 1: Merged System and User Messages
