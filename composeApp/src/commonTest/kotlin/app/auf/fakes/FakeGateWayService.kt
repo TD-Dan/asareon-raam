@@ -1,7 +1,6 @@
 
 package app.auf.fakes
 
-import app.auf.core.Author
 import app.auf.core.ChatMessage
 import app.auf.core.GatewayResponse
 import app.auf.model.ToolDefinition

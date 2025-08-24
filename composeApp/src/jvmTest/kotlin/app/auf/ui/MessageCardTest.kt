@@ -9,9 +9,7 @@ import app.auf.core.ActionStatus
 import app.auf.core.AppAction
 import app.auf.core.AppState
 import app.auf.core.ChatMessage
-import app.auf.core.ParseErrorBlock
 import app.auf.core.StateManager
-import app.auf.core.TextBlock
 import app.auf.fakes.FakeActionExecutor
 import app.auf.fakes.FakeBackupManager
 import app.auf.fakes.FakeChatService
@@ -35,7 +33,6 @@ import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertTrue
 
 /**
  * Unit tests for the MessageCard Composable and its sub-renderers.

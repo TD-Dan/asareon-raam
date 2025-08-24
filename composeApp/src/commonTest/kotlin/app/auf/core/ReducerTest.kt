@@ -4,7 +4,6 @@ import app.auf.fakes.FakeAufTextParser
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.model.CreateFile
 import app.auf.model.ToolDefinition
-import app.auf.service.AufTextParser
 import app.auf.util.JsonProvider
 import kotlin.test.BeforeTest
 import kotlin.test.Test

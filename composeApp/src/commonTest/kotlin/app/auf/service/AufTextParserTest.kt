@@ -4,7 +4,6 @@ import app.auf.core.ActionBlock
 import app.auf.core.FileContentBlock
 import app.auf.core.ParseErrorBlock
 import app.auf.core.TextBlock
-import app.auf.model.CreateFile
 import app.auf.model.Parameter
 import app.auf.model.ToolDefinition
 import app.auf.util.JsonProvider

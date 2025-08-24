@@ -27,7 +27,7 @@ open class ChatService(
     private val store: Store,
     private val gatewayService: GatewayService,
     private val platform: PlatformDependencies,
-    private val parser: AufTextParser, // Still needed for parsing content blocks for system status display for example, but NOT for reconstruction
+    //private val parser: AufTextParser,
     private val toolRegistry: List<ToolDefinition>,
     private val coroutineScope: CoroutineScope
 ) {

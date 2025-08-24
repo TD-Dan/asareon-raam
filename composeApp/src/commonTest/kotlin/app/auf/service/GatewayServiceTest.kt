@@ -1,6 +1,5 @@
 package app.auf.service
 
-import app.auf.core.Author
 import app.auf.core.ChatMessage
 import app.auf.core.TextBlock
 import app.auf.fakes.FakeAufTextParser // Import the new Fake
@@ -84,7 +83,7 @@ class GatewayServiceTest {
 
         // ASSERT
         assertNotNull(result.errorMessage)
-        assertTrue(result.errorMessage!!.contains("API Error: Internal Server Error"))
+        assertTrue(result.errorMessage.contains("API Error: Internal Server Error"))
     }
 
     @Test
