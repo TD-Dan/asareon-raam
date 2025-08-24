@@ -11,6 +11,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -32,6 +34,7 @@ fun ChatView(
     val coroutineScope = rememberCoroutineScope()
     val lazyListState = rememberLazyListState()
     val clipboardManager = LocalClipboardManager.current
+    val focusRequester = remember { FocusRequester() }
 
     val availableModels = appState.availableModels
     val selectedModel = appState.selectedModel
@@ -79,8 +82,6 @@ fun ChatView(
         ) {
             items(
                 items = displayedMessages,
-                // --- FIX IS HERE ---
-                // The key is now the guaranteed unique message.id, making the UI robust.
                 key = { message -> message.id }
             ) { message ->
                 MessageCard(message = message, stateManager = stateManager)
@@ -138,7 +139,9 @@ fun ChatView(
                     Text("Agent:", fontSize = 12.sp)
                     Spacer(Modifier.width(8.dp))
                     Box {
-                        Button(onClick = { isAgentSelectorExpanded = true }) { Text(selectedAiPersonaName) }
+                        Button(onClick = { isAgentSelectorExpanded = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                        ) { Text(selectedAiPersonaName) }
                         DropdownMenu(expanded = isAgentSelectorExpanded, onDismissRequest = { isAgentSelectorExpanded = false }) {
                             DropdownMenuItem(text = { Text("None") }, onClick = { stateManager.selectAiPersona(null); isAgentSelectorExpanded = false })
                             aiPersonas.forEach { persona ->
@@ -170,12 +173,21 @@ fun ChatView(
             OutlinedTextField(
                 value = userMessage,
                 onValueChange = { userMessage = it },
-                modifier = Modifier.weight(1f).onKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown && (event.isCtrlPressed) && event.key == Key.Enter) {
-                        sendMessageAction(); true
-                    } else false
-                },
-                placeholder = { Text("Enter message... (Ctrl+Enter to send)") },
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester)
+                    .onKeyEvent { event ->
+                        if (event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
+                            if (event.isCtrlPressed) {
+                                sendMessageAction()
+                                return@onKeyEvent true // We've handled this event.
+                            }
+                        }
+                        // For all other cases (including plain Enter, Shift+Enter, etc.),
+                        // let the default handler run to allow newlines.
+                        false
+                    },
+                placeholder = { Text("Enter message... (Ctrl+Enter to send, Enter for newline)") },
                 enabled = !appState.isProcessing && appState.gatewayStatus == GatewayStatus.OK
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -195,6 +207,18 @@ fun ChatView(
                     Text("Send")
                 }
             }
+        }
+    }
+
+    // Request initial focus when the view is first composed.
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
+
+    // Request focus whenever the AI is done processing and the input field becomes enabled again.
+    LaunchedEffect(appState.isProcessing) {
+        if (!appState.isProcessing) {
+            focusRequester.requestFocus()
         }
     }
 }
