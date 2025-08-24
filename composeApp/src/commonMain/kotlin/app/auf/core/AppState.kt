@@ -22,7 +22,7 @@ import kotlinx.serialization.json.JsonObject
  * - `Action` (from ActionModels.kt): Used within the `ActionBlock` content type.
  * - `kotlinx.serialization`: Used extensively for defining serializable data contracts.
  *
- * @version 1.7
+ * @version 1.8
  * @since 2025-08-17
  */
 
@@ -115,6 +115,8 @@ data class AppState(
     val contextualHolonIds: Set<String> = emptySet(),
     val inspectedHolonId: String? = null,
     val chatHistory: List<ChatMessage> = emptyList(),
+    // --- FIX IS HERE (1/2) ---
+    val messageIdCounter: Long = 0, // Counter to generate unique IDs.
     val isSystemVisible: Boolean = false,
     val gatewayStatus: GatewayStatus = GatewayStatus.IDLE,
     val isProcessing: Boolean = false,
@@ -203,6 +205,8 @@ data class SentinelBlock(
 ) : ContentBlock
 
 data class ChatMessage(
+    // --- FIX IS HERE (2/2) ---
+    val id: Long, // A unique, non-nullable identifier for this message.
     val author: Author,
     val title: String? = null,
     val timestamp: Long,

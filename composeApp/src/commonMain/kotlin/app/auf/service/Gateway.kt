@@ -37,8 +37,16 @@ data class Candidate(val content: Content)
 @Serializable
 data class PromptFeedback(val blockReason: String?)
 
+// --- FIX IS HERE ---
+// By making the individual token counts nullable, we prevent a crash if the API
+// sends a usageMetadata object with missing fields.
 @Serializable
-data class UsageMetadata(val promptTokenCount: Int, val candidatesTokenCount: Int, val totalTokenCount: Int)
+data class UsageMetadata(
+    val promptTokenCount: Int? = null,
+    val candidatesTokenCount: Int? = null,
+    val totalTokenCount: Int? = null
+)
+// --- END FIX ---
 
 @Serializable
 data class ApiError(val code: Int, val message: String, val status: String)
@@ -46,16 +54,13 @@ data class ApiError(val code: Int, val message: String, val status: String)
 @Serializable
 data class ListModelsResponse(val models: List<ModelInfo>)
 
-// --- MODIFIED: Updated the ModelInfo data class ---
 @Serializable
 data class ModelInfo(
     val name: String,
     val displayName: String? = null,
     val version: String? = null,
-    // This is the key field for robust filtering. It tells us what the model can actually do.
     val supportedGenerationMethods: List<String> = emptyList()
 )
-// --- END MODIFICATION ---
 
 
 /**
@@ -72,7 +77,7 @@ data class ModelInfo(
  * - `io.ktor.client.HttpClient`
  * - `kotlinx.serialization.json.Json`
  *
- * @version 1.2
+ * @version 1.3
  * @since 2025-08-17
  */
 open class Gateway(private val jsonParser: Json) {

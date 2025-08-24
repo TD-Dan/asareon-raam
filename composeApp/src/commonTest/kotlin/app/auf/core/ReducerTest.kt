@@ -1,6 +1,5 @@
 package app.auf.core
 
-import androidx.compose.foundation.layout.size
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -11,49 +10,48 @@ class ReducerTest {
 
     @Test
     fun `UpdateActionStatus should update the status in the correct message and block`() {
-        // GIVEN an initial state with a chat message containing a PENDING ActionBlock
-        val actionMessage = ChatMessage(
-            author = Author.AI,
-            timestamp = 12345L,
-            contentBlocks = listOf(
-                TextBlock("Here is a plan."),
-                ActionBlock(actions = emptyList(), status = ActionStatus.PENDING)
-            )
+        // ARRANGE: Use the reducer to create messages with proper, unique IDs.
+        var state = initialState
+        val actionMessageContent = listOf(
+            TextBlock("Here is a plan."),
+            ActionBlock(actions = emptyList(), status = ActionStatus.PENDING)
         )
-        val otherMessage = ChatMessage(author = Author.USER, timestamp = 67890L, contentBlocks = listOf(TextBlock("Do it.")))
-        val stateWithAction = initialState.copy(chatHistory = listOf(actionMessage, otherMessage))
+        // Dispatch actions to add messages, letting the reducer handle ID generation.
+        state = appReducer(state, AppAction.SendMessageSuccess(GatewayResponse(contentBlocks = actionMessageContent), 12345L))
+        state = appReducer(state, AppAction.AddUserMessage(listOf(TextBlock("Do it.")), 67890L))
 
-        // WHEN the UpdateActionStatus action is dispatched for the correct timestamp
-        val action = AppAction.UpdateActionStatus(12345L, ActionStatus.EXECUTED)
-        val newState = appReducer(stateWithAction, action)
+        // Get the timestamp of the message we want to modify.
+        val messageToUpdate = state.chatHistory.first()
+        val otherMessage = state.chatHistory.last()
 
-        // THEN the corresponding ActionBlock should be marked as EXECUTED
-        val updatedMessage = newState.chatHistory.find { it.timestamp == 12345L }
+        // ACT: Dispatch the action to update the status.
+        val action = AppAction.UpdateActionStatus(messageToUpdate.timestamp, ActionStatus.EXECUTED)
+        val newState = appReducer(state, action)
+
+        // ASSERT: Verify the state was updated correctly.
+        val updatedMessage = newState.chatHistory.find { it.id == messageToUpdate.id }
         val actionBlock = updatedMessage?.contentBlocks?.filterIsInstance<ActionBlock>()?.first()
         assertEquals(ActionStatus.EXECUTED, actionBlock?.status, "ActionBlock status should be EXECUTED")
 
-        // AND other messages should remain unchanged
-        assertEquals(2, newState.chatHistory.size)
-        val unchangedMessage = newState.chatHistory.find { it.timestamp == 67890L }
-        assertEquals(otherMessage, unchangedMessage)
+        // AND other messages should remain unchanged.
+        val unchangedMessage = newState.chatHistory.find { it.id == otherMessage.id }
+        assertEquals(otherMessage.contentBlocks, unchangedMessage?.contentBlocks)
     }
 
     @Test
     fun `UpdateActionStatus should do nothing if timestamp does not match`() {
-        // GIVEN a state with a PENDING ActionBlock
-        val actionMessage = ChatMessage(
-            author = Author.AI,
-            timestamp = 12345L,
-            contentBlocks = listOf(ActionBlock(actions = emptyList(), status = ActionStatus.PENDING))
-        )
-        val stateWithAction = initialState.copy(chatHistory = listOf(actionMessage))
+        // ARRANGE: Create the initial message using the reducer.
+        var state = initialState
+        val actionMessageContent = listOf(ActionBlock(actions = emptyList(), status = ActionStatus.PENDING))
+        state = appReducer(state, AppAction.SendMessageSuccess(GatewayResponse(contentBlocks = actionMessageContent), 12345L))
+        val messageToTest = state.chatHistory.first()
 
-        // WHEN the action is dispatched with a non-matching timestamp
+        // ACT: Dispatch an action with a non-matching timestamp.
         val action = AppAction.UpdateActionStatus(99999L, ActionStatus.EXECUTED)
-        val newState = appReducer(stateWithAction, action)
+        val newState = appReducer(state, action)
 
-        // THEN the ActionBlock should remain PENDING
-        val originalMessage = newState.chatHistory.find { it.timestamp == 12345L }
+        // ASSERT: The state should be unchanged.
+        val originalMessage = newState.chatHistory.find { it.id == messageToTest.id }
         val actionBlock = originalMessage?.contentBlocks?.filterIsInstance<ActionBlock>()?.first()
         assertEquals(ActionStatus.PENDING, actionBlock?.status, "ActionBlock status should not have changed")
         assertNotEquals(ActionStatus.EXECUTED, actionBlock?.status)

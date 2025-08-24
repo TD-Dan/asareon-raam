@@ -19,7 +19,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.StateManager
 import app.auf.core.AppState
-import app.auf.core.Author
 import app.auf.core.GatewayStatus
 import kotlinx.coroutines.launch
 
@@ -40,7 +39,7 @@ fun ChatView(
     val selectedAiPersonaId = appState.aiPersonaId
     val selectedAiPersonaName = aiPersonas.find { it.id == selectedAiPersonaId }?.name ?: "None"
 
-    val lastTransactionTokens = appState.chatHistory.lastOrNull { it.author == Author.AI }?.usageMetadata
+    val lastTransactionTokens = appState.chatHistory.lastOrNull { it.author == app.auf.core.Author.AI }?.usageMetadata
 
     val displayedMessages by remember(appState.isSystemVisible, appState.chatHistory, appState.activeHolons) {
         derivedStateOf {
@@ -80,7 +79,9 @@ fun ChatView(
         ) {
             items(
                 items = displayedMessages,
-                key = { message -> "${message.timestamp}-${message.author}-${message.contentBlocks.firstOrNull()?.summary}" }
+                // --- FIX IS HERE ---
+                // The key is now the guaranteed unique message.id, making the UI robust.
+                key = { message -> message.id }
             ) { message ->
                 MessageCard(message = message, stateManager = stateManager)
             }
@@ -118,8 +119,11 @@ fun ChatView(
 
 
             lastTransactionTokens?.let {
+                val promptTokens = it.promptTokenCount ?: 0
+                val candidateTokens = it.candidatesTokenCount ?: 0
+                val totalTokens = it.totalTokenCount ?: (promptTokens + candidateTokens)
                 Text(
-                    text = "Last Tx: ${it.promptTokenCount}p / ${it.candidatesTokenCount}o / ${it.totalTokenCount}t",
+                    text = "Last Tx: ${promptTokens}p / ${candidateTokens}o / ${totalTokens}t",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontStyle = FontStyle.Italic

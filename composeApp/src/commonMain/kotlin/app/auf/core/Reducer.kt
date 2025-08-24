@@ -15,7 +15,7 @@ package app.auf.core
  * - `app.auf.core.AppState`: The state object it operates on.
  * - `app.auf.core.AppAction`: The actions it responds to.
  *
- * @version 2.2
+ * @version 2.3
  * @since 2025-08-17
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
@@ -32,17 +32,23 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             val personaHolon = result.holonGraph.find { it.header.id == result.determinedPersonaId }
             val initialActiveHolons = if (personaHolon != null) mapOf(personaHolon.header.id to personaHolon) else emptyMap()
 
-            val newChatHistory = state.chatHistory.toMutableList()
+            var newChatHistory = state.chatHistory
+            var newMessageIdCounter = state.messageIdCounter
+
             if (result.parsingErrors.isNotEmpty()) {
                 val errorContent = "The following ${result.parsingErrors.size} files could not be parsed and were excluded from the graph:\n\n" +
                         result.parsingErrors.joinToString("\n") { "- $it" }
+
+                // --- FIX: Assign a unique ID to the system message ---
+                newMessageIdCounter++
                 val errorMessage = ChatMessage(
+                    id = newMessageIdCounter,
                     author = Author.SYSTEM,
                     title = "Graph Parsing Warning",
                     contentBlocks = listOf(TextBlock(errorContent)),
                     timestamp = action.timestamp
                 )
-                newChatHistory.add(errorMessage)
+                newChatHistory = newChatHistory + errorMessage
             }
 
             state.copy(
@@ -52,6 +58,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                 aiPersonaId = result.determinedPersonaId,
                 activeHolons = initialActiveHolons,
                 chatHistory = newChatHistory,
+                messageIdCounter = newMessageIdCounter, // Update the counter
                 errorMessage = null
             )
         }
@@ -62,28 +69,40 @@ fun appReducer(state: AppState, action: AppAction): AppState {
 
         // --- Chat & Gateway ---
         is AppAction.AddUserMessage -> {
+            val newMessageId = state.messageIdCounter + 1
             val userMessage = ChatMessage(
+                id = newMessageId, // --- FIX: Assign the unique ID ---
                 author = Author.USER,
                 timestamp = action.timestamp,
                 contentBlocks = action.contentBlocks
             )
-            state.copy(chatHistory = state.chatHistory + userMessage)
+            state.copy(
+                chatHistory = state.chatHistory + userMessage,
+                messageIdCounter = newMessageId // --- FIX: Increment the counter ---
+            )
         }
         is AppAction.AddSystemMessage -> {
+            val newMessageId = state.messageIdCounter + 1
             val systemMessage = ChatMessage(
+                id = newMessageId, // --- FIX: Assign the unique ID ---
                 author = Author.SYSTEM,
                 title = "System Request",
                 timestamp = action.timestamp,
                 contentBlocks = action.contentBlocks
             )
-            state.copy(chatHistory = state.chatHistory + systemMessage)
+            state.copy(
+                chatHistory = state.chatHistory + systemMessage,
+                messageIdCounter = newMessageId // --- FIX: Increment the counter ---
+            )
         }
         is AppAction.SendMessageLoading -> state.copy(
             isProcessing = true,
             errorMessage = null
         )
         is AppAction.SendMessageSuccess -> {
+            val newMessageId = state.messageIdCounter + 1
             val aiMessage = ChatMessage(
+                id = newMessageId, // --- FIX: Assign the unique ID ---
                 author = Author.AI,
                 title = "AI",
                 contentBlocks = action.response.contentBlocks,
@@ -93,11 +112,14 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             )
             state.copy(
                 isProcessing = false,
-                chatHistory = state.chatHistory + aiMessage
+                chatHistory = state.chatHistory + aiMessage,
+                messageIdCounter = newMessageId // --- FIX: Increment the counter ---
             )
         }
         is AppAction.SendMessageFailure -> {
+            val newMessageId = state.messageIdCounter + 1
             val errorChatMessage = ChatMessage(
+                id = newMessageId, // --- FIX: Assign the unique ID ---
                 author = Author.SYSTEM,
                 title = "Gateway Error",
                 contentBlocks = listOf(TextBlock(action.error)),
@@ -105,7 +127,8 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             )
             state.copy(
                 isProcessing = false,
-                chatHistory = state.chatHistory + errorChatMessage
+                chatHistory = state.chatHistory + errorChatMessage,
+                messageIdCounter = newMessageId // --- FIX: Increment the counter ---
             )
         }
         is AppAction.CancelMessage -> state.copy(

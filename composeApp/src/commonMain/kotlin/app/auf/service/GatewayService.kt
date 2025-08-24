@@ -1,10 +1,23 @@
 package app.auf.service
 
-import app.auf.core.ChatMessage
-import app.auf.core.GatewayResponse
+import app.auf.core.ActionBlock
+import app.auf.core.AnchorBlock
+import app.auf.core.AppRequestBlock
 import app.auf.core.Author
+import app.auf.core.ChatMessage
+import app.auf.core.ContentBlock
+import app.auf.core.FileContentBlock
+import app.auf.core.GatewayResponse
+import app.auf.core.ParseErrorBlock
+import app.auf.core.SentinelBlock
+import app.auf.core.TextBlock
+import app.auf.model.Action
+import app.auf.model.ToolDefinition
+import app.auf.util.JsonProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.JsonObject
 
 /**
  * ---
@@ -20,12 +33,13 @@ import kotlinx.coroutines.withContext
  * - `app.auf.service.Gateway`: The client for the AI service API.
  * - `app.auf.service.AufTextParser`: The canonical parser for the AUF tagged-text format.
  *
- * @version 3.2
+ * @version 3.3
  * @since 2025-08-24
  */
 open class GatewayService(
     private val gateway: Gateway,
     private val parser: AufTextParser,
+    private val toolRegistry: List<ToolDefinition>, // <<< Injected dependency
     private val apiKey: String,
     private val coroutineScope: CoroutineScope
 ) {
@@ -75,31 +89,34 @@ open class GatewayService(
 
         val mergedContents = mutableListOf<Content>()
         var currentParts = mutableListOf<String>()
-        var currentAuthor = messages.first().author
+        // --- FIX: Merge based on the final API role, not the Author enum ---
+        var currentRole = when (messages.first().author) {
+            Author.AI -> "model"
+            else -> "user"
+        }
 
         fun commitCurrentBlock() {
             if (currentParts.isNotEmpty()) {
-                val role = when (currentAuthor) {
-                    Author.AI -> "model"
-                    Author.USER, Author.SYSTEM -> "user"
-                }
                 val combinedText = currentParts.joinToString("\n\n")
-                mergedContents.add(Content(role, listOf(Part(combinedText))))
+                mergedContents.add(Content(currentRole, listOf(Part(combinedText))))
                 currentParts.clear()
             }
         }
 
         for (msg in messages) {
-            if (msg.author != currentAuthor) {
-                commitCurrentBlock()
-                currentAuthor = msg.author
+            val msgRole = when (msg.author) {
+                Author.AI -> "model"
+                else -> "user" // SYSTEM and USER both map to the 'user' role for the API
             }
 
-            val reconstructedContent = msg.contentBlocks.joinToString(separator = "\n") { block ->
-                when (block) {
-                    is app.auf.core.TextBlock -> block.text
-                    else -> "[System placeholder for block type: ${block::class.simpleName}]"
-                }
+            if (msgRole != currentRole) {
+                commitCurrentBlock()
+                currentRole = msgRole
+            }
+
+            // --- FIX: Use robust reconstruction logic, eliminating placeholders ---
+            val reconstructedContent = msg.rawContent ?: msg.contentBlocks.joinToString(separator = "\n") { block ->
+                reconstructBlockToString(block)
             }
 
             val contentToAdd = if (msg.author == Author.SYSTEM) {
@@ -112,5 +129,33 @@ open class GatewayService(
 
         commitCurrentBlock() // Commit the last block
         return mergedContents
+    }
+
+    // --- FIX: This helper ensures consistent, high-fidelity reconstruction ---
+    private fun reconstructBlockToString(block: ContentBlock): String {
+        return when (block) {
+            is TextBlock -> block.text
+            is ActionBlock -> {
+                val command = toolRegistry.find { it.name == "Action Manifest" }?.command ?: "ACTION_MANIFEST"
+                val content = JsonProvider.appJson.encodeToString(ListSerializer(Action.serializer()), block.actions)
+                "[AUF_${command}]\n$content\n[/AUF_${command}]"
+            }
+            is FileContentBlock -> {
+                val command = toolRegistry.find { it.name == "File View" }?.command ?: "FILE_VIEW"
+                val langParam = block.language?.let { ", language=\"$it\"" } ?: ""
+                "[AUF_${command}(path=\"${block.fileName}\"$langParam)]\n${block.content}\n[/AUF_${command}]"
+            }
+            is AppRequestBlock -> {
+                val command = toolRegistry.find { it.name == "App Request" }?.command ?: "APP_REQUEST"
+                "[AUF_${command}]${block.requestType}[/AUF_${command}]"
+            }
+            is AnchorBlock -> {
+                val command = toolRegistry.find { it.name == "State Anchor" }?.command ?: "STATE_ANCHOR"
+                val content = JsonProvider.appJson.encodeToString(JsonObject.serializer(), block.content)
+                "[AUF_${command}]\n$content\n[/AUF_${command}]"
+            }
+            is ParseErrorBlock -> "<!-- PARSE ERROR: ${block.errorMessage} | RAW: ${block.rawContent} -->"
+            is SentinelBlock -> "<!-- SENTINEL: ${block.message} -->"
+        }
     }
 }

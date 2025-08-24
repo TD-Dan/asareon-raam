@@ -39,14 +39,19 @@ import kotlinx.serialization.modules.subclass
  * - `ContentBlock` (Sealed Interface from AppState.kt) and its subclasses.
  * - `ImportAction` (Sealed Interface from AppState.kt) and its subclasses.
  *
- * @version 1.3
+ * @version 1.4
  * @since 2025-08-14
  */
 object JsonProvider {
     val appJson = Json {
-        // This configuration MUST be kept in sync with its dedicated test suite, JsonProviderTest.kt
         prettyPrint = true
-        ignoreUnknownKeys = true // Good practice for resilience against future changes
+        // Prevents crashes when the API adds new fields we don't know about.
+        ignoreUnknownKeys = true
+        // Allows parsing to succeed even if some fields in a data class are missing from the JSON.
+        // This is a key part of the graceful failure strategy.
+        isLenient = true
+        // Ensures that when we write files, all fields are present, which is good for consistency.
+        encodeDefaults = true
         serializersModule = SerializersModule {
             // Configure the Action polymorphic hierarchy
             polymorphic(Action::class) {
@@ -62,7 +67,6 @@ object JsonProvider {
                 subclass(AppRequestBlock::class)
                 subclass(AnchorBlock::class)
                 subclass(ParseErrorBlock::class)
-                // --- NEW: Register the new SentinelBlock ---
                 subclass(SentinelBlock::class)
             }
             polymorphic(ImportAction::class) {

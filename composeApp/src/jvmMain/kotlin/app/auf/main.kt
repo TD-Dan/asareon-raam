@@ -107,7 +107,8 @@ fun main() = application {
     // 3. Construct all services with their dependencies now clearly defined.
     val stateManager = remember {
         val gateway = Gateway(jsonParser)
-        val gatewayService = GatewayService(gateway, aufTextParser, apiKey, coroutineScope)
+        // --- FIX IS HERE ---
+        val gatewayService = GatewayService(gateway, aufTextParser, toolRegistry, apiKey, coroutineScope)
         val backupManager = BackupManager(platformDependencies)
         val actionExecutor = ActionExecutor(platformDependencies, jsonParser)
         val importExportManager = ImportExportManager(platformDependencies, jsonParser)
@@ -115,6 +116,7 @@ fun main() = application {
         val graphLoader = GraphLoader(platformDependencies, jsonParser)
         val graphService = GraphService(graphLoader)
         val sourceCodeService = SourceCodeService(platformDependencies)
+        // --- AND HERE ---
         val chatService = ChatService(store, gatewayService, platformDependencies, aufTextParser, toolRegistry, coroutineScope)
 
         StateManager(
