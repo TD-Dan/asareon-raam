@@ -38,16 +38,11 @@ import java.util.Properties
 fun main() = application {
     val coroutineScope = rememberCoroutineScope()
 
-    // --- Dependency Injection Root ---
     val platformDependencies = remember { PlatformDependencies() }
     val jsonParser = remember { JsonProvider.appJson }
 
-    // --- MODIFICATION: Initialize the ChatMessage factory once at startup ---
     remember { ChatMessage.Factory.initialize(platformDependencies) }
 
-    // --- CORRECTED INITIALIZATION ORDER ---
-
-    // 1. Define the ToolRegistry as the single source of truth.
     val toolRegistry = remember {
         listOf(
             ToolDefinition(
@@ -88,9 +83,7 @@ fun main() = application {
         )
     }
 
-    // 2. Create the parser, injecting the tool registry.
     val aufTextParser = remember { AufTextParser(jsonParser, toolRegistry) }
-
     val settingsManager = remember { SettingsManager(platformDependencies, jsonParser) }
     val savedSettings = remember { settingsManager.loadSettings() ?: UserSettings() }
 
@@ -106,12 +99,17 @@ fun main() = application {
         println("WARNING: google.api.key not found in local.properties. AI will not function.")
     }
 
-    val store = remember { Store(AppState(), ::appReducer, coroutineScope) }
+    val initialState = remember(savedSettings) {
+        AppState(
+            selectedModel = savedSettings.selectedModel,
+            aiPersonaId = savedSettings.selectedAiPersonaId,
+            contextualHolonIds = savedSettings.activeContextualHolonIds
+        )
+    }
+    val store = remember { Store(initialState, ::appReducer, coroutineScope) }
 
-    // 3. Construct all services with their dependencies now clearly defined.
     val stateManager = remember {
         val gateway = Gateway(jsonParser)
-        // --- FIX IS HERE ---
         val gatewayService = GatewayService(gateway, aufTextParser, toolRegistry, apiKey, coroutineScope)
         val backupManager = BackupManager(platformDependencies)
         val actionExecutor = ActionExecutor(platformDependencies, jsonParser)
@@ -120,7 +118,6 @@ fun main() = application {
         val graphLoader = GraphLoader(platformDependencies, jsonParser)
         val graphService = GraphService(graphLoader)
         val sourceCodeService = SourceCodeService(platformDependencies)
-        // --- AND HERE ---
         val chatService = ChatService(store, gatewayService, platformDependencies, aufTextParser, toolRegistry, coroutineScope)
 
         StateManager(
