@@ -14,19 +14,19 @@ import kotlinx.coroutines.withContext
  * Orchestrates all communication with the external AI service (e.g., Google AI).
  * It is responsible for formatting requests from the app's data model into the API's
  * required format, sending them via the `Gateway`, and providing lists of available models.
- * It uses `AufTextParser` for any necessary message reconstruction.
+ * It uses the `compiledContent` of system messages for token efficiency.
  *
  * ---
  * ## Dependencies
  * - `app.auf.service.Gateway`: The client for the AI service API.
  * - `app.auf.service.AufTextParser`: The canonical parser/reconstructor.
  *
- * @version 3.4
- * @since 2025-08-24
+ * @version 3.5
+ * @since 2025-08-25
  */
 open class GatewayService(
     private val gateway: Gateway,
-    private val parser: AufTextParser, // Parser is still a dependency for AppState's factory
+    private val parser: AufTextParser,
     private val toolRegistry: List<ToolDefinition>,
     private val apiKey: String,
     private val coroutineScope: CoroutineScope
@@ -48,9 +48,8 @@ open class GatewayService(
                     ?: response.promptFeedback?.blockReason?.let { "Blocked: $it" }
                     ?: "No content received, but no error was reported."
 
-                // The raw string is the source of truth.
                 GatewayResponse(
-                    contentBlocks = parser.parse(rawTextResponse), // This is now a VIEW of the raw content
+                    contentBlocks = parser.parse(rawTextResponse),
                     usageMetadata = response.usageMetadata,
                     rawContent = rawTextResponse
                 )
@@ -98,13 +97,20 @@ open class GatewayService(
                 currentRole = msgRole
             }
 
-            // MODIFICATION: Logic simplified. Prioritize rawContent, fall back to TextBlocks only if rawContent is null.
-            val content = msg.rawContent ?: msg.contentBlocks.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
+            // --- FIX IS HERE ---
+            // This is now the single source of truth for what content gets sent.
+            // For system messages, we prioritize the optimized compiled content.
+            // For User/AI messages, we always use the original raw content.
+            val contentToSend = when (msg.author) {
+                Author.SYSTEM -> msg.compiledContent ?: msg.rawContent ?: ""
+                else -> msg.rawContent ?: ""
+            }
+            // --- END FIX ---
 
             val contentToAdd = if (msg.author == Author.SYSTEM) {
-                "--- START OF FILE ${msg.title} ---\n$content"
+                "--- START OF FILE ${msg.title} ---\n$contentToSend"
             } else {
-                content
+                contentToSend
             }
             currentParts.add(contentToAdd)
         }

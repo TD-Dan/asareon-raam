@@ -44,6 +44,13 @@ fun ChatView(
 
     val lastTransactionTokens = appState.chatHistory.lastOrNull { it.author == app.auf.core.Author.AI }?.usageMetadata
 
+    // --- FIX IS HERE ---
+    val aggregatedStats = remember(appState.activeHolons, appState.compilerSettings) {
+        stateManager.getAggregatedCompilationStats()
+    }
+    // --- END FIX ---
+
+
     val displayedMessages by remember(appState.isSystemVisible, appState.chatHistory, appState.activeHolons) {
         derivedStateOf {
             if (appState.isSystemVisible) {
@@ -118,18 +125,34 @@ fun ChatView(
                 }
             }
 
+            // --- FIX IS HERE ---
+            // This column will now hold both token and compression stats
+            Column(horizontalAlignment = Alignment.End) {
+                lastTransactionTokens?.let {
+                    val promptTokens = it.promptTokenCount ?: 0
+                    val candidateTokens = it.candidatesTokenCount ?: 0
+                    val totalTokens = it.totalTokenCount ?: (promptTokens + candidateTokens)
+                    Text(
+                        text = "Last Tx: ${promptTokens}p / ${candidateTokens}o / ${totalTokens}t",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontStyle = FontStyle.Italic
+                    )
+                }
 
-            lastTransactionTokens?.let {
-                val promptTokens = it.promptTokenCount ?: 0
-                val candidateTokens = it.candidatesTokenCount ?: 0
-                val totalTokens = it.totalTokenCount ?: (promptTokens + candidateTokens)
-                Text(
-                    text = "Last Tx: ${promptTokens}p / ${candidateTokens}o / ${totalTokens}t",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontStyle = FontStyle.Italic
-                )
+                // Display compilation stats if there's a reduction
+                if (aggregatedStats.totalOriginalChars > 0 && aggregatedStats.totalOriginalChars > aggregatedStats.totalCompiledChars) {
+                    val reduction = ((aggregatedStats.totalOriginalChars - aggregatedStats.totalCompiledChars).toDouble() / aggregatedStats.totalOriginalChars * 100).toInt()
+                    Text(
+                        text = "Sys Context Compression: ${aggregatedStats.totalOriginalChars} -> ${aggregatedStats.totalCompiledChars}c (-$reduction%)",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        fontStyle = FontStyle.Italic
+                    )
+                }
             }
+            // --- END FIX ---
+
 
             var isModelSelectorExpanded by remember { mutableStateOf(false) }
             var isAgentSelectorExpanded by remember { mutableStateOf(false) }
@@ -180,11 +203,9 @@ fun ChatView(
                         if (event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
                             if (event.isCtrlPressed) {
                                 sendMessageAction()
-                                return@onKeyEvent true // We've handled this event.
+                                return@onKeyEvent true
                             }
                         }
-                        // For all other cases (including plain Enter, Shift+Enter, etc.),
-                        // let the default handler run to allow newlines.
                         false
                     },
                 placeholder = { Text("Enter message... (Ctrl+Enter to send, Enter for newline)") },
@@ -210,12 +231,10 @@ fun ChatView(
         }
     }
 
-    // Request initial focus when the view is first composed.
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
     }
 
-    // Request focus whenever the AI is done processing and the input field becomes enabled again.
     LaunchedEffect(appState.isProcessing) {
         if (!appState.isProcessing) {
             focusRequester.requestFocus()

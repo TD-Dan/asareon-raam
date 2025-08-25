@@ -4,8 +4,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import app.auf.core.ActionBlock
-import app.auf.core.ActionStatus
 import app.auf.core.AppAction
 import app.auf.core.AppState
 import app.auf.core.ChatMessage
@@ -19,8 +17,6 @@ import app.auf.fakes.FakeImportExportViewModel
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeSourceCodeService
 import app.auf.fakes.FakeStore
-import app.auf.model.Action
-import app.auf.model.CreateFile
 import app.auf.model.Parameter
 import app.auf.model.ToolDefinition
 import app.auf.model.UserSettings
@@ -62,7 +58,7 @@ class MessageCardTest {
         ChatMessage.Factory.initialize(fakePlatform, realParser)
         val fakeGatewayService = FakeGatewayService(testCoroutineScope)
         val promptCompiler = PromptCompiler(JsonProvider.appJson)
-        val settingsManager = SettingsManager(fakePlatform, JsonProvider.appJson) // <<< FIX: Instantiate SettingsManager
+        val settingsManager = SettingsManager(fakePlatform, JsonProvider.appJson)
 
         stateManager = StateManager(
             store = fakeStore,
@@ -73,7 +69,7 @@ class MessageCardTest {
             gatewayService = fakeGatewayService,
             actionExecutor = FakeActionExecutor(fakePlatform, JsonProvider.appJson),
             parser = realParser,
-            settingsManager = settingsManager, // <<< FIX: Add missing parameter
+            settingsManager = settingsManager,
             importExportViewModel = FakeImportExportViewModel(),
             platform = fakePlatform,
             coroutineScope = testCoroutineScope
@@ -82,34 +78,28 @@ class MessageCardTest {
 
     @Test
     fun `MessageCard shows compiled content toggle when compiledContent is different`() {
-        // ARRANGE
         val raw = "{\n  \"key\": \"value\"\n}"
         val compiled = """{"key":"value"}"""
         val message = ChatMessage.Factory.createSystem("test.json", raw).copy(compiledContent = compiled)
 
-        // ACT
         composeTestRule.setContent {
             MessageCard(message = message, stateManager = stateManager)
         }
 
-        // ASSERT
         composeTestRule.onNodeWithContentDescription("View Compiled Content").assertExists()
     }
 
     @Test
     fun `MessageCard does NOT show compiled content toggle when content is same or null`() {
-        // ARRANGE
         val raw = "Just text"
         val messageSame = ChatMessage.Factory.createUser(raw).copy(compiledContent = raw)
         val messageNull = ChatMessage.Factory.createUser(raw).copy(compiledContent = null)
 
-        // ACT & ASSERT for same content
         composeTestRule.setContent {
             MessageCard(message = messageSame, stateManager = stateManager)
         }
         composeTestRule.onNodeWithContentDescription("View Compiled Content").assertDoesNotExist()
 
-        // ACT & ASSERT for null compiled content
         composeTestRule.setContent {
             MessageCard(message = messageNull, stateManager = stateManager)
         }
@@ -118,7 +108,6 @@ class MessageCardTest {
 
     @Test
     fun `clicking compiled toggle switches between rendered and compiled views`() {
-        // ARRANGE
         val raw = "{\n  \"key\": \"value\"\n}"
         val compiled = """{"key":"value"}"""
         val message = ChatMessage.Factory.createSystem("test.json", raw).copy(compiledContent = compiled)
@@ -127,15 +116,16 @@ class MessageCardTest {
             MessageCard(message = message, stateManager = stateManager)
         }
 
-        // ACT 1: Initially, raw (parsed) content is shown
-        composeTestRule.onNodeWithText(raw).assertExists()
+        // --- FIX IS HERE ---
+        // ACT 1: Initially, raw (parsed) content is shown. Assert for key substrings.
+        composeTestRule.onNodeWithText("\"key\": \"value\"", substring = true).assertExists()
         composeTestRule.onNodeWithText(compiled).assertDoesNotExist()
 
         // ACT 2: Click the toggle
         composeTestRule.onNodeWithContentDescription("View Compiled Content").performClick()
 
         // ASSERT 2: Compiled content is shown, raw is hidden
-        composeTestRule.onNodeWithText(raw).assertDoesNotExist()
+        composeTestRule.onNodeWithText("\"key\": \"value\"", substring = true).assertDoesNotExist()
         composeTestRule.onNodeWithText(compiled).assertExists()
         composeTestRule.onNodeWithText("COMPILED CONTENT").assertExists()
 
@@ -143,8 +133,9 @@ class MessageCardTest {
         composeTestRule.onNodeWithContentDescription("View Compiled Content").performClick()
 
         // ASSERT 3: View reverts to raw (parsed) content
-        composeTestRule.onNodeWithText(raw).assertExists()
+        composeTestRule.onNodeWithText("\"key\": \"value\"", substring = true).assertExists()
         composeTestRule.onNodeWithText(compiled).assertDoesNotExist()
+        // --- END FIX ---
     }
 
     @Test

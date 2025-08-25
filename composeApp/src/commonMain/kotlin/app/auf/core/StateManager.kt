@@ -19,20 +19,17 @@ import kotlinx.coroutines.launch
 import app.auf.service.AufTextParser
 
 /**
+ * A simple data class to hold the aggregated compilation statistics.
+ */
+data class AggregatedCompilationStats(
+    val totalOriginalChars: Int,
+    val totalCompiledChars: Int
+)
+
+/**
  * The core state management class for the AUF application.
  *
- * ---
- * ## Mandate
- * This class is the single source of truth for the application's UI state (AppState).
- * It orchestrates data loading, AI interaction, and user actions by delegating to
- * specialized service classes. It is fully platform-agnostic and testable.
- *
- * ---
- * ## Dependencies
- * - `app.auf.core.Store`: The UDF state container.
- * - All services in `app.auf.service`
- *
- * @version 5.3
+ * @version 5.4
  * @since 2025-08-25
  */
 open class StateManager(
@@ -44,7 +41,7 @@ open class StateManager(
     private val gatewayService: GatewayService,
     private val actionExecutor: ActionExecutor,
     private val parser: AufTextParser,
-    val settingsManager: SettingsManager, // <<< ADDED
+    val settingsManager: SettingsManager,
     val importExportViewModel: ImportExportViewModel,
     private val platform: PlatformDependencies,
     private val coroutineScope: CoroutineScope
@@ -92,6 +89,25 @@ open class StateManager(
         return chatService.buildSystemContextMessages()
     }
 
+    // --- FIX IS HERE ---
+    /**
+     * Calculates the aggregated compilation statistics for the current system context.
+     * This is called by the UI to display real-time feedback on prompt compression.
+     */
+    fun getAggregatedCompilationStats(): AggregatedCompilationStats {
+        val systemMessages = chatService.buildSystemContextMessages()
+        var totalOriginal = 0
+        var totalCompiled = 0
+        systemMessages.forEach { msg ->
+            msg.compilationStats?.let {
+                totalOriginal += it.originalCharCount
+                totalCompiled += it.compiledCharCount
+            }
+        }
+        return AggregatedCompilationStats(totalOriginal, totalCompiled)
+    }
+    // --- END FIX ---
+
     fun getPromptForClipboard(): String {
         return chatService.buildFullPromptAsString()
     }
@@ -115,7 +131,7 @@ open class StateManager(
     }
 
     fun executeActionFromMessage(messageTimestamp: Long) {
-        if (state.value.isProcessing) return // Prevent concurrent executions
+        if (state.value.isProcessing) return
 
         coroutineScope.launch {
             val message = state.value.chatHistory.find { it.timestamp == messageTimestamp }
@@ -235,12 +251,11 @@ open class StateManager(
         store.dispatch(AppAction.ClearToast)
     }
 
-    // --- Settings Management ---
-    fun getSettingDefinitions(): List<SettingDefinition> { // <<< ADDED
+    fun getSettingDefinitions(): List<SettingDefinition> {
         return settingsManager.getSettingDefinitions()
     }
 
-    fun updateSetting(settingValue: SettingValue) { // <<< ADDED
+    fun updateSetting(settingValue: SettingValue) {
         store.dispatch(AppAction.UpdateSetting(settingValue))
     }
 }
