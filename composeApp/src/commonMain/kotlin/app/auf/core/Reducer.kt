@@ -1,5 +1,7 @@
 package app.auf.core
 
+import app.auf.model.CompilerSettings
+
 /**
  * The Reducer function for the Unidirectional Data Flow (UDF) architecture.
  *
@@ -15,7 +17,7 @@ package app.auf.core
  * - `app.auf.core.AppState`: The state object it operates on.
  * - `app.auf.core.AppAction`: The actions it responds to.
  *
- * @version 2.8
+ * @version 2.9
  * @since 2025-08-25
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
@@ -29,11 +31,21 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         )
         is AppAction.LoadGraphSuccess -> {
             val result = action.result
-            val personaHolon = result.holonGraph.find { it.header.id == result.determinedPersonaId }
-            val initialActiveHolons = if (personaHolon != null) mapOf(personaHolon.header.id to personaHolon) else emptyMap()
+
+            // --- FIX IS HERE ---
+            // Re-hydrate the activeHolons map from the contextualHolonIds that were loaded from settings.
+            val restoredActiveHolons = result.holonGraph
+                .filter { state.contextualHolonIds.contains(it.header.id) }
+                .associateBy { it.header.id }
+                .toMutableMap()
+
+            // Also ensure the primary AI persona is always active.
+            result.holonGraph.find { it.header.id == result.determinedPersonaId }?.let { persona ->
+                restoredActiveHolons[persona.header.id] = persona
+            }
+            // --- END FIX ---
 
             var newChatHistory = state.chatHistory
-
             if (result.parsingErrors.isNotEmpty()) {
                 val errorContent = "The following ${result.parsingErrors.size} files could not be parsed and were excluded from the graph:\n\n" +
                         result.parsingErrors.joinToString("\n") { "- $it" }
@@ -50,7 +62,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                 gatewayStatus = GatewayStatus.OK,
                 availableAiPersonas = result.availableAiPersonas,
                 aiPersonaId = result.determinedPersonaId,
-                activeHolons = initialActiveHolons,
+                activeHolons = restoredActiveHolons, // <<< Use the restored map
                 chatHistory = newChatHistory,
                 errorMessage = null
             )
@@ -110,11 +122,10 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         is AppAction.RerunFromMessage -> {
             val messageIndex = state.chatHistory.indexOfFirst { it.id == action.id }
             if (messageIndex != -1) {
-                // Truncate the history to include only messages up to the point of the rerun.
                 val truncatedHistory = state.chatHistory.subList(0, messageIndex + 1)
                 state.copy(chatHistory = truncatedHistory)
             } else {
-                state // If message not found, do nothing.
+                state
             }
         }
 
@@ -128,7 +139,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             } else {
                 state.copy(
                     currentViewMode = action.mode,
-                    holonIdsForExport = emptySet() // Clear list when leaving other modes
+                    holonIdsForExport = emptySet()
                 )
             }
         }
@@ -136,17 +147,15 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             inspectedHolonId = action.holonId
         )
         is AppAction.ToggleHolonActive -> {
-            if (action.holonId == state.aiPersonaId) return state // Cannot deactivate persona
+            if (action.holonId == state.aiPersonaId) return state
 
             val newContextIds: Set<String>
             val newActiveHolons: Map<String, Holon>
 
             if (state.contextualHolonIds.contains(action.holonId)) {
-                // Remove from context
                 newContextIds = state.contextualHolonIds - action.holonId
                 newActiveHolons = state.activeHolons - action.holonId
             } else {
-                // Add to context
                 val holonToAdd = state.holonGraph.find { it.header.id == action.holonId }
                 if (holonToAdd != null) {
                     newContextIds = state.contextualHolonIds + action.holonId
@@ -170,7 +179,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             isSystemVisible = !state.isSystemVisible
         )
         is AppAction.ToggleHolonExport -> {
-            if (action.holonId == state.aiPersonaId) return state // Cannot deselect persona
+            if (action.holonId == state.aiPersonaId) return state
             val newExportIds = if (state.holonIdsForExport.contains(action.holonId)) {
                 state.holonIdsForExport - action.holonId
             } else {
@@ -244,7 +253,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             state.copy(chatHistory = updatedHistory)
         }
         // --- Settings ---
-        is AppAction.UpdateSetting -> { // <<< ADDED
+        is AppAction.UpdateSetting -> {
             val newCompilerSettings = when (action.setting.key) {
                 "compiler.removeWhitespace" -> state.compilerSettings.copy(removeWhitespace = action.setting.value)
                 "compiler.cleanHeaders" -> state.compilerSettings.copy(cleanHeaders = action.setting.value)

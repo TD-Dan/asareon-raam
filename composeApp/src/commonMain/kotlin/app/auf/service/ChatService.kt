@@ -19,9 +19,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Service dedicated to handling all business logic related to AI chat interactions.
- * It uses a PromptCompiler to optimize messages before sending them to the GatewayService.
  *
- * @version 2.6
+ * @version 2.7
  * @since 2025-08-25
  */
 open class ChatService(
@@ -30,7 +29,7 @@ open class ChatService(
     private val platform: PlatformDependencies,
     private val parser: AufTextParser,
     private val toolRegistry: List<ToolDefinition>,
-    private val promptCompiler: PromptCompiler, // <<< ADDED
+    private val promptCompiler: PromptCompiler,
     private val coroutineScope: CoroutineScope
 ) {
 
@@ -75,28 +74,29 @@ open class ChatService(
         val appState = store.state.value
         val compilerSettings = appState.compilerSettings
 
-        // --- Helper function to create and compile a system message ---
         fun createAndCompileSystemMessage(title: String, rawContent: String): ChatMessage {
-            val compiledContent = promptCompiler.compile(rawContent, compilerSettings)
-            // Create the message with both raw and compiled content
-            return ChatMessage.createSystem(title, rawContent).copy(compiledContent = compiledContent)
+            val result = promptCompiler.compile(rawContent, compilerSettings)
+            return ChatMessage.createSystem(title, rawContent).copy(
+                compiledContent = result.compiledText,
+                compilationStats = result.stats
+            )
         }
 
         val frameworkBasePath = platform.getBasePathFor(BasePath.FRAMEWORK)
         val protocolPath = frameworkBasePath + platform.pathSeparator + "framework_protocol.md"
         messages.add(createAndCompileSystemMessage("framework_protocol.md", platform.readFileContent(protocolPath)))
-
         messages.add(createAndCompileSystemMessage("REAL TIME SYSTEM STATUS", generateSystemStatusMessage()))
-
         messages.add(createAndCompileSystemMessage("Host Tool Manifest", generateDynamicToolManifest()))
 
         appState.activeHolons.values.forEach { holon ->
             if (holon.header.type != "Quarantined_File") {
                 val holonContentString = JsonProvider.appJson.encodeToString(Holon.serializer(), holon)
-                messages.add(createAndCompileSystemMessage(
-                    title = platform.getFileName(holon.header.id + ".json"),
-                    rawContent = holonContentString
-                ))
+                messages.add(
+                    createAndCompileSystemMessage(
+                        title = platform.getFileName(holon.header.id + ".json"),
+                        rawContent = holonContentString
+                    )
+                )
             }
         }
         return messages
@@ -104,22 +104,19 @@ open class ChatService(
 
     open fun buildFullPromptAsString(): String {
         val state = store.state.value
-        // User and AI messages are not compiled, so they use rawContent.
         val historyForApi = state.chatHistory.map {
             if (it.author == Author.USER || it.author == Author.AI) {
                 it.copy(compiledContent = it.rawContent)
             } else {
-                // For system messages, re-compile them to ensure they reflect current settings.
-                val compiled = promptCompiler.compile(it.rawContent ?: "", state.compilerSettings)
-                it.copy(compiledContent = compiled)
+                val result = promptCompiler.compile(it.rawContent ?: "", state.compilerSettings)
+                it.copy(compiledContent = result.compiledText, compilationStats = result.stats)
             }
         }
 
-        val systemMessages = buildSystemContextMessages() // These are already compiled
+        val systemMessages = buildSystemContextMessages()
         val fullContext = systemMessages + historyForApi
 
         return fullContext.joinToString("\n\n") { msg ->
-            // --- CRITICAL CHANGE: Use compiledContent for the prompt ---
             val content = msg.compiledContent ?: msg.rawContent ?: ""
             when (msg.author) {
                 Author.USER, Author.AI -> {

@@ -13,21 +13,11 @@ import kotlinx.serialization.json.JsonObject
 /**
  * Defines the core, immutable data models for the entire AUF application state.
  *
- * ---
- * ## Mandate
- * This file is the single source of truth for the application's state structure. It contains
- * all data classes that represent the UI, session data, and user settings. Its primary
- * responsibility is to provide stable, serializable data contracts that the rest of the
- * application can rely on for state management and UI rendering.
- *
- * ---
- * ## Dependencies
- * - `Action` (from ActionModels.kt): Used within the `ActionBlock` content type.
- * - `kotlinx.serialization`: Used extensively for defining serializable data contracts.
- *
- * @version 2.0
+ * @version 2.2
  * @since 2025-08-25
  */
+
+// ... (GatewayResponse, GraphLoadResult, ViewMode, etc. remain unchanged) ...
 
 data class GatewayResponse(
     val contentBlocks: List<ContentBlock> = emptyList(),
@@ -45,7 +35,7 @@ data class GraphLoadResult(
 )
 
 enum class ViewMode {
-    CHAT, EXPORT, IMPORT, SETTINGS // <<< ADDED
+    CHAT, EXPORT, IMPORT, SETTINGS
 }
 
 data class ImportItem(
@@ -128,7 +118,7 @@ data class AppState(
     val holonIdsForExport: Set<String> = emptySet(),
     val importState: ImportState? = null,
     val toastMessage: String? = null,
-    val compilerSettings: CompilerSettings = CompilerSettings() // <<< ADDED
+    val compilerSettings: CompilerSettings = CompilerSettings()
 )
 
 @Serializable
@@ -153,13 +143,10 @@ data class ActionBlock(
         get() = "Action Manifest (${actions.size} actions)"
 }
 
-/**
- * Represents the lifecycle of an executable ActionBlock within the UI.
- */
 enum class ActionStatus {
-    PENDING, // Awaiting user confirmation
-    EXECUTED, // Confirmed and successfully executed by the ActionExecutor
-    REJECTED // Explicitly rejected by the user
+    PENDING,
+    EXECUTED,
+    REJECTED
 }
 
 
@@ -196,15 +183,19 @@ data class ParseErrorBlock(
     override val summary: String = "Parse Error: $originalTag"
 ) : ContentBlock
 
-/**
- * A dedicated block for displaying system warnings or feedback to the AI
- */
 @Serializable
 @SerialName("SentinelBlock")
 data class SentinelBlock(
     val message: String,
     override val summary: String = "Parser Sentinel"
 ) : ContentBlock
+
+// --- FIX IS HERE ---
+@Serializable
+data class CompilationStats(
+    val originalCharCount: Int,
+    val compiledCharCount: Int
+)
 
 @ConsistentCopyVisibility
 data class ChatMessage internal constructor(
@@ -215,17 +206,14 @@ data class ChatMessage internal constructor(
     val contentBlocks: List<ContentBlock>,
     val usageMetadata: UsageMetadata?,
     val rawContent: String?,
-    val compiledContent: String? = null // <<< ADDED
+    val compiledContent: String? = null,
+    val compilationStats: CompilationStats? = null // <<< ADDED
 ) {
     companion object Factory {
         private var nextId = 0L
         private var platform: PlatformDependencies? = null
         private var parser: AufTextParser? = null
 
-        /**
-         * Initializes the factory with the necessary dependencies.
-         * This MUST be called once at application startup.
-         */
         fun initialize(platform: PlatformDependencies, parser: AufTextParser) {
             this.platform = platform
             this.parser = parser
@@ -233,7 +221,7 @@ data class ChatMessage internal constructor(
 
         private fun getTimestamp(): Long {
             return platform?.getSystemTimeMillis()
-                ?: throw IllegalStateException("ChatMessage.Factory has not been initialized. Call Factory.initialize() at app startup.")
+                ?: throw IllegalStateException("ChatMessage.Factory has not been initialized.")
         }
 
         private fun getParser(): AufTextParser {
@@ -241,10 +229,6 @@ data class ChatMessage internal constructor(
                 ?: throw IllegalStateException("ChatMessage.Factory has not been initialized with a parser.")
         }
 
-        /**
-         * Creates a new message from the USER's raw text input.
-         * The rawContent is the source of truth.
-         */
         fun createUser(rawContent: String): ChatMessage {
             return ChatMessage(
                 id = ++nextId,
@@ -254,14 +238,11 @@ data class ChatMessage internal constructor(
                 contentBlocks = getParser().parse(rawContent),
                 usageMetadata = null,
                 rawContent = rawContent,
-                compiledContent = null // <<< ADDED
+                compiledContent = null,
+                compilationStats = null // <<< ADDED
             )
         }
 
-        /**
-         * Creates a new message from the AI's raw text response.
-         * The rawContent is the source of truth.
-         */
         fun createAi(
             rawContent: String,
             usageMetadata: UsageMetadata?
@@ -274,14 +255,11 @@ data class ChatMessage internal constructor(
                 contentBlocks = getParser().parse(rawContent),
                 usageMetadata = usageMetadata,
                 rawContent = rawContent,
-                compiledContent = null // <<< ADDED
+                compiledContent = null,
+                compilationStats = null // <<< ADDED
             )
         }
 
-        /**
-         * Creates a new SYSTEM message from a raw text source (e.g., a file).
-         * The rawContent is the source of truth.
-         */
         fun createSystem(
             title: String,
             rawContent: String
@@ -294,7 +272,8 @@ data class ChatMessage internal constructor(
                 contentBlocks = getParser().parse(rawContent),
                 usageMetadata = null,
                 rawContent = rawContent,
-                compiledContent = null // <<< ADDED
+                compiledContent = null,
+                compilationStats = null // <<< ADDED
             )
         }
     }
@@ -316,11 +295,24 @@ data class Holon(
 )
 
 @Serializable
+data class HolonUsage(
+    val scope: String? = null,
+    val description: String? = null
+)
+
+@Serializable
 data class HolonHeader(
     val id: String,
     val type: String,
     val name: String,
     val summary: String,
+    val version: String = "0.0.0",
+    @SerialName("created_at")
+    val createdAt: String? = null,
+    @SerialName("modified_at")
+    val modifiedAt: String? = null,
+    @SerialName("holon_usage")
+    val holonUsage: HolonUsage? = null,
     val relationships: List<Relationship> = emptyList(),
     @SerialName("sub_holons")
     val subHolons: List<SubHolonRef> = emptyList(),

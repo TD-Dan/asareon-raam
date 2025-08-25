@@ -51,6 +51,7 @@ import app.auf.core.AnchorBlock
 import app.auf.core.AppRequestBlock
 import app.auf.core.Author
 import app.auf.core.ChatMessage
+import app.auf.core.CompilationStats
 import app.auf.core.FileContentBlock
 import app.auf.core.ParseErrorBlock
 import app.auf.core.SentinelBlock
@@ -61,12 +62,10 @@ import kotlinx.serialization.json.JsonObject
 
 /**
  * ## Mandate
- * This file contains the `MessageCard` Composable. Its responsibility is to display a single
- * `ChatMessage`. It is a "dumb" component that receives state and emits events.
- * It uses the message's `rawContent` as the source of truth for display and copy actions,
- * and provides a toggle to view `compiledContent` if available.
+ * This file contains the `MessageCard` Composable. It displays a single `ChatMessage`,
+ * allows toggling between raw and compiled views, and shows compilation statistics.
  *
- * @version 1.6
+ * @version 1.7
  * @since 2025-08-25
  */
 @Composable
@@ -81,7 +80,7 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
         )
     }
     var showRaw by remember { mutableStateOf(false) }
-    var showCompiled by remember { mutableStateOf(false) } // <<< ADDED
+    var showCompiled by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
 
@@ -103,7 +102,6 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
         stateManager.formatDisplayTimestamp(message.timestamp)
     }
 
-    // <<< NEW LOGIC for compiled view toggle
     val showCompiledToggle = remember(message.rawContent, message.compiledContent) {
         message.compiledContent != null && message.compiledContent != message.rawContent
     }
@@ -139,7 +137,7 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (showCompiledToggle) { // <<< ADDED
+                    if (showCompiledToggle) {
                         IconButton(onClick = { showCompiled = !showCompiled }, modifier = Modifier.size(24.dp)) {
                             Icon(Icons.Default.Sync, contentDescription = "View Compiled Content", tint = if (showCompiled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -176,10 +174,9 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
             AnimatedVisibility(visible = !isCollapsed) {
                 Column {
                     Spacer(Modifier.height(8.dp))
-                    // --- MODIFIED: View switching logic ---
                     when {
-                        showRaw && message.rawContent != null -> RenderContent( "RAW CONTENT", message.rawContent)
-                        showCompiled && message.compiledContent != null -> RenderContent("COMPILED CONTENT", message.compiledContent)
+                        showRaw && message.rawContent != null -> RenderContent("RAW CONTENT", message.rawContent)
+                        showCompiled && message.compiledContent != null -> RenderContent("COMPILED CONTENT", message.compiledContent, message.compilationStats)
                         else -> {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 message.contentBlocks.forEach { block ->
@@ -202,22 +199,43 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
     }
 }
 
-// --- NEW COMPOSABLE: A generic renderer for raw/compiled content ---
+// --- FIX IS HERE ---
 @Composable
-fun RenderContent(title: String, content: String) {
+fun RenderContent(title: String, content: String, stats: CompilationStats? = null) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = title,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                // Display statistics if they are available
+                stats?.let {
+                    val reduction = if (it.originalCharCount > 0) {
+                        ((it.originalCharCount - it.compiledCharCount).toDouble() / it.originalCharCount * 100).toInt()
+                    } else {
+                        0
+                    }
+                    Text(
+                        text = "${it.originalCharCount} -> ${it.compiledCharCount} chars (-$reduction%)",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+            }
+
             HorizontalDivider(modifier=Modifier.padding(vertical=8.dp))
             Text(
                 text = content,
@@ -228,13 +246,14 @@ fun RenderContent(title: String, content: String) {
         }
     }
 }
+// --- END FIX ---
 
-// Existing Render* composables remain below, unchanged.
 @Composable
 fun RenderTextBlock(block: TextBlock) {
     Text(block.text, fontFamily = FontFamily.Default, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
 }
 
+// ... (Other Render* composables remain unchanged) ...
 @Composable
 fun RenderActionBlock(block: ActionBlock, onConfirm: () -> Unit, onReject: () -> Unit) {
     val isResolved = block.status != ActionStatus.PENDING

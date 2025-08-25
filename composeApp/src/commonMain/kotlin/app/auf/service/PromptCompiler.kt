@@ -1,5 +1,6 @@
 package app.auf.service
 
+import app.auf.core.CompilationStats
 import app.auf.model.CompilerSettings
 import app.auf.model.SettingDefinition
 import app.auf.model.SettingType
@@ -11,20 +12,18 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
 /**
+ * A wrapper for the result of a compilation, containing both the
+ * transformed text and the statistics of the transformation.
+ */
+data class CompilationResult(
+    val compiledText: String,
+    val stats: CompilationStats
+)
+
+/**
  * A service responsible for transforming raw prompt strings into token-efficient versions.
  *
- * ---
- * ## Mandate
- * This service's sole responsibility is to take a raw string and a set of `CompilerSettings`
- * and apply a series of configurable transformations. It is designed to operate on any
- * string content, making it a generic utility for prompt optimization. It also acts as
- * the single source of truth for its own setting definitions, allowing for a decoupled UI.
- *
- * ---
- * ## Dependencies
- * - `kotlinx.serialization.json.Json`: For intelligently cleaning JSON strings.
- *
- * @version 1.0
+ * @version 1.1
  * @since 2025-08-25
  */
 class PromptCompiler(private val jsonParser: Json) {
@@ -34,9 +33,10 @@ class PromptCompiler(private val jsonParser: Json) {
 
     /**
      * The main entry point for the compiler. Takes a raw string and settings, and returns
-     * the compiled version.
+     * the compiled version along with statistics.
      */
-    fun compile(rawContent: String, settings: CompilerSettings): String {
+    fun compile(rawContent: String, settings: CompilerSettings): CompilationResult {
+        val originalCharCount = rawContent.length
         var tempContent = rawContent
 
         if (settings.cleanHeaders) {
@@ -46,11 +46,13 @@ class PromptCompiler(private val jsonParser: Json) {
             tempContent = minifyJson(tempContent)
         }
         if (settings.removeWhitespace) {
-            // Apply this after other transformations to catch all possible whitespace
             tempContent = removeExtraneousWhitespace(tempContent)
         }
 
-        return tempContent
+        val compiledCharCount = tempContent.length
+        val stats = CompilationStats(originalCharCount, compiledCharCount)
+
+        return CompilationResult(tempContent, stats)
     }
 
     private fun removeExtraneousWhitespace(content: String): String {
@@ -62,7 +64,6 @@ class PromptCompiler(private val jsonParser: Json) {
             val jsonElement = jsonParser.parseToJsonElement(content)
             Json.encodeToString(JsonElement.serializer(), jsonElement)
         } catch (e: Exception) {
-            // If it's not valid JSON, return the original content
             content
         }
     }
@@ -75,45 +76,31 @@ class PromptCompiler(private val jsonParser: Json) {
                 val cleanedHeaderFields = header.toMutableMap()
                 headerFieldsToClean.forEach { cleanedHeaderFields.remove(it) }
 
-                // Specifically process sub_holons if they exist after the first cleaning pass
                 if (cleanedHeaderFields.containsKey("sub_holons")) {
-                    val subHolons = header["sub_holons"]
-                    // Re-add the cleaned version
-                    cleanedHeaderFields["sub_holons"] = cleanSubHolonRefs(subHolons)
+                    cleanedHeaderFields["sub_holons"] = cleanSubHolonRefs(header["sub_holons"])
                 }
 
                 val cleanedHolonJson = buildJsonObject {
                     put("header", JsonObject(cleanedHeaderFields))
-                    // Only add payload if it exists
                     if(jsonElement.containsKey("payload")) {
                         put("payload", jsonElement["payload"]!!)
                     }
                 }
-                // Use the pretty printer to maintain readability for non-minified output
                 Json { prettyPrint = true }.encodeToString(JsonElement.serializer(), cleanedHolonJson)
             } else {
                 content
             }
         } catch (e: Exception) {
-            content // Not a JSON object or not a Holon, return as-is
+            content
         }
     }
 
     private fun cleanSubHolonRefs(subHolonsElement: JsonElement?): JsonElement {
-        // A more robust implementation is needed here. For now, this is a placeholder.
-        // The ideal solution would correctly parse the array and rebuild it.
-        // Due to the complexity of robustly editing raw JSON arrays, we will
-        // defer a more aggressive sub_holon cleaning strategy.
-        // Returning the original is the safest option.
         return subHolonsElement ?: buildJsonObject { }
     }
 
 
     companion object {
-        /**
-         * The declarative schema for all settings this service uses.
-         * This list is the single source of truth for the settings UI.
-         */
         val SETTING_DEFINITIONS = listOf(
             SettingDefinition(
                 key = "compiler.removeWhitespace",
