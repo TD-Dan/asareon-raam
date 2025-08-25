@@ -26,6 +26,7 @@ import app.auf.service.GatewayService
 import app.auf.service.GraphLoader
 import app.auf.service.GraphService
 import app.auf.service.ImportExportManager
+import app.auf.service.PromptCompiler
 import app.auf.service.SettingsManager
 import app.auf.service.SourceCodeService
 import app.auf.ui.App
@@ -82,8 +83,6 @@ fun main() = application {
     }
 
     val aufTextParser = remember { AufTextParser(jsonParser, toolRegistry) }
-
-    // MODIFICATION: Initialize the factory with all its dependencies, including the parser.
     remember { ChatMessage.Factory.initialize(platformDependencies, aufTextParser) }
 
     val settingsManager = remember { SettingsManager(platformDependencies, jsonParser) }
@@ -105,10 +104,12 @@ fun main() = application {
         AppState(
             selectedModel = savedSettings.selectedModel,
             aiPersonaId = savedSettings.selectedAiPersonaId,
-            contextualHolonIds = savedSettings.activeContextualHolonIds
+            contextualHolonIds = savedSettings.activeContextualHolonIds,
+            compilerSettings = savedSettings.compilerSettings // <<< ADDED
         )
     }
     val store = remember { Store(initialState, ::appReducer, coroutineScope) }
+    val promptCompiler = remember { PromptCompiler(jsonParser) } // <<< ADDED
 
     val stateManager = remember {
         val gateway = Gateway(jsonParser)
@@ -120,7 +121,8 @@ fun main() = application {
         val graphLoader = GraphLoader(platformDependencies, jsonParser)
         val graphService = GraphService(graphLoader)
         val sourceCodeService = SourceCodeService(platformDependencies)
-        val chatService = ChatService(store, gatewayService, platformDependencies, aufTextParser, toolRegistry, coroutineScope)
+        // <<< MODIFIED: Injected promptCompiler
+        val chatService = ChatService(store, gatewayService, platformDependencies, aufTextParser, toolRegistry, promptCompiler, coroutineScope)
 
         StateManager(
             store = store,
@@ -131,9 +133,9 @@ fun main() = application {
             gatewayService = gatewayService,
             actionExecutor = actionExecutor,
             parser = aufTextParser,
+            settingsManager = settingsManager, // <<< ADDED
             importExportViewModel = importExportViewModel,
             platform = platformDependencies,
-            initialSettings = savedSettings,
             coroutineScope = coroutineScope
         )
     }
@@ -157,7 +159,8 @@ fun main() = application {
                 windowHeight = windowState.size.height.value.toInt(),
                 selectedModel = currentState.selectedModel,
                 selectedAiPersonaId = currentState.aiPersonaId,
-                activeContextualHolonIds = currentState.contextualHolonIds
+                activeContextualHolonIds = currentState.contextualHolonIds,
+                compilerSettings = currentState.compilerSettings // <<< ADDED
             )
             settingsManager.saveSettings(currentSettingsToSave)
             exitApplication()

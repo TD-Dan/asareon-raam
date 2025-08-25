@@ -1,5 +1,7 @@
 package app.auf.core
 
+import app.auf.model.SettingDefinition
+import app.auf.model.SettingValue
 import app.auf.model.UserSettings
 import app.auf.service.ActionExecutor
 import app.auf.service.ActionExecutorResult
@@ -7,6 +9,7 @@ import app.auf.service.BackupManager
 import app.auf.service.ChatService
 import app.auf.service.GatewayService
 import app.auf.service.GraphService
+import app.auf.service.SettingsManager
 import app.auf.service.SourceCodeService
 import app.auf.ui.ImportExportViewModel
 import app.auf.util.PlatformDependencies
@@ -27,17 +30,10 @@ import app.auf.service.AufTextParser
  * ---
  * ## Dependencies
  * - `app.auf.core.Store`: The UDF state container.
- * - `app.auf.service.ChatService`: The new service for chat logic.
- * - `app.auf.service.BackupManager`
- * - `app.auf.service.GraphService`
- * - `app.auf.service.SourceCodeService`
- * - `app.auf.service.ActionExecutor`
- * - `app.auf.ui.ImportExportViewModel`
- * - `app.auf.util.PlatformDependencies`: The single bridge to the host OS.
- * - `kotlinx.coroutines.CoroutineScope`
+ * - All services in `app.auf.service`
  *
- * @version 5.2
- * @since 2025-08-17
+ * @version 5.3
+ * @since 2025-08-25
  */
 open class StateManager(
     private val store: Store,
@@ -48,9 +44,9 @@ open class StateManager(
     private val gatewayService: GatewayService,
     private val actionExecutor: ActionExecutor,
     private val parser: AufTextParser,
+    val settingsManager: SettingsManager, // <<< ADDED
     val importExportViewModel: ImportExportViewModel,
     private val platform: PlatformDependencies,
-    private val initialSettings: UserSettings,
     private val coroutineScope: CoroutineScope
 ) {
 
@@ -84,7 +80,6 @@ open class StateManager(
     // --- Chat Logic Delegation ---
     fun sendMessage(message: String) {
         if (state.value.isProcessing || state.value.aiPersonaId == null) return
-        // MODIFICATION: No parsing happens here. Dispatch the raw string directly.
         store.dispatch(AppAction.AddUserMessage(message))
         chatService.sendMessage()
     }
@@ -143,7 +138,6 @@ open class StateManager(
                 is ActionExecutorResult.Success -> {
                     store.dispatch(AppAction.UpdateActionStatus(messageTimestamp, ActionStatus.EXECUTED))
                     store.dispatch(AppAction.ExecuteActionManifestSuccess(result.summary, messageTimestamp))
-                    // This is critical for data consistency: reload the graph from the disk.
                     loadHolonGraph()
                 }
                 is ActionExecutorResult.Failure -> {
@@ -239,5 +233,14 @@ open class StateManager(
 
     fun clearToast() {
         store.dispatch(AppAction.ClearToast)
+    }
+
+    // --- Settings Management ---
+    fun getSettingDefinitions(): List<SettingDefinition> { // <<< ADDED
+        return settingsManager.getSettingDefinitions()
+    }
+
+    fun updateSetting(settingValue: SettingValue) { // <<< ADDED
+        store.dispatch(AppAction.UpdateSetting(settingValue))
     }
 }

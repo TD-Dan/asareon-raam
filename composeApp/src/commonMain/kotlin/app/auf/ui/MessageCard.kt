@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -62,45 +63,36 @@ import kotlinx.serialization.json.JsonObject
  * ## Mandate
  * This file contains the `MessageCard` Composable. Its responsibility is to display a single
  * `ChatMessage`. It is a "dumb" component that receives state and emits events.
- * It uses the message's `rawContent` as the source of truth for display and copy actions.
+ * It uses the message's `rawContent` as the source of truth for display and copy actions,
+ * and provides a toggle to view `compiledContent` if available.
  *
- * @version 1.5
- * @since 2025-08-24
+ * @version 1.6
+ * @since 2025-08-25
  */
 @Composable
 fun MessageCard(message: ChatMessage, stateManager: StateManager) {
-    // MODIFICATION: Ensure ParseErrorBlock is not collapsed by default.
     val hasParseErrorBlock = message.contentBlocks.any { it is ParseErrorBlock }
     var isCollapsed by remember {
         mutableStateOf(
             message.author == Author.SYSTEM &&
-                    !hasParseErrorBlock && // Don't collapse if it contains a ParseErrorBlock
+                    !hasParseErrorBlock &&
                     message.title != "Gateway Error" &&
                     message.title != "Graph Parsing Warning"
         )
     }
     var showRaw by remember { mutableStateOf(false) }
+    var showCompiled by remember { mutableStateOf(false) } // <<< ADDED
     val clipboardManager = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
 
     val cardColors = when {
-        message.title == "Gateway Error" || message.title == "Graph Parsing Warning" || hasParseErrorBlock -> CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer
-        )
-        message.author == Author.SYSTEM -> CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-        )
-        else -> CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        hasParseErrorBlock -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+        message.author == Author.SYSTEM -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+        else -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     }
-    val borderColor = null
     val elevation = if (message.author == Author.SYSTEM) 0.dp else 2.dp
 
-    // MODIFICATION: The logic for copying content is now unified and authoritative
     val contentToCopy = remember(message) {
-        // Prioritize rawContent. If null, fall back to joining TextBlocks.
-        // This should theoretically only occur for internal system messages if they aren't provided with rawContent.
         message.rawContent ?: message.contentBlocks.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
     }
     val showCopyButton = contentToCopy.isNotBlank()
@@ -111,10 +103,14 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
         stateManager.formatDisplayTimestamp(message.timestamp)
     }
 
+    // <<< NEW LOGIC for compiled view toggle
+    val showCompiledToggle = remember(message.rawContent, message.compiledContent) {
+        message.compiledContent != null && message.compiledContent != message.rawContent
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         colors = cardColors,
-        border = if (borderColor != null) BorderStroke(1.dp, color=borderColor) else null,
         elevation = CardDefaults.cardElevation(defaultElevation = elevation)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -143,17 +139,20 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Only show raw view if raw content exists for this message
+                    if (showCompiledToggle) { // <<< ADDED
+                        IconButton(onClick = { showCompiled = !showCompiled }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.Sync, contentDescription = "View Compiled Content", tint = if (showCompiled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Spacer(Modifier.width(4.dp))
+                    }
                     if (message.rawContent != null) {
                         IconButton(onClick = { showRaw = !showRaw }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Code, contentDescription = "View Raw Content", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(Icons.Default.Code, contentDescription = "View Raw Content", tint = if (showRaw) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Spacer(Modifier.width(4.dp))
                     }
                     if (showCopyButton) {
-                        IconButton(onClick = {
-                            clipboardManager.setText(AnnotatedString(guardedCopyContent))
-                        }, modifier = Modifier.size(24.dp)) {
+                        IconButton(onClick = { clipboardManager.setText(AnnotatedString(guardedCopyContent)) }, modifier = Modifier.size(24.dp)) {
                             Icon(Icons.Default.ContentCopy, contentDescription = "Copy Message Content", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Spacer(Modifier.width(4.dp))
@@ -163,28 +162,12 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                         IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) {
                             Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
+                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                             if (message.author == Author.USER) {
-                                DropdownMenuItem(
-                                    text = { Text("Rerun from here") },
-                                    onClick = {
-                                        stateManager.rerunFromMessage(message.id)
-                                        showMenu = false
-                                    }
-                                )
+                                DropdownMenuItem(text = { Text("Rerun from here") }, onClick = { stateManager.rerunFromMessage(message.id); showMenu = false })
                             }
-
-                            val deleteText = if (message.title?.contains("Error") == true || message.title?.contains("Warning") == true) "Dismiss" else "Delete"
-                            DropdownMenuItem(
-                                text = { Text(deleteText) },
-                                onClick = {
-                                    stateManager.deleteMessage(message.id)
-                                    showMenu = false
-                                }
-                            )
+                            val deleteText = if (hasParseErrorBlock || message.title?.contains("Error") == true) "Dismiss" else "Delete"
+                            DropdownMenuItem(text = { Text(deleteText) }, onClick = { stateManager.deleteMessage(message.id); showMenu = false })
                         }
                     }
                 }
@@ -193,24 +176,22 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
             AnimatedVisibility(visible = !isCollapsed) {
                 Column {
                     Spacer(Modifier.height(8.dp))
-                    // MODIFICATION: RenderRawContent now takes the string directly
-                    if (showRaw && message.rawContent != null) {
-                        RenderRawContent(message.rawContent)
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            message.contentBlocks.forEach { block ->
-                                when (block) {
-                                    is TextBlock -> RenderTextBlock(block)
-                                    is ActionBlock -> RenderActionBlock(
-                                        block,
-                                        onConfirm = { stateManager.executeActionFromMessage(message.timestamp) },
-                                        onReject = { stateManager.rejectActionFromMessage(message.timestamp) }
-                                    )
-                                    is FileContentBlock -> RenderFileContentBlock(block)
-                                    is AppRequestBlock -> RenderAppRequestBlock(block)
-                                    is AnchorBlock -> RenderAnchorBlock(block)
-                                    is ParseErrorBlock -> RenderParseErrorBlock(block)
-                                    is SentinelBlock -> RenderSentinelBlock(block)
+                    // --- MODIFIED: View switching logic ---
+                    when {
+                        showRaw && message.rawContent != null -> RenderContent( "RAW CONTENT", message.rawContent)
+                        showCompiled && message.compiledContent != null -> RenderContent("COMPILED CONTENT", message.compiledContent)
+                        else -> {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                message.contentBlocks.forEach { block ->
+                                    when (block) {
+                                        is TextBlock -> RenderTextBlock(block)
+                                        is ActionBlock -> RenderActionBlock(block, onConfirm = { stateManager.executeActionFromMessage(message.timestamp) }, onReject = { stateManager.rejectActionFromMessage(message.timestamp) })
+                                        is FileContentBlock -> RenderFileContentBlock(block)
+                                        is AppRequestBlock -> RenderAppRequestBlock(block)
+                                        is AnchorBlock -> RenderAnchorBlock(block)
+                                        is ParseErrorBlock -> RenderParseErrorBlock(block)
+                                        is SentinelBlock -> RenderSentinelBlock(block)
+                                    }
                                 }
                             }
                         }
@@ -221,9 +202,9 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
     }
 }
 
-// MODIFICATION: RenderRawContent now takes the string directly
+// --- NEW COMPOSABLE: A generic renderer for raw/compiled content ---
 @Composable
-fun RenderRawContent(rawContent: String) {
+fun RenderContent(title: String, content: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -231,7 +212,7 @@ fun RenderRawContent(rawContent: String) {
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
-                text = "RAW CONTENT",
+                text = title,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 11.sp,
@@ -239,7 +220,7 @@ fun RenderRawContent(rawContent: String) {
             )
             HorizontalDivider(modifier=Modifier.padding(vertical=8.dp))
             Text(
-                text = rawContent,
+                text = content,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurface
@@ -248,7 +229,7 @@ fun RenderRawContent(rawContent: String) {
     }
 }
 
-
+// Existing Render* composables remain below, unchanged.
 @Composable
 fun RenderTextBlock(block: TextBlock) {
     Text(block.text, fontFamily = FontFamily.Default, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
@@ -355,7 +336,7 @@ fun RenderParseErrorBlock(block: ParseErrorBlock) {
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
-                text = "PARSE ERROR: ${block.originalTag.uppercase()}", // Corrected to use originalTag
+                text = "PARSE ERROR: ${block.originalTag.uppercase()}",
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )

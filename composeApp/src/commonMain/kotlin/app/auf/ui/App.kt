@@ -38,14 +38,13 @@ import app.auf.core.ViewMode
  * This component's sole responsibility is to act as the main router and orchestrator for the UI.
  * It observes the state from the provided StateManager and wires "dumb" view components
  * to the appropriate ViewModel or StateManager functions, passing state down and routing events up.
- * It does NOT create or manage its own dependencies.
  *
  * ---
  * ## Dependencies
  * - `app.auf.core.StateManager`
  *
- * @version 3.1
- * @since 2025-08-17
+ * @version 3.2
+ * @since 2025-08-25
  */
 @Composable
 fun App(stateManager: StateManager) {
@@ -92,33 +91,51 @@ fun App(stateManager: StateManager) {
                             GlobalActionRibbon(stateManager)
                             VerticalDivider()
 
-                            SessionView(
-                                appState = appState,
-                                onFilter = { stateManager.setCatalogueFilter(it) },
-                                onHolonSelected = { stateManager.onHolonClicked(it) },
-                                modifier = Modifier.width(320.dp)
-                            )
-
-                            VerticalDivider()
-
-                            Box(modifier = Modifier.weight(1f)) {
+                            // Main content area that switches based on ViewMode
+                            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                                 when (appState.currentViewMode) {
-                                    ViewMode.CHAT -> ChatView(appState = appState, stateManager = stateManager)
-                                    ViewMode.EXPORT -> ExportView(appState = appState, stateManager = stateManager)
-                                    ViewMode.IMPORT -> {
-                                        ImportView(
-                                            viewModel = stateManager.importExportViewModel,
-                                            currentGraph = appState.holonGraph.map { it.header },
-                                            personaId = appState.aiPersonaId ?: "",
-                                            onCancel = { stateManager.setViewMode(ViewMode.CHAT) }
+                                    ViewMode.SETTINGS -> { // <<< ROUTING LOGIC
+                                        SettingsView(
+                                            definitions = stateManager.getSettingDefinitions(),
+                                            compilerSettings = appState.compilerSettings,
+                                            onSettingChanged = { stateManager.updateSetting(it) },
+                                            onClose = { stateManager.setViewMode(ViewMode.CHAT) }
                                         )
+                                    }
+                                    else -> { // Default view is the main 3-panel layout
+                                        Row(Modifier.fillMaxSize()) {
+                                            SessionView(
+                                                appState = appState,
+                                                onFilter = { stateManager.setCatalogueFilter(it) },
+                                                onHolonSelected = { stateManager.onHolonClicked(it) },
+                                                modifier = Modifier.width(320.dp)
+                                            )
+
+                                            VerticalDivider()
+
+                                            Box(modifier = Modifier.weight(1f)) {
+                                                when (appState.currentViewMode) {
+                                                    ViewMode.CHAT -> ChatView(appState = appState, stateManager = stateManager)
+                                                    ViewMode.EXPORT -> ExportView(appState = appState, stateManager = stateManager)
+                                                    ViewMode.IMPORT -> {
+                                                        ImportView(
+                                                            viewModel = stateManager.importExportViewModel,
+                                                            currentGraph = appState.holonGraph.map { it.header },
+                                                            personaId = appState.aiPersonaId ?: "",
+                                                            onCancel = { stateManager.setViewMode(ViewMode.CHAT) }
+                                                        )
+                                                    }
+                                                    else -> {} // Should not happen
+                                                }
+                                            }
+
+                                            VerticalDivider()
+
+                                            HolonInspectorView(appState = appState, modifier = Modifier.width(320.dp))
+                                        }
                                     }
                                 }
                             }
-
-                            VerticalDivider()
-
-                            HolonInspectorView(appState = appState, modifier = Modifier.width(320.dp))
                         }
                     }
                 }

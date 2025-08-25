@@ -6,6 +6,7 @@ import app.auf.model.ToolDefinition
 import app.auf.service.AufTextParser
 import app.auf.service.ChatService
 import app.auf.service.GatewayService
+import app.auf.service.PromptCompiler
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 
@@ -14,9 +15,10 @@ class FakeChatService(
     gatewayService: GatewayService,
     platform: PlatformDependencies,
     parser: AufTextParser,
-    toolRegistry: List<ToolDefinition>, // <<< MODIFIED: Added parameter
+    toolRegistry: List<ToolDefinition>,
+    promptCompiler: PromptCompiler, // <<< ADDED
     coroutineScope: CoroutineScope
-) : ChatService(store, gatewayService, platform, parser, toolRegistry, coroutineScope) { // <<< MODIFIED: Passed to super()
+) : ChatService(store, gatewayService, platform, parser, toolRegistry, promptCompiler, coroutineScope) { // <<< ADDED
 
     var sendMessageCalled = false
     var cancelMessageCalled = false

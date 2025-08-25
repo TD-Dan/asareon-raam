@@ -17,5 +17,5 @@ package app.auf.core
  * @since 2025-08-23
  */
 object Version {
-    const val APP_VERSION = "1.4.0"
+    const val APP_VERSION = "1.4.1"
 }

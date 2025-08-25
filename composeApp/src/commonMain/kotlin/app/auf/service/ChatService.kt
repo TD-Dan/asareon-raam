@@ -19,9 +19,10 @@ import kotlinx.coroutines.launch
 
 /**
  * Service dedicated to handling all business logic related to AI chat interactions.
+ * It uses a PromptCompiler to optimize messages before sending them to the GatewayService.
  *
- * @version 2.5
- * @since 2025-08-17
+ * @version 2.6
+ * @since 2025-08-25
  */
 open class ChatService(
     private val store: Store,
@@ -29,6 +30,7 @@ open class ChatService(
     private val platform: PlatformDependencies,
     private val parser: AufTextParser,
     private val toolRegistry: List<ToolDefinition>,
+    private val promptCompiler: PromptCompiler, // <<< ADDED
     private val coroutineScope: CoroutineScope
 ) {
 
@@ -54,7 +56,6 @@ open class ChatService(
             }
             activeJob = null
 
-            // MODIFICATION: Check for app requests *after* the AI message has been added
             val latestState = store.state.value
             val lastMessage = latestState.chatHistory.lastOrNull()
             if (lastMessage != null && lastMessage.author == Author.AI) {
@@ -72,37 +73,30 @@ open class ChatService(
     open fun buildSystemContextMessages(): List<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
         val appState = store.state.value
+        val compilerSettings = appState.compilerSettings
+
+        // --- Helper function to create and compile a system message ---
+        fun createAndCompileSystemMessage(title: String, rawContent: String): ChatMessage {
+            val compiledContent = promptCompiler.compile(rawContent, compilerSettings)
+            // Create the message with both raw and compiled content
+            return ChatMessage.createSystem(title, rawContent).copy(compiledContent = compiledContent)
+        }
+
         val frameworkBasePath = platform.getBasePathFor(BasePath.FRAMEWORK)
         val protocolPath = frameworkBasePath + platform.pathSeparator + "framework_protocol.md"
+        messages.add(createAndCompileSystemMessage("framework_protocol.md", platform.readFileContent(protocolPath)))
 
-        messages.add(
-            ChatMessage.createSystem(
-                title = "framework_protocol.md",
-                rawContent = platform.readFileContent(protocolPath)
-            )
-        )
-        messages.add(
-            ChatMessage.createSystem(
-                title = "REAL TIME SYSTEM STATUS",
-                rawContent = generateSystemStatusMessage()
-            )
-        )
-        messages.add(
-            ChatMessage.createSystem(
-                title = "Host Tool Manifest",
-                rawContent = generateDynamicToolManifest()
-            )
-        )
+        messages.add(createAndCompileSystemMessage("REAL TIME SYSTEM STATUS", generateSystemStatusMessage()))
+
+        messages.add(createAndCompileSystemMessage("Host Tool Manifest", generateDynamicToolManifest()))
 
         appState.activeHolons.values.forEach { holon ->
             if (holon.header.type != "Quarantined_File") {
                 val holonContentString = JsonProvider.appJson.encodeToString(Holon.serializer(), holon)
-                messages.add(
-                    ChatMessage.createSystem(
-                        title = platform.getFileName(holon.header.id + ".json"),
-                        rawContent = holonContentString
-                    )
-                )
+                messages.add(createAndCompileSystemMessage(
+                    title = platform.getFileName(holon.header.id + ".json"),
+                    rawContent = holonContentString
+                ))
             }
         }
         return messages
@@ -110,13 +104,23 @@ open class ChatService(
 
     open fun buildFullPromptAsString(): String {
         val state = store.state.value
-        val historyForApi = state.chatHistory.filter { it.author == Author.USER || it.author == Author.AI }
-        val systemMessages = buildSystemContextMessages()
+        // User and AI messages are not compiled, so they use rawContent.
+        val historyForApi = state.chatHistory.map {
+            if (it.author == Author.USER || it.author == Author.AI) {
+                it.copy(compiledContent = it.rawContent)
+            } else {
+                // For system messages, re-compile them to ensure they reflect current settings.
+                val compiled = promptCompiler.compile(it.rawContent ?: "", state.compilerSettings)
+                it.copy(compiledContent = compiled)
+            }
+        }
+
+        val systemMessages = buildSystemContextMessages() // These are already compiled
         val fullContext = systemMessages + historyForApi
 
         return fullContext.joinToString("\n\n") { msg ->
-            // MODIFICATION: Logic simplified. Prioritize rawContent, fall back to TextBlocks only if rawContent is null.
-            val content = msg.rawContent ?: msg.contentBlocks.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
+            // --- CRITICAL CHANGE: Use compiledContent for the prompt ---
+            val content = msg.compiledContent ?: msg.rawContent ?: ""
             when (msg.author) {
                 Author.USER, Author.AI -> {
                     val role = if (msg.author == Author.AI) "model" else "USER"
@@ -127,20 +131,17 @@ open class ChatService(
         }
     }
 
-    // DELETED: sendSystemMessage helper function is removed as AppAction.AddSystemMessage is now direct.
-
     private fun handleAppRequests(message: ChatMessage) {
         message.contentBlocks.filterIsInstance<AppRequestBlock>().forEach { request ->
             when (request.requestType) {
                 "START_DREAM_CYCLE" -> {
-                    // MODIFICATION: Dispatch the new AddSystemMessage action directly, providing title and raw content.
                     store.dispatch(
                         AppAction.AddSystemMessage(
-                            title = "App Request", // Provide a descriptive title for this system message
+                            title = "App Request",
                             rawContent = "Please perform a 'Dream Cycle Simulation' based on our recent interaction."
                         )
                     )
-                    sendMessage() // Send the new system message to the AI
+                    sendMessage()
                 }
             }
         }
@@ -169,6 +170,6 @@ open class ChatService(
             *   **Description:** ${tool.description}
             *   **Usage:** `${tool.usage}`
             """.trimIndent()
-        }.trim() // Ensure no trailing newlines for consistent comparison
+        }.trim()
     }
 }

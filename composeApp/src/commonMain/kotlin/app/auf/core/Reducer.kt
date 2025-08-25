@@ -15,8 +15,8 @@ package app.auf.core
  * - `app.auf.core.AppState`: The state object it operates on.
  * - `app.auf.core.AppAction`: The actions it responds to.
  *
- * @version 2.7
- * @since 2025-08-17
+ * @version 2.8
+ * @since 2025-08-25
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
     return when (action) {
@@ -62,14 +62,12 @@ fun appReducer(state: AppState, action: AppAction): AppState {
 
         // --- Chat & Gateway ---
         is AppAction.AddUserMessage -> {
-            // MODIFICATION: Create the user message from the raw string in the action.
             val userMessage = ChatMessage.createUser(rawContent = action.rawContent)
             state.copy(
                 chatHistory = state.chatHistory + userMessage
             )
         }
         is AppAction.AddSystemMessage -> {
-            // MODIFICATION: Create the system message from the raw string in the action.
             val systemMessage = ChatMessage.createSystem(
                 title = action.title,
                 rawContent = action.rawContent
@@ -83,7 +81,6 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             errorMessage = null
         )
         is AppAction.SendMessageSuccess -> {
-            // MODIFICATION: Use the updated factory, providing a fallback for safety.
             val aiMessage = ChatMessage.createAi(
                 rawContent = action.response.rawContent ?: "Error: AI response was null.",
                 usageMetadata = action.response.usageMetadata
@@ -94,7 +91,6 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             )
         }
         is AppAction.SendMessageFailure -> {
-            // MODIFICATION: Use the updated factory.
             val errorChatMessage = ChatMessage.createSystem(
                 title = "Gateway Error",
                 rawContent = action.error
@@ -132,7 +128,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             } else {
                 state.copy(
                     currentViewMode = action.mode,
-                    holonIdsForExport = emptySet() // Clear list when leaving export mode
+                    holonIdsForExport = emptySet() // Clear list when leaving other modes
                 )
             }
         }
@@ -246,6 +242,16 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                 }
             }
             state.copy(chatHistory = updatedHistory)
+        }
+        // --- Settings ---
+        is AppAction.UpdateSetting -> { // <<< ADDED
+            val newCompilerSettings = when (action.setting.key) {
+                "compiler.removeWhitespace" -> state.compilerSettings.copy(removeWhitespace = action.setting.value)
+                "compiler.cleanHeaders" -> state.compilerSettings.copy(cleanHeaders = action.setting.value)
+                "compiler.minifyJson" -> state.compilerSettings.copy(minifyJson = action.setting.value)
+                else -> state.compilerSettings
+            }
+            state.copy(compilerSettings = newCompilerSettings)
         }
     }
 }

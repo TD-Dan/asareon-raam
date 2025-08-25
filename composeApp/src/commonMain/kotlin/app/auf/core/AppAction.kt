@@ -1,4 +1,7 @@
+
 package app.auf.core
+
+import app.auf.model.SettingValue
 
 /**
  * Defines all possible actions that can be dispatched to the Store to trigger a state change.
@@ -14,8 +17,8 @@ package app.auf.core
  * ## Dependencies
  * - `app.auf.core.AppState`: Many actions carry payload data defined in AppState.kt.
  *
- * @version 2.5
- * @since 2025-08-24
+ * @version 2.6
+ * @since 2025-08-25
  */
 sealed interface AppAction {
 
@@ -54,4 +57,7 @@ sealed interface AppAction {
     data class ExecuteActionManifestSuccess(val summary: String, val messageTimestamp: Long) : AppAction
     data class ExecuteActionManifestFailure(val error: String, val messageTimestamp: Long) : AppAction
     data class UpdateActionStatus(val messageTimestamp: Long, val status: ActionStatus) : AppAction
+
+    // --- Settings Actions ---
+    data class UpdateSetting(val setting: SettingValue) : AppAction // <<< ADDED
 }

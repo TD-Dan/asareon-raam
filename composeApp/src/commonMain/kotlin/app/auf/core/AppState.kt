@@ -1,7 +1,7 @@
-
 package app.auf.core
 
 import app.auf.model.Action
+import app.auf.model.CompilerSettings
 import app.auf.service.AufTextParser
 import app.auf.service.UsageMetadata
 import app.auf.util.PlatformDependencies
@@ -25,8 +25,8 @@ import kotlinx.serialization.json.JsonObject
  * - `Action` (from ActionModels.kt): Used within the `ActionBlock` content type.
  * - `kotlinx.serialization`: Used extensively for defining serializable data contracts.
  *
- * @version 1.9
- * @since 2025-08-17
+ * @version 2.0
+ * @since 2025-08-25
  */
 
 data class GatewayResponse(
@@ -45,7 +45,7 @@ data class GraphLoadResult(
 )
 
 enum class ViewMode {
-    CHAT, EXPORT, IMPORT
+    CHAT, EXPORT, IMPORT, SETTINGS // <<< ADDED
 }
 
 data class ImportItem(
@@ -127,7 +127,8 @@ data class AppState(
     val currentViewMode: ViewMode = ViewMode.CHAT,
     val holonIdsForExport: Set<String> = emptySet(),
     val importState: ImportState? = null,
-    val toastMessage: String? = null
+    val toastMessage: String? = null,
+    val compilerSettings: CompilerSettings = CompilerSettings() // <<< ADDED
 )
 
 @Serializable
@@ -213,7 +214,8 @@ data class ChatMessage internal constructor(
     val timestamp: Long,
     val contentBlocks: List<ContentBlock>,
     val usageMetadata: UsageMetadata?,
-    val rawContent: String?
+    val rawContent: String?,
+    val compiledContent: String? = null // <<< ADDED
 ) {
     companion object Factory {
         private var nextId = 0L
@@ -251,7 +253,8 @@ data class ChatMessage internal constructor(
                 timestamp = getTimestamp(),
                 contentBlocks = getParser().parse(rawContent),
                 usageMetadata = null,
-                rawContent = rawContent
+                rawContent = rawContent,
+                compiledContent = null // <<< ADDED
             )
         }
 
@@ -270,7 +273,8 @@ data class ChatMessage internal constructor(
                 timestamp = getTimestamp(),
                 contentBlocks = getParser().parse(rawContent),
                 usageMetadata = usageMetadata,
-                rawContent = rawContent
+                rawContent = rawContent,
+                compiledContent = null // <<< ADDED
             )
         }
 
@@ -289,7 +293,8 @@ data class ChatMessage internal constructor(
                 timestamp = getTimestamp(),
                 contentBlocks = getParser().parse(rawContent),
                 usageMetadata = null,
-                rawContent = rawContent
+                rawContent = rawContent,
+                compiledContent = null // <<< ADDED
             )
         }
     }

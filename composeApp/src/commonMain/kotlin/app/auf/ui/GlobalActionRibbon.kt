@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -66,6 +67,21 @@ fun GlobalActionRibbon(
                 expanded = isMenuExpanded,
                 onDismissRequest = { isMenuExpanded = false }
             ) {
+                DropdownMenuItem(
+                    text = { Text("Settings") }, // <<< ADDED
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    onClick = {
+                        stateManager.setViewMode(ViewMode.SETTINGS)
+                        isMenuExpanded = false
+                    }
+                )
+                HorizontalDivider() // <<< ADDED
                 DropdownMenuItem(
                     text = { Text("Export for AUF manual runtime") },
                     onClick = {
