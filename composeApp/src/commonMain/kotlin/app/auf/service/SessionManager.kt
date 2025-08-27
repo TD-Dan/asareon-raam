@@ -21,7 +21,7 @@ import kotlinx.serialization.json.Json
  * @version 1.0
  * @since 2025-08-27
  */
-class SessionManager(
+open class SessionManager(
     private val platform: PlatformDependencies,
     private val jsonParser: Json
 ) {
@@ -37,7 +37,7 @@ class SessionManager(
      * Saves the provided list of ChatMessages to the active_session.json file.
      * This operation overwrites the existing file.
      */
-    fun saveSession(chatHistory: List<ChatMessage>) {
+    open fun saveSession(chatHistory: List<ChatMessage>) {
         try {
             val jsonString = jsonParser.encodeToString(ListSerializer(ChatMessage.serializer()), chatHistory)
             platform.writeFileContent(sessionFilePath, jsonString)
@@ -52,7 +52,7 @@ class SessionManager(
      * Returns null if the file does not exist or fails to parse, allowing the app
      * to start with a fresh session.
      */
-    fun loadSession(): List<ChatMessage>? {
+    open fun loadSession(): List<ChatMessage>? {
         if (!platform.fileExists(sessionFilePath)) return null
 
         return try {

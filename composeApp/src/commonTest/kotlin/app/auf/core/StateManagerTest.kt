@@ -8,14 +8,15 @@ import app.auf.fakes.FakeGatewayService
 import app.auf.fakes.FakeGraphService
 import app.auf.fakes.FakeImportExportManager
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.fakes.FakeSessionManager
 import app.auf.fakes.FakeSourceCodeService
 import app.auf.fakes.FakeStore
 import app.auf.model.Action
 import app.auf.model.CreateFile
 import app.auf.model.ToolDefinition
-import app.auf.model.UserSettings
 import app.auf.service.ActionExecutorResult
 import app.auf.service.PromptCompiler
+import app.auf.service.SessionManager
 import app.auf.service.SettingsManager
 import app.auf.ui.ImportExportViewModel
 import app.auf.util.JsonProvider
@@ -39,8 +40,9 @@ class StateManagerTest {
         initialState: AppState = AppState(),
         scope: TestScope
     ): Triple<StateManager, FakeStore, FakeActionExecutor> {
-        val store = FakeStore(initialState, scope)
         val platform = FakePlatformDependencies()
+        val sessionManager = FakeSessionManager(platform) // MODIFIED: Create FakeSessionManager
+        val store = FakeStore(initialState, scope, sessionManager) // MODIFIED: Pass sessionManager to FakeStore
         val backupManager = FakeBackupManager(platform)
         val graphService = FakeGraphService()
         val sourceCodeService = FakeSourceCodeService(platform)
@@ -48,11 +50,10 @@ class StateManagerTest {
 
         val toolRegistry = listOf<ToolDefinition>()
         val parser = FakeAufTextParser(jsonParser, toolRegistry)
-        val settingsManager = SettingsManager(platform, jsonParser) // <<< FIX: Instantiate SettingsManager
-        val promptCompiler = PromptCompiler(jsonParser) // <<< FIX: Instantiate PromptCompiler
+        val settingsManager = SettingsManager(platform, jsonParser)
+        val promptCompiler = PromptCompiler(jsonParser)
 
         val gatewayService = FakeGatewayService(scope, toolRegistry)
-        // <<< FIX: Correctly pass promptCompiler and scope to the constructor
         val chatService = FakeChatService(store, gatewayService, platform, parser, toolRegistry, promptCompiler, scope)
 
         val actionExecutor = FakeActionExecutor(platform, jsonParser)
@@ -68,7 +69,8 @@ class StateManagerTest {
             gatewayService = gatewayService,
             actionExecutor = actionExecutor,
             parser = parser,
-            settingsManager = settingsManager, // <<< FIX: Pass the new dependency
+            settingsManager = settingsManager,
+            sessionManager = sessionManager, // MODIFIED: Pass sessionManager
             importExportViewModel = importExportViewModel,
             platform = platform,
             coroutineScope = scope

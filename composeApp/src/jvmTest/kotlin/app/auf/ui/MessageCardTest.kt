@@ -15,11 +15,11 @@ import app.auf.fakes.FakeGatewayService
 import app.auf.fakes.FakeGraphService
 import app.auf.fakes.FakeImportExportViewModel
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.fakes.FakeSessionManager
 import app.auf.fakes.FakeSourceCodeService
 import app.auf.fakes.FakeStore
 import app.auf.model.Parameter
 import app.auf.model.ToolDefinition
-import app.auf.model.UserSettings
 import app.auf.service.AufTextParser
 import app.auf.service.PromptCompiler
 import app.auf.service.SettingsManager
@@ -52,8 +52,9 @@ class MessageCardTest {
     @Before
     fun setup() {
         val initialState = AppState()
-        fakeStore = FakeStore(initialState, testCoroutineScope)
         val fakePlatform = FakePlatformDependencies()
+        val fakeSessionManager = FakeSessionManager(fakePlatform)
+        fakeStore = FakeStore(initialState, testCoroutineScope, fakeSessionManager)
         realParser = AufTextParser(JsonProvider.appJson, toolRegistry)
         ChatMessage.Factory.initialize(fakePlatform, realParser)
         val fakeGatewayService = FakeGatewayService(testCoroutineScope)
@@ -70,6 +71,7 @@ class MessageCardTest {
             actionExecutor = FakeActionExecutor(fakePlatform, JsonProvider.appJson),
             parser = realParser,
             settingsManager = settingsManager,
+            sessionManager = fakeSessionManager,
             importExportViewModel = FakeImportExportViewModel(),
             platform = fakePlatform,
             coroutineScope = testCoroutineScope
@@ -117,15 +119,21 @@ class MessageCardTest {
         }
 
         // --- FIX IS HERE ---
+        // The test failed because a System message card is collapsed by default.
+        // We must first click the card's header to expand it before we can
+        // assert on the content within it.
+        composeTestRule.onNodeWithText("test.json").performClick()
+        // --- END FIX ---
+
         // ACT 1: Initially, raw (parsed) content is shown. Assert for key substrings.
-        composeTestRule.onNodeWithText("\"key\": \"value\"", substring = true).assertExists()
+        composeTestRule.onNodeWithText(raw, substring = true).assertExists()
         composeTestRule.onNodeWithText(compiled).assertDoesNotExist()
 
         // ACT 2: Click the toggle
         composeTestRule.onNodeWithContentDescription("View Compiled Content").performClick()
 
         // ASSERT 2: Compiled content is shown, raw is hidden
-        composeTestRule.onNodeWithText("\"key\": \"value\"", substring = true).assertDoesNotExist()
+        composeTestRule.onNodeWithText(raw, substring = true).assertDoesNotExist()
         composeTestRule.onNodeWithText(compiled).assertExists()
         composeTestRule.onNodeWithText("COMPILED CONTENT").assertExists()
 
@@ -133,9 +141,8 @@ class MessageCardTest {
         composeTestRule.onNodeWithContentDescription("View Compiled Content").performClick()
 
         // ASSERT 3: View reverts to raw (parsed) content
-        composeTestRule.onNodeWithText("\"key\": \"value\"", substring = true).assertExists()
+        composeTestRule.onNodeWithText(raw, substring = true).assertExists()
         composeTestRule.onNodeWithText(compiled).assertDoesNotExist()
-        // --- END FIX ---
     }
 
     @Test

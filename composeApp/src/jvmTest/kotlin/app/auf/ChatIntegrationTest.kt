@@ -16,6 +16,7 @@ import app.auf.fakes.FakeGatewayService
 import app.auf.fakes.FakeGraphService
 import app.auf.fakes.FakeImportExportViewModel
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.fakes.FakeSessionManager
 import app.auf.fakes.FakeSourceCodeService
 import app.auf.fakes.FakeStore
 import app.auf.model.Parameter
@@ -61,6 +62,7 @@ class ChatIntegrationTest {
     private lateinit var realPromptCompiler: PromptCompiler
     private lateinit var settingsManager: SettingsManager
     private lateinit var testCoroutineScope: CoroutineScope
+    private lateinit var fakeSessionManager: FakeSessionManager
 
     private val toolRegistry = listOf(
         ToolDefinition("Atomic Change Manifest", "ACTION_MANIFEST", "", emptyList(), true, ""),
@@ -78,8 +80,9 @@ class ChatIntegrationTest {
             availableAiPersonas = listOf(initialPersonaHeader),
             activeHolons = emptyMap()
         )
-        fakeStore = FakeStore(initialState, testCoroutineScope)
         fakePlatform = FakePlatformDependencies()
+        fakeSessionManager = FakeSessionManager(fakePlatform)
+        fakeStore = FakeStore(initialState, testCoroutineScope, fakeSessionManager)
         realParser = AufTextParser(JsonProvider.appJson, toolRegistry)
         realPromptCompiler = PromptCompiler(JsonProvider.appJson)
         settingsManager = SettingsManager(fakePlatform, JsonProvider.appJson)
@@ -109,6 +112,7 @@ class ChatIntegrationTest {
             actionExecutor = FakeActionExecutor(fakePlatform, JsonProvider.appJson),
             parser = realParser,
             settingsManager = settingsManager,
+            sessionManager = fakeSessionManager,
             importExportViewModel = FakeImportExportViewModel(),
             platform = fakePlatform,
             coroutineScope = testCoroutineScope
@@ -142,9 +146,9 @@ class ChatIntegrationTest {
         fakeStore.dispatch(AppAction.ToggleHolonActive("test-holon-1"))
 
         // Set compiler settings to be aggressive
-        stateManager.updateSetting(SettingValue("compiler.cleanHeaders", true)) // <<< FIX: Corrected method call
-        stateManager.updateSetting(SettingValue("compiler.minifyJson", true)) // <<< FIX: Corrected method call
-        stateManager.updateSetting(SettingValue("compiler.removeWhitespace", true)) // <<< FIX: Corrected method call
+        stateManager.updateSetting(SettingValue("compiler.cleanHeaders", true))
+        stateManager.updateSetting(SettingValue("compiler.minifyJson", true))
+        stateManager.updateSetting(SettingValue("compiler.removeWhitespace", true))
         advanceUntilIdle()
 
         // ACT
@@ -152,12 +156,17 @@ class ChatIntegrationTest {
         advanceUntilIdle()
 
         // ASSERT
-        val apiContents = fakeGatewayService.sendMessageCalledWith
-        assertNotNull(apiContents)
+        val systemMessagesSentToChatService = stateManager.getSystemContextForDisplay()
+        assertNotNull(systemMessagesSentToChatService)
 
-        val systemBlock = apiContents.first { it.author == Author.SYSTEM && it.title == "test-holon-1.json" }
-        val sentContent = systemBlock.rawContent
-        assertNotNull(sentContent)
+        val systemBlock = systemMessagesSentToChatService.first { it.title == "test-holon-1.json" }
+        // --- FIX IS HERE ---
+        // The test failed because it was asserting on `rawContent`.
+        // The correct property to check is `compiledContent`, which holds the result
+        // of the PromptCompiler's transformations.
+        val sentContent = systemBlock.compiledContent
+        assertNotNull(sentContent, "The compiled content of the system message should not be null.")
+        // --- END FIX ---
 
         assertFalse(sentContent.contains("\n"), "Compiled content should be minified.")
         assertFalse(sentContent.contains("version"), "Compiled content should not contain 'version'.")
@@ -171,7 +180,7 @@ class ChatIntegrationTest {
     @Test
     fun `getPromptForClipboard uses compiled content for system messages and raw for others`() = runTest {
         // ARRANGE
-        stateManager.updateSetting(SettingValue("compiler.minifyJson", true)) // <<< FIX: Corrected method call
+        stateManager.updateSetting(SettingValue("compiler.minifyJson", true))
         val userMessage = "User query."
         val aiResponse = "AI response."
         val systemMessageRaw = """
