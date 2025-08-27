@@ -20,7 +20,7 @@ import kotlinx.serialization.json.JsonObject
  * - `app.auf.util.PlatformDependencies`: The contract for all platform-specific I/O.
  * - `kotlinx.serialization.json.Json`: For parsing Holon files.
  *
- * @version 3.1
+ * @version 3.2
  * @since 2025-08-17
  */
 open class GraphLoader(
@@ -39,22 +39,46 @@ open class GraphLoader(
         val parsingErrors = mutableListOf<String>()
         try {
             if (!platform.fileExists(holonsBasePath)) {
-                return GraphLoadResult(fatalError = "Holon directory not found at resolved path: $holonsBasePath")
+                // --- MODIFICATION START: Allow app to start if holons dir is missing ---
+                // If the holons directory doesn't even exist, return a successful empty state.
+                // This allows a first-time user to launch the app and use the import tool.
+                return GraphLoadResult(
+                    holonGraph = emptyList(),
+                    availableAiPersonas = emptyList(),
+                    parsingErrors = emptyList(),
+                    determinedPersonaId = null,
+                    fatalError = null // Not a fatal error
+                )
+                // --- MODIFICATION END ---
             }
 
             val availablePersonas = discoverAvailablePersonas(holonsBasePath, parsingErrors)
             val determinedPersonaId = determinePersonaToLoad(currentPersonaId, availablePersonas)
 
+
+            // --- MODIFICATION START: Handle no-persona and multi-persona scenarios gracefully ---
             if (determinedPersonaId == null) {
-                if (parsingErrors.isNotEmpty()) {
+                // Scenario 1: No personas exist at all. This is a valid "clean slate" for a new user.
+                if (availablePersonas.isEmpty()) {
                     return GraphLoadResult(
+                        holonGraph = emptyList(),
+                        availableAiPersonas = emptyList(),
                         parsingErrors = parsingErrors,
-                        fatalError = "Could not load any valid persona. ${parsingErrors.size} parsing error(s) found."
+                        determinedPersonaId = null,
+                        fatalError = null // Not a fatal error
                     )
                 }
-                val errorMsg = if (availablePersonas.isNotEmpty()) "Please select an Active Agent to begin." else "No AI_Persona_Root holons found in the 'holons' directory."
-                return GraphLoadResult(availableAiPersonas = availablePersonas, fatalError = errorMsg)
+                // Scenario 2: Multiple personas exist, but none is selected. Prompt the user.
+                else {
+                    val errorMsg = "Please select an Active Agent to begin."
+                    return GraphLoadResult(
+                        availableAiPersonas = availablePersonas,
+                        fatalError = errorMsg
+                    )
+                }
             }
+            // --- MODIFICATION END ---
+
 
             val graph = mutableListOf<Holon>()
             val rootDirectoryPath = holonsBasePath + platform.pathSeparator + determinedPersonaId
@@ -150,7 +174,6 @@ open class GraphLoader(
             }
         } catch (e: Exception) {
             val error = "Parse failed for $holonId: ${e.message?.substringBefore('\n')}"
-            // --- FIX IS HERE: Explicit console print for immediate debugging ---
             println("GRAPHLOADER_ERROR: $error")
             parsingErrors.add(error)
             e.printStackTrace()

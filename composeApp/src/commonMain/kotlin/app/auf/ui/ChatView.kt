@@ -1,3 +1,4 @@
+// --- FILE: composeApp/src/commonMain/kotlin/app/auf/ui/ChatView.kt ---
 package app.auf.ui
 
 import androidx.compose.foundation.background
@@ -17,6 +18,7 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.StateManager
@@ -42,13 +44,15 @@ fun ChatView(
     val selectedAiPersonaId = appState.aiPersonaId
     val selectedAiPersonaName = aiPersonas.find { it.id == selectedAiPersonaId }?.name ?: "None"
 
+    // --- MODIFICATION START: Determine if the chat functionality should be active ---
+    val isChatActive = selectedAiPersonaId != null
+    // --- MODIFICATION END ---
+
     val lastTransactionTokens = appState.chatHistory.lastOrNull { it.author == app.auf.core.Author.AI }?.usageMetadata
 
-    // --- FIX IS HERE ---
     val aggregatedStats = remember(appState.activeHolons, appState.compilerSettings) {
         stateManager.getAggregatedCompilationStats()
     }
-    // --- END FIX ---
 
 
     val displayedMessages by remember(appState.isSystemVisible, appState.chatHistory, appState.activeHolons) {
@@ -82,18 +86,44 @@ fun ChatView(
         .background(MaterialTheme.colorScheme.surface)
     )
     {
-        LazyColumn(
-            state = lazyListState,
-            modifier = Modifier.weight(1f).padding(bottom = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            items(
-                items = displayedMessages,
-                key = { message -> message.id }
-            ) { message ->
-                MessageCard(message = message, stateManager = stateManager)
+        // --- MODIFICATION START: Conditionally display chat or placeholder ---
+        if (isChatActive) {
+            LazyColumn(
+                state = lazyListState,
+                modifier = Modifier.weight(1f).padding(bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(
+                    items = displayedMessages,
+                    key = { message -> message.id }
+                ) { message ->
+                    MessageCard(message = message, stateManager = stateManager)
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "No Active Agent",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        appState.errorMessage ?: "Select a persona or use the menu to import a knowledge graph.",
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
+        // --- MODIFICATION END ---
+
 
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
@@ -103,11 +133,11 @@ fun ChatView(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val systemButton: @Composable () -> Unit = {
                     if (appState.isSystemVisible) {
-                        Button(onClick = { stateManager.toggleSystemMessageVisibility() }) {
+                        Button(onClick = { stateManager.toggleSystemMessageVisibility() }, enabled = isChatActive) {
                             Text("Show System")
                         }
                     } else {
-                        OutlinedButton(onClick = { stateManager.toggleSystemMessageVisibility() }) {
+                        OutlinedButton(onClick = { stateManager.toggleSystemMessageVisibility() }, enabled = isChatActive) {
                             Text("Show System")
                         }
                     }
@@ -116,17 +146,18 @@ fun ChatView(
 
 
                 Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick = {
-                    val fullPrompt = stateManager.getPromptForClipboard()
-                    val guardedPrompt = "---START OF COPY:---\n$fullPrompt\n--- END OF COPY---"
-                    clipboardManager.setText(AnnotatedString(guardedPrompt))
-                }) {
+                OutlinedButton(
+                    onClick = {
+                        val fullPrompt = stateManager.getPromptForClipboard()
+                        val guardedPrompt = "---START OF COPY:---\n$fullPrompt\n--- END OF COPY---"
+                        clipboardManager.setText(AnnotatedString(guardedPrompt))
+                    },
+                    enabled = isChatActive
+                ) {
                     Text("Copy Prompt")
                 }
             }
 
-            // --- FIX IS HERE ---
-            // This column will now hold both token and compression stats
             Column(horizontalAlignment = Alignment.End) {
                 lastTransactionTokens?.let {
                     val promptTokens = it.promptTokenCount ?: 0
@@ -140,7 +171,6 @@ fun ChatView(
                     )
                 }
 
-                // Display compilation stats if there's a reduction
                 if (aggregatedStats.totalOriginalChars > 0 && aggregatedStats.totalOriginalChars > aggregatedStats.totalCompiledChars) {
                     val reduction = ((aggregatedStats.totalOriginalChars - aggregatedStats.totalCompiledChars).toDouble() / aggregatedStats.totalOriginalChars * 100).toInt()
                     Text(
@@ -151,7 +181,6 @@ fun ChatView(
                     )
                 }
             }
-            // --- END FIX ---
 
 
             var isModelSelectorExpanded by remember { mutableStateOf(false) }
@@ -208,14 +237,24 @@ fun ChatView(
                         }
                         false
                     },
-                placeholder = { Text("Enter message... (Ctrl+Enter to send, Enter for newline)") },
-                enabled = !appState.isProcessing && appState.gatewayStatus == GatewayStatus.OK
+                // --- MODIFICATION START: Update placeholder and enabled state ---
+                placeholder = {
+                    if (isChatActive) {
+                        Text("Enter message... (Ctrl+Enter to send, Enter for newline)")
+                    } else {
+                        Text("Select an agent to activate chat")
+                    }
+                },
+                enabled = !appState.isProcessing && isChatActive
+                // --- MODIFICATION END ---
             )
             Spacer(modifier = Modifier.width(8.dp))
             Button(
                 onClick = { if (appState.isProcessing) stateManager.cancelMessage() else sendMessageAction() },
                 modifier = Modifier.height(56.dp),
-                enabled = appState.gatewayStatus == GatewayStatus.OK,
+                // --- MODIFICATION START: Update enabled state ---
+                enabled = isChatActive,
+                // --- MODIFICATION END ---
                 colors = if (appState.isProcessing) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.inversePrimary) else ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 if (appState.isProcessing) {
