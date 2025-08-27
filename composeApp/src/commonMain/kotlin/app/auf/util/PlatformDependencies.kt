@@ -13,7 +13,8 @@ enum class BasePath {
     SETTINGS,
     BACKUPS,
     HOLONS,
-    FRAMEWORK
+    FRAMEWORK,
+    SESSIONS
 }
 
 /**

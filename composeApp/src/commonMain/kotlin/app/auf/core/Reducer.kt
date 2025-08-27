@@ -1,3 +1,4 @@
+// --- FILE: commonMain/kotlin/app/auf/core/Reducer.kt ---
 package app.auf.core
 
 import app.auf.model.CompilerSettings
@@ -17,8 +18,8 @@ import app.auf.model.CompilerSettings
  * - `app.auf.core.AppState`: The state object it operates on.
  * - `app.auf.core.AppAction`: The actions it responds to.
  *
- * @version 2.9
- * @since 2025-08-25
+ * @version 2.10
+ * @since 2025-08-27
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
     return when (action) {
@@ -32,7 +33,6 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         is AppAction.LoadGraphSuccess -> {
             val result = action.result
 
-            // --- FIX IS HERE ---
             // Re-hydrate the activeHolons map from the contextualHolonIds that were loaded from settings.
             val restoredActiveHolons = result.holonGraph
                 .filter { state.contextualHolonIds.contains(it.header.id) }
@@ -43,7 +43,6 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             result.holonGraph.find { it.header.id == result.determinedPersonaId }?.let { persona ->
                 restoredActiveHolons[persona.header.id] = persona
             }
-            // --- END FIX ---
 
             var newChatHistory = state.chatHistory
             if (result.parsingErrors.isNotEmpty()) {
@@ -57,15 +56,23 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                 newChatHistory = newChatHistory + errorMessage
             }
 
-            state.copy(
-                holonGraph = result.holonGraph,
-                gatewayStatus = GatewayStatus.OK,
-                availableAiPersonas = result.availableAiPersonas,
-                aiPersonaId = result.determinedPersonaId,
-                activeHolons = restoredActiveHolons, // <<< Use the restored map
-                chatHistory = newChatHistory,
-                errorMessage = null
-            )
+            if (result.holonGraph.isEmpty() && result.determinedPersonaId == null) {
+                state.copy(
+                    gatewayStatus = GatewayStatus.IDLE,
+                    errorMessage = "No Holons found. Use the menu to import from a manual runtime.",
+                    holonGraph = emptyList()
+                )
+            } else {
+                state.copy(
+                    holonGraph = result.holonGraph,
+                    gatewayStatus = if (result.determinedPersonaId == null) GatewayStatus.IDLE else GatewayStatus.OK,
+                    availableAiPersonas = result.availableAiPersonas,
+                    aiPersonaId = result.determinedPersonaId,
+                    activeHolons = restoredActiveHolons,
+                    chatHistory = newChatHistory,
+                    errorMessage = if (result.determinedPersonaId == null && result.availableAiPersonas.isNotEmpty()) "Please select an Active Agent to begin." else null
+                )
+            }
         }
         is AppAction.LoadGraphFailure -> state.copy(
             gatewayStatus = GatewayStatus.ERROR,
@@ -198,7 +205,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                     activeHolons = emptyMap(),
                     inspectedHolonId = null,
                     contextualHolonIds = emptySet(),
-                    gatewayStatus = GatewayStatus.ERROR,
+                    gatewayStatus = GatewayStatus.IDLE,
                     errorMessage = "Please select an Active Agent to begin."
                 )
             } else {
@@ -262,5 +269,10 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             }
             state.copy(compilerSettings = newCompilerSettings)
         }
+
+        // --- Session Persistence ---
+        is AppAction.LoadSessionSuccess -> state.copy(
+            chatHistory = action.history
+        )
     }
 }

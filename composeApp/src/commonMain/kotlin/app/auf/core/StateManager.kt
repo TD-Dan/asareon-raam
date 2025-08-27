@@ -1,3 +1,4 @@
+// --- FILE: commonMain/kotlin/app/auf/core/StateManager.kt ---
 package app.auf.core
 
 import app.auf.model.SettingDefinition
@@ -9,6 +10,7 @@ import app.auf.service.BackupManager
 import app.auf.service.ChatService
 import app.auf.service.GatewayService
 import app.auf.service.GraphService
+import app.auf.service.SessionManager
 import app.auf.service.SettingsManager
 import app.auf.service.SourceCodeService
 import app.auf.ui.ImportExportViewModel
@@ -29,8 +31,8 @@ data class AggregatedCompilationStats(
 /**
  * The core state management class for the AUF application.
  *
- * @version 5.4
- * @since 2025-08-25
+ * @version 5.6
+ * @since 2025-08-27
  */
 open class StateManager(
     private val store: Store,
@@ -42,6 +44,7 @@ open class StateManager(
     private val actionExecutor: ActionExecutor,
     private val parser: AufTextParser,
     val settingsManager: SettingsManager,
+    private val sessionManager: SessionManager,
     val importExportViewModel: ImportExportViewModel,
     private val platform: PlatformDependencies,
     private val coroutineScope: CoroutineScope
@@ -50,6 +53,17 @@ open class StateManager(
     open val state: StateFlow<AppState> = store.state
 
     fun initialize() {
+        // Load the session first, so the UI can render the chat history immediately
+        // while the knowledge graph loads in the background.
+        var loadedHistory = sessionManager.loadSession()
+        if (loadedHistory != null) {
+            // --- MODIFICATION START ---
+            // Re-assign fresh IDs to the loaded messages to prevent key collisions in the UI.
+            loadedHistory = ChatMessage.Factory.reId(loadedHistory)
+            store.dispatch(AppAction.LoadSessionSuccess(loadedHistory))
+            // --- MODIFICATION END ---
+        }
+
         backupManager.createBackup("on-launch")
         loadHolonGraph()
         loadAvailableModels()
@@ -59,7 +73,7 @@ open class StateManager(
         coroutineScope.launch {
             store.dispatch(AppAction.LoadGraph)
             val result = graphService.loadGraph(state.value.aiPersonaId)
-            if (result.fatalError != null) {
+            if (result.fatalError != null && result.holonGraph.isEmpty()) {
                 store.dispatch(AppAction.LoadGraphFailure(result.fatalError))
             } else {
                 store.dispatch(AppAction.LoadGraphSuccess(result))
@@ -76,7 +90,7 @@ open class StateManager(
 
     // --- Chat Logic Delegation ---
     fun sendMessage(message: String) {
-        if (state.value.isProcessing || state.value.aiPersonaId == null) return
+        if (state.value.isProcessing || state.value.aiPersonaId == null && state.value.holonGraph.isNotEmpty()) return
         store.dispatch(AppAction.AddUserMessage(message))
         chatService.sendMessage()
     }
@@ -89,7 +103,6 @@ open class StateManager(
         return chatService.buildSystemContextMessages()
     }
 
-    // --- FIX IS HERE ---
     /**
      * Calculates the aggregated compilation statistics for the current system context.
      * This is called by the UI to display real-time feedback on prompt compression.
@@ -106,7 +119,6 @@ open class StateManager(
         }
         return AggregatedCompilationStats(totalOriginal, totalCompiled)
     }
-    // --- END FIX ---
 
     fun getPromptForClipboard(): String {
         return chatService.buildFullPromptAsString()
@@ -232,8 +244,6 @@ open class StateManager(
         val headersToExport = holonsToExport.map { it.header }
         importExportViewModel.importExportManager.executeExport(destinationPath, headersToExport)
     }
-
-
 
     fun copyCodebaseToClipboard() {
         coroutineScope.launch {

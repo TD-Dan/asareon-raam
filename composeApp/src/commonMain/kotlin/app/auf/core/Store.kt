@@ -1,8 +1,10 @@
 package app.auf.core
 
+import app.auf.service.SessionManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 /**
  * The central state container for the Unidirectional Data Flow (UDF) architecture.
@@ -23,12 +25,13 @@ import kotlinx.coroutines.flow.asStateFlow
  * - `app.auf.Reducer`: The pure function used to calculate new state.
  * - `kotlinx.coroutines.CoroutineScope`: For launching asynchronous tasks.
  *
- * @version 1.0
- * @since 2025-08-16
+ * @version 1.1
+ * @since 2025-08-27
  */
 open class Store(
     initialState: AppState,
     private val reducer: (AppState, AppAction) -> AppState,
+    private val sessionManager: SessionManager,
     private val coroutineScope: CoroutineScope
 ) {
 
@@ -36,24 +39,16 @@ open class Store(
     val state = _state.asStateFlow()
 
     open fun dispatch(action: AppAction) {
+        val previousState = _state.value
         // The core of UDF: calculate the new state using the reducer.
-        val newState = reducer(_state.value, action)
+        val newState = reducer(previousState, action)
         _state.value = newState
 
-        // Handle side effects (asynchronous operations)
-        // This will be expanded significantly when we build the Services.
-        when (action) {
-            is AppAction.LoadGraph -> {
-                // In the full architecture, this would be handled by a GraphService.
-                // For now, this is a placeholder for the concept.
-                println("STORE: Side-effect for LoadGraph would be triggered here.")
-            }
-            is AppAction.AddUserMessage -> {
-                // In the full architecture, this would be handled by a ChatService.
-                println("STORE: Side-effect for SendMessage would be triggered here.")
-            }
-            else -> {
-                // No side effect for this action.
+        // --- SIDE EFFECT: AUTO-SAVE SESSION ---
+        // If the chat history has changed, save the new history to disk.
+        if (newState.chatHistory != previousState.chatHistory) {
+            coroutineScope.launch {
+                sessionManager.saveSession(newState.chatHistory)
             }
         }
     }

@@ -75,6 +75,7 @@ actual open class PlatformDependencies {
             BasePath.BACKUPS -> File(getBasePathFor(BasePath.SETTINGS), "backups").absolutePath
             BasePath.HOLONS -> File("holons").absolutePath
             BasePath.FRAMEWORK -> File("framework").absolutePath
+            BasePath.SESSIONS -> File( "sessions").absolutePath
         }
     }
 

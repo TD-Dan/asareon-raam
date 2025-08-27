@@ -27,6 +27,7 @@ import app.auf.service.GraphLoader
 import app.auf.service.GraphService
 import app.auf.service.ImportExportManager
 import app.auf.service.PromptCompiler
+import app.auf.service.SessionManager
 import app.auf.service.SettingsManager
 import app.auf.service.SourceCodeService
 import app.auf.ui.App
@@ -86,6 +87,7 @@ fun main() = application {
     remember { ChatMessage.Factory.initialize(platformDependencies, aufTextParser) }
 
     val settingsManager = remember { SettingsManager(platformDependencies, jsonParser) }
+    val sessionManager = remember { SessionManager(platformDependencies, jsonParser) }
     val savedSettings = remember { settingsManager.loadSettings() ?: UserSettings() }
 
     val properties = remember { Properties() }
@@ -105,11 +107,11 @@ fun main() = application {
             selectedModel = savedSettings.selectedModel,
             aiPersonaId = savedSettings.selectedAiPersonaId,
             contextualHolonIds = savedSettings.activeContextualHolonIds,
-            compilerSettings = savedSettings.compilerSettings // <<< ADDED
+            compilerSettings = savedSettings.compilerSettings
         )
     }
-    val store = remember { Store(initialState, ::appReducer, coroutineScope) }
-    val promptCompiler = remember { PromptCompiler(jsonParser) } // <<< ADDED
+    val store = remember { Store(initialState, ::appReducer, sessionManager, coroutineScope) }
+    val promptCompiler = remember { PromptCompiler(jsonParser) }
 
     val stateManager = remember {
         val gateway = Gateway(jsonParser)
@@ -121,7 +123,6 @@ fun main() = application {
         val graphLoader = GraphLoader(platformDependencies, jsonParser)
         val graphService = GraphService(graphLoader)
         val sourceCodeService = SourceCodeService(platformDependencies)
-        // <<< MODIFIED: Injected promptCompiler
         val chatService = ChatService(store, gatewayService, platformDependencies, aufTextParser, toolRegistry, promptCompiler, coroutineScope)
 
         StateManager(
@@ -133,7 +134,8 @@ fun main() = application {
             gatewayService = gatewayService,
             actionExecutor = actionExecutor,
             parser = aufTextParser,
-            settingsManager = settingsManager, // <<< ADDED
+            settingsManager = settingsManager,
+            sessionManager = sessionManager,
             importExportViewModel = importExportViewModel,
             platform = platformDependencies,
             coroutineScope = coroutineScope
@@ -154,13 +156,17 @@ fun main() = application {
     Window(
         onCloseRequest = {
             val currentState = stateManager.state.value
+            // The auto-save in the Store handles most cases, but we do one final explicit
+            // save on close to be absolutely certain the last state is persisted.
+            sessionManager.saveSession(currentState.chatHistory)
+
             val currentSettingsToSave = UserSettings(
                 windowWidth = windowState.size.width.value.toInt(),
                 windowHeight = windowState.size.height.value.toInt(),
                 selectedModel = currentState.selectedModel,
                 selectedAiPersonaId = currentState.aiPersonaId,
                 activeContextualHolonIds = currentState.contextualHolonIds,
-                compilerSettings = currentState.compilerSettings // <<< ADDED
+                compilerSettings = currentState.compilerSettings
             )
             settingsManager.saveSettings(currentSettingsToSave)
             exitApplication()

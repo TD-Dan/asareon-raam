@@ -1,3 +1,4 @@
+// --- FILE: commonMain/kotlin/app/auf/core/AppState.kt ---
 package app.auf.core
 
 import app.auf.model.Action
@@ -13,11 +14,9 @@ import kotlinx.serialization.json.JsonObject
 /**
  * Defines the core, immutable data models for the entire AUF application state.
  *
- * @version 2.2
- * @since 2025-08-25
+ * @version 2.5
+ * @since 2025-08-27
  */
-
-// ... (GatewayResponse, GraphLoadResult, ViewMode, etc. remain unchanged) ...
 
 data class GatewayResponse(
     val contentBlocks: List<ContentBlock> = emptyList(),
@@ -190,16 +189,16 @@ data class SentinelBlock(
     override val summary: String = "Parser Sentinel"
 ) : ContentBlock
 
-// --- FIX IS HERE ---
 @Serializable
 data class CompilationStats(
     val originalCharCount: Int,
     val compiledCharCount: Int
 )
 
+@Serializable
 @ConsistentCopyVisibility
 data class ChatMessage internal constructor(
-    val id: Long,
+    @Transient val id: Long = 0L, // <<< MODIFIED: Added @Transient and default value
     val author: Author,
     val title: String?,
     val timestamp: Long,
@@ -207,7 +206,7 @@ data class ChatMessage internal constructor(
     val usageMetadata: UsageMetadata?,
     val rawContent: String?,
     val compiledContent: String? = null,
-    val compilationStats: CompilationStats? = null // <<< ADDED
+    val compilationStats: CompilationStats? = null
 ) {
     companion object Factory {
         private var nextId = 0L
@@ -217,7 +216,19 @@ data class ChatMessage internal constructor(
         fun initialize(platform: PlatformDependencies, parser: AufTextParser) {
             this.platform = platform
             this.parser = parser
+            nextId = 0L // Ensure counter is reset on initialization
         }
+
+        // --- MODIFICATION START ---
+        /**
+         * Takes a list of messages (presumably from a deserialized session file) and
+         * returns a new list where each message has a fresh, unique, sequential ID.
+         */
+        fun reId(loadedMessages: List<ChatMessage>): List<ChatMessage> {
+            nextId = 0L // Reset counter before re-IDing
+            return loadedMessages.map { it.copy(id = ++nextId) }
+        }
+        // --- MODIFICATION END ---
 
         private fun getTimestamp(): Long {
             return platform?.getSystemTimeMillis()
@@ -239,7 +250,7 @@ data class ChatMessage internal constructor(
                 usageMetadata = null,
                 rawContent = rawContent,
                 compiledContent = null,
-                compilationStats = null // <<< ADDED
+                compilationStats = null
             )
         }
 
@@ -256,7 +267,7 @@ data class ChatMessage internal constructor(
                 usageMetadata = usageMetadata,
                 rawContent = rawContent,
                 compiledContent = null,
-                compilationStats = null // <<< ADDED
+                compilationStats = null
             )
         }
 
@@ -273,7 +284,7 @@ data class ChatMessage internal constructor(
                 usageMetadata = null,
                 rawContent = rawContent,
                 compiledContent = null,
-                compilationStats = null // <<< ADDED
+                compilationStats = null
             )
         }
     }

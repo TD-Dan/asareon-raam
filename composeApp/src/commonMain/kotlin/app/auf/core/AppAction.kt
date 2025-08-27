@@ -1,4 +1,3 @@
-
 package app.auf.core
 
 import app.auf.model.SettingValue
@@ -17,8 +16,8 @@ import app.auf.model.SettingValue
  * ## Dependencies
  * - `app.auf.core.AppState`: Many actions carry payload data defined in AppState.kt.
  *
- * @version 2.6
- * @since 2025-08-25
+ * @version 2.7
+ * @since 2025-08-27
  */
 sealed interface AppAction {
 
@@ -59,5 +58,8 @@ sealed interface AppAction {
     data class UpdateActionStatus(val messageTimestamp: Long, val status: ActionStatus) : AppAction
 
     // --- Settings Actions ---
-    data class UpdateSetting(val setting: SettingValue) : AppAction // <<< ADDED
+    data class UpdateSetting(val setting: SettingValue) : AppAction
+
+    // --- Session Persistence Actions ---
+    data class LoadSessionSuccess(val history: List<ChatMessage>) : AppAction
 }

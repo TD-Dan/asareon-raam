@@ -71,6 +71,7 @@ class FakePlatformDependencies : PlatformDependencies() {
             BasePath.BACKUPS -> "/user/home/.auf/backups"
             BasePath.HOLONS -> "holons"
             BasePath.FRAMEWORK -> "framework"
+            BasePath.SESSIONS -> "sessions"
         }
     }
 
