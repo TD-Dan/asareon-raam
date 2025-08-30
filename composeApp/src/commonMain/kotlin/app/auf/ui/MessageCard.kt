@@ -45,18 +45,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.auf.core.ActionBlock
-import app.auf.core.ActionStatus
-import app.auf.core.AnchorBlock
-import app.auf.core.AppRequestBlock
-import app.auf.core.Author
-import app.auf.core.ChatMessage
-import app.auf.core.CompilationStats
-import app.auf.core.FileContentBlock
-import app.auf.core.ParseErrorBlock
-import app.auf.core.SentinelBlock
-import app.auf.core.StateManager
-import app.auf.core.TextBlock
+import app.auf.core.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
@@ -64,21 +53,21 @@ import kotlinx.serialization.json.JsonObject
  * ## Mandate
  * This file contains the `MessageCard` Composable. It displays a single `ChatMessage`,
  * allows toggling between raw and compiled views, and shows compilation statistics.
- *
- * @version 1.7
- * @since 2025-08-25
  */
 @Composable
 fun MessageCard(message: ChatMessage, stateManager: StateManager) {
     val hasParseErrorBlock = message.contentBlocks.any { it is ParseErrorBlock }
-    var isCollapsed by remember {
+
+    // --- MODIFICATION START: Parse Errors no longer force the card to be expanded. ---
+    var isCollapsed by remember(message.id) {
         mutableStateOf(
             message.author == Author.SYSTEM &&
-                    !hasParseErrorBlock &&
                     message.title != "Gateway Error" &&
                     message.title != "Graph Parsing Warning"
         )
     }
+    // --- MODIFICATION END ---
+
     var showRaw by remember { mutableStateOf(false) }
     var showCompiled by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
@@ -199,7 +188,6 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
     }
 }
 
-// --- FIX IS HERE ---
 @Composable
 fun RenderContent(title: String, content: String, stats: CompilationStats? = null) {
     Card(
@@ -220,7 +208,6 @@ fun RenderContent(title: String, content: String, stats: CompilationStats? = nul
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                // Display statistics if they are available
                 stats?.let {
                     val reduction = if (it.originalCharCount > 0) {
                         ((it.originalCharCount - it.compiledCharCount).toDouble() / it.originalCharCount * 100).toInt()
@@ -246,14 +233,12 @@ fun RenderContent(title: String, content: String, stats: CompilationStats? = nul
         }
     }
 }
-// --- END FIX ---
 
 @Composable
 fun RenderTextBlock(block: TextBlock) {
     Text(block.text, fontFamily = FontFamily.Default, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
 }
 
-// ... (Other Render* composables remain unchanged) ...
 @Composable
 fun RenderActionBlock(block: ActionBlock, onConfirm: () -> Unit, onReject: () -> Unit) {
     val isResolved = block.status != ActionStatus.PENDING
