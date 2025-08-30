@@ -1,3 +1,4 @@
+// --- FILE: commonMain/kotlin/app/auf/ui/ImportView.kt ---
 package app.auf.ui
 
 import androidx.compose.foundation.layout.*
@@ -26,18 +27,20 @@ import app.auf.util.PlatformDependencies
 /**
  * A Composable screen for managing the import of Holons from an external source.
  *
- * @version 2.2
+ * @version 2.3
  * @since 2025-08-28
  */
 @Composable
 fun ImportView(
     viewModel: ImportExportViewModel,
     currentGraph: List<HolonHeader>,
-    personaId: String,
+    personaId: String?,
     onCancel: () -> Unit
 ) {
     val platformDependencies = remember { PlatformDependencies() }
     val importState by viewModel.importState.collectAsState()
+    // --- MODIFICATION: Collect the recursive state ---
+    val isRecursive by viewModel.isRecursive.collectAsState()
     val sourcePath = importState?.sourcePath ?: ""
 
     importState?.let { state ->
@@ -59,7 +62,7 @@ fun ImportView(
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
                     value = sourcePath,
-                    onValueChange = { /* No-op, path is set by button */ },
+                    onValueChange = { /* No-op */ },
                     label = { Text("Source Folder") },
                     modifier = Modifier.weight(1f),
                     readOnly = true
@@ -73,6 +76,18 @@ fun ImportView(
                     Text("Select & Analyze...")
                 }
             }
+            // --- MODIFICATION START: Add the recursive toggle ---
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = isRecursive,
+                    onCheckedChange = { viewModel.setRecursive(it, currentGraph) }
+                )
+                Text("Import sub-folders recursively")
+            }
+            // --- MODIFICATION END ---
             Spacer(modifier = Modifier.height(16.dp))
 
             // Import Manifest List
@@ -85,14 +100,13 @@ fun ImportView(
                 }
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(state.items) { item ->
+                    items(state.items, key = { it.sourcePath }) { item ->
                         ImportItemRow(
                             item = item,
                             selectedAction = state.selectedActions[item.sourcePath] ?: item.initialAction,
                             onActionSelected = { newAction ->
                                 viewModel.updateImportAction(item.sourcePath, newAction)
                             },
-                            // --- MODIFICATION: Pass the graph down for parent selection ---
                             potentialParents = currentGraph
                         )
                         Divider()
@@ -118,7 +132,6 @@ fun ImportView(
     }
 }
 
-// --- MODIFICATION START: Complete refactor of ImportItemRow ---
 @Composable
 private fun ImportItemRow(
     item: ImportItem,
@@ -126,7 +139,6 @@ private fun ImportItemRow(
     onActionSelected: (ImportAction) -> Unit,
     potentialParents: List<HolonHeader>
 ) {
-    var actionMenuExpanded by remember { mutableStateOf(false) }
     val fileName = remember(item.sourcePath) { item.sourcePath.substringAfterLast('/').substringAfterLast('\\') }
 
     Row(
@@ -137,18 +149,14 @@ private fun ImportItemRow(
         Text(fileName, modifier = Modifier.weight(1f))
         Spacer(modifier = Modifier.width(16.dp))
 
-        // This Box now contains the conditional logic for rendering the correct button
         Box {
-            // If the action is AssignParent, we show a special dropdown for parent selection.
             if (selectedAction is AssignParent) {
                 ParentSelector(
                     selectedAction = selectedAction,
                     potentialParents = potentialParents,
                     onActionSelected = onActionSelected
                 )
-            }
-            // For all other actions, we show the generic action selector.
-            else {
+            } else {
                 GenericActionSelector(
                     initialAction = item.initialAction,
                     selectedAction = selectedAction,
@@ -173,7 +181,6 @@ private fun ParentSelector(
     } ?: "Select Parent..."
 
     Row {
-        // Dropdown to select the parent
         OutlinedButton(
             onClick = { parentMenuExpanded = true },
             modifier = Modifier.width(200.dp)
@@ -194,7 +201,6 @@ private fun ParentSelector(
                 )
             }
         }
-        // Button to change the action type itself
         IconButton(onClick = { actionMenuExpanded = true }) {
             Icon(Icons.Default.MoreVert, contentDescription = "Change Action Type")
         }
@@ -202,7 +208,8 @@ private fun ParentSelector(
             expanded = actionMenuExpanded,
             onDismissRequest = { actionMenuExpanded = false }
         ) {
-            ImportActionType.values().forEach { actionType ->
+            // --- MODIFICATION: Filter out CREATE_ROOT from this menu as it's auto-detected ---
+            ImportActionType.values().filter { it != ImportActionType.CREATE_ROOT }.forEach { actionType ->
                 DropdownMenuItem(
                     text = { Text(actionType.toInstance(selectedAction).summary) },
                     onClick = {
@@ -235,7 +242,8 @@ private fun GenericActionSelector(
         expanded = expanded,
         onDismissRequest = { expanded = false }
     ) {
-        ImportActionType.values().forEach { actionType ->
+        // --- MODIFICATION: Filter out CREATE_ROOT from this menu ---
+        ImportActionType.values().filter { it != ImportActionType.CREATE_ROOT }.forEach { actionType ->
             DropdownMenuItem(
                 text = { Text(actionType.toInstance(initialAction).summary) },
                 onClick = {
@@ -255,7 +263,6 @@ private fun ImportActionType.toInstance(initialAction: ImportAction): ImportActi
         ImportActionType.ASSIGN_PARENT -> AssignParent()
         ImportActionType.QUARANTINE -> Quarantine("Manual Quarantine")
         ImportActionType.IGNORE -> Ignore()
-        ImportActionType.CREATE_ROOT -> CreateRoot() // <<< MODIFICATION: Handle the new type
+        ImportActionType.CREATE_ROOT -> CreateRoot()
     }
 }
-// --- MODIFICATION END ---

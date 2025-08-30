@@ -10,44 +10,52 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * A dedicated ViewModel for managing the state and business logic of the import/export feature.
- *
- * ---
- * ## Mandate
- * This class's sole responsibility is to handle all operations related to importing and exporting
- * holons. It encapsulates the `ImportState` and orchestrates calls to the `ImportExportManager`
- * for file system interactions. This adheres to the Single Responsibility Principle by decoupling
- * this specific feature's logic from the main StateManager.
- *
- * ---
- * ## Dependencies
- * - `app.auf.service.ImportExportManager`
- * - `app.auf.core.ImportState`
- * - `app.auf.core.HolonHeader`
- *
- * @version 1.3
- * @since 2025-08-15
  */
 open class ImportExportViewModel(
     val importExportManager: ImportExportManager,
-    private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Default)
+    // --- MODIFICATION: Inject the application's CoroutineScope for consistency ---
+    private val coroutineScope: CoroutineScope
 ) {
 
     private val _importState = MutableStateFlow<ImportState?>(null)
     open val importState = _importState.asStateFlow()
 
+    private val _isRecursive = MutableStateFlow(true)
+    open val isRecursive = _isRecursive.asStateFlow()
+
+
     var onImportComplete: () -> Unit = {}
+    var onImportFailed: (String) -> Unit = {}
 
     fun startImport(sourcePath: String = "") {
         _importState.value = ImportState(sourcePath)
+        _isRecursive.value = true
     }
 
     open fun analyzeFolder(sourcePath: String, currentGraph: List<HolonHeader>) {
+        // Use the injected scope
         coroutineScope.launch(Dispatchers.Default) {
-            val importItems = importExportManager.analyzeFolder(sourcePath, currentGraph)
-            _importState.update { it?.copy(sourcePath = sourcePath, items = importItems) }
+            val importItems = importExportManager.analyzeFolder(sourcePath, currentGraph, _isRecursive.value)
+            _importState.update {
+                it?.copy(
+                    sourcePath = sourcePath,
+                    items = importItems,
+                    selectedActions = importItems.associate { item -> item.sourcePath to item.initialAction }
+                )
+            }
+        }
+    }
+
+    open fun setRecursive(isRecursive: Boolean, currentGraph: List<HolonHeader>) {
+        _isRecursive.value = isRecursive
+        _importState.value?.sourcePath?.let {
+            if (it.isNotBlank()) {
+                analyzeFolder(it, currentGraph)
+            }
         }
     }
 
@@ -61,26 +69,25 @@ open class ImportExportViewModel(
         }
     }
 
-    open fun executeImport(currentGraph: List<HolonHeader>, personaId: String) {
+    open fun executeImport(currentGraph: List<HolonHeader>, personaId: String?) {
         val currentState = _importState.value ?: return
+        // Use the injected scope
         coroutineScope.launch(Dispatchers.Default) {
-            // MODIFIED: Calling the updated suspend function with the correct parameters
-            // and handling the Result.
             val result = importExportManager.executeImport(
-                sourcePath = currentState.sourcePath,
                 actions = currentState.selectedActions,
                 graph = currentGraph,
                 personaId = personaId
             )
 
-            result.onSuccess {
-                // This callback is defined in main.kt and will reload the graph and switch views.
-                onImportComplete()
-            }.onFailure {
-                // TODO: A future improvement would be to show this error in the UI.
-                // For now, we print it to the console to ensure errors are not silent.
-                println("Import failed: ${it.message}")
+            // --- MODIFICATION START: Switch to the Main dispatcher before calling UI callbacks ---
+            withContext(Dispatchers.Main) {
+                result.onSuccess {
+                    onImportComplete()
+                }.onFailure {
+                    onImportFailed(it.message ?: "An unknown import error occurred.")
+                }
             }
+            // --- MODIFICATION END ---
         }
     }
 

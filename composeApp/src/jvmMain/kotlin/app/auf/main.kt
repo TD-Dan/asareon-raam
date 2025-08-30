@@ -1,3 +1,4 @@
+// --- FILE: jvmMain/kotlin/app/auf/main.kt ---
 package app.auf
 
 import androidx.compose.runtime.LaunchedEffect
@@ -7,6 +8,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import app.auf.core.AppAction
 import app.auf.core.AppState
 import app.auf.core.ChatMessage
 import app.auf.core.StateManager
@@ -119,6 +121,7 @@ fun main() = application {
         val backupManager = BackupManager(platformDependencies)
         val actionExecutor = ActionExecutor(platformDependencies, jsonParser)
         val importExportManager = ImportExportManager(platformDependencies, jsonParser)
+        // --- MODIFICATION: Inject the application's coroutine scope ---
         val importExportViewModel = ImportExportViewModel(importExportManager, coroutineScope)
         val graphLoader = GraphLoader(platformDependencies, jsonParser)
         val graphService = GraphService(graphLoader)
@@ -147,6 +150,10 @@ fun main() = application {
             stateManager.loadHolonGraph()
             stateManager.setViewMode(ViewMode.CHAT)
         }
+        // --- MODIFICATION: Implement the failure callback ---
+        stateManager.importExportViewModel.onImportFailed = { errorMessage ->
+            store.dispatch(AppAction.ShowToast("IMPORT FAILED: $errorMessage"))
+        }
     }
 
     remember { stateManager.initialize() }
@@ -156,8 +163,6 @@ fun main() = application {
     Window(
         onCloseRequest = {
             val currentState = stateManager.state.value
-            // The auto-save in the Store handles most cases, but we do one final explicit
-            // save on close to be absolutely certain the last state is persisted.
             sessionManager.saveSession(currentState.chatHistory)
 
             val currentSettingsToSave = UserSettings(
