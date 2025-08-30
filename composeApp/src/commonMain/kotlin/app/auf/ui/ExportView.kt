@@ -13,6 +13,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,6 +25,10 @@ import app.auf.core.StateManager
 import app.auf.core.ViewMode
 import app.auf.util.PlatformDependencies
 
+/**
+ * @version 1.1
+ * @since 2025-08-28
+ */
 @Composable
 fun ExportView(
     appState: AppState,
@@ -53,18 +58,34 @@ fun ExportView(
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
+        // --- MODIFICATION START: Add bulk action buttons ---
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "Export Manifest (${exportListIds.size} / ${appState.holonGraph.size} items)",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Row {
+                TextButton(onClick = { stateManager.selectAllForExport() }) {
+                    Text("Select All")
+                }
+                Spacer(Modifier.width(4.dp))
+                TextButton(onClick = { stateManager.deselectAllForExport() }) {
+                    Text("Deselect All")
+                }
+            }
+        }
+        Divider()
+        // --- MODIFICATION END ---
+
         // Holon Checklist
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth()
         ) {
-            item {
-                Text(
-                    "Export Manifest (${exportListIds.size} / ${appState.holonGraph.size} items)",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                Divider()
-            }
             items(appState.holonGraph, key = { it.header.id }) { holon ->
                 val isSelected = holon.header.id in exportListIds
                 val isPersona = holon.header.id == appState.aiPersonaId
@@ -75,7 +96,7 @@ fun ExportView(
                     Checkbox(
                         checked = isSelected,
                         onCheckedChange = { stateManager.toggleHolonForExport(holon.header.id) },
-                        enabled = !isPersona // Disable checkbox for the persona root
+                        enabled = !isPersona
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(

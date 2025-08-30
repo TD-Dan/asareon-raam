@@ -4,20 +4,6 @@ import app.auf.model.SettingValue
 
 /**
  * Defines all possible actions that can be dispatched to the Store to trigger a state change.
- *
- * ---
- * ## Mandate
- * This file contains the sealed interface `AppAction` and all data classes that implement it.
- * Each class represents a single, specific, serializable user intent or asynchronous event
- * completion. This strict contract is the foundation of the Unidirectional Data Flow (UDF)
- * architecture, ensuring that state changes are predictable and traceable.
- *
- * ---
- * ## Dependencies
- * - `app.auf.core.AppState`: Many actions carry payload data defined in AppState.kt.
- *
- * @version 2.7
- * @since 2025-08-27
  */
 sealed interface AppAction {
 
@@ -45,6 +31,11 @@ sealed interface AppAction {
     data object ClearToast : AppAction
     data object ToggleSystemVisibility : AppAction
     data class ToggleHolonExport(val holonId: String) : AppAction
+    // --- MODIFICATION START: New actions for bulk export selection ---
+    data object SelectAllForExport : AppAction
+    data object DeselectAllForExport : AppAction
+    // --- MODIFICATION END ---
+
 
     // --- Persona & Model Selection ---
     data class SelectAiPersona(val holonId: String?) : AppAction

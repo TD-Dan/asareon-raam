@@ -1,4 +1,3 @@
-// --- FILE: commonMain/kotlin/app/auf/ui/ImportView.kt ---
 package app.auf.ui
 
 import androidx.compose.foundation.layout.*
@@ -27,7 +26,7 @@ import app.auf.util.PlatformDependencies
 /**
  * A Composable screen for managing the import of Holons from an external source.
  *
- * @version 2.3
+ * @version 2.4
  * @since 2025-08-28
  */
 @Composable
@@ -39,9 +38,19 @@ fun ImportView(
 ) {
     val platformDependencies = remember { PlatformDependencies() }
     val importState by viewModel.importState.collectAsState()
-    // --- MODIFICATION: Collect the recursive state ---
     val isRecursive by viewModel.isRecursive.collectAsState()
+    // --- MODIFICATION START: Collect filter state and compute filtered list ---
+    val showOnlyChanged by viewModel.showOnlyChanged.collectAsState()
     val sourcePath = importState?.sourcePath ?: ""
+
+    val filteredItems = remember(importState?.items, showOnlyChanged) {
+        if (showOnlyChanged) {
+            importState?.items?.filter { it.initialAction !is Ignore } ?: emptyList()
+        } else {
+            importState?.items ?: emptyList()
+        }
+    }
+    // --- MODIFICATION END ---
 
     importState?.let { state ->
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -76,18 +85,28 @@ fun ImportView(
                     Text("Select & Analyze...")
                 }
             }
-            // --- MODIFICATION START: Add the recursive toggle ---
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween // Aligns items to ends
             ) {
-                Checkbox(
-                    checked = isRecursive,
-                    onCheckedChange = { viewModel.setRecursive(it, currentGraph) }
-                )
-                Text("Import sub-folders recursively")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = isRecursive,
+                        onCheckedChange = { viewModel.setRecursive(it, currentGraph) }
+                    )
+                    Text("Import sub-folders recursively")
+                }
+                // --- MODIFICATION START: Add the filter checkbox ---
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = showOnlyChanged,
+                        onCheckedChange = { viewModel.toggleShowOnlyChanged() }
+                    )
+                    Text("Show only changed files")
+                }
+                // --- MODIFICATION END ---
             }
-            // --- MODIFICATION END ---
             Spacer(modifier = Modifier.height(16.dp))
 
             // Import Manifest List
@@ -100,7 +119,8 @@ fun ImportView(
                 }
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(state.items, key = { it.sourcePath }) { item ->
+                    // --- MODIFICATION: Use the new filteredItems list ---
+                    items(filteredItems, key = { it.sourcePath }) { item ->
                         ImportItemRow(
                             item = item,
                             selectedAction = state.selectedActions[item.sourcePath] ?: item.initialAction,
@@ -208,7 +228,6 @@ private fun ParentSelector(
             expanded = actionMenuExpanded,
             onDismissRequest = { actionMenuExpanded = false }
         ) {
-            // --- MODIFICATION: Filter out CREATE_ROOT from this menu as it's auto-detected ---
             ImportActionType.values().filter { it != ImportActionType.CREATE_ROOT }.forEach { actionType ->
                 DropdownMenuItem(
                     text = { Text(actionType.toInstance(selectedAction).summary) },
@@ -242,7 +261,6 @@ private fun GenericActionSelector(
         expanded = expanded,
         onDismissRequest = { expanded = false }
     ) {
-        // --- MODIFICATION: Filter out CREATE_ROOT from this menu ---
         ImportActionType.values().filter { it != ImportActionType.CREATE_ROOT }.forEach { actionType ->
             DropdownMenuItem(
                 text = { Text(actionType.toInstance(initialAction).summary) },

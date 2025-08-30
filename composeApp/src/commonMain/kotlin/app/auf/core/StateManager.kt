@@ -1,4 +1,3 @@
-// --- FILE: commonMain/kotlin/app/auf/core/StateManager.kt ---
 package app.auf.core
 
 import app.auf.model.SettingDefinition
@@ -10,6 +9,7 @@ import app.auf.service.BackupManager
 import app.auf.service.ChatService
 import app.auf.service.GatewayService
 import app.auf.service.GraphService
+import app.auf.service.ImportResult
 import app.auf.service.SessionManager
 import app.auf.service.SettingsManager
 import app.auf.service.SourceCodeService
@@ -31,8 +31,8 @@ data class AggregatedCompilationStats(
 /**
  * The core state management class for the AUF application.
  *
- * @version 5.6
- * @since 2025-08-27
+ * @version 5.7
+ * @since 2025-08-28
  */
 open class StateManager(
     private val store: Store,
@@ -53,15 +53,10 @@ open class StateManager(
     open val state: StateFlow<AppState> = store.state
 
     fun initialize() {
-        // Load the session first, so the UI can render the chat history immediately
-        // while the knowledge graph loads in the background.
         var loadedHistory = sessionManager.loadSession()
         if (loadedHistory != null) {
-            // --- MODIFICATION START ---
-            // Re-assign fresh IDs to the loaded messages to prevent key collisions in the UI.
             loadedHistory = ChatMessage.Factory.reId(loadedHistory)
             store.dispatch(AppAction.LoadSessionSuccess(loadedHistory))
-            // --- MODIFICATION END ---
         }
 
         backupManager.createBackup("on-launch")
@@ -103,10 +98,6 @@ open class StateManager(
         return chatService.buildSystemContextMessages()
     }
 
-    /**
-     * Calculates the aggregated compilation statistics for the current system context.
-     * This is called by the UI to display real-time feedback on prompt compression.
-     */
     fun getAggregatedCompilationStats(): AggregatedCompilationStats {
         val systemMessages = chatService.buildSystemContextMessages()
         var totalOriginal = 0
@@ -244,6 +235,16 @@ open class StateManager(
         val headersToExport = holonsToExport.map { it.header }
         importExportViewModel.importExportManager.executeExport(destinationPath, headersToExport)
     }
+
+    // --- MODIFICATION START: Add methods to dispatch bulk export actions ---
+    fun selectAllForExport() {
+        store.dispatch(AppAction.SelectAllForExport)
+    }
+
+    fun deselectAllForExport() {
+        store.dispatch(AppAction.DeselectAllForExport)
+    }
+    // --- MODIFICATION END ---
 
     fun copyCodebaseToClipboard() {
         coroutineScope.launch {

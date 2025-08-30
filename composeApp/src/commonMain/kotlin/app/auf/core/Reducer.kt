@@ -1,4 +1,3 @@
-// --- FILE: commonMain/kotlin/app/auf/core/Reducer.kt ---
 package app.auf.core
 
 import app.auf.model.CompilerSettings
@@ -6,20 +5,8 @@ import app.auf.model.CompilerSettings
 /**
  * The Reducer function for the Unidirectional Data Flow (UDF) architecture.
  *
- * ---
- * ## Mandate
- * This file contains the primary reducer for the application. The reducer is a PURE function
- * that takes the current `AppState` and an `AppAction` and returns a new `AppState`. It is
- * the only place in the application where the state is mutated. It must be synchronous and
- * completely free of side effects (e.g., no network calls, no file I/O).
- *
- * ---
- * ## Dependencies
- * - `app.auf.core.AppState`: The state object it operates on.
- * - `app.auf.core.AppAction`: The actions it responds to.
- *
- * @version 2.10
- * @since 2025-08-27
+ * @version 2.11
+ * @since 2025-08-28
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
     return when (action) {
@@ -32,14 +19,11 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         )
         is AppAction.LoadGraphSuccess -> {
             val result = action.result
-
-            // Re-hydrate the activeHolons map from the contextualHolonIds that were loaded from settings.
             val restoredActiveHolons = result.holonGraph
                 .filter { state.contextualHolonIds.contains(it.header.id) }
                 .associateBy { it.header.id }
                 .toMutableMap()
 
-            // Also ensure the primary AI persona is always active.
             result.holonGraph.find { it.header.id == result.determinedPersonaId }?.let { persona ->
                 restoredActiveHolons[persona.header.id] = persona
             }
@@ -194,6 +178,21 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             }
             state.copy(holonIdsForExport = newExportIds)
         }
+        // --- MODIFICATION START: Handle bulk export actions ---
+        is AppAction.SelectAllForExport -> {
+            val allIds = state.holonGraph.map { it.header.id }.toSet()
+            state.copy(holonIdsForExport = allIds)
+        }
+        is AppAction.DeselectAllForExport -> {
+            // Keep the persona selected as it cannot be deselected anyway
+            val personaId = state.aiPersonaId
+            if (personaId != null) {
+                state.copy(holonIdsForExport = setOf(personaId))
+            } else {
+                state.copy(holonIdsForExport = emptySet())
+            }
+        }
+        // --- MODIFICATION END ---
 
 
         // --- Persona & Model ---

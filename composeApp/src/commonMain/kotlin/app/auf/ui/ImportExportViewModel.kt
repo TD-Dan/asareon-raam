@@ -4,6 +4,7 @@ import app.auf.core.HolonHeader
 import app.auf.core.ImportAction
 import app.auf.core.ImportState
 import app.auf.service.ImportExportManager
+import app.auf.service.ImportResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +15,9 @@ import kotlinx.coroutines.withContext
 
 /**
  * A dedicated ViewModel for managing the state and business logic of the import/export feature.
+ *
+ * @version 1.7
+ * @since 2025-08-28
  */
 open class ImportExportViewModel(
     val importExportManager: ImportExportManager,
@@ -26,6 +30,11 @@ open class ImportExportViewModel(
     private val _isRecursive = MutableStateFlow(true)
     open val isRecursive = _isRecursive.asStateFlow()
 
+    // --- MODIFICATION START: Add state for the filter toggle ---
+    private val _showOnlyChanged = MutableStateFlow(false)
+    open val showOnlyChanged = _showOnlyChanged.asStateFlow()
+    // --- MODIFICATION END ---
+
 
     var onImportComplete: () -> Unit = {}
     var onImportFailed: (String) -> Unit = {}
@@ -33,6 +42,7 @@ open class ImportExportViewModel(
     fun startImport(sourcePath: String = "") {
         _importState.value = ImportState(sourcePath)
         _isRecursive.value = true
+        _showOnlyChanged.value = false // Reset on start
     }
 
     open fun analyzeFolder(sourcePath: String, currentGraph: List<HolonHeader>) {
@@ -57,6 +67,12 @@ open class ImportExportViewModel(
         }
     }
 
+    // --- MODIFICATION START: Add function to handle filter toggle ---
+    open fun toggleShowOnlyChanged() {
+        _showOnlyChanged.value = !_showOnlyChanged.value
+    }
+    // --- MODIFICATION END ---
+
     open fun updateImportAction(sourceFilePath: String, newAction: ImportAction) {
         _importState.update { currentImportState ->
             currentImportState?.let {
@@ -67,7 +83,6 @@ open class ImportExportViewModel(
         }
     }
 
-    // --- MODIFICATION START: Handle the new ImportResult object ---
     open fun executeImport(currentGraph: List<HolonHeader>, personaId: String?) {
         val currentState = _importState.value ?: return
         coroutineScope.launch(Dispatchers.Default) {
@@ -78,21 +93,18 @@ open class ImportExportViewModel(
             )
 
             withContext(Dispatchers.Main) {
-                // If there were failures, report them.
                 if (result.failedImports.isNotEmpty()) {
                     val failedFiles = result.failedImports.keys.joinToString { it.substringAfterLast('/') }
                     val errorMessage = "Import completed with ${result.failedImports.size} errors: $failedFiles"
                     onImportFailed(errorMessage)
                 }
 
-                // If there were any successes, trigger the UI refresh.
                 if (result.successfulImports.isNotEmpty()) {
                     onImportComplete()
                 }
             }
         }
     }
-    // --- MODIFICATION END ---
 
     open fun cancelImport() {
         _importState.value = null

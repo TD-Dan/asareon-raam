@@ -1,7 +1,9 @@
 package app.auf.fakes
 
 import app.auf.core.HolonHeader
+import app.auf.core.ImportAction
 import app.auf.service.ImportExportManager
+import app.auf.service.ImportResult
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.Json
 
@@ -12,18 +14,20 @@ class FakeImportExportManager(
 
     var executeExportCalled = false
     var executeImportCalled = false
+    var lastImportActions: Map<String, ImportAction>? = null
 
     override fun executeExport(destinationPath: String, headersToExport: List<HolonHeader>) {
         executeExportCalled = true
     }
 
     override suspend fun executeImport(
-        sourcePath: String,
-        actions: Map<String, app.auf.core.ImportAction>,
+        actions: Map<String, ImportAction>,
         graph: List<HolonHeader>,
-        personaId: String
-    ): Result<String> {
+        personaId: String?
+    ): ImportResult {
         executeImportCalled = true
-        return Result.success("Fake import complete.")
+        lastImportActions = actions
+        // Return a default success result for testing purposes
+        return ImportResult(successfulImports = actions.keys.toList(), failedImports = emptyMap())
     }
 }

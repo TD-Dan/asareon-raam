@@ -1,4 +1,3 @@
-// --- FILE: commonMain/kotlin/app/auf/service/ChatService.kt ---
 package app.auf.service
 
 import app.auf.core.AppAction

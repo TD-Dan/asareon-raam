@@ -1,24 +1,8 @@
 package app.auf
 
 
-import app.auf.core.AppAction
-import app.auf.core.AppState
-import app.auf.core.Author
-import app.auf.core.ChatMessage
-import app.auf.core.GatewayResponse
-import app.auf.core.GraphLoadResult
-import app.auf.core.Holon
-import app.auf.core.HolonHeader
-import app.auf.core.StateManager
-import app.auf.fakes.FakeActionExecutor
-import app.auf.fakes.FakeBackupManager
-import app.auf.fakes.FakeGatewayService
-import app.auf.fakes.FakeGraphService
-import app.auf.fakes.FakeImportExportViewModel
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.fakes.FakeSessionManager
-import app.auf.fakes.FakeSourceCodeService
-import app.auf.fakes.FakeStore
+import app.auf.core.*
+import app.auf.fakes.*
 import app.auf.model.Parameter
 import app.auf.model.SettingValue
 import app.auf.model.ToolDefinition
@@ -44,9 +28,6 @@ import kotlin.test.assertTrue
  * ## Mandate
  * This test suite focuses on integration-level scenarios within the chat functionality,
  * particularly on message creation, the prompt compilation pipeline, and state flow.
- *
- * ## Dependencies
- * - All core AUF services and components, though often faked for isolation.
  */
 class ChatIntegrationTest {
 
@@ -113,7 +94,8 @@ class ChatIntegrationTest {
             parser = realParser,
             settingsManager = settingsManager,
             sessionManager = fakeSessionManager,
-            importExportViewModel = FakeImportExportViewModel(),
+            // --- MODIFICATION: Pass the required coroutine scope to the fake view model ---
+            importExportViewModel = FakeImportExportViewModel(testCoroutineScope),
             platform = fakePlatform,
             coroutineScope = testCoroutineScope
         )
@@ -127,7 +109,6 @@ class ChatIntegrationTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `system messages are compiled based on settings before being sent`() = runTest {
-        // ARRANGE: A holon that can be cleaned and minified
         val holonRawContent = """
         {
             "header": {
@@ -145,28 +126,20 @@ class ChatIntegrationTest {
         fakeStore.dispatch(AppAction.LoadGraphSuccess(GraphLoadResult(holonGraph = listOf(holon))))
         fakeStore.dispatch(AppAction.ToggleHolonActive("test-holon-1"))
 
-        // Set compiler settings to be aggressive
         stateManager.updateSetting(SettingValue("compiler.cleanHeaders", true))
         stateManager.updateSetting(SettingValue("compiler.minifyJson", true))
         stateManager.updateSetting(SettingValue("compiler.removeWhitespace", true))
         advanceUntilIdle()
 
-        // ACT
         stateManager.sendMessage("Go")
         advanceUntilIdle()
 
-        // ASSERT
         val systemMessagesSentToChatService = stateManager.getSystemContextForDisplay()
         assertNotNull(systemMessagesSentToChatService)
 
         val systemBlock = systemMessagesSentToChatService.first { it.title == "test-holon-1.json" }
-        // --- FIX IS HERE ---
-        // The test failed because it was asserting on `rawContent`.
-        // The correct property to check is `compiledContent`, which holds the result
-        // of the PromptCompiler's transformations.
         val sentContent = systemBlock.compiledContent
         assertNotNull(sentContent, "The compiled content of the system message should not be null.")
-        // --- END FIX ---
 
         assertFalse(sentContent.contains("\n"), "Compiled content should be minified.")
         assertFalse(sentContent.contains("version"), "Compiled content should not contain 'version'.")
@@ -179,7 +152,6 @@ class ChatIntegrationTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `getPromptForClipboard uses compiled content for system messages and raw for others`() = runTest {
-        // ARRANGE
         stateManager.updateSetting(SettingValue("compiler.minifyJson", true))
         val userMessage = "User query."
         val aiResponse = "AI response."
@@ -196,10 +168,8 @@ class ChatIntegrationTest {
         fakeStore.dispatch(AppAction.AddSystemMessage("sys-holon.json", systemMessageRaw))
         advanceUntilIdle()
 
-        // ACT
         val fullPrompt = stateManager.getPromptForClipboard()
 
-        // ASSERT
         assertTrue(fullPrompt.contains(expectedSystemCompiled), "Prompt should contain the compiled system message.")
         assertFalse(fullPrompt.contains(""""header": {"""), "Prompt should NOT contain the pretty-printed system message.")
         assertTrue(fullPrompt.contains("--- USER MESSAGE ---\n$userMessage"))
