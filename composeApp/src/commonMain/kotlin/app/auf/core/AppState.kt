@@ -1,4 +1,3 @@
-// --- FILE: commonMain/kotlin/app/auf/core/AppState.kt ---
 package app.auf.core
 
 import app.auf.model.Action
@@ -14,8 +13,8 @@ import kotlinx.serialization.json.JsonObject
 /**
  * Defines the core, immutable data models for the entire AUF application state.
  *
- * @version 2.5
- * @since 2025-08-27
+ * @version 2.6
+ * @since 2025-08-28
  */
 
 data class GatewayResponse(
@@ -50,7 +49,7 @@ sealed interface ImportAction {
 }
 
 enum class ImportActionType {
-    UPDATE, INTEGRATE, ASSIGN_PARENT, QUARANTINE, IGNORE
+    UPDATE, INTEGRATE, ASSIGN_PARENT, QUARANTINE, IGNORE, CREATE_ROOT
 }
 
 @Serializable
@@ -91,6 +90,14 @@ data class Ignore(
     override val actionType: ImportActionType = ImportActionType.IGNORE,
     override val summary: String = "Do not import."
 ) : ImportAction
+
+@Serializable
+@SerialName("CreateRoot")
+data class CreateRoot(
+    override val actionType: ImportActionType = ImportActionType.CREATE_ROOT,
+    override val summary: String = "IMPORT AS NEW ROOT PERSONA"
+) : ImportAction
+
 
 data class ImportState(
     val sourcePath: String,
@@ -198,7 +205,7 @@ data class CompilationStats(
 @Serializable
 @ConsistentCopyVisibility
 data class ChatMessage internal constructor(
-    @Transient val id: Long = 0L, // <<< MODIFIED: Added @Transient and default value
+    @Transient val id: Long = 0L,
     val author: Author,
     val title: String?,
     val timestamp: Long,
@@ -219,7 +226,6 @@ data class ChatMessage internal constructor(
             nextId = 0L // Ensure counter is reset on initialization
         }
 
-        // --- MODIFICATION START ---
         /**
          * Takes a list of messages (presumably from a deserialized session file) and
          * returns a new list where each message has a fresh, unique, sequential ID.
@@ -228,7 +234,6 @@ data class ChatMessage internal constructor(
             nextId = 0L // Reset counter before re-IDing
             return loadedMessages.map { it.copy(id = ++nextId) }
         }
-        // --- MODIFICATION END ---
 
         private fun getTimestamp(): Long {
             return platform?.getSystemTimeMillis()

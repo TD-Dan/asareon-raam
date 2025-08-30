@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.auf.core.AssignParent
+import app.auf.core.CreateRoot
 import app.auf.core.HolonHeader
 import app.auf.core.Ignore
 import app.auf.core.ImportAction
@@ -25,27 +26,15 @@ import app.auf.util.PlatformDependencies
 /**
  * A Composable screen for managing the import of Holons from an external source.
  *
- * ---
- * ## Mandate
- * This view's responsibility is to render the `ImportState` provided by the
- * `ImportExportViewModel` and to delegate all user actions (analyze, import, select action)
- * back to that ViewModel. It is a "dumb" component that only knows how to display state
- * and forward events.
- *
- * ---
- * ## Dependencies
- * - `app.auf.ui.ImportExportViewModel`: The source of truth for the view's state and logic.
- * - `app.auf.core.ImportState`: The data class that this view renders.
- *
- * @version 2.1
- * @since 2025-08-17
+ * @version 2.2
+ * @since 2025-08-28
  */
 @Composable
 fun ImportView(
     viewModel: ImportExportViewModel,
     currentGraph: List<HolonHeader>,
     personaId: String,
-    onCancel: () -> Unit // <<< MODIFIED: Added this parameter
+    onCancel: () -> Unit
 ) {
     val platformDependencies = remember { PlatformDependencies() }
     val importState by viewModel.importState.collectAsState()
@@ -60,7 +49,6 @@ fun ImportView(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Import & Sync Holons", style = MaterialTheme.typography.headlineSmall)
-                // --- MODIFIED: Use the onCancel callback ---
                 IconButton(onClick = onCancel) {
                     Icon(Icons.Default.Close, contentDescription = "Close Import View")
                 }
@@ -103,7 +91,9 @@ fun ImportView(
                             selectedAction = state.selectedActions[item.sourcePath] ?: item.initialAction,
                             onActionSelected = { newAction ->
                                 viewModel.updateImportAction(item.sourcePath, newAction)
-                            }
+                            },
+                            // --- MODIFICATION: Pass the graph down for parent selection ---
+                            potentialParents = currentGraph
                         )
                         Divider()
                     }
@@ -113,7 +103,6 @@ fun ImportView(
 
             // Action Buttons
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                // --- MODIFIED: Use the onCancel callback ---
                 OutlinedButton(onClick = onCancel) {
                     Text("Cancel")
                 }
@@ -129,14 +118,15 @@ fun ImportView(
     }
 }
 
+// --- MODIFICATION START: Complete refactor of ImportItemRow ---
 @Composable
 private fun ImportItemRow(
     item: ImportItem,
     selectedAction: ImportAction,
-    onActionSelected: (ImportAction) -> Unit
+    onActionSelected: (ImportAction) -> Unit,
+    potentialParents: List<HolonHeader>
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val actions = remember { ImportActionType.values().map { it.toInstance(item.initialAction) } }
+    var actionMenuExpanded by remember { mutableStateOf(false) }
     val fileName = remember(item.sourcePath) { item.sourcePath.substringAfterLast('/').substringAfterLast('\\') }
 
     Row(
@@ -147,32 +137,116 @@ private fun ImportItemRow(
         Text(fileName, modifier = Modifier.weight(1f))
         Spacer(modifier = Modifier.width(16.dp))
 
+        // This Box now contains the conditional logic for rendering the correct button
         Box {
-            OutlinedButton(
-                onClick = { expanded = true },
-                modifier = Modifier.width(250.dp)
-            ) {
-                Text(selectedAction.summary, modifier = Modifier.weight(1f))
-                Icon(Icons.Default.MoreVert, contentDescription = "Select Action")
+            // If the action is AssignParent, we show a special dropdown for parent selection.
+            if (selectedAction is AssignParent) {
+                ParentSelector(
+                    selectedAction = selectedAction,
+                    potentialParents = potentialParents,
+                    onActionSelected = onActionSelected
+                )
             }
-
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
-                actions.forEach { action ->
-                    DropdownMenuItem(
-                        text = { Text(action.summary) },
-                        onClick = {
-                            onActionSelected(action)
-                            expanded = false
-                        }
-                    )
-                }
+            // For all other actions, we show the generic action selector.
+            else {
+                GenericActionSelector(
+                    initialAction = item.initialAction,
+                    selectedAction = selectedAction,
+                    onActionSelected = onActionSelected
+                )
             }
         }
     }
 }
+
+@Composable
+private fun ParentSelector(
+    selectedAction: AssignParent,
+    potentialParents: List<HolonHeader>,
+    onActionSelected: (ImportAction) -> Unit
+) {
+    var parentMenuExpanded by remember { mutableStateOf(false) }
+    var actionMenuExpanded by remember { mutableStateOf(false) }
+
+    val selectedParentName = selectedAction.assignedParentId?.let { id ->
+        potentialParents.find { it.id == id }?.name
+    } ?: "Select Parent..."
+
+    Row {
+        // Dropdown to select the parent
+        OutlinedButton(
+            onClick = { parentMenuExpanded = true },
+            modifier = Modifier.width(200.dp)
+        ) {
+            Text(selectedParentName, modifier = Modifier.weight(1f), maxLines = 1)
+        }
+        DropdownMenu(
+            expanded = parentMenuExpanded,
+            onDismissRequest = { parentMenuExpanded = false }
+        ) {
+            potentialParents.forEach { parent ->
+                DropdownMenuItem(
+                    text = { Text(parent.name) },
+                    onClick = {
+                        onActionSelected(AssignParent(assignedParentId = parent.id))
+                        parentMenuExpanded = false
+                    }
+                )
+            }
+        }
+        // Button to change the action type itself
+        IconButton(onClick = { actionMenuExpanded = true }) {
+            Icon(Icons.Default.MoreVert, contentDescription = "Change Action Type")
+        }
+        DropdownMenu(
+            expanded = actionMenuExpanded,
+            onDismissRequest = { actionMenuExpanded = false }
+        ) {
+            ImportActionType.values().forEach { actionType ->
+                DropdownMenuItem(
+                    text = { Text(actionType.toInstance(selectedAction).summary) },
+                    onClick = {
+                        onActionSelected(actionType.toInstance(selectedAction))
+                        actionMenuExpanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GenericActionSelector(
+    initialAction: ImportAction,
+    selectedAction: ImportAction,
+    onActionSelected: (ImportAction) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    OutlinedButton(
+        onClick = { expanded = true },
+        modifier = Modifier.width(250.dp)
+    ) {
+        Text(selectedAction.summary, modifier = Modifier.weight(1f))
+        Icon(Icons.Default.MoreVert, contentDescription = "Select Action")
+    }
+
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = { expanded = false }
+    ) {
+        ImportActionType.values().forEach { actionType ->
+            DropdownMenuItem(
+                text = { Text(actionType.toInstance(initialAction).summary) },
+                onClick = {
+                    onActionSelected(actionType.toInstance(initialAction))
+                    expanded = false
+                }
+            )
+        }
+    }
+}
+
 
 private fun ImportActionType.toInstance(initialAction: ImportAction): ImportAction {
     return when (this) {
@@ -181,5 +255,7 @@ private fun ImportActionType.toInstance(initialAction: ImportAction): ImportActi
         ImportActionType.ASSIGN_PARENT -> AssignParent()
         ImportActionType.QUARANTINE -> Quarantine("Manual Quarantine")
         ImportActionType.IGNORE -> Ignore()
+        ImportActionType.CREATE_ROOT -> CreateRoot() // <<< MODIFICATION: Handle the new type
     }
 }
+// --- MODIFICATION END ---

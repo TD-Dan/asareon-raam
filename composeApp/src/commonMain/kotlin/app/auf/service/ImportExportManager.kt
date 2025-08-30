@@ -1,6 +1,7 @@
 package app.auf.service
 
 import app.auf.core.AssignParent
+import app.auf.core.CreateRoot
 import app.auf.core.Holon
 import app.auf.core.HolonHeader
 import app.auf.core.Ignore
@@ -11,6 +12,7 @@ import app.auf.core.Quarantine
 import app.auf.core.SubHolonRef
 import app.auf.core.Update
 import app.auf.util.BasePath
+import app.auf.util.FileEntry
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,13 +33,30 @@ import kotlinx.serialization.json.Json
  * - `app.auf.util.PlatformDependencies`: The contract for all platform-specific I/O.
  * - `kotlinx.serialization.json.Json`: For parsing and writing Holon files.
  *
- * @version 2.1
- * @since 2025-08-15
+ * @version 2.2
+ * @since 2025-08-28
  */
 open class ImportExportManager(
     private val platform: PlatformDependencies,
     private val jsonParser: Json
 ) {
+
+    // --- MODIFICATION START: Added a recursive file discovery function ---
+    private fun discoverJsonFiles(startPath: String): List<FileEntry> {
+        val allFiles = mutableListOf<FileEntry>()
+        val entries = platform.listDirectory(startPath)
+
+        for (entry in entries) {
+            if (entry.isDirectory) {
+                allFiles.addAll(discoverJsonFiles(entry.path))
+            } else if (entry.path.endsWith(".json")) {
+                allFiles.add(entry)
+            }
+        }
+        return allFiles
+    }
+    // --- MODIFICATION END ---
+
 
     /**
      * Analyzes a source folder against the current knowledge graph to determine
@@ -49,41 +68,65 @@ open class ImportExportManager(
         }
 
         val currentGraphMap = currentGraph.associateBy { it.id }
-        val parentMap = currentGraph.flatMap { parent -> parent.subHolons.map { child -> child.id to parent.id } }.toMap()
-        val sourceFiles = platform.listDirectory(sourcePath)
-            .filter { !it.isDirectory && it.path.endsWith(".json") }
+        // --- MODIFICATION: Scan recursively ---
+        val sourceFiles = discoverJsonFiles(sourcePath)
+
+        // --- MODIFICATION: Pre-parse all source holons to resolve internal relationships ---
+        val sourceHolons = sourceFiles.mapNotNull {
+            try {
+                val content = platform.readFileContent(it.path)
+                it.path to jsonParser.decodeFromString<Holon>(content).header
+            } catch (e: Exception) {
+                null
+            }
+        }.toMap()
+        val sourceParentMap = sourceHolons.values.flatMap { parent -> parent.subHolons.map { child -> child.id to parent.id } }.toMap()
+        // --- END MODIFICATION ---
 
         return sourceFiles.mapNotNull { sourceFileEntry ->
             try {
-                // Read the file to ensure it's at least processable.
-                platform.readFileContent(sourceFileEntry.path)
                 val holonId = platform.getFileName(sourceFileEntry.path).removeSuffix(".json")
+                val sourceHeader = sourceHolons[sourceFileEntry.path]
                 val existingHeader = currentGraphMap[holonId]
 
-                if (existingHeader != null) {
-                    if (platform.getLastModified(sourceFileEntry.path) > platform.getLastModified(existingHeader.filePath)) {
-                        ImportItem(sourceFileEntry.path, Update(holonId), existingHeader.filePath)
-                    } else {
-                        ImportItem(sourceFileEntry.path, Ignore())
+                // --- MODIFICATION: Re-ordered logic for clarity and correctness ---
+                when {
+                    // 1. If it's a malformed file, quarantine it.
+                    sourceHeader == null -> {
+                        ImportItem(sourceFileEntry.path, Quarantine("Malformed JSON or file read error."))
                     }
-                } else {
-                    val knownParentId = parentMap[holonId]
-                    if (knownParentId != null) {
-                        val parentDir = platform.getParentDirectory(currentGraphMap[knownParentId]!!.filePath) ?: ""
-                        val targetPath = parentDir + platform.pathSeparator + holonId
-                        ImportItem(sourceFileEntry.path, Integrate(knownParentId), targetPath)
-                    } else {
+                    // 2. If it's a new AI Persona Root, propose creating a new root.
+                    sourceHeader.type == "AI_Persona_Root" && existingHeader == null -> {
+                        ImportItem(sourceFileEntry.path, CreateRoot())
+                    }
+                    // 3. If it's an update to an existing holon, propose update.
+                    existingHeader != null -> {
+                        if (platform.getLastModified(sourceFileEntry.path) > platform.getLastModified(existingHeader.filePath)) {
+                            ImportItem(sourceFileEntry.path, Update(holonId), existingHeader.filePath)
+                        } else {
+                            ImportItem(sourceFileEntry.path, Ignore())
+                        }
+                    }
+                    // 4. If its parent is IN THE SOURCE SET, propose integration.
+                    sourceParentMap.containsKey(holonId) -> {
+                        val parentId = sourceParentMap[holonId]!!
+                        // We can't determine the full target path yet, so we leave it null.
+                        // The execution logic will handle placing it relative to its parent.
+                        ImportItem(sourceFileEntry.path, Integrate(parentId))
+                    }
+                    // 5. Otherwise, it's a new, untethered holon that needs a parent from the existing graph.
+                    else -> {
                         ImportItem(sourceFileEntry.path, AssignParent())
                     }
                 }
-            } catch (e: SerializationException) {
-                ImportItem(sourceFileEntry.path, Quarantine("Malformed JSON: ${e.message?.substringBefore('\n')}"))
+
             } catch (e: Exception) {
                 println("Could not analyze file ${platform.getFileName(sourceFileEntry.path)}, ignoring. Error: ${e.message}")
                 null
             }
         }
     }
+
 
     /**
      * Executes the file copy operations for the export feature.
@@ -112,28 +155,35 @@ open class ImportExportManager(
 
     /**
      * Executes all file modifications for the import feature based on the finalized actions.
-     * --- MODIFIED: This is now a suspend function returning a Result for asynchronous UI feedback. ---
      */
     open suspend fun executeImport(
-        sourcePath: String, // Note: The sourcePath from ImportState is passed directly now
+        sourcePath: String,
         actions: Map<String, ImportAction>,
         graph: List<HolonHeader>,
         personaId: String
     ): Result<String> = withContext(Dispatchers.Default) {
         try {
             val holonsBasePath = platform.getBasePathFor(BasePath.HOLONS)
-            val personaRootPath = holonsBasePath + platform.pathSeparator + personaId
-            val quarantineDirPath = personaRootPath + platform.pathSeparator + "quarantined-imports"
-            platform.createDirectories(quarantineDirPath)
+
+            // --- MODIFICATION: Build a map of NEWLY created holon paths for dependency resolution ---
+            val newHolonPaths = mutableMapOf<String, String>()
 
             actions.forEach { (sourceFilePath, finalAction) ->
                 if (!platform.fileExists(sourceFilePath)) {
                     println("Skipping import for $sourceFilePath as it does not exist.")
-                    return@forEach // 'continue' in a forEach loop
+                    return@forEach
                 }
 
                 try {
                     when (finalAction) {
+                        is CreateRoot -> {
+                            val newHolonContent = jsonParser.decodeFromString<Holon>(platform.readFileContent(sourceFilePath))
+                            val newPersonaId = newHolonContent.header.id
+                            val newPersonaRootPath = holonsBasePath + platform.pathSeparator + newPersonaId
+                            platform.createDirectories(newPersonaRootPath)
+                            val destPath = newPersonaRootPath + platform.pathSeparator + platform.getFileName(sourceFilePath)
+                            platform.copyFile(sourceFilePath, destPath)
+                        }
                         is Update -> {
                             val targetHolon = graph.find { it.id == finalAction.targetHolonId }
                             if (targetHolon != null) {
@@ -141,13 +191,17 @@ open class ImportExportManager(
                             }
                         }
                         is Integrate -> {
-                            val parentHolon = graph.find { it.id == finalAction.parentHolonId }
-                            if (parentHolon != null) {
-                                val parentDir = platform.getParentDirectory(parentHolon.filePath)!!
-                                val newHolonDir = parentDir + platform.pathSeparator + platform.getFileName(sourceFilePath).removeSuffix(".json")
+                            val parentHolonHeader = graph.find { it.id == finalAction.parentHolonId }
+                                ?: sourcePath.let { sp -> newHolonPaths[finalAction.parentHolonId]?.let { hp -> HolonHeader(id=finalAction.parentHolonId, filePath=hp, type="", name="", summary = "") } } // Check existing graph OR newly added holons
+
+                            if (parentHolonHeader != null) {
+                                val parentDir = platform.getParentDirectory(parentHolonHeader.filePath)!!
+                                val holonId = platform.getFileName(sourceFilePath).removeSuffix(".json")
+                                val newHolonDir = parentDir + platform.pathSeparator + holonId
                                 platform.createDirectories(newHolonDir)
                                 val destPath = newHolonDir + platform.pathSeparator + platform.getFileName(sourceFilePath)
                                 platform.copyFile(sourceFilePath, destPath)
+                                newHolonPaths[holonId] = destPath
                             }
                         }
                         is AssignParent -> {
@@ -160,7 +214,7 @@ open class ImportExportManager(
                                     val newHolonContentString = platform.readFileContent(sourceFilePath)
                                     val newHolonHeader = jsonParser.decodeFromString<Holon>(newHolonContentString).header
 
-                                    val newSummary = "[IMPORTED-UNVALIDATED]: ${newHolonHeader.summary}. AI must treat this as foreign material until reviewed and integrated."
+                                    val newSummary = "[IMPORTED-UNVALIDATED]: ${newHolonHeader.summary}"
                                     val newSubRef = SubHolonRef(newHolonHeader.id, newHolonHeader.type, newSummary)
 
                                     if (parentContent.header.subHolons.none { it.id == newSubRef.id }) {
@@ -174,10 +228,14 @@ open class ImportExportManager(
                                     platform.createDirectories(newHolonDir)
                                     val destPath = newHolonDir + platform.pathSeparator + platform.getFileName(sourceFilePath)
                                     platform.copyFile(sourceFilePath, destPath)
+                                    newHolonPaths[newHolonHeader.id] = destPath
                                 }
                             }
                         }
                         is Quarantine -> {
+                            val personaRootPath = holonsBasePath + platform.pathSeparator + personaId
+                            val quarantineDirPath = personaRootPath + platform.pathSeparator + "quarantined-imports"
+                            platform.createDirectories(quarantineDirPath)
                             val destPath = quarantineDirPath + platform.pathSeparator + platform.getFileName(sourceFilePath)
                             platform.copyFile(sourceFilePath, destPath)
                         }
