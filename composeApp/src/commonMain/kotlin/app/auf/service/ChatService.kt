@@ -1,3 +1,4 @@
+// --- FILE: commonMain/kotlin/app/auf/service/ChatService.kt ---
 package app.auf.service
 
 import app.auf.core.AppAction
@@ -20,8 +21,6 @@ import kotlinx.coroutines.launch
 /**
  * Service dedicated to handling all business logic related to AI chat interactions.
  *
- * @version 2.7
- * @since 2025-08-25
  */
 open class ChatService(
     private val store: Store,
@@ -144,6 +143,7 @@ open class ChatService(
         }
     }
 
+    // --- MODIFICATION START: Added holon statistics to the system status message ---
     private fun generateSystemStatusMessage(): String {
         val state = store.state.value
         val personaName = state.availableAiPersonas.find { it.id == state.aiPersonaId }?.name ?: "Unknown"
@@ -151,14 +151,20 @@ open class ChatService(
         val tokenInfo = lastTx?.totalTokenCount?.let { "Approximate context window size of last transaction: $it tokens." }
             ?: "Token count for the last transaction is not available."
 
+        val activeHolonCount = state.activeHolons.size
+        val totalHolonCount = state.holonGraph.size
+        val holonStats = "Your Holon Knowledge Graph has $activeHolonCount/$totalHolonCount holons active in context."
+
         return """
         *   You are running on host LLM: `${state.selectedModel}`
         *   Your current runtime platform is 'AUF App v${Version.APP_VERSION}'
         *   You are embodying the persona: '$personaName' (holon: ${state.aiPersonaId})
+        *   $holonStats
         *   The time of this request is: `${platform.formatIsoTimestamp(platform.getSystemTimeMillis())}`
         *   $tokenInfo
         """.trimIndent()
     }
+    // --- MODIFICATION END ---
 
     private fun generateDynamicToolManifest(): String {
         return toolRegistry.joinToString("\n\n") { tool ->
