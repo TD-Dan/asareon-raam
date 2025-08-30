@@ -17,7 +17,6 @@ import kotlinx.coroutines.withContext
  */
 open class ImportExportViewModel(
     val importExportManager: ImportExportManager,
-    // --- MODIFICATION: Inject the application's CoroutineScope for consistency ---
     private val coroutineScope: CoroutineScope
 ) {
 
@@ -37,7 +36,6 @@ open class ImportExportViewModel(
     }
 
     open fun analyzeFolder(sourcePath: String, currentGraph: List<HolonHeader>) {
-        // Use the injected scope
         coroutineScope.launch(Dispatchers.Default) {
             val importItems = importExportManager.analyzeFolder(sourcePath, currentGraph, _isRecursive.value)
             _importState.update {
@@ -69,9 +67,9 @@ open class ImportExportViewModel(
         }
     }
 
+    // --- MODIFICATION START: Handle the new ImportResult object ---
     open fun executeImport(currentGraph: List<HolonHeader>, personaId: String?) {
         val currentState = _importState.value ?: return
-        // Use the injected scope
         coroutineScope.launch(Dispatchers.Default) {
             val result = importExportManager.executeImport(
                 actions = currentState.selectedActions,
@@ -79,17 +77,22 @@ open class ImportExportViewModel(
                 personaId = personaId
             )
 
-            // --- MODIFICATION START: Switch to the Main dispatcher before calling UI callbacks ---
             withContext(Dispatchers.Main) {
-                result.onSuccess {
+                // If there were failures, report them.
+                if (result.failedImports.isNotEmpty()) {
+                    val failedFiles = result.failedImports.keys.joinToString { it.substringAfterLast('/') }
+                    val errorMessage = "Import completed with ${result.failedImports.size} errors: $failedFiles"
+                    onImportFailed(errorMessage)
+                }
+
+                // If there were any successes, trigger the UI refresh.
+                if (result.successfulImports.isNotEmpty()) {
                     onImportComplete()
-                }.onFailure {
-                    onImportFailed(it.message ?: "An unknown import error occurred.")
                 }
             }
-            // --- MODIFICATION END ---
         }
     }
+    // --- MODIFICATION END ---
 
     open fun cancelImport() {
         _importState.value = null

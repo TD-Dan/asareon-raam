@@ -121,7 +121,6 @@ fun main() = application {
         val backupManager = BackupManager(platformDependencies)
         val actionExecutor = ActionExecutor(platformDependencies, jsonParser)
         val importExportManager = ImportExportManager(platformDependencies, jsonParser)
-        // --- MODIFICATION: Inject the application's coroutine scope ---
         val importExportViewModel = ImportExportViewModel(importExportManager, coroutineScope)
         val graphLoader = GraphLoader(platformDependencies, jsonParser)
         val graphService = GraphService(graphLoader)
@@ -147,12 +146,13 @@ fun main() = application {
 
     remember {
         stateManager.importExportViewModel.onImportComplete = {
+            // --- MODIFICATION: Add a success toast for clarity ---
+            store.dispatch(AppAction.ShowToast("Import successful! Reloading graph..."))
             stateManager.loadHolonGraph()
             stateManager.setViewMode(ViewMode.CHAT)
         }
-        // --- MODIFICATION: Implement the failure callback ---
         stateManager.importExportViewModel.onImportFailed = { errorMessage ->
-            store.dispatch(AppAction.ShowToast("IMPORT FAILED: $errorMessage"))
+            store.dispatch(AppAction.ShowToast(errorMessage))
         }
     }
 
