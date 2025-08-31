@@ -1,4 +1,3 @@
-// --- FILE: commonMain/kotlin/app/auf/service/AufTextParser.kt ---
 package app.auf.service
 
 import app.auf.core.ActionBlock
@@ -30,15 +29,12 @@ import kotlinx.serialization.json.jsonPrimitive
  * - `app.auf.model.ToolDefinition`: The schema for available tools.
  * - `kotlinx.serialization.json.Json`: For parsing JSON payloads in specific blocks.
  *
- * @version 3.4
- * @since 2025-08-29
  */
 open class AufTextParser(
     private val jsonParser: Json,
     private val toolRegistry: List<ToolDefinition>
 ) {
 
-    // --- MODIFICATION START: Expanded State enum for comments ---
     private enum class State {
         SCANNING,
         IN_STRING,
@@ -46,15 +42,12 @@ open class AufTextParser(
         IN_MULTI_LINE_COMMENT,
         TOOL_ACTIVE
     }
-    // --- MODIFICATION END ---
 
-    // --- MODIFICATION START: Added delimiter map for paired quotes ---
     private val quoteDelimiterMap = mapOf(
         '‘' to '’',
         '“' to '”'
     )
     private val allQuoteChars = setOf('\'', '`', '´', '‘', '’', '"', '“', '”')
-    // --- MODIFICATION END ---
 
 
     open fun parse(rawText: String): List<ContentBlock> {
@@ -73,13 +66,11 @@ open class AufTextParser(
         while (currentIndex < rawText.length) {
             when (currentState) {
                 State.SCANNING -> {
-                    // --- MODIFICATION START: Scan for all known delimiters ---
                     val nextTagIndex = rawText.indexOf("[AUF_", currentIndex)
                     val nextSingleLineCommentIndex = rawText.indexOf("//", currentIndex)
                     val nextMultiLineCommentIndex = rawText.indexOf("/*", currentIndex)
                     val nextQuoteIndices = allQuoteChars.map { rawText.indexOf(it, currentIndex) }
                     val nextQuoteIndex = nextQuoteIndices.filter { it != -1 }.minOrNull() ?: -1
-                    // --- MODIFICATION END ---
 
                     val firstInterestingIndex = findFirstOf(
                         nextTagIndex,
@@ -88,7 +79,7 @@ open class AufTextParser(
                         nextMultiLineCommentIndex
                     )
 
-                    if (firstInterestingIndex == -1) { // No more delimiters
+                    if (firstInterestingIndex == -1) {
                         currentText.append(rawText.substring(currentIndex))
                         currentIndex = rawText.length
                         continue
@@ -96,7 +87,6 @@ open class AufTextParser(
 
                     currentText.append(rawText.substring(currentIndex, firstInterestingIndex))
 
-                    // --- MODIFICATION START: Handle transition to all new states ---
                     when (firstInterestingIndex) {
                         nextQuoteIndex -> {
                             val quoteChar = rawText[firstInterestingIndex]
@@ -151,10 +141,8 @@ open class AufTextParser(
                             currentState = State.TOOL_ACTIVE
                         }
                     }
-                    // --- MODIFICATION END ---
                 }
 
-                // --- MODIFICATION START: Smarter IN_STRING state ---
                 State.IN_STRING -> {
                     val closingQuoteIndex = findClosingDelimiter(rawText, currentIndex, expectedStringDelimiter)
                     if (closingQuoteIndex != -1) {
@@ -166,9 +154,7 @@ open class AufTextParser(
                         currentIndex = rawText.length
                     }
                 }
-                // --- MODIFICATION END ---
 
-                // --- MODIFICATION START: New comment states ---
                 State.IN_SINGLE_LINE_COMMENT -> {
                     val endOfLineIndex = rawText.indexOf('\n', currentIndex)
                     if (endOfLineIndex != -1) {
@@ -191,7 +177,6 @@ open class AufTextParser(
                         currentIndex = rawText.length
                     }
                 }
-                // --- MODIFICATION END ---
 
                 State.TOOL_ACTIVE -> {
                     val tool = activeTool ?: break
