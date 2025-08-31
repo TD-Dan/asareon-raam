@@ -1,12 +1,7 @@
 package app.auf.core
 
-import app.auf.model.CompilerSettings
-
 /**
  * The Reducer function for the Unidirectional Data Flow (UDF) architecture.
- *
- * @version 2.12
- * @since 2025-08-31
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
     return when (action) {
@@ -242,7 +237,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             val updatedHistory = state.chatHistory.map { message ->
                 if (message.timestamp == action.messageTimestamp) {
                     val updatedBlocks = message.contentBlocks.map { block ->
-                        if (block is ActionBlock) {
+                        if (block is CodeBlock) {
                             block.copy(status = action.status)
                         } else {
                             block

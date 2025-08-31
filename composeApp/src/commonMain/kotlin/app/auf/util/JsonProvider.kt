@@ -27,12 +27,7 @@ object JsonProvider {
             }
             polymorphic(ContentBlock::class) {
                 subclass(TextBlock::class)
-                subclass(ActionBlock::class)
-                subclass(FileContentBlock::class)
-                subclass(AppRequestBlock::class)
-                subclass(AnchorBlock::class)
-                subclass(ParseErrorBlock::class)
-                subclass(SentinelBlock::class)
+                subclass(CodeBlock::class)
             }
             polymorphic(ImportAction::class) {
                 subclass(Update::class)

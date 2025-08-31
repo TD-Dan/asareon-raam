@@ -1,6 +1,5 @@
 package app.auf.core
 
-import app.auf.model.Action
 import app.auf.model.CompilerSettings
 import app.auf.service.AufTextParser
 import app.auf.service.UsageMetadata
@@ -8,7 +7,7 @@ import app.auf.util.PlatformDependencies
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonElement
 
 /**
  * Defines the core, immutable data models for the entire AUF application state.
@@ -138,62 +137,27 @@ data class TextBlock(
     override val summary: String = "Text block: \"${text.take(50).replace("\n", " ")}...\""
 ) : ContentBlock
 
+/**
+ * A universal container for any content wrapped in ```markdown code fences```.
+ * The `language` hint (e.g., "json", "kotlin" ,"auf_tool_name") is used by the UI to determine
+ * how to render the block and what actions to offer. For example, a `json`
+ * block might be parsed into an Action Manifest and rendered with confirm/reject buttons.
+ */
 @Serializable
-@SerialName("ActionBlock")
-data class ActionBlock(
-    val actions: List<Action>,
-    var status: ActionStatus = ActionStatus.PENDING
-) : ContentBlock {
-    override val summary: String
-        get() = "Action Manifest (${actions.size} actions)"
-}
+@SerialName("CodeBlock")
+data class CodeBlock(
+    val language: String,
+    val content: String,
+    var status: ActionStatus = ActionStatus.PENDING, // Used for actionable blocks like json
+    override val summary: String = "Code Block: $language"
+) : ContentBlock
+
 
 enum class ActionStatus {
     PENDING,
     EXECUTED,
     REJECTED
 }
-
-
-@Serializable
-@SerialName("FileContentBlock")
-data class FileContentBlock(
-    val fileName: String,
-    val content: String,
-    val language: String? = null,
-    override val summary: String = "File View: $fileName"
-) : ContentBlock
-
-@Serializable
-@SerialName("AppRequestBlock")
-data class AppRequestBlock(
-    val requestType: String,
-    override val summary: String = "App Request: $requestType"
-) : ContentBlock
-
-@Serializable
-@SerialName("AnchorBlock")
-data class AnchorBlock(
-    val anchorId: String,
-    val content: JsonObject,
-    override val summary: String = "State Anchor: $anchorId"
-) : ContentBlock
-
-@Serializable
-@SerialName("ParseErrorBlock")
-data class ParseErrorBlock(
-    val originalTag: String,
-    val rawContent: String,
-    val errorMessage: String,
-    override val summary: String = "Parse Error: $originalTag"
-) : ContentBlock
-
-@Serializable
-@SerialName("SentinelBlock")
-data class SentinelBlock(
-    val message: String,
-    override val summary: String = "Parser Sentinel"
-) : ContentBlock
 
 @Serializable
 data class CompilationStats(
@@ -307,7 +271,7 @@ enum class GatewayStatus {
 @Serializable
 data class Holon(
     val header: HolonHeader,
-    val payload: JsonObject
+    val payload: JsonElement
 )
 
 @Serializable

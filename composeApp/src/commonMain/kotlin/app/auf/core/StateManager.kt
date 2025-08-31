@@ -1,24 +1,25 @@
 package app.auf.core
 
+import app.auf.model.Action
 import app.auf.model.SettingDefinition
 import app.auf.model.SettingValue
-import app.auf.model.UserSettings
 import app.auf.service.ActionExecutor
 import app.auf.service.ActionExecutorResult
 import app.auf.service.BackupManager
 import app.auf.service.ChatService
 import app.auf.service.GatewayService
 import app.auf.service.GraphService
-import app.auf.service.ImportResult
 import app.auf.service.SessionManager
 import app.auf.service.SettingsManager
 import app.auf.service.SourceCodeService
 import app.auf.ui.ImportExportViewModel
+import app.auf.util.JsonProvider
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import app.auf.service.AufTextParser
+import kotlinx.serialization.builtins.ListSerializer
 
 /**
  * A simple data class to hold the aggregated compilation statistics.
@@ -138,16 +139,24 @@ open class StateManager(
 
         coroutineScope.launch {
             val message = state.value.chatHistory.find { it.timestamp == messageTimestamp }
-            val actionBlock = message?.contentBlocks?.filterIsInstance<ActionBlock>()?.firstOrNull()
+            val codeBlock = message?.contentBlocks
+                ?.filterIsInstance<CodeBlock>()
+                ?.firstOrNull { it.language.lowercase() == "json" }
 
-            if (actionBlock == null || actionBlock.status != ActionStatus.PENDING) {
-                store.dispatch(AppAction.ExecuteActionManifestFailure("Action block not found or already resolved.", messageTimestamp))
+            if (codeBlock == null || codeBlock.status != ActionStatus.PENDING) {
+                store.dispatch(AppAction.ExecuteActionManifestFailure("Actionable JSON block not found or already resolved.", messageTimestamp))
+                return@launch
+            }
+
+            val manifest = try {
+                JsonProvider.appJson.decodeFromString(ListSerializer(Action.serializer()), codeBlock.content)
+            } catch (e: Exception) {
+                store.dispatch(AppAction.ExecuteActionManifestFailure("Failed to parse Action Manifest JSON: ${e.message}", messageTimestamp))
                 return@launch
             }
 
             store.dispatch(AppAction.ExecuteActionManifest(messageTimestamp))
 
-            val manifest = actionBlock.actions
             val personaId = state.value.aiPersonaId ?: ""
             val currentGraphHeaders = state.value.holonGraph.map { it.header }
 

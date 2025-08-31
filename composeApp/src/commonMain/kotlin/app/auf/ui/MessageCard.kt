@@ -19,7 +19,6 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -46,8 +45,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.*
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
+import app.auf.model.Action
+import app.auf.util.JsonProvider
+import kotlinx.serialization.builtins.ListSerializer
+
+private sealed interface ParsedJsonContent {
+    data class Actionable(val actions: List<Action>) : ParsedJsonContent
+    data class Error(val message: String) : ParsedJsonContent
+}
 
 /**
  * ## Mandate
@@ -56,9 +61,6 @@ import kotlinx.serialization.json.JsonObject
  */
 @Composable
 fun MessageCard(message: ChatMessage, stateManager: StateManager) {
-    val hasParseErrorBlock = message.contentBlocks.any { it is ParseErrorBlock }
-
-    // --- MODIFICATION START: Parse Errors no longer force the card to be expanded. ---
     var isCollapsed by remember(message.id) {
         mutableStateOf(
             message.author == Author.SYSTEM &&
@@ -66,17 +68,16 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                     message.title != "Graph Parsing Warning"
         )
     }
-    // --- MODIFICATION END ---
 
     var showRaw by remember { mutableStateOf(false) }
     var showCompiled by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
 
-    val cardColors = when {
-        hasParseErrorBlock -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-        message.author == Author.SYSTEM -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-        else -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    val cardColors = if (message.author == Author.SYSTEM) {
+        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+    } else {
+        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     }
     val elevation = if (message.author == Author.SYSTEM) 0.dp else 2.dp
 
@@ -153,7 +154,7 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                             if (message.author == Author.USER) {
                                 DropdownMenuItem(text = { Text("Rerun from here") }, onClick = { stateManager.rerunFromMessage(message.id); showMenu = false })
                             }
-                            val deleteText = if (hasParseErrorBlock || message.title?.contains("Error") == true) "Dismiss" else "Delete"
+                            val deleteText = if (message.title?.contains("Error") == true) "Dismiss" else "Delete"
                             DropdownMenuItem(text = { Text(deleteText) }, onClick = { stateManager.deleteMessage(message.id); showMenu = false })
                         }
                     }
@@ -171,12 +172,11 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                                 message.contentBlocks.forEach { block ->
                                     when (block) {
                                         is TextBlock -> RenderTextBlock(block)
-                                        is ActionBlock -> RenderActionBlock(block, onConfirm = { stateManager.executeActionFromMessage(message.timestamp) }, onReject = { stateManager.rejectActionFromMessage(message.timestamp) })
-                                        is FileContentBlock -> RenderFileContentBlock(block)
-                                        is AppRequestBlock -> RenderAppRequestBlock(block)
-                                        is AnchorBlock -> RenderAnchorBlock(block)
-                                        is ParseErrorBlock -> RenderParseErrorBlock(block)
-                                        is SentinelBlock -> RenderSentinelBlock(block)
+                                        is CodeBlock -> RenderCodeBlock(
+                                            block = block,
+                                            onConfirm = { stateManager.executeActionFromMessage(message.timestamp) },
+                                            onReject = { stateManager.rejectActionFromMessage(message.timestamp) }
+                                        )
                                     }
                                 }
                             }
@@ -240,7 +240,35 @@ fun RenderTextBlock(block: TextBlock) {
 }
 
 @Composable
-fun RenderActionBlock(block: ActionBlock, onConfirm: () -> Unit, onReject: () -> Unit) {
+fun RenderCodeBlock(block: CodeBlock, onConfirm: () -> Unit, onReject: () -> Unit) {
+    val parsedJsonContent = remember(block.content, block.language) {
+        if (block.language.lowercase() == "json") {
+            try {
+                val actions = JsonProvider.appJson.decodeFromString(ListSerializer(Action.serializer()), block.content)
+                ParsedJsonContent.Actionable(actions)
+            } catch (e: Exception) {
+                ParsedJsonContent.Error("A deserialization error occurred: ${e.message}")
+            }
+        } else {
+            null
+        }
+    }
+
+    when (parsedJsonContent) {
+        is ParsedJsonContent.Actionable -> {
+            RenderActionableJsonBlock(block, parsedJsonContent.actions, onConfirm, onReject)
+        }
+        is ParsedJsonContent.Error -> {
+            RenderJsonErrorBlock(block, parsedJsonContent.message)
+        }
+        null -> {
+            RenderGenericCodeBlock(block)
+        }
+    }
+}
+
+@Composable
+private fun RenderActionableJsonBlock(block: CodeBlock, actions: List<Action>, onConfirm: () -> Unit, onReject: () -> Unit) {
     val isResolved = block.status != ActionStatus.PENDING
     val cardColors = when(block.status) {
         ActionStatus.PENDING -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
@@ -258,11 +286,10 @@ fun RenderActionBlock(block: ActionBlock, onConfirm: () -> Unit, onReject: () ->
         ActionStatus.REJECTED -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val titleText = when(block.status) {
-        ActionStatus.PENDING -> block.summary
-        ActionStatus.EXECUTED -> "${block.summary} - Executed"
-        ActionStatus.REJECTED -> "${block.summary} - Rejected"
+        ActionStatus.PENDING -> "Action Manifest (${actions.size} actions)"
+        ActionStatus.EXECUTED -> "Action Manifest - Executed"
+        ActionStatus.REJECTED -> "Action Manifest - Rejected"
     }
-
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -275,7 +302,7 @@ fun RenderActionBlock(block: ActionBlock, onConfirm: () -> Unit, onReject: () ->
             AnimatedVisibility(visible = !isResolved) {
                 Column {
                     Spacer(modifier = Modifier.height(8.dp))
-                    block.actions.forEach { action ->
+                    actions.forEach { action ->
                         Text("- ${action.summary}", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = textColor)
                     }
                     Spacer(modifier = Modifier.height(12.dp))
@@ -291,14 +318,14 @@ fun RenderActionBlock(block: ActionBlock, onConfirm: () -> Unit, onReject: () ->
 }
 
 @Composable
-fun RenderFileContentBlock(block: FileContentBlock) {
+private fun RenderGenericCodeBlock(block: CodeBlock) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(0.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(block.fileName, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+            Text(block.language, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
             HorizontalDivider(modifier=Modifier.padding(vertical=8.dp))
             Text(block.content, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
         }
@@ -306,33 +333,7 @@ fun RenderFileContentBlock(block: FileContentBlock) {
 }
 
 @Composable
-fun RenderAppRequestBlock(block: AppRequestBlock) {
-    Row(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer).padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(Icons.Default.Warning, contentDescription = "App Request", tint = MaterialTheme.colorScheme.onSecondaryContainer)
-        Spacer(Modifier.width(8.dp))
-        Text(block.summary, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSecondaryContainer)
-    }
-}
-
-@Composable
-fun RenderAnchorBlock(block: AnchorBlock) {
-    val jsonPrettyPrinter = remember { Json { prettyPrint = true } }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text("State Anchor Created: ${block.anchorId}", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-            HorizontalDivider(modifier=Modifier.padding(vertical=8.dp))
-            Text(jsonPrettyPrinter.encodeToString(JsonObject.serializer(), block.content), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-        }
-    }
-}
-
-@Composable
-fun RenderParseErrorBlock(block: ParseErrorBlock) {
+private fun RenderJsonErrorBlock(block: CodeBlock, errorMessage: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
@@ -340,13 +341,13 @@ fun RenderParseErrorBlock(block: ParseErrorBlock) {
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
-                text = "PARSE ERROR: ${block.originalTag.uppercase()}",
+                text = "JSON PARSE ERROR",
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.error)
             Text(
-                text = "Error: ${block.errorMessage}",
+                text = "Error: $errorMessage",
                 fontStyle = FontStyle.Italic,
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onErrorContainer
@@ -359,34 +360,11 @@ fun RenderParseErrorBlock(block: ParseErrorBlock) {
                 color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
             )
             Text(
-                text = block.rawContent,
+                text = block.content,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
         }
-    }
-}
-
-@Composable
-fun RenderSentinelBlock(block: SentinelBlock) {
-    Row(
-        modifier = Modifier.fillMaxWidth()
-            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
-            .padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            Icons.Default.Warning,
-            contentDescription = "Parser Sentinel",
-            tint = MaterialTheme.colorScheme.onSecondaryContainer
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = block.message,
-            fontStyle = FontStyle.Italic,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            fontSize = 13.sp
-        )
     }
 }
