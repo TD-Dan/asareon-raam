@@ -1,5 +1,6 @@
 package app.auf.service
 
+import app.auf.feature.systemclock.SystemClockFeature
 import app.auf.model.SettingDefinition
 import app.auf.util.BasePath
 import app.auf.util.PlatformDependencies
@@ -67,7 +68,8 @@ class SettingsManager(
      * This is the single point of contact for the UI to discover what settings are available.
      */
     fun getSettingDefinitions(): List<SettingDefinition> {
-        // As new services with settings are created, they are added here.
-        return PromptCompiler.SETTING_DEFINITIONS
+        // --- MODIFICATION START: Add definitions from the SystemClockFeature ---
+        return PromptCompiler.SETTING_DEFINITIONS + SystemClockFeature.SETTING_DEFINITIONS
+        // --- MODIFICATION END ---
     }
 }

@@ -11,23 +11,32 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.auf.core.ViewMode
+import app.auf.core.AppState
+import app.auf.feature.systemclock.SystemClockState
 import app.auf.model.CompilerSettings
 import app.auf.model.SettingDefinition
+import app.auf.model.SettingType
 import app.auf.model.SettingValue
 
 /**
@@ -45,13 +54,11 @@ import app.auf.model.SettingValue
  * - `app.auf.model.SettingDefinition`: The schema for rendering.
  * - `app.auf.model.CompilerSettings`: The current state of the settings.
  *
- * @version 1.0
- * @since 2025-08-25
  */
 @Composable
 fun SettingsView(
     definitions: List<SettingDefinition>,
-    compilerSettings: CompilerSettings,
+    appState: AppState, // --- MODIFICATION: Pass full AppState for feature access ---
     onSettingChanged: (SettingValue) -> Unit,
     onClose: () -> Unit
 ) {
@@ -88,7 +95,7 @@ fun SettingsView(
                 items(defs) { definition ->
                     SettingRow(
                         definition = definition,
-                        compilerSettings = compilerSettings,
+                        appState = appState,
                         onSettingChanged = onSettingChanged
                     )
                 }
@@ -100,7 +107,7 @@ fun SettingsView(
 @Composable
 private fun SettingRow(
     definition: SettingDefinition,
-    compilerSettings: CompilerSettings,
+    appState: AppState, // --- MODIFICATION: Pass full AppState ---
     onSettingChanged: (SettingValue) -> Unit
 ) {
     Row(
@@ -120,11 +127,14 @@ private fun SettingRow(
 
         // This `when` block makes the UI extensible to new setting types.
         when (definition.type) {
-            app.auf.model.SettingType.BOOLEAN -> {
+            SettingType.BOOLEAN -> {
                 val isChecked = when (definition.key) {
-                    "compiler.removeWhitespace" -> compilerSettings.removeWhitespace
-                    "compiler.cleanHeaders" -> compilerSettings.cleanHeaders
-                    "compiler.minifyJson" -> compilerSettings.minifyJson
+                    // Core settings
+                    "compiler.removeWhitespace" -> appState.compilerSettings.removeWhitespace
+                    "compiler.cleanHeaders" -> appState.compilerSettings.cleanHeaders
+                    "compiler.minifyJson" -> appState.compilerSettings.minifyJson
+                    // Feature settings
+                    "clock.isEnabled" -> (appState.featureStates["SystemClockFeature"] as? SystemClockState)?.isEnabled ?: false
                     else -> false
                 }
                 Switch(
@@ -134,6 +144,32 @@ private fun SettingRow(
                     }
                 )
             }
+            // --- MODIFICATION START: Add renderer for NUMERIC_LONG ---
+            SettingType.NUMERIC_LONG -> {
+                val currentValue = when (definition.key) {
+                    "clock.intervalMillis" -> (appState.featureStates["SystemClockFeature"] as? SystemClockState)?.intervalMillis ?: 0L
+                    else -> 0L
+                }
+                var textValue by remember(currentValue) { mutableStateOf(currentValue.toString()) }
+
+                OutlinedTextField(
+                    value = textValue,
+                    onValueChange = {
+                        val filtered = it.filter { char -> char.isDigit() }
+                        if (filtered.length <= 18) { // Prevent overflow
+                            textValue = filtered
+                            val longValue = filtered.toLongOrNull()
+                            if (longValue != null) {
+                                onSettingChanged(SettingValue(key = definition.key, value = longValue))
+                            }
+                        }
+                    },
+                    modifier = Modifier.width(150.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true
+                )
+            }
+            // --- MODIFICATION END ---
         }
     }
 }

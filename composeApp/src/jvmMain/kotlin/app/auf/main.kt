@@ -57,10 +57,11 @@ fun main() = application {
             aiPersonaId = savedSettings.selectedAiPersonaId,
             contextualHolonIds = savedSettings.activeContextualHolonIds,
             compilerSettings = savedSettings.compilerSettings,
-            featureStates = features.associate { it.name to (when(it) {
-                is SystemClockFeature -> app.auf.feature.systemclock.SystemClockState()
-                else -> Any()
-            }) }
+            // --- MODIFICATION START: Load feature state from saved settings ---
+            featureStates = mapOf(
+                "SystemClockFeature" to savedSettings.systemClockState
+            )
+            // --- MODIFICATION END ---
         )
     }
 
@@ -119,14 +120,17 @@ fun main() = application {
             val currentState = stateManager.state.value
             sessionManager.saveSession(currentState.chatHistory)
 
+            // --- MODIFICATION START: Save feature states on exit ---
             val currentSettingsToSave = UserSettings(
                 windowWidth = windowState.size.width.value.toInt(),
                 windowHeight = windowState.size.height.value.toInt(),
                 selectedModel = currentState.selectedModel,
                 selectedAiPersonaId = currentState.aiPersonaId,
                 activeContextualHolonIds = currentState.contextualHolonIds,
-                compilerSettings = currentState.compilerSettings
+                compilerSettings = currentState.compilerSettings,
+                systemClockState = currentState.featureStates["SystemClockFeature"] as? app.auf.feature.systemclock.SystemClockState ?: app.auf.feature.systemclock.SystemClockState()
             )
+            // --- MODIFICATION END ---
             settingsManager.saveSettings(currentSettingsToSave)
             exitApplication()
         },

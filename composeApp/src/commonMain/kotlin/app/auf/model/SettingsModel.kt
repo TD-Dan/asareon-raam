@@ -15,9 +15,6 @@ import kotlinx.serialization.Serializable
  * ---
  * ## Dependencies
  * - `kotlinx.serialization`: For the `SettingValue` container.
- *
- * @version 1.0
- * @since 2025-08-25
  */
 
 /**
@@ -41,8 +38,8 @@ data class SettingDefinition(
  * Enumerates the types of UI controls that can be rendered for a setting.
  */
 enum class SettingType {
-    BOOLEAN
-    // Future types could include: STRING_CHOICE, NUMERIC, etc.
+    BOOLEAN,
+    NUMERIC_LONG
 }
 
 /**
@@ -52,5 +49,5 @@ enum class SettingType {
  * @param value The new value for the setting. For now, it's a Boolean, but can be
  *              expanded to `Any` with polymorphic serialization if other types are needed.
  */
-@Serializable
-data class SettingValue(val key: String, val value: Boolean)
+// --- CORRECTION: Removed @Serializable as this is a transient action payload ---
+data class SettingValue(val key: String, val value: Any)

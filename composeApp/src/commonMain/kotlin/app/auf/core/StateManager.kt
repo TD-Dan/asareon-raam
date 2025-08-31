@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import app.auf.service.AufTextParser
 import kotlinx.serialization.builtins.ListSerializer
+import app.auf.feature.systemclock.ClockAction
 
 /**
  * A simple data class to hold the aggregated compilation statistics.
@@ -88,8 +89,38 @@ open class StateManager(
     fun sendMessage(message: String) {
         if (state.value.isProcessing || state.value.aiPersonaId == null && state.value.holonGraph.isNotEmpty()) return
         store.dispatch(AppAction.AddUserMessage(message))
+        // --- MODIFICATION START: Handle Conversational Command-Line ---
+        handleCcl(message)
+        // --- MODIFICATION END ---
         chatService.sendMessage()
     }
+
+    // --- MODIFICATION START: Add Conversational Command-Line handler ---
+    /**
+     * Parses the raw user message for `auf_action` code blocks and dispatches
+     * the corresponding AppAction, enabling the Conversational Command-Line (CCL).
+     */
+    private fun handleCcl(rawContent: String) {
+        val blocks = parser.parse(rawContent)
+        blocks.filterIsInstance<CodeBlock>()
+            .filter { it.language.lowercase() == "auf_action" }
+            .forEach { block ->
+                val action = when (block.content.trim()) {
+                    "ClockAction.Start" -> ClockAction.Start
+                    "ClockAction.Stop" -> ClockAction.Stop
+                    "ClockAction.Tick" -> ClockAction.Tick
+                    else -> null
+                }
+                if (action != null) {
+                    store.dispatch(action)
+                    store.dispatch(AppAction.ShowToast("Dispatched: ${block.content.trim()}"))
+                } else {
+                    store.dispatch(AppAction.ShowToast("Unknown CCL action: ${block.content.trim()}"))
+                }
+            }
+    }
+    // --- MODIFICATION END ---
+
 
     fun cancelMessage() {
         chatService.cancelMessage()

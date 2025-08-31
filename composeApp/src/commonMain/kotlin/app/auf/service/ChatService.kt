@@ -33,7 +33,8 @@ open class ChatService(
         val systemMessages = buildSystemContextMessages()
         val fullContextForApi = systemMessages + historyForApi
 
-        activeJob = coroutineScope.launch(Dispatchers.Default) {
+        // --- FIX: Remove explicit Dispatchers.Default to inherit the test dispatcher ---
+        activeJob = coroutineScope.launch {
             val response = gatewayService.sendMessage(state.selectedModel, fullContextForApi)
 
             if (response.errorMessage != null) {

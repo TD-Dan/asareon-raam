@@ -5,6 +5,9 @@ import app.auf.core.AppState
 import app.auf.core.Feature
 import app.auf.core.GatewayStatus
 import app.auf.core.Store
+import app.auf.model.SettingDefinition
+import app.auf.model.SettingType
+import app.auf.model.SettingValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -46,24 +49,53 @@ class SystemClockFeature(
 ) : Feature {
     override val name: String = "SystemClockFeature"
 
+    companion object {
+        val SETTING_DEFINITIONS = listOf(
+            SettingDefinition(
+                key = "clock.isEnabled",
+                section = "System Clock",
+                label = "Enable Autonomous TICK",
+                description = "When enabled, the application will periodically dispatch a TICK action, allowing the AI to perform background introspection.",
+                type = SettingType.BOOLEAN
+            ),
+            SettingDefinition(
+                key = "clock.intervalMillis",
+                section = "System Clock",
+                label = "TICK Interval (milliseconds)",
+                description = "The time in milliseconds between each autonomous TICK dispatch.",
+                type = SettingType.NUMERIC_LONG
+            )
+        )
+    }
+
     /**
      * The feature's dedicated reducer. It safely accesses its own state slice from the generic
      * feature map, modifies it based on ClockActions, and returns the new global AppState.
      */
     override fun reducer(state: AppState, action: AppAction): AppState {
-        if (action !is ClockAction) return state
-
-        // Safely get the current state for this feature, or a default if not present.
         val currentState = state.featureStates[name] as? SystemClockState ?: SystemClockState()
 
         val newFeatureState = when (action) {
             is ClockAction.Start -> currentState.copy(isEnabled = true)
             is ClockAction.Stop -> currentState.copy(isEnabled = false)
             is ClockAction.SetInterval -> currentState.copy(intervalMillis = action.millis)
-            is ClockAction.Tick -> currentState // A Tick action does not change the clock's state.
+            is AppAction.UpdateSetting -> {
+                when (action.setting.key) {
+                    "clock.isEnabled" -> {
+                        val value = action.setting.value as? Boolean ?: currentState.isEnabled
+                        currentState.copy(isEnabled = value)
+                    }
+                    "clock.intervalMillis" -> {
+                        val value = (action.setting.value as? Long) ?: currentState.intervalMillis
+                        currentState.copy(intervalMillis = value)
+                    }
+                    else -> currentState
+                }
+            }
+            else -> return state
         }
 
-        // Return the global state with this feature's state slice updated in the map.
+
         return state.copy(
             featureStates = state.featureStates + (name to newFeatureState)
         )
@@ -76,18 +108,23 @@ class SystemClockFeature(
     override fun start(store: Store) {
         coroutineScope.launch {
             while (true) {
-                // Always read the latest state from the store inside the loop.
                 val latestState = store.state.value
                 val clockState = latestState.featureStates[name] as? SystemClockState ?: SystemClockState()
 
                 if (clockState.isEnabled) {
-                    // CRITICAL SAFETY CONSTRAINT: Only dispatch a Tick if the gateway is idle.
-                    if (latestState.gatewayStatus == GatewayStatus.IDLE && !latestState.isProcessing) {
+                    if (latestState.gatewayStatus == GatewayStatus.OK && !latestState.isProcessing) {
+                        // 1. Dispatch the system-wide event for other features to hear.
                         store.dispatch(ClockAction.Tick)
+                        // 2. Dispatch a generic core action to make the event visible in the UI.
+                        store.dispatch(
+                            AppAction.AddSystemMessage(
+                                title = "[SYSTEM: TICK]",
+                                rawContent = "Autonomous processing cycle."
+                            )
+                        )
                     }
                     delay(clockState.intervalMillis)
                 } else {
-                    // If disabled, wait a short time before checking again to avoid a tight loop.
                     delay(1000L)
                 }
             }

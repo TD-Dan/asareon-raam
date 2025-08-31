@@ -1,5 +1,6 @@
 package app.auf.model
 
+import app.auf.feature.systemclock.SystemClockState
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -16,5 +17,8 @@ data class UserSettings(
     val selectedModel: String = "gemini-1.5-flash-latest",
     val selectedAiPersonaId: String? = null,
     val activeContextualHolonIds: Set<String> = emptySet(),
-    val compilerSettings: CompilerSettings = CompilerSettings() // <<< ADDED
+    val compilerSettings: CompilerSettings = CompilerSettings(),
+    // --- MODIFICATION START: Add feature states to user settings for persistence ---
+    val systemClockState: SystemClockState = SystemClockState()
+    // --- MODIFICATION END ---
 )

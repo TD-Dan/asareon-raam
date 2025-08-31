@@ -19,6 +19,7 @@ import app.auf.fakes.FakeSessionManager
 import app.auf.fakes.FakeSourceCodeService
 import app.auf.fakes.FakeStore
 import app.auf.service.AufTextParser
+import app.auf.service.ChatService
 import app.auf.service.PromptCompiler
 import app.auf.service.SettingsManager
 import app.auf.util.JsonProvider
@@ -51,13 +52,21 @@ class MessageCardTest {
         val fakeGatewayService = FakeGatewayService(testCoroutineScope)
         val promptCompiler = PromptCompiler(JsonProvider.appJson)
         val settingsManager = SettingsManager(fakePlatform, JsonProvider.appJson)
+        val chatService = ChatService(
+            fakeStore,
+            fakeGatewayService,
+            fakePlatform,
+            realParser,
+            promptCompiler,
+            testCoroutineScope
+        )
 
         stateManager = StateManager(
             store = fakeStore,
             backupManager = FakeBackupManager(fakePlatform),
             graphService = FakeGraphService(),
             sourceCodeService = FakeSourceCodeService(fakePlatform),
-            chatService = FakeChatService(fakeStore, fakeGatewayService, fakePlatform, realParser, promptCompiler, testCoroutineScope),
+            chatService = chatService,
             gatewayService = fakeGatewayService,
             actionExecutor = FakeActionExecutor(fakePlatform, JsonProvider.appJson),
             parser = realParser,
@@ -71,7 +80,7 @@ class MessageCardTest {
 
     @Test
     fun `MessageCard shows compiled content toggle when compiledContent is different`() {
-        val raw = "{\n  \"key\": \"value\"\n}"
+        val raw = "```json\n{\n  \"key\": \"value\"\n}\n```"
         val compiled = """{"key":"value"}"""
         val message = ChatMessage.Factory.createSystem("test.json", raw).copy(compiledContent = compiled)
 
@@ -101,7 +110,8 @@ class MessageCardTest {
 
     @Test
     fun `clicking compiled toggle switches between rendered and compiled views`() {
-        val raw = "{\n  \"key\": \"value\"\n}"
+        // --- FIX: Provide raw content with markdown fences so it's parsed as a CodeBlock ---
+        val raw = "```json\n{\n  \"key\": \"value\"\n}\n```"
         val compiled = """{"key":"value"}"""
         val message = ChatMessage.Factory.createSystem("test.json", raw).copy(compiledContent = compiled)
 

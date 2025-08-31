@@ -1,5 +1,7 @@
 package app.auf.core
 
+import app.auf.model.SettingValue
+
 /**
  * The Reducer function for the Unidirectional Data Flow (UDF) architecture.
  */
@@ -252,13 +254,21 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         }
         // --- Settings ---
         is AppAction.UpdateSetting -> {
+            // --- MODIFICATION START: Handle compiler settings in the root reducer ---
             val newCompilerSettings = when (action.setting.key) {
-                "compiler.removeWhitespace" -> state.compilerSettings.copy(removeWhitespace = action.setting.value)
-                "compiler.cleanHeaders" -> state.compilerSettings.copy(cleanHeaders = action.setting.value)
-                "compiler.minifyJson" -> state.compilerSettings.copy(minifyJson = action.setting.value)
-                else -> state.compilerSettings
+                "compiler.removeWhitespace" -> state.compilerSettings.copy(removeWhitespace = action.setting.value as? Boolean ?: state.compilerSettings.removeWhitespace)
+                "compiler.cleanHeaders" -> state.compilerSettings.copy(cleanHeaders = action.setting.value as? Boolean ?: state.compilerSettings.cleanHeaders)
+                "compiler.minifyJson" -> state.compilerSettings.copy(minifyJson = action.setting.value as? Boolean ?: state.compilerSettings.minifyJson)
+                else -> state.compilerSettings // Do nothing if it's not a compiler setting
             }
-            state.copy(compilerSettings = newCompilerSettings)
+            // If the compiler settings changed, update them. Otherwise, the action is for a feature.
+            if (newCompilerSettings != state.compilerSettings) {
+                state.copy(compilerSettings = newCompilerSettings)
+            } else {
+                // Let the feature reducers handle it.
+                state
+            }
+            // --- MODIFICATION END ---
         }
 
         // --- Session Persistence ---

@@ -1,4 +1,3 @@
-// --- FILE: composeApp/src/commonMain/kotlin/app/auf/ui/App.kt ---
 package app.auf.ui
 
 import androidx.compose.foundation.layout.Box
@@ -44,8 +43,6 @@ import app.auf.core.ViewMode
  * ## Dependencies
  * - `app.auf.core.StateManager`
  *
- * @version 3.4
- * @since 2025-08-25
  */
 @Composable
 fun App(stateManager: StateManager) {
@@ -118,7 +115,8 @@ private fun MainAppContent(stateManager: StateManager) {
                 ViewMode.SETTINGS -> {
                     SettingsView(
                         definitions = stateManager.getSettingDefinitions(),
-                        compilerSettings = appState.compilerSettings,
+                        // --- MODIFICATION: Pass the full AppState ---
+                        appState = appState,
                         onSettingChanged = { stateManager.updateSetting(it) },
                         onClose = { stateManager.setViewMode(ViewMode.CHAT) }
                     )
