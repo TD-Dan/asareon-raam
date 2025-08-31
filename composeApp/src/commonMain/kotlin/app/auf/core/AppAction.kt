@@ -4,8 +4,10 @@ import app.auf.model.SettingValue
 
 /**
  * Defines all possible actions that can be dispatched to the Store to trigger a state change.
+ * As of v2.0.0, this is a non-sealed interface to support an open, pluggable feature architecture,
+ * allowing features in separate packages to define and dispatch their own action subtypes.
  */
-sealed interface AppAction {
+interface AppAction {
 
     // --- Graph Loading Actions ---
     data object LoadGraph : AppAction
@@ -31,10 +33,8 @@ sealed interface AppAction {
     data object ClearToast : AppAction
     data object ToggleSystemVisibility : AppAction
     data class ToggleHolonExport(val holonId: String) : AppAction
-    // --- MODIFICATION START: New actions for bulk export selection ---
     data object SelectAllForExport : AppAction
     data object DeselectAllForExport : AppAction
-    // --- MODIFICATION END ---
 
 
     // --- Persona & Model Selection ---

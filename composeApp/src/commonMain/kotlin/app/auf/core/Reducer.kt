@@ -5,8 +5,8 @@ import app.auf.model.CompilerSettings
 /**
  * The Reducer function for the Unidirectional Data Flow (UDF) architecture.
  *
- * @version 2.11
- * @since 2025-08-28
+ * @version 2.12
+ * @since 2025-08-31
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
     return when (action) {
@@ -178,13 +178,11 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             }
             state.copy(holonIdsForExport = newExportIds)
         }
-        // --- MODIFICATION START: Handle bulk export actions ---
         is AppAction.SelectAllForExport -> {
             val allIds = state.holonGraph.map { it.header.id }.toSet()
             state.copy(holonIdsForExport = allIds)
         }
         is AppAction.DeselectAllForExport -> {
-            // Keep the persona selected as it cannot be deselected anyway
             val personaId = state.aiPersonaId
             if (personaId != null) {
                 state.copy(holonIdsForExport = setOf(personaId))
@@ -192,7 +190,6 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                 state.copy(holonIdsForExport = emptySet())
             }
         }
-        // --- MODIFICATION END ---
 
 
         // --- Persona & Model ---
@@ -273,5 +270,8 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         is AppAction.LoadSessionSuccess -> state.copy(
             chatHistory = action.history
         )
+
+        // --- MODIFICATION: Add else branch for non-exhaustive when ---
+        else -> state
     }
 }

@@ -1,22 +1,11 @@
 package app.auf.core
 
-import app.auf.fakes.FakeActionExecutor
-import app.auf.fakes.FakeAufTextParser
-import app.auf.fakes.FakeBackupManager
-import app.auf.fakes.FakeChatService
-import app.auf.fakes.FakeGatewayService
-import app.auf.fakes.FakeGraphService
-import app.auf.fakes.FakeImportExportManager
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.fakes.FakeSessionManager
-import app.auf.fakes.FakeSourceCodeService
-import app.auf.fakes.FakeStore
+import app.auf.fakes.*
 import app.auf.model.Action
 import app.auf.model.CreateFile
 import app.auf.model.ToolDefinition
 import app.auf.service.ActionExecutorResult
 import app.auf.service.PromptCompiler
-import app.auf.service.SessionManager
 import app.auf.service.SettingsManager
 import app.auf.ui.ImportExportViewModel
 import app.auf.util.JsonProvider
@@ -41,8 +30,9 @@ class StateManagerTest {
         scope: TestScope
     ): Triple<StateManager, FakeStore, FakeActionExecutor> {
         val platform = FakePlatformDependencies()
-        val sessionManager = FakeSessionManager(platform) // MODIFIED: Create FakeSessionManager
-        val store = FakeStore(initialState, scope, sessionManager) // MODIFIED: Pass sessionManager to FakeStore
+        val sessionManager = FakeSessionManager(platform)
+        // --- MODIFICATION: The FakeStore constructor is now correct ---
+        val store = FakeStore(initialState, scope, sessionManager)
         val backupManager = FakeBackupManager(platform)
         val graphService = FakeGraphService()
         val sourceCodeService = FakeSourceCodeService(platform)
@@ -70,7 +60,7 @@ class StateManagerTest {
             actionExecutor = actionExecutor,
             parser = parser,
             settingsManager = settingsManager,
-            sessionManager = sessionManager, // MODIFIED: Pass sessionManager
+            sessionManager = sessionManager,
             importExportViewModel = importExportViewModel,
             platform = platform,
             coroutineScope = scope
@@ -106,6 +96,8 @@ class StateManagerTest {
         val (stateManager, store, fakeActionExecutor) = setupTestEnvironment(initialState, this)
         fakeActionExecutor.nextResult = ActionExecutorResult.Success("Manifest executed.")
 
+        // --- MODIFICATION: We must now explicitly start the feature lifecycles in tests ---
+        store.startFeatureLifecycles()
         stateManager.executeActionFromMessage(messageTimestamp)
 
         runCurrent()
@@ -147,6 +139,8 @@ class StateManagerTest {
         val (stateManager, store, fakeActionExecutor) = setupTestEnvironment(initialState, this)
         fakeActionExecutor.nextResult = ActionExecutorResult.Failure("File not found.")
 
+        // --- MODIFICATION: We must now explicitly start the feature lifecycles in tests ---
+        store.startFeatureLifecycles()
         stateManager.executeActionFromMessage(messageTimestamp)
 
         runCurrent()

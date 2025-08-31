@@ -1,9 +1,6 @@
 package app.auf.fakes
 
-import app.auf.core.AppAction
-import app.auf.core.AppState
-import app.auf.core.Store
-import app.auf.core.appReducer
+import app.auf.core.*
 import app.auf.service.SessionManager
 import kotlinx.coroutines.CoroutineScope
 
@@ -14,8 +11,11 @@ import kotlinx.coroutines.CoroutineScope
 class FakeStore(
     initialState: AppState,
     coroutineScope: CoroutineScope = CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
-    sessionManager: SessionManager = FakeSessionManager() // MODIFIED: Added sessionManager with a default fake
-) : Store(initialState, ::appReducer, sessionManager, coroutineScope) { // MODIFIED: Corrected super() call
+    sessionManager: SessionManager = FakeSessionManager(),
+    // --- MODIFICATION START: Allow fakes to be passed into the fake store ---
+    features: List<Feature> = emptyList()
+    // --- MODIFICATION END ---
+) : Store(initialState, ::appReducer, features, sessionManager, coroutineScope) { // --- MODIFICATION: Corrected super() call ---
 
     val dispatchedActions = mutableListOf<AppAction>()
 

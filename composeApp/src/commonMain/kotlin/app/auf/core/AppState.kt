@@ -12,9 +12,6 @@ import kotlinx.serialization.json.JsonObject
 
 /**
  * Defines the core, immutable data models for the entire AUF application state.
- *
- * @version 2.6
- * @since 2025-08-28
  */
 
 data class GatewayResponse(
@@ -106,6 +103,7 @@ data class ImportState(
 )
 
 data class AppState(
+    // Core App State
     val holonGraph: List<Holon> = emptyList(),
     val catalogueFilter: String? = null,
     val activeHolons: Map<String, Holon> = emptyMap(),
@@ -124,7 +122,8 @@ data class AppState(
     val holonIdsForExport: Set<String> = emptySet(),
     val importState: ImportState? = null,
     val toastMessage: String? = null,
-    val compilerSettings: CompilerSettings = CompilerSettings()
+    val compilerSettings: CompilerSettings = CompilerSettings(),
+    val featureStates: Map<String, Any> = emptyMap()
 )
 
 @Serializable
@@ -187,6 +186,14 @@ data class ParseErrorBlock(
     val rawContent: String,
     val errorMessage: String,
     override val summary: String = "Parse Error: $originalTag"
+) : ContentBlock
+
+@Serializable
+@SerialName("DispatchActionBlock")
+data class DispatchActionBlock(
+    val actionString: String,
+    val params: Map<String, String>,
+    override val summary: String = "Dispatch Request: $actionString"
 ) : ContentBlock
 
 @Serializable
@@ -253,6 +260,7 @@ data class ChatMessage internal constructor(
                 timestamp = getTimestamp(),
                 contentBlocks = getParser().parse(rawContent),
                 usageMetadata = null,
+
                 rawContent = rawContent,
                 compiledContent = null,
                 compilationStats = null

@@ -15,22 +15,24 @@ import kotlinx.coroutines.launch
  * responsibilities are:
  * 1. To provide a `StateFlow` of the current `AppState` for the UI to observe.
  * 2. To expose a single `dispatch` method that accepts `AppAction`s.
- * 3. To use the `appReducer` to calculate the new state after an action is dispatched.
- * 4. To manage the execution of asynchronous side effects (delegating to Services).
+ * 3. To use the `appReducer` and registered `Feature` reducers to calculate the new state.
+ * 4. To manage the lifecycle of features, calling their `start` method once.
  *
  * ---
  * ## Dependencies
  * - `app.auf.core.AppState`: The state object it holds.
  * - `app.auf.core.AppAction`: The actions it receives.
- * - `app.auf.Reducer`: The pure function used to calculate new state.
+ * - `app.auf.core.Reducer`: The pure function used for the root state.
+ * - `app.auf.core.Feature`: The contract for modular feature plugins.
  * - `kotlinx.coroutines.CoroutineScope`: For launching asynchronous tasks.
  *
- * @version 1.1
- * @since 2025-08-27
+ * @version 2.0
+ * @since 2025-08-31
  */
 open class Store(
     initialState: AppState,
-    private val reducer: (AppState, AppAction) -> AppState,
+    private val rootReducer: (AppState, AppAction) -> AppState,
+    private val features: List<Feature>,
     private val sessionManager: SessionManager,
     private val coroutineScope: CoroutineScope
 ) {
@@ -38,11 +40,31 @@ open class Store(
     private val _state = MutableStateFlow(initialState)
     val state = _state.asStateFlow()
 
+    private var lifecycleStarted = false
+
+    /**
+     * Kicks off the `start` lifecycle method for all registered features.
+     * This should only be called once, after the store has been fully initialized.
+     */
+    fun startFeatureLifecycles() {
+        if (!lifecycleStarted) {
+            features.forEach { it.start(this) }
+            lifecycleStarted = true
+        }
+    }
+
+
     open fun dispatch(action: AppAction) {
         val previousState = _state.value
-        // The core of UDF: calculate the new state using the reducer.
-        val newState = reducer(previousState, action)
+        // 1. The root reducer handles core state changes first.
+        val stateAfterRoot = rootReducer(previousState, action)
+
+        // 2. The state is then passed through each feature's reducer in sequence.
+        val newState = features.fold(stateAfterRoot) { currentState, feature ->
+            feature.reducer(currentState, action)
+        }
         _state.value = newState
+
 
         // --- SIDE EFFECT: AUTO-SAVE SESSION ---
         // If the chat history has changed, save the new history to disk.

@@ -1,4 +1,3 @@
-// --- FILE: jvmMain/kotlin/app/auf/main.kt ---
 package app.auf
 
 import androidx.compose.runtime.LaunchedEffect
@@ -8,14 +7,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import app.auf.core.AppAction
-import app.auf.core.AppState
-import app.auf.core.ChatMessage
-import app.auf.core.StateManager
-import app.auf.core.Store
-import app.auf.core.Version
-import app.auf.core.ViewMode
-import app.auf.core.appReducer
+import app.auf.core.*
+import app.auf.feature.systemclock.SystemClockFeature
 import app.auf.model.Parameter
 import app.auf.model.ToolDefinition
 import app.auf.model.UserSettings
@@ -104,15 +97,29 @@ fun main() = application {
         println("WARNING: google.api.key not found in local.properties. AI will not function.")
     }
 
+    val features = remember {
+        listOf(
+            SystemClockFeature(coroutineScope)
+            // Future features will be added here
+        )
+    }
+
+
     val initialState = remember(savedSettings) {
         AppState(
             selectedModel = savedSettings.selectedModel,
             aiPersonaId = savedSettings.selectedAiPersonaId,
             contextualHolonIds = savedSettings.activeContextualHolonIds,
-            compilerSettings = savedSettings.compilerSettings
+            compilerSettings = savedSettings.compilerSettings,
+            // --- MODIFICATION START: Initialize feature states from our new feature list ---
+            featureStates = features.associate { it.name to (when(it) {
+                is SystemClockFeature -> app.auf.feature.systemclock.SystemClockState()
+                else -> Any()
+            }) }
         )
     }
-    val store = remember { Store(initialState, ::appReducer, sessionManager, coroutineScope) }
+
+    val store = remember { Store(initialState, ::appReducer, features, sessionManager, coroutineScope) }
     val promptCompiler = remember { PromptCompiler(jsonParser) }
 
     val stateManager = remember {
@@ -146,7 +153,6 @@ fun main() = application {
 
     remember {
         stateManager.importExportViewModel.onImportComplete = {
-            // --- MODIFICATION: Add a success toast for clarity ---
             store.dispatch(AppAction.ShowToast("Import successful! Reloading graph..."))
             stateManager.loadHolonGraph()
             stateManager.setViewMode(ViewMode.CHAT)
@@ -156,7 +162,10 @@ fun main() = application {
         }
     }
 
-    remember { stateManager.initialize() }
+    remember {
+        stateManager.initialize()
+        store.startFeatureLifecycles()
+    }
 
     val windowState = rememberWindowState(width = savedSettings.windowWidth.dp, height = savedSettings.windowHeight.dp)
 
