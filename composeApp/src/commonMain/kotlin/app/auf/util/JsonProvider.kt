@@ -33,7 +33,6 @@ object JsonProvider {
                 subclass(AnchorBlock::class)
                 subclass(ParseErrorBlock::class)
                 subclass(SentinelBlock::class)
-                subclass(DispatchActionBlock::class)
             }
             polymorphic(ImportAction::class) {
                 subclass(Update::class)

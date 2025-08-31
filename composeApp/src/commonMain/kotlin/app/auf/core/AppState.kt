@@ -189,14 +189,6 @@ data class ParseErrorBlock(
 ) : ContentBlock
 
 @Serializable
-@SerialName("DispatchActionBlock")
-data class DispatchActionBlock(
-    val actionString: String,
-    val params: Map<String, String>,
-    override val summary: String = "Dispatch Request: $actionString"
-) : ContentBlock
-
-@Serializable
 @SerialName("SentinelBlock")
 data class SentinelBlock(
     val message: String,
