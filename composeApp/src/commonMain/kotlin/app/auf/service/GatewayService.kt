@@ -1,10 +1,6 @@
 package app.auf.service
 
-import app.auf.core.Author
-import app.auf.core.ChatMessage
-import app.auf.core.GatewayResponse
-import app.auf.core.TextBlock
-import app.auf.model.ToolDefinition
+import app.auf.core.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.withContext
 
@@ -15,19 +11,10 @@ import kotlinx.coroutines.withContext
  * It is responsible for formatting requests from the app's data model into the API's
  * required format, sending them via the `Gateway`, and providing lists of available models.
  * It uses the `compiledContent` of system messages for token efficiency.
- *
- * ---
- * ## Dependencies
- * - `app.auf.service.Gateway`: The client for the AI service API.
- * - `app.auf.service.AufTextParser`: The canonical parser/reconstructor.
- *
- * @version 3.5
- * @since 2025-08-25
  */
 open class GatewayService(
     private val gateway: Gateway,
     private val parser: AufTextParser,
-    private val toolRegistry: List<ToolDefinition>,
     private val apiKey: String,
     private val coroutineScope: CoroutineScope
 ) {

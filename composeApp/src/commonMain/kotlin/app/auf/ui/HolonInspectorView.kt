@@ -15,13 +15,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.AppState
 import app.auf.util.JsonProvider
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonElement
 
 @Composable
 fun HolonInspectorView(
@@ -58,7 +56,7 @@ fun HolonInspectorView(
                 // Use an appropriate M3 theme color for the background.
                 // 'surfaceContainer' is a good choice for a subtle containing background.
                 Text(
-                    text = jsonPrettyPrinter.encodeToString(JsonObject.serializer(), inspectedHolon.payload),
+                    text = jsonPrettyPrinter.encodeToString(JsonElement.serializer(), inspectedHolon.payload),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
                     modifier = Modifier

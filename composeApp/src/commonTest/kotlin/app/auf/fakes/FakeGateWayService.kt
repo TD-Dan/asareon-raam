@@ -1,9 +1,8 @@
-
 package app.auf.fakes
+
 
 import app.auf.core.ChatMessage
 import app.auf.core.GatewayResponse
-import app.auf.model.ToolDefinition
 import app.auf.service.AufTextParser
 import app.auf.service.Gateway
 import app.auf.service.GatewayService
@@ -11,12 +10,10 @@ import app.auf.util.JsonProvider
 import kotlinx.coroutines.CoroutineScope
 
 class FakeGatewayService(
-    coroutineScope: CoroutineScope,
-    toolRegistry: List<ToolDefinition> = emptyList()
+    coroutineScope: CoroutineScope
 ) : GatewayService(
     gateway = Gateway(JsonProvider.appJson),
-    parser = AufTextParser(JsonProvider.appJson, toolRegistry),
-    toolRegistry = toolRegistry,
+    parser = AufTextParser(),
     apiKey = "fake-api-key",
     coroutineScope = coroutineScope
 ) {

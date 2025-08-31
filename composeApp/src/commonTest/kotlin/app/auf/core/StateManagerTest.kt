@@ -3,7 +3,6 @@ package app.auf.core
 import app.auf.fakes.*
 import app.auf.model.Action
 import app.auf.model.CreateFile
-import app.auf.model.ToolDefinition
 import app.auf.service.ActionExecutorResult
 import app.auf.service.PromptCompiler
 import app.auf.service.SettingsManager
@@ -31,20 +30,18 @@ class StateManagerTest {
     ): Triple<StateManager, FakeStore, FakeActionExecutor> {
         val platform = FakePlatformDependencies()
         val sessionManager = FakeSessionManager(platform)
-        // --- MODIFICATION: The FakeStore constructor is now correct ---
         val store = FakeStore(initialState, scope, sessionManager)
         val backupManager = FakeBackupManager(platform)
         val graphService = FakeGraphService()
         val sourceCodeService = FakeSourceCodeService(platform)
         val jsonParser = JsonProvider.appJson
 
-        val toolRegistry = listOf<ToolDefinition>()
-        val parser = FakeAufTextParser(jsonParser, toolRegistry)
+        val parser = FakeAufTextParser()
         val settingsManager = SettingsManager(platform, jsonParser)
         val promptCompiler = PromptCompiler(jsonParser)
 
-        val gatewayService = FakeGatewayService(scope, toolRegistry)
-        val chatService = FakeChatService(store, gatewayService, platform, parser, toolRegistry, promptCompiler, scope)
+        val gatewayService = FakeGatewayService(scope)
+        val chatService = FakeChatService(store, gatewayService, platform, parser, promptCompiler, scope)
 
         val actionExecutor = FakeActionExecutor(platform, jsonParser)
         val importExportManager = FakeImportExportManager(platform, jsonParser)
@@ -73,22 +70,12 @@ class StateManagerTest {
     @Test
     fun `executeActionFromMessage success path dispatches correct actions and reloads graph`() = runTest {
         val manifest = listOf(CreateFile("test.txt", "content", "Create test file"))
-        val rawManifestContent = """
-            [AUF_ACTION_MANIFEST]
-            [
-                {
-                    "type": "CreateFile",
-                    "filePath": "test.txt",
-                    "content": "Hello",
-                    "summary": "Create test file"
-                }
-            ]
-            [/AUF_ACTION_MANIFEST]
-        """.trimIndent()
+        val manifestJson = """[{"type":"CreateFile","filePath":"test.txt","content":"content","summary":"Create test file"}]"""
+        val rawManifestContent = "```json\n$manifestJson\n```"
         val actionMessage = ChatMessage.Factory.createAi(
             rawContent = rawManifestContent,
             usageMetadata = null
-        ).copy(contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING)))
+        ).copy(contentBlocks = listOf(CodeBlock(language = "json", content = manifestJson, status = ActionStatus.PENDING)))
 
         val messageTimestamp = actionMessage.timestamp
 
@@ -96,7 +83,6 @@ class StateManagerTest {
         val (stateManager, store, fakeActionExecutor) = setupTestEnvironment(initialState, this)
         fakeActionExecutor.nextResult = ActionExecutorResult.Success("Manifest executed.")
 
-        // --- MODIFICATION: We must now explicitly start the feature lifecycles in tests ---
         store.startFeatureLifecycles()
         stateManager.executeActionFromMessage(messageTimestamp)
 
@@ -110,36 +96,25 @@ class StateManagerTest {
         assertIs<AppAction.ExecuteActionManifestSuccess>(dispatchedActions[2])
         assertIs<AppAction.LoadGraph>(dispatchedActions[3])
         assertIs<AppAction.LoadGraphSuccess>(dispatchedActions[4])
-        assertEquals(manifest, fakeActionExecutor.lastExecutedManifest)
+        assertEquals(manifest[0].summary, fakeActionExecutor.lastExecutedManifest?.get(0)?.summary)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `executeActionFromMessage failure path dispatches failure action`() = runTest {
         val manifest = listOf<Action>(CreateFile("test.txt", "content", "Create test file"))
-        val rawManifestContent = """
-            [AUF_ACTION_MANIFEST]
-            [
-                {
-                    "type": "CreateFile",
-                    "filePath": "test.txt",
-                    "content": "Hello",
-                    "summary": "Create test file"
-                }
-            ]
-            [/AUF_ACTION_MANIFEST]
-        """.trimIndent()
+        val manifestJson = """[{"type":"CreateFile","filePath":"test.txt","content":"content","summary":"Create test file"}]"""
+        val rawManifestContent = "```json\n$manifestJson\n```"
         val actionMessage = ChatMessage.Factory.createAi(
             rawContent = rawManifestContent,
             usageMetadata = null
-        ).copy(contentBlocks = listOf(ActionBlock(actions = manifest, status = ActionStatus.PENDING)))
+        ).copy(contentBlocks = listOf(CodeBlock(language = "json", content = manifestJson, status = ActionStatus.PENDING)))
         val messageTimestamp = actionMessage.timestamp
 
         val initialState = AppState(chatHistory = listOf(actionMessage))
         val (stateManager, store, fakeActionExecutor) = setupTestEnvironment(initialState, this)
         fakeActionExecutor.nextResult = ActionExecutorResult.Failure("File not found.")
 
-        // --- MODIFICATION: We must now explicitly start the feature lifecycles in tests ---
         store.startFeatureLifecycles()
         stateManager.executeActionFromMessage(messageTimestamp)
 

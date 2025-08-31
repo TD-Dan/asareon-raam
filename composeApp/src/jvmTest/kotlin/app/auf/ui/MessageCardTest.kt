@@ -18,8 +18,6 @@ import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeSessionManager
 import app.auf.fakes.FakeSourceCodeService
 import app.auf.fakes.FakeStore
-import app.auf.model.Parameter
-import app.auf.model.ToolDefinition
 import app.auf.service.AufTextParser
 import app.auf.service.PromptCompiler
 import app.auf.service.SettingsManager
@@ -42,20 +40,13 @@ class MessageCardTest {
     private lateinit var realParser: AufTextParser
     private val testCoroutineScope = CoroutineScope(Dispatchers.Unconfined)
 
-    private val toolRegistry = listOf(
-        ToolDefinition("Atomic Change Manifest", "ACTION_MANIFEST", "", emptyList(), true, ""),
-        ToolDefinition("File Content View", "FILE_VIEW", "", listOf(Parameter("path", "String", true)), true, ""),
-        ToolDefinition("App Request", "APP_REQUEST", "", emptyList(), true, ""),
-        ToolDefinition("State Anchor", "STATE_ANCHOR", "", emptyList(), true, "")
-    )
-
     @Before
     fun setup() {
         val initialState = AppState()
         val fakePlatform = FakePlatformDependencies()
         val fakeSessionManager = FakeSessionManager(fakePlatform)
         fakeStore = FakeStore(initialState, testCoroutineScope, fakeSessionManager)
-        realParser = AufTextParser(JsonProvider.appJson, toolRegistry)
+        realParser = AufTextParser()
         ChatMessage.Factory.initialize(fakePlatform, realParser)
         val fakeGatewayService = FakeGatewayService(testCoroutineScope)
         val promptCompiler = PromptCompiler(JsonProvider.appJson)
@@ -66,7 +57,7 @@ class MessageCardTest {
             backupManager = FakeBackupManager(fakePlatform),
             graphService = FakeGraphService(),
             sourceCodeService = FakeSourceCodeService(fakePlatform),
-            chatService = FakeChatService(fakeStore, fakeGatewayService, fakePlatform, realParser, toolRegistry, promptCompiler, testCoroutineScope),
+            chatService = FakeChatService(fakeStore, fakeGatewayService, fakePlatform, realParser, promptCompiler, testCoroutineScope),
             gatewayService = fakeGatewayService,
             actionExecutor = FakeActionExecutor(fakePlatform, JsonProvider.appJson),
             parser = realParser,
@@ -118,22 +109,17 @@ class MessageCardTest {
             MessageCard(message = message, stateManager = stateManager)
         }
 
-        // --- FIX IS HERE ---
-        // The test failed because a System message card is collapsed by default.
-        // We must first click the card's header to expand it before we can
-        // assert on the content within it.
         composeTestRule.onNodeWithText("test.json").performClick()
-        // --- END FIX ---
 
-        // ACT 1: Initially, raw (parsed) content is shown. Assert for key substrings.
-        composeTestRule.onNodeWithText(raw, substring = true).assertExists()
-        composeTestRule.onNodeWithText(compiled).assertDoesNotExist()
+        // ACT 1: Initially, raw (parsed) content is shown.
+        composeTestRule.onNodeWithText("json").assertExists() // Checks for the CodeBlock language header
+        composeTestRule.onNodeWithText("COMPILED CONTENT").assertDoesNotExist()
 
         // ACT 2: Click the toggle
         composeTestRule.onNodeWithContentDescription("View Compiled Content").performClick()
 
         // ASSERT 2: Compiled content is shown, raw is hidden
-        composeTestRule.onNodeWithText(raw, substring = true).assertDoesNotExist()
+        composeTestRule.onNodeWithText("json").assertDoesNotExist()
         composeTestRule.onNodeWithText(compiled).assertExists()
         composeTestRule.onNodeWithText("COMPILED CONTENT").assertExists()
 
@@ -141,7 +127,7 @@ class MessageCardTest {
         composeTestRule.onNodeWithContentDescription("View Compiled Content").performClick()
 
         // ASSERT 3: View reverts to raw (parsed) content
-        composeTestRule.onNodeWithText(raw, substring = true).assertExists()
+        composeTestRule.onNodeWithText("json").assertExists()
         composeTestRule.onNodeWithText(compiled).assertDoesNotExist()
     }
 

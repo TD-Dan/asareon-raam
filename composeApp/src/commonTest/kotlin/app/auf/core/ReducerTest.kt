@@ -5,8 +5,6 @@ import app.auf.fakes.FakePlatformDependencies
 import app.auf.model.CompilerSettings
 import app.auf.model.CreateFile
 import app.auf.model.SettingValue
-import app.auf.model.ToolDefinition
-import app.auf.util.JsonProvider
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,7 +17,7 @@ class ReducerTest {
 
     @BeforeTest
     fun initializeFactory() {
-        fakeParser = FakeAufTextParser(JsonProvider.appJson, emptyList<ToolDefinition>())
+        fakeParser = FakeAufTextParser()
         ChatMessage.Factory.initialize(FakePlatformDependencies(), fakeParser)
     }
 
@@ -61,15 +59,15 @@ class ReducerTest {
         var state = initialState
         val actionMessageRawContent = """
             Here is a plan.
-[AUF_ACTION_MANIFEST]
-[]
-[/AUF_ACTION_MANIFEST]
-""".trimIndent()
+            ```json
+            []
+            ```
+        """.trimIndent()
         val userMessageRawContent = "Do it."
 
         fakeParser.nextParseResult = listOf(
             TextBlock("Here is a plan."),
-            ActionBlock(actions = listOf(CreateFile("test.txt", "Hello", "Create")), status = ActionStatus.PENDING)
+            CodeBlock(language = "json", content = "[]", status = ActionStatus.PENDING)
         )
         state = appReducer(state, AppAction.SendMessageSuccess(GatewayResponse(rawContent = actionMessageRawContent)))
 
@@ -85,8 +83,8 @@ class ReducerTest {
 
         // ASSERT
         val updatedMessage = newState.chatHistory.find { it.id == messageToUpdate.id }
-        val actionBlock = updatedMessage?.contentBlocks?.filterIsInstance<ActionBlock>()?.first()
-        assertEquals(ActionStatus.EXECUTED, actionBlock?.status, "ActionBlock status should be EXECUTED")
+        val codeBlock = updatedMessage?.contentBlocks?.filterIsInstance<CodeBlock>()?.first()
+        assertEquals(ActionStatus.EXECUTED, codeBlock?.status, "CodeBlock status should be EXECUTED")
 
         val unchangedMessage = newState.chatHistory.find { it.id == otherMessage.id }
         assertEquals(otherMessage.rawContent, unchangedMessage?.rawContent)
@@ -97,12 +95,12 @@ class ReducerTest {
         // ARRANGE
         var state = initialState
         val actionMessageRawContent = """
-[AUF_ACTION_MANIFEST]
-[]
-[/AUF_ACTION_MANIFEST]
-""".trimIndent()
+            ```json
+            []
+            ```
+        """.trimIndent()
         fakeParser.nextParseResult = listOf(
-            ActionBlock(actions = listOf(CreateFile("test.txt", "Hello", "Create")), status = ActionStatus.PENDING)
+            CodeBlock(language = "json", content = "[]", status = ActionStatus.PENDING)
         )
 
         state = appReducer(state, AppAction.SendMessageSuccess(GatewayResponse(rawContent = actionMessageRawContent)))
@@ -114,9 +112,9 @@ class ReducerTest {
 
         // ASSERT
         val originalMessage = newState.chatHistory.find { it.id == messageToTest.id }
-        val actionBlock = originalMessage?.contentBlocks?.filterIsInstance<ActionBlock>()?.first()
-        assertEquals(ActionStatus.PENDING, actionBlock?.status, "ActionBlock status should not have changed")
-        assertNotEquals(ActionStatus.EXECUTED, actionBlock?.status)
+        val codeBlock = originalMessage?.contentBlocks?.filterIsInstance<CodeBlock>()?.first()
+        assertEquals(ActionStatus.PENDING, codeBlock?.status, "CodeBlock status should not have changed")
+        assertNotEquals(ActionStatus.EXECUTED, codeBlock?.status)
     }
 
     @Test
@@ -127,7 +125,7 @@ class ReducerTest {
         state = appReducer(state, AppAction.AddUserMessage("Message 1"))
 
         fakeParser.nextParseResult = listOf(
-            ActionBlock(actions = listOf(CreateFile("ai.txt", "AI content", "AI file")), status = ActionStatus.PENDING)
+            CodeBlock(language = "json", content = "[]", status = ActionStatus.PENDING)
         )
         state = appReducer(state, AppAction.SendMessageSuccess(GatewayResponse(rawContent = "Message 2")))
 

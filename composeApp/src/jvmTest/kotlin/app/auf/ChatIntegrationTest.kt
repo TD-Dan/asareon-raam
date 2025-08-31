@@ -3,9 +3,7 @@ package app.auf
 
 import app.auf.core.*
 import app.auf.fakes.*
-import app.auf.model.Parameter
 import app.auf.model.SettingValue
-import app.auf.model.ToolDefinition
 import app.auf.service.AufTextParser
 import app.auf.service.ChatService
 import app.auf.service.PromptCompiler
@@ -45,13 +43,6 @@ class ChatIntegrationTest {
     private lateinit var testCoroutineScope: CoroutineScope
     private lateinit var fakeSessionManager: FakeSessionManager
 
-    private val toolRegistry = listOf(
-        ToolDefinition("Atomic Change Manifest", "ACTION_MANIFEST", "", emptyList(), true, ""),
-        ToolDefinition("Application Request", "APP_REQUEST", "", emptyList(), true, ""),
-        ToolDefinition("File Content View", "FILE_VIEW", "", listOf(Parameter("path", "String", true)), true, ""),
-        ToolDefinition("State Anchor", "STATE_ANCHOR", "", emptyList(), true, "")
-    )
-
     @Before
     fun setup() {
         testCoroutineScope = CoroutineScope(Dispatchers.Unconfined)
@@ -64,13 +55,13 @@ class ChatIntegrationTest {
         fakePlatform = FakePlatformDependencies()
         fakeSessionManager = FakeSessionManager(fakePlatform)
         fakeStore = FakeStore(initialState, testCoroutineScope, fakeSessionManager)
-        realParser = AufTextParser(JsonProvider.appJson, toolRegistry)
+        realParser = AufTextParser()
         realPromptCompiler = PromptCompiler(JsonProvider.appJson)
         settingsManager = SettingsManager(fakePlatform, JsonProvider.appJson)
 
         ChatMessage.Factory.initialize(fakePlatform, realParser)
 
-        fakeGatewayService = FakeGatewayService(testCoroutineScope, toolRegistry)
+        fakeGatewayService = FakeGatewayService(testCoroutineScope)
         fakeSourceCodeService = FakeSourceCodeService(fakePlatform)
 
         val chatService = ChatService(
@@ -78,7 +69,6 @@ class ChatIntegrationTest {
             fakeGatewayService,
             fakePlatform,
             realParser,
-            toolRegistry,
             realPromptCompiler,
             testCoroutineScope
         )
@@ -94,7 +84,6 @@ class ChatIntegrationTest {
             parser = realParser,
             settingsManager = settingsManager,
             sessionManager = fakeSessionManager,
-            // --- MODIFICATION: Pass the required coroutine scope to the fake view model ---
             importExportViewModel = FakeImportExportViewModel(testCoroutineScope),
             platform = fakePlatform,
             coroutineScope = testCoroutineScope

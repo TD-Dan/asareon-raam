@@ -49,11 +49,6 @@ import app.auf.model.Action
 import app.auf.util.JsonProvider
 import kotlinx.serialization.builtins.ListSerializer
 
-private sealed interface ParsedJsonContent {
-    data class Actionable(val actions: List<Action>) : ParsedJsonContent
-    data class Error(val message: String) : ParsedJsonContent
-}
-
 /**
  * ## Mandate
  * This file contains the `MessageCard` Composable. It displays a single `ChatMessage`,
@@ -241,29 +236,23 @@ fun RenderTextBlock(block: TextBlock) {
 
 @Composable
 fun RenderCodeBlock(block: CodeBlock, onConfirm: () -> Unit, onReject: () -> Unit) {
-    val parsedJsonContent = remember(block.content, block.language) {
-        if (block.language.lowercase() == "json") {
+    if (block.language.lowercase() == "json") {
+        val parsedActions = remember(block.content) {
             try {
-                val actions = JsonProvider.appJson.decodeFromString(ListSerializer(Action.serializer()), block.content)
-                ParsedJsonContent.Actionable(actions)
+                JsonProvider.appJson.decodeFromString(ListSerializer(Action.serializer()), block.content)
             } catch (e: Exception) {
-                ParsedJsonContent.Error("A deserialization error occurred: ${e.message}")
+                null
             }
-        } else {
-            null
         }
-    }
 
-    when (parsedJsonContent) {
-        is ParsedJsonContent.Actionable -> {
-            RenderActionableJsonBlock(block, parsedJsonContent.actions, onConfirm, onReject)
-        }
-        is ParsedJsonContent.Error -> {
-            RenderJsonErrorBlock(block, parsedJsonContent.message)
-        }
-        null -> {
+        if (parsedActions != null) {
+            RenderActionableJsonBlock(block, parsedActions, onConfirm, onReject)
+        } else {
+            // It's JSON, but not an action manifest. Treat as generic.
             RenderGenericCodeBlock(block)
         }
+    } else {
+        RenderGenericCodeBlock(block)
     }
 }
 
@@ -328,43 +317,6 @@ private fun RenderGenericCodeBlock(block: CodeBlock) {
             Text(block.language, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
             HorizontalDivider(modifier=Modifier.padding(vertical=8.dp))
             Text(block.content, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
-        }
-    }
-}
-
-@Composable
-private fun RenderJsonErrorBlock(block: CodeBlock, errorMessage: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = "JSON PARSE ERROR",
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.error)
-            Text(
-                text = "Error: $errorMessage",
-                fontStyle = FontStyle.Italic,
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "--- Raw Content ---",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
-            )
-            Text(
-                text = block.content,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
         }
     }
 }

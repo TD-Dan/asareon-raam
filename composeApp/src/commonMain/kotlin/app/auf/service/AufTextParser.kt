@@ -16,161 +16,125 @@ import app.auf.core.TextBlock
  */
 open class AufTextParser {
 
-    private enum class State {
-        SCANNING,
-        IN_STRING,
-        IN_SINGLE_LINE_COMMENT,
-        IN_MULTI_LINE_COMMENT
-    }
+    private val debug = false // Set to true to enable logging
 
-    private val allQuoteChars = setOf('\'', '`', '"')
+    private fun log(message: String) {
+        if (debug) println("[Parser] $message")
+    }
 
     open fun parse(rawText: String): List<ContentBlock> {
         if (rawText.isBlank()) return emptyList()
 
         val blocks = mutableListOf<ContentBlock>()
-        val currentText = StringBuilder()
-        var currentState = State.SCANNING
         var currentIndex = 0
-        var expectedStringDelimiter = ' '
 
+        log("--- STARTING PARSE ---")
         while (currentIndex < rawText.length) {
-            when (currentState) {
-                State.SCANNING -> {
-                    val nextCodeFenceIndex = rawText.indexOf("```", currentIndex)
-                    val nextSingleLineCommentIndex = rawText.indexOf("//", currentIndex)
-                    val nextMultiLineCommentIndex = rawText.indexOf("/*", currentIndex)
-                    val nextQuoteIndex = rawText.indexOfAny(allQuoteChars.toCharArray(), currentIndex)
+            val textBeforeBlock = StringBuilder()
+            var blockStartIndex = -1
 
-                    val firstInterestingIndex = findFirstOf(
-                        nextCodeFenceIndex,
-                        nextQuoteIndex,
-                        nextSingleLineCommentIndex,
-                        nextMultiLineCommentIndex
-                    )
-
-                    // No special characters left, append the rest and finish.
-                    if (firstInterestingIndex == -1) {
-                        currentText.append(rawText.substring(currentIndex))
-                        currentIndex = rawText.length
-                        continue
+            // Phase 1: Scan for the next code block, respecting comments and strings
+            var scanIndex = currentIndex
+            while (scanIndex < rawText.length) {
+                when {
+                    rawText.startsWith("```", scanIndex) -> {
+                        blockStartIndex = scanIndex
+                        break // Found it, exit scan loop
                     }
-
-                    // Append the plain text between the current position and the special character.
-                    currentText.append(rawText.substring(currentIndex, firstInterestingIndex))
-
-                    when (firstInterestingIndex) {
-                        nextQuoteIndex -> {
-                            val quoteChar = rawText[firstInterestingIndex]
-                            currentText.append(quoteChar)
-                            expectedStringDelimiter = quoteChar
-                            currentIndex = firstInterestingIndex + 1
-                            currentState = State.IN_STRING
-                        }
-                        nextSingleLineCommentIndex -> {
-                            currentText.append("//")
-                            currentIndex = firstInterestingIndex + 2
-                            currentState = State.IN_SINGLE_LINE_COMMENT
-                        }
-                        nextMultiLineCommentIndex -> {
-                            currentText.append("/*")
-                            currentIndex = firstInterestingIndex + 2
-                            currentState = State.IN_MULTI_LINE_COMMENT
-                        }
-                        nextCodeFenceIndex -> {
-                            // A code fence was found. Commit any preceding text.
-                            if (currentText.isNotEmpty()) {
-                                blocks.add(TextBlock(currentText.toString().trim()))
-                                currentText.clear()
-                            }
-
-                            val languageLineEndIndex = rawText.indexOf('\n', firstInterestingIndex + 3)
-                            val blockEndIndex = rawText.indexOf("```", (languageLineEndIndex.takeIf { it != -1 } ?: (firstInterestingIndex + 3)))
-
-                            if (blockEndIndex != -1) {
-                                val language = if (languageLineEndIndex != -1 && languageLineEndIndex < blockEndIndex) {
-                                    rawText.substring(firstInterestingIndex + 3, languageLineEndIndex).trim()
-                                } else {
-                                    // Handle case where language is on the same line as the fence, or no language
-                                    rawText.substring(firstInterestingIndex + 3, blockEndIndex).split('\n').first().trim()
-                                }
-
-                                val contentStartIndex = if (languageLineEndIndex != -1 && languageLineEndIndex < blockEndIndex) {
-                                    languageLineEndIndex + 1
-                                } else {
-                                    // If no newline, content starts after the language part
-                                    firstInterestingIndex + 3 + language.length
-                                }
-
-                                val content = rawText.substring(contentStartIndex, blockEndIndex).trim()
-                                blocks.add(CodeBlock(language = language.ifBlank { "text" }, content = content))
-                                currentIndex = blockEndIndex + 3
-                            } else {
-                                // Unterminated code block, treat it as plain text.
-                                currentText.append("```")
-                                currentIndex = firstInterestingIndex + 3
-                            }
+                    rawText.startsWith("//", scanIndex) -> {
+                        val lineEnd = rawText.indexOf('\n', scanIndex)
+                        if (lineEnd == -1) {
+                            textBeforeBlock.append(rawText.substring(scanIndex))
+                            scanIndex = rawText.length
+                        } else {
+                            textBeforeBlock.append(rawText.substring(scanIndex, lineEnd + 1))
+                            scanIndex = lineEnd + 1
                         }
                     }
-                }
-
-                State.IN_STRING -> {
-                    val closingQuoteIndex = findClosingDelimiter(rawText, currentIndex, expectedStringDelimiter)
-                    if (closingQuoteIndex != -1) {
-                        currentText.append(rawText.substring(currentIndex, closingQuoteIndex + 1))
-                        currentIndex = closingQuoteIndex + 1
-                        currentState = State.SCANNING
-                    } else { // Unterminated string
-                        currentText.append(rawText.substring(currentIndex))
-                        currentIndex = rawText.length
+                    rawText.startsWith("/*", scanIndex) -> {
+                        val commentEnd = rawText.indexOf("*/", scanIndex + 2)
+                        if (commentEnd == -1) {
+                            textBeforeBlock.append(rawText.substring(scanIndex))
+                            scanIndex = rawText.length
+                        } else {
+                            textBeforeBlock.append(rawText.substring(scanIndex, commentEnd + 2))
+                            scanIndex = commentEnd + 2
+                        }
                     }
-                }
-
-                State.IN_SINGLE_LINE_COMMENT -> {
-                    val endOfLineIndex = rawText.indexOf('\n', currentIndex)
-                    if (endOfLineIndex != -1) {
-                        currentText.append(rawText.substring(currentIndex, endOfLineIndex + 1))
-                        currentIndex = endOfLineIndex + 1
-                        currentState = State.SCANNING
-                    } else {
-                        currentText.append(rawText.substring(currentIndex))
-                        currentIndex = rawText.length
+                    rawText[scanIndex] in setOf('"', '\'', '`') -> {
+                        val quote = rawText[scanIndex]
+                        textBeforeBlock.append(quote)
+                        val stringEnd = rawText.indexOf(quote, scanIndex + 1) // Simple version, no escape handling
+                        if (stringEnd == -1) {
+                            textBeforeBlock.append(rawText.substring(scanIndex + 1))
+                            scanIndex = rawText.length
+                        } else {
+                            textBeforeBlock.append(rawText.substring(scanIndex + 1, stringEnd + 1))
+                            scanIndex = stringEnd + 1
+                        }
                     }
-                }
-
-                State.IN_MULTI_LINE_COMMENT -> {
-                    val endCommentIndex = rawText.indexOf("*/", currentIndex)
-                    if (endCommentIndex != -1) {
-                        currentText.append(rawText.substring(currentIndex, endCommentIndex + 2))
-                        currentIndex = endCommentIndex + 2
-                        currentState = State.SCANNING
-                    } else {
-                        currentText.append(rawText.substring(currentIndex))
-                        currentIndex = rawText.length
+                    else -> {
+                        textBeforeBlock.append(rawText[scanIndex])
+                        scanIndex++
                     }
                 }
             }
-        }
-        if (currentText.isNotEmpty()) {
-            blocks.add(TextBlock(currentText.toString().trim()))
-        }
-        return blocks.filter { (it as? TextBlock)?.text?.isNotBlank() ?: true }
-    }
+            log("Scan Phase: Found text: '${textBeforeBlock.toString().replace("\n", "\\n")}', fence at $blockStartIndex")
 
-    private fun findFirstOf(vararg indices: Int): Int {
-        return indices.filter { it != -1 }.minOrNull() ?: -1
-    }
-
-    private fun findClosingDelimiter(text: String, startIndex: Int, delimiter: Char): Int {
-        var i = startIndex
-        while (i < text.length) {
-            if (text[i] == delimiter) return i
-            if (text[i] == '\\' && i + 1 < text.length) {
-                i += 2 // Skip escaped character
-                continue
+            // Phase 2: Process findings
+            val trimmedTextBefore = textBeforeBlock.toString().trim()
+            if (trimmedTextBefore.isNotEmpty()) {
+                blocks.add(TextBlock(trimmedTextBefore))
             }
-            i++
+
+            if (blockStartIndex != -1) {
+                val blockEndIndex = rawText.indexOf("```", blockStartIndex + 3)
+                if (blockEndIndex != -1) {
+                    // This is a complete, well-formed block
+                    val innerBlock = rawText.substring(blockStartIndex + 3, blockEndIndex)
+                    val firstNewline = innerBlock.indexOf('\n')
+
+                    val language: String
+                    val content: String
+
+                    if (firstNewline != -1) {
+                        language = innerBlock.substring(0, firstNewline).trim()
+                        content = innerBlock.substring(firstNewline + 1).trim()
+                    } else {
+                        val parts = innerBlock.trim().split(Regex("\\s+"), 2)
+                        language = parts.getOrNull(0) ?: ""
+                        content = parts.getOrNull(1) ?: ""
+                    }
+                    log("  -> CREATED CodeBlock(lang='${language.ifBlank { "text" }}')")
+                    blocks.add(CodeBlock(language.ifBlank { "text" }, content))
+                    currentIndex = blockEndIndex + 3
+                } else {
+                    // --- FIX IS HERE ---
+                    // Unterminated block. Treat it as a valid, greedy block that consumes the rest of the string.
+                    val innerBlock = rawText.substring(blockStartIndex + 3)
+                    val firstNewline = innerBlock.indexOf('\n')
+
+                    val language: String
+                    val content: String
+
+                    if (firstNewline != -1) {
+                        language = innerBlock.substring(0, firstNewline).trim()
+                        content = innerBlock.substring(firstNewline + 1).trim()
+                    } else {
+                        val parts = innerBlock.trim().split(Regex("\\s+"), 2)
+                        language = parts.getOrNull(0) ?: ""
+                        content = parts.getOrNull(1) ?: ""
+                    }
+                    log("  -> CREATED UNTERMINATED CodeBlock(lang='${language.ifBlank { "text" }}')")
+                    blocks.add(CodeBlock(language.ifBlank { "text" }, content))
+                    currentIndex = rawText.length // We've consumed the rest of the string
+                }
+            } else {
+                // No more fences found
+                currentIndex = rawText.length
+            }
         }
-        return -1 // Not found
+        log("--- PARSE COMPLETE: ${blocks.size} blocks found. ---")
+        return blocks
     }
 }

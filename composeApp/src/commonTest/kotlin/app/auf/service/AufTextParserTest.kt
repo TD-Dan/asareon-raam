@@ -1,187 +1,137 @@
 package app.auf.service
 
-import app.auf.core.ActionBlock
-import app.auf.core.FileContentBlock
-import app.auf.core.ParseErrorBlock
+import app.auf.core.CodeBlock
 import app.auf.core.TextBlock
-import app.auf.model.Parameter
-import app.auf.model.ToolDefinition
-import app.auf.util.JsonProvider
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertTrue
 
 class AufTextParserTest {
 
-    private fun setupTestEnvironment(): AufTextParser {
-        val jsonParser = JsonProvider.appJson
-        val toolRegistry = listOf(
-            ToolDefinition(
-                name = "Atomic Change Manifest",
-                command = "ACTION_MANIFEST",
-                description = "",
-                parameters = emptyList(),
-                expectsPayload = true,
-                usage = ""
-            ),
-            ToolDefinition(
-                name = "File Content View",
-                command = "FILE_VIEW",
-                description = "",
-                parameters = listOf(
-                    Parameter(name = "path", type = "String", isRequired = true),
-                    Parameter(name = "language", type = "String", isRequired = false, defaultValue = "plaintext")
-                ),
-                expectsPayload = true,
-                usage = ""
-            ),
-            ToolDefinition("App Request", "APP_REQUEST", "", emptyList(), true, ""),
-            ToolDefinition("State Anchor", "STATE_ANCHOR", "", emptyList(), true, "")
-        )
-        return AufTextParser(jsonParser, toolRegistry)
-    }
-
-    // --- Existing Passing Tests (No Changes) ---
-
     @Test
-    fun `should correctly parse text and a valid action block`() {
-        val parser = setupTestEnvironment()
+    fun `should correctly parse text and a valid code block`() {
+        val parser = AufTextParser()
         val rawResponse = """
             Here is the plan.
-[AUF_ACTION_MANIFEST]
-[
-    {
-        "type": "CreateFile",
-        "filePath": "test.txt",
-        "content": "Hello",
-        "summary": "Create"
-    }
-]
-[/AUF_ACTION_MANIFEST]
-Proceed?
+            ```json
+            [
+                {
+                    "type": "CreateFile"
+                }
+            ]
+            ```
+            Proceed?
         """.trimIndent()
         val result = parser.parse(rawResponse)
         assertEquals(3, result.size)
-        assertIs<ActionBlock>(result[1])
         assertIs<TextBlock>(result[0])
+        assertIs<CodeBlock>(result[1])
         assertIs<TextBlock>(result[2])
+        val codeBlock = result[1] as CodeBlock
+        assertEquals("json", codeBlock.language)
+        assertEquals("[\n    {\n        \"type\": \"CreateFile\"\n    }\n]", codeBlock.content)
     }
 
     @Test
-    fun `should return a single text block if no tags are present`() {
-        val parser = setupTestEnvironment()
-        val rawResponse = "This is just a simple sentence."
+    fun `should handle code block with no language`() {
+        val parser = AufTextParser()
+        val rawResponse = "```\nHello\n```"
         val result = parser.parse(rawResponse)
         assertEquals(1, result.size)
-        assertIs<TextBlock>(result[0])
+        assertIs<CodeBlock>(result[0])
+        assertEquals("text", (result[0] as CodeBlock).language)
+        assertEquals("Hello", (result[0] as CodeBlock).content)
     }
 
     @Test
-    fun `should create a ParseErrorBlock for an unterminated tag`() {
-        val parser = setupTestEnvironment()
+    fun `should treat unterminated code block as a valid greedy block`() {
+        val parser = AufTextParser()
         val rawResponse = """
-            Here we go...
-[AUF_ACTION_MANIFEST]Some content that never gets closed.
+            Here is 
+            ```some
+            code that never ends
+            """.trimIndent()
+        val result = parser.parse(rawResponse)
+        assertEquals(2, result.size)
+        assertIs<TextBlock>(result[0])
+        assertEquals("Here is", (result[0] as TextBlock).text)
+        assertIs<CodeBlock>(result[1])
+        val codeBlock = result[1] as CodeBlock
+        assertEquals("some", codeBlock.language)
+        assertEquals("code that never ends", codeBlock.content)
+    }
+
+    @Test
+    fun `should find multiple code blocks`() {
+        val parser = AufTextParser()
+        val rawResponse = """
+            ```markdown
+            ## Header
+            ```
+            Some text in middle
+            ```kotlin
+            val realCode = true
+            ```
+            ```txt
+            Foobar.
+            ```
+        """.trimIndent()
+        val result = parser.parse(rawResponse)
+        assertIs<CodeBlock>(result[0])
+        assertIs<TextBlock>(result[1])
+        assertIs<CodeBlock>(result[2])
+        assertIs<CodeBlock>(result[3])
+    }
+
+    @Test
+    fun `should understand various not so perfectly formatted code blocks`() {
+        val parser = AufTextParser()
+        val rawResponse = """
+``` markdown with parameters
+## Header```
+Some text in middle
+    ```kotlin single line```
+```
+no language specified
+    ```
+        """
+        val result = parser.parse(rawResponse)
+        assertIs<CodeBlock>(result[0])
+        assertIs<TextBlock>(result[1])
+        assertIs<CodeBlock>(result[2])
+        assertIs<CodeBlock>(result[3])
+    }
+
+    @Test
+    fun `should ignore fences inside strings and comments`() {
+        val parser = AufTextParser()
+        val rawResponse = """
+            // This is a comment ``` with a fence.
+            val myString = "Here is a ``` fence in a string"
+            /*
+             * And a multiline ``` comment
+             */
+            ```kotlin
+            val realCode = true
+            ```
         """.trimIndent()
         val result = parser.parse(rawResponse)
         assertEquals(2, result.size)
-        assertIs<ParseErrorBlock>(result[1])
-        val errorBlock = result[1] as ParseErrorBlock
-        val expectedErrorMessageContent = "Closing tag '[/AUF_ACTION_MANIFEST]' not found."
-        assertTrue(
-            errorBlock.errorMessage == expectedErrorMessageContent,
-            "Error message should be specific. Was: '${errorBlock.errorMessage}'"
+        assertIs<TextBlock>(result[0])
+        assertIs<CodeBlock>(result[1])
+        val textBlock = result[0] as TextBlock
+        assertEquals(
+            """
+            // This is a comment ``` with a fence.
+            val myString = "Here is a ``` fence in a string"
+            /*
+             * And a multiline ``` comment
+             */
+            """.trimIndent(),
+            textBlock.text
         )
-    }
-
-    @Test
-    fun `should treat nested tags as part of the payload`() {
-        val parser = setupTestEnvironment()
-        val rawResponse = """
-[AUF_FILE_VIEW(path="outer.txt")]
-Outer content.
-            [AUF_ACTION_MANIFEST]
-            [{"type":"CreateFile","filePath":"inner.txt","content":"...","summary":"Inner"}]
-            [/AUF_ACTION_MANIFEST]
-[/AUF_FILE_VIEW]
-""".trimIndent()
-        val result = parser.parse(rawResponse)
-        assertEquals(1, result.size, "Expected a single FileContentBlock")
-        assertIs<FileContentBlock>(result[0])
-        val fileBlock = result[0] as FileContentBlock
-        assertTrue(fileBlock.content.contains("[AUF_ACTION_MANIFEST]"))
-    }
-
-    @Test
-    fun `should create a ParseErrorBlock for malformed JSON`() {
-        val parser = setupTestEnvironment()
-        val rawResponse = """
-            [AUF_ACTION_MANIFEST]
-            [{"type":"CreateFile", "summary":"Forgot a quote}]
-            [/AUF_ACTION_MANIFEST]
-        """.trimIndent()
-        val result = parser.parse(rawResponse)
-        assertEquals(1, result.size)
-        assertIs<ParseErrorBlock>(result[0])
-        assertTrue((result[0] as ParseErrorBlock).errorMessage.contains("deserialization error"))
-    }
-
-    // --- Parameter Parsing Tests ---
-
-    @Test
-    fun `should parse a single named parameter correctly`() {
-        val parser = setupTestEnvironment()
-        val rawResponse = """
-[AUF_FILE_VIEW(path="test.kt")]
-fun main() {}
-[/AUF_FILE_VIEW]
-""".trimIndent()
-        val result = parser.parse(rawResponse)
-        assertEquals(1, result.size)
-        assertIs<FileContentBlock>(result[0])
-        val block = result[0] as FileContentBlock
-        assertEquals("test.kt", block.fileName)
-        assertEquals("plaintext", block.language) // Expecting default value
-    }
-
-    @Test
-    fun `should parse multiple named parameters with varied whitespace`() {
-        val parser = setupTestEnvironment()
-        val rawResponse = """
-[AUF_FILE_VIEW(path="test.kt", language="kotlin")]
-fun main() {}
-[/AUF_FILE_VIEW]
-""".trimIndent()
-        val result = parser.parse(rawResponse)
-        assertEquals(1, result.size)
-        assertIs<FileContentBlock>(result[0])
-        val block = result[0] as FileContentBlock
-        assertEquals("test.kt", block.fileName)
-        assertEquals("kotlin", block.language)
-    }
-
-    @Test
-    fun `should create ParseErrorBlock for malformed parameters`() {
-        val parser = setupTestEnvironment()
-        // Missing closing quote on the path value
-        val rawResponse = """
-            [AUF_FILE_VIEW(path="test.kt, language="kotlin")]
-            fun main() {}
-            [/AUF_FILE_VIEW]
-        """.trimIndent()
-        val result = parser.parse(rawResponse)
-
-        assertEquals(2, result.size, "Should produce an error AND the leftover text.")
-
-        assertIs<ParseErrorBlock>(result[0])
-        val errorBlock = result[0] as ParseErrorBlock
-        assertTrue(errorBlock.errorMessage.contains("Failed to parse parameters"))
-
-        assertIs<TextBlock>(result[1])
-        val textBlock = result[1] as TextBlock
-        // The leftover text should contain the payload and the now-unmatched closing tag
-        assertTrue(textBlock.text.contains("fun main() {}"))
-        assertTrue(textBlock.text.contains("[/AUF_FILE_VIEW]"))
+        val codeBlock = result[1] as CodeBlock
+        assertEquals("kotlin", codeBlock.language)
+        assertEquals("val realCode = true", codeBlock.content)
     }
 }

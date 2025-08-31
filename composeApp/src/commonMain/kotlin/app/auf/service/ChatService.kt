@@ -1,14 +1,6 @@
 package app.auf.service
 
-import app.auf.core.AppAction
-import app.auf.core.AppRequestBlock
-import app.auf.core.Author
-import app.auf.core.ChatMessage
-import app.auf.core.Holon
-import app.auf.core.Store
-import app.auf.core.TextBlock
-import app.auf.core.Version
-import app.auf.model.ToolDefinition
+import app.auf.core.*
 import app.auf.util.BasePath
 import app.auf.util.JsonProvider
 import app.auf.util.PlatformDependencies
@@ -19,14 +11,12 @@ import kotlinx.coroutines.launch
 
 /**
  * Service dedicated to handling all business logic related to AI chat interactions.
- *
  */
 open class ChatService(
     private val store: Store,
     private val gatewayService: GatewayService,
     private val platform: PlatformDependencies,
     private val parser: AufTextParser,
-    private val toolRegistry: List<ToolDefinition>,
     private val promptCompiler: PromptCompiler,
     private val coroutineScope: CoroutineScope
 ) {
@@ -84,7 +74,6 @@ open class ChatService(
         val protocolPath = frameworkBasePath + platform.pathSeparator + "framework_protocol.md"
         messages.add(createAndCompileSystemMessage("framework_protocol.md", platform.readFileContent(protocolPath)))
         messages.add(createAndCompileSystemMessage("REAL TIME SYSTEM STATUS", generateSystemStatusMessage()))
-        messages.add(createAndCompileSystemMessage("Host Tool Manifest", generateDynamicToolManifest()))
 
         appState.activeHolons.values.forEach { holon ->
             if (holon.header.type != "Quarantined_File") {
@@ -127,22 +116,23 @@ open class ChatService(
     }
 
     private fun handleAppRequests(message: ChatMessage) {
-        message.contentBlocks.filterIsInstance<AppRequestBlock>().forEach { request ->
-            when (request.requestType) {
-                "START_DREAM_CYCLE" -> {
-                    store.dispatch(
-                        AppAction.AddSystemMessage(
-                            title = "App Request",
-                            rawContent = "Please perform a 'Dream Cycle Simulation' based on our recent interaction."
+        message.contentBlocks.filterIsInstance<CodeBlock>().forEach { block ->
+            if(block.language.lowercase() == "app_request") {
+                when (block.content) {
+                    "START_DREAM_CYCLE" -> {
+                        store.dispatch(
+                            AppAction.AddSystemMessage(
+                                title = "App Request",
+                                rawContent = "Please perform a 'Dream Cycle Simulation' based on our recent interaction."
+                            )
                         )
-                    )
-                    sendMessage()
+                        sendMessage()
+                    }
                 }
             }
         }
     }
 
-    // --- MODIFICATION START: Added holon statistics to the system status message ---
     private fun generateSystemStatusMessage(): String {
         val state = store.state.value
         val personaName = state.availableAiPersonas.find { it.id == state.aiPersonaId }?.name ?: "Unknown"
@@ -162,16 +152,5 @@ open class ChatService(
         *   The time of this request is: `${platform.formatIsoTimestamp(platform.getSystemTimeMillis())}`
         *   $tokenInfo
         """.trimIndent()
-    }
-    // --- MODIFICATION END ---
-
-    private fun generateDynamicToolManifest(): String {
-        return toolRegistry.joinToString("\n\n") { tool ->
-            """
-            **Tool: ${tool.name}**
-            *   **Description:** ${tool.description}
-            *   **Usage:** `${tool.usage}`
-            """.trimIndent()
-        }.trim()
     }
 }

@@ -2,7 +2,6 @@ package app.auf.fakes
 
 import app.auf.core.ChatMessage
 import app.auf.core.Store
-import app.auf.model.ToolDefinition
 import app.auf.service.AufTextParser
 import app.auf.service.ChatService
 import app.auf.service.GatewayService
@@ -15,10 +14,9 @@ class FakeChatService(
     gatewayService: GatewayService,
     platform: PlatformDependencies,
     parser: AufTextParser,
-    toolRegistry: List<ToolDefinition>,
-    promptCompiler: PromptCompiler, // <<< ADDED
+    promptCompiler: PromptCompiler,
     coroutineScope: CoroutineScope
-) : ChatService(store, gatewayService, platform, parser, toolRegistry, promptCompiler, coroutineScope) { // <<< ADDED
+) : ChatService(store, gatewayService, platform, parser, promptCompiler, coroutineScope) {
 
     var sendMessageCalled = false
     var cancelMessageCalled = false
