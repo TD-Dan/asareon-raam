@@ -45,7 +45,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.*
-import app.auf.model.Action
 import app.auf.util.JsonProvider
 import kotlinx.serialization.builtins.ListSerializer
 
@@ -235,7 +234,7 @@ fun RenderTextBlock(block: TextBlock) {
 @Composable
 fun RenderCodeBlock(block: CodeBlock, onConfirm: () -> Unit, onReject: () -> Unit) {
     if (block.language.lowercase() == "json") {
-        val parsedActions = remember(block.content) {
+       /* val parsedActions = remember(block.content) { // USES DEPRECATED Action class. Should use AppAction instead?
             try {
                 JsonProvider.appJson.decodeFromString(ListSerializer(Action.serializer()), block.content)
             } catch (e: Exception) {
@@ -248,12 +247,12 @@ fun RenderCodeBlock(block: CodeBlock, onConfirm: () -> Unit, onReject: () -> Uni
         } else {
             // It's JSON, but not an action manifest. Treat as generic.
             RenderGenericCodeBlock(block)
-        }
+        }*/
     } else {
         RenderGenericCodeBlock(block)
     }
 }
-
+/*
 @Composable
 private fun RenderActionableJsonBlock(block: CodeBlock, actions: List<Action>, onConfirm: () -> Unit, onReject: () -> Unit) {
     val isResolved = block.status != ActionStatus.PENDING
@@ -302,7 +301,7 @@ private fun RenderActionableJsonBlock(block: CodeBlock, actions: List<Action>, o
             }
         }
     }
-}
+}*/
 
 @Composable
 private fun RenderGenericCodeBlock(block: CodeBlock) {

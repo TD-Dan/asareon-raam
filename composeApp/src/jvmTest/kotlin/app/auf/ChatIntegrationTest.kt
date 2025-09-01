@@ -3,6 +3,7 @@ package app.auf
 import app.auf.core.*
 import app.auf.fakes.FakeGatewayService
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.fakes.FakeSessionManager
 import app.auf.fakes.FakeStore
 import app.auf.feature.knowledgegraph.Holon
 import app.auf.feature.knowledgegraph.HolonHeader
@@ -34,7 +35,7 @@ class ChatIntegrationTest {
 
     private fun setupTestEnvironment(initialState: AppState = AppState()) = runTest {
         val platform = FakePlatformDependencies()
-        val sessionManager = fakes.FakeSessionManager(platform)
+        val sessionManager = FakeSessionManager(platform)
         val kgFeature = KnowledgeGraphFeature(platform, this)
         val store = FakeStore(initialState, this, sessionManager, listOf(kgFeature))
         val parser = AufTextParser()

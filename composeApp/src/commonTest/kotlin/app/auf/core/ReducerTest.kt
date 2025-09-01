@@ -3,7 +3,6 @@ package app.auf.core
 import app.auf.fakes.FakeAufTextParser
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.model.CompilerSettings
-import app.auf.model.CreateFile
 import app.auf.model.SettingValue
 import kotlin.test.BeforeTest
 import kotlin.test.Test
