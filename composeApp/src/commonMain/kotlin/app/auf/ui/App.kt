@@ -13,7 +13,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration // <<< CORRECTION: Import the correct class
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -27,33 +27,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.auf.core.StateManager
-import app.auf.core.GatewayStatus
-import app.auf.core.ViewMode
+import app.auf.feature.knowledgegraph.KnowledgeGraphState
+import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
 
 /**
  * The root Composable for the entire AUF application's UI.
- *
- * ---
- * ## Mandate
- * This component's sole responsibility is to act as the main router and orchestrator for the UI.
- * It observes the state from the provided StateManager and wires "dumb" view components
- * to the appropriate ViewModel or StateManager functions, passing state down and routing events up.
- *
- * ---
- * ## Dependencies
- * - `app.auf.core.StateManager`
- *
  */
 @Composable
 fun App(stateManager: StateManager) {
     val appState by stateManager.state.collectAsState()
+    val kgState = remember(appState.featureStates) {
+        appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
+    }
+
     val snackbarHostState = remember { SnackbarHostState() }
 
     appState.toastMessage?.let { message ->
         LaunchedEffect(message) {
-            // --- CORRECTION IS HERE ---
             snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
-            // --- END CORRECTION ---
             stateManager.clearToast()
         }
     }
@@ -64,11 +55,8 @@ fun App(stateManager: StateManager) {
         ) { paddingValues ->
             Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
 
-                val showBlockingError = appState.gatewayStatus == GatewayStatus.ERROR &&
-                        appState.errorMessage != "Please select an Active Agent to begin."
-
                 when {
-                    appState.gatewayStatus == GatewayStatus.LOADING -> {
+                    kgState.isLoading -> {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 CircularProgressIndicator()
@@ -77,12 +65,12 @@ fun App(stateManager: StateManager) {
                             }
                         }
                     }
-                    showBlockingError -> {
+                    kgState.fatalError != null -> {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("Error", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.headlineMedium)
                                 Spacer(modifier = Modifier.height(16.dp))
-                                Text(appState.errorMessage ?: "An unknown error occurred.")
+                                Text(kgState.fatalError)
                                 Spacer(modifier = Modifier.height(24.dp))
                                 Button(onClick = { stateManager.retryLoadHolonGraph() }) {
                                     Text("Retry")
@@ -105,53 +93,56 @@ fun App(stateManager: StateManager) {
 @Composable
 private fun MainAppContent(stateManager: StateManager) {
     val appState by stateManager.state.collectAsState()
+    val kgState = remember(appState.featureStates) {
+        appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
+    }
+
 
     Row(Modifier.fillMaxSize()) {
         GlobalActionRibbon(stateManager)
         VerticalDivider()
 
         Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-            when (appState.currentViewMode) {
-                ViewMode.SETTINGS -> {
-                    SettingsView(
-                        definitions = stateManager.getSettingDefinitions(),
-                        // --- MODIFICATION: Pass the full AppState ---
-                        appState = appState,
-                        onSettingChanged = { stateManager.updateSetting(it) },
-                        onClose = { stateManager.setViewMode(ViewMode.CHAT) }
+            // Main content area, reacts to the feature's view mode
+            if (kgState.viewMode == KnowledgeGraphViewMode.INSPECTOR) {
+                Row(Modifier.fillMaxSize()) {
+                    SessionView(
+                        kgState = kgState,
+                        onFilter = { stateManager.setCatalogueFilter(it) },
+                        onHolonSelected = { stateManager.onHolonClicked(it) },
+                        modifier = Modifier.width(320.dp)
                     )
-                }
-                else -> {
-                    Row(Modifier.fillMaxSize()) {
-                        SessionView(
-                            appState = appState,
-                            onFilter = { stateManager.setCatalogueFilter(it) },
-                            onHolonSelected = { stateManager.onHolonClicked(it) },
-                            modifier = Modifier.width(320.dp)
-                        )
-
-                        VerticalDivider()
-
-                        Box(modifier = Modifier.weight(1f)) {
-                            when (appState.currentViewMode) {
-                                ViewMode.CHAT -> ChatView(appState = appState, stateManager = stateManager)
-                                ViewMode.EXPORT -> ExportView(appState = appState, stateManager = stateManager)
-                                ViewMode.IMPORT -> {
-                                    ImportView(
-                                        viewModel = stateManager.importExportViewModel,
-                                        currentGraph = appState.holonGraph.map { it.header },
-                                        personaId = appState.aiPersonaId ?: "",
-                                        onCancel = { stateManager.setViewMode(ViewMode.CHAT) }
-                                    )
-                                }
-                                else -> {}
-                            }
-                        }
-
-                        VerticalDivider()
-
-                        HolonInspectorView(appState = appState, modifier = Modifier.width(320.dp))
+                    VerticalDivider()
+                    Box(modifier = Modifier.weight(1f)) {
+                        ChatView(stateManager = stateManager)
                     }
+                    VerticalDivider()
+                    HolonInspectorView(kgState = kgState, modifier = Modifier.width(320.dp))
+                }
+            } else {
+                // When in a special view mode, it takes over the main area.
+                when (kgState.viewMode) {
+                    KnowledgeGraphViewMode.SETTINGS -> {
+                        SettingsView(
+                            definitions = stateManager.getSettingDefinitions(),
+                            appState = appState,
+                            onSettingChanged = { stateManager.updateSetting(it) },
+                            onClose = { stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.INSPECTOR) }
+                        )
+                    }
+                    KnowledgeGraphViewMode.EXPORT -> {
+                        ExportView(
+                            kgState = kgState,
+                            stateManager = stateManager
+                        )
+                    }
+                    KnowledgeGraphViewMode.IMPORT -> {
+                        ImportView(
+                            kgState = kgState,
+                            stateManager = stateManager
+                        )
+                    }
+                    else -> {} // Should not happen
                 }
             }
         }

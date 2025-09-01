@@ -11,142 +11,125 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import app.auf.core.AssignParent
-import app.auf.core.CreateRoot
-import app.auf.core.HolonHeader
-import app.auf.core.Ignore
-import app.auf.core.ImportAction
-import app.auf.core.ImportActionType
-import app.auf.core.ImportItem
-import app.auf.core.Integrate
-import app.auf.core.Quarantine
-import app.auf.core.Update
+import app.auf.core.StateManager
+import app.auf.feature.knowledgegraph.AssignParent
+import app.auf.feature.knowledgegraph.CreateRoot
+import app.auf.feature.knowledgegraph.HolonHeader
+import app.auf.feature.knowledgegraph.Ignore
+import app.auf.feature.knowledgegraph.ImportAction
+import app.auf.feature.knowledgegraph.ImportActionType
+import app.auf.feature.knowledgegraph.ImportItem
+import app.auf.feature.knowledgegraph.Integrate
+import app.auf.feature.knowledgegraph.KnowledgeGraphState
+import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
+import app.auf.feature.knowledgegraph.Quarantine
+import app.auf.feature.knowledgegraph.Update
 import app.auf.util.PlatformDependencies
 
-/**
- * A Composable screen for managing the import of Holons from an external source.
- *
- * @version 2.4
- * @since 2025-08-28
- */
 @Composable
 fun ImportView(
-    viewModel: ImportExportViewModel,
-    currentGraph: List<HolonHeader>,
-    personaId: String?,
-    onCancel: () -> Unit
+    kgState: KnowledgeGraphState,
+    stateManager: StateManager
 ) {
     val platformDependencies = remember { PlatformDependencies() }
-    val importState by viewModel.importState.collectAsState()
-    val isRecursive by viewModel.isRecursive.collectAsState()
-    // --- MODIFICATION START: Collect filter state and compute filtered list ---
-    val showOnlyChanged by viewModel.showOnlyChanged.collectAsState()
-    val sourcePath = importState?.sourcePath ?: ""
+    val isRecursive = kgState.isImportRecursive
+    val showOnlyChanged = kgState.showOnlyChangedImportItems
+    val sourcePath = kgState.importSourcePath
 
-    val filteredItems = remember(importState?.items, showOnlyChanged) {
+    val filteredItems = remember(kgState.importItems, showOnlyChanged) {
         if (showOnlyChanged) {
-            importState?.items?.filter { it.initialAction !is Ignore } ?: emptyList()
+            kgState.importItems.filter { it.initialAction !is Ignore }
         } else {
-            importState?.items ?: emptyList()
+            kgState.importItems
         }
     }
-    // --- MODIFICATION END ---
 
-    importState?.let { state ->
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            // Top Bar
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Import & Sync Holons", style = MaterialTheme.typography.headlineSmall)
-                IconButton(onClick = onCancel) {
-                    Icon(Icons.Default.Close, contentDescription = "Close Import View")
-                }
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Import & Sync Holons", style = MaterialTheme.typography.headlineSmall)
+            IconButton(onClick = { stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.INSPECTOR) }) {
+                Icon(Icons.Default.Close, contentDescription = "Close Import View")
             }
-            Spacer(modifier = Modifier.height(16.dp))
+        }
+        Spacer(modifier = Modifier.height(16.dp))
 
-            // Source Folder Selection
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = sourcePath,
-                    onValueChange = { /* No-op */ },
-                    label = { Text("Source Folder") },
-                    modifier = Modifier.weight(1f),
-                    readOnly = true
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = sourcePath,
+                onValueChange = { /* No-op */ },
+                label = { Text("Source Folder") },
+                modifier = Modifier.weight(1f),
+                readOnly = true
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = {
+                platformDependencies.selectDirectoryPath()?.let { selectedPath ->
+                    stateManager.startImportAnalysis(selectedPath)
+                }
+            }) {
+                Text("Select & Analyze...")
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = isRecursive,
+                    onCheckedChange = { stateManager.setImportRecursive(it) }
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(onClick = {
-                    platformDependencies.selectDirectoryPath()?.let { selectedPath ->
-                        viewModel.analyzeFolder(selectedPath, currentGraph)
-                    }
-                }) {
-                    Text("Select & Analyze...")
-                }
+                Text("Import sub-folders recursively")
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween // Aligns items to ends
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = showOnlyChanged,
+                    onCheckedChange = { stateManager.toggleShowOnlyChangedImportItems() }
+                )
+                Text("Show only changed files")
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (kgState.importItems.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentAlignment = Alignment.Center
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = isRecursive,
-                        onCheckedChange = { viewModel.setRecursive(it, currentGraph) }
-                    )
-                    Text("Import sub-folders recursively")
-                }
-                // --- MODIFICATION START: Add the filter checkbox ---
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = showOnlyChanged,
-                        onCheckedChange = { viewModel.toggleShowOnlyChanged() }
-                    )
-                    Text("Show only changed files")
-                }
-                // --- MODIFICATION END ---
+                Text(if (sourcePath.isBlank()) "Select a folder to analyze." else "No importable .json files found.")
             }
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Import Manifest List
-            if (state.items.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(if (sourcePath.isBlank()) "Select a folder to analyze." else "No importable .json files found.")
-                }
-            } else {
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    // --- MODIFICATION: Use the new filteredItems list ---
-                    items(filteredItems, key = { it.sourcePath }) { item ->
-                        ImportItemRow(
-                            item = item,
-                            selectedAction = state.selectedActions[item.sourcePath] ?: item.initialAction,
-                            onActionSelected = { newAction ->
-                                viewModel.updateImportAction(item.sourcePath, newAction)
-                            },
-                            potentialParents = currentGraph
-                        )
-                        Divider()
-                    }
+        } else {
+            LazyColumn(modifier = Modifier.weight(1f)) {
+                items(filteredItems, key = { it.sourcePath }) { item ->
+                    ImportItemRow(
+                        item = item,
+                        selectedAction = kgState.importSelectedActions[item.sourcePath] ?: item.initialAction,
+                        onActionSelected = { newAction ->
+                            stateManager.updateImportAction(item.sourcePath, newAction)
+                        },
+                        potentialParents = kgState.holonGraph.map { it.header }
+                    )
+                    Divider()
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
+        }
+        Spacer(modifier = Modifier.height(16.dp))
 
-            // Action Buttons
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                OutlinedButton(onClick = onCancel) {
-                    Text("Cancel")
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(
-                    onClick = { viewModel.executeImport(currentGraph, personaId) },
-                    enabled = state.items.isNotEmpty()
-                ) {
-                    Text("Execute Import")
-                }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            OutlinedButton(onClick = { stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.INSPECTOR) }) {
+                Text("Cancel")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = { stateManager.executeImport() },
+                enabled = kgState.importItems.isNotEmpty()
+            ) {
+                Text("Execute Import")
             }
         }
     }

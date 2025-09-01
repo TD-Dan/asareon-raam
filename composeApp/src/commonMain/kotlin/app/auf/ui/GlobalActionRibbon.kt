@@ -30,7 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import app.auf.core.StateManager
-import app.auf.core.ViewMode
+import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
 import aufapp.composeapp.generated.resources.Res
 import aufapp.composeapp.generated.resources.icon
 import org.jetbrains.compose.resources.painterResource
@@ -51,7 +51,7 @@ fun GlobalActionRibbon(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        IconButton(onClick = { stateManager.setViewMode(ViewMode.CHAT) }) {
+        IconButton(onClick = { stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.INSPECTOR) }) {
             Icon(
                 painter = painterResource(Res.drawable.icon),
                 contentDescription = "Home (Chat View)",
@@ -68,7 +68,7 @@ fun GlobalActionRibbon(
                 onDismissRequest = { isMenuExpanded = false }
             ) {
                 DropdownMenuItem(
-                    text = { Text("Settings") }, // <<< ADDED
+                    text = { Text("Settings") },
                     leadingIcon = {
                         Icon(
                             Icons.Default.Settings,
@@ -77,22 +77,22 @@ fun GlobalActionRibbon(
                         )
                     },
                     onClick = {
-                        stateManager.setViewMode(ViewMode.SETTINGS)
+                        stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.SETTINGS)
                         isMenuExpanded = false
                     }
                 )
-                HorizontalDivider() // <<< ADDED
+                HorizontalDivider()
                 DropdownMenuItem(
                     text = { Text("Export for AUF manual runtime") },
                     onClick = {
-                        stateManager.setViewMode(ViewMode.EXPORT)
+                        stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.EXPORT)
                         isMenuExpanded = false
                     }
                 )
                 DropdownMenuItem(
                     text = { Text("Import & Sync from manual runtime") },
                     onClick = {
-                        stateManager.setViewMode(ViewMode.IMPORT)
+                        stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.IMPORT)
                         isMenuExpanded = false
                     }
                 )

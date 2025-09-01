@@ -17,16 +17,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.auf.core.AppState
+import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import app.auf.util.JsonProvider
 import kotlinx.serialization.json.JsonElement
 
 @Composable
 fun HolonInspectorView(
-    appState: AppState,
+    kgState: KnowledgeGraphState,
     modifier: Modifier = Modifier
 ) {
-    val inspectedHolon = appState.inspectedHolonId?.let { appState.activeHolons[it] }
+    val inspectedHolon = kgState.inspectedHolonId?.let { id ->
+        kgState.holonGraph.find { it.header.id == id }
+    }
     val jsonPrettyPrinter = remember { JsonProvider.appJson }
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
@@ -53,8 +55,6 @@ fun HolonInspectorView(
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
 
-                // Use an appropriate M3 theme color for the background.
-                // 'surfaceContainer' is a good choice for a subtle containing background.
                 Text(
                     text = jsonPrettyPrinter.encodeToString(JsonElement.serializer(), inspectedHolon.payload),
                     fontFamily = FontFamily.Monospace,

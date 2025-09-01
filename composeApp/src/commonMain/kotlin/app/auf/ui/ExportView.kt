@@ -20,34 +20,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
-import app.auf.core.AppState
 import app.auf.core.StateManager
-import app.auf.core.ViewMode
+import app.auf.feature.knowledgegraph.KnowledgeGraphState
+import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
 import app.auf.util.PlatformDependencies
 
-/**
- * @version 1.1
- * @since 2025-08-28
- */
 @Composable
 fun ExportView(
-    appState: AppState,
+    kgState: KnowledgeGraphState,
     stateManager: StateManager,
     modifier: Modifier = Modifier
 ) {
     val platformDependencies = remember { PlatformDependencies() }
     var destinationPath by remember { mutableStateOf<String?>(null) }
-    val exportListIds = appState.holonIdsForExport
+    val exportListIds = kgState.holonIdsForExport
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        // Top Bar
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Export for Manual Runtime", style = MaterialTheme.typography.headlineSmall)
-            IconButton(onClick = { stateManager.setViewMode(ViewMode.CHAT) }) {
+            IconButton(onClick = { stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.INSPECTOR) }) {
                 Icon(Icons.Default.Close, contentDescription = "Close Export View")
             }
         }
@@ -58,14 +53,13 @@ fun ExportView(
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        // --- MODIFICATION START: Add bulk action buttons ---
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                "Export Manifest (${exportListIds.size} / ${appState.holonGraph.size} items)",
+                "Export Manifest (${exportListIds.size} / ${kgState.holonGraph.size} items)",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
@@ -80,15 +74,13 @@ fun ExportView(
             }
         }
         Divider()
-        // --- MODIFICATION END ---
 
-        // Holon Checklist
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth()
         ) {
-            items(appState.holonGraph, key = { it.header.id }) { holon ->
+            items(kgState.holonGraph, key = { it.header.id }) { holon ->
                 val isSelected = holon.header.id in exportListIds
-                val isPersona = holon.header.id == appState.aiPersonaId
+                val isPersona = holon.header.id == kgState.aiPersonaId
                 Row(
                     Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -111,7 +103,6 @@ fun ExportView(
 
         Spacer(Modifier.height(16.dp))
 
-        // Destination Selector
         Row(verticalAlignment = Alignment.CenterVertically) {
             Button(onClick = {
                 destinationPath = platformDependencies.selectDirectoryPath()
@@ -130,9 +121,8 @@ fun ExportView(
 
         Spacer(Modifier.height(16.dp))
 
-        // Action Buttons
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            OutlinedButton(onClick = { stateManager.setViewMode(ViewMode.CHAT) }) {
+            OutlinedButton(onClick = { stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.INSPECTOR) }) {
                 Text("Cancel")
             }
             Spacer(Modifier.width(8.dp))

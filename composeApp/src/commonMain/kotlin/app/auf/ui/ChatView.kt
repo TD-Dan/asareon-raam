@@ -21,14 +21,19 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.*
+import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import kotlinx.coroutines.launch
 
 @Composable
 fun ChatView(
-    appState: AppState,
     stateManager: StateManager,
     modifier: Modifier = Modifier
 ) {
+    val appState by stateManager.state.collectAsState()
+    val kgState = remember(appState.featureStates) {
+        appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
+    }
+
     var userMessage by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
     val lazyListState = rememberLazyListState()
@@ -37,20 +42,19 @@ fun ChatView(
 
     val availableModels = appState.availableModels
     val selectedModel = appState.selectedModel
-    val aiPersonas = appState.availableAiPersonas
-    val selectedAiPersonaId = appState.aiPersonaId
+    val aiPersonas = kgState.availableAiPersonas
+    val selectedAiPersonaId = kgState.aiPersonaId
     val selectedAiPersonaName = aiPersonas.find { it.id == selectedAiPersonaId }?.name ?: "None"
 
     val isChatActive = selectedAiPersonaId != null
 
-    val lastTransactionTokens = appState.chatHistory.lastOrNull { it.author == app.auf.core.Author.AI }?.usageMetadata
+    val lastTransactionTokens = appState.chatHistory.lastOrNull { it.author == Author.AI }?.usageMetadata
 
-    val aggregatedStats = remember(appState.activeHolons, appState.compilerSettings) {
+    val aggregatedStats = remember(appState.isSystemVisible, kgState.contextualHolonIds, appState.compilerSettings) {
         stateManager.getAggregatedCompilationStats()
     }
 
-
-    val displayedMessages by remember(appState.isSystemVisible, appState.chatHistory, appState.activeHolons) {
+    val displayedMessages by remember(appState.isSystemVisible, appState.chatHistory) {
         derivedStateOf {
             if (appState.isSystemVisible) {
                 stateManager.getSystemContextForDisplay() + appState.chatHistory
@@ -113,7 +117,7 @@ fun ChatView(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        appState.errorMessage ?: "Select a persona or use the menu to import a knowledge graph.",
+                        kgState.fatalError ?: "Select a persona or use the menu to import a knowledge graph.",
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -247,9 +251,7 @@ fun ChatView(
             Button(
                 onClick = { if (appState.isProcessing) stateManager.cancelMessage() else sendMessageAction() },
                 modifier = Modifier.height(56.dp),
-                // --- MODIFICATION START: Update enabled state ---
                 enabled = isChatActive,
-                // --- MODIFICATION END ---
                 colors = if (appState.isProcessing) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.inversePrimary) else ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 if (appState.isProcessing) {

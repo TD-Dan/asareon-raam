@@ -3,63 +3,12 @@ package app.auf.core
 import app.auf.model.SettingValue
 
 /**
- * The Reducer function for the Unidirectional Data Flow (UDF) architecture.
+ * The root Reducer function for the Unidirectional Data Flow (UDF) architecture.
+ * As of v2.0, this reducer only handles core, app-wide state. Feature-specific
+ * state changes are handled by their own dedicated reducers.
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
     return when (action) {
-
-        // --- Graph Loading ---
-        is AppAction.LoadGraph -> state.copy(
-            gatewayStatus = GatewayStatus.LOADING,
-            errorMessage = null,
-            holonGraph = emptyList()
-        )
-        is AppAction.LoadGraphSuccess -> {
-            val result = action.result
-            val restoredActiveHolons = result.holonGraph
-                .filter { state.contextualHolonIds.contains(it.header.id) }
-                .associateBy { it.header.id }
-                .toMutableMap()
-
-            result.holonGraph.find { it.header.id == result.determinedPersonaId }?.let { persona ->
-                restoredActiveHolons[persona.header.id] = persona
-            }
-
-            var newChatHistory = state.chatHistory
-            if (result.parsingErrors.isNotEmpty()) {
-                val errorContent = "The following ${result.parsingErrors.size} files could not be parsed and were excluded from the graph:\n\n" +
-                        result.parsingErrors.joinToString("\n") { "- $it" }
-
-                val errorMessage = ChatMessage.createSystem(
-                    title = "Graph Parsing Warning",
-                    rawContent = errorContent
-                )
-                newChatHistory = newChatHistory + errorMessage
-            }
-
-            if (result.holonGraph.isEmpty() && result.determinedPersonaId == null) {
-                state.copy(
-                    gatewayStatus = GatewayStatus.IDLE,
-                    errorMessage = "No Holons found. Use the menu to import from a manual runtime.",
-                    holonGraph = emptyList()
-                )
-            } else {
-                state.copy(
-                    holonGraph = result.holonGraph,
-                    gatewayStatus = if (result.determinedPersonaId == null) GatewayStatus.IDLE else GatewayStatus.OK,
-                    availableAiPersonas = result.availableAiPersonas,
-                    aiPersonaId = result.determinedPersonaId,
-                    activeHolons = restoredActiveHolons,
-                    chatHistory = newChatHistory,
-                    errorMessage = if (result.determinedPersonaId == null && result.availableAiPersonas.isNotEmpty()) "Please select an Active Agent to begin." else null
-                )
-            }
-        }
-        is AppAction.LoadGraphFailure -> state.copy(
-            gatewayStatus = GatewayStatus.ERROR,
-            errorMessage = action.error
-        )
-
         // --- Chat & Gateway ---
         is AppAction.AddUserMessage -> {
             val userMessage = ChatMessage.createUser(rawContent = action.rawContent)
@@ -77,8 +26,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             )
         }
         is AppAction.SendMessageLoading -> state.copy(
-            isProcessing = true,
-            errorMessage = null
+            isProcessing = true
         )
         is AppAction.SendMessageSuccess -> {
             val aiMessage = ChatMessage.createAi(
@@ -101,8 +49,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             )
         }
         is AppAction.CancelMessage -> state.copy(
-            isProcessing = false,
-            errorMessage = "Request cancelled by user."
+            isProcessing = false
         )
         is AppAction.DeleteMessage -> state.copy(
             chatHistory = state.chatHistory.filterNot { it.id == action.id }
@@ -118,45 +65,6 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         }
 
         // --- UI & View ---
-        is AppAction.SetViewMode -> {
-            if (action.mode == ViewMode.EXPORT) {
-                state.copy(
-                    currentViewMode = action.mode,
-                    holonIdsForExport = state.activeHolons.keys
-                )
-            } else {
-                state.copy(
-                    currentViewMode = action.mode,
-                    holonIdsForExport = emptySet()
-                )
-            }
-        }
-        is AppAction.InspectHolon -> state.copy(
-            inspectedHolonId = action.holonId
-        )
-        is AppAction.ToggleHolonActive -> {
-            if (action.holonId == state.aiPersonaId) return state
-
-            val newContextIds: Set<String>
-            val newActiveHolons: Map<String, Holon>
-
-            if (state.contextualHolonIds.contains(action.holonId)) {
-                newContextIds = state.contextualHolonIds - action.holonId
-                newActiveHolons = state.activeHolons - action.holonId
-            } else {
-                val holonToAdd = state.holonGraph.find { it.header.id == action.holonId }
-                if (holonToAdd != null) {
-                    newContextIds = state.contextualHolonIds + action.holonId
-                    newActiveHolons = state.activeHolons + (action.holonId to holonToAdd)
-                } else {
-                    return state
-                }
-            }
-            state.copy(contextualHolonIds = newContextIds, activeHolons = newActiveHolons)
-        }
-        is AppAction.SetCatalogueFilter -> state.copy(
-            catalogueFilter = action.type
-        )
         is AppAction.ShowToast -> state.copy(
             toastMessage = action.message
         )
@@ -166,27 +74,6 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         is AppAction.ToggleSystemVisibility -> state.copy(
             isSystemVisible = !state.isSystemVisible
         )
-        is AppAction.ToggleHolonExport -> {
-            if (action.holonId == state.aiPersonaId) return state
-            val newExportIds = if (state.holonIdsForExport.contains(action.holonId)) {
-                state.holonIdsForExport - action.holonId
-            } else {
-                state.holonIdsForExport + action.holonId
-            }
-            state.copy(holonIdsForExport = newExportIds)
-        }
-        is AppAction.SelectAllForExport -> {
-            val allIds = state.holonGraph.map { it.header.id }.toSet()
-            state.copy(holonIdsForExport = allIds)
-        }
-        is AppAction.DeselectAllForExport -> {
-            val personaId = state.aiPersonaId
-            if (personaId != null) {
-                state.copy(holonIdsForExport = setOf(personaId))
-            } else {
-                state.copy(holonIdsForExport = emptySet())
-            }
-        }
         is AppAction.ToggleMessageCollapsed -> {
             val updatedHistory = state.chatHistory.map { message ->
                 if (message.id == action.id) {
@@ -198,22 +85,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             state.copy(chatHistory = updatedHistory)
         }
 
-        // --- Persona & Model ---
-        is AppAction.SelectAiPersona -> {
-            if (action.holonId == null) {
-                state.copy(
-                    aiPersonaId = null,
-                    holonGraph = emptyList(),
-                    activeHolons = emptyMap(),
-                    inspectedHolonId = null,
-                    contextualHolonIds = emptySet(),
-                    gatewayStatus = GatewayStatus.IDLE,
-                    errorMessage = "Please select an Active Agent to begin."
-                )
-            } else {
-                state.copy(aiPersonaId = action.holonId)
-            }
-        }
+        // --- Model ---
         is AppAction.SelectModel -> state.copy(
             selectedModel = action.modelName
         )
@@ -264,13 +136,13 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         // --- Settings ---
         is AppAction.UpdateSetting -> {
             val newCompilerSettings = when (action.setting.key) {
-                "compiler.removeWhitespace" -> state.compilerSettings.copy(removeWhitespace = action.setting.value as? Boolean ?: state.compilerSettings.removeWhitespace)
-                "compiler.cleanHeaders" -> state.compilerSettings.copy(cleanHeaders = action.setting.value as? Boolean ?: state.compilerSettings.cleanHeaders)
-                "compiler.minifyJson" -> state.compilerSettings.copy(minifyJson = action.setting.value as? Boolean ?: state.compilerSettings.minifyJson)
+                "compiler.removeWhitespace" -> state.compilerSettings.copy(removeWhitespace = action.setting.value as? Boolean ?: state.compilerSettings.removeWhitespace) // Needs updating: core should not know about feature specifics
+                "compiler.cleanHeaders" -> state.compilerSettings.copy(cleanHeaders = action.setting.value as? Boolean ?: state.compilerSettings.cleanHeaders) // Needs updating: core should not know about feature specifics
+                "compiler.minifyJson" -> state.compilerSettings.copy(minifyJson = action.setting.value as? Boolean ?: state.compilerSettings.minifyJson) // Needs updating: core should not know about feature specifics
                 else -> state.compilerSettings
             }
             if (newCompilerSettings != state.compilerSettings) {
-                state.copy(compilerSettings = newCompilerSettings)
+                state.copy(compilerSettings = newCompilerSettings)  // Needs updating: core should not know about feature specifics
             } else {
                 state
             }

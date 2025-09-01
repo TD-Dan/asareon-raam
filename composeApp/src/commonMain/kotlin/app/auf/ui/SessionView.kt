@@ -8,12 +8,9 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -26,25 +23,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import app.auf.core.AppState
-import app.auf.core.ViewMode
+import app.auf.feature.knowledgegraph.KnowledgeGraphState
+import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SessionView(
-    appState: AppState,
+    kgState: KnowledgeGraphState,
     onFilter: (String?) -> Unit,
     onHolonSelected: (String) -> Unit,
     modifier : Modifier = Modifier
         .background(color = MaterialTheme.colorScheme.surfaceContainer)
 ) {
-    val holonGraph = appState.holonGraph
-    val activeContextualHolonIds = appState.contextualHolonIds
-    val activeAiPersonaId = appState.aiPersonaId
-    val activeFilter = appState.catalogueFilter
-    val holonIdsForExport = appState.holonIdsForExport
-    val currentViewMode = appState.currentViewMode
+    val holonGraph = kgState.holonGraph
+    val activeContextualHolonIds = kgState.contextualHolonIds
+    val activeAiPersonaId = kgState.aiPersonaId
+    val activeFilter = kgState.catalogueFilter
+    val holonIdsForExport = kgState.holonIdsForExport
+    val currentViewMode = kgState.viewMode
 
     val holonTypes = holonGraph.map { it.header.type }.distinct().sorted()
     val filteredGraph = if (activeFilter == null) {
@@ -89,7 +85,6 @@ fun SessionView(
                     }
                 }
             }
-            // --- END MODIFICATION ---
         }
 
         LazyColumn {
@@ -101,26 +96,22 @@ fun SessionView(
                 val isInChatContext = activeContextualHolonIds.contains(holon.header.id)
                 val isSelectedForExport = holonIdsForExport.contains(holon.header.id)
 
-                // --- MODIFIED: Use M3 theme colors for row backgrounds ---
                 val backgroundColor = when {
-                    currentViewMode == ViewMode.EXPORT && isSelectedForExport -> MaterialTheme.colorScheme.primaryContainer
+                    currentViewMode == KnowledgeGraphViewMode.EXPORT && isSelectedForExport -> MaterialTheme.colorScheme.primaryContainer
                     isTheActiveAgent -> MaterialTheme.colorScheme.surfaceVariant
                     isInChatContext -> MaterialTheme.colorScheme.surfaceContainerHigh
                     else -> Color.Transparent
                 }
-                // --- END MODIFICATION ---
 
-                val fontWeight = if (isTheActiveAgent || (currentViewMode == ViewMode.CHAT && isInChatContext) || (currentViewMode == ViewMode.EXPORT && isSelectedForExport)) FontWeight.Bold else FontWeight.Normal
+                val fontWeight = if (isTheActiveAgent || (currentViewMode == KnowledgeGraphViewMode.INSPECTOR && isInChatContext) || (currentViewMode == KnowledgeGraphViewMode.EXPORT && isSelectedForExport)) FontWeight.Bold else FontWeight.Normal
                 val fontStyle = if (isTheActiveAgent) FontStyle.Italic else FontStyle.Normal
                 val displayText = if (isTheActiveAgent) "${holon.header.name} (Active Agent)" else holon.header.name
                 val indentation = (holon.header.depth * 16).dp
 
-                // --- MODIFIED: Use M3 theme colors for text ---
                 val textColor = when {
                     isTheActiveAgent -> MaterialTheme.colorScheme.onSurfaceVariant
                     else -> MaterialTheme.colorScheme.onSurface
                 }
-                // --- END MODIFICATION ---
 
                 Row(
                     modifier = Modifier

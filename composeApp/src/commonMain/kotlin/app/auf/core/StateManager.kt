@@ -1,35 +1,25 @@
 package app.auf.core
 
+import app.auf.feature.knowledgegraph.KnowledgeGraphAction
+import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
 import app.auf.model.*
 import app.auf.service.*
-import app.auf.ui.ImportExportViewModel
 import app.auf.util.JsonProvider
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import app.auf.service.AufTextParser
 import kotlinx.serialization.builtins.ListSerializer
-import app.auf.feature.systemclock.ClockAction
 
 /**
- * A simple data class to hold the aggregated compilation statistics.
- */
-data class AggregatedCompilationStats(
-    val totalOriginalChars: Int,
-    val totalCompiledChars: Int
-)
-
-/**
- * The core state management class for the AUF application.
- *
- * @version 5.7
- * @since 2025-08-28
+ * The core state management class for the AUF application. As of v2.0, this class
+ * is a thin layer responsible for orchestrating interactions between the UI, services,
+ * and the central Store. It does not contain business logic itself but dispatches
+ * actions to the appropriate features.
  */
 open class StateManager(
     private val store: Store,
     private val backupManager: BackupManager,
-    private val graphService: GraphService,
     internal val sourceCodeService: SourceCodeService,
     private val chatService: ChatService,
     private val gatewayService: GatewayService,
@@ -37,7 +27,6 @@ open class StateManager(
     private val parser: AufTextParser,
     val settingsManager: SettingsManager,
     private val sessionManager: SessionManager,
-    val importExportViewModel: ImportExportViewModel,
     private val platform: PlatformDependencies,
     private val coroutineScope: CoroutineScope
 ) {
@@ -52,20 +41,8 @@ open class StateManager(
         }
 
         backupManager.createBackup("on-launch")
-        loadHolonGraph()
+        // Graph loading is now handled by the KnowledgeGraphFeature's start() lifecycle.
         loadAvailableModels()
-    }
-
-    fun loadHolonGraph() {
-        coroutineScope.launch {
-            store.dispatch(AppAction.LoadGraph)
-            val result = graphService.loadGraph(state.value.aiPersonaId)
-            if (result.fatalError != null && result.holonGraph.isEmpty()) {
-                store.dispatch(AppAction.LoadGraphFailure(result.fatalError))
-            } else {
-                store.dispatch(AppAction.LoadGraphSuccess(result))
-            }
-        }
     }
 
     private fun loadAvailableModels() {
@@ -77,27 +54,22 @@ open class StateManager(
 
     // --- Chat Logic Delegation ---
     fun sendMessage(message: String) {
-        if (state.value.isProcessing || state.value.aiPersonaId == null && state.value.holonGraph.isNotEmpty()) return
+        val kgState = state.value.knowledgeGraphState
+        if (state.value.isProcessing || kgState.aiPersonaId == null && kgState.holonGraph.isNotEmpty()) return
+
         store.dispatch(AppAction.AddUserMessage(message))
-        // --- MODIFICATION START: Handle Conversational Command-Line ---
-        handleCcl(message)
-        // --- MODIFICATION END ---
+        handleCcl(message) // Still handle core CCL here for now
         chatService.sendMessage()
     }
 
-    /**
-     * Parses the raw user message for `auf_action` code blocks and dispatches
-     * the corresponding AppAction, enabling the Conversational Command-Line (CCL).
-     */
     private fun handleCcl(rawContent: String) {
+        // This could be migrated to its own feature in the future.
         val blocks = parser.parse(rawContent)
         blocks.filterIsInstance<CodeBlock>()
             .filter { it.language.lowercase() == "auf_action" }
             .forEach { block ->
                 val action = when (block.content.trim()) {
-                    "ClockAction.Start" -> ClockAction.Start // Needs to be updated! Core does not know of features!
-                    "ClockAction.Stop" -> ClockAction.Stop // Needs to be updated! Core does not know of features!
-                    "ClockAction.Tick" -> ClockAction.Tick // Needs to be updated! Core does not know of features!
+                    // "ClockAction.Start" -> ClockAction.Start // This will be handled by feature interop later
                     else -> null
                 }
                 if (action != null) {
@@ -180,8 +152,9 @@ open class StateManager(
 
             store.dispatch(AppAction.ExecuteActionManifest(messageTimestamp))
 
-            val personaId = state.value.aiPersonaId ?: ""
-            val currentGraphHeaders = state.value.holonGraph.map { it.header }
+            val kgState = state.value.knowledgeGraphState
+            val personaId = kgState.aiPersonaId ?: ""
+            val currentGraphHeaders = kgState.holonGraph.map { it.header }
 
             val result = actionExecutor.execute(manifest, personaId, currentGraphHeaders)
 
@@ -189,7 +162,7 @@ open class StateManager(
                 is ActionExecutorResult.Success -> {
                     store.dispatch(AppAction.UpdateActionStatus(messageTimestamp, ActionStatus.EXECUTED))
                     store.dispatch(AppAction.ExecuteActionManifestSuccess(result.summary, messageTimestamp))
-                    loadHolonGraph()
+                    store.dispatch(KnowledgeGraphAction.LoadGraph)
                 }
                 is ActionExecutorResult.Failure -> {
                     store.dispatch(AppAction.ExecuteActionManifestFailure(result.error, messageTimestamp))
@@ -208,72 +181,78 @@ open class StateManager(
         backupManager.openBackupFolder()
     }
 
-    fun setViewMode(mode: ViewMode) {
-        store.dispatch(AppAction.SetViewMode(mode))
-        if (mode == ViewMode.CHAT) {
-            importExportViewModel.cancelImport()
-        } else if (mode == ViewMode.IMPORT) {
-            importExportViewModel.startImport()
-        }
+    // --- Knowledge Graph Actions ---
+    fun retryLoadHolonGraph() {
+        store.dispatch(KnowledgeGraphAction.RetryLoadGraph)
     }
 
     fun onHolonClicked(holonId: String) {
-        inspectHolon(holonId)
-        if (state.value.currentViewMode == ViewMode.CHAT) {
-            toggleHolonActive(holonId)
+        store.dispatch(KnowledgeGraphAction.InspectHolon(holonId))
+        // Logic for which view mode is active is now handled in the UI layer,
+        // which can inspect the state and dispatch the appropriate action.
+        if (state.value.knowledgeGraphState.viewMode == KnowledgeGraphViewMode.INSPECTOR) {
+            store.dispatch(KnowledgeGraphAction.ToggleHolonActive(holonId))
         }
-    }
-
-    fun retryLoadHolonGraph() {
-        loadHolonGraph()
-    }
-
-    fun toggleHolonActive(holonId: String) {
-        store.dispatch(AppAction.ToggleHolonActive(holonId))
-        inspectHolon(holonId)
-    }
-
-    fun toggleHolonForExport(holonId: String) {
-        store.dispatch(AppAction.ToggleHolonExport(holonId))
     }
 
     fun selectAiPersona(holonId: String?) {
-        store.dispatch(AppAction.SelectAiPersona(holonId))
-        if (holonId != null) {
-            loadHolonGraph()
-        }
+        store.dispatch(KnowledgeGraphAction.SelectAiPersona(holonId))
     }
 
-    fun inspectHolon(holonId: String?) {
-        store.dispatch(AppAction.InspectHolon(holonId))
+    fun setCatalogueFilter(type: String?) {
+        store.dispatch(KnowledgeGraphAction.SetCatalogueFilter(type))
     }
 
+    fun executeExport(destinationPath: String) {
+        store.dispatch(KnowledgeGraphAction.ExecuteExport(destinationPath))
+    }
+
+    fun selectAllForExport() {
+        store.dispatch(KnowledgeGraphAction.SelectAllForExport)
+    }
+
+    fun deselectAllForExport() {
+        store.dispatch(KnowledgeGraphAction.DeselectAllForExport)
+    }
+
+    fun toggleHolonForExport(holonId: String) {
+        store.dispatch(KnowledgeGraphAction.ToggleHolonForExport(holonId))
+    }
+
+    fun setKnowledgeGraphViewMode(mode: KnowledgeGraphViewMode) {
+        store.dispatch(KnowledgeGraphAction.SetViewMode(mode))
+    }
+
+    fun startImportAnalysis(sourcePath: String) {
+        store.dispatch(KnowledgeGraphAction.StartImportAnalysis(sourcePath))
+    }
+
+    fun executeImport() {
+        store.dispatch(KnowledgeGraphAction.ExecuteImport)
+    }
+
+    fun updateImportAction(sourcePath: String, action: ImportAction) {
+        store.dispatch(KnowledgeGraphAction.UpdateImportAction(sourcePath, action))
+    }
+
+    fun setImportRecursive(isRecursive: Boolean) {
+        store.dispatch(KnowledgeGraphAction.SetImportRecursive(isRecursive))
+    }
+
+    fun toggleShowOnlyChangedImportItems() {
+        store.dispatch(KnowledgeGraphAction.ToggleShowOnlyChangedImportItems)
+    }
+
+
+    // --- Core App Actions ---
     fun selectModel(modelName: String) {
         if (modelName in state.value.availableModels) {
             store.dispatch(AppAction.SelectModel(modelName))
         }
     }
 
-    fun setCatalogueFilter(type: String?) {
-        store.dispatch(AppAction.SetCatalogueFilter(type))
-    }
-
     fun toggleSystemMessageVisibility() {
         store.dispatch(AppAction.ToggleSystemVisibility)
-    }
-
-    fun executeExport(destinationPath: String) {
-        val holonsToExport = state.value.holonGraph.filter { it.header.id in state.value.holonIdsForExport }
-        val headersToExport = holonsToExport.map { it.header }
-        importExportViewModel.importExportManager.executeExport(destinationPath, headersToExport)
-    }
-
-    fun selectAllForExport() {
-        store.dispatch(AppAction.SelectAllForExport)
-    }
-
-    fun deselectAllForExport() {
-        store.dispatch(AppAction.DeselectAllForExport)
     }
 
     fun copyCodebaseToClipboard() {
