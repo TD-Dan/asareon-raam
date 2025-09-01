@@ -11,7 +11,9 @@ import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 
 /**
- * Provides a single, correctly configured instance of the JSON parser for the entire application.
+ * Provides a single, globally-accessible, and correctly configured instance of the JSON
+ * parser for the entire application's CORE data types. Feature-specific models
+ * should be handled by a local parser within the feature itself.
  */
 object JsonProvider {
     val appJson = Json {
@@ -28,14 +30,6 @@ object JsonProvider {
             polymorphic(ContentBlock::class) {
                 subclass(TextBlock::class)
                 subclass(CodeBlock::class)
-            }
-            polymorphic(ImportAction::class) {
-                subclass(Update::class)
-                subclass(Integrate::class)
-                subclass(AssignParent::class)
-                subclass(Quarantine::class)
-                subclass(Ignore::class)
-                subclass(CreateRoot::class)
             }
         }
     }

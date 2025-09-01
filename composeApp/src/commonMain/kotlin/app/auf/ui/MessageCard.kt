@@ -167,7 +167,7 @@ fun MessageCard(
                                         is TextBlock -> RenderTextBlock(block)
                                         is CodeBlock -> RenderCodeBlock(
                                             block = block,
-                                            onConfirm = { stateManager.executeActionFromMessage(message.timestamp) },
+                                            onConfirm = {  },
                                             onReject = { stateManager.rejectActionFromMessage(message.timestamp) }
                                         )
                                     }

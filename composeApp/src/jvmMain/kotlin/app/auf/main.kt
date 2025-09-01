@@ -45,14 +45,10 @@ fun main() = application {
     }
 
     val features = remember {
-        // Instantiate services needed by features
-        val graphLoader = GraphLoader(platformDependencies, jsonParser)
-        val graphService = GraphService(graphLoader)
-        val importExportManager = ImportExportManager(platformDependencies, jsonParser)
 
         listOf(
             SystemClockFeature(coroutineScope),
-            KnowledgeGraphFeature(graphService, importExportManager, coroutineScope)
+            KnowledgeGraphFeature(platformDependencies, jsonParser, coroutineScope)
         )
     }
 
@@ -79,7 +75,6 @@ fun main() = application {
         val gateway = Gateway(jsonParser)
         val gatewayService = GatewayService(gateway, aufTextParser, apiKey, coroutineScope)
         val backupManager = BackupManager(platformDependencies)
-        val actionExecutor = ActionExecutor(platformDependencies, jsonParser)
         val sourceCodeService = SourceCodeService(platformDependencies)
         val chatService = ChatService(store, gatewayService, platformDependencies, aufTextParser, promptCompiler, coroutineScope)
 
@@ -89,7 +84,6 @@ fun main() = application {
             sourceCodeService = sourceCodeService,
             chatService = chatService,
             gatewayService = gatewayService,
-            actionExecutor = actionExecutor,
             parser = aufTextParser,
             settingsManager = settingsManager,
             sessionManager = sessionManager,
