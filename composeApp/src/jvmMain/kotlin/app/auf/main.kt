@@ -8,11 +8,12 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import app.auf.core.*
+import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
+import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import app.auf.feature.systemclock.SystemClockFeature
 import app.auf.model.UserSettings
 import app.auf.service.*
 import app.auf.ui.App
-import app.auf.ui.ImportExportViewModel
 import app.auf.util.JsonProvider
 import app.auf.util.PlatformDependencies
 import java.io.File
@@ -44,9 +45,14 @@ fun main() = application {
     }
 
     val features = remember {
+        // Instantiate services needed by features
+        val graphLoader = GraphLoader(platformDependencies, jsonParser)
+        val graphService = GraphService(graphLoader)
+        val importExportManager = ImportExportManager(platformDependencies, jsonParser)
+
         listOf(
-            SystemClockFeature(coroutineScope)
-            // Future features will be added here
+            SystemClockFeature(coroutineScope),
+            KnowledgeGraphFeature(graphService, importExportManager, coroutineScope)
         )
     }
 
@@ -54,14 +60,15 @@ fun main() = application {
     val initialState = remember(savedSettings) {
         AppState(
             selectedModel = savedSettings.selectedModel,
-            aiPersonaId = savedSettings.selectedAiPersonaId,
-            contextualHolonIds = savedSettings.activeContextualHolonIds,
             compilerSettings = savedSettings.compilerSettings,
-            // --- MODIFICATION START: Load feature state from saved settings ---
             featureStates = mapOf(
-                "SystemClockFeature" to savedSettings.systemClockState
+                "SystemClockFeature" to savedSettings.systemClockState,
+                // Initialize KG feature state from saved settings
+                "KnowledgeGraphFeature" to KnowledgeGraphState(
+                    aiPersonaId = savedSettings.selectedAiPersonaId,
+                    contextualHolonIds = savedSettings.activeContextualHolonIds
+                )
             )
-            // --- MODIFICATION END ---
         )
     }
 
@@ -73,17 +80,12 @@ fun main() = application {
         val gatewayService = GatewayService(gateway, aufTextParser, apiKey, coroutineScope)
         val backupManager = BackupManager(platformDependencies)
         val actionExecutor = ActionExecutor(platformDependencies, jsonParser)
-        val importExportManager = ImportExportManager(platformDependencies, jsonParser)
-        val importExportViewModel = ImportExportViewModel(importExportManager, coroutineScope)
-        val graphLoader = GraphLoader(platformDependencies, jsonParser)
-        val graphService = GraphService(graphLoader)
         val sourceCodeService = SourceCodeService(platformDependencies)
         val chatService = ChatService(store, gatewayService, platformDependencies, aufTextParser, promptCompiler, coroutineScope)
 
         StateManager(
             store = store,
             backupManager = backupManager,
-            graphService = graphService,
             sourceCodeService = sourceCodeService,
             chatService = chatService,
             gatewayService = gatewayService,
@@ -91,21 +93,9 @@ fun main() = application {
             parser = aufTextParser,
             settingsManager = settingsManager,
             sessionManager = sessionManager,
-            importExportViewModel = importExportViewModel,
             platform = platformDependencies,
             coroutineScope = coroutineScope
         )
-    }
-
-    remember {
-        stateManager.importExportViewModel.onImportComplete = {
-            store.dispatch(AppAction.ShowToast("Import successful! Reloading graph..."))
-            stateManager.loadHolonGraph()
-            stateManager.setViewMode(ViewMode.CHAT)
-        }
-        stateManager.importExportViewModel.onImportFailed = { errorMessage ->
-            store.dispatch(AppAction.ShowToast(errorMessage))
-        }
     }
 
     remember {
@@ -118,19 +108,20 @@ fun main() = application {
     Window(
         onCloseRequest = {
             val currentState = stateManager.state.value
+            val kgState = currentState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
+            val clockState = currentState.featureStates["SystemClockFeature"] as? app.auf.feature.systemclock.SystemClockState ?: app.auf.feature.systemclock.SystemClockState()
+
             sessionManager.saveSession(currentState.chatHistory)
 
-            // --- MODIFICATION START: Save feature states on exit ---
             val currentSettingsToSave = UserSettings(
                 windowWidth = windowState.size.width.value.toInt(),
                 windowHeight = windowState.size.height.value.toInt(),
                 selectedModel = currentState.selectedModel,
-                selectedAiPersonaId = currentState.aiPersonaId,
-                activeContextualHolonIds = currentState.contextualHolonIds,
+                selectedAiPersonaId = kgState.aiPersonaId,
+                activeContextualHolonIds = kgState.contextualHolonIds,
                 compilerSettings = currentState.compilerSettings,
-                systemClockState = currentState.featureStates["SystemClockFeature"] as? app.auf.feature.systemclock.SystemClockState ?: app.auf.feature.systemclock.SystemClockState()
+                systemClockState = clockState
             )
-            // --- MODIFICATION END ---
             settingsManager.saveSettings(currentSettingsToSave)
             exitApplication()
         },

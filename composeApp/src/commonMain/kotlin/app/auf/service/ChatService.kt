@@ -1,11 +1,12 @@
 package app.auf.service
 
 import app.auf.core.*
+import app.auf.feature.knowledgegraph.Holon
+import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import app.auf.util.BasePath
 import app.auf.util.JsonProvider
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -25,7 +26,8 @@ open class ChatService(
 
     open fun sendMessage() {
         val state = store.state.value
-        if (state.isProcessing || state.aiPersonaId == null) return
+        val kgState = state.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
+        if (state.isProcessing || kgState.aiPersonaId == null) return
 
         store.dispatch(AppAction.SendMessageLoading)
 
@@ -33,7 +35,6 @@ open class ChatService(
         val systemMessages = buildSystemContextMessages()
         val fullContextForApi = systemMessages + historyForApi
 
-        // --- FIX: Remove explicit Dispatchers.Default to inherit the test dispatcher ---
         activeJob = coroutineScope.launch {
             val response = gatewayService.sendMessage(state.selectedModel, fullContextForApi)
 
@@ -61,6 +62,7 @@ open class ChatService(
     open fun buildSystemContextMessages(): List<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
         val appState = store.state.value
+        val kgState = appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
         val compilerSettings = appState.compilerSettings
 
         fun createAndCompileSystemMessage(title: String, rawContent: String): ChatMessage {
@@ -76,7 +78,10 @@ open class ChatService(
         messages.add(createAndCompileSystemMessage("framework_protocol.md", platform.readFileContent(protocolPath)))
         messages.add(createAndCompileSystemMessage("REAL TIME SYSTEM STATUS", generateSystemStatusMessage()))
 
-        appState.activeHolons.values.forEach { holon ->
+        val activeIds = kgState.contextualHolonIds + (kgState.aiPersonaId ?: "")
+        val activeHolons = kgState.holonGraph.filter { it.header.id in activeIds }
+
+        activeHolons.forEach { holon ->
             if (holon.header.type != "Quarantined_File") {
                 val holonContentString = JsonProvider.appJson.encodeToString(Holon.serializer(), holon)
                 messages.add(
@@ -136,19 +141,20 @@ open class ChatService(
 
     private fun generateSystemStatusMessage(): String {
         val state = store.state.value
-        val personaName = state.availableAiPersonas.find { it.id == state.aiPersonaId }?.name ?: "Unknown"
+        val kgState = state.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
+        val personaName = kgState.availableAiPersonas.find { it.id == kgState.aiPersonaId }?.name ?: "Unknown"
         val lastTx = state.chatHistory.lastOrNull { it.author == Author.AI }?.usageMetadata
         val tokenInfo = lastTx?.totalTokenCount?.let { "Approximate context window size of last transaction: $it tokens." }
             ?: "Token count for the last transaction is not available."
 
-        val activeHolonCount = state.activeHolons.size
-        val totalHolonCount = state.holonGraph.size
+        val activeHolonCount = kgState.contextualHolonIds.size + (if(kgState.aiPersonaId != null) 1 else 0)
+        val totalHolonCount = kgState.holonGraph.size
         val holonStats = "Your Holon Knowledge Graph has $activeHolonCount/$totalHolonCount holons active in context."
 
         return """
         *   You are running on host LLM: `${state.selectedModel}`
         *   Your current runtime platform is 'AUF App v${Version.APP_VERSION}'
-        *   You are embodying the persona: '$personaName' (holon: ${state.aiPersonaId})
+        *   You are embodying the persona: '$personaName' (holon: ${kgState.aiPersonaId})
         *   $holonStats
         *   The time of this request is: `${platform.formatIsoTimestamp(platform.getSystemTimeMillis())}`
         *   $tokenInfo

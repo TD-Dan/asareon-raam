@@ -3,11 +3,9 @@ package app.auf.feature.systemclock
 import app.auf.core.AppAction
 import app.auf.core.AppState
 import app.auf.core.Feature
-import app.auf.core.GatewayStatus
 import app.auf.core.Store
 import app.auf.model.SettingDefinition
 import app.auf.model.SettingType
-import app.auf.model.SettingValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -112,7 +110,7 @@ class SystemClockFeature(
                 val clockState = latestState.featureStates[name] as? SystemClockState ?: SystemClockState()
 
                 if (clockState.isEnabled) {
-                    if (latestState.gatewayStatus == GatewayStatus.OK && !latestState.isProcessing) {
+                    if (!latestState.isProcessing) {
                         // 1. Dispatch the system-wide event for other features to hear.
                         store.dispatch(ClockAction.Tick)
                         // 2. Dispatch a generic core action to make the event visible in the UI.

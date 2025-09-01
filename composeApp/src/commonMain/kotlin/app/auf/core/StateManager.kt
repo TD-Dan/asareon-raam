@@ -1,6 +1,8 @@
 package app.auf.core
 
+import app.auf.feature.knowledgegraph.ImportAction
 import app.auf.feature.knowledgegraph.KnowledgeGraphAction
+import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
 import app.auf.model.*
 import app.auf.service.*
@@ -16,6 +18,9 @@ import kotlinx.serialization.builtins.ListSerializer
  * is a thin layer responsible for orchestrating interactions between the UI, services,
  * and the central Store. It does not contain business logic itself but dispatches
  * actions to the appropriate features.
+ *
+ * @version 7.0
+ * @since 2025-09-01
  */
 open class StateManager(
     private val store: Store,
@@ -23,7 +28,6 @@ open class StateManager(
     internal val sourceCodeService: SourceCodeService,
     private val chatService: ChatService,
     private val gatewayService: GatewayService,
-    private val actionExecutor: ActionExecutor,
     private val parser: AufTextParser,
     val settingsManager: SettingsManager,
     private val sessionManager: SessionManager,
@@ -36,12 +40,11 @@ open class StateManager(
     fun initialize() {
         var loadedHistory = sessionManager.loadSession()
         if (loadedHistory != null) {
-            loadedHistory = ChatMessage.Factory.reId(loadedHistory)
+            loadedHistory = ChatMessage.reId(loadedHistory)
             store.dispatch(AppAction.LoadSessionSuccess(loadedHistory))
         }
 
         backupManager.createBackup("on-launch")
-        // Graph loading is now handled by the KnowledgeGraphFeature's start() lifecycle.
         loadAvailableModels()
     }
 
@@ -54,22 +57,21 @@ open class StateManager(
 
     // --- Chat Logic Delegation ---
     fun sendMessage(message: String) {
-        val kgState = state.value.knowledgeGraphState
-        if (state.value.isProcessing || kgState.aiPersonaId == null && kgState.holonGraph.isNotEmpty()) return
+        val appState = state.value
+        val kgState = appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
+        if (appState.isProcessing || kgState.aiPersonaId == null && kgState.holonGraph.isNotEmpty()) return
 
         store.dispatch(AppAction.AddUserMessage(message))
-        handleCcl(message) // Still handle core CCL here for now
+        handleCcl(message)
         chatService.sendMessage()
     }
 
     private fun handleCcl(rawContent: String) {
-        // This could be migrated to its own feature in the future.
         val blocks = parser.parse(rawContent)
         blocks.filterIsInstance<CodeBlock>()
             .filter { it.language.lowercase() == "auf_action" }
             .forEach { block ->
                 val action = when (block.content.trim()) {
-                    // "ClockAction.Start" -> ClockAction.Start // This will be handled by feature interop later
                     else -> null
                 }
                 if (action != null) {
@@ -90,6 +92,7 @@ open class StateManager(
         return chatService.buildSystemContextMessages()
     }
 
+    data class AggregatedCompilationStats(val totalOriginalChars: Int, val totalCompiledChars: Int)
     fun getAggregatedCompilationStats(): AggregatedCompilationStats {
         val systemMessages = chatService.buildSystemContextMessages()
         var totalOriginal = 0
@@ -129,48 +132,6 @@ open class StateManager(
         }
     }
 
-    fun executeActionFromMessage(messageTimestamp: Long) {
-        if (state.value.isProcessing) return
-
-        coroutineScope.launch {
-            val message = state.value.chatHistory.find { it.timestamp == messageTimestamp }
-            val codeBlock = message?.contentBlocks
-                ?.filterIsInstance<CodeBlock>()
-                ?.firstOrNull { it.language.lowercase() == "json" }
-
-            if (codeBlock == null || codeBlock.status != ActionStatus.PENDING) {
-                store.dispatch(AppAction.ExecuteActionManifestFailure("Actionable JSON block not found or already resolved.", messageTimestamp))
-                return@launch
-            }
-
-            val manifest = try {
-                JsonProvider.appJson.decodeFromString(ListSerializer(Action.serializer()), codeBlock.content)
-            } catch (e: Exception) {
-                store.dispatch(AppAction.ExecuteActionManifestFailure("Failed to parse Action Manifest JSON: ${e.message}", messageTimestamp))
-                return@launch
-            }
-
-            store.dispatch(AppAction.ExecuteActionManifest(messageTimestamp))
-
-            val kgState = state.value.knowledgeGraphState
-            val personaId = kgState.aiPersonaId ?: ""
-            val currentGraphHeaders = kgState.holonGraph.map { it.header }
-
-            val result = actionExecutor.execute(manifest, personaId, currentGraphHeaders)
-
-            when (result) {
-                is ActionExecutorResult.Success -> {
-                    store.dispatch(AppAction.UpdateActionStatus(messageTimestamp, ActionStatus.EXECUTED))
-                    store.dispatch(AppAction.ExecuteActionManifestSuccess(result.summary, messageTimestamp))
-                    store.dispatch(KnowledgeGraphAction.LoadGraph)
-                }
-                is ActionExecutorResult.Failure -> {
-                    store.dispatch(AppAction.ExecuteActionManifestFailure(result.error, messageTimestamp))
-                }
-            }
-        }
-    }
-
     fun rejectActionFromMessage(messageTimestamp: Long) {
         store.dispatch(AppAction.UpdateActionStatus(messageTimestamp, ActionStatus.REJECTED))
         store.dispatch(AppAction.ShowToast("Action Manifest Rejected."))
@@ -188,9 +149,8 @@ open class StateManager(
 
     fun onHolonClicked(holonId: String) {
         store.dispatch(KnowledgeGraphAction.InspectHolon(holonId))
-        // Logic for which view mode is active is now handled in the UI layer,
-        // which can inspect the state and dispatch the appropriate action.
-        if (state.value.knowledgeGraphState.viewMode == KnowledgeGraphViewMode.INSPECTOR) {
+        val kgState = state.value.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
+        if (kgState.viewMode == KnowledgeGraphViewMode.INSPECTOR) {
             store.dispatch(KnowledgeGraphAction.ToggleHolonActive(holonId))
         }
     }
