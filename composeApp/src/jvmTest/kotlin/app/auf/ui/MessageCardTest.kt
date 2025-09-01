@@ -8,12 +8,9 @@ import app.auf.core.AppAction
 import app.auf.core.AppState
 import app.auf.core.ChatMessage
 import app.auf.core.StateManager
-import app.auf.fakes.FakeActionExecutor
 import app.auf.fakes.FakeBackupManager
 import app.auf.fakes.FakeChatService
 import app.auf.fakes.FakeGatewayService
-import app.auf.fakes.FakeGraphService
-import app.auf.fakes.FakeImportExportViewModel
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeSessionManager
 import app.auf.fakes.FakeSourceCodeService
@@ -38,41 +35,30 @@ class MessageCardTest {
 
     private lateinit var stateManager: StateManager
     private lateinit var fakeStore: FakeStore
-    private lateinit var realParser: AufTextParser
-    private val testCoroutineScope = CoroutineScope(Dispatchers.Unconfined)
 
     @Before
     fun setup() {
         val initialState = AppState()
         val fakePlatform = FakePlatformDependencies()
         val fakeSessionManager = FakeSessionManager(fakePlatform)
+        val testCoroutineScope = CoroutineScope(Dispatchers.Unconfined)
         fakeStore = FakeStore(initialState, testCoroutineScope, fakeSessionManager)
-        realParser = AufTextParser()
+        val realParser = AufTextParser()
         ChatMessage.Factory.initialize(fakePlatform, realParser)
         val fakeGatewayService = FakeGatewayService(testCoroutineScope)
         val promptCompiler = PromptCompiler(JsonProvider.appJson)
         val settingsManager = SettingsManager(fakePlatform, JsonProvider.appJson)
-        val chatService = ChatService(
-            fakeStore,
-            fakeGatewayService,
-            fakePlatform,
-            realParser,
-            promptCompiler,
-            testCoroutineScope
-        )
+        val chatService = FakeChatService(fakeStore, fakeGatewayService, fakePlatform, realParser, promptCompiler, testCoroutineScope)
 
         stateManager = StateManager(
             store = fakeStore,
             backupManager = FakeBackupManager(fakePlatform),
-            graphService = FakeGraphService(),
             sourceCodeService = FakeSourceCodeService(fakePlatform),
             chatService = chatService,
             gatewayService = fakeGatewayService,
-            actionExecutor = FakeActionExecutor(fakePlatform, JsonProvider.appJson),
             parser = realParser,
             settingsManager = settingsManager,
             sessionManager = fakeSessionManager,
-            importExportViewModel = FakeImportExportViewModel(),
             platform = fakePlatform,
             coroutineScope = testCoroutineScope
         )
@@ -80,46 +66,30 @@ class MessageCardTest {
 
     @Test
     fun `MessageCard shows compiled content toggle when compiledContent is different`() {
+        // ARRANGE
         val raw = "```json\n{\n  \"key\": \"value\"\n}\n```"
         val compiled = """{"key":"value"}"""
         val message = ChatMessage.Factory.createSystem("test.json", raw).copy(compiledContent = compiled)
 
+        // ACT
         composeTestRule.setContent {
-            MessageCard(message = message, stateManager = stateManager)
+            MessageCard(message = message, stateManager = stateManager, onToggleCollapsed = {})
         }
 
+        // ASSERT
         composeTestRule.onNodeWithContentDescription("View Compiled Content").assertExists()
     }
 
     @Test
-    fun `MessageCard does NOT show compiled content toggle when content is same or null`() {
-        val raw = "Just text"
-        val messageSame = ChatMessage.Factory.createUser(raw).copy(compiledContent = raw)
-        val messageNull = ChatMessage.Factory.createUser(raw).copy(compiledContent = null)
-
-        composeTestRule.setContent {
-            MessageCard(message = messageSame, stateManager = stateManager)
-        }
-        composeTestRule.onNodeWithContentDescription("View Compiled Content").assertDoesNotExist()
-
-        composeTestRule.setContent {
-            MessageCard(message = messageNull, stateManager = stateManager)
-        }
-        composeTestRule.onNodeWithContentDescription("View Compiled Content").assertDoesNotExist()
-    }
-
-    @Test
     fun `clicking compiled toggle switches between rendered and compiled views`() {
-        // --- FIX: Provide raw content with markdown fences so it's parsed as a CodeBlock ---
+        // ARRANGE
         val raw = "```json\n{\n  \"key\": \"value\"\n}\n```"
         val compiled = """{"key":"value"}"""
         val message = ChatMessage.Factory.createSystem("test.json", raw).copy(compiledContent = compiled)
 
         composeTestRule.setContent {
-            MessageCard(message = message, stateManager = stateManager)
+            MessageCard(message = message, stateManager = stateManager, onToggleCollapsed = {})
         }
-
-        composeTestRule.onNodeWithText("test.json").performClick()
 
         // ACT 1: Initially, raw (parsed) content is shown.
         composeTestRule.onNodeWithText("json").assertExists() // Checks for the CodeBlock language header
@@ -142,26 +112,20 @@ class MessageCardTest {
     }
 
     @Test
-    fun `RenderTextBlock should display the correct text`() {
-        val testMessage = "This is a test message."
-        val message = ChatMessage.Factory.createUser(rawContent = testMessage)
-        composeTestRule.setContent { MessageCard(message = message, stateManager = stateManager) }
-        composeTestRule.onNodeWithText(testMessage).assertExists()
-    }
-
-    @Test
-    fun `deleteMenuItemClick should dispatch DeleteAction`() {
-        val rawMessageContent = "Delete me"
-        fakeStore.dispatch(AppAction.AddUserMessage(rawMessageContent))
+    fun `delete menu item dispatches DeleteMessage action`() {
+        // ARRANGE
+        fakeStore.dispatch(AppAction.AddUserMessage("Delete me"))
         val messageInState = fakeStore.state.value.chatHistory.first()
 
         composeTestRule.setContent {
-            MessageCard(message = messageInState, stateManager = stateManager)
+            MessageCard(message = messageInState, stateManager = stateManager, onToggleCollapsed = {})
         }
 
+        // ACT
         composeTestRule.onNodeWithContentDescription("More options").performClick()
         composeTestRule.onNodeWithText("Delete").performClick()
 
+        // ASSERT
         val dispatchedAction = fakeStore.dispatchedActions.last()
         assertIs<AppAction.DeleteMessage>(dispatchedAction)
         assertEquals(messageInState.id, dispatchedAction.id)

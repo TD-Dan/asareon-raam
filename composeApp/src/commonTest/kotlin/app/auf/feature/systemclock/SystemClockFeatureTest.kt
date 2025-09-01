@@ -2,7 +2,6 @@ package app.auf.feature.systemclock
 
 import app.auf.core.AppAction
 import app.auf.core.AppState
-import app.auf.core.GatewayStatus
 import app.auf.fakes.FakeSessionManager
 import app.auf.fakes.FakeStore
 import app.auf.model.SettingValue
@@ -70,7 +69,7 @@ class SystemClockFeatureTest {
     fun `reducer ignores irrelevant actions`() = runTest {
         val feature = SystemClockFeature(this)
         val initialState = AppState(featureStates = mapOf(feature.name to SystemClockState()))
-        val newState = feature.reducer(initialState, AppAction.LoadGraph)
+        val newState = feature.reducer(initialState, AppAction.AddUserMessage("test")) // Using an irrelevant action
         assertEquals(initialState, newState)
     }
 
@@ -88,7 +87,6 @@ class SystemClockFeatureTest {
 
     @Test
     fun `start lifecycle method dispatches Tick when enabled`() = runTest {
-        // --- FIX: Launch the feature in the background scope ---
         val feature = SystemClockFeature(backgroundScope)
         val initialState = AppState(featureStates = mapOf(feature.name to SystemClockState(isEnabled = true, intervalMillis = 1000L)))
         val store = FakeStore(initialState, this, FakeSessionManager(), listOf(feature))
@@ -117,7 +115,7 @@ class SystemClockFeatureTest {
     fun `start lifecycle method does NOT dispatch Tick when gateway is busy`() = runTest {
         val feature = SystemClockFeature(backgroundScope)
         val initialState = AppState(
-            gatewayStatus = GatewayStatus.LOADING,
+            isProcessing = true,
             featureStates = mapOf(feature.name to SystemClockState(isEnabled = true, intervalMillis = 1000L))
         )
         val store = FakeStore(initialState, this, FakeSessionManager(), listOf(feature))
