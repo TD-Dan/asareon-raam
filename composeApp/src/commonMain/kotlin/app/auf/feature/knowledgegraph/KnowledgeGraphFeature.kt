@@ -17,6 +17,9 @@ import kotlinx.serialization.Transient
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.polymorphic
+import kotlinx.serialization.modules.subclass
 
 // --- 1. MODEL ---
 /**
@@ -206,12 +209,32 @@ sealed interface KnowledgeGraphAction : AppAction {
 // --- 3. FEATURE IMPLEMENTATION ---
 class KnowledgeGraphFeature(
     private val platform: PlatformDependencies,
-    private val jsonParser: Json,
     private val coroutineScope: CoroutineScope
 ) : Feature {
     override val name: String = "KnowledgeGraphFeature"
     private var store: Store? = null
     private val holonsBasePath by lazy { platform.getBasePathFor(BasePath.HOLONS) }
+
+    /**
+     * A private, self-contained JSON parser configured specifically for this feature's needs.
+     */
+    private val featureJsonParser = Json {
+        prettyPrint = true
+        ignoreUnknownKeys = true
+        isLenient = true
+        encodeDefaults = true
+        serializersModule = SerializersModule {
+            polymorphic(ImportAction::class) {
+                subclass(Update::class)
+                subclass(Integrate::class)
+                subclass(AssignParent::class)
+                subclass(Quarantine::class)
+                subclass(Ignore::class)
+                subclass(CreateRoot::class)
+            }
+        }
+    }
+
 
     override fun reducer(state: AppState, action: AppAction): AppState {
         if (action !is KnowledgeGraphAction) return state
@@ -347,7 +370,6 @@ class KnowledgeGraphFeature(
         }
     }
 
-    // --- Logic transplanted from GraphLoader ---
     private fun _loadGraph(currentPersonaId: String?): GraphLoadResult {
         val parsingErrors = mutableListOf<String>()
         try {
@@ -383,7 +405,7 @@ class KnowledgeGraphFeature(
             if (platform.fileExists(holonFilePath)) {
                 try {
                     val content = platform.readFileContent(holonFilePath)
-                    val holon = jsonParser.decodeFromString<Holon>(content)
+                    val holon = featureJsonParser.decodeFromString<Holon>(content)
                     if (holon.header.type == "AI_Persona_Root") holon.header.copy(filePath = holonFilePath) else null
                 } catch (e: Exception) {
                     parsingErrors.add("Parse failed for potential persona $dirName: ${e.message?.substringBefore('\n')}")
@@ -408,7 +430,7 @@ class KnowledgeGraphFeature(
         if (holonId == "quarantined-imports" || !platform.fileExists(holonFilePath)) return
         try {
             val fileContentString = platform.readFileContent(holonFilePath)
-            val parsedHolon = jsonParser.decodeFromString<Holon>(fileContentString)
+            val parsedHolon = featureJsonParser.decodeFromString<Holon>(fileContentString)
             val updatedHolon = parsedHolon.copy(header = parsedHolon.header.copy(filePath = holonFilePath, parentId = parentId, depth = depth))
             graph.add(updatedHolon)
             updatedHolon.header.subHolons.forEach { subRef ->
@@ -420,7 +442,6 @@ class KnowledgeGraphFeature(
         }
     }
 
-    // --- Logic transplanted from ImportExportManager ---
     private fun _analyzeImportFolder(sourcePath: String) {
         val store = this.store ?: return
         coroutineScope.launch(Dispatchers.Default) {
@@ -504,12 +525,12 @@ class KnowledgeGraphFeature(
         val destPath = newHolonDir + platform.pathSeparator + platform.getFileName(sourceFilePath)
         platform.copyFile(sourceFilePath, destPath)
         processedHolonPaths[holonId] = destPath
-        val parentContent = jsonParser.decodeFromString<Holon>(platform.readFileContent(parentFilePath))
-        val newHolonHeader = jsonParser.decodeFromString<Holon>(platform.readFileContent(sourceFilePath)).header
+        val parentContent = featureJsonParser.decodeFromString<Holon>(platform.readFileContent(parentFilePath))
+        val newHolonHeader = featureJsonParser.decodeFromString<Holon>(platform.readFileContent(sourceFilePath)).header
         val newSubRef = SubHolonRef(newHolonHeader.id, newHolonHeader.type, "[IMPORTED] " + newHolonHeader.summary)
         if (parentContent.header.subHolons.none { it.id == newSubRef.id }) {
             val updatedParent = parentContent.copy(header = parentContent.header.copy(subHolons = parentContent.header.subHolons + newSubRef))
-            platform.writeFileContent(parentFilePath, jsonParser.encodeToString(updatedParent))
+            platform.writeFileContent(parentFilePath, featureJsonParser.encodeToString(updatedParent))
         }
     }
 
@@ -537,7 +558,7 @@ class KnowledgeGraphFeature(
         val currentGraphMap = currentGraph.associateBy { it.id }
         val sourceFiles = _discoverJsonFiles(sourcePath, recursive)
         val sourceHolons = sourceFiles.mapNotNull {
-            try { it.path to jsonParser.decodeFromString<Holon>(platform.readFileContent(it.path)).header } catch (_: Exception) { null }
+            try { it.path to featureJsonParser.decodeFromString<Holon>(platform.readFileContent(it.path)).header } catch (_: Exception) { null }
         }.toMap()
         val existingParentMap = currentGraph.flatMap { parent -> parent.subHolons.map { child -> child.id to parent.id } }.toMap()
         val sourceParentMap = sourceHolons.values.flatMap { parent -> parent.subHolons.map { child -> child.id to parent.id } }.toMap()

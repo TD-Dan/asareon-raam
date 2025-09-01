@@ -45,10 +45,9 @@ fun main() = application {
     }
 
     val features = remember {
-
         listOf(
             SystemClockFeature(coroutineScope),
-            KnowledgeGraphFeature(platformDependencies, jsonParser, coroutineScope)
+            KnowledgeGraphFeature(platformDependencies, coroutineScope)
         )
     }
 
@@ -59,7 +58,6 @@ fun main() = application {
             compilerSettings = savedSettings.compilerSettings,
             featureStates = mapOf(
                 "SystemClockFeature" to savedSettings.systemClockState,
-                // Initialize KG feature state from saved settings
                 "KnowledgeGraphFeature" to KnowledgeGraphState(
                     aiPersonaId = savedSettings.selectedAiPersonaId,
                     contextualHolonIds = savedSettings.activeContextualHolonIds
