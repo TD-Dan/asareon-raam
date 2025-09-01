@@ -151,9 +151,7 @@ fun MessageCard(
                 }
             }
 
-            // --- MODIFICATION START ---
             AnimatedVisibility(visible = !message.isCollapsed) {
-                // --- MODIFICATION END ---
                 Column {
                     Spacer(Modifier.height(8.dp))
                     when {
@@ -233,24 +231,11 @@ fun RenderTextBlock(block: TextBlock) {
 
 @Composable
 fun RenderCodeBlock(block: CodeBlock, onConfirm: () -> Unit, onReject: () -> Unit) {
-    if (block.language.lowercase() == "json") {
-       /* val parsedActions = remember(block.content) { // USES DEPRECATED Action class. Should use AppAction instead?
-            try {
-                JsonProvider.appJson.decodeFromString(ListSerializer(Action.serializer()), block.content)
-            } catch (e: Exception) {
-                null
-            }
-        }
-
-        if (parsedActions != null) {
-            RenderActionableJsonBlock(block, parsedActions, onConfirm, onReject)
-        } else {
-            // It's JSON, but not an action manifest. Treat as generic.
-            RenderGenericCodeBlock(block)
-        }*/
-    } else {
-        RenderGenericCodeBlock(block)
-    }
+    // --- FIX START: The previous implementation had broken, commented-out logic that prevented
+    // any JSON block from rendering. This version ensures all code blocks are rendered generically,
+    // fixing the test failure and restoring UI functionality.
+    RenderGenericCodeBlock(block)
+    // --- FIX END ---
 }
 /*
 @Composable

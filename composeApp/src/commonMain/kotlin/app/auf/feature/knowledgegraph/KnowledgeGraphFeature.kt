@@ -311,6 +311,12 @@ class KnowledgeGraphFeature(
 
     private fun dispatch(action: AppAction) {
         val store = this.store ?: return
+
+        // --- FIX START: The original action must be dispatched to the store so its state change (reducer)
+        // and its presence in the action history (for tests) is correctly handled.
+        store.dispatch(action)
+        // --- FIX END ---
+
         when (action) {
             is KnowledgeGraphAction.LoadGraph, KnowledgeGraphAction.RetryLoadGraph -> {
                 coroutineScope.launch(Dispatchers.Default) {
@@ -326,15 +332,13 @@ class KnowledgeGraphFeature(
                 }
             }
             is KnowledgeGraphAction.SelectAiPersona -> {
-                store.dispatch(action)
+                // The reducer handles the state change. The side effect is to reload the graph.
                 dispatch(KnowledgeGraphAction.LoadGraph)
             }
             is KnowledgeGraphAction.StartImportAnalysis -> {
-                store.dispatch(action)
                 _analyzeImportFolder(action.sourcePath)
             }
             is KnowledgeGraphAction.SetImportRecursive -> {
-                store.dispatch(action)
                 val sourcePath = (store.state.value.featureStates[name] as? KnowledgeGraphState)?.importSourcePath
                 if (!sourcePath.isNullOrBlank()) {
                     _analyzeImportFolder(sourcePath)
@@ -366,7 +370,6 @@ class KnowledgeGraphFeature(
                 store.dispatch(AppAction.ShowToast("Export successful!"))
                 store.dispatch(KnowledgeGraphAction.SetViewMode(KnowledgeGraphViewMode.INSPECTOR))
             }
-            else -> store.dispatch(action)
         }
     }
 
