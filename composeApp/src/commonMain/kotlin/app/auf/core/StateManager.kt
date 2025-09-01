@@ -1,17 +1,7 @@
 package app.auf.core
 
-import app.auf.model.Action
-import app.auf.model.SettingDefinition
-import app.auf.model.SettingValue
-import app.auf.service.ActionExecutor
-import app.auf.service.ActionExecutorResult
-import app.auf.service.BackupManager
-import app.auf.service.ChatService
-import app.auf.service.GatewayService
-import app.auf.service.GraphService
-import app.auf.service.SessionManager
-import app.auf.service.SettingsManager
-import app.auf.service.SourceCodeService
+import app.auf.model.*
+import app.auf.service.*
 import app.auf.ui.ImportExportViewModel
 import app.auf.util.JsonProvider
 import app.auf.util.PlatformDependencies
@@ -95,7 +85,6 @@ open class StateManager(
         chatService.sendMessage()
     }
 
-    // --- MODIFICATION START: Add Conversational Command-Line handler ---
     /**
      * Parses the raw user message for `auf_action` code blocks and dispatches
      * the corresponding AppAction, enabling the Conversational Command-Line (CCL).
@@ -106,9 +95,9 @@ open class StateManager(
             .filter { it.language.lowercase() == "auf_action" }
             .forEach { block ->
                 val action = when (block.content.trim()) {
-                    "ClockAction.Start" -> ClockAction.Start
-                    "ClockAction.Stop" -> ClockAction.Stop
-                    "ClockAction.Tick" -> ClockAction.Tick
+                    "ClockAction.Start" -> ClockAction.Start // Needs to be updated! Core does not know of features!
+                    "ClockAction.Stop" -> ClockAction.Stop // Needs to be updated! Core does not know of features!
+                    "ClockAction.Tick" -> ClockAction.Tick // Needs to be updated! Core does not know of features!
                     else -> null
                 }
                 if (action != null) {
@@ -119,7 +108,6 @@ open class StateManager(
                 }
             }
     }
-    // --- MODIFICATION END ---
 
 
     fun cancelMessage() {
@@ -153,6 +141,10 @@ open class StateManager(
 
     fun deleteMessage(id: Long) {
         store.dispatch(AppAction.DeleteMessage(id))
+    }
+
+    fun toggleMessageCollapsed(id: Long) {
+        store.dispatch(AppAction.ToggleMessageCollapsed(id))
     }
 
     fun rerunFromMessage(id: Long) {
@@ -276,7 +268,6 @@ open class StateManager(
         importExportViewModel.importExportManager.executeExport(destinationPath, headersToExport)
     }
 
-    // --- MODIFICATION START: Add methods to dispatch bulk export actions ---
     fun selectAllForExport() {
         store.dispatch(AppAction.SelectAllForExport)
     }
@@ -284,7 +275,6 @@ open class StateManager(
     fun deselectAllForExport() {
         store.dispatch(AppAction.DeselectAllForExport)
     }
-    // --- MODIFICATION END ---
 
     fun copyCodebaseToClipboard() {
         coroutineScope.launch {

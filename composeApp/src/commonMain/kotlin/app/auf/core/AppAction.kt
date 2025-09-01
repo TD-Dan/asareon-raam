@@ -35,6 +35,7 @@ interface AppAction {
     data class ToggleHolonExport(val holonId: String) : AppAction
     data object SelectAllForExport : AppAction
     data object DeselectAllForExport : AppAction
+    data class ToggleMessageCollapsed(val id: Long) : AppAction
 
 
     // --- Persona & Model Selection ---

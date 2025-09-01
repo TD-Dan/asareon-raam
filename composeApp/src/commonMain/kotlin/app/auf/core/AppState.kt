@@ -176,7 +176,10 @@ data class ChatMessage internal constructor(
     val usageMetadata: UsageMetadata?,
     val rawContent: String?,
     val compiledContent: String? = null,
-    val compilationStats: CompilationStats? = null
+    val compilationStats: CompilationStats? = null,
+    // --- MODIFICATION START ---
+    val isCollapsed: Boolean = false
+    // --- MODIFICATION END ---
 ) {
     companion object Factory {
         private var nextId = 0L
@@ -219,7 +222,10 @@ data class ChatMessage internal constructor(
 
                 rawContent = rawContent,
                 compiledContent = null,
-                compilationStats = null
+                compilationStats = null,
+                // --- MODIFICATION START ---
+                isCollapsed = false
+                // --- MODIFICATION END ---
             )
         }
 
@@ -236,7 +242,10 @@ data class ChatMessage internal constructor(
                 usageMetadata = usageMetadata,
                 rawContent = rawContent,
                 compiledContent = null,
-                compilationStats = null
+                compilationStats = null,
+                // --- MODIFICATION START ---
+                isCollapsed = false
+                // --- MODIFICATION END ---
             )
         }
 
@@ -244,6 +253,8 @@ data class ChatMessage internal constructor(
             title: String,
             rawContent: String
         ): ChatMessage {
+            // --- MODIFICATION START ---
+            val shouldCollapse = title != "Gateway Error" && title != "Graph Parsing Warning"
             return ChatMessage(
                 id = ++nextId,
                 author = Author.SYSTEM,
@@ -253,8 +264,10 @@ data class ChatMessage internal constructor(
                 usageMetadata = null,
                 rawContent = rawContent,
                 compiledContent = null,
-                compilationStats = null
+                compilationStats = null,
+                isCollapsed = shouldCollapse
             )
+            // --- MODIFICATION END ---
         }
     }
 }

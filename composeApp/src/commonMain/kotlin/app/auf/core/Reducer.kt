@@ -187,7 +187,16 @@ fun appReducer(state: AppState, action: AppAction): AppState {
                 state.copy(holonIdsForExport = emptySet())
             }
         }
-
+        is AppAction.ToggleMessageCollapsed -> {
+            val updatedHistory = state.chatHistory.map { message ->
+                if (message.id == action.id) {
+                    message.copy(isCollapsed = !message.isCollapsed)
+                } else {
+                    message
+                }
+            }
+            state.copy(chatHistory = updatedHistory)
+        }
 
         // --- Persona & Model ---
         is AppAction.SelectAiPersona -> {
@@ -254,21 +263,17 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         }
         // --- Settings ---
         is AppAction.UpdateSetting -> {
-            // --- MODIFICATION START: Handle compiler settings in the root reducer ---
             val newCompilerSettings = when (action.setting.key) {
                 "compiler.removeWhitespace" -> state.compilerSettings.copy(removeWhitespace = action.setting.value as? Boolean ?: state.compilerSettings.removeWhitespace)
                 "compiler.cleanHeaders" -> state.compilerSettings.copy(cleanHeaders = action.setting.value as? Boolean ?: state.compilerSettings.cleanHeaders)
                 "compiler.minifyJson" -> state.compilerSettings.copy(minifyJson = action.setting.value as? Boolean ?: state.compilerSettings.minifyJson)
-                else -> state.compilerSettings // Do nothing if it's not a compiler setting
+                else -> state.compilerSettings
             }
-            // If the compiler settings changed, update them. Otherwise, the action is for a feature.
             if (newCompilerSettings != state.compilerSettings) {
                 state.copy(compilerSettings = newCompilerSettings)
             } else {
-                // Let the feature reducers handle it.
                 state
             }
-            // --- MODIFICATION END ---
         }
 
         // --- Session Persistence ---
@@ -276,7 +281,6 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             chatHistory = action.history
         )
 
-        // --- MODIFICATION: Add else branch for non-exhaustive when ---
         else -> state
     }
 }

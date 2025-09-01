@@ -1,4 +1,3 @@
-// --- FILE: composeApp/src/commonMain/kotlin/app/auf/ui/ChatView.kt ---
 package app.auf.ui
 
 import androidx.compose.foundation.background
@@ -21,9 +20,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.auf.core.StateManager
-import app.auf.core.AppState
-import app.auf.core.GatewayStatus
+import app.auf.core.*
 import kotlinx.coroutines.launch
 
 @Composable
@@ -44,9 +41,7 @@ fun ChatView(
     val selectedAiPersonaId = appState.aiPersonaId
     val selectedAiPersonaName = aiPersonas.find { it.id == selectedAiPersonaId }?.name ?: "None"
 
-    // --- MODIFICATION START: Determine if the chat functionality should be active ---
     val isChatActive = selectedAiPersonaId != null
-    // --- MODIFICATION END ---
 
     val lastTransactionTokens = appState.chatHistory.lastOrNull { it.author == app.auf.core.Author.AI }?.usageMetadata
 
@@ -86,7 +81,6 @@ fun ChatView(
         .background(MaterialTheme.colorScheme.surface)
     )
     {
-        // --- MODIFICATION START: Conditionally display chat or placeholder ---
         if (isChatActive) {
             LazyColumn(
                 state = lazyListState,
@@ -97,7 +91,11 @@ fun ChatView(
                     items = displayedMessages,
                     key = { message -> message.id }
                 ) { message ->
-                    MessageCard(message = message, stateManager = stateManager)
+                    MessageCard(
+                        message = message,
+                        stateManager = stateManager,
+                        onToggleCollapsed = { stateManager.toggleMessageCollapsed(message.id) }
+                    )
                 }
             }
         } else {
@@ -122,7 +120,6 @@ fun ChatView(
                 }
             }
         }
-        // --- MODIFICATION END ---
 
 
         Row(
@@ -237,7 +234,6 @@ fun ChatView(
                         }
                         false
                     },
-                // --- MODIFICATION START: Update placeholder and enabled state ---
                 placeholder = {
                     if (isChatActive) {
                         Text("Enter message... (Ctrl+Enter to send, Enter for newline)")
@@ -246,7 +242,6 @@ fun ChatView(
                     }
                 },
                 enabled = !appState.isProcessing && isChatActive
-                // --- MODIFICATION END ---
             )
             Spacer(modifier = Modifier.width(8.dp))
             Button(

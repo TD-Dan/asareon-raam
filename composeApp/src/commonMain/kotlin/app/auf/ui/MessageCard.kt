@@ -55,15 +55,11 @@ import kotlinx.serialization.builtins.ListSerializer
  * allows toggling between raw and compiled views, and shows compilation statistics.
  */
 @Composable
-fun MessageCard(message: ChatMessage, stateManager: StateManager) {
-    var isCollapsed by remember(message.id) {
-        mutableStateOf(
-            message.author == Author.SYSTEM &&
-                    message.title != "Gateway Error" &&
-                    message.title != "Graph Parsing Warning"
-        )
-    }
-
+fun MessageCard(
+    message: ChatMessage,
+    stateManager: StateManager,
+    onToggleCollapsed: () -> Unit
+) {
     var showRaw by remember { mutableStateOf(false) }
     var showCompiled by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
@@ -103,7 +99,7 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    modifier = Modifier.weight(1f).clickable { isCollapsed = !isCollapsed },
+                    modifier = Modifier.weight(1f).clickable { onToggleCollapsed() },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -156,7 +152,9 @@ fun MessageCard(message: ChatMessage, stateManager: StateManager) {
                 }
             }
 
-            AnimatedVisibility(visible = !isCollapsed) {
+            // --- MODIFICATION START ---
+            AnimatedVisibility(visible = !message.isCollapsed) {
+                // --- MODIFICATION END ---
                 Column {
                     Spacer(Modifier.height(8.dp))
                     when {
