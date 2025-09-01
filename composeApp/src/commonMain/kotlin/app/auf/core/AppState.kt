@@ -7,11 +7,30 @@ import app.auf.util.PlatformDependencies
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
-import kotlinx.serialization.json.JsonElement
 
 /**
  * Defines the core, immutable data models for the entire AUF application state.
+ * As of v2.0, this object is lean, holding only top-level session state.
+ * Feature-specific state is managed within the `featureStates` map.
  */
+
+data class AppState(
+    // Core App State
+    val chatHistory: List<ChatMessage> = emptyList(),
+    val isSystemVisible: Boolean = false,
+    val isProcessing: Boolean = false, // Is the gateway currently busy?
+    val availableModels: List<String> = emptyList(),
+    val selectedModel: String = "gemini-1.5-flash-latest",
+    val toastMessage: String? = null,
+    val compilerSettings: CompilerSettings = CompilerSettings(),
+
+    /**
+     * The single entry point for all modular feature states. The key is the
+     * unique feature name (e.g., "KnowledgeGraphFeature"), and the value is the
+     * feature's specific state object (e.g., KnowledgeGraphState).
+     */
+    val featureStates: Map<String, Any> = emptyMap()
+)
 
 data class GatewayResponse(
     val contentBlocks: List<ContentBlock> = emptyList(),
@@ -20,110 +39,6 @@ data class GatewayResponse(
     val rawContent: String? = null
 )
 
-data class GraphLoadResult(
-    val holonGraph: List<Holon> = emptyList(),
-    val parsingErrors: List<String> = emptyList(),
-    val fatalError: String? = null,
-    val availableAiPersonas: List<HolonHeader> = emptyList(),
-    val determinedPersonaId: String? = null
-)
-
-enum class ViewMode {
-    CHAT, EXPORT, IMPORT, SETTINGS
-}
-
-data class ImportItem(
-    val sourcePath: String,
-    val initialAction: ImportAction,
-    val targetPath: String? = null
-)
-
-@Serializable
-sealed interface ImportAction {
-    val actionType: ImportActionType
-    val summary: String
-}
-
-enum class ImportActionType {
-    UPDATE, INTEGRATE, ASSIGN_PARENT, QUARANTINE, IGNORE, CREATE_ROOT
-}
-
-@Serializable
-@SerialName("Update")
-data class Update(
-    val targetHolonId: String,
-    override val actionType: ImportActionType = ImportActionType.UPDATE,
-    override val summary: String = "Update existing holon."
-) : ImportAction
-
-@Serializable
-@SerialName("Integrate")
-data class Integrate(
-    val parentHolonId: String,
-    override val actionType: ImportActionType = ImportActionType.INTEGRATE,
-    override val summary: String = "Integrate with known parent."
-) : ImportAction
-
-@Serializable
-@SerialName("AssignParent")
-data class AssignParent(
-    var assignedParentId: String? = null,
-    override val actionType: ImportActionType = ImportActionType.ASSIGN_PARENT,
-    override val summary: String = "New holon - requires parent."
-) : ImportAction
-
-@Serializable
-@SerialName("Quarantine")
-data class Quarantine(
-    val reason: String,
-    override val actionType: ImportActionType = ImportActionType.QUARANTINE,
-    override val summary: String = "Quarantine File"
-) : ImportAction
-
-@Serializable
-@SerialName("Ignore")
-data class Ignore(
-    override val actionType: ImportActionType = ImportActionType.IGNORE,
-    override val summary: String = "Do not import."
-) : ImportAction
-
-@Serializable
-@SerialName("CreateRoot")
-data class CreateRoot(
-    override val actionType: ImportActionType = ImportActionType.CREATE_ROOT,
-    override val summary: String = "IMPORT AS NEW ROOT PERSONA"
-) : ImportAction
-
-
-data class ImportState(
-    val sourcePath: String,
-    val items: List<ImportItem> = emptyList(),
-    val selectedActions: Map<String, ImportAction> = emptyMap()
-)
-
-data class AppState(
-    // Core App State
-    val holonGraph: List<Holon> = emptyList(),
-    val catalogueFilter: String? = null,
-    val activeHolons: Map<String, Holon> = emptyMap(),
-    val availableAiPersonas: List<HolonHeader> = emptyList(),
-    val aiPersonaId: String? = null,
-    val contextualHolonIds: Set<String> = emptySet(),
-    val inspectedHolonId: String? = null,
-    val chatHistory: List<ChatMessage> = emptyList(),
-    val isSystemVisible: Boolean = false,
-    val gatewayStatus: GatewayStatus = GatewayStatus.IDLE,
-    val isProcessing: Boolean = false,
-    val availableModels: List<String> = emptyList(),
-    val selectedModel: String = "gemini-1.5-flash-latest",
-    val errorMessage: String? = null,
-    val currentViewMode: ViewMode = ViewMode.CHAT,
-    val holonIdsForExport: Set<String> = emptySet(),
-    val importState: ImportState? = null,
-    val toastMessage: String? = null,
-    val compilerSettings: CompilerSettings = CompilerSettings(),
-    val featureStates: Map<String, Any> = emptyMap()
-)
 
 @Serializable
 sealed interface ContentBlock {
@@ -140,8 +55,7 @@ data class TextBlock(
 /**
  * A universal container for any content wrapped in ```markdown code fences```.
  * The `language` hint (e.g., "json", "kotlin" ,"auf_tool_name") is used by the UI to determine
- * how to render the block and what actions to offer. For example, a `json`
- * block might be parsed into an Action Manifest and rendered with confirm/reject buttons.
+ * how to render the block and what actions to offer.
  */
 @Serializable
 @SerialName("CodeBlock")
@@ -166,7 +80,6 @@ data class CompilationStats(
 )
 
 @Serializable
-@ConsistentCopyVisibility
 data class ChatMessage internal constructor(
     @Transient val id: Long = 0L,
     val author: Author,
@@ -177,9 +90,7 @@ data class ChatMessage internal constructor(
     val rawContent: String?,
     val compiledContent: String? = null,
     val compilationStats: CompilationStats? = null,
-    // --- MODIFICATION START ---
     val isCollapsed: Boolean = false
-    // --- MODIFICATION END ---
 ) {
     companion object Factory {
         private var nextId = 0L
@@ -189,15 +100,11 @@ data class ChatMessage internal constructor(
         fun initialize(platform: PlatformDependencies, parser: AufTextParser) {
             this.platform = platform
             this.parser = parser
-            nextId = 0L // Ensure counter is reset on initialization
+            nextId = 0L
         }
 
-        /**
-         * Takes a list of messages (presumably from a deserialized session file) and
-         * returns a new list where each message has a fresh, unique, sequential ID.
-         */
         fun reId(loadedMessages: List<ChatMessage>): List<ChatMessage> {
-            nextId = 0L // Reset counter before re-IDing
+            nextId = 0L
             return loadedMessages.map { it.copy(id = ++nextId) }
         }
 
@@ -219,13 +126,8 @@ data class ChatMessage internal constructor(
                 timestamp = getTimestamp(),
                 contentBlocks = getParser().parse(rawContent),
                 usageMetadata = null,
-
                 rawContent = rawContent,
-                compiledContent = null,
-                compilationStats = null,
-                // --- MODIFICATION START ---
                 isCollapsed = false
-                // --- MODIFICATION END ---
             )
         }
 
@@ -241,11 +143,7 @@ data class ChatMessage internal constructor(
                 contentBlocks = getParser().parse(rawContent),
                 usageMetadata = usageMetadata,
                 rawContent = rawContent,
-                compiledContent = null,
-                compilationStats = null,
-                // --- MODIFICATION START ---
                 isCollapsed = false
-                // --- MODIFICATION END ---
             )
         }
 
@@ -253,7 +151,6 @@ data class ChatMessage internal constructor(
             title: String,
             rawContent: String
         ): ChatMessage {
-            // --- MODIFICATION START ---
             val shouldCollapse = title != "Gateway Error" && title != "Graph Parsing Warning"
             return ChatMessage(
                 id = ++nextId,
@@ -263,11 +160,8 @@ data class ChatMessage internal constructor(
                 contentBlocks = getParser().parse(rawContent),
                 usageMetadata = null,
                 rawContent = rawContent,
-                compiledContent = null,
-                compilationStats = null,
                 isCollapsed = shouldCollapse
             )
-            // --- MODIFICATION END ---
         }
     }
 }
@@ -276,54 +170,3 @@ data class ChatMessage internal constructor(
 enum class Author {
     USER, AI, SYSTEM
 }
-
-enum class GatewayStatus {
-    OK, IDLE, ERROR, LOADING
-}
-
-@Serializable
-data class Holon(
-    val header: HolonHeader,
-    val payload: JsonElement
-)
-
-@Serializable
-data class HolonUsage(
-    val scope: String? = null,
-    val description: String? = null
-)
-
-@Serializable
-data class HolonHeader(
-    val id: String,
-    val type: String,
-    val name: String,
-    val summary: String,
-    val version: String = "0.0.0",
-    @SerialName("created_at")
-    val createdAt: String? = null,
-    @SerialName("modified_at")
-    val modifiedAt: String? = null,
-    @SerialName("holon_usage")
-    val holonUsage: HolonUsage? = null,
-    val relationships: List<Relationship> = emptyList(),
-    @SerialName("sub_holons")
-    val subHolons: List<SubHolonRef> = emptyList(),
-    @Transient val filePath: String = "",
-    @Transient val parentId: String? = null,
-    @Transient val depth: Int = 0
-)
-
-@Serializable
-data class Relationship(
-    @SerialName("target_id")
-    val targetId: String,
-    val type: String
-)
-
-@Serializable
-data class SubHolonRef(
-    val id: String,
-    val type: String,
-    val summary: String
-)

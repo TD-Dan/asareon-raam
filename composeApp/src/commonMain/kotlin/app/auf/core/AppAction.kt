@@ -9,11 +9,6 @@ import app.auf.model.SettingValue
  */
 interface AppAction {
 
-    // --- Graph Loading Actions ---
-    data object LoadGraph : AppAction
-    data class LoadGraphSuccess(val result: GraphLoadResult) : AppAction
-    data class LoadGraphFailure(val error: String) : AppAction
-
     // --- Chat & Gateway Actions ---
     data class AddUserMessage(val rawContent: String) : AppAction
     data class AddSystemMessage(val title: String, val rawContent: String) : AppAction
@@ -25,21 +20,13 @@ interface AppAction {
     data class RerunFromMessage(val id: Long) : AppAction
 
     // --- UI & View Actions ---
-    data class SetViewMode(val mode: ViewMode) : AppAction
-    data class InspectHolon(val holonId: String?) : AppAction
-    data class ToggleHolonActive(val holonId: String) : AppAction
-    data class SetCatalogueFilter(val type: String?) : AppAction
     data class ShowToast(val message: String) : AppAction
     data object ClearToast : AppAction
     data object ToggleSystemVisibility : AppAction
-    data class ToggleHolonExport(val holonId: String) : AppAction
-    data object SelectAllForExport : AppAction
-    data object DeselectAllForExport : AppAction
     data class ToggleMessageCollapsed(val id: Long) : AppAction
 
 
-    // --- Persona & Model Selection ---
-    data class SelectAiPersona(val holonId: String?) : AppAction
+    // --- Model Selection ---
     data class SelectModel(val modelName: String) : AppAction
     data class SetAvailableModels(val models: List<String>) : AppAction
 
