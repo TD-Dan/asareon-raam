@@ -22,7 +22,7 @@ open class GatewayService(
     open suspend fun sendMessage(selectedModel: String, messages: List<ChatMessage>): GatewayResponse {
         return withContext(coroutineScope.coroutineContext) {
             try {
-                val apiRequestContents = convertChatToApiContents(messages)
+                val apiRequestContents = buildApiContentsFromChatHistory(messages)
                 val response = gateway.generateContent(apiKey, selectedModel, apiRequestContents)
 
                 response.error?.let {
@@ -38,6 +38,7 @@ open class GatewayService(
                 GatewayResponse(
                     contentBlocks = parser.parse(rawTextResponse),
                     usageMetadata = response.usageMetadata,
+
                     rawContent = rawTextResponse
                 )
             } catch (e: Exception) {
@@ -55,8 +56,12 @@ open class GatewayService(
         }
     }
 
-    private fun convertChatToApiContents(messages: List<ChatMessage>): List<Content> {
+    open fun buildApiContentsFromChatHistory(messages: List<ChatMessage>): List<Content> {
         if (messages.isEmpty()) return emptyList()
+
+        // --- INSTRUMENTATION START ---
+        println("[GatewayService] --- Starting Prompt Build ---")
+        // --- INSTRUMENTATION END ---
 
         val mergedContents = mutableListOf<Content>()
         val currentParts = mutableListOf<String>()
@@ -84,15 +89,26 @@ open class GatewayService(
                 currentRole = msgRole
             }
 
-            // --- FIX IS HERE ---
-            // This is now the single source of truth for what content gets sent.
-            // For system messages, we prioritize the optimized compiled content.
-            // For User/AI messages, we always use the original raw content.
-            val contentToSend = when (msg.author) {
-                Author.SYSTEM -> msg.compiledContent ?: msg.rawContent ?: ""
-                else -> msg.rawContent ?: ""
+            val contentToSend: String
+            // --- INSTRUMENTATION START ---
+            print("[GatewayService] Processing msg '${msg.title ?: msg.author}': ")
+            // --- INSTRUMENTATION END ---
+            when (msg.author) {
+                Author.SYSTEM -> {
+                    if (msg.compiledContent != null) {
+                        contentToSend = msg.compiledContent
+                        println("Using compiledContent.")
+                    } else {
+                        contentToSend = msg.rawContent ?: ""
+                        println("FALLING BACK to rawContent.")
+                    }
+                }
+                else -> {
+                    contentToSend = msg.rawContent ?: ""
+                    println("Using rawContent.")
+                }
             }
-            // --- END FIX ---
+
 
             val contentToAdd = if (msg.author == Author.SYSTEM) {
                 "--- START OF FILE ${msg.title} ---\n$contentToSend"
@@ -103,6 +119,9 @@ open class GatewayService(
         }
 
         commitCurrentBlock()
+        // --- INSTRUMENTATION START ---
+        println("[GatewayService] --- Prompt Build Complete: ${mergedContents.size} blocks. ---")
+        // --- INSTRUMENTATION END ---
         return mergedContents
     }
 }

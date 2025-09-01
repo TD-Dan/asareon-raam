@@ -31,7 +31,7 @@ open class ChatService(
 
         store.dispatch(AppAction.SendMessageLoading)
 
-        val historyForApi = state.chatHistory.filter { it.author == Author.USER || it.author == Author.AI }
+        val historyForApi = state.chatHistory
         val systemMessages = buildSystemContextMessages()
         val fullContextForApi = systemMessages + historyForApi
 
@@ -97,29 +97,26 @@ open class ChatService(
 
     open fun buildFullPromptAsString(): String {
         val state = store.state.value
-        val historyForApi = state.chatHistory.map {
-            if (it.author == Author.USER || it.author == Author.AI) {
-                it.copy(compiledContent = it.rawContent)
-            } else {
-                val result = promptCompiler.compile(it.rawContent ?: "", state.compilerSettings)
-                it.copy(compiledContent = result.compiledText, compilationStats = result.stats)
-            }
-        }
-
+        val historyForApi = state.chatHistory
         val systemMessages = buildSystemContextMessages()
         val fullContext = systemMessages + historyForApi
 
         return fullContext.joinToString("\n\n") { msg ->
-            val content = msg.compiledContent ?: msg.rawContent ?: ""
+            // For clipboard accuracy, we ensure system messages always use their compiled form.
+            val content = when {
+                msg.author == Author.SYSTEM -> msg.compiledContent ?: promptCompiler.compile(msg.rawContent ?: "", state.compilerSettings).compiledText
+                else -> msg.rawContent ?: ""
+            }
+
             when (msg.author) {
-                Author.USER, Author.AI -> {
-                    val role = if (msg.author == Author.AI) "model" else "USER"
-                    "--- $role MESSAGE ---\n$content"
-                }
+                Author.USER -> "--- USER MESSAGE ---\n$content"
+                Author.AI -> "--- model MESSAGE ---\n$content" // The test expects "model"
                 Author.SYSTEM -> "--- START OF FILE ${msg.title} ---\n$content"
             }
         }
     }
+    // --- FIX END ---
+
 
     private fun handleAppRequests(message: ChatMessage) {
         message.contentBlocks.filterIsInstance<CodeBlock>().forEach { block ->

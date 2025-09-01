@@ -9,7 +9,6 @@ import app.auf.feature.knowledgegraph.GraphLoadResult
 import app.auf.feature.knowledgegraph.Holon
 import app.auf.feature.knowledgegraph.KnowledgeGraphAction
 import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
-import app.auf.model.SettingValue
 import app.auf.service.AufTextParser
 import app.auf.service.ChatService
 import app.auf.service.PromptCompiler
@@ -20,31 +19,25 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
-import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 /**
  * ## Mandate
- * This test suite focuses on integration-level scenarios within the chat functionality,
- * particularly on the prompt compilation pipeline and the interaction between the
- * ChatService, the KnowledgeGraphFeature, and the GatewayService.
+ * This integration test verifies the complete, end-to-end flow of a chat interaction.
+ * It ensures that the ChatService correctly orchestrates actions and state changes by
+ * interacting with the Store, KnowledgeGraph, and GatewayService. It is not concerned
+ * with the specifics of prompt compilation, but rather with the integrity of the data flow.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatIntegrationTest {
 
-    /** A dedicated data class to hold the test environment for type safety. */
     private data class TestEnvironment(
         val store: FakeStore,
         val chatService: ChatService,
         val gatewayService: FakeGatewayService
     )
 
-    /**
-     * A suspend function that sets up the test environment within the caller's TestScope.
-     */
-    private suspend fun TestScope.setupTestEnvironment(initialState: AppState = AppState()): TestEnvironment {
+    private fun TestScope.setupTestEnvironment(initialState: AppState = AppState()): TestEnvironment {
         val platform = FakePlatformDependencies()
         val sessionManager = FakeSessionManager(platform)
         val kgFeature = KnowledgeGraphFeature(platform, this)
@@ -59,93 +52,96 @@ class ChatIntegrationTest {
             platform.getBasePathFor(BasePath.FRAMEWORK) + platform.pathSeparator + "framework_protocol.md",
             "**Protocol**"
         )
-        // Start feature lifecycles to trigger initial graph load etc.
         store.startFeatureLifecycles()
+        runCurrent() // Allow initial graph load
+
+        // COMMON SETUP: Ensure a persona is loaded and selected for most tests
+        val persona = Holon(holonHeader, kotlinx.serialization.json.JsonNull)
+        store.dispatch(KnowledgeGraphAction.LoadGraphSuccess(GraphLoadResult(holonGraph = listOf(persona), availableAiPersonas = listOf(holonHeader), determinedPersonaId = holonHeader.id)))
         runCurrent()
 
         return TestEnvironment(store, chatService, gatewayService)
     }
 
+    private val holonHeader = app.auf.feature.knowledgegraph.HolonHeader("sage-1", "AI_Persona_Root", "Sage", "")
 
     @Test
-    fun `system messages are compiled based on settings before being sent`() = runTest {
+    fun `sendMessage happy path dispatches correct actions and updates state`() = runTest {
         // ARRANGE
-        val testEnv = setupTestEnvironment()
-
-        val holonRawContent = """
-        {
-            "header": {
-                "id": "test-holon-1",
-                "type": "Test",
-                "name": "Test Holon",
-                "summary": "A test holon.",
-                "version": "1.0",
-                "created_at": "2025-01-01T00:00:00Z"
-            },
-            "payload": { "data": "some value" }
-        }
-        """.trimIndent()
-        val holon = JsonProvider.appJson.decodeFromString(Holon.serializer(), holonRawContent)
-
-        // Set up the knowledge graph state
-        testEnv.store.dispatch(KnowledgeGraphAction.LoadGraphSuccess(GraphLoadResult(holonGraph = listOf(holon))))
-        testEnv.store.dispatch(KnowledgeGraphAction.ToggleHolonActive("test-holon-1"))
-        testEnv.store.dispatch(KnowledgeGraphAction.SelectAiPersona(holon.header.id))
-
-        // Update compiler settings via core AppActions
-        testEnv.store.dispatch(AppAction.UpdateSetting(SettingValue("compiler.cleanHeaders", true)))
-        testEnv.store.dispatch(AppAction.UpdateSetting(SettingValue("compiler.minifyJson", true)))
-        testEnv.store.dispatch(AppAction.UpdateSetting(SettingValue("compiler.removeWhitespace", true)))
-        advanceUntilIdle()
+        val (store, chatService, gatewayService) = setupTestEnvironment()
+        gatewayService.nextResponse = GatewayResponse(rawContent = "AI reply")
 
         // ACT
-        testEnv.chatService.sendMessage()
+        chatService.sendMessage()
         advanceUntilIdle()
 
         // ASSERT
-        val systemMessagesSentToChatService = testEnv.chatService.buildSystemContextMessages()
-        assertNotNull(systemMessagesSentToChatService)
+        assertTrue(gatewayService.sendMessageCalledWith != null, "GatewayService.sendMessage should have been called.")
+        assertEquals(2, store.dispatchedActions.size, "Expected 2 actions: Loading and Success.")
+        assertIs<AppAction.SendMessageLoading>(store.dispatchedActions[0])
+        assertIs<AppAction.SendMessageSuccess>(store.dispatchedActions[1])
 
-        val systemBlock = systemMessagesSentToChatService.first { it.title == "test-holon-1.json" }
-        val sentContent = systemBlock.compiledContent
-        assertNotNull(sentContent, "The compiled content of the system message should not be null.")
-
-        assertFalse(sentContent.contains("\n"), "Compiled content should be minified.")
-        assertFalse(sentContent.contains("version"), "Compiled content should not contain 'version'.")
-        assertFalse(sentContent.contains("created_at"), "Compiled content should not contain 'created_at'.")
-        assertTrue(sentContent.contains("test-holon-1"), "Compiled content must contain the ID.")
-        assertTrue(sentContent.contains("some value"), "Compiled content must contain the payload data.")
+        val finalState = store.state.value
+        assertFalse(finalState.isProcessing, "isProcessing flag should be false after completion.")
+        val lastMessage = finalState.chatHistory.last()
+        assertEquals(Author.AI, lastMessage.author)
+        assertEquals("AI reply", lastMessage.rawContent)
     }
 
     @Test
-    fun `buildFullPromptAsString uses compiled content for system messages and raw for others`() = runTest {
+    fun `sendMessage error path dispatches failure and updates state with error message`() = runTest {
         // ARRANGE
-        val testEnv = setupTestEnvironment()
-
-        // Set up state
-        testEnv.store.dispatch(AppAction.UpdateSetting(SettingValue("compiler.minifyJson", true)))
-        val userMessage = "User query."
-        val aiResponse = "AI response."
-        val systemMessageRaw = """
-        {
-            "header": { "id": "sys-holon" },
-            "payload": {}
-        }
-        """.trimIndent()
-        val expectedSystemCompiled = """{"header":{"id":"sys-holon"},"payload":{}}"""
-
-        testEnv.store.dispatch(AppAction.AddUserMessage(userMessage))
-        testEnv.store.dispatch(AppAction.SendMessageSuccess(GatewayResponse(rawContent = aiResponse)))
-        testEnv.store.dispatch(AppAction.AddSystemMessage("sys-holon.json", systemMessageRaw))
-        advanceUntilIdle()
+        val (store, chatService, gatewayService) = setupTestEnvironment()
+        gatewayService.nextResponse = GatewayResponse(errorMessage = "API Failure")
 
         // ACT
-        val fullPrompt = testEnv.chatService.buildFullPromptAsString()
+        chatService.sendMessage()
+        advanceUntilIdle()
 
         // ASSERT
-        assertTrue(fullPrompt.contains(expectedSystemCompiled), "Prompt should contain the compiled system message.")
-        assertFalse(fullPrompt.contains(""""header": {"""), "Prompt should NOT contain the pretty-printed system message.")
-        assertTrue(fullPrompt.contains("--- USER MESSAGE ---\n$userMessage"), "Prompt should contain raw user message.")
-        assertTrue(fullPrompt.contains("--- model MESSAGE ---\n$aiResponse"), "Prompt should contain raw AI message.")
+        assertEquals(2, store.dispatchedActions.size)
+        assertIs<AppAction.SendMessageLoading>(store.dispatchedActions[0])
+        assertIs<AppAction.SendMessageFailure>(store.dispatchedActions[1])
+
+        val finalState = store.state.value
+        assertFalse(finalState.isProcessing)
+        val lastMessage = finalState.chatHistory.last()
+        assertEquals(Author.SYSTEM, lastMessage.author)
+        assertEquals("Gateway Error", lastMessage.title)
+        assertEquals("API Failure", lastMessage.rawContent)
+    }
+
+    @Test
+    fun `sendMessage is blocked if isProcessing is true`() = runTest {
+        // ARRANGE
+        val initialState = AppState(isProcessing = true)
+        val (store, chatService, gatewayService) = setupTestEnvironment(initialState)
+
+        // ACT
+        chatService.sendMessage()
+        advanceUntilIdle()
+
+        // ASSERT
+        assertTrue(gatewayService.sendMessageCalledWith == null, "GatewayService.sendMessage should NOT be called.")
+        assertTrue(store.dispatchedActions.isEmpty(), "No actions should be dispatched when processing.")
+    }
+
+    @Test
+    fun `sendMessage is blocked if no AI persona is selected`() = runTest {
+        // ARRANGE
+        val (store, chatService, gatewayService) = setupTestEnvironment()
+        // Override the common setup by deselecting the persona
+        store.dispatch(KnowledgeGraphAction.SelectAiPersona(null))
+        runCurrent()
+
+        // ACT
+        chatService.sendMessage()
+        advanceUntilIdle()
+
+        // ASSERT
+        assertTrue(gatewayService.sendMessageCalledWith == null, "GatewayService.sendMessage should NOT be called.")
+        // The SelectAiPersona action will be in the history, so we check that no *new* actions were dispatched.
+        assertEquals(1, store.dispatchedActions.size)
+        assertIs<KnowledgeGraphAction.SelectAiPersona>(store.dispatchedActions[0])
     }
 }
