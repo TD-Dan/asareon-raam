@@ -57,12 +57,13 @@ open class Store(
         _state.value = newState
 
 
-        // --- SIDE EFFECT: AUTO-SAVE SESSION ---
+        // ---DEPRECATED: moved into SessionService
+        // SIDE EFFECT: AUTO-SAVE SESSION ---
         // If the chat history has changed, save the new history to disk.
-        if (newState.chatHistory != previousState.chatHistory) {
-            coroutineScope.launch {
-                sessionManager.saveSession(newState.chatHistory)
-            }
-        }
+        //if (newState.chatHistory != previousState.chatHistory) {
+        //    coroutineScope.launch {
+        //        sessionManager.saveSession(newState.chatHistory)
+        //    }
+        //}
     }
 }
