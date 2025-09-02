@@ -1,7 +1,6 @@
 package app.auf.core
 
 import app.auf.model.CompilerSettings
-import app.auf.service.UsageMetadata
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -20,13 +19,9 @@ data class AppState(
     val featureStates: Map<String, Any> = emptyMap()
 )
 
-data class GatewayResponse(
-    val contentBlocks: List<ContentBlock> = emptyList(),
-    val usageMetadata: UsageMetadata? = null,
-    val errorMessage: String? = null,
-    val rawContent: String? = null
-)
-
+// This class is no longer needed in core, but ContentBlock types are used by the UI
+// and parser. We will keep them for now for stability. A future refactor could move
+// them to a dedicated `ui.model` package.
 
 @Serializable
 sealed interface ContentBlock {

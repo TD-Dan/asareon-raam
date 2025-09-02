@@ -28,7 +28,7 @@ import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SessionView(
+fun KnowledgeGraphCatalogueView(
     kgState: KnowledgeGraphState,
     onFilter: (String?) -> Unit,
     onHolonSelected: (String) -> Unit,

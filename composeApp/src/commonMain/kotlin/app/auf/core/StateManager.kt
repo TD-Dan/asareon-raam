@@ -5,9 +5,12 @@ import app.auf.feature.knowledgegraph.ImportAction
 import app.auf.feature.knowledgegraph.KnowledgeGraphAction
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
+import app.auf.feature.session.SessionAction
 import app.auf.model.SettingDefinition
 import app.auf.model.SettingValue
-import app.auf.service.*
+import app.auf.service.BackupManager
+import app.auf.service.SettingsManager
+import app.auf.service.SourceCodeService
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
@@ -26,21 +29,29 @@ open class StateManager(
 
     fun initialize() {
         backupManager.createBackup("on-launch")
-        // Model loading is now handled by HkgAgentFeature
     }
 
     fun cancelMessage() {
-        // TODO: This needs to be re-wired to the HkgAgentFeature
+        // TODO: This needs to be re-wired to the HkgAgentFeature.
     }
 
+    // --- Session Actions ---
+    fun postUserMessage(sessionId: String, content: String) {
+        store.dispatch(SessionAction.PostEntry(sessionId, "USER", content))
+    }
+
+
+    // --- Agent Actions ---
     fun selectHkgPersona(agentId: String, personaId: String?) {
         store.dispatch(HkgAgentAction.SelectHkgPersona(agentId, personaId))
     }
 
+    // --- Time formatting ---
     fun formatDisplayTimestamp(timestamp: Long): String {
         return platform.formatDisplayTimestamp(timestamp)
     }
 
+    // --- Backup Actions ---
     fun openBackupFolder() {
         backupManager.createBackup("on-export-view")
         backupManager.openBackupFolder()

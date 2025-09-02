@@ -14,44 +14,32 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.*
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.*
 import app.auf.feature.hkgagent.HkgAgentFeatureState
-import app.auf.feature.session.SessionAction
 import app.auf.feature.session.SessionFeatureState
 import kotlinx.coroutines.launch
 
 @Composable
 fun SessionView(
     stateManager: StateManager,
-    // --- MODIFICATION START: Inject the list of features to find the UI provider ---
     features: List<Feature>,
-    // --- MODIFICATION END ---
     modifier: Modifier = Modifier
 ) {
     val appState by stateManager.state.collectAsState()
-    // --- MODIFICATION START: Read state from the new modular features ---
     val sessionFeatureState = appState.featureStates["SessionFeature"] as? SessionFeatureState
     val hkgAgentFeatureState = appState.featureStates["HkgAgentFeature"] as? HkgAgentFeatureState
 
-    // For now, we assume a single session and a single agent.
-    // A multi-tabbed UI would require a concept of the "active" session ID.
     val activeSession = sessionFeatureState?.sessions?.values?.firstOrNull()
     val activeAgent = hkgAgentFeatureState?.agents?.values?.firstOrNull()
     val isProcessing = activeAgent?.isProcessing ?: false
-    val isChatActive = activeAgent?.hkgPersonaId != null || activeAgent?.hkgPersonaId == null // Chat is always active now
+    val isChatActive = activeAgent != null // Chat is active if an agent exists
     val displayedTranscript = activeSession?.transcript ?: emptyList()
-    // --- MODIFICATION END ---
 
     var userMessage by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
     val lazyListState = rememberLazyListState()
-    val clipboardManager = LocalClipboardManager.current
     val focusRequester = remember { FocusRequester() }
 
     val availableModels = appState.availableModels
@@ -67,12 +55,10 @@ fun SessionView(
 
     val sendMessageAction = {
         if (userMessage.isNotBlank() && !isProcessing && activeSession != null) {
-            // --- MODIFICATION: Dispatch the new SessionAction ---
-            stateManager.dispatch(SessionAction.PostEntry(
+            stateManager.postUserMessage(
                 sessionId = activeSession.id,
-                agentId = "USER",
                 content = userMessage
-            ))
+            )
             userMessage = ""
         }
     }
@@ -93,7 +79,6 @@ fun SessionView(
                     items = displayedTranscript,
                     key = { entry -> entry.id }
                 ) { entry ->
-                    // This will be the next file we refactor. It will error for now.
                     MessageCard(
                         entry = entry,
                         stateManager = stateManager
@@ -105,33 +90,20 @@ fun SessionView(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        "No Active Session",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
+                Text( "No Active Session" )
             }
         }
 
-        // --- DEPRECATED: Complex footer is being replaced by the modular header ---
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // --- MODIFICATION START: Render feature-provided UI slots ---
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Find any feature that provides a SessionHeader and render it.
                 features.forEach { feature ->
                     feature.composableProvider?.SessionHeader(stateManager)
                 }
             }
-            // --- MODIFICATION END ---
 
             var isModelSelectorExpanded by remember { mutableStateOf(false) }
 
@@ -163,7 +135,7 @@ fun SessionView(
                     .onKeyEvent { event ->
                         if (event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
                             if (event.isShiftPressed) {
-                                // Allow newline with Shift+Enter
+                                // Allow newline
                             } else {
                                 sendMessageAction()
                                 return@onKeyEvent true
@@ -179,7 +151,7 @@ fun SessionView(
                 onClick = { if (isProcessing) stateManager.cancelMessage() else sendMessageAction() },
                 modifier = Modifier.height(56.dp),
                 enabled = isChatActive,
-                colors = if (isProcessing) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer) else ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                colors = if (isProcessing) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer) else ButtonDefaults.buttonColors()
             ) {
                 if (isProcessing) {
                     Row(verticalAlignment = Alignment.CenterVertically) {

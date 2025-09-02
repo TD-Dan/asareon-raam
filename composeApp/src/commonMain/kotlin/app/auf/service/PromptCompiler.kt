@@ -1,6 +1,5 @@
 package app.auf.service
 
-import app.auf.core.CompilationStats
 import app.auf.model.CompilerSettings
 import app.auf.model.SettingDefinition
 import app.auf.model.SettingType
@@ -10,6 +9,22 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+
+/**
+ * A simple data class to hold the statistics from a compilation pass.
+ */
+data class CompilationStats(
+    val originalCharCount: Int,
+    val compiledCharCount: Int
+) {
+    val reduction: Int = originalCharCount - compiledCharCount
+    val efficiency: Double = if (originalCharCount > 0) {
+        (reduction.toDouble() / originalCharCount.toDouble()) * 100.0
+    } else {
+        0.0
+    }
+}
+
 
 /**
  * A wrapper for the result of a compilation, containing both the

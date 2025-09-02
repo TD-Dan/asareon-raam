@@ -28,7 +28,6 @@ import app.auf.core.Store
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import app.auf.feature.session.SessionAction
 import app.auf.feature.session.SessionFeatureState
-import app.auf.service.GatewayService
 import app.auf.service.PromptCompiler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +37,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
 import app.auf.feature.knowledgegraph.Holon as HolonData
 
 // --- 1. MODEL ---
@@ -90,9 +88,8 @@ sealed interface HkgAgentAction : AppAction {
  * and post responses.
  */
 class HkgAgentFeature(
-    private val gatewayService: GatewayService,
+    private val agentGateway: AgentGateway,
     private val promptCompiler: PromptCompiler,
-    // TODO: This direct dependency will be removed when the HkgAgent builds its own context.
     private val platform: app.auf.util.PlatformDependencies,
     private val jsonParser: Json,
     private val coroutineScope: CoroutineScope
@@ -133,8 +130,16 @@ class HkgAgentFeature(
     override fun start(store: Store) {
         this.store = store
 
+        coroutineScope.launch {
+            val models = agentGateway.listAvailableModels()
+            withContext(Dispatchers.Main) {
+                store.dispatch(AppAction.SetAvailableModels(models))
+            }
+        }
+
         // Create a default agent for the default session on startup
-        store.dispatch(HkgAgentAction.CreateAgent("default-session", "sage-agent-1", store.state.value.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState)?.aiPersonaId)
+        val kgState = store.state.value.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState
+        store.dispatch(HkgAgentAction.CreateAgent("default-session", "sage-agent-1", kgState?.aiPersonaId))
 
 
         coroutineScope.launch(Dispatchers.Default) {
@@ -168,15 +173,9 @@ class HkgAgentFeature(
 
         val promptContents = _buildPromptContents(agent, transcript)
         val selectedModel = store.state.value.selectedModel
+        val request = AgentRequest(selectedModel, promptContents)
 
-        // This is a temporary conversion until GatewayService is updated to accept a simpler structure
-        val apiRequest = promptContents.map {
-            val author = if (it.role == "model") app.auf.core.Author.AI else app.auf.core.Author.USER
-            val title = if (author == app.auf.core.Author.USER) null else "AI"
-            app.auf.core.ChatMessage.createSystem(title ?: "", it.parts.first().text)
-        }
-
-        val response = gatewayService.sendMessage(selectedModel, apiRequest)
+        val response = agentGateway.generateContent(request)
 
         withContext(Dispatchers.Main) {
             if (response.errorMessage != null) {
@@ -196,7 +195,7 @@ class HkgAgentFeature(
         }
     }
 
-    private fun _buildPromptContents(agent: HkgAgentState, transcript: List<app.auf.feature.session.LedgerEntry>): List<app.auf.service.Content> {
+    private fun _buildPromptContents(agent: HkgAgentState, transcript: List<app.auf.feature.session.LedgerEntry>): List<Content> {
         val store = this.store ?: return emptyList()
         val appState = store.state.value
         val kgState = appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState
@@ -204,7 +203,6 @@ class HkgAgentFeature(
 
         val promptMessages = mutableListOf<Pair<String, String>>() // Role, Content
 
-        // Smart Mode: Build a rich context prompt
         if (agent.hkgPersonaId != null && kgState != null) {
             val protocolPath = platform.getBasePathFor(app.auf.util.BasePath.FRAMEWORK) + platform.pathSeparator + "framework_protocol.md"
             promptMessages.add("user" to "--- START OF FILE framework_protocol.md ---\n${platform.readFileContent(protocolPath)}")
@@ -217,22 +215,33 @@ class HkgAgentFeature(
             }
         }
 
-        // Add chat history for both Smart and Dumb modes
         transcript.forEach { entry ->
             val role = when(entry.agentId) {
                 "USER" -> "user"
-                else -> "model" // Treat CORE and other AI agents as the 'model' role
+                else -> "model"
             }
             promptMessages.add(role to entry.content)
         }
 
         // Merge consecutive messages
-        return gatewayService.buildApiContentsFromChatHistory(
-            promptMessages.map { (role, content) ->
-                val author = if (role == "user") app.auf.core.Author.USER else app.auf.core.Author.AI
-                app.auf.core.ChatMessage.createSystem("prompt", content).copy(author = author)
+        if (promptMessages.isEmpty()) return emptyList()
+
+        val mergedContents = mutableListOf<Content>()
+        var currentRole = promptMessages.first().first
+        var currentText = StringBuilder()
+
+        for ((role, text) in promptMessages) {
+            if (role == currentRole) {
+                currentText.append(text).append("\n\n")
+            } else {
+                mergedContents.add(Content(currentRole, listOf(Part(currentText.toString().trim()))))
+                currentRole = role
+                currentText = StringBuilder(text).append("\n\n")
             }
-        )
+        }
+        mergedContents.add(Content(currentRole, listOf(Part(currentText.toString().trim()))))
+
+        return mergedContents
     }
 
     inner class HkgAgentComposableProvider : Feature.ComposableProvider {
@@ -241,9 +250,6 @@ class HkgAgentFeature(
             val appState by stateManager.state.collectAsState()
             val kgState = appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState
             val agentFeatureState = appState.featureStates[name] as? HkgAgentFeatureState
-
-            // For now, assume a single agent for a single session view
-            // A more complex UI would need to know which session is active
             val activeAgent = agentFeatureState?.agents?.values?.firstOrNull()
             val aiPersonas = kgState?.availableAiPersonas ?: emptyList()
 
@@ -267,7 +273,7 @@ class HkgAgentFeature(
                             DropdownMenuItem(
                                 text = { Text("None (Dumb Mode)") },
                                 onClick = {
-                                    stateManager.dispatch(HkgAgentAction.SelectHkgPersona(activeAgent.id, null))
+                                    stateManager.selectHkgPersona(activeAgent.id, null)
                                     isAgentSelectorExpanded = false
                                 }
                             )
@@ -275,7 +281,7 @@ class HkgAgentFeature(
                                 DropdownMenuItem(
                                     text = { Text(persona.name) },
                                     onClick = {
-                                        stateManager.dispatch(HkgAgentAction.SelectHkgPersona(activeAgent.id, persona.id))
+                                        stateManager.selectHkgPersona(activeAgent.id, persona.id)
                                         isAgentSelectorExpanded = false
                                     }
                                 )

@@ -3,7 +3,6 @@ package app.auf.core
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 
 /**
  * The central state container for the Unidirectional Data Flow (UDF) architecture.
@@ -23,7 +22,6 @@ open class Store(
     initialState: AppState,
     private val rootReducer: (AppState, AppAction) -> AppState,
     private val features: List<Feature>,
-    // DELETED: private val sessionManager: SessionManager,
     private val coroutineScope: CoroutineScope
 ) {
 
@@ -54,9 +52,5 @@ open class Store(
             feature.reducer(currentState, action)
         }
         _state.value = newState
-
-
-        // ---DEPRECATED: moved into SessionService
-        // All auto-save logic has been removed.
     }
 }

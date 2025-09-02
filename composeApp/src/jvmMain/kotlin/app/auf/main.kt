@@ -8,6 +8,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import app.auf.core.*
+import app.auf.feature.hkgagent.AgentGateway
 import app.auf.feature.hkgagent.GatewayGemini
 import app.auf.feature.hkgagent.HkgAgentFeature
 import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
@@ -47,14 +48,12 @@ fun main() = application {
 
     // --- Feature Instantiation ---
     val features = remember {
-        // The concrete implementation of the gateway is created here...
-        val agentGateway = GatewayGemini(jsonParser, apiKey)
+        val agentGateway: AgentGateway = GatewayGemini(jsonParser, apiKey)
 
         listOf(
             SystemClockFeature(coroutineScope),
             KnowledgeGraphFeature(platformDependencies, coroutineScope),
             SessionFeature(platformDependencies, jsonParser, coroutineScope),
-            // ...and injected into the feature that needs it.
             HkgAgentFeature(agentGateway, promptCompiler, platformDependencies, jsonParser, coroutineScope)
         )
     }

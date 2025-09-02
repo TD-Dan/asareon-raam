@@ -4,6 +4,8 @@ import app.auf.core.AppAction
 import app.auf.core.AppState
 import app.auf.core.Feature
 import app.auf.core.Store
+import app.auf.feature.hkgagent.HkgAgentFeatureState
+import app.auf.feature.session.SessionAction
 import app.auf.model.SettingDefinition
 import app.auf.model.SettingType
 import kotlinx.coroutines.CoroutineScope
@@ -66,10 +68,6 @@ class SystemClockFeature(
         )
     }
 
-    /**
-     * The feature's dedicated reducer. It safely accesses its own state slice from the generic
-     * feature map, modifies it based on ClockActions, and returns the new global AppState.
-     */
     override fun reducer(state: AppState, action: AppAction): AppState {
         val currentState = state.featureStates[name] as? SystemClockState ?: SystemClockState()
 
@@ -99,25 +97,23 @@ class SystemClockFeature(
         )
     }
 
-    /**
-     * The lifecycle start method, which launches the clock's asynchronous ticking loop.
-     * This is the "middleware" portion of the feature.
-     */
     override fun start(store: Store) {
         coroutineScope.launch {
             while (true) {
                 val latestState = store.state.value
                 val clockState = latestState.featureStates[name] as? SystemClockState ?: SystemClockState()
+                val agentState = latestState.featureStates["HkgAgentFeature"] as? HkgAgentFeatureState
+
+                val isAnyAgentProcessing = agentState?.agents?.values?.any { it.isProcessing } ?: false
 
                 if (clockState.isEnabled) {
-                    if (!latestState.isProcessing) {
-                        // 1. Dispatch the system-wide event for other features to hear.
+                    if (!isAnyAgentProcessing) {
                         store.dispatch(ClockAction.Tick)
-                        // 2. Dispatch a generic core action to make the event visible in the UI.
                         store.dispatch(
-                            AppAction.AddSystemMessage(
-                                title = "[SYSTEM: TICK]",
-                                rawContent = "Autonomous processing cycle."
+                            SessionAction.PostEntry(
+                                sessionId = "default-session", // Assume default for now
+                                agentId = "CORE",
+                                content = "[SYSTEM: TICK]\nAutonomous processing cycle."
                             )
                         )
                     }
