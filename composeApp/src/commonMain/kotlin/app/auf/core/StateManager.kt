@@ -19,7 +19,8 @@ import kotlinx.serialization.builtins.ListSerializer
  * and the central Store. It does not contain business logic itself but dispatches
  * actions to the appropriate features.
  *
- * Is part of CORE: Does not know anything of specific features!
+ * @version 7.0
+ * @since 2025-09-01
  */
 open class StateManager(
     private val store: Store,
@@ -29,7 +30,6 @@ open class StateManager(
     private val gatewayService: GatewayService,
     private val parser: AufTextParser,
     val settingsManager: SettingsManager,
-    private val sessionManager: SessionManager,
     private val platform: PlatformDependencies,
     private val coroutineScope: CoroutineScope
 ) {
@@ -37,12 +37,6 @@ open class StateManager(
     open val state: StateFlow<AppState> = store.state
 
     fun initialize() {
-        var loadedHistory = sessionManager.loadSession()
-        if (loadedHistory != null) {
-            loadedHistory = ChatMessage.reId(loadedHistory)
-            store.dispatch(AppAction.LoadSessionSuccess(loadedHistory))
-        }
-
         backupManager.createBackup("on-launch")
         loadAvailableModels()
     }
@@ -60,6 +54,7 @@ open class StateManager(
         val kgState = appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
         if (appState.isProcessing || kgState.aiPersonaId == null && kgState.holonGraph.isNotEmpty()) return
 
+        // This AddUserMessage action is now temporary and will be replaced by a SessionAction
         store.dispatch(AppAction.AddUserMessage(message))
         handleCcl(message)
         chatService.sendMessage()
@@ -113,23 +108,25 @@ open class StateManager(
         return platform.formatDisplayTimestamp(timestamp)
     }
 
-    fun deleteMessage(id: Long) {
-        store.dispatch(AppAction.DeleteMessage(id))
-    }
+    // --- DEPRECATED: This will be re-implemented in SessionFeature ---
+    // fun deleteMessage(id: Long) {
+    //     store.dispatch(AppAction.DeleteMessage(id))
+    // }
 
     fun toggleMessageCollapsed(id: Long) {
         store.dispatch(AppAction.ToggleMessageCollapsed(id))
     }
 
-    fun rerunFromMessage(id: Long) {
-        if (state.value.isProcessing) return
-
-        val messageToRerun = state.value.chatHistory.find { it.id == id }
-        if (messageToRerun != null && messageToRerun.author == Author.USER) {
-            store.dispatch(AppAction.RerunFromMessage(id))
-            chatService.sendMessage()
-        }
-    }
+    // --- DEPRECATED: This will be re-implemented in SessionFeature ---
+    // fun rerunFromMessage(id: Long) {
+    //     if (state.value.isProcessing) return
+    //
+    //     val messageToRerun = state.value.chatHistory.find { it.id == id }
+    //     if (messageToRerun != null && messageToRerun.author == Author.USER) {
+    //         store.dispatch(AppAction.RerunFromMessage(id))
+    //         chatService.sendMessage()
+    //     }
+    // }
 
     fun rejectActionFromMessage(messageTimestamp: Long) {
         store.dispatch(AppAction.UpdateActionStatus(messageTimestamp, ActionStatus.REJECTED))

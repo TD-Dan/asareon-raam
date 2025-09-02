@@ -32,8 +32,7 @@ class StateManagerTest {
         val platform = FakePlatformDependencies()
         platform.writeFileContent(platform.getBasePathFor(BasePath.FRAMEWORK) + platform.pathSeparator + "framework_protocol.md", "protocol")
 
-        val sessionManager = FakeSessionManager(platform)
-        val store = FakeStore(initialState, scope, sessionManager)
+        val store = FakeStore(initialState, scope)
         val parser = AufTextParser()
         ChatMessage.Factory.initialize(platform, parser)
 
@@ -51,7 +50,6 @@ class StateManagerTest {
             gatewayService = gatewayService,
             parser = parser,
             settingsManager = settingsManager,
-            sessionManager = sessionManager,
             platform = platform,
             coroutineScope = scope
         )

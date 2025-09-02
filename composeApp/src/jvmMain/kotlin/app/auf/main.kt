@@ -10,6 +10,7 @@ import androidx.compose.ui.window.rememberWindowState
 import app.auf.core.*
 import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
+import app.auf.feature.session.SessionFeature
 import app.auf.feature.systemclock.SystemClockFeature
 import app.auf.model.UserSettings
 import app.auf.service.*
@@ -29,7 +30,6 @@ fun main() = application {
     remember { ChatMessage.Factory.initialize(platformDependencies, aufTextParser) }
 
     val settingsManager = remember { SettingsManager(platformDependencies, jsonParser) }
-    val sessionManager = remember { SessionManager(platformDependencies, jsonParser) }
     val savedSettings = remember { settingsManager.loadSettings() ?: UserSettings() }
 
     val properties = remember { Properties() }
@@ -47,7 +47,8 @@ fun main() = application {
     val features = remember {
         listOf(
             SystemClockFeature(coroutineScope),
-            KnowledgeGraphFeature(platformDependencies, coroutineScope)
+            KnowledgeGraphFeature(platformDependencies, coroutineScope),
+            SessionFeature(platformDependencies, jsonParser, coroutineScope)
         )
     }
 
@@ -66,7 +67,7 @@ fun main() = application {
         )
     }
 
-    val store = remember { Store(initialState, ::appReducer, features, sessionManager, coroutineScope) }
+    val store = remember { Store(initialState, ::appReducer, features, coroutineScope) }
     val promptCompiler = remember { PromptCompiler(jsonParser) }
 
     val stateManager = remember {
@@ -84,7 +85,6 @@ fun main() = application {
             gatewayService = gatewayService,
             parser = aufTextParser,
             settingsManager = settingsManager,
-            sessionManager = sessionManager,
             platform = platformDependencies,
             coroutineScope = coroutineScope
         )
@@ -102,8 +102,6 @@ fun main() = application {
             val currentState = stateManager.state.value
             val kgState = currentState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
             val clockState = currentState.featureStates["SystemClockFeature"] as? app.auf.feature.systemclock.SystemClockState ?: app.auf.feature.systemclock.SystemClockState()
-
-            sessionManager.saveSession(currentState.chatHistory)
 
             val currentSettingsToSave = UserSettings(
                 windowWidth = windowState.size.width.value.toInt(),

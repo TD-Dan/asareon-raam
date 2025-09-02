@@ -15,8 +15,8 @@ import kotlinx.serialization.Transient
  */
 
 data class AppState(
-    // Core App State
-    val chatHistory: List<ChatMessage> = emptyList(),
+    // --- DEPRECATED: chatHistory has been moved to SessionFeature ---
+    // val chatHistory: List<ChatMessage> = emptyList(),
     val isSystemVisible: Boolean = false,
     val isProcessing: Boolean = false, // Is the gateway currently busy?
     val availableModels: List<String> = emptyList(),
@@ -112,6 +112,8 @@ data class ChatMessage internal constructor(
             return platform?.getSystemTimeMillis()
                 ?: throw IllegalStateException("ChatMessage.Factory has not been initialized.")
         }
+
+
 
         private fun getParser(): AufTextParser {
             return parser

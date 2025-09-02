@@ -4,67 +4,30 @@ import app.auf.model.SettingValue
 
 /**
  * The root Reducer function for the Unidirectional Data Flow (UDF) architecture.
- * This reducer only handles core, app-wide state. Feature-specific
+ * As of v2.0, this reducer only handles core, app-wide state. Feature-specific
  * state changes are handled by their own dedicated reducers.
- *
- * Is part of CORE: Does not know anything of specific features!
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
     return when (action) {
-        // --- Chat & Gateway ---
-        is AppAction.AddUserMessage -> {
-            val userMessage = ChatMessage.createUser(rawContent = action.rawContent)
-            state.copy(
-                chatHistory = state.chatHistory + userMessage
-            )
-        }
-        is AppAction.AddSystemMessage -> {
-            val systemMessage = ChatMessage.createSystem(
-                title = action.title,
-                rawContent = action.rawContent
-            )
-            state.copy(
-                chatHistory = state.chatHistory + systemMessage
-            )
-        }
+        // --- DEPRECATED CHAT & GATEWAY ACTIONS ---
+        // is AppAction.AddUserMessage -> ...
+        // is AppAction.AddSystemMessage -> ...
         is AppAction.SendMessageLoading -> state.copy(
             isProcessing = true
         )
-        is AppAction.SendMessageSuccess -> {
-            val aiMessage = ChatMessage.createAi(
-                rawContent = action.response.rawContent ?: "Error: AI response was null.",
-                usageMetadata = action.response.usageMetadata
-            )
-            state.copy(
-                isProcessing = false,
-                chatHistory = state.chatHistory + aiMessage
-            )
-        }
-        is AppAction.SendMessageFailure -> {
-            val errorChatMessage = ChatMessage.createSystem(
-                title = "Gateway Error",
-                rawContent = action.error
-            )
-            state.copy(
-                isProcessing = false,
-                chatHistory = state.chatHistory + errorChatMessage
-            )
-        }
+        is AppAction.SendMessageSuccess -> state.copy(
+            isProcessing = false
+            // The chatHistory update is now handled by SessionFeature
+        )
+        is AppAction.SendMessageFailure -> state.copy(
+            isProcessing = false
+            // The chatHistory update is now handled by SessionFeature
+        )
         is AppAction.CancelMessage -> state.copy(
             isProcessing = false
         )
-        is AppAction.DeleteMessage -> state.copy(
-            chatHistory = state.chatHistory.filterNot { it.id == action.id }
-        )
-        is AppAction.RerunFromMessage -> {
-            val messageIndex = state.chatHistory.indexOfFirst { it.id == action.id }
-            if (messageIndex != -1) {
-                val truncatedHistory = state.chatHistory.subList(0, messageIndex + 1)
-                state.copy(chatHistory = truncatedHistory)
-            } else {
-                state
-            }
-        }
+        // is AppAction.DeleteMessage -> ...
+        // is AppAction.RerunFromMessage -> ...
 
         // --- UI & View ---
         is AppAction.ShowToast -> state.copy(
@@ -76,16 +39,7 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         is AppAction.ToggleSystemVisibility -> state.copy(
             isSystemVisible = !state.isSystemVisible
         )
-        is AppAction.ToggleMessageCollapsed -> {
-            val updatedHistory = state.chatHistory.map { message ->
-                if (message.id == action.id) {
-                    message.copy(isCollapsed = !message.isCollapsed)
-                } else {
-                    message
-                }
-            }
-            state.copy(chatHistory = updatedHistory)
-        }
+        // is AppAction.ToggleMessageCollapsed -> ...
 
         // --- Model ---
         is AppAction.SelectModel -> state.copy(
@@ -106,35 +60,12 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             )
         }
 
-        // --- Action Manifest Execution ---
-        is AppAction.ExecuteActionManifest -> state.copy(
-            isProcessing = true
-        )
-        is AppAction.ExecuteActionManifestSuccess -> state.copy(
-            isProcessing = false,
-            toastMessage = action.summary
-        )
-        is AppAction.ExecuteActionManifestFailure -> state.copy(
-            isProcessing = false,
-            toastMessage = "ERROR: ${action.error}"
-        )
-        is AppAction.UpdateActionStatus -> {
-            val updatedHistory = state.chatHistory.map { message ->
-                if (message.timestamp == action.messageTimestamp) {
-                    val updatedBlocks = message.contentBlocks.map { block ->
-                        if (block is CodeBlock) {
-                            block.copy(status = action.status)
-                        } else {
-                            block
-                        }
-                    }
-                    message.copy(contentBlocks = updatedBlocks)
-                } else {
-                    message
-                }
-            }
-            state.copy(chatHistory = updatedHistory)
-        }
+        // --- DEPRECATED ACTION MANIFEST ACTIONS ---
+        // is AppAction.ExecuteActionManifest -> ...
+        // is AppAction.ExecuteActionManifestSuccess -> ...
+        // is AppAction.ExecuteActionManifestFailure -> ...
+        // is AppAction.UpdateActionStatus -> ...
+
         // --- Settings ---
         is AppAction.UpdateSetting -> {
             val newCompilerSettings = when (action.setting.key) {
@@ -150,10 +81,8 @@ fun appReducer(state: AppState, action: AppAction): AppState {
             }
         }
 
-        // --- Session Persistence ---
-        is AppAction.LoadSessionSuccess -> state.copy(
-            chatHistory = action.history
-        )
+        // --- DEPRECATED SESSION PERSISTENCE ACTIONS ---
+        // is AppAction.LoadSessionSuccess -> ...
 
         else -> state
     }
