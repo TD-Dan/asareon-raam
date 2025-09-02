@@ -1,6 +1,5 @@
 package app.auf.core
 
-import app.auf.service.SessionManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,7 +23,7 @@ open class Store(
     initialState: AppState,
     private val rootReducer: (AppState, AppAction) -> AppState,
     private val features: List<Feature>,
-    private val sessionManager: SessionManager,
+    // DELETED: private val sessionManager: SessionManager,
     private val coroutineScope: CoroutineScope
 ) {
 
@@ -58,12 +57,6 @@ open class Store(
 
 
         // ---DEPRECATED: moved into SessionService
-        // SIDE EFFECT: AUTO-SAVE SESSION ---
-        // If the chat history has changed, save the new history to disk.
-        //if (newState.chatHistory != previousState.chatHistory) {
-        //    coroutineScope.launch {
-        //        sessionManager.saveSession(newState.chatHistory)
-        //    }
-        //}
+        // All auto-save logic has been removed.
     }
 }

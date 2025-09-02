@@ -10,24 +10,7 @@ import app.auf.model.SettingValue
 fun appReducer(state: AppState, action: AppAction): AppState {
     return when (action) {
         // --- DEPRECATED CHAT & GATEWAY ACTIONS ---
-        // is AppAction.AddUserMessage -> ...
-        // is AppAction.AddSystemMessage -> ...
-        is AppAction.SendMessageLoading -> state.copy(
-            isProcessing = true
-        )
-        is AppAction.SendMessageSuccess -> state.copy(
-            isProcessing = false
-            // The chatHistory update is now handled by SessionFeature
-        )
-        is AppAction.SendMessageFailure -> state.copy(
-            isProcessing = false
-            // The chatHistory update is now handled by SessionFeature
-        )
-        is AppAction.CancelMessage -> state.copy(
-            isProcessing = false
-        )
-        // is AppAction.DeleteMessage -> ...
-        // is AppAction.RerunFromMessage -> ...
+        // These have been removed as they are now handled by SessionFeature and HkgAgentFeature.
 
         // --- UI & View ---
         is AppAction.ShowToast -> state.copy(
@@ -68,14 +51,17 @@ fun appReducer(state: AppState, action: AppAction): AppState {
 
         // --- Settings ---
         is AppAction.UpdateSetting -> {
+            // This logic is now partially delegated to feature reducers.
+            // The core reducer handles settings it knows about, like compiler settings.
+            // A more advanced implementation might use a dedicated SettingsFeature.
             val newCompilerSettings = when (action.setting.key) {
-                "compiler.removeWhitespace" -> state.compilerSettings.copy(removeWhitespace = action.setting.value as? Boolean ?: state.compilerSettings.removeWhitespace) // Needs updating: core should not know about feature specifics
-                "compiler.cleanHeaders" -> state.compilerSettings.copy(cleanHeaders = action.setting.value as? Boolean ?: state.compilerSettings.cleanHeaders) // Needs updating: core should not know about feature specifics
-                "compiler.minifyJson" -> state.compilerSettings.copy(minifyJson = action.setting.value as? Boolean ?: state.compilerSettings.minifyJson) // Needs updating: core should not know about feature specifics
+                "compiler.removeWhitespace" -> state.compilerSettings.copy(removeWhitespace = action.setting.value as? Boolean ?: state.compilerSettings.removeWhitespace)
+                "compiler.cleanHeaders" -> state.compilerSettings.copy(cleanHeaders = action.setting.value as? Boolean ?: state.compilerSettings.cleanHeaders)
+                "compiler.minifyJson" -> state.compilerSettings.copy(minifyJson = action.setting.value as? Boolean ?: state.compilerSettings.minifyJson)
                 else -> state.compilerSettings
             }
             if (newCompilerSettings != state.compilerSettings) {
-                state.copy(compilerSettings = newCompilerSettings)  // Needs updating: core should not know about feature specifics
+                state.copy(compilerSettings = newCompilerSettings)
             } else {
                 state
             }

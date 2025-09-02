@@ -8,6 +8,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import app.auf.core.*
+import app.auf.feature.hkgagent.GatewayGemini
 import app.auf.feature.hkgagent.HkgAgentFeature
 import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
@@ -25,10 +26,9 @@ import java.util.Properties
 fun main() = application {
     val coroutineScope = rememberCoroutineScope()
 
-    // --- Core Dependencies (Unchanged) ---
+    // --- Core Dependencies ---
     val platformDependencies = remember { PlatformDependencies() }
     val jsonParser = remember { JsonProvider.appJson }
-    val aufTextParser = remember { AufTextParser() }
     val settingsManager = remember { SettingsManager(platformDependencies, jsonParser) }
     val savedSettings = remember { settingsManager.loadSettings() ?: UserSettings() }
     val properties = remember { Properties() }
@@ -43,21 +43,21 @@ fun main() = application {
         println("WARNING: google.api.key not found in local.properties. AI will not function.")
     }
     val promptCompiler = remember { PromptCompiler(jsonParser) }
-    val gateway = remember { Gateway(jsonParser) }
-    val gatewayService = remember { GatewayService(gateway, aufTextParser, apiKey, coroutineScope) }
 
 
-    // --- MODIFICATION START: Instantiate all features, including the new HkgAgentFeature ---
+    // --- Feature Instantiation ---
     val features = remember {
+        // The concrete implementation of the gateway is created here...
+        val agentGateway = GatewayGemini(jsonParser, apiKey)
+
         listOf(
             SystemClockFeature(coroutineScope),
             KnowledgeGraphFeature(platformDependencies, coroutineScope),
             SessionFeature(platformDependencies, jsonParser, coroutineScope),
-            HkgAgentFeature(gatewayService, promptCompiler, platformDependencies, jsonParser, coroutineScope)
+            // ...and injected into the feature that needs it.
+            HkgAgentFeature(agentGateway, promptCompiler, platformDependencies, jsonParser, coroutineScope)
         )
     }
-    // --- MODIFICATION END ---
-
 
     val initialState = remember(savedSettings) {
         AppState(
@@ -66,8 +66,6 @@ fun main() = application {
             featureStates = mapOf(
                 "SystemClockFeature" to savedSettings.systemClockState,
                 "KnowledgeGraphFeature" to KnowledgeGraphState(
-                    // Note: These KG-specific settings are now deprecated, as the agent manages its own persona.
-                    // This can be cleaned up in a future refactor.
                     aiPersonaId = savedSettings.selectedAiPersonaId,
                     contextualHolonIds = savedSettings.activeContextualHolonIds
                 )
@@ -75,11 +73,7 @@ fun main() = application {
         )
     }
 
-    // --- MODIFICATION: The SessionManager is no longer passed to the Store ---
     val store = remember { Store(initialState, ::appReducer, features, coroutineScope) }
-
-    // --- DEPRECATED: ChatService is no longer needed. ---
-    // val chatService = remember { ... }
 
     val stateManager = remember {
         val backupManager = BackupManager(platformDependencies)
@@ -89,10 +83,6 @@ fun main() = application {
             store = store,
             backupManager = backupManager,
             sourceCodeService = sourceCodeService,
-            // --- MODIFICATION: Remove deprecated service dependencies ---
-            // chatService = chatService,
-            gatewayService = gatewayService,
-            parser = aufTextParser,
             settingsManager = settingsManager,
             platform = platformDependencies,
             coroutineScope = coroutineScope
@@ -112,12 +102,10 @@ fun main() = application {
             val kgState = currentState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
             val clockState = currentState.featureStates["SystemClockFeature"] as? SystemClockState ?: SystemClockState()
 
-            // --- MODIFICATION: Simplify settings to save. Session state is now autonomous. ---
             val currentSettingsToSave = UserSettings(
                 windowWidth = windowState.size.width.value.toInt(),
                 windowHeight = windowState.size.height.value.toInt(),
                 selectedModel = currentState.selectedModel,
-                // These are now effectively deprecated but kept for schema compatibility.
                 selectedAiPersonaId = kgState.aiPersonaId,
                 activeContextualHolonIds = kgState.contextualHolonIds,
                 compilerSettings = currentState.compilerSettings,
@@ -132,7 +120,6 @@ fun main() = application {
         LaunchedEffect(Unit) {
             platformDependencies.applyNativeWindowDecorations(window)
         }
-        // --- MODIFICATION: Pass the features list to the App composable ---
         App(stateManager, features)
     }
 }

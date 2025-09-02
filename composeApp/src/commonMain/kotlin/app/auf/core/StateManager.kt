@@ -1,5 +1,6 @@
 package app.auf.core
 
+import app.auf.feature.hkgagent.HkgAgentAction
 import app.auf.feature.knowledgegraph.ImportAction
 import app.auf.feature.knowledgegraph.KnowledgeGraphAction
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
@@ -12,20 +13,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-/**
- * The core state management class for the AUF application. As of v2.0, this class
- * is a thin layer responsible for orchestrating interactions between the UI, services,
- * and the central Store. It does not contain business logic itself but dispatches
- * actions to the appropriate features.
- *
- * @version 8.0
- * @since 2025-09-02
- */
 open class StateManager(
     private val store: Store,
     private val backupManager: BackupManager,
     internal val sourceCodeService: SourceCodeService,
-    private val gatewayService: GatewayService, // Still needed by HkgAgentFeature
     val settingsManager: SettingsManager,
     private val platform: PlatformDependencies,
     private val coroutineScope: CoroutineScope
@@ -35,20 +26,15 @@ open class StateManager(
 
     fun initialize() {
         backupManager.createBackup("on-launch")
-        loadAvailableModels()
+        // Model loading is now handled by HkgAgentFeature
     }
 
-    private fun loadAvailableModels() {
-        coroutineScope.launch {
-            val modelNames = gatewayService.listTextModels()
-            store.dispatch(AppAction.SetAvailableModels(modelNames))
-        }
-    }
-
-    // --- DEPRECATED: All Chat Logic is removed ---
     fun cancelMessage() {
         // TODO: This needs to be re-wired to the HkgAgentFeature
-        // For now, it's a no-op.
+    }
+
+    fun selectHkgPersona(agentId: String, personaId: String?) {
+        store.dispatch(HkgAgentAction.SelectHkgPersona(agentId, personaId))
     }
 
     fun formatDisplayTimestamp(timestamp: Long): String {
@@ -116,7 +102,6 @@ open class StateManager(
     fun toggleShowOnlyChangedImportItems() {
         store.dispatch(KnowledgeGraphAction.ToggleShowOnlyChangedImportItems)
     }
-
 
     // --- Core App Actions ---
     fun selectModel(modelName: String) {
