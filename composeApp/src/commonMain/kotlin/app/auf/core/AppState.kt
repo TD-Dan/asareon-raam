@@ -1,7 +1,7 @@
 package app.auf.core
 
 import app.auf.model.CompilerSettings
-import app.auf.service.UsageMetadata
+import app.auf.service.rUsageMetadata
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
