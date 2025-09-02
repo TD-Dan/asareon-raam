@@ -7,12 +7,6 @@ package app.auf.core
  * This is the cornerstone of the "Core Ignorance" and "Contextual Granularity" principles.
  * A Feature can provide a reducer to manage its own state slice and a `start` lifecycle
  * method to initiate asynchronous operations or middleware-like behavior.
- *
- * ---
- * ## Dependencies
- * - `app.auf.core.AppState`: The global state object it can read and modify.
- * - `app.auf.core.AppAction`: The actions it can respond to.
- * - `app.auf.core.Store`: The store it can dispatch new actions to.
  */
 
 interface Feature {

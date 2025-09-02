@@ -1,9 +1,6 @@
 package app.auf.feature.knowledgegraph
 
-import app.auf.core.AppAction
-import app.auf.core.AppState
-import app.auf.core.Feature
-import app.auf.core.Store
+import app.auf.core.*
 import app.auf.util.BasePath
 import app.auf.util.FileEntry
 import app.auf.util.PlatformDependencies
@@ -20,6 +17,8 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
+
+//TODO: The KnowledgeGraphFeature file is over 300 lines and needs to be split into the main feature and a supporting service or something
 
 // --- 1. MODEL ---
 /**

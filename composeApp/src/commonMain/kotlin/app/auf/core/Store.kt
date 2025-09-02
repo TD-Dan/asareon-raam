@@ -18,16 +18,7 @@ import kotlinx.coroutines.launch
  * 3. To use the `appReducer` and registered `Feature` reducers to calculate the new state.
  * 4. To manage the lifecycle of features, calling their `start` method once.
  *
- * ---
- * ## Dependencies
- * - `app.auf.core.AppState`: The state object it holds.
- * - `app.auf.core.AppAction`: The actions it receives.
- * - `app.auf.core.Reducer`: The pure function used for the root state.
- * - `app.auf.core.Feature`: The contract for modular feature plugins.
- * - `kotlinx.coroutines.CoroutineScope`: For launching asynchronous tasks.
- *
- * @version 2.0
- * @since 2025-08-31
+ * Is part of CORE: Does not know anything of specific features!
  */
 open class Store(
     initialState: AppState,

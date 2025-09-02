@@ -4,8 +4,10 @@ import app.auf.model.SettingValue
 
 /**
  * The root Reducer function for the Unidirectional Data Flow (UDF) architecture.
- * As of v2.0, this reducer only handles core, app-wide state. Feature-specific
+ * This reducer only handles core, app-wide state. Feature-specific
  * state changes are handled by their own dedicated reducers.
+ *
+ * Is part of CORE: Does not know anything of specific features!
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
     return when (action) {

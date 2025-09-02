@@ -19,8 +19,7 @@ import kotlinx.serialization.builtins.ListSerializer
  * and the central Store. It does not contain business logic itself but dispatches
  * actions to the appropriate features.
  *
- * @version 7.0
- * @since 2025-09-01
+ * Is part of CORE: Does not know anything of specific features!
  */
 open class StateManager(
     private val store: Store,
