@@ -1,12 +1,14 @@
 package app.auf.core
 
+import androidx.compose.runtime.Composable
+
 /**
  * ---
  * ## Mandate
  * Defines the universal contract for a self-contained, modular feature plugin within the AUF app.
  * This is the cornerstone of the "Core Ignorance" and "Contextual Granularity" principles.
- * A Feature can provide a reducer to manage its own state slice and a `start` lifecycle
- * method to initiate asynchronous operations or middleware-like behavior.
+ * A Feature can provide a reducer to manage its own state slice, a `start` lifecycle
+ * method, and an optional `ComposableProvider` for rendering its UI.
  */
 
 interface Feature {
@@ -37,5 +39,31 @@ interface Feature {
      */
     fun start(store: Store) {
         // The default implementation is a no-op for features without async logic.
+    }
+
+    /**
+     * An optional provider for this feature's UI components. If a feature needs to render
+     * something in the main application shell, it should override this property and return
+     * an implementation of the [ComposableProvider] interface.
+     */
+    val composableProvider: ComposableProvider?
+        get() = null
+
+
+    /**
+     * Defines a contract for features to provide UI components ("slots") to be rendered
+     * in the main application layout. This keeps the core UI decoupled from feature specifics.
+     */
+    interface ComposableProvider {
+        /**
+         * A slot for components that should appear in the header area of a session view,
+         * typically for controls like agent or model selection.
+         *
+         * @param stateManager The central StateManager to dispatch actions.
+         */
+        @Composable
+        fun SessionHeader(stateManager: StateManager) {
+            // Default is an empty implementation
+        }
     }
 }

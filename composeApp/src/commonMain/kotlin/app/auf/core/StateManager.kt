@@ -4,14 +4,13 @@ import app.auf.feature.knowledgegraph.ImportAction
 import app.auf.feature.knowledgegraph.KnowledgeGraphAction
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
-import app.auf.model.*
+import app.auf.model.SettingDefinition
+import app.auf.model.SettingValue
 import app.auf.service.*
-import app.auf.util.JsonProvider
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.serialization.builtins.ListSerializer
 
 /**
  * The core state management class for the AUF application. As of v2.0, this class
@@ -19,16 +18,14 @@ import kotlinx.serialization.builtins.ListSerializer
  * and the central Store. It does not contain business logic itself but dispatches
  * actions to the appropriate features.
  *
- * @version 7.0
- * @since 2025-09-01
+ * @version 8.0
+ * @since 2025-09-02
  */
 open class StateManager(
     private val store: Store,
     private val backupManager: BackupManager,
     internal val sourceCodeService: SourceCodeService,
-    private val chatService: ChatService,
-    private val gatewayService: GatewayService,
-    private val parser: AufTextParser,
+    private val gatewayService: GatewayService, // Still needed by HkgAgentFeature
     val settingsManager: SettingsManager,
     private val platform: PlatformDependencies,
     private val coroutineScope: CoroutineScope
@@ -48,89 +45,14 @@ open class StateManager(
         }
     }
 
-    // --- Chat Logic Delegation ---
-    fun sendMessage(message: String) {
-        val appState = state.value
-        val kgState = appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
-        if (appState.isProcessing || kgState.aiPersonaId == null && kgState.holonGraph.isNotEmpty()) return
-
-        // This AddUserMessage action is now temporary and will be replaced by a SessionAction
-        store.dispatch(AppAction.AddUserMessage(message))
-        handleCcl(message)
-        chatService.sendMessage()
-    }
-
-    private fun handleCcl(rawContent: String) {
-        val blocks = parser.parse(rawContent)
-        blocks.filterIsInstance<CodeBlock>()
-            .filter { it.language.lowercase() == "auf_action" }
-            .forEach { block ->
-                val action = when (block.content.trim()) {
-                    else -> null
-                }
-                if (action != null) {
-                    store.dispatch(action)
-                    store.dispatch(AppAction.ShowToast("Dispatched: ${block.content.trim()}"))
-                } else {
-                    store.dispatch(AppAction.ShowToast("Unknown CCL action: ${block.content.trim()}"))
-                }
-            }
-    }
-
-
+    // --- DEPRECATED: All Chat Logic is removed ---
     fun cancelMessage() {
-        chatService.cancelMessage()
-    }
-
-    fun getSystemContextForDisplay(): List<ChatMessage> {
-        return chatService.buildSystemContextMessages()
-    }
-
-    data class AggregatedCompilationStats(val totalOriginalChars: Int, val totalCompiledChars: Int)
-    fun getAggregatedCompilationStats(): AggregatedCompilationStats {
-        val systemMessages = chatService.buildSystemContextMessages()
-        var totalOriginal = 0
-        var totalCompiled = 0
-        systemMessages.forEach { msg ->
-            msg.compilationStats?.let {
-                totalOriginal += it.originalCharCount
-                totalCompiled += it.compiledCharCount
-            }
-        }
-        return AggregatedCompilationStats(totalOriginal, totalCompiled)
-    }
-
-    fun getPromptForClipboard(): String {
-        return chatService.buildFullPromptAsString()
+        // TODO: This needs to be re-wired to the HkgAgentFeature
+        // For now, it's a no-op.
     }
 
     fun formatDisplayTimestamp(timestamp: Long): String {
         return platform.formatDisplayTimestamp(timestamp)
-    }
-
-    // --- DEPRECATED: This will be re-implemented in SessionFeature ---
-    // fun deleteMessage(id: Long) {
-    //     store.dispatch(AppAction.DeleteMessage(id))
-    // }
-
-    fun toggleMessageCollapsed(id: Long) {
-        store.dispatch(AppAction.ToggleMessageCollapsed(id))
-    }
-
-    // --- DEPRECATED: This will be re-implemented in SessionFeature ---
-    // fun rerunFromMessage(id: Long) {
-    //     if (state.value.isProcessing) return
-    //
-    //     val messageToRerun = state.value.chatHistory.find { it.id == id }
-    //     if (messageToRerun != null && messageToRerun.author == Author.USER) {
-    //         store.dispatch(AppAction.RerunFromMessage(id))
-    //         chatService.sendMessage()
-    //     }
-    // }
-
-    fun rejectActionFromMessage(messageTimestamp: Long) {
-        store.dispatch(AppAction.UpdateActionStatus(messageTimestamp, ActionStatus.REJECTED))
-        store.dispatch(AppAction.ShowToast("Action Manifest Rejected."))
     }
 
     fun openBackupFolder() {
@@ -149,10 +71,6 @@ open class StateManager(
         if (kgState.viewMode == KnowledgeGraphViewMode.INSPECTOR) {
             store.dispatch(KnowledgeGraphAction.ToggleHolonActive(holonId))
         }
-    }
-
-    fun selectAiPersona(holonId: String?) {
-        store.dispatch(KnowledgeGraphAction.SelectAiPersona(holonId))
     }
 
     fun setCatalogueFilter(type: String?) {

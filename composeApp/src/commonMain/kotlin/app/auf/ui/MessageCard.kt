@@ -18,8 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -28,7 +26,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -45,45 +42,47 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.*
-import app.auf.util.JsonProvider
-import kotlinx.serialization.builtins.ListSerializer
+import app.auf.feature.session.LedgerEntry
+import app.auf.service.AufTextParser
 
 /**
  * ## Mandate
- * This file contains the `MessageCard` Composable. It displays a single `ChatMessage`,
- * allows toggling between raw and compiled views, and shows compilation statistics.
+ * Renders a single entry from the session transcript. It is responsible for parsing the
+ * raw content string from the LedgerEntry into displayable ContentBlocks.
  */
 @Composable
 fun MessageCard(
-    message: ChatMessage,
-    stateManager: StateManager,
-    onToggleCollapsed: () -> Unit
+    entry: LedgerEntry,
+    stateManager: StateManager
 ) {
     var showRaw by remember { mutableStateOf(false) }
-    var showCompiled by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
+    var isCollapsed by remember { mutableStateOf(false) }
 
-    val cardColors = if (message.author == Author.SYSTEM) {
-        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-    } else {
-        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    }
-    val elevation = if (message.author == Author.SYSTEM) 0.dp else 2.dp
+    // Each card gets its own parser instance.
+    val parser = remember { AufTextParser() }
+    val contentBlocks = remember(entry.content) { parser.parse(entry.content) }
 
-    val contentToCopy = remember(message) {
-        message.rawContent ?: message.contentBlocks.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
-    }
-    val showCopyButton = contentToCopy.isNotBlank()
-    val titleForCopy = message.title ?: message.author.name
-    val guardedCopyContent = "---COPY of ${titleForCopy}:---\n$contentToCopy\n---END OF COPY of ${titleForCopy}---"
-
-    val formattedTimestamp = remember(message.timestamp) {
-        stateManager.formatDisplayTimestamp(message.timestamp)
+    val authorName = remember(entry.agentId) {
+        when {
+            entry.agentId == "USER" -> "USER"
+            entry.agentId == "CORE" -> "CORE"
+            else -> "AI" // Default for any other agentId
+        }
     }
 
-    val showCompiledToggle = remember(message.rawContent, message.compiledContent) {
-        message.compiledContent != null && message.compiledContent != message.rawContent
+    val cardColors = when(authorName) {
+        "CORE" -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f))
+        else -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    }
+
+    val elevation = if (authorName == "CORE") 0.dp else 2.dp
+
+    val guardedCopyContent = "---COPY of ${authorName} entry:---\n${entry.content}\n---END OF COPY---"
+
+    val formattedTimestamp = remember(entry.timestamp) {
+        stateManager.formatDisplayTimestamp(entry.timestamp)
     }
 
     Card(
@@ -98,13 +97,13 @@ fun MessageCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    modifier = Modifier.weight(1f).clickable { onToggleCollapsed() },
+                    modifier = Modifier.weight(1f).clickable { isCollapsed = !isCollapsed },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = message.title ?: message.author.name,
+                        text = authorName,
                         fontWeight = FontWeight.Bold,
-                        fontStyle = if (message.author == Author.SYSTEM) FontStyle.Italic else FontStyle.Normal,
+                        fontStyle = if (authorName == "CORE") FontStyle.Italic else FontStyle.Normal,
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -117,57 +116,39 @@ fun MessageCard(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (showCompiledToggle) {
-                        IconButton(onClick = { showCompiled = !showCompiled }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Sync, contentDescription = "View Compiled Content", tint = if (showCompiled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Spacer(Modifier.width(4.dp))
+                    IconButton(onClick = { showRaw = !showRaw }, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Code, contentDescription = "View Raw Content", tint = if (showRaw) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    if (message.rawContent != null) {
-                        IconButton(onClick = { showRaw = !showRaw }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Code, contentDescription = "View Raw Content", tint = if (showRaw) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(4.dp))
+
+                    IconButton(onClick = { clipboardManager.setText(AnnotatedString(guardedCopyContent)) }, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy Message Content", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    if (showCopyButton) {
-                        IconButton(onClick = { clipboardManager.setText(AnnotatedString(guardedCopyContent)) }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy Message Content", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Spacer(Modifier.width(4.dp))
-                    }
+                    Spacer(Modifier.width(4.dp))
 
                     Box {
                         IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) {
                             Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                            if (message.author == Author.USER) {
-                                DropdownMenuItem(text = { Text("Rerun from here") }, onClick = { stateManager.rerunFromMessage(message.id); showMenu = false })
-                            }
-                            val deleteText = if (message.title?.contains("Error") == true) "Dismiss" else "Delete"
-                            DropdownMenuItem(text = { Text(deleteText) }, onClick = { stateManager.deleteMessage(message.id); showMenu = false })
+                            // TODO: Implement Delete and Rerun actions for LedgerEntries
+                            DropdownMenuItem(text = { Text("Delete (NYI)") }, onClick = { /* stateManager.deleteMessage(entry.id) */ showMenu = false })
                         }
                     }
                 }
             }
 
-            AnimatedVisibility(visible = !message.isCollapsed) {
+            AnimatedVisibility(visible = !isCollapsed) {
                 Column {
                     Spacer(Modifier.height(8.dp))
-                    when {
-                        showRaw && message.rawContent != null -> RenderContent("RAW CONTENT", message.rawContent)
-                        showCompiled && message.compiledContent != null -> RenderContent("COMPILED CONTENT", message.compiledContent, message.compilationStats)
-                        else -> {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                message.contentBlocks.forEach { block ->
-                                    when (block) {
-                                        is TextBlock -> RenderTextBlock(block)
-                                        is CodeBlock -> RenderCodeBlock(
-                                            block = block,
-                                            onConfirm = {  },
-                                            onReject = { stateManager.rejectActionFromMessage(message.timestamp) }
-                                        )
-                                    }
+                    if (showRaw) {
+                        RenderRawContent("RAW CONTENT", entry.content)
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            contentBlocks.forEach { block ->
+                                when (block) {
+                                    is TextBlock -> RenderTextBlock(block)
+                                    is CodeBlock -> RenderGenericCodeBlock(block)
                                 }
                             }
                         }
@@ -179,7 +160,7 @@ fun MessageCard(
 }
 
 @Composable
-fun RenderContent(title: String, content: String, stats: CompilationStats? = null) {
+fun RenderRawContent(title: String, content: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -198,19 +179,6 @@ fun RenderContent(title: String, content: String, stats: CompilationStats? = nul
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                stats?.let {
-                    val reduction = if (it.originalCharCount > 0) {
-                        ((it.originalCharCount - it.compiledCharCount).toDouble() / it.originalCharCount * 100).toInt()
-                    } else {
-                        0
-                    }
-                    Text(
-                        text = "${it.originalCharCount} -> ${it.compiledCharCount} chars (-$reduction%)",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.tertiary
-                    )
-                }
             }
 
             HorizontalDivider(modifier=Modifier.padding(vertical=8.dp))
@@ -228,65 +196,6 @@ fun RenderContent(title: String, content: String, stats: CompilationStats? = nul
 fun RenderTextBlock(block: TextBlock) {
     Text(block.text, fontFamily = FontFamily.Default, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
 }
-
-@Composable
-fun RenderCodeBlock(block: CodeBlock, onConfirm: () -> Unit, onReject: () -> Unit) {
-    // --- FIX START: The previous implementation had broken, commented-out logic that prevented
-    // any JSON block from rendering. This version ensures all code blocks are rendered generically,
-    // fixing the test failure and restoring UI functionality.
-    RenderGenericCodeBlock(block)
-    // --- FIX END ---
-}
-/*
-@Composable
-private fun RenderActionableJsonBlock(block: CodeBlock, actions: List<Action>, onConfirm: () -> Unit, onReject: () -> Unit) {
-    val isResolved = block.status != ActionStatus.PENDING
-    val cardColors = when(block.status) {
-        ActionStatus.PENDING -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-        ActionStatus.EXECUTED -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
-        ActionStatus.REJECTED -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-    }
-    val borderColor = when(block.status) {
-        ActionStatus.PENDING -> MaterialTheme.colorScheme.primary
-        ActionStatus.EXECUTED -> MaterialTheme.colorScheme.tertiary
-        ActionStatus.REJECTED -> MaterialTheme.colorScheme.outlineVariant
-    }
-    val textColor = when(block.status) {
-        ActionStatus.PENDING -> MaterialTheme.colorScheme.onPrimaryContainer
-        ActionStatus.EXECUTED -> MaterialTheme.colorScheme.onTertiaryContainer
-        ActionStatus.REJECTED -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val titleText = when(block.status) {
-        ActionStatus.PENDING -> "Action Manifest (${actions.size} actions)"
-        ActionStatus.EXECUTED -> "Action Manifest - Executed"
-        ActionStatus.REJECTED -> "Action Manifest - Rejected"
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = cardColors,
-        border = BorderStroke(1.dp, borderColor),
-        elevation = CardDefaults.cardElevation(0.dp)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(titleText, fontWeight = FontWeight.Bold, color = textColor)
-            AnimatedVisibility(visible = !isResolved) {
-                Column {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    actions.forEach { action ->
-                        Text("- ${action.summary}", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = textColor)
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        OutlinedButton(onClick = onReject) { Text("Reject") }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(onClick = onConfirm) { Text("Confirm") }
-                    }
-                }
-            }
-        }
-    }
-}*/
 
 @Composable
 private fun RenderGenericCodeBlock(block: CodeBlock) {

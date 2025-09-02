@@ -9,36 +9,23 @@ import app.auf.model.SettingValue
  */
 interface AppAction {
 
-    // --- Chat & Gateway Actions ---
-    data class AddUserMessage(val rawContent: String) : AppAction
-    data class AddSystemMessage(val title: String, val rawContent: String) : AppAction
-    data object SendMessageLoading : AppAction
-    data class SendMessageSuccess(val response: GatewayResponse) : AppAction
-    data class SendMessageFailure(val error: String) : AppAction
-    data object CancelMessage : AppAction
-    data class DeleteMessage(val id: Long) : AppAction
-    data class RerunFromMessage(val id: Long) : AppAction
+    // --- DEPRECATED Chat & Gateway Actions ---
+    // These are now handled by HkgAgentFeature and SessionFeature internally.
 
     // --- UI & View Actions ---
     data class ShowToast(val message: String) : AppAction
     data object ClearToast : AppAction
-    data object ToggleSystemVisibility : AppAction
-    data class ToggleMessageCollapsed(val id: Long) : AppAction
+    data object ToggleSystemVisibility : AppAction // This will likely be deprecated soon.
 
 
     // --- Model Selection ---
     data class SelectModel(val modelName: String) : AppAction
     data class SetAvailableModels(val models: List<String>) : AppAction
 
-    // --- Action Manifest Execution ---
-    data class ExecuteActionManifest(val messageTimestamp: Long) : AppAction
-    data class ExecuteActionManifestSuccess(val summary: String, val messageTimestamp: Long) : AppAction
-    data class ExecuteActionManifestFailure(val error: String, val messageTimestamp: Long) : AppAction
-    data class UpdateActionStatus(val messageTimestamp: Long, val status: ActionStatus) : AppAction
+    // --- DEPRECATED Action Manifest Actions ---
 
     // --- Settings Actions ---
     data class UpdateSetting(val setting: SettingValue) : AppAction
 
-    // --- Session Persistence Actions ---
-    data class LoadSessionSuccess(val history: List<ChatMessage>) : AppAction
+    // --- DEPRECATED Session Persistence Actions ---
 }
