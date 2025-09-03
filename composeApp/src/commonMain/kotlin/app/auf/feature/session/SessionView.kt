@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,6 +31,7 @@ fun SessionView(
     val hkgAgentFeatureState = appState.featureStates["HkgAgentFeature"] as? HkgAgentFeatureState
 
     val activeSession = sessionFeatureState?.sessions?.values?.firstOrNull()
+    val isRawContentVisible = sessionFeatureState?.isRawContentVisible ?: false
     val activeAgent = hkgAgentFeatureState?.agents?.values?.firstOrNull()
     val isProcessing = activeAgent?.isProcessing ?: false
     val isChatActive = activeAgent != null
@@ -50,7 +52,6 @@ fun SessionView(
 
     val sendMessageAction = {
         if (userMessage.isNotBlank() && !isProcessing && activeSession != null) {
-            // CORRECTED: Dispatch specific action
             stateManager.dispatch(SessionAction.PostEntry(
                 sessionId = activeSession.id,
                 agentId = "USER",
@@ -78,7 +79,8 @@ fun SessionView(
                 ) { entry ->
                     MessageCard(
                         entry = entry,
-                        stateManager = stateManager
+                        stateManager = stateManager,
+                        showRawContent = isRawContentVisible
                     )
                 }
             }
@@ -95,8 +97,17 @@ fun SessionView(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            features.forEach { feature ->
-                feature.composableProvider?.SessionHeader(stateManager)
+            Row(modifier = Modifier.weight(1f)) {
+                features.forEach { feature ->
+                    feature.composableProvider?.SessionHeader(stateManager)
+                }
+            }
+            IconButton(onClick = { stateManager.dispatch(SessionAction.ToggleRawContentView) }) {
+                Icon(
+                    Icons.Default.Code,
+                    contentDescription = "Toggle Raw Content View",
+                    tint = if (isRawContentVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 

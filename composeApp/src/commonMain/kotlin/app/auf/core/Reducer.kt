@@ -13,9 +13,6 @@ fun appReducer(state: AppState, action: AppAction): AppState {
         is AppAction.ClearToast -> state.copy(
             toastMessage = null
         )
-        is AppAction.ToggleSystemVisibility -> state.copy(
-            isSystemVisible = !state.isSystemVisible
-        )
         is AppAction.SetActiveView -> state.copy(
             activeViewKey = action.key
         )

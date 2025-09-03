@@ -12,95 +12,105 @@ import kotlinx.serialization.Serializable
 @OptIn(ExperimentalCoroutinesApi::class)
 class StoreTest {
 
-    // --- Test-specific helper classes ---
+    // --- Test Doubles: Self-contained fakes to simulate real features ---
 
-    /** A custom state slice for our FakeFeature. */
+    // --- WidgetFeature ---
     @Serializable
-    data class FakeFeatureState(
-        val name: String = "Fake",
-        val eventCount: Int = 0,
-        val selectedModel: String = "initial-model"
-    ) : FeatureState
-
-    /** A custom action that only our FakeFeature understands. */
-    sealed interface FakeFeatureAction : AppAction {
-        data object IncrementEventCount : FakeFeatureAction
+    data class WidgetState(val count: Int = 0) : FeatureState
+    data object IncrementWidgetCount : AppAction
+    class WidgetFeature : Feature {
+        override val name: String = "WidgetFeature"
+        var startWasCalled = false
+        override fun start(store: Store) { startWasCalled = true }
+        override fun reducer(state: AppState, action: AppAction): AppState {
+            if (action is IncrementWidgetCount) {
+                val currentFeatureState = state.featureStates[name] as? WidgetState ?: WidgetState()
+                val newFeatureState = currentFeatureState.copy(count = currentFeatureState.count + 1)
+                return state.copy(featureStates = state.featureStates + (name to newFeatureState))
+            }
+            return state
+        }
     }
 
-    /**
-     * A simple, self-contained Feature used to test the Store's orchestration.
-     * Its reducer responds to both its own custom action and a core AppAction.
-     */
-    class FakeFeature : Feature {
-        override val name: String = "FakeFeature"
-
-        override fun reducer(state: AppState, action: AppAction): AppState {
-            val currentState = state.featureStates[name] as? FakeFeatureState ?: FakeFeatureState()
-
-            val newFeatureState = when (action) {
-                is FakeFeatureAction.IncrementEventCount -> {
-                    currentState.copy(eventCount = currentState.eventCount + 1)
-                }
-                is AppAction.SelectModel -> {
-                    currentState.copy(eventCount = 99, selectedModel = action.modelName)
-                }
-                else -> currentState
-            }
-            return state.copy(featureStates = state.featureStates + (name to newFeatureState))
-        }
-
+    // --- GadgetFeature ---
+    @Serializable
+    data class GadgetState(val text: String = "initial") : FeatureState
+    data class SetGadgetText(val newText: String) : AppAction
+    class GadgetFeature : Feature {
+        override val name: String = "GadgetFeature"
         var startWasCalled = false
-        override fun start(store: Store) {
-            startWasCalled = true
+        override fun start(store: Store) { startWasCalled = true }
+        override fun reducer(state: AppState, action: AppAction): AppState {
+            if (action is SetGadgetText) {
+                val currentFeatureState = state.featureStates[name] as? GadgetState ?: GadgetState()
+                val newFeatureState = currentFeatureState.copy(text = action.newText)
+                return state.copy(featureStates = state.featureStates + (name to newFeatureState))
+            }
+            return state
         }
     }
 
     @Test
-    fun `store orchestrates root and feature reducers`() = runTest {
-        // ARRANGE
-        val fakeFeature = FakeFeature()
+    fun `store correctly orchestrates core and multiple feature reducers while maintaining state isolation`() = runTest {
+        // --- ARRANGE ---
+        val widgetFeature = WidgetFeature()
+        val gadgetFeature = GadgetFeature()
         val initialState = AppState(
-            featureStates = mapOf(fakeFeature.name to FakeFeatureState(eventCount = 0))
+            featureStates = mapOf(
+                widgetFeature.name to WidgetState(count = 5),
+                gadgetFeature.name to GadgetState(text = "initial")
+            )
         )
         val store = Store(
             initialState = initialState,
             rootReducer = ::appReducer,
-            features = listOf(fakeFeature),
+            features = listOf(widgetFeature, gadgetFeature),
             coroutineScope = this
         )
 
-        // ACT
-        store.dispatch(AppAction.SelectModel("new-model"))
-        store.dispatch(FakeFeatureAction.IncrementEventCount)
+        // --- ACT ---
+        store.dispatch(IncrementWidgetCount)              // A widget-specific action
+        store.dispatch(SetGadgetText("new text"))         // A gadget-specific action
 
-        // ASSERT
+        // --- ASSERT ---
         val finalState = store.state.value
-        val finalFeatureState = finalState.featureStates[fakeFeature.name] as? FakeFeatureState
-        assertNotNull(finalFeatureState)
 
-        // Assert the feature reducer handled both actions correctly
-        assertEquals("new-model", finalFeatureState.selectedModel)
-        assertEquals(100, finalFeatureState.eventCount) // 99 from SelectModel + 1 from Increment
+        // 1. Assert Widget Integrity
+        val finalWidgetState = finalState.featureStates[widgetFeature.name] as? WidgetState
+        assertNotNull(finalWidgetState)
+        assertEquals(6, finalWidgetState.count, "WidgetFeature reducer should have incremented the count.")
+
+        // 2. Assert Gadget Integrity
+        val finalGadgetState = finalState.featureStates[gadgetFeature.name] as? GadgetState
+        assertNotNull(finalGadgetState)
+        assertEquals("new text", finalGadgetState.text, "GadgetFeature reducer should have set the text.")
+
+        // 3. Assert State Isolation (Crucial)
+        assertEquals("initial", (initialState.featureStates[gadgetFeature.name] as GadgetState).text, "Gadget initial text should be unchanged after WidgetAction.")
+        assertEquals(5, (initialState.featureStates[widgetFeature.name] as WidgetState).count, "Widget initial count should be unchanged after GadgetAction.")
     }
 
     @Test
-    fun `startFeatureLifecycles calls start on all registered features only once`() = runTest {
-        // ARRANGE
-        val fakeFeature = FakeFeature()
+    fun `startFeatureLifecycles calls start on all registered features exactly once`() = runTest {
+        // --- ARRANGE ---
+        val widgetFeature = WidgetFeature()
+        val gadgetFeature = GadgetFeature()
         val store = Store(
             initialState = AppState(),
             rootReducer = ::appReducer,
-            features = listOf(fakeFeature),
+            features = listOf(widgetFeature, gadgetFeature),
             coroutineScope = this
         )
 
-        assertFalse(fakeFeature.startWasCalled, "start() should not be called before lifecycles are started.")
+        assertFalse(widgetFeature.startWasCalled, "Widget start() should not be called before lifecycles are started.")
+        assertFalse(gadgetFeature.startWasCalled, "Gadget start() should not be called before lifecycles are started.")
 
-        // ACT
+        // --- ACT ---
         store.startFeatureLifecycles()
         store.startFeatureLifecycles() // Call a second time to ensure it's idempotent
 
-        // ASSERT
-        assertTrue(fakeFeature.startWasCalled, "start() should be called after lifecycles are started.")
+        // --- ASSERT ---
+        assertTrue(widgetFeature.startWasCalled, "Widget start() should be called after lifecycles are started.")
+        assertTrue(gadgetFeature.startWasCalled, "Gadget start() should be called after lifecycles are started.")
     }
 }

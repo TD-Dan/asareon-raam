@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Card
@@ -51,9 +50,9 @@ import app.auf.service.AufTextParser
 @Composable
 fun MessageCard(
     entry: LedgerEntry,
-    stateManager: StateManager
+    stateManager: StateManager,
+    showRawContent: Boolean
 ) {
-    var showRaw by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
     var isCollapsed by remember { mutableStateOf(false) }
@@ -114,11 +113,6 @@ fun MessageCard(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { showRaw = !showRaw }, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.Code, contentDescription = "View Raw Content", tint = if (showRaw) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Spacer(Modifier.width(4.dp))
-
                     IconButton(onClick = { clipboardManager.setText(AnnotatedString(guardedCopyContent)) }, modifier = Modifier.size(24.dp)) {
                         Icon(Icons.Default.ContentCopy, contentDescription = "Copy Message Content", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -139,7 +133,7 @@ fun MessageCard(
             AnimatedVisibility(visible = !isCollapsed) {
                 Column {
                     Spacer(Modifier.height(8.dp))
-                    if (showRaw) {
+                    if (showRawContent) {
                         RenderRawContent("RAW CONTENT", entry.content)
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

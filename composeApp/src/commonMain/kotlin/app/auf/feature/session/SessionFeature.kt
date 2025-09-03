@@ -18,15 +18,10 @@ import kotlinx.serialization.serializer
 
 // --- 1. MODEL ---
 
-/**
- * ---
- * ## Mandate
- * Defines the complete data model for the Session feature. It is a pure data container
- * for a map of all sessions, with no concept of which one is "active".
- */
 @Serializable
 data class SessionFeatureState(
-    val sessions: Map<String, Session> = emptyMap()
+    val sessions: Map<String, Session> = emptyMap(),
+    val isRawContentVisible: Boolean = false // <-- NEW HOME FOR THE STATE
 ) : FeatureState
 
 @Serializable
@@ -47,27 +42,16 @@ data class LedgerEntry(
 
 // --- 2. ACTIONS ---
 
-/**
- * ---
- * ## Mandate
- * Defines actions to manipulate the collection of sessions. Actions are explicit and
- * target sessions by their unique ID.
- */
 sealed interface SessionAction : AppAction {
     data class CreateSession(val id: String, val name: String) : SessionAction
     data class PostEntry(val sessionId: String, val agentId: String, val content: String) : SessionAction
     data class LoadSessionsSuccess(val sessions: Map<String, Session>) : SessionAction
+    data object ToggleRawContentView : SessionAction // <-- NEW ACTION
 }
 
 
 // --- 3. FEATURE IMPLEMENTATION ---
 
-/**
- * ---
- * ## Mandate
- * Implements the "Public Ledger" architectural pattern. Its sole responsibility is to manage
- * the state of all conversation transcripts. It provides the main chat UI for the application.
- */
 class SessionFeature(
     private val platform: PlatformDependencies,
     private val jsonParser: Json,
@@ -119,6 +103,9 @@ class SessionFeature(
                     sessions = action.sessions
                 )
             }
+            is SessionAction.ToggleRawContentView -> {
+                currentState.copy(isRawContentVisible = !currentState.isRawContentVisible)
+            }
         }
         return state.copy(featureStates = state.featureStates + (name to newFeatureState))
     }
@@ -152,11 +139,6 @@ class SessionFeature(
 
     inner class SessionComposableProvider : Feature.ComposableProvider {
         override val viewKey: String = "feature.session.main"
-
-        // --- REMOVED ---
-        // The RibbonButton is no longer the responsibility of this feature.
-        // @Composable
-        // override fun RibbonButton(stateManager: StateManager, isActive: Boolean) { ... }
 
         @Composable
         override fun StageContent(stateManager: StateManager) {
