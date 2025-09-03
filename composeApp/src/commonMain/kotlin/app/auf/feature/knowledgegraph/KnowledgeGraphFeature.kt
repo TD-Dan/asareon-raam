@@ -311,13 +311,9 @@ class KnowledgeGraphFeature(
     private fun dispatch(action: AppAction) {
         val store = this.store ?: return
 
-        // --- FIX START: The original action must be dispatched to the store so its state change (reducer)
-        // and its presence in the action history (for tests) is correctly handled.
-        store.dispatch(action)
-        // --- FIX END ---
-
         when (action) {
             is KnowledgeGraphAction.LoadGraph, KnowledgeGraphAction.RetryLoadGraph -> {
+                store.dispatch(action)
                 coroutineScope.launch(Dispatchers.Default) {
                     val currentPersonaId = (store.state.value.featureStates[name] as? KnowledgeGraphState)?.aiPersonaId
                     val result = _loadGraph(currentPersonaId)
@@ -331,19 +327,23 @@ class KnowledgeGraphFeature(
                 }
             }
             is KnowledgeGraphAction.SelectAiPersona -> {
+                store.dispatch(action)
                 // The reducer handles the state change. The side effect is to reload the graph.
                 dispatch(KnowledgeGraphAction.LoadGraph)
             }
             is KnowledgeGraphAction.StartImportAnalysis -> {
+                store.dispatch(action)
                 _analyzeImportFolder(action.sourcePath)
             }
             is KnowledgeGraphAction.SetImportRecursive -> {
+                store.dispatch(action)
                 val sourcePath = (store.state.value.featureStates[name] as? KnowledgeGraphState)?.importSourcePath
                 if (!sourcePath.isNullOrBlank()) {
                     _analyzeImportFolder(sourcePath)
                 }
             }
             is KnowledgeGraphAction.ExecuteImport -> {
+                store.dispatch(action)
                 coroutineScope.launch(Dispatchers.Default) {
                     val kgState = store.state.value.featureStates[name] as? KnowledgeGraphState ?: return@launch
                     val result = _executeImport(kgState.importSelectedActions, kgState.holonGraph.map { it.header }, kgState.aiPersonaId)
@@ -363,12 +363,14 @@ class KnowledgeGraphFeature(
                 }
             }
             is KnowledgeGraphAction.ExecuteExport -> {
+                store.dispatch(action)
                 val kgState = store.state.value.featureStates[name] as? KnowledgeGraphState ?: return
                 val holonsToExport = kgState.holonGraph.filter { it.header.id in kgState.holonIdsForExport }
                 _executeExport(action.destinationPath, holonsToExport.map { it.header })
                 store.dispatch(AppAction.ShowToast("Export successful!"))
                 store.dispatch(KnowledgeGraphAction.SetViewMode(KnowledgeGraphViewMode.INSPECTOR))
             }
+            else -> store.dispatch(action)
         }
     }
 
