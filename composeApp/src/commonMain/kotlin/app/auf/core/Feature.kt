@@ -1,79 +1,75 @@
 package app.auf.core
 
 import androidx.compose.runtime.Composable
-import app.auf.model.SettingDefinition
 
 /**
  * ---
  * ## Mandate
  * Defines the universal contract for a self-contained, modular feature plugin within the AUF app.
  * This is the cornerstone of the "Core Ignorance" and "Contextual Granularity" principles.
- * A Feature can provide a reducer to manage its own state slice, a `start` lifecycle
- * method, an optional `ComposableProvider` for rendering its UI, and a list of its
- * configurable settings.
  */
-
 interface Feature {
-    /**
-     * A unique, machine-readable name for the feature, used for debugging and registration.
-     */
     val name: String
-
-    /**
-     * The feature's dedicated reducer function. It receives the current global state and an action,
-     * and must return a new, updated global state. It is the feature's responsibility to
-     * handle its own state slice immutably. If an action is not relevant to this feature,
-     * it must return the state object unmodified.
-     *
-     * @param state The current global [AppState].
-     * @param action The dispatched [AppAction].
-     * @return The new [AppState].
-     */
     fun reducer(state: AppState, action: AppAction): AppState = state
+    fun start(store: Store) {}
 
     /**
-     * A lifecycle method called once when the Store is initialized. This is the designated
-     * entry point for a feature to start any long-running processes, coroutines, or listeners
-     * (e.g., a system clock timer, a file system watcher). It provides access to the
-     * store for dispatching new actions.
-     *
-     * @param store The central [Store] instance, providing `dispatch` and `state`.
-     */
-    fun start(store: Store) {
-        // The default implementation is a no-op for features without async logic.
-    }
-
-    /**
-     * An optional provider for this feature's UI components. If a feature needs to render
-     * something in the main application shell, it should override this property and return
-     * an implementation of the [ComposableProvider] interface.
+     * The single, optional provider for ALL of this feature's UI components.
+     * A feature can choose to implement any combination of the functions within.
      */
     val composableProvider: ComposableProvider?
         get() = null
 
-    /**
-     * An optional list of setting definitions for this feature. This allows the settings UI
-     * to be built dynamically without the SettingsManager needing to know about any
-     * specific feature.
-     */
-    val settingDefinitions: List<SettingDefinition>
-        get() = emptyList()
-
-
-    /**
-     * Defines a contract for features to provide UI components ("slots") to be rendered
-     * in the main application layout. This keeps the core UI decoupled from feature specifics.
-     */
     interface ComposableProvider {
         /**
-         * A slot for components that should appear in the header area of a session view,
-         * typically for controls like agent or model selection.
-         *
-         * @param stateManager The central StateManager to dispatch actions.
+         * --- Main Stage Contract (for features with a dedicated, top-level view) ---
+         */
+
+        /**
+         * The unique key for this feature's main view, used for navigation.
+         * MUST be provided if the feature has a main StageContent.
+         * e.g., "feature.session.main", "feature.knowledgegraph.import"
+         */
+        val viewKey: String?
+            get() = null
+
+        /**
+         * The button to render in the GlobalActionRibbon.
+         * Typically dispatches AppAction.SetActiveView(viewKey).
          */
         @Composable
-        fun SessionHeader(stateManager: StateManager) {
-            // Default is an empty implementation
-        }
+        fun RibbonButton(stateManager: StateManager, isActive: Boolean) {}
+
+        /**
+         * The main content to render on the ActionStage when this feature's viewKey is active.
+         */
+        @Composable
+        fun StageContent(stateManager: StateManager) {}
+
+
+        /**
+         * --- Enrichment & Headless Contract (for features that plug into other views) ---
+         */
+
+        /**
+         * A slot for adding controls to the header of the main SessionView.
+         * Used by features like HkgAgentFeature to provide model/persona selectors.
+         */
+        @Composable
+        fun SessionHeader(stateManager: StateManager) {}
+
+        /**
+         * A slot for adding a feature's settings UI to the main SettingsView.
+         * The SettingsView will iterate through all features and render this for each one.
+         */
+        @Composable
+        fun SettingsContent(stateManager: StateManager) {}
+
+        /**
+         * A slot for adding DropdownMenuItems to the main application menu.
+         * Used for simple, one-off tool commands.
+         */
+        @Composable
+        fun MenuContent(stateManager: StateManager, onDismiss: () -> Unit) {}
     }
 }

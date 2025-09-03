@@ -7,19 +7,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,17 +21,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import app.auf.core.Feature
 import app.auf.core.StateManager
-import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
-import aufapp.composeapp.generated.resources.Res
-import aufapp.composeapp.generated.resources.icon
-import org.jetbrains.compose.resources.painterResource
 
 @Composable
 fun GlobalActionRibbon(
-    stateManager: StateManager
+    stateManager: StateManager,
+    features: List<Feature>,
+    activeViewKey: String?
 ) {
     var isMenuExpanded by remember { mutableStateOf(false) }
 
@@ -51,14 +43,17 @@ fun GlobalActionRibbon(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        IconButton(onClick = { stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.INSPECTOR) }) {
-            Icon(
-                painter = painterResource(Res.drawable.icon),
-                contentDescription = "Home (Chat View)",
-                tint = Color.Unspecified
-            )
+        // Render ribbon buttons from all features
+        features.forEach { feature ->
+            feature.composableProvider?.let { provider ->
+                provider.RibbonButton(
+                    stateManager = stateManager,
+                    isActive = provider.viewKey == activeViewKey
+                )
+            }
         }
 
+        // The main application menu
         Box {
             IconButton(onClick = { isMenuExpanded = true }) {
                 Icon(Icons.Default.Menu, contentDescription = "Application Menu")
@@ -67,58 +62,13 @@ fun GlobalActionRibbon(
                 expanded = isMenuExpanded,
                 onDismissRequest = { isMenuExpanded = false }
             ) {
-                DropdownMenuItem(
-                    text = { Text("Settings") },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    onClick = {
-                        stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.SETTINGS)
-                        isMenuExpanded = false
-                    }
-                )
-                HorizontalDivider()
-                DropdownMenuItem(
-                    text = { Text("Export for AUF manual runtime") },
-                    onClick = {
-                        stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.EXPORT)
-                        isMenuExpanded = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("Import & Sync from manual runtime") },
-                    onClick = {
-                        stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.IMPORT)
-                        isMenuExpanded = false
-                    }
-                )
-                HorizontalDivider()
-                DropdownMenuItem(
-                    text = { Text("Copy codebase to clipboard") },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.Code,
-                            contentDescription = "Copy Codebase",
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    onClick = {
-                        stateManager.copyCodebaseToClipboard()
-                        isMenuExpanded = false
-                    }
-                )
-                HorizontalDivider()
-                DropdownMenuItem(
-                    text = { Text("Manage Backups") },
-                    onClick = {
-                        stateManager.openBackupFolder()
-                        isMenuExpanded = false
-                    }
-                )
+                // Render menu content from all features
+                features.forEach { feature ->
+                    feature.composableProvider?.MenuContent(
+                        stateManager = stateManager,
+                        onDismiss = { isMenuExpanded = false }
+                    )
+                }
             }
         }
     }

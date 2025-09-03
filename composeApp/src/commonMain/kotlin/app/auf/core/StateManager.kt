@@ -74,9 +74,11 @@ open class StateManager(
         store.dispatch(KnowledgeGraphAction.SetCatalogueFilter(type))
     }
 
-    fun executeExport(destinationPath: String) {
-        store.dispatch(KnowledgeGraphAction.ExecuteExport(destinationPath))
-    }
+    /* DEPRECATED
+    fun executeExport() {
+
+        store.dispatch(KnowledgeGraphAction.ExecuteExport)
+    }*/
 
     fun selectAllForExport() {
         store.dispatch(KnowledgeGraphAction.SelectAllForExport)
@@ -146,5 +148,9 @@ open class StateManager(
 
     fun updateSetting(settingValue: SettingValue) {
         store.dispatch(AppAction.UpdateSetting(settingValue))
+    }
+
+    fun setActiveView(key: String) {
+        store.dispatch(AppAction.SetActiveView(key))
     }
 }

@@ -4,15 +4,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import app.auf.core.Feature
 import app.auf.core.StateManager
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
-import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
 
 @Composable
 fun App(stateManager: StateManager, features: List<Feature>) {
     val appState by stateManager.state.collectAsState()
+    // We still need the KG state for the initial loading/error screens.
     val kgState = remember(appState.featureStates) {
         appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
     }
@@ -46,44 +45,22 @@ fun App(stateManager: StateManager, features: List<Feature>) {
 @Composable
 private fun MainAppContent(stateManager: StateManager, features: List<Feature>) {
     val appState by stateManager.state.collectAsState()
-    val kgState = remember(appState.featureStates) {
-        appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
-    }
+    val activeViewKey = appState.activeViewKey
+
+    // Find the feature whose ComposableProvider has the currently active key.
+    val activeFeatureProvider = features
+        .mapNotNull { it.composableProvider }
+        .find { it.viewKey == activeViewKey }
 
     Row(Modifier.fillMaxSize()) {
-        GlobalActionRibbon(stateManager)
+        // 1. The Ribbon is built dynamically from ALL features.
+        GlobalActionRibbon(stateManager, features, activeViewKey)
         VerticalDivider()
 
+        // 2. The Stage renders the content from the ONE active feature.
         Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-            if (kgState.viewMode == KnowledgeGraphViewMode.INSPECTOR) {
-                Row(Modifier.fillMaxSize()) {
-                    KnowledgeGraphCatalogueView(
-                        kgState = kgState,
-                        onFilter = { stateManager.setCatalogueFilter(it) },
-                        onHolonSelected = { stateManager.onHolonClicked(it) },
-                        modifier = Modifier.width(320.dp)
-                    )
-                    VerticalDivider()
-                    Box(modifier = Modifier.weight(1f)) {
-                        SessionView(stateManager = stateManager, features = features)
-                    }
-                    VerticalDivider()
-                    HolonInspectorView(kgState = kgState, modifier = Modifier.width(320.dp))
-                }
-            } else {
-                // This will be the next refactor target to clean up the main view
-                when (kgState.viewMode) {
-                    KnowledgeGraphViewMode.SETTINGS -> SettingsView(
-                        definitions = stateManager.getSettingDefinitions(),
-                        appState = appState,
-                        onSettingChanged = { stateManager.updateSetting(it) },
-                        onClose = { stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.INSPECTOR) }
-                    )
-                    KnowledgeGraphViewMode.EXPORT -> ExportView(kgState, stateManager)
-                    KnowledgeGraphViewMode.IMPORT -> ImportView(kgState, stateManager)
-                    else -> {}
-                }
-            }
+            activeFeatureProvider?.StageContent(stateManager)
+                ?: Text("Error: No view found for key '$activeViewKey'")
         }
     }
 }
