@@ -40,7 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.*
-import app.auf.service.AufTextParser
+import app.auf.feature.session.BlockSeparatingParser
 
 /**
  * ## Mandate
@@ -58,7 +58,7 @@ fun MessageCard(
     var isCollapsed by remember { mutableStateOf(false) }
 
     // Each card gets its own parser instance.
-    val parser = remember { AufTextParser() }
+    val parser = remember { BlockSeparatingParser() }
     val contentBlocks = remember(entry.content) { parser.parse(entry.content) }
 
     val authorName = remember(entry.agentId) {

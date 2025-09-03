@@ -50,10 +50,11 @@ class ReducerTest {
     fun `appReducer ignores unknown and feature-specific actions`() {
         // Arrange
         val initialState = AppState(toastMessage = "Unchanged")
-        data object SomeFeatureAction : AppAction // A fake feature action
+        // FIX: Use an anonymous object for the local fake action.
+        val someFeatureAction = object : AppAction {}
 
         // Act
-        val newState = appReducer(initialState, SomeFeatureAction)
+        val newState = appReducer(initialState, someFeatureAction)
 
         // Assert
         // The entire state object should be identical to the initial one.

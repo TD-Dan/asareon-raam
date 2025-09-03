@@ -1,6 +1,5 @@
 package app.auf.feature.hkgagent
 
-import app.auf.service.AufTextParser
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.HttpTimeout

@@ -1,4 +1,4 @@
-package app.auf.service
+package app.auf.feature.session
 
 import app.auf.core.CodeBlock
 import app.auf.core.ContentBlock
@@ -14,7 +14,7 @@ import app.auf.core.TextBlock
  * simplified markdown-based data contract. It correctly handles code fences that may appear
  * inside string literals or comments, preventing false positives.
  */
-open class AufTextParser {
+open class BlockSeparatingParser {
 
     private val debug = false // Set to true to enable logging
 
