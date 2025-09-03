@@ -1,6 +1,8 @@
 package app.auf.core
 
 import androidx.compose.runtime.Composable
+import app.auf.model.SettingDefinition
+import app.auf.model.SettingValue
 
 /**
  * ---
@@ -12,6 +14,13 @@ interface Feature {
     val name: String
     fun reducer(state: AppState, action: AppAction): AppState = state
     fun start(store: Store) {}
+
+    /**
+     * A new delegation method. The StateManager will call this on all features.
+     * The first feature to recognize the setting's key will return the appropriate
+     * feature-specific AppAction. Others will return null.
+     */
+    fun createActionForSetting(setting: SettingValue): AppAction? = null
 
     /**
      * The single, optional provider for ALL of this feature's UI components.
@@ -71,5 +80,10 @@ interface Feature {
          */
         @Composable
         fun MenuContent(stateManager: StateManager, onDismiss: () -> Unit) {}
+
+        // This is a temporary solution to make settings discoverable
+        // A better approach might be a direct property on the Feature interface itself.
+        val settingDefinitions: List<SettingDefinition>
+            get() = emptyList()
     }
 }

@@ -127,7 +127,10 @@ fun ExportView(
             }
             Spacer(Modifier.width(8.dp))
             Button(
-                onClick = { stateManager.executeExport(destinationPath!!) },
+                onClick = {
+                    // --- CORRECTED ---
+                    destinationPath?.let { stateManager.executeExport(it) }
+                },
                 enabled = destinationPath != null && exportListIds.isNotEmpty()
             ) {
                 Text("Execute Export")

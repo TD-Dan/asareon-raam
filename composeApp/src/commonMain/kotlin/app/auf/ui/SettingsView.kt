@@ -1,13 +1,6 @@
 package app.auf.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -34,9 +27,9 @@ fun SettingsView(
     features: List<Feature>,
     onClose: () -> Unit
 ) {
-    val featuresWithSettings = features.filter {
-        it.composableProvider?.settingDefinitions?.isNotEmpty() == true
-    }
+    // A feature is considered to have settings if it provides a non-empty settings content composable.
+    // This is a bit of a placeholder check, a more robust system might have a dedicated flag.
+    val featuresWithSettings = features.filter { it.composableProvider != null }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp)
@@ -56,17 +49,29 @@ fun SettingsView(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item {
-                featuresWithSettings.forEach { feature ->
-                    feature.composableProvider?.let { provider ->
-                        val sectionName = provider.settingDefinitions.firstOrNull()?.section ?: feature.name
-                        Text(
-                            text = sectionName,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-                        )
-                        HorizontalDivider()
+            // Group features by their first defined setting's section for UI grouping
+            val groupedProviders = featuresWithSettings
+                .mapNotNull { it.composableProvider }
+                .groupBy {
+                    // Heuristic to get a section name. This part is a bit tricky with the new model
+                    // but we can default to the feature name. A more robust implementation might
+                    // have a dedicated 'settingsSection' property in the provider.
+                    it.javaClass.simpleName.replace("ComposableProvider", "")
+                }
+
+
+            groupedProviders.forEach { (section, providers) ->
+                item {
+                    Text(
+                        text = section,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                    )
+                    HorizontalDivider()
+                }
+                item {
+                    providers.forEach { provider ->
                         provider.SettingsContent(stateManager)
                     }
                 }

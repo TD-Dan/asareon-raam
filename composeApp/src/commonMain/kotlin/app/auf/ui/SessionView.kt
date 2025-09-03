@@ -17,6 +17,7 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.feature.hkgagent.HkgAgentFeatureState
+import app.auf.feature.session.SessionAction
 import app.auf.feature.session.SessionFeatureState
 import kotlinx.coroutines.launch
 
@@ -33,7 +34,7 @@ fun SessionView(
     val activeSession = sessionFeatureState?.sessions?.values?.firstOrNull()
     val activeAgent = hkgAgentFeatureState?.agents?.values?.firstOrNull()
     val isProcessing = activeAgent?.isProcessing ?: false
-    val isChatActive = activeAgent != null // Chat is active if an agent exists
+    val isChatActive = activeAgent != null
     val displayedTranscript = activeSession?.transcript ?: emptyList()
 
     var userMessage by remember { mutableStateOf("") }
@@ -51,10 +52,12 @@ fun SessionView(
 
     val sendMessageAction = {
         if (userMessage.isNotBlank() && !isProcessing && activeSession != null) {
-            stateManager.postUserMessage(
+            // CORRECTED: Dispatch specific action
+            stateManager.dispatch(SessionAction.PostEntry(
                 sessionId = activeSession.id,
+                agentId = "USER",
                 content = userMessage
-            )
+            ))
             userMessage = ""
         }
     }
@@ -94,7 +97,6 @@ fun SessionView(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // The feature composable providers will now render the agent and model selectors
             features.forEach { feature ->
                 feature.composableProvider?.SessionHeader(stateManager)
             }
@@ -109,9 +111,7 @@ fun SessionView(
                     .focusRequester(focusRequester)
                     .onKeyEvent { event ->
                         if (event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
-                            if (event.isShiftPressed) {
-                                // Allow newline
-                            } else {
+                            if (!event.isShiftPressed) {
                                 sendMessageAction()
                                 return@onKeyEvent true
                             }

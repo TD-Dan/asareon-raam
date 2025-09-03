@@ -1,6 +1,13 @@
 package app.auf.feature.session
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import app.auf.core.*
+import app.auf.ui.SessionView
 import app.auf.util.BasePath
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
@@ -65,16 +72,17 @@ sealed interface SessionAction : AppAction {
  * ---
  * ## Mandate
  * Implements the "Public Ledger" architectural pattern. Its sole responsibility is to manage
- * the state of all conversation transcripts. It is a self-contained, autonomous plugin that
- * also handles its own data persistence as a side effect.
+ * the state of all conversation transcripts. It provides the main chat UI for the application.
  */
 class SessionFeature(
     private val platform: PlatformDependencies,
     private val jsonParser: Json,
-    private val coroutineScope: CoroutineScope
+    private val coroutineScope: CoroutineScope,
+    private val allFeatures: List<Feature> // Injected to pass to the view
 ) : Feature {
 
     override val name: String = "SessionFeature"
+    override val composableProvider: Feature.ComposableProvider = SessionComposableProvider()
 
     private val persistenceService = SessionPersistenceService(platform, jsonParser)
     private val nextEntryIdCounters = mutableMapOf<String, Long>()
@@ -145,6 +153,26 @@ class SessionFeature(
                         persistenceService.saveSessions(sessionsToSave)
                     }
                 }
+        }
+    }
+
+    inner class SessionComposableProvider : Feature.ComposableProvider {
+        override val viewKey: String = "feature.session.main"
+
+        @Composable
+        override fun RibbonButton(stateManager: StateManager, isActive: Boolean) {
+            IconButton(onClick = { stateManager.setActiveView(viewKey) }) {
+                Icon(
+                    Icons.Default.Home,
+                    contentDescription = "Session View",
+                    tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        @Composable
+        override fun StageContent(stateManager: StateManager) {
+            SessionView(stateManager = stateManager, features = allFeatures)
         }
     }
 

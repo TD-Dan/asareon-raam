@@ -35,7 +35,6 @@ import kotlinx.serialization.modules.subclass
 fun main() = application {
     val coroutineScope = rememberCoroutineScope()
 
-    // --- Core Dependencies ---
     val platformDependencies = remember { PlatformDependencies() }
     val jsonParser = remember {
         Json {
@@ -67,18 +66,18 @@ fun main() = application {
     }
     val promptCompiler = remember { PromptCompiler(jsonParser) }
 
-
-    // --- Feature Instantiation ---
     val features = remember {
         val agentGateway: AgentGateway = GatewayGemini(jsonParser, apiKey)
         val knowledgeGraphService = KnowledgeGraphService(platformDependencies)
+        val allFeatures = mutableListOf<Feature>()
 
-        listOf(
+        allFeatures.addAll(listOf(
             SystemClockFeature(coroutineScope),
             KnowledgeGraphFeature(knowledgeGraphService, coroutineScope),
-            SessionFeature(platformDependencies, jsonParser, coroutineScope),
-            HkgAgentFeature(agentGateway, promptCompiler, platformDependencies, jsonParser, coroutineScope)
-        )
+            HkgAgentFeature(agentGateway, promptCompiler, platformDependencies, jsonParser, coroutineScope),
+            SessionFeature(platformDependencies, jsonParser, coroutineScope, allFeatures)
+        ))
+        allFeatures
     }
 
     val settingsManager = remember { SettingsManager(platformDependencies, jsonParser, features) }
@@ -102,7 +101,8 @@ fun main() = application {
             sourceCodeService = sourceCodeService,
             settingsManager = settingsManager,
             platform = platformDependencies,
-            coroutineScope = coroutineScope
+            coroutineScope = coroutineScope,
+            features = features
         )
     }
 

@@ -1,49 +1,33 @@
 package app.auf.core
 
-import app.auf.model.SettingValue
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 // --- VERSION ---
 object Version {
-    const val APP_VERSION = "1.5.1"
+    const val APP_VERSION = "1.6.0" // Bump for the UI refactor
 }
 
 // --- CORE STATE & ACTIONS ---
 
-/**
- * ## Mandate
- * A marker interface for all serializable feature state data classes.
- * This enables the core persistence system to save and load a generic map of
- * feature states without needing to know the concrete type of any specific feature's state.
- */
 interface FeatureState
 
-/**
- * Defines the core, immutable data models for the entire AUF application state.
- * This object is lean, holding only top-level session state.
- * Feature-specific state is managed within the `featureStates` map.
- */
 data class AppState(
     val isSystemVisible: Boolean = false,
     val toastMessage: String? = null,
+    val activeViewKey: String = "feature.session.main",
     val featureStates: Map<String, FeatureState> = emptyMap()
 )
 
 /**
  * Defines all possible actions that can be dispatched to the Store to trigger a state change.
- * As of v2.0.0, this is a non-sealed interface to support an open, pluggable feature architecture.
+ * This is now a pure, core-only contract.
  */
 interface AppAction {
     data class ShowToast(val message: String) : AppAction
     data object ClearToast : AppAction
     data object ToggleSystemVisibility : AppAction
-
-    // These actions are now handled by HkgAgentFeature, but remain here as part of the
-    // universal action bus contract.
-    data class SelectModel(val modelName: String) : AppAction
-    data class SetAvailableModels(val models: List<String>) : AppAction
-    data class UpdateSetting(val setting: SettingValue) : AppAction
+    data class SetActiveView(val key: String) : AppAction
 }
 
 // --- UI MODELS (Used by multiple features) ---

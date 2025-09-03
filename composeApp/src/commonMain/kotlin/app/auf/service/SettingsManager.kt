@@ -7,27 +7,11 @@ import app.auf.util.PlatformDependencies
 import app.auf.model.UserSettings
 import kotlinx.serialization.json.Json
 
-/**
- * ---
- * ## Mandate
- * Manages the loading and saving of user preferences and provides a central registry
- * for discovering all available application settings. It handles serialization and
- * delegates all file system I/O to the injected `PlatformDependencies` instance.
- *
- * ---
- * ## Dependencies
- * - `app.auf.util.PlatformDependencies`: The contract for all platform-specific I/O.
- * - `kotlinx.serialization.json.Json`: For serializing the UserSettings object.
- *
- * @version 2.2
- * @since 2025-09-02
- */
 class SettingsManager(
     private val platform: PlatformDependencies,
     private val jsonParser: Json,
     private val features: List<Feature>
 ) {
-
     private val settingsFilePath: String
 
     init {
@@ -36,9 +20,6 @@ class SettingsManager(
         settingsFilePath = settingsDir + platform.pathSeparator + "user_settings.json"
     }
 
-    /**
-     * Saves the provided UserSettings object to user_settings.json.
-     */
     fun saveSettings(settings: UserSettings) {
         try {
             val jsonString = jsonParser.encodeToString(UserSettings.serializer(), settings)
@@ -48,13 +29,8 @@ class SettingsManager(
         }
     }
 
-    /**
-     * Loads UserSettings from user_settings.json.
-     * Returns null if the file doesn't exist or is corrupt, allowing the app to use defaults.
-     */
     fun loadSettings(): UserSettings? {
         if (!platform.fileExists(settingsFilePath)) return null
-
         return try {
             val jsonString = platform.readFileContent(settingsFilePath)
             jsonParser.decodeFromString(UserSettings.serializer(), jsonString)
@@ -64,11 +40,10 @@ class SettingsManager(
         }
     }
 
-    /**
-     * Collects all setting definitions from across the application by querying registered features.
-     * This is the single point of contact for the UI to discover what settings are available.
-     */
+    // --- CORRECTED ---
+    // This method is no longer used by the new SettingsView, but is fixed here for correctness.
+    // It now correctly looks inside the composableProvider.
     fun getSettingDefinitions(): List<SettingDefinition> {
-        return features.flatMap { it.settingDefinitions }
+        return features.flatMap { it.composableProvider?.settingDefinitions ?: emptyList() }
     }
 }
