@@ -1,13 +1,7 @@
 package app.auf.feature.session
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import app.auf.core.*
-import app.auf.ui.SessionView
 import app.auf.util.BasePath
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
@@ -159,16 +153,10 @@ class SessionFeature(
     inner class SessionComposableProvider : Feature.ComposableProvider {
         override val viewKey: String = "feature.session.main"
 
-        @Composable
-        override fun RibbonButton(stateManager: StateManager, isActive: Boolean) {
-            IconButton(onClick = { stateManager.setActiveView(viewKey) }) {
-                Icon(
-                    Icons.Default.Home,
-                    contentDescription = "Session View",
-                    tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        // --- REMOVED ---
+        // The RibbonButton is no longer the responsibility of this feature.
+        // @Composable
+        // override fun RibbonButton(stateManager: StateManager, isActive: Boolean) { ... }
 
         @Composable
         override fun StageContent(stateManager: StateManager) {

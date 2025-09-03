@@ -1,4 +1,4 @@
-package app.auf.ui
+package app.auf.feature.session
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -17,8 +17,6 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.feature.hkgagent.HkgAgentFeatureState
-import app.auf.feature.session.SessionAction
-import app.auf.feature.session.SessionFeatureState
 import kotlinx.coroutines.launch
 
 @Composable

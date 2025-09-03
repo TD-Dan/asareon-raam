@@ -1,9 +1,11 @@
+// --- file: commonMain/kotlin/app/auf/ui/App.kt ---
 package app.auf.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import app.auf.core.AppAction
 import app.auf.core.Feature
 import app.auf.core.StateManager
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
@@ -21,7 +23,7 @@ fun App(stateManager: StateManager, features: List<Feature>) {
     appState.toastMessage?.let { message ->
         LaunchedEffect(message) {
             snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
-            stateManager.clearToast()
+            stateManager.dispatch(AppAction.ClearToast)
         }
     }
 

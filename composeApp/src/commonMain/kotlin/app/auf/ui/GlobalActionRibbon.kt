@@ -15,15 +15,21 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import app.auf.core.AppAction
 import app.auf.core.Feature
 import app.auf.core.StateManager
+import aufapp.composeapp.generated.resources.Res
+import aufapp.composeapp.generated.resources.icon
+import org.jetbrains.compose.resources.painterResource
 
 @Composable
 fun GlobalActionRibbon(
@@ -32,6 +38,7 @@ fun GlobalActionRibbon(
     activeViewKey: String?
 ) {
     var isMenuExpanded by remember { mutableStateOf(false) }
+    val appState by stateManager.state.collectAsState()
 
     Column(
         modifier = Modifier
@@ -43,7 +50,18 @@ fun GlobalActionRibbon(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Render ribbon buttons from all features
+        // --- CORRECTED: Master Home Button using typesafe resources ---
+        val isDefaultViewActive = activeViewKey == appState.defaultViewKey
+        IconButton(onClick = { stateManager.dispatch(AppAction.SetActiveView(appState.defaultViewKey)) }) {
+            Icon(
+                painter = painterResource(Res.drawable.icon),
+                contentDescription = "Go to Default View (Session)",
+                // Using Color.Unspecified to render the PNG with its original colors, as per your working example.
+                tint = Color.Unspecified
+            )
+        }
+
+        // Render ribbon buttons from all OTHER features
         features.forEach { feature ->
             feature.composableProvider?.let { provider ->
                 provider.RibbonButton(

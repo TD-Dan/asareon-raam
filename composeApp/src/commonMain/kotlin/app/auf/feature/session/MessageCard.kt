@@ -1,8 +1,7 @@
-package app.auf.ui
+package app.auf.feature.session
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,7 +41,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.*
-import app.auf.feature.session.LedgerEntry
 import app.auf.service.AufTextParser
 
 /**

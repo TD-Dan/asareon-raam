@@ -1,3 +1,4 @@
+// --- file: commonMain/kotlin/app/auf/ui/ExportView.kt ---
 package app.auf.ui
 
 import androidx.compose.foundation.layout.*
@@ -21,6 +22,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import app.auf.core.StateManager
+import app.auf.feature.knowledgegraph.KnowledgeGraphAction
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
 import app.auf.util.PlatformDependencies
@@ -42,7 +44,7 @@ fun ExportView(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Export for Manual Runtime", style = MaterialTheme.typography.headlineSmall)
-            IconButton(onClick = { stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.INSPECTOR) }) {
+            IconButton(onClick = { stateManager.dispatch(KnowledgeGraphAction.SetViewMode(KnowledgeGraphViewMode.INSPECTOR)) }) {
                 Icon(Icons.Default.Close, contentDescription = "Close Export View")
             }
         }
@@ -64,11 +66,11 @@ fun ExportView(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
             Row {
-                TextButton(onClick = { stateManager.selectAllForExport() }) {
+                TextButton(onClick = { stateManager.dispatch(KnowledgeGraphAction.SelectAllForExport) }) {
                     Text("Select All")
                 }
                 Spacer(Modifier.width(4.dp))
-                TextButton(onClick = { stateManager.deselectAllForExport() }) {
+                TextButton(onClick = { stateManager.dispatch(KnowledgeGraphAction.DeselectAllForExport) }) {
                     Text("Deselect All")
                 }
             }
@@ -87,7 +89,7 @@ fun ExportView(
                 ) {
                     Checkbox(
                         checked = isSelected,
-                        onCheckedChange = { stateManager.toggleHolonForExport(holon.header.id) },
+                        onCheckedChange = { stateManager.dispatch(KnowledgeGraphAction.ToggleHolonForExport(holon.header.id)) },
                         enabled = !isPersona
                     )
                     Spacer(Modifier.width(8.dp))
@@ -122,14 +124,13 @@ fun ExportView(
         Spacer(Modifier.height(16.dp))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            OutlinedButton(onClick = { stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.INSPECTOR) }) {
+            OutlinedButton(onClick = { stateManager.dispatch(KnowledgeGraphAction.SetViewMode(KnowledgeGraphViewMode.INSPECTOR)) }) {
                 Text("Cancel")
             }
             Spacer(Modifier.width(8.dp))
             Button(
                 onClick = {
-                    // --- CORRECTED ---
-                    destinationPath?.let { stateManager.executeExport(it) }
+                    destinationPath?.let { stateManager.dispatch(KnowledgeGraphAction.ExecuteExport(it)) }
                 },
                 enabled = destinationPath != null && exportListIds.isNotEmpty()
             ) {

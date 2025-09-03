@@ -1,3 +1,4 @@
+// --- file: commonMain/kotlin/app/auf/core/AppCore.kt ---
 package app.auf.core
 
 import kotlinx.serialization.SerialName
@@ -16,6 +17,7 @@ data class AppState(
     val isSystemVisible: Boolean = false,
     val toastMessage: String? = null,
     val activeViewKey: String = "feature.session.main",
+    val defaultViewKey: String = "feature.session.main",
     val featureStates: Map<String, FeatureState> = emptyMap()
 )
 

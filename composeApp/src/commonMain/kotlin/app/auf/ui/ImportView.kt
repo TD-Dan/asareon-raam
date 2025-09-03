@@ -1,3 +1,4 @@
+// --- file: commonMain/kotlin/app/auf/ui/ImportView.kt ---
 package app.auf.ui
 
 import androidx.compose.foundation.layout.*
@@ -12,18 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.auf.core.StateManager
-import app.auf.feature.knowledgegraph.AssignParent
-import app.auf.feature.knowledgegraph.CreateRoot
-import app.auf.feature.knowledgegraph.HolonHeader
-import app.auf.feature.knowledgegraph.Ignore
-import app.auf.feature.knowledgegraph.ImportAction
-import app.auf.feature.knowledgegraph.ImportActionType
-import app.auf.feature.knowledgegraph.ImportItem
-import app.auf.feature.knowledgegraph.Integrate
-import app.auf.feature.knowledgegraph.KnowledgeGraphState
-import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
-import app.auf.feature.knowledgegraph.Quarantine
-import app.auf.feature.knowledgegraph.Update
+import app.auf.feature.knowledgegraph.*
 import app.auf.util.PlatformDependencies
 
 @Composable
@@ -51,7 +41,7 @@ fun ImportView(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Import & Sync Holons", style = MaterialTheme.typography.headlineSmall)
-            IconButton(onClick = { stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.INSPECTOR) }) {
+            IconButton(onClick = { stateManager.dispatch(KnowledgeGraphAction.SetViewMode(KnowledgeGraphViewMode.INSPECTOR)) }) {
                 Icon(Icons.Default.Close, contentDescription = "Close Import View")
             }
         }
@@ -68,7 +58,7 @@ fun ImportView(
             Spacer(modifier = Modifier.width(8.dp))
             Button(onClick = {
                 platformDependencies.selectDirectoryPath()?.let { selectedPath ->
-                    stateManager.startImportAnalysis(selectedPath)
+                    stateManager.dispatch(KnowledgeGraphAction.StartImportAnalysis(selectedPath))
                 }
             }) {
                 Text("Select & Analyze...")
@@ -82,14 +72,14 @@ fun ImportView(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(
                     checked = isRecursive,
-                    onCheckedChange = { stateManager.setImportRecursive(it) }
+                    onCheckedChange = { stateManager.dispatch(KnowledgeGraphAction.SetImportRecursive(it)) }
                 )
                 Text("Import sub-folders recursively")
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(
                     checked = showOnlyChanged,
-                    onCheckedChange = { stateManager.toggleShowOnlyChangedImportItems() }
+                    onCheckedChange = { stateManager.dispatch(KnowledgeGraphAction.ToggleShowOnlyChangedImportItems) }
                 )
                 Text("Show only changed files")
             }
@@ -110,7 +100,7 @@ fun ImportView(
                         item = item,
                         selectedAction = kgState.importSelectedActions[item.sourcePath] ?: item.initialAction,
                         onActionSelected = { newAction ->
-                            stateManager.updateImportAction(item.sourcePath, newAction)
+                            stateManager.dispatch(KnowledgeGraphAction.UpdateImportAction(item.sourcePath, newAction))
                         },
                         potentialParents = kgState.holonGraph.map { it.header }
                     )
@@ -121,12 +111,12 @@ fun ImportView(
         Spacer(modifier = Modifier.height(16.dp))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            OutlinedButton(onClick = { stateManager.setKnowledgeGraphViewMode(KnowledgeGraphViewMode.INSPECTOR) }) {
+            OutlinedButton(onClick = { stateManager.dispatch(KnowledgeGraphAction.SetViewMode(KnowledgeGraphViewMode.INSPECTOR)) }) {
                 Text("Cancel")
             }
             Spacer(modifier = Modifier.width(8.dp))
             Button(
-                onClick = { stateManager.executeImport() },
+                onClick = { stateManager.dispatch(KnowledgeGraphAction.ExecuteImport) },
                 enabled = kgState.importItems.isNotEmpty()
             ) {
                 Text("Execute Import")
