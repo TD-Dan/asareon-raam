@@ -24,9 +24,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import app.auf.feature.knowledgegraph.Holon as HolonData
+import app.auf.feature.session.Session
 
-// Models and Actions are unchanged from the previous correct version
-
+// Models and Actions are unchanged
 @Serializable
 data class CompilerSettings(val removeWhitespace: Boolean = true, val cleanHeaders: Boolean = true, val minifyJson: Boolean = false)
 @Serializable
@@ -51,22 +51,107 @@ class HkgAgentFeature(
     private val coroutineScope: CoroutineScope
 ) : Feature {
 
-    // createActionForSetting, reducer, start, and other logic functions are unchanged from the previous correct version.
     override val name: String = "HkgAgentFeature"
     private var store: Store? = null
     override val composableProvider: Feature.ComposableProvider = HkgAgentComposableProvider()
+
     override fun createActionForSetting(setting: SettingValue): AppAction? {
         return if (setting.key.startsWith("compiler.")) HkgAgentAction.UpdateCompilerSetting(setting) else null
     }
-    override fun reducer(state: AppState, action: AppAction): AppState { /* ... */ return state}
-    override fun start(store: Store) { /* ... */ }
-    private fun handleSessionUpdate(session: app.auf.feature.session.Session) { /* ... */ }
-    private suspend fun triggerAgentResponse(agent: HkgAgentState, transcript: List<app.auf.feature.session.LedgerEntry>) { /* ... */ }
-    private fun _buildPromptContents(agent: HkgAgentState, transcript: List<app.auf.feature.session.LedgerEntry>): List<Content> { /* ... */ return emptyList()}
 
+    override fun reducer(state: AppState, action: AppAction): AppState {
+        if (action !is HkgAgentAction) return state
+        val currentState = state.featureStates[name] as? HkgAgentFeatureState ?: HkgAgentFeatureState()
+        val newFeatureState = when (action) {
+            is HkgAgentAction.CreateAgent -> {
+                val newAgent = HkgAgentState(id = action.agentId, sessionId = action.sessionId, hkgPersonaId = action.hkgPersonaId)
+                currentState.copy(agents = currentState.agents + (action.agentId to newAgent))
+            }
+            is HkgAgentAction.SetAvailableModels -> {
+                // When models are set, update ALL existing agents
+                val updatedAgents = currentState.agents.mapValues { (_, agent) ->
+                    agent.copy(
+                        availableModels = action.models,
+                        // If the current model isn't in the new list, gracefully fall back to the first available one.
+                        selectedModel = if (action.models.contains(agent.selectedModel)) agent.selectedModel else action.models.firstOrNull() ?: ""
+                    )
+                }
+                currentState.copy(agents = updatedAgents)
+            }
+            is HkgAgentAction.SelectModel -> {
+                val updatedAgents = currentState.agents.mapValues { (_, agent) ->
+                    agent.copy(selectedModel = action.modelName)
+                }
+                currentState.copy(agents = updatedAgents)
+            }
+            // ... other actions remain unchanged
+            is HkgAgentAction.SetProcessingStatus -> {
+                val targetAgent = currentState.agents[action.agentId] ?: return state
+                val updatedAgent = targetAgent.copy(isProcessing = action.isProcessing)
+                currentState.copy(agents = currentState.agents + (action.agentId to updatedAgent))
+            }
+            is HkgAgentAction.SelectHkgPersona -> {
+                val targetAgent = currentState.agents[action.agentId] ?: return state
+                val updatedAgent = targetAgent.copy(hkgPersonaId = action.hkgPersonaId)
+                currentState.copy(agents = currentState.agents + (action.agentId to updatedAgent))
+            }
+            is HkgAgentAction.UpdateCompilerSetting -> {
+                val updatedAgents = currentState.agents.mapValues { (_, agent) ->
+                    val currentSettings = agent.compilerSettings
+                    val newSettings = when(action.setting.key) {
+                        "compiler.removeWhitespace" -> currentSettings.copy(removeWhitespace = action.setting.value as? Boolean ?: currentSettings.removeWhitespace)
+                        "compiler.cleanHeaders" -> currentSettings.copy(cleanHeaders = action.setting.value as? Boolean ?: currentSettings.cleanHeaders)
+                        "compiler.minifyJson" -> currentSettings.copy(minifyJson = action.setting.value as? Boolean ?: currentSettings.minifyJson)
+                        else -> currentSettings
+                    }
+                    agent.copy(compilerSettings = newSettings)
+                }
+                currentState.copy(agents = updatedAgents)
+            }
+        }
+        return state.copy(featureStates = state.featureStates + (name to newFeatureState))
+    }
+
+    // --- CORRECTED: Full implementation of the start method ---
+    override fun start(store: Store) {
+        this.store = store
+        // 1. Fetch available models once on startup.
+        coroutineScope.launch {
+            val models = agentGateway.listAvailableModels()
+            withContext(Dispatchers.Main) {
+                store.dispatch(HkgAgentAction.SetAvailableModels(models))
+            }
+        }
+        // 2. Subscribe to session updates to create/manage agents.
+        coroutineScope.launch {
+            store.state
+                .map { (it.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions }
+                .distinctUntilChanged()
+                .collect { sessions ->
+                    sessions?.values?.forEach { handleSessionUpdate(it) }
+                }
+        }
+    }
+
+    // This logic remains the same: ensure an agent exists for each session.
+    private fun handleSessionUpdate(session: Session) {
+        val store = this.store ?: return
+        val agentState = store.state.value.featureStates[name] as? HkgAgentFeatureState
+        val agentForSessionExists = agentState?.agents?.values?.any { it.sessionId == session.id } ?: false
+        if (!agentForSessionExists) {
+            val kgState = store.state.value.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState
+            store.dispatch(HkgAgentAction.CreateAgent(
+                sessionId = session.id,
+                agentId = "agent-for-${session.id}",
+                hkgPersonaId = kgState?.aiPersonaId
+            ))
+        }
+    }
+
+    private suspend fun triggerAgentResponse(agent: HkgAgentState, transcript: List<app.auf.feature.session.LedgerEntry>) { /* ... unchanged ... */ }
+    private fun _buildPromptContents(agent: HkgAgentState, transcript: List<app.auf.feature.session.LedgerEntry>): List<Content> { /* ... unchanged ... */ return emptyList()}
 
     inner class HkgAgentComposableProvider : Feature.ComposableProvider {
-        // settingDefinitions is unchanged
         override val settingDefinitions: List<SettingDefinition> = listOf(
             SettingDefinition("compiler.removeWhitespace", "Prompt Compiler", "Remove extraneous whitespace", "Reduces token count by trimming leading/trailing whitespace from each line and removing empty lines.", SettingType.BOOLEAN),
             SettingDefinition("compiler.cleanHeaders", "Prompt Compiler", "Clean non-essential Holon headers", "Removes fields like version, timestamps, and relationships from holon headers before sending.", SettingType.BOOLEAN),
@@ -83,7 +168,9 @@ class HkgAgentFeature(
 
             var isModelSelectorExpanded by remember { mutableStateOf(false) }
             val availableModels = activeAgent?.availableModels ?: emptyList()
-            val selectedModel = activeAgent?.selectedModel ?: "loading..."
+            // --- CORRECTED: Use a more sensible default when models are loading ---
+            val selectedModel = if (availableModels.isEmpty()) "loading..." else activeAgent?.selectedModel ?: ""
+
 
             var isAgentSelectorExpanded by remember { mutableStateOf(false) }
             val selectedAiPersonaId = activeAgent?.hkgPersonaId
@@ -105,7 +192,6 @@ class HkgAgentFeature(
                             DropdownMenuItem(
                                 text = { Text("None (Dumb Mode)") },
                                 onClick = {
-                                    // CORRECTED: Dispatch specific action
                                     stateManager.dispatch(HkgAgentAction.SelectHkgPersona(activeAgent.id, null))
                                     isAgentSelectorExpanded = false
                                 }
@@ -114,7 +200,6 @@ class HkgAgentFeature(
                                 DropdownMenuItem(
                                     text = { Text(persona.name) },
                                     onClick = {
-                                        // CORRECTED: Dispatch specific action
                                         stateManager.dispatch(HkgAgentAction.SelectHkgPersona(activeAgent.id, persona.id))
                                         isAgentSelectorExpanded = false
                                     }
@@ -129,14 +214,14 @@ class HkgAgentFeature(
                 Box {
                     Button(
                         onClick = { isModelSelectorExpanded = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                        enabled = availableModels.isNotEmpty() // Disable button while loading
                     ) { Text(selectedModel, maxLines = 1) }
                     DropdownMenu(expanded = isModelSelectorExpanded, onDismissRequest = { isModelSelectorExpanded = false }) {
                         availableModels.forEach { modelName ->
                             DropdownMenuItem(
                                 text = { Text(modelName) },
                                 onClick = {
-                                    // THIS IS THE FIX FOR THE COMPILER ERROR
                                     stateManager.dispatch(HkgAgentAction.SelectModel(modelName))
                                     isModelSelectorExpanded = false
                                 }
@@ -147,8 +232,7 @@ class HkgAgentFeature(
             }
         }
 
-        // SettingsContent is unchanged from the previous correct version
         @Composable
-        override fun SettingsContent(stateManager: StateManager) { /* ... */ }
+        override fun SettingsContent(stateManager: StateManager) { /* ... unchanged ... */ }
     }
 }

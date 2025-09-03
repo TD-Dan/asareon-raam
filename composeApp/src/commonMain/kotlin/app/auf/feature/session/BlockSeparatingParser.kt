@@ -16,7 +16,7 @@ import app.auf.core.TextBlock
  */
 open class BlockSeparatingParser {
 
-    private val debug = false // Set to true to enable logging
+    private val debug = false
 
     private fun log(message: String) {
         if (debug) println("[Parser] $message")
@@ -33,13 +33,12 @@ open class BlockSeparatingParser {
             val textBeforeBlock = StringBuilder()
             var blockStartIndex = -1
 
-            // Phase 1: Scan for the next code block, respecting comments and strings
             var scanIndex = currentIndex
             while (scanIndex < rawText.length) {
                 when {
                     rawText.startsWith("```", scanIndex) -> {
                         blockStartIndex = scanIndex
-                        break // Found it, exit scan loop
+                        break
                     }
                     rawText.startsWith("//", scanIndex) -> {
                         val lineEnd = rawText.indexOf('\n', scanIndex)
@@ -64,7 +63,7 @@ open class BlockSeparatingParser {
                     rawText[scanIndex] in setOf('"', '\'', '`') -> {
                         val quote = rawText[scanIndex]
                         textBeforeBlock.append(quote)
-                        val stringEnd = rawText.indexOf(quote, scanIndex + 1) // Simple version, no escape handling
+                        val stringEnd = rawText.indexOf(quote, scanIndex + 1)
                         if (stringEnd == -1) {
                             textBeforeBlock.append(rawText.substring(scanIndex + 1))
                             scanIndex = rawText.length
@@ -81,7 +80,6 @@ open class BlockSeparatingParser {
             }
             log("Scan Phase: Found text: '${textBeforeBlock.toString().replace("\n", "\\n")}', fence at $blockStartIndex")
 
-            // Phase 2: Process findings
             val trimmedTextBefore = textBeforeBlock.toString().trim()
             if (trimmedTextBefore.isNotEmpty()) {
                 blocks.add(TextBlock(trimmedTextBefore))
@@ -90,7 +88,6 @@ open class BlockSeparatingParser {
             if (blockStartIndex != -1) {
                 val blockEndIndex = rawText.indexOf("```", blockStartIndex + 3)
                 if (blockEndIndex != -1) {
-                    // This is a complete, well-formed block
                     val innerBlock = rawText.substring(blockStartIndex + 3, blockEndIndex)
                     val firstNewline = innerBlock.indexOf('\n')
 
@@ -101,16 +98,23 @@ open class BlockSeparatingParser {
                         language = innerBlock.substring(0, firstNewline).trim()
                         content = innerBlock.substring(firstNewline + 1).trim()
                     } else {
-                        val parts = innerBlock.trim().split(Regex("\\s+"), 2)
-                        language = parts.getOrNull(0) ?: ""
-                        content = parts.getOrNull(1) ?: ""
+                        // --- CORRECTED LOGIC for single-line blocks ---
+                        val trimmedLine = innerBlock.trim()
+                        // Find the first character that is NOT part of a valid command name
+                        val langEndIndex = trimmedLine.indexOfFirst { !it.isLetterOrDigit() && it != '_' }
+
+                        if (langEndIndex == -1) { // No arguments, just a command name
+                            language = trimmedLine
+                            content = ""
+                        } else {
+                            language = trimmedLine.substring(0, langEndIndex)
+                            content = trimmedLine.substring(langEndIndex).trim()
+                        }
                     }
                     log("  -> CREATED CodeBlock(lang='${language.ifBlank { "text" }}')")
                     blocks.add(CodeBlock(language.ifBlank { "text" }, content))
                     currentIndex = blockEndIndex + 3
                 } else {
-                    // --- FIX IS HERE ---
-                    // Unterminated block. Treat it as a valid, greedy block that consumes the rest of the string.
                     val innerBlock = rawText.substring(blockStartIndex + 3)
                     val firstNewline = innerBlock.indexOf('\n')
 
@@ -127,10 +131,9 @@ open class BlockSeparatingParser {
                     }
                     log("  -> CREATED UNTERMINATED CodeBlock(lang='${language.ifBlank { "text" }}')")
                     blocks.add(CodeBlock(language.ifBlank { "text" }, content))
-                    currentIndex = rawText.length // We've consumed the rest of the string
+                    currentIndex = rawText.length
                 }
             } else {
-                // No more fences found
                 currentIndex = rawText.length
             }
         }

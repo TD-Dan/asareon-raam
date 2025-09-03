@@ -6,9 +6,7 @@ import app.auf.util.BasePath
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -21,7 +19,8 @@ import kotlinx.serialization.serializer
 @Serializable
 data class SessionFeatureState(
     val sessions: Map<String, Session> = emptyMap(),
-    val isRawContentVisible: Boolean = false // <-- NEW HOME FOR THE STATE
+    val isRawContentVisible: Boolean = false,
+    val rawContentViewIds: Set<Long> = emptySet()
 ) : FeatureState
 
 @Serializable
@@ -46,7 +45,8 @@ sealed interface SessionAction : AppAction {
     data class CreateSession(val id: String, val name: String) : SessionAction
     data class PostEntry(val sessionId: String, val agentId: String, val content: String) : SessionAction
     data class LoadSessionsSuccess(val sessions: Map<String, Session>) : SessionAction
-    data object ToggleRawContentView : SessionAction // <-- NEW ACTION
+    data object ToggleRawContentView : SessionAction
+    data class ToggleMessageRawView(val entryId: Long) : SessionAction
 }
 
 
@@ -56,13 +56,15 @@ class SessionFeature(
     private val platform: PlatformDependencies,
     private val jsonParser: Json,
     private val coroutineScope: CoroutineScope,
-    private val allFeatures: List<Feature> // Injected to pass to the view
+    private val allFeatures: List<Feature>
 ) : Feature {
 
     override val name: String = "SessionFeature"
     override val composableProvider: Feature.ComposableProvider = SessionComposableProvider()
 
     private val persistenceService = SessionPersistenceService(platform, jsonParser)
+    private val blockParser = BlockSeparatingParser()
+    private val commandInterpreter = CommandInterpreter()
     private val nextEntryIdCounters = mutableMapOf<String, Long>()
 
     override fun reducer(state: AppState, action: AppAction): AppState {
@@ -70,6 +72,14 @@ class SessionFeature(
         val currentState = state.featureStates[name] as? SessionFeatureState ?: SessionFeatureState()
 
         val newFeatureState = when (action) {
+            is SessionAction.ToggleMessageRawView -> {
+                val newSet = if (currentState.rawContentViewIds.contains(action.entryId)) {
+                    currentState.rawContentViewIds - action.entryId
+                } else {
+                    currentState.rawContentViewIds + action.entryId
+                }
+                currentState.copy(rawContentViewIds = newSet)
+            }
             is SessionAction.CreateSession -> {
                 val newSession = Session(id = action.id, name = action.name)
                 currentState.copy(
@@ -78,20 +88,16 @@ class SessionFeature(
             }
             is SessionAction.PostEntry -> {
                 val targetSession = currentState.sessions[action.sessionId] ?: return state
-
                 val nextId = nextEntryIdCounters.getOrPut(action.sessionId) { 0L } + 1
                 nextEntryIdCounters[action.sessionId] = nextId
-
                 val newEntry = LedgerEntry(
                     id = nextId,
                     agentId = action.agentId,
                     content = action.content,
                     timestamp = platform.getSystemTimeMillis()
                 )
-
                 val updatedTranscript = targetSession.transcript + newEntry
                 val updatedSession = targetSession.copy(transcript = updatedTranscript)
-
                 currentState.copy(sessions = currentState.sessions + (action.sessionId to updatedSession))
             }
             is SessionAction.LoadSessionsSuccess -> {
@@ -111,19 +117,17 @@ class SessionFeature(
     }
 
     override fun start(store: Store) {
+        // ... start() logic is unchanged
         coroutineScope.launch(Dispatchers.Default) {
             val loadedSessions = persistenceService.loadSessions()
             withContext(Dispatchers.Main) {
                 if (!loadedSessions.isNullOrEmpty()) {
                     store.dispatch(SessionAction.LoadSessionsSuccess(loadedSessions))
                 } else {
-                    // Create a default session on first launch if none exist.
                     store.dispatch(SessionAction.CreateSession(id = "default-session", name = "Primary Session"))
                 }
             }
         }
-
-        // Autonomous persistence side-effect
         coroutineScope.launch(Dispatchers.Default) {
             store.state
                 .map { (it.featureStates[name] as? SessionFeatureState)?.sessions }
@@ -132,6 +136,29 @@ class SessionFeature(
                 .collect { sessionsToSave ->
                     if (sessionsToSave != null) {
                         persistenceService.saveSessions(sessionsToSave)
+                    }
+                }
+        }
+        coroutineScope.launch(Dispatchers.Main) {
+            var lastProcessedEntryId = -1L
+            store.state
+                .map { (it.featureStates[name] as? SessionFeatureState)?.sessions?.get("default-session")?.transcript?.lastOrNull() }
+                .distinctUntilChanged()
+                .collect { latestEntry ->
+                    if (latestEntry != null && latestEntry.id > lastProcessedEntryId) {
+                        lastProcessedEntryId = latestEntry.id
+                        if (latestEntry.agentId == "USER") {
+                            val contentBlocks = blockParser.parse(latestEntry.content)
+                            for (block in contentBlocks) {
+                                if (block is CodeBlock) {
+                                    commandInterpreter.interpret(block)?.let { toolCall ->
+                                        when (toolCall.command) {
+                                            "auf_toastMessage" -> store.dispatch(AppAction.ShowToast(toolCall.argument))
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
         }
@@ -144,6 +171,12 @@ class SessionFeature(
         override fun StageContent(stateManager: StateManager) {
             SessionView(stateManager = stateManager, features = allFeatures)
         }
+
+        // --- REMOVED: This logic has been moved to SessionView ---
+        /*
+        @Composable
+        override fun MenuContent(stateManager: StateManager, onDismiss: () -> Unit) { ... }
+        */
     }
 
     private class SessionPersistenceService(
@@ -151,11 +184,7 @@ class SessionFeature(
         private val jsonParser: Json
     ) {
         private val sessionsFilePath: String = platform.getBasePathFor(BasePath.SESSIONS) + platform.pathSeparator + "sessions.json"
-
-        init {
-            platform.createDirectories(platform.getBasePathFor(BasePath.SESSIONS))
-        }
-
+        init { platform.createDirectories(platform.getBasePathFor(BasePath.SESSIONS)) }
         fun saveSessions(sessions: Map<String, Session>) {
             try {
                 val serializer = MapSerializer(serializer<String>(), serializer<Session>())
@@ -165,7 +194,6 @@ class SessionFeature(
                 println("ERROR: Could not save sessions file: ${e.message}")
             }
         }
-
         fun loadSessions(): Map<String, Session>? {
             if (!platform.fileExists(sessionsFilePath)) return null
             return try {

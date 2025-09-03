@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 
 // --- VERSION ---
 object Version {
-    const val APP_VERSION = "1.5.3" // Bump for the UI refactor
+    const val APP_VERSION = "1.5.4"
 }
 
 // --- CORE STATE & ACTIONS ---

@@ -1,13 +1,49 @@
 package app.auf.feature.session
 
 import app.auf.core.CodeBlock
+import app.auf.core.ContentBlock
 import app.auf.core.TextBlock
-import kotlin.collections.get
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 class BlockSeparatingParserTest {
+
+    @Test
+    fun `should correctly parse single-line tool call`() {
+        val parser = BlockSeparatingParser()
+        val rawResponse = "```auf_toastMessage(\"Hello!\")```"
+        val result = parser.parse(rawResponse)
+
+        assertEquals(1, result.size, "Should result in a single code block.")
+        assertIs<CodeBlock>(result[0])
+
+        val codeBlock = result[0] as CodeBlock
+        assertEquals("auf_toastMessage", codeBlock.language, "The language should be the command name.")
+        assertEquals("(\"Hello!\")", codeBlock.content, "The content should be the arguments.")
+    }
+
+    @Test
+    fun `should handle fences with leading whitespace`() {
+        val parser = BlockSeparatingParser()
+        val rawResponse = """
+            Here is some text.
+              ```kotlin
+              val indented = true
+              ```
+            And some more text.
+        """.trimMargin()
+
+        val result = parser.parse(rawResponse)
+        assertEquals(3, result.size)
+        assertIs<TextBlock>(result[0])
+        assertIs<CodeBlock>(result[1])
+        assertIs<TextBlock>(result[2])
+
+        val codeBlock = result[1] as CodeBlock
+        assertEquals("kotlin", codeBlock.language)
+        assertEquals("val indented = true", codeBlock.content)
+    }
 
     @Test
     fun `should correctly parse text and a valid code block`() {
@@ -54,6 +90,7 @@ class BlockSeparatingParserTest {
             """.trimIndent()
         val result = parser.parse(rawResponse)
         assertEquals(2, result.size)
+        // --- CORRECTED ---
         assertIs<TextBlock>(result[0])
         assertEquals("Here is", (result[0] as TextBlock).text)
         assertIs<CodeBlock>(result[1])
@@ -78,25 +115,8 @@ class BlockSeparatingParserTest {
             ```
         """.trimIndent()
         val result = parser.parse(rawResponse)
-        assertIs<CodeBlock>(result[0])
-        assertIs<TextBlock>(result[1])
-        assertIs<CodeBlock>(result[2])
-        assertIs<CodeBlock>(result[3])
-    }
-
-    @Test
-    fun `should understand various not so perfectly formatted code blocks`() {
-        val parser = BlockSeparatingParser()
-        val rawResponse = """
-``` markdown with parameters
-## Header```
-Some text in middle
-    ```kotlin single line```
-```
-no language specified
-    ```
-        """
-        val result = parser.parse(rawResponse)
+        assertEquals(4, result.size)
+        // --- CORRECTED ---
         assertIs<CodeBlock>(result[0])
         assertIs<TextBlock>(result[1])
         assertIs<CodeBlock>(result[2])

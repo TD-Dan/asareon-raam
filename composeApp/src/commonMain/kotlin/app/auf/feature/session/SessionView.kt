@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,10 +16,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.auf.core.*
 import app.auf.feature.hkgagent.HkgAgentFeatureState
 import kotlinx.coroutines.launch
+
+/**
+ * --- NEW: Centralized function for generating the "ground truth" format for a single entry. ---
+ * This is the Single Source of Truth for raw transcript formatting.
+ */
+private fun generateRawEntry(entry: LedgerEntry, formattedTimestamp: String): String {
+    val header = "--- ${entry.agentId} @ $formattedTimestamp ---"
+    return "$header\n${entry.content}"
+}
 
 @Composable
 fun SessionView(
@@ -29,12 +44,14 @@ fun SessionView(
     val appState by stateManager.state.collectAsState()
     val sessionFeatureState = appState.featureStates["SessionFeature"] as? SessionFeatureState
     val hkgAgentFeatureState = appState.featureStates["HkgAgentFeature"] as? HkgAgentFeatureState
+    val clipboardManager = LocalClipboardManager.current
 
     val activeSession = sessionFeatureState?.sessions?.values?.firstOrNull()
     val isRawContentVisible = sessionFeatureState?.isRawContentVisible ?: false
+    val rawContentViewIds = sessionFeatureState?.rawContentViewIds ?: emptySet()
     val activeAgent = hkgAgentFeatureState?.agents?.values?.firstOrNull()
-    val isProcessing = activeAgent?.isProcessing ?: false
-    val isChatActive = activeAgent != null
+    val isAgentProcessing = activeAgent?.isProcessing ?: false
+    val isChatInputEnabled = activeSession != null
     val displayedTranscript = activeSession?.transcript ?: emptyList()
 
     var userMessage by remember { mutableStateOf("") }
@@ -51,7 +68,7 @@ fun SessionView(
     }
 
     val sendMessageAction = {
-        if (userMessage.isNotBlank() && !isProcessing && activeSession != null) {
+        if (userMessage.isNotBlank() && !isAgentProcessing && activeSession != null) {
             stateManager.dispatch(SessionAction.PostEntry(
                 sessionId = activeSession.id,
                 agentId = "USER",
@@ -77,11 +94,17 @@ fun SessionView(
                     items = displayedTranscript,
                     key = { entry -> entry.id }
                 ) { entry ->
-                    MessageCard(
-                        entry = entry,
-                        stateManager = stateManager,
-                        showRawContent = isRawContentVisible
-                    )
+                    if (isRawContentVisible) {
+                        val formattedTimestamp = remember(entry.timestamp) { stateManager.formatDisplayTimestamp(entry.timestamp) }
+                        RawTranscriptEntry(entry, formattedTimestamp)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    } else {
+                        MessageCard(
+                            entry = entry,
+                            stateManager = stateManager,
+                            rawContentViewIds = rawContentViewIds
+                        )
+                    }
                 }
             }
         } else {
@@ -102,10 +125,21 @@ fun SessionView(
                     feature.composableProvider?.SessionHeader(stateManager)
                 }
             }
+            IconButton(onClick = {
+                // --- CORRECTED: Use the unified header function for the copy action ---
+                val rawPrompt = displayedTranscript.joinToString("\n\n---\n\n") { entry ->
+                    val timestamp = stateManager.formatDisplayTimestamp(entry.timestamp)
+                    generateRawEntry(entry, timestamp)
+                }
+                clipboardManager.setText(AnnotatedString(rawPrompt))
+                stateManager.dispatch(AppAction.ShowToast("Full transcript copied!"))
+            }) {
+                Icon(Icons.Default.ContentCopy, contentDescription = "Copy Full Transcript")
+            }
             IconButton(onClick = { stateManager.dispatch(SessionAction.ToggleRawContentView) }) {
                 Icon(
                     Icons.Default.Code,
-                    contentDescription = "Toggle Raw Content View",
+                    contentDescription = "Toggle All Raw Content Views",
                     tint = if (isRawContentVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -128,16 +162,16 @@ fun SessionView(
                         false
                     },
                 placeholder = { Text("Enter message... (Enter to send, Shift+Enter for newline)") },
-                enabled = !isProcessing && isChatActive
+                enabled = isChatInputEnabled && !isAgentProcessing
             )
             Spacer(modifier = Modifier.width(8.dp))
             Button(
-                onClick = { if (isProcessing) stateManager.cancelMessage() else sendMessageAction() },
+                onClick = { if (isAgentProcessing) stateManager.cancelMessage() else sendMessageAction() },
                 modifier = Modifier.height(56.dp),
-                enabled = isChatActive,
-                colors = if (isProcessing) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer) else ButtonDefaults.buttonColors()
+                enabled = isChatInputEnabled,
+                colors = if (isAgentProcessing) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer) else ButtonDefaults.buttonColors()
             ) {
-                if (isProcessing) {
+                if (isAgentProcessing) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Stop, contentDescription = "Stop Request")
                         Spacer(Modifier.width(8.dp))
@@ -154,9 +188,36 @@ fun SessionView(
         focusRequester.requestFocus()
     }
 
-    LaunchedEffect(isProcessing) {
-        if (!isProcessing) {
+    LaunchedEffect(isAgentProcessing) {
+        if (!isAgentProcessing) {
             focusRequester.requestFocus()
         }
+    }
+}
+
+@Composable
+private fun RawTranscriptEntry(entry: LedgerEntry, formattedTimestamp: String) {
+    // --- CORRECTED: Use the unified header function for the raw view rendering ---
+    val fullEntryText = remember(entry, formattedTimestamp) {
+        generateRawEntry(entry, formattedTimestamp)
+    }
+    val header = fullEntryText.substringBefore('\n')
+    val content = fullEntryText.substringAfter('\n')
+
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp)) {
+        Text(
+            text = header,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+        Text(
+            text = content,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }

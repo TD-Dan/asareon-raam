@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Card
@@ -40,24 +41,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.*
-import app.auf.feature.session.BlockSeparatingParser
 
-/**
- * ## Mandate
- * Renders a single entry from the session transcript. It is responsible for parsing the
- * raw content string from the LedgerEntry into displayable ContentBlocks.
- */
 @Composable
 fun MessageCard(
     entry: LedgerEntry,
     stateManager: StateManager,
-    showRawContent: Boolean
+    rawContentViewIds: Set<Long> // <-- Simplified: No longer needs global state
 ) {
     val clipboardManager = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
     var isCollapsed by remember { mutableStateOf(false) }
 
-    // Each card gets its own parser instance.
     val parser = remember { BlockSeparatingParser() }
     val contentBlocks = remember(entry.content) { parser.parse(entry.content) }
 
@@ -65,7 +59,7 @@ fun MessageCard(
         when {
             entry.agentId == "USER" -> "USER"
             entry.agentId == "CORE" -> "CORE"
-            else -> "AI" // Default for any other agentId
+            else -> "AI"
         }
     }
 
@@ -75,12 +69,11 @@ fun MessageCard(
     }
 
     val elevation = if (authorName == "CORE") 0.dp else 2.dp
-
     val guardedCopyContent = "---COPY of ${authorName} entry:---\n${entry.content}\n---END OF COPY---"
+    val formattedTimestamp = remember(entry.timestamp) { stateManager.formatDisplayTimestamp(entry.timestamp) }
 
-    val formattedTimestamp = remember(entry.timestamp) {
-        stateManager.formatDisplayTimestamp(entry.timestamp)
-    }
+    // --- SIMPLIFIED LOGIC ---
+    val isThisCardRaw = rawContentViewIds.contains(entry.id)
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -113,18 +106,27 @@ fun MessageCard(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { stateManager.dispatch(SessionAction.ToggleMessageRawView(entry.id)) },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Code,
+                            contentDescription = "Toggle Raw Content",
+                            tint = if (isThisCardRaw) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
                     IconButton(onClick = { clipboardManager.setText(AnnotatedString(guardedCopyContent)) }, modifier = Modifier.size(24.dp)) {
                         Icon(Icons.Default.ContentCopy, contentDescription = "Copy Message Content", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Spacer(Modifier.width(4.dp))
-
                     Box {
                         IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) {
                             Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                            // TODO: Implement Delete and Rerun actions for LedgerEntries
-                            DropdownMenuItem(text = { Text("Delete (NYI)") }, onClick = { /* stateManager.deleteMessage(entry.id) */ showMenu = false })
+                            DropdownMenuItem(text = { Text("Delete (NYI)") }, onClick = { showMenu = false })
                         }
                     }
                 }
@@ -133,8 +135,9 @@ fun MessageCard(
             AnimatedVisibility(visible = !isCollapsed) {
                 Column {
                     Spacer(Modifier.height(8.dp))
-                    if (showRawContent) {
-                        RenderRawContent("RAW CONTENT", entry.content)
+                    if (isThisCardRaw) {
+                        // --- UPDATED: Use simplified raw renderer ---
+                        RenderRawContent(entry.content)
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             contentBlocks.forEach { block ->
@@ -151,37 +154,18 @@ fun MessageCard(
     }
 }
 
+/**
+ * --- UPDATED: Simplified raw renderer without title or outer card ---
+ */
 @Composable
-fun RenderRawContent(title: String, content: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = title,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            HorizontalDivider(modifier=Modifier.padding(vertical=8.dp))
-            Text(
-                text = content,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-    }
+fun RenderRawContent(content: String) {
+    Text(
+        text = content,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 13.sp,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+    )
 }
 
 @Composable
