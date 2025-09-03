@@ -16,8 +16,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-// TODO: This file and class will be mostly deprecated.
-
 open class StateManager(
     private val store: Store,
     private val backupManager: BackupManager,
@@ -118,9 +116,8 @@ open class StateManager(
 
     // --- Core App Actions ---
     fun selectModel(modelName: String) {
-        if (modelName in state.value.availableModels) {
-            store.dispatch(AppAction.SelectModel(modelName))
-        }
+        // --- CORRECTED: Removed the invalid state check ---
+        store.dispatch(AppAction.SelectModel(modelName))
     }
 
     fun toggleSystemMessageVisibility() {

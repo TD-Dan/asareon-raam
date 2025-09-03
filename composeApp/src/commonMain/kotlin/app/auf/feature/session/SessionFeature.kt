@@ -1,9 +1,6 @@
 package app.auf.feature.session
 
-import app.auf.core.AppAction
-import app.auf.core.AppState
-import app.auf.core.Feature
-import app.auf.core.Store
+import app.auf.core.*
 import app.auf.util.BasePath
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
@@ -29,7 +26,7 @@ import kotlinx.serialization.serializer
 @Serializable
 data class SessionFeatureState(
     val sessions: Map<String, Session> = emptyMap()
-)
+) : FeatureState
 
 @Serializable
 data class Session(

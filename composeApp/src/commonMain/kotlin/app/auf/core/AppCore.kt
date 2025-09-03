@@ -17,7 +17,6 @@ object Version {
  * This enables the core persistence system to save and load a generic map of
  * feature states without needing to know the concrete type of any specific feature's state.
  */
-@Serializable
 interface FeatureState
 
 /**

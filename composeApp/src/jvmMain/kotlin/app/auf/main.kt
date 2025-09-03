@@ -15,6 +15,7 @@ import app.auf.feature.hkgagent.HkgAgentFeatureState
 import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import app.auf.feature.session.SessionFeature
+import app.auf.feature.session.SessionFeatureState
 import app.auf.feature.systemclock.SystemClockFeature
 import app.auf.feature.systemclock.SystemClockState
 import app.auf.model.UserSettings
@@ -44,6 +45,8 @@ fun main() = application {
                 polymorphic(FeatureState::class) {
                     subclass(SystemClockState::class)
                     subclass(HkgAgentFeatureState::class)
+                    subclass(KnowledgeGraphState::class)
+                    subclass(SessionFeatureState::class)
                 }
             }
         }
@@ -79,8 +82,11 @@ fun main() = application {
     val initialState = remember(savedSettings) {
         val initialFeatureStates = savedSettings.featureStates.toMutableMap()
 
-        // Ensure KG state has the loaded persona/context IDs
-        initialFeatureStates["KnowledgeGraphFeature"] = KnowledgeGraphState(
+        // Get the saved KG state or a default one
+        val kgState = initialFeatureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
+
+        // Update it with the non-persistent settings from the root of UserSettings
+        initialFeatureStates["KnowledgeGraphFeature"] = kgState.copy(
             aiPersonaId = savedSettings.selectedAiPersonaId,
             contextualHolonIds = savedSettings.activeContextualHolonIds
         )
