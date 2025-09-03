@@ -46,24 +46,22 @@ class SystemClockFeature(
 ) : Feature {
     override val name: String = "SystemClockFeature"
 
-    companion object {
-        val SETTING_DEFINITIONS = listOf(
-            SettingDefinition(
-                key = "clock.isEnabled",
-                section = "System Clock",
-                label = "Enable Autonomous TICK",
-                description = "When enabled, the application will periodically dispatch a TICK action, allowing the AI to perform background introspection.",
-                type = SettingType.BOOLEAN
-            ),
-            SettingDefinition(
-                key = "clock.intervalMillis",
-                section = "System Clock",
-                label = "TICK Interval (milliseconds)",
-                description = "The time in milliseconds between each autonomous TICK dispatch.",
-                type = SettingType.NUMERIC_LONG
-            )
+    override val settingDefinitions: List<SettingDefinition> = listOf(
+        SettingDefinition(
+            key = "clock.isEnabled",
+            section = "System Clock",
+            label = "Enable Autonomous TICK",
+            description = "When enabled, the application will periodically dispatch a TICK action, allowing the AI to perform background introspection.",
+            type = SettingType.BOOLEAN
+        ),
+        SettingDefinition(
+            key = "clock.intervalMillis",
+            section = "System Clock",
+            label = "TICK Interval (milliseconds)",
+            description = "The time in milliseconds between each autonomous TICK dispatch.",
+            type = SettingType.NUMERIC_LONG
         )
-    }
+    )
 
     override fun reducer(state: AppState, action: AppAction): AppState {
         val currentState = state.featureStates[name] as? SystemClockState ?: SystemClockState()

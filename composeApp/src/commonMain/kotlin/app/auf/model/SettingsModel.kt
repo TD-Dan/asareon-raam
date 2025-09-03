@@ -1,7 +1,5 @@
 package app.auf.model
 
-import kotlinx.serialization.Serializable
-
 /**
  * Defines the decoupled, declarative contracts for application settings.
  *
@@ -14,7 +12,7 @@ import kotlinx.serialization.Serializable
  *
  * ---
  * ## Dependencies
- * - `kotlinx.serialization`: For the `SettingValue` container.
+ * - None
  */
 
 /**
@@ -46,8 +44,6 @@ enum class SettingType {
  * A generic container for dispatching updates for any setting value via an AppAction.
  *
  * @param key The unique key of the setting to update.
- * @param value The new value for the setting. For now, it's a Boolean, but can be
- *              expanded to `Any` with polymorphic serialization if other types are needed.
+ * @param value The new value for the setting.
  */
-// --- CORRECTION: Removed @Serializable as this is a transient action payload ---
 data class SettingValue(val key: String, val value: Any)

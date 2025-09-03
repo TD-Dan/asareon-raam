@@ -7,6 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.serialization.Serializable
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class StoreTest {
@@ -14,7 +15,12 @@ class StoreTest {
     // --- Test-specific helper classes ---
 
     /** A custom state slice for our FakeFeature. */
-    data class FakeFeatureState(val name: String = "Fake", val eventCount: Int = 0)
+    @Serializable
+    data class FakeFeatureState(
+        val name: String = "Fake",
+        val eventCount: Int = 0,
+        val selectedModel: String = "initial-model"
+    ) : FeatureState
 
     /** A custom action that only our FakeFeature understands. */
     sealed interface FakeFeatureAction : AppAction {
@@ -36,56 +42,45 @@ class StoreTest {
                     currentState.copy(eventCount = currentState.eventCount + 1)
                 }
                 is AppAction.SelectModel -> {
-                    // Also react to a core action to test the full chain
-                    currentState.copy(eventCount = 99)
+                    currentState.copy(eventCount = 99, selectedModel = action.modelName)
                 }
                 else -> currentState
             }
             return state.copy(featureStates = state.featureStates + (name to newFeatureState))
         }
 
-        // --- NEW: A fake start method to test lifecycle ---
         var startWasCalled = false
         override fun start(store: Store) {
             startWasCalled = true
         }
     }
 
-    // --- Characterization Test ---
-
     @Test
-    fun `store orchestrates root and feature reducers - CHARACTERIZATION`() = runTest {
+    fun `store orchestrates root and feature reducers`() = runTest {
         // ARRANGE
         val fakeFeature = FakeFeature()
         val initialState = AppState(
-            selectedModel = "initial-model",
             featureStates = mapOf(fakeFeature.name to FakeFeatureState(eventCount = 0))
         )
         val store = Store(
             initialState = initialState,
             rootReducer = ::appReducer,
             features = listOf(fakeFeature),
-            coroutineScope = this // Use the TestCoroutineScope
+            coroutineScope = this
         )
 
         // ACT
-        // 1. Dispatch a core action that BOTH reducers should handle.
         store.dispatch(AppAction.SelectModel("new-model"))
-
-        // 2. Dispatch a feature-specific action.
         store.dispatch(FakeFeatureAction.IncrementEventCount)
 
         // ASSERT
         val finalState = store.state.value
         val finalFeatureState = finalState.featureStates[fakeFeature.name] as? FakeFeatureState
-
-        // Assert that the root reducer worked
-        assertEquals("new-model", finalState.selectedModel)
-
-        // Assert that the feature reducer worked for both actions, in order
         assertNotNull(finalFeatureState)
-        // SelectModel set it to 99, then IncrementEventCount added 1
-        assertEquals(100, finalFeatureState.eventCount)
+
+        // Assert the feature reducer handled both actions correctly
+        assertEquals("new-model", finalFeatureState.selectedModel)
+        assertEquals(100, finalFeatureState.eventCount) // 99 from SelectModel + 1 from Increment
     }
 
     @Test
@@ -99,15 +94,13 @@ class StoreTest {
             coroutineScope = this
         )
 
-        // ASSERT Pre-condition
         assertFalse(fakeFeature.startWasCalled, "start() should not be called before lifecycles are started.")
 
         // ACT
         store.startFeatureLifecycles()
-        // Call it a second time to ensure it's idempotent
-        store.startFeatureLifecycles()
+        store.startFeatureLifecycles() // Call a second time to ensure it's idempotent
 
-        // ASSERT Post-condition
+        // ASSERT
         assertTrue(fakeFeature.startWasCalled, "start() should be called after lifecycles are started.")
     }
 }

@@ -24,8 +24,8 @@ import app.auf.core.*
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import app.auf.feature.session.SessionAction
 import app.auf.feature.session.SessionFeatureState
-import app.auf.model.CompilerSettings
-import app.auf.service.PromptCompiler
+import app.auf.model.SettingDefinition
+import app.auf.model.SettingType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -37,6 +37,13 @@ import kotlinx.serialization.json.Json
 import app.auf.feature.knowledgegraph.Holon as HolonData
 
 // --- 1. MODEL ---
+
+@Serializable
+data class CompilerSettings(
+    val removeWhitespace: Boolean = true,
+    val cleanHeaders: Boolean = true,
+    val minifyJson: Boolean = false
+)
 
 /**
  * ## Mandate
@@ -99,6 +106,29 @@ class HkgAgentFeature(
     private var store: Store? = null
 
     override val composableProvider: Feature.ComposableProvider = HkgAgentComposableProvider()
+    override val settingDefinitions: List<SettingDefinition> = listOf(
+        SettingDefinition(
+            key = "compiler.removeWhitespace",
+            section = "Prompt Compiler",
+            label = "Remove extraneous whitespace",
+            description = "Reduces token count by trimming leading/trailing whitespace from each line and removing empty lines.",
+            type = SettingType.BOOLEAN
+        ),
+        SettingDefinition(
+            key = "compiler.cleanHeaders",
+            section = "Prompt Compiler",
+            label = "Clean non-essential Holon headers",
+            description = "Removes fields like version, timestamps, and relationships from holon headers before sending.",
+            type = SettingType.BOOLEAN
+        ),
+        SettingDefinition(
+            key = "compiler.minifyJson",
+            section = "Prompt Compiler",
+            label = "Minify Holon JSON",
+            description = "Compresses Holon JSON into a single line. Highest token savings, but may impact complex reasoning.",
+            type = SettingType.BOOLEAN
+        )
+    )
 
     override fun reducer(state: AppState, action: AppAction): AppState {
         if (action !is HkgAgentAction && action !is AppAction.SelectModel && action !is AppAction.SetAvailableModels && action !is AppAction.UpdateSetting) return state
@@ -174,10 +204,15 @@ class HkgAgentFeature(
             }
         }
 
-        // Create a default agent for the default session on startup
-        val kgState = store.state.value.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState
-        store.dispatch(HkgAgentAction.CreateAgent("default-session", "sage-agent-1", kgState?.aiPersonaId))
+        // Check if the state already contains an agent for the default session.
+        // If not, create one. This makes startup idempotent and respects saved state.
+        val featureState = store.state.value.featureStates[name] as? HkgAgentFeatureState
+        val hasDefaultAgent = featureState?.agents?.values?.any { it.sessionId == "default-session" } ?: false
 
+        if (!hasDefaultAgent) {
+            val kgState = store.state.value.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState
+            store.dispatch(HkgAgentAction.CreateAgent("default-session", "sage-agent-1", kgState?.aiPersonaId))
+        }
 
         coroutineScope.launch(Dispatchers.Default) {
             store.state

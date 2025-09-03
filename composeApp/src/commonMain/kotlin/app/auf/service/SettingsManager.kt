@@ -1,6 +1,6 @@
 package app.auf.service
 
-import app.auf.feature.systemclock.SystemClockFeature
+import app.auf.core.Feature
 import app.auf.model.SettingDefinition
 import app.auf.util.BasePath
 import app.auf.util.PlatformDependencies
@@ -19,12 +19,13 @@ import kotlinx.serialization.json.Json
  * - `app.auf.util.PlatformDependencies`: The contract for all platform-specific I/O.
  * - `kotlinx.serialization.json.Json`: For serializing the UserSettings object.
  *
- * @version 2.1
- * @since 2025-08-25
+ * @version 2.2
+ * @since 2025-09-02
  */
 class SettingsManager(
     private val platform: PlatformDependencies,
-    private val jsonParser: Json
+    private val jsonParser: Json,
+    private val features: List<Feature>
 ) {
 
     private val settingsFilePath: String
@@ -64,12 +65,10 @@ class SettingsManager(
     }
 
     /**
-     * Collects all setting definitions from across the application.
+     * Collects all setting definitions from across the application by querying registered features.
      * This is the single point of contact for the UI to discover what settings are available.
      */
     fun getSettingDefinitions(): List<SettingDefinition> {
-        // --- MODIFICATION START: Add definitions from the SystemClockFeature ---
-        return PromptCompiler.SETTING_DEFINITIONS + SystemClockFeature.SETTING_DEFINITIONS
-        // --- MODIFICATION END ---
+        return features.flatMap { it.settingDefinitions }
     }
 }

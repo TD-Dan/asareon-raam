@@ -1,8 +1,5 @@
-package app.auf.service
+package app.auf.feature.hkgagent
 
-import app.auf.model.CompilerSettings
-import app.auf.model.SettingDefinition
-import app.auf.model.SettingType
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -112,32 +109,5 @@ class PromptCompiler(private val jsonParser: Json) {
 
     private fun cleanSubHolonRefs(subHolonsElement: JsonElement?): JsonElement {
         return subHolonsElement ?: buildJsonObject { }
-    }
-
-
-    companion object {
-        val SETTING_DEFINITIONS = listOf(
-            SettingDefinition(
-                key = "compiler.removeWhitespace",
-                section = "Prompt Compiler",
-                label = "Remove extraneous whitespace",
-                description = "Reduces token count by trimming leading/trailing whitespace from each line and removing empty lines.",
-                type = SettingType.BOOLEAN
-            ),
-            SettingDefinition(
-                key = "compiler.cleanHeaders",
-                section = "Prompt Compiler",
-                label = "Clean non-essential Holon headers",
-                description = "Removes fields like version, timestamps, and relationships from holon headers before sending.",
-                type = SettingType.BOOLEAN
-            ),
-            SettingDefinition(
-                key = "compiler.minifyJson",
-                section = "Prompt Compiler",
-                label = "Minify Holon JSON",
-                description = "Compresses Holon JSON into a single line. Highest token savings, but may impact complex reasoning.",
-                type = SettingType.BOOLEAN
-            )
-        )
     }
 }

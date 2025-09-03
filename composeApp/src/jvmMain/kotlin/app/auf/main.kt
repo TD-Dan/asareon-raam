@@ -12,7 +12,9 @@ import app.auf.feature.hkgagent.AgentGateway
 import app.auf.feature.hkgagent.GatewayGemini
 import app.auf.feature.hkgagent.HkgAgentFeature
 import app.auf.feature.hkgagent.HkgAgentFeatureState
+import app.auf.feature.hkgagent.PromptCompiler
 import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
+import app.auf.feature.knowledgegraph.KnowledgeGraphService
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import app.auf.feature.session.SessionFeature
 import app.auf.feature.session.SessionFeatureState
@@ -51,8 +53,7 @@ fun main() = application {
             }
         }
     }
-    val settingsManager = remember { SettingsManager(platformDependencies, jsonParser) }
-    val savedSettings = remember { settingsManager.loadSettings() ?: UserSettings() }
+
     val properties = remember { Properties() }
     val apiKey = remember {
         val localPropertiesFile = File("local.properties")
@@ -70,29 +71,22 @@ fun main() = application {
     // --- Feature Instantiation ---
     val features = remember {
         val agentGateway: AgentGateway = GatewayGemini(jsonParser, apiKey)
+        val knowledgeGraphService = KnowledgeGraphService(platformDependencies)
 
         listOf(
             SystemClockFeature(coroutineScope),
-            KnowledgeGraphFeature(platformDependencies, coroutineScope),
+            KnowledgeGraphFeature(knowledgeGraphService, coroutineScope),
             SessionFeature(platformDependencies, jsonParser, coroutineScope),
             HkgAgentFeature(agentGateway, promptCompiler, platformDependencies, jsonParser, coroutineScope)
         )
     }
 
+    val settingsManager = remember { SettingsManager(platformDependencies, jsonParser, features) }
+    val savedSettings = remember { settingsManager.loadSettings() ?: UserSettings() }
+
     val initialState = remember(savedSettings) {
-        val initialFeatureStates = savedSettings.featureStates.toMutableMap()
-
-        // Get the saved KG state or a default one
-        val kgState = initialFeatureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
-
-        // Update it with the non-persistent settings from the root of UserSettings
-        initialFeatureStates["KnowledgeGraphFeature"] = kgState.copy(
-            aiPersonaId = savedSettings.selectedAiPersonaId,
-            contextualHolonIds = savedSettings.activeContextualHolonIds
-        )
-
         AppState(
-            featureStates = initialFeatureStates
+            featureStates = savedSettings.featureStates
         )
     }
 
@@ -122,13 +116,9 @@ fun main() = application {
     Window(
         onCloseRequest = {
             val currentState = stateManager.state.value
-            val kgState = currentState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
-
             val currentSettingsToSave = UserSettings(
                 windowWidth = windowState.size.width.value.toInt(),
                 windowHeight = windowState.size.height.value.toInt(),
-                selectedAiPersonaId = kgState.aiPersonaId,
-                activeContextualHolonIds = kgState.contextualHolonIds,
                 featureStates = currentState.featureStates
             )
             settingsManager.saveSettings(currentSettingsToSave)

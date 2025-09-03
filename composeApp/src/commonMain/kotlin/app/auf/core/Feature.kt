@@ -1,6 +1,7 @@
 package app.auf.core
 
 import androidx.compose.runtime.Composable
+import app.auf.model.SettingDefinition
 
 /**
  * ---
@@ -8,7 +9,8 @@ import androidx.compose.runtime.Composable
  * Defines the universal contract for a self-contained, modular feature plugin within the AUF app.
  * This is the cornerstone of the "Core Ignorance" and "Contextual Granularity" principles.
  * A Feature can provide a reducer to manage its own state slice, a `start` lifecycle
- * method, and an optional `ComposableProvider` for rendering its UI.
+ * method, an optional `ComposableProvider` for rendering its UI, and a list of its
+ * configurable settings.
  */
 
 interface Feature {
@@ -48,6 +50,14 @@ interface Feature {
      */
     val composableProvider: ComposableProvider?
         get() = null
+
+    /**
+     * An optional list of setting definitions for this feature. This allows the settings UI
+     * to be built dynamically without the SettingsManager needing to know about any
+     * specific feature.
+     */
+    val settingDefinitions: List<SettingDefinition>
+        get() = emptyList()
 
 
     /**
