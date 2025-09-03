@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 
 // --- VERSION ---
 object Version {
-    const val APP_VERSION = "1.5.0"
+    const val APP_VERSION = "1.5.1"
 }
 
 // --- CORE STATE & ACTIONS ---
