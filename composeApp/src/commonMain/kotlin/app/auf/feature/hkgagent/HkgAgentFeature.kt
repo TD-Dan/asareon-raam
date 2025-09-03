@@ -20,14 +20,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.auf.core.AppAction
-import app.auf.core.AppState
-import app.auf.core.Feature
-import app.auf.core.StateManager
-import app.auf.core.Store
+import app.auf.core.*
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import app.auf.feature.session.SessionAction
 import app.auf.feature.session.SessionFeatureState
+import app.auf.model.CompilerSettings
 import app.auf.service.PromptCompiler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,7 +45,7 @@ import app.auf.feature.knowledgegraph.Holon as HolonData
 @Serializable
 data class HkgAgentFeatureState(
     val agents: Map<String, HkgAgentState> = emptyMap()
-)
+) : FeatureState
 
 /**
  * ## Mandate
@@ -61,7 +58,10 @@ data class HkgAgentState(
     val id: String,
     val sessionId: String,
     val hkgPersonaId: String? = null,
-    val isProcessing: Boolean = false
+    val isProcessing: Boolean = false,
+    val availableModels: List<String> = emptyList(),
+    val selectedModel: String = "gemini-1.5-flash-latest",
+    val compilerSettings: CompilerSettings = CompilerSettings()
 )
 
 
@@ -101,10 +101,10 @@ class HkgAgentFeature(
     override val composableProvider: Feature.ComposableProvider = HkgAgentComposableProvider()
 
     override fun reducer(state: AppState, action: AppAction): AppState {
-        if (action !is HkgAgentAction) return state
+        if (action !is HkgAgentAction && action !is AppAction.SelectModel && action !is AppAction.SetAvailableModels && action !is AppAction.UpdateSetting) return state
         val currentState = state.featureStates[name] as? HkgAgentFeatureState ?: HkgAgentFeatureState()
 
-        val newFeatureState = when (action) {
+        val newFeatureState: HkgAgentFeatureState = when (action) {
             is HkgAgentAction.CreateAgent -> {
                 val newAgent = HkgAgentState(
                     id = action.agentId,
@@ -123,6 +123,43 @@ class HkgAgentFeature(
                 val updatedAgent = agentToUpdate.copy(hkgPersonaId = action.hkgPersonaId)
                 currentState.copy(agents = currentState.agents + (action.agentId to updatedAgent))
             }
+            is AppAction.SetAvailableModels -> {
+                val updatedAgents = currentState.agents.mapValues { (_, agent) ->
+                    val defaultModel = "gemini-1.5-flash-latest"
+                    val newSelectedModel = if (agent.selectedModel in action.models) {
+                        agent.selectedModel
+                    } else if (defaultModel in action.models) {
+                        defaultModel
+                    } else {
+                        action.models.firstOrNull() ?: agent.selectedModel
+                    }
+                    agent.copy(availableModels = action.models, selectedModel = newSelectedModel)
+                }
+                currentState.copy(agents = updatedAgents)
+            }
+            is AppAction.SelectModel -> {
+                val updatedAgents = currentState.agents.mapValues { (_, agent) ->
+                    agent.copy(selectedModel = action.modelName)
+                }
+                currentState.copy(agents = updatedAgents)
+            }
+            is AppAction.UpdateSetting -> {
+                val updatedAgents = currentState.agents.mapValues { (_, agent) ->
+                    val newCompilerSettings = when (action.setting.key) {
+                        "compiler.removeWhitespace" -> agent.compilerSettings.copy(removeWhitespace = action.setting.value as? Boolean ?: agent.compilerSettings.removeWhitespace)
+                        "compiler.cleanHeaders" -> agent.compilerSettings.copy(cleanHeaders = action.setting.value as? Boolean ?: agent.compilerSettings.cleanHeaders)
+                        "compiler.minifyJson" -> agent.compilerSettings.copy(minifyJson = action.setting.value as? Boolean ?: agent.compilerSettings.minifyJson)
+                        else -> agent.compilerSettings
+                    }
+                    if (newCompilerSettings != agent.compilerSettings) {
+                        agent.copy(compilerSettings = newCompilerSettings)
+                    } else {
+                        agent
+                    }
+                }
+                currentState.copy(agents = updatedAgents)
+            }
+            else -> currentState
         }
         return state.copy(featureStates = state.featureStates + (name to newFeatureState))
     }
@@ -172,8 +209,7 @@ class HkgAgentFeature(
         store.dispatch(HkgAgentAction.SetProcessingStatus(agent.id, true))
 
         val promptContents = _buildPromptContents(agent, transcript)
-        val selectedModel = store.state.value.selectedModel
-        val request = AgentRequest(selectedModel, promptContents)
+        val request = AgentRequest(agent.selectedModel, promptContents)
 
         val response = agentGateway.generateContent(request)
 
@@ -199,7 +235,7 @@ class HkgAgentFeature(
         val store = this.store ?: return emptyList()
         val appState = store.state.value
         val kgState = appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState
-        val compilerSettings = appState.compilerSettings
+        val compilerSettings = agent.compilerSettings
 
         val promptMessages = mutableListOf<Pair<String, String>>() // Role, Content
 
@@ -253,19 +289,25 @@ class HkgAgentFeature(
             val activeAgent = agentFeatureState?.agents?.values?.firstOrNull()
             val aiPersonas = kgState?.availableAiPersonas ?: emptyList()
 
-            if (activeAgent != null) {
-                var isAgentSelectorExpanded by remember { mutableStateOf(false) }
-                val selectedAiPersonaId = activeAgent.hkgPersonaId
-                val selectedAiPersonaName = aiPersonas.find { it.id == selectedAiPersonaId }?.name ?: "None (Dumb Mode)"
+            // Model selection UI
+            var isModelSelectorExpanded by remember { mutableStateOf(false) }
+            val availableModels = activeAgent?.availableModels ?: emptyList()
+            val selectedModel = activeAgent?.selectedModel ?: "loading..."
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            // Agent persona selection UI
+            var isAgentSelectorExpanded by remember { mutableStateOf(false) }
+            val selectedAiPersonaId = activeAgent?.hkgPersonaId
+            val selectedAiPersonaName = aiPersonas.find { it.id == selectedAiPersonaId }?.name ?: "None (Dumb Mode)"
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (activeAgent != null) {
                     Text("Agent:", fontSize = 12.sp)
                     Spacer(Modifier.width(8.dp))
                     Box {
                         Button(
                             onClick = { isAgentSelectorExpanded = true },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                        ) { Text(selectedAiPersonaName) }
+                        ) { Text(selectedAiPersonaName, maxLines = 1) }
                         DropdownMenu(
                             expanded = isAgentSelectorExpanded,
                             onDismissRequest = { isAgentSelectorExpanded = false }
@@ -286,6 +328,22 @@ class HkgAgentFeature(
                                     }
                                 )
                             }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.width(16.dp))
+
+                Text("Model:", fontSize = 12.sp)
+                Spacer(Modifier.width(8.dp))
+                Box {
+                    Button(
+                        onClick = { isModelSelectorExpanded = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    ) { Text(selectedModel, maxLines = 1) }
+                    DropdownMenu(expanded = isModelSelectorExpanded, onDismissRequest = { isModelSelectorExpanded = false }) {
+                        availableModels.forEach { modelName ->
+                            DropdownMenuItem(text = { Text(modelName) }, onClick = { stateManager.selectModel(modelName); isModelSelectorExpanded = false })
                         }
                     }
                 }

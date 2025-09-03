@@ -18,7 +18,5 @@ data class UserSettings(
     val selectedAiPersonaId: String? = null,
     val activeContextualHolonIds: Set<String> = emptySet(),
     val compilerSettings: CompilerSettings = CompilerSettings(),
-    // --- MODIFICATION START: Add feature states to user settings for persistence ---
     val systemClockState: SystemClockState = SystemClockState()
-    // --- MODIFICATION END ---
 )

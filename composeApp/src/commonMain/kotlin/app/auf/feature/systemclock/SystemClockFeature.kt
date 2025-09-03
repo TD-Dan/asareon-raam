@@ -1,9 +1,6 @@
 package app.auf.feature.systemclock
 
-import app.auf.core.AppAction
-import app.auf.core.AppState
-import app.auf.core.Feature
-import app.auf.core.Store
+import app.auf.core.*
 import app.auf.feature.hkgagent.HkgAgentFeatureState
 import app.auf.feature.session.SessionAction
 import app.auf.model.SettingDefinition
@@ -21,7 +18,7 @@ import kotlinx.serialization.Serializable
 data class SystemClockState(
     val isEnabled: Boolean = false,
     val intervalMillis: Long = 300_000L // 5 minutes
-)
+) : FeatureState
 
 // --- 2. ACTIONS ---
 /**
@@ -102,9 +99,9 @@ class SystemClockFeature(
             while (true) {
                 val latestState = store.state.value
                 val clockState = latestState.featureStates[name] as? SystemClockState ?: SystemClockState()
-                val agentState = latestState.featureStates["HkgAgentFeature"] as? HkgAgentFeatureState
+                val agentFeatureState = latestState.featureStates["HkgAgentFeature"] as? HkgAgentFeatureState
 
-                val isAnyAgentProcessing = agentState?.agents?.values?.any { it.isProcessing } ?: false
+                val isAnyAgentProcessing = agentFeatureState?.agents?.values?.any { it.isProcessing } ?: false
 
                 if (clockState.isEnabled) {
                     if (!isAnyAgentProcessing) {

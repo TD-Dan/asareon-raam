@@ -16,6 +16,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
+// TODO: This file and class will be mostly deprecated.
+
 open class StateManager(
     private val store: Store,
     private val backupManager: BackupManager,

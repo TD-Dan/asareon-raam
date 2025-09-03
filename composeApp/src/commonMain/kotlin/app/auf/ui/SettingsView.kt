@@ -33,32 +33,19 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.AppState
+import app.auf.feature.hkgagent.HkgAgentFeatureState
 import app.auf.feature.systemclock.SystemClockState
-import app.auf.model.CompilerSettings
 import app.auf.model.SettingDefinition
 import app.auf.model.SettingType
 import app.auf.model.SettingValue
 
 /**
  * A dynamically generated view for displaying and modifying application settings.
- *
- * ---
- * ## Mandate
- * This composable's sole responsibility is to render a UI based on a list of
- * `SettingDefinition` objects. It is a "dumb" component that is completely decoupled
- * from the services that define the settings. It groups settings by section and renders
- * the appropriate control (e.g., a Switch for a Boolean) for each definition.
- *
- * ---
- * ## Dependencies
- * - `app.auf.model.SettingDefinition`: The schema for rendering.
- * - `app.auf.model.CompilerSettings`: The current state of the settings.
- *
  */
 @Composable
 fun SettingsView(
     definitions: List<SettingDefinition>,
-    appState: AppState, // --- MODIFICATION: Pass full AppState for feature access ---
+    appState: AppState,
     onSettingChanged: (SettingValue) -> Unit,
     onClose: () -> Unit
 ) {
@@ -107,7 +94,7 @@ fun SettingsView(
 @Composable
 private fun SettingRow(
     definition: SettingDefinition,
-    appState: AppState, // --- MODIFICATION: Pass full AppState ---
+    appState: AppState,
     onSettingChanged: (SettingValue) -> Unit
 ) {
     Row(
@@ -125,16 +112,17 @@ private fun SettingRow(
             )
         }
 
-        // This `when` block makes the UI extensible to new setting types.
         when (definition.type) {
             SettingType.BOOLEAN -> {
+                val agentState = appState.featureStates["HkgAgentFeature"] as? HkgAgentFeatureState
+                val agent = agentState?.agents?.values?.firstOrNull()
+                val clockState = appState.featureStates["SystemClockFeature"] as? SystemClockState
+
                 val isChecked = when (definition.key) {
-                    // Core settings
-                    "compiler.removeWhitespace" -> appState.compilerSettings.removeWhitespace
-                    "compiler.cleanHeaders" -> appState.compilerSettings.cleanHeaders
-                    "compiler.minifyJson" -> appState.compilerSettings.minifyJson
-                    // Feature settings
-                    "clock.isEnabled" -> (appState.featureStates["SystemClockFeature"] as? SystemClockState)?.isEnabled ?: false
+                    "compiler.removeWhitespace" -> agent?.compilerSettings?.removeWhitespace ?: false
+                    "compiler.cleanHeaders" -> agent?.compilerSettings?.cleanHeaders ?: false
+                    "compiler.minifyJson" -> agent?.compilerSettings?.minifyJson ?: false
+                    "clock.isEnabled" -> clockState?.isEnabled ?: false
                     else -> false
                 }
                 Switch(
@@ -144,10 +132,11 @@ private fun SettingRow(
                     }
                 )
             }
-            // --- MODIFICATION START: Add renderer for NUMERIC_LONG ---
             SettingType.NUMERIC_LONG -> {
+                val clockState = appState.featureStates["SystemClockFeature"] as? SystemClockState
+
                 val currentValue = when (definition.key) {
-                    "clock.intervalMillis" -> (appState.featureStates["SystemClockFeature"] as? SystemClockState)?.intervalMillis ?: 0L
+                    "clock.intervalMillis" -> clockState?.intervalMillis ?: 0L
                     else -> 0L
                 }
                 var textValue by remember(currentValue) { mutableStateOf(currentValue.toString()) }
@@ -169,7 +158,6 @@ private fun SettingRow(
                     singleLine = true
                 )
             }
-            // --- MODIFICATION END ---
         }
     }
 }

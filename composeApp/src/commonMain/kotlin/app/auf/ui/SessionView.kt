@@ -15,7 +15,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.auf.core.*
 import app.auf.feature.hkgagent.HkgAgentFeatureState
 import app.auf.feature.session.SessionFeatureState
@@ -41,9 +40,6 @@ fun SessionView(
     val coroutineScope = rememberCoroutineScope()
     val lazyListState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
-
-    val availableModels = appState.availableModels
-    val selectedModel = appState.selectedModel
 
     LaunchedEffect(displayedTranscript.size) {
         coroutineScope.launch {
@@ -96,34 +92,13 @@ fun SessionView(
 
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                features.forEach { feature ->
-                    feature.composableProvider?.SessionHeader(stateManager)
-                }
-            }
-
-            var isModelSelectorExpanded by remember { mutableStateOf(false) }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Model:", fontSize = 12.sp)
-                Spacer(Modifier.width(8.dp))
-                Box {
-                    Button(
-                        onClick = { isModelSelectorExpanded = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                    ) { Text(selectedModel, maxLines = 1) }
-                    DropdownMenu(expanded = isModelSelectorExpanded, onDismissRequest = { isModelSelectorExpanded = false }) {
-                        availableModels.forEach { modelName ->
-                            DropdownMenuItem(text = { Text(modelName) }, onClick = { stateManager.selectModel(modelName); isModelSelectorExpanded = false })
-                        }
-                    }
-                }
+            // The feature composable providers will now render the agent and model selectors
+            features.forEach { feature ->
+                feature.composableProvider?.SessionHeader(stateManager)
             }
         }
-
 
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(

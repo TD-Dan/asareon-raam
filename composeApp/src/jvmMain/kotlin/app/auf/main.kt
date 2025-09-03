@@ -11,6 +11,7 @@ import app.auf.core.*
 import app.auf.feature.hkgagent.AgentGateway
 import app.auf.feature.hkgagent.GatewayGemini
 import app.auf.feature.hkgagent.HkgAgentFeature
+import app.auf.feature.hkgagent.HkgAgentFeatureState
 import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import app.auf.feature.session.SessionFeature
@@ -19,17 +20,34 @@ import app.auf.feature.systemclock.SystemClockState
 import app.auf.model.UserSettings
 import app.auf.service.*
 import app.auf.ui.App
-import app.auf.util.JsonProvider
 import app.auf.util.PlatformDependencies
 import java.io.File
 import java.util.Properties
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.polymorphic
+import kotlinx.serialization.modules.subclass
+
 
 fun main() = application {
     val coroutineScope = rememberCoroutineScope()
 
     // --- Core Dependencies ---
     val platformDependencies = remember { PlatformDependencies() }
-    val jsonParser = remember { JsonProvider.appJson }
+    val jsonParser = remember {
+        Json {
+            prettyPrint = true
+            ignoreUnknownKeys = true
+            isLenient = true
+            encodeDefaults = true
+            serializersModule = SerializersModule {
+                polymorphic(FeatureState::class) {
+                    subclass(SystemClockState::class)
+                    subclass(HkgAgentFeatureState::class)
+                }
+            }
+        }
+    }
     val settingsManager = remember { SettingsManager(platformDependencies, jsonParser) }
     val savedSettings = remember { settingsManager.loadSettings() ?: UserSettings() }
     val properties = remember { Properties() }
@@ -59,16 +77,16 @@ fun main() = application {
     }
 
     val initialState = remember(savedSettings) {
+        val initialFeatureStates = savedSettings.featureStates.toMutableMap()
+
+        // Ensure KG state has the loaded persona/context IDs
+        initialFeatureStates["KnowledgeGraphFeature"] = KnowledgeGraphState(
+            aiPersonaId = savedSettings.selectedAiPersonaId,
+            contextualHolonIds = savedSettings.activeContextualHolonIds
+        )
+
         AppState(
-            selectedModel = savedSettings.selectedModel,
-            compilerSettings = savedSettings.compilerSettings,
-            featureStates = mapOf(
-                "SystemClockFeature" to savedSettings.systemClockState,
-                "KnowledgeGraphFeature" to KnowledgeGraphState(
-                    aiPersonaId = savedSettings.selectedAiPersonaId,
-                    contextualHolonIds = savedSettings.activeContextualHolonIds
-                )
-            )
+            featureStates = initialFeatureStates
         )
     }
 
@@ -99,16 +117,13 @@ fun main() = application {
         onCloseRequest = {
             val currentState = stateManager.state.value
             val kgState = currentState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: KnowledgeGraphState()
-            val clockState = currentState.featureStates["SystemClockFeature"] as? SystemClockState ?: SystemClockState()
 
             val currentSettingsToSave = UserSettings(
                 windowWidth = windowState.size.width.value.toInt(),
                 windowHeight = windowState.size.height.value.toInt(),
-                selectedModel = currentState.selectedModel,
                 selectedAiPersonaId = kgState.aiPersonaId,
                 activeContextualHolonIds = kgState.contextualHolonIds,
-                compilerSettings = currentState.compilerSettings,
-                systemClockState = clockState
+                featureStates = currentState.featureStates
             )
             settingsManager.saveSettings(currentSettingsToSave)
             exitApplication()
