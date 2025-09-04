@@ -1,4 +1,4 @@
-package app.auf.ui
+package app.auf.feature.knowledgegraph
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,8 +23,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import app.auf.feature.knowledgegraph.KnowledgeGraphState
-import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

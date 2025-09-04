@@ -117,7 +117,6 @@ class SessionFeature(
     }
 
     override fun start(store: Store) {
-        // ... start() logic is unchanged
         coroutineScope.launch(Dispatchers.Default) {
             val loadedSessions = persistenceService.loadSessions()
             withContext(Dispatchers.Main) {
@@ -171,12 +170,6 @@ class SessionFeature(
         override fun StageContent(stateManager: StateManager) {
             SessionView(stateManager = stateManager, features = allFeatures)
         }
-
-        // --- REMOVED: This logic has been moved to SessionView ---
-        /*
-        @Composable
-        override fun MenuContent(stateManager: StateManager, onDismiss: () -> Unit) { ... }
-        */
     }
 
     private class SessionPersistenceService(

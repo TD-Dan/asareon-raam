@@ -1,5 +1,11 @@
 package app.auf.feature.knowledgegraph
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import app.auf.core.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -13,6 +19,8 @@ class KnowledgeGraphFeature(
 ) : Feature {
     override val name: String = "KnowledgeGraphFeature"
     private var store: Store? = null
+    override val composableProvider: Feature.ComposableProvider = KnowledgeGraphComposableProvider()
+
 
     override fun reducer(state: AppState, action: AppAction): AppState {
         if (action !is KnowledgeGraphAction) return state
@@ -160,6 +168,24 @@ class KnowledgeGraphFeature(
                 }
             }
             else -> store.dispatch(action)
+        }
+    }
+
+    inner class KnowledgeGraphComposableProvider : Feature.ComposableProvider {
+        override val viewKey: String = "feature.knowledgegraph.main"
+        @Composable
+        override fun RibbonButton(stateManager: StateManager, isActive: Boolean) {
+            IconButton(onClick = { stateManager.dispatch(AppAction.SetActiveView(viewKey)) }) {
+                Icon(
+                    imageVector = Icons.Default.AccountTree,
+                    contentDescription = "Knowledge Graph",
+                    tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        @Composable
+        override fun StageContent(stateManager: StateManager) {
+            KnowledgeGraphView(stateManager)
         }
     }
 }

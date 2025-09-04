@@ -1,4 +1,4 @@
-package app.auf.ui
+package app.auf.feature.settings
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,6 +10,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -27,9 +28,12 @@ fun SettingsView(
     features: List<Feature>,
     onClose: () -> Unit
 ) {
-    // A feature is considered to have settings if it provides a non-empty settings content composable.
-    // This is a bit of a placeholder check, a more robust system might have a dedicated flag.
-    val featuresWithSettings = features.filter { it.composableProvider != null }
+    val allSettingsDefinitions = remember(features) {
+        features.flatMap { it.composableProvider?.settingDefinitions ?: emptyList() }
+    }
+    val groupedSettings = remember(allSettingsDefinitions) {
+        allSettingsDefinitions.groupBy { it.section }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp)
@@ -49,18 +53,7 @@ fun SettingsView(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Group features by their first defined setting's section for UI grouping
-            val groupedProviders = featuresWithSettings
-                .mapNotNull { it.composableProvider }
-                .groupBy {
-                    // Heuristic to get a section name. This part is a bit tricky with the new model
-                    // but we can default to the feature name. A more robust implementation might
-                    // have a dedicated 'settingsSection' property in the provider.
-                    it.javaClass.simpleName.replace("ComposableProvider", "")
-                }
-
-
-            groupedProviders.forEach { (section, providers) ->
+            groupedSettings.forEach { (section, definitions) ->
                 item {
                     Text(
                         text = section,
@@ -70,8 +63,14 @@ fun SettingsView(
                     )
                     HorizontalDivider()
                 }
-                item {
-                    providers.forEach { provider ->
+
+                // Find the feature that provides the UI for this section
+                val provider = features.find { feature ->
+                    feature.composableProvider?.settingDefinitions?.any { it.section == section } ?: false
+                }?.composableProvider
+
+                if (provider != null) {
+                    item {
                         provider.SettingsContent(stateManager)
                     }
                 }

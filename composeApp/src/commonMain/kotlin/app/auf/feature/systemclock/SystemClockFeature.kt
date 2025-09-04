@@ -33,10 +33,6 @@ data class SystemClockState(
 
 // --- 2. ACTIONS ---
 sealed interface ClockAction : AppAction {
-    data object Start : ClockAction
-    data object Stop : ClockAction
-    data class SetInterval(val millis: Long) : ClockAction
-    data object Tick : ClockAction
     data class UpdateSetting(val setting: SettingValue) : ClockAction
 }
 
@@ -61,10 +57,6 @@ class SystemClockFeature(
         val currentState = state.featureStates[name] as? SystemClockState ?: SystemClockState()
 
         val newFeatureState = when (action) {
-            is ClockAction.Start -> currentState.copy(isEnabled = true)
-            is ClockAction.Stop -> currentState.copy(isEnabled = false)
-            is ClockAction.SetInterval -> currentState.copy(intervalMillis = action.millis)
-            is ClockAction.Tick -> currentState
             is ClockAction.UpdateSetting -> {
                 when (action.setting.key) {
                     "clock.isEnabled" -> currentState.copy(isEnabled = action.setting.value as? Boolean ?: currentState.isEnabled)
@@ -83,23 +75,18 @@ class SystemClockFeature(
             while (true) {
                 val latestState = store.state.value
                 val clockState = latestState.featureStates[name] as? SystemClockState ?: SystemClockState()
-                val agentFeatureState = latestState.featureStates["HkgAgentFeature"] as? HkgAgentFeatureState
-
-                val isAnyAgentProcessing = agentFeatureState?.agents?.values?.any { it.isProcessing } ?: false
 
                 if (clockState.isEnabled) {
-                    if (!isAnyAgentProcessing) {
-                        store.dispatch(ClockAction.Tick)
-                        store.dispatch(
-                            SessionAction.PostEntry(
-                                sessionId = "default-session", // Assume default for now
-                                agentId = "CORE",
-                                content = "[SYSTEM: TICK]\nAutonomous processing cycle."
-                            )
+                    store.dispatch(
+                        SessionAction.PostEntry(
+                            sessionId = "default-session", // Assume default for now
+                            agentId = "CORE",
+                            content = "[SYSTEM: TICK]"
                         )
-                    }
+                    )
                     delay(clockState.intervalMillis)
                 } else {
+                    // Check less frequently when disabled
                     delay(1000L)
                 }
             }
@@ -108,8 +95,8 @@ class SystemClockFeature(
 
     inner class SystemClockComposableProvider : Feature.ComposableProvider {
         override val settingDefinitions: List<SettingDefinition> = listOf(
-            SettingDefinition("clock.isEnabled", "System Clock", "Enable Autonomous TICK", "When enabled, the application will periodically dispatch a TICK action, allowing the AI to perform background introspection.", SettingType.BOOLEAN),
-            SettingDefinition("clock.intervalMillis", "System Clock", "TICK Interval (milliseconds)", "The time in milliseconds between each autonomous TICK dispatch.", SettingType.NUMERIC_LONG)
+            SettingDefinition("clock.isEnabled", "System Clock", "Enable Autonomous TICK", "When enabled, the application will periodically post a TICK message to the session, allowing agents to perform background introspection.", SettingType.BOOLEAN),
+            SettingDefinition("clock.intervalMillis", "System Clock", "TICK Interval (milliseconds)", "The time in milliseconds between each autonomous TICK message.", SettingType.NUMERIC_LONG)
         )
 
         @Composable

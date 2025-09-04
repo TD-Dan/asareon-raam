@@ -17,7 +17,7 @@ import kotlinx.serialization.modules.subclass
  * This service is responsible for loading, parsing, analyzing, importing, and exporting holons.
  * It is completely stateless and operates only on the inputs it is given, returning result objects.
  */
-class KnowledgeGraphService(
+open class KnowledgeGraphService(
     private val platform: PlatformDependencies
 ) {
     private val holonsBasePath by lazy { platform.getBasePathFor(BasePath.HOLONS) }

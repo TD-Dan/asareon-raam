@@ -16,6 +16,7 @@ import app.auf.feature.hkgagent.PromptCompiler
 import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.feature.knowledgegraph.KnowledgeGraphService
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
+import app.auf.feature.settings.SettingsFeature
 import app.auf.feature.session.SessionFeature
 import app.auf.feature.session.SessionFeatureState
 import app.auf.feature.systemclock.SystemClockFeature
@@ -75,7 +76,8 @@ fun main() = application {
             SystemClockFeature(coroutineScope),
             KnowledgeGraphFeature(knowledgeGraphService, coroutineScope),
             HkgAgentFeature(agentGateway, promptCompiler, platformDependencies, jsonParser, coroutineScope),
-            SessionFeature(platformDependencies, jsonParser, coroutineScope, allFeatures)
+            SessionFeature(platformDependencies, jsonParser, coroutineScope, allFeatures),
+            SettingsFeature(allFeatures) // Add the new feature here
         ))
         allFeatures
     }
