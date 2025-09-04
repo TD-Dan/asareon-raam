@@ -1,20 +1,7 @@
 package app.auf.feature.systemclock
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+
 import app.auf.core.*
-import app.auf.feature.hkgagent.HkgAgentFeatureState
 import app.auf.feature.session.SessionAction
 import app.auf.model.SettingDefinition
 import app.auf.model.SettingType
