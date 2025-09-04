@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import app.auf.feature.session.Session
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 
 // --- 1. MODEL ---
 
@@ -88,6 +89,8 @@ sealed interface HkgAgentAction : AppAction {
         val primedAt: Long? = null,
         val lastEntryAt: Long? = null
     ) : HkgAgentAction
+
+    data class _DebounceTimerExpired(val agentId: String) : HkgAgentAction
 }
 
 
@@ -129,6 +132,15 @@ class HkgAgentFeature(
                     lastEntryAt = action.lastEntryAt
                 )
                 currentState.copy(agents = currentState.agents + (action.agentId to updatedAgent))
+            }
+            is HkgAgentAction._DebounceTimerExpired -> {
+                val agent = currentState.agents[action.agentId] ?: return state
+                if (agent.status == AgentStatus.PRIMED) {
+                    val updatedAgent = agent.copy(status = AgentStatus.PROCESSING, primedAt = null, lastEntryAt = null)
+                    currentState.copy(agents = currentState.agents + (action.agentId to updatedAgent))
+                } else {
+                    currentState // Do nothing if state changed in the meantime
+                }
             }
             is HkgAgentAction.SetAvailableModels -> {
                 val updatedAgents = currentState.agents.mapValues { (_, agent) ->
@@ -186,6 +198,7 @@ class HkgAgentFeature(
             }
         }
 
+        // --- Collector 1: The Watcher (Manages Debouncing) ---
         coroutineScope.launch {
             var lastSeenEntryId = -1L
             val initialTranscriptSize = (store.state.value.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions?.values?.firstOrNull()?.transcript?.size ?: 0
@@ -194,37 +207,51 @@ class HkgAgentFeature(
             }
 
             store.state.map {
-                (it.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions?.values?.firstOrNull() to
+                (it.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions?.values?.firstOrNull()?.transcript?.lastOrNull() to
                         (it.featureStates[name] as? HkgAgentFeatureState)?.agents?.values?.firstOrNull()
-            }.distinctUntilChanged().collect { (session, agent) ->
-                if (session == null || agent == null) return@collect
+            }.distinctUntilChanged().collect { (lastEntry, agent) ->
+                if (lastEntry == null || agent == null || lastEntry.id <= lastSeenEntryId) return@collect
 
-                val lastEntry = session.transcript.lastOrNull() ?: return@collect
-                if (lastEntry.id > lastSeenEntryId) {
-                    lastSeenEntryId = lastEntry.id
-                    if (lastEntry.agentId != agent.id && (agent.status == AgentStatus.WAITING || agent.status == AgentStatus.PRIMED)) {
-                        debounceJob?.cancel()
+                lastSeenEntryId = lastEntry.id
+                if (lastEntry.agentId != agent.id && (agent.status == AgentStatus.WAITING || agent.status == AgentStatus.PRIMED)) {
+                    debounceJob?.cancel()
 
-                        val currentTime = platform.getSystemTimeMillis()
-                        val newPrimedAt = if (agent.status == AgentStatus.WAITING) currentTime else agent.primedAt
-                        store.dispatch(HkgAgentAction._UpdateAgentStatus(agent.id, AgentStatus.PRIMED, newPrimedAt, currentTime))
+                    val currentTime = platform.getSystemTimeMillis()
+                    val newPrimedAt = if (agent.status == AgentStatus.WAITING) currentTime else (agent.primedAt ?: currentTime)
+                    store.dispatch(HkgAgentAction._UpdateAgentStatus(agent.id, AgentStatus.PRIMED, newPrimedAt, currentTime))
 
-                        val agentAfterPriming = (store.state.value.featureStates[name] as HkgAgentFeatureState).agents[agent.id]!!
-                        val timeSincePrimed = currentTime - (agentAfterPriming.primedAt ?: currentTime)
+                    val agentAfterPriming = (store.state.value.featureStates[name] as HkgAgentFeatureState).agents[agent.id]!!
+                    val timeSincePrimed = currentTime - (agentAfterPriming.primedAt ?: currentTime)
 
-                        if (timeSincePrimed >= agentAfterPriming.maxWaitMillis) {
-                            coroutineScope.launch { triggerResponseNow(agent.id) }
-                        } else {
-                            debounceJob = coroutineScope.launch {
-                                delay(agentAfterPriming.initialWaitMillis)
-                                triggerResponseNow(agent.id)
-                            }
+                    if (timeSincePrimed >= agentAfterPriming.maxWaitMillis) {
+                        store.dispatch(HkgAgentAction._DebounceTimerExpired(agent.id))
+                    } else {
+                        debounceJob = coroutineScope.launch {
+                            delay(agentAfterPriming.initialWaitMillis)
+                            store.dispatch(HkgAgentAction._DebounceTimerExpired(agent.id))
                         }
                     }
                 }
             }
         }
 
+        // --- Collector 2: The Executor (Handles Side Effects) ---
+        coroutineScope.launch {
+            store.state.map {
+                (it.featureStates[name] as? HkgAgentFeatureState)?.agents?.values?.firstOrNull()
+            }.distinctUntilChangedBy { it?.status }.collect { agent ->
+                if (agent?.status == AgentStatus.PROCESSING) {
+                    val appState = store.state.value
+                    val session = (appState.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions?.get(agent.sessionId)
+                    val kgState = appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState
+                    if (session != null && kgState != null) {
+                        triggerAgentResponse(agent, session.transcript, kgState)
+                    }
+                }
+            }
+        }
+
+        // --- Collector 3: Agent Creator ---
         coroutineScope.launch {
             store.state
                 .map { (it.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions }
@@ -232,19 +259,6 @@ class HkgAgentFeature(
                 .collect { sessions ->
                     sessions?.values?.forEach { handleSessionUpdate(it) }
                 }
-        }
-    }
-
-    private suspend fun triggerResponseNow(agentId: String) {
-        val store = this.store ?: return
-        val appState = store.state.value
-        val agent = (appState.featureStates[name] as? HkgAgentFeatureState)?.agents?.get(agentId) ?: return
-        val session = (appState.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions?.get(agent.sessionId) ?: return
-        val kgState = appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: return
-
-        if (agent.status == AgentStatus.PRIMED) {
-            store.dispatch(HkgAgentAction._UpdateAgentStatus(agent.id, AgentStatus.PROCESSING, null, null))
-            triggerAgentResponse(agent, session.transcript, kgState)
         }
     }
 
@@ -293,9 +307,8 @@ class HkgAgentFeature(
             if (hasNewMessages) {
                 val latestKgState = store.state.value.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: kgStateSnapshot
                 val latestAgentState = (store.state.value.featureStates[name] as? HkgAgentFeatureState)?.agents?.get(agentSnapshot.id) ?: agentSnapshot
-                coroutineScope.launch {
-                    triggerAgentResponse(latestAgentState, latestTranscript, latestKgState)
-                }
+                store.dispatch(HkgAgentAction._UpdateAgentStatus(agentSnapshot.id, AgentStatus.PROCESSING, null, null))
+                // The new PROCESSING state will be picked up by the executor collector, creating a clean loop.
             } else {
                 store.dispatch(HkgAgentAction._UpdateAgentStatus(agentSnapshot.id, AgentStatus.WAITING, null, null))
             }

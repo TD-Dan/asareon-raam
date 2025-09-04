@@ -49,8 +49,6 @@ class HkgAgentFeatureTest {
     private lateinit var store: Store
     private lateinit var fakeGateway: FakeAgentGateway
     private lateinit var agentFeature: HkgAgentFeature
-    private lateinit var sessionFeature: SessionFeature
-    private lateinit var clockFeature: SystemClockFeature
     private lateinit var platform: FakePlatformDependencies
     private lateinit var testScope: TestScope
 
@@ -80,8 +78,8 @@ class HkgAgentFeatureTest {
 
 
         agentFeature = HkgAgentFeature(fakeGateway, promptCompiler, platform, jsonParser, testScope)
-        sessionFeature = SessionFeature(platform, jsonParser, testScope, features)
-        clockFeature = SystemClockFeature(testScope)
+        val sessionFeature = SessionFeature(platform, jsonParser, testScope, features)
+        val clockFeature = SystemClockFeature(testScope)
         val kgFeature = KnowledgeGraphFeature(fakeKgService, testScope)
         val settingsFeature = SettingsFeature(features)
         features.addAll(listOf(agentFeature, sessionFeature, clockFeature, kgFeature, settingsFeature))
@@ -97,6 +95,11 @@ class HkgAgentFeatureTest {
         testScope.runCurrent()
     }
 
+    private fun advanceTime(delayMillis: Long) {
+        testScope.testScheduler.advanceTimeBy(delayMillis)
+        platform.currentTime += delayMillis
+        testScope.runCurrent() // FIX: Explicitly call on the testScope instance
+    }
 
     @Test
     fun agentRespondsToUserMessageAfterDebounce() = testScope.runTest {
@@ -111,8 +114,7 @@ class HkgAgentFeatureTest {
         assertEquals(AgentStatus.PRIMED, primedAgent.status)
 
         // ACT 2: Advance time and run the pending debounce job
-        testScope.testScheduler.advanceTimeBy(initialAgent.initialWaitMillis)
-        runCurrent()
+        advanceTime(initialAgent.initialWaitMillis)
 
         // ASSERT: Agent is PROCESSING and gateway was called
         val processingAgent = (store.state.value.featureStates[agentFeature.name] as HkgAgentFeatureState).agents[agentId]!!
@@ -124,7 +126,7 @@ class HkgAgentFeatureTest {
 
         // ASSERT: Agent is WAITING and transcript is updated
         val finalAgent = (store.state.value.featureStates[agentFeature.name] as HkgAgentFeatureState).agents[agentId]!!
-        val finalTranscript = (store.state.value.featureStates[sessionFeature.name] as SessionFeatureState).sessions[sessionId]!!.transcript
+        val finalTranscript = (store.state.value.featureStates["SessionFeature"] as SessionFeatureState).sessions[sessionId]!!.transcript
         assertEquals(AgentStatus.WAITING, finalAgent.status)
         assertEquals(2, finalTranscript.size)
         assertEquals("This is the fake AI response.", finalTranscript.last().content)
@@ -141,24 +143,21 @@ class HkgAgentFeatureTest {
         assertEquals(AgentStatus.PRIMED, (store.state.value.featureStates[agentFeature.name] as HkgAgentFeatureState).agents[agentId]!!.status)
 
         // ACT 2: Advance time, but not enough to trigger the response
-        testScope.testScheduler.advanceTimeBy(agent.initialWaitMillis - 500)
-        runCurrent()
+        advanceTime(agent.initialWaitMillis - 500)
 
         // ACT 3: User posts a second message, resetting the timer
         store.dispatch(SessionAction.PostEntry(sessionId, "USER", "Second part"))
         runCurrent()
 
         // ACT 4: Advance time again, but not enough for the *original* timer to fire
-        testScope.testScheduler.advanceTimeBy(agent.initialWaitMillis - 500)
-        runCurrent()
+        advanceTime(agent.initialWaitMillis - 500)
 
         // ASSERT 1: Agent is still primed, gateway has not been called
         assertEquals(AgentStatus.PRIMED, (store.state.value.featureStates[agentFeature.name] as HkgAgentFeatureState).agents[agentId]!!.status)
         assertEquals(0, fakeGateway.callCount, "Gateway should not be called yet.")
 
         // ACT 5: Advance time past the *second* timer's expiry
-        testScope.testScheduler.advanceTimeBy(1000)
-        runCurrent()
+        advanceTime(1000)
 
         // ASSERT 2: Agent is now processing, and gateway was finally called
         assertEquals(AgentStatus.PROCESSING, (store.state.value.featureStates[agentFeature.name] as HkgAgentFeatureState).agents[agentId]!!.status)
@@ -176,19 +175,20 @@ class HkgAgentFeatureTest {
         assertEquals(AgentStatus.PRIMED, (store.state.value.featureStates[agentFeature.name] as HkgAgentFeatureState).agents[agentId]!!.status)
 
         // Simulate a stream of messages keeping the debounce timer resetting
+        var totalElapsedTime = 0L
         for (i in 1..10) {
-            testScope.testScheduler.advanceTimeBy(agent.initialWaitMillis - 200)
-            runCurrent()
+            val delay = agent.initialWaitMillis - 200
+            advanceTime(delay)
+            totalElapsedTime += delay
             store.dispatch(SessionAction.PostEntry(sessionId, "USER", "message $i"))
             runCurrent()
         }
-        val totalElapsedTime = testScope.testScheduler.currentTime
-        assertTrue(totalElapsedTime < agent.maxWaitMillis, "Precondition: Max wait should not be exceeded yet.")
+
+        assertTrue(totalElapsedTime < agent.maxWaitMillis, "Precondition: Max wait should not be exceeded yet. Elapsed: $totalElapsedTime")
         assertEquals(0, fakeGateway.callCount, "Gateway should not have been called yet.")
 
         // ACT 2: Advance time to just over the maxWait limit
-        testScope.testScheduler.advanceTimeBy(agent.maxWaitMillis - totalElapsedTime + 100)
-        runCurrent()
+        advanceTime(agent.maxWaitMillis - totalElapsedTime + 100)
 
         // ASSERT: Agent should now be processing, having bypassed the last debounce
         assertEquals(AgentStatus.PROCESSING, (store.state.value.featureStates[agentFeature.name] as HkgAgentFeatureState).agents[agentId]!!.status)
@@ -203,8 +203,7 @@ class HkgAgentFeatureTest {
         // ACT 1: Trigger the agent, it will enter PROCESSING for 5s
         store.dispatch(SessionAction.PostEntry(sessionId, "USER", "Initial prompt"))
         runCurrent()
-        testScope.testScheduler.advanceTimeBy(1500L)
-        runCurrent()
+        advanceTime(1500L)
         assertEquals(AgentStatus.PROCESSING, (store.state.value.featureStates[agentFeature.name] as HkgAgentFeatureState).agents[agentId]!!.status)
 
         // ACT 2: While agent is busy, a new user message arrives
@@ -212,11 +211,10 @@ class HkgAgentFeatureTest {
         runCurrent()
 
         // ACT 3: Advance time to let the first gateway call finish
-        testScope.testScheduler.advanceTimeBy(5000L)
-        runCurrent()
+        advanceTime(5000L)
 
         // ASSERT 1: The first response is posted, but the agent immediately re-triggers
-        val transcript = (store.state.value.featureStates[sessionFeature.name] as SessionFeatureState).sessions[sessionId]!!.transcript
+        val transcript = (store.state.value.featureStates["SessionFeature"] as SessionFeatureState).sessions[sessionId]!!.transcript
         assertEquals(3, transcript.size, "Transcript should have user, AI, and second user message.")
         assertEquals(AgentStatus.PROCESSING, (store.state.value.featureStates[agentFeature.name] as HkgAgentFeatureState).agents[agentId]!!.status, "Agent should immediately re-enter PROCESSING state to catch up.")
         assertEquals(2, fakeGateway.callCount, "Gateway should have been called a second time immediately.")
@@ -227,18 +225,18 @@ class HkgAgentFeatureTest {
         // ACT 1: Trigger a normal response
         store.dispatch(SessionAction.PostEntry(sessionId, "USER", "Hello"))
         runCurrent()
-        testScope.testScheduler.advanceTimeBy(1500L)
-        runCurrent() // Agent is processing
-        runCurrent() // Gateway responds, agent posts, returns to WAITING
+        advanceTime(1500L)
+        runCurrent() // Gateway responds, agent posts, `finally` runs, returns to WAITING
+
+        // ASSERT 1: The agent should complete its cycle and return to WAITING
         assertEquals(AgentStatus.WAITING, (store.state.value.featureStates[agentFeature.name] as HkgAgentFeatureState).agents[agentId]!!.status)
         assertEquals(1, fakeGateway.callCount)
-        assertEquals(2, (store.state.value.featureStates[sessionFeature.name] as SessionFeatureState).sessions[sessionId]!!.transcript.size)
+        assertEquals(2, (store.state.value.featureStates["SessionFeature"] as SessionFeatureState).sessions[sessionId]!!.transcript.size)
 
-        // ACT 2: Wait for a moment
-        testScope.testScheduler.advanceTimeBy(3000L)
-        runCurrent()
+        // ACT 2: Wait for a moment to see if the agent's own message re-triggers it
+        advanceTime(3000L)
 
-        // ASSERT: Agent should still be waiting and should not have called the gateway again
+        // ASSERT 2: Agent should still be waiting and should not have called the gateway again
         assertEquals(AgentStatus.WAITING, (store.state.value.featureStates[agentFeature.name] as HkgAgentFeatureState).agents[agentId]!!.status, "Agent should not be primed by its own message.")
         assertEquals(1, fakeGateway.callCount, "Gateway should not be called a second time.")
     }
@@ -252,13 +250,12 @@ class HkgAgentFeatureTest {
         // ACT & ASSERT: Same flow as the first test
         store.dispatch(SessionAction.PostEntry(sessionId, "USER", "Are you there?"))
         runCurrent()
-        testScope.testScheduler.advanceTimeBy(1500L)
-        runCurrent()
+        advanceTime(1500L)
         assertEquals(AgentStatus.PROCESSING, (store.state.value.featureStates[agentFeature.name] as HkgAgentFeatureState).agents[agentId]!!.status)
         assertEquals(1, fakeGateway.callCount)
 
         runCurrent()
-        val finalTranscript = (store.state.value.featureStates[sessionFeature.name] as SessionFeatureState).sessions[sessionId]!!.transcript
+        val finalTranscript = (store.state.value.featureStates["SessionFeature"] as SessionFeatureState).sessions[sessionId]!!.transcript
         assertEquals(2, finalTranscript.size)
         assertTrue(fakeGateway.lastRequest!!.contents.any { it.parts.any { p -> p.text == "You are a helpful assistant." } }, "Should have used the generic dumb mode system prompt.")
     }
