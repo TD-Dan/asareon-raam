@@ -1,3 +1,5 @@
+// --- START OF FILE commonTest\kotlin\app\auf\feature\hkgagent\HkgAgentFeatureTest.kt ---
+
 package app.auf.feature.hkgagent
 
 import app.auf.core.AppAction
@@ -131,10 +133,9 @@ class HkgAgentFeatureTest {
         assertNotNull(primedAgent.lastEntryAt)
 
         // --- ACT 2: Advance time past the initial wait delay ---
-        val delayMillis = initialAgent.initialWaitMillis + 1
+        val delayMillis = initialAgent.initialWaitMillis
         testScope.testScheduler.advanceTimeBy(delayMillis)
-        platform.currentTime += delayMillis
-        runCurrent() // Allow the timer check loop and subsequent gateway call to execute
+        runCurrent() // This executes the code inside the delay()
 
         // --- ASSERT 2: Agent is now PROCESSING ---
         val processingState = store.state.value
@@ -142,8 +143,7 @@ class HkgAgentFeatureTest {
         assertEquals(AgentStatus.PROCESSING, processingAgent.status, "Agent should be PROCESSING after the delay.")
         assertEquals(1, fakeGateway.callCount, "AgentGateway should have been called exactly once.")
         assertNotNull(fakeGateway.lastRequest, "Gateway should have received a request.")
-        // --- FIX: Use assertTrue for clarity ---
-        assertTrue(fakeGateway.lastRequest!!.contents.isNotEmpty(), "Request should contain prompt contents.")
+        assertTrue(fakeGateway.lastRequest!!.contents.any { it.role == "user" && it.parts.any { p -> p.text == "Hello world" } }, "Request should contain the user's message.")
 
 
         // --- ACT 3: The gateway "responds" and the feature posts the new entry and resets ---
@@ -162,3 +162,4 @@ class HkgAgentFeatureTest {
         assertEquals("This is the fake AI response.", aiEntry.content, "The AI's response content is incorrect.")
     }
 }
+// --- END OF FILE commonTest\kotlin\app\auf\feature\hkgagent\HkgAgentFeatureTest.kt ---

@@ -63,16 +63,10 @@ interface Feature {
         /**
          * A slot for adding controls to the header of the main SessionView.
          * Used by features like HkgAgentFeature to provide model/persona selectors.
+         * TODO: This is not a great way to implement this. This introduces feature awareness to the core...
          */
         @Composable
         fun SessionHeader(stateManager: StateManager) {}
-
-        /**
-         * A slot for adding a feature's settings UI to the main SettingsView.
-         * The SettingsView will iterate through all features and render this for each one.
-         */
-        @Composable
-        fun SettingsContent(stateManager: StateManager) {}
 
         /**
          * A slot for adding DropdownMenuItems to the main application menu.

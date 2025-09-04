@@ -103,13 +103,15 @@ class SettingsPersistenceServiceTest {
     @Test
     fun `SettingsPersistenceService constructor creates settings directory if it does not exist`() {
         // --- ARRANGE ---
+        val localPlatform = FakePlatformDependencies() // Use a fresh, clean fake for this test
         val settingsDirPath = "/fake/settings"
-        assertFalse(platform.directories.contains(settingsDirPath), "Precondition: Directory should not exist.")
+        assertFalse(localPlatform.directories.contains(settingsDirPath), "Precondition: Directory should not exist.")
+
         // --- ACT ---
-        // The directory creation happens in the `init` block, which is called in setup().
-        // This test re-instantiates to make the check explicit.
-        SettingsPersistenceService(platform, jsonParser)
+        // Instantiate the service here, which triggers the `init` block.
+        SettingsPersistenceService(localPlatform, jsonParser)
+
         // --- ASSERT ---
-        assertTrue(platform.directories.contains(settingsDirPath), "Settings directory should have been created on initialization.")
+        assertTrue(localPlatform.directories.contains(settingsDirPath), "Settings directory should have been created on initialization.")
     }
 }

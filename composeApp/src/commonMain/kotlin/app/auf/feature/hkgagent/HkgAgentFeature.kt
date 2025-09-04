@@ -105,6 +105,9 @@ class HkgAgentFeature(
     private var store: Store? = null
     override val composableProvider: Feature.ComposableProvider = HkgAgentComposableProvider()
 
+    // --- NEW: A single, disposable job for debounce logic ---
+    private var debounceJob: Job? = null
+
     override fun createActionForSetting(setting: SettingValue): AppAction? {
         return when {
             setting.key.startsWith("compiler.") -> HkgAgentAction.UpdateCompilerSetting(setting)
@@ -186,16 +189,13 @@ class HkgAgentFeature(
             }
         }
 
-        // --- COROUTINE 1: Message Watcher ---
-        // This coroutine's ONLY job is to transition the agent from WAITING to PRIMED.
+        // --- NEW: Single "Message Watcher" Coroutine ---
         coroutineScope.launch {
             var lastSeenEntryId = -1L
-            // Initialize with the size of the transcript on load, to avoid responding to history.
             val initialTranscriptSize = (store.state.value.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions?.values?.firstOrNull()?.transcript?.size ?: 0
             if (initialTranscriptSize > 0) {
                 lastSeenEntryId = (store.state.value.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions?.values?.firstOrNull()?.transcript?.last()?.id ?: -1L
             }
-
 
             store.state.map {
                 (it.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions?.values?.firstOrNull() to
@@ -206,35 +206,22 @@ class HkgAgentFeature(
                 val lastEntry = session.transcript.lastOrNull() ?: return@collect
                 if (lastEntry.id > lastSeenEntryId) {
                     lastSeenEntryId = lastEntry.id
-                    if (lastEntry.agentId != agent.id && agent.status != AgentStatus.PROCESSING) {
+                    if (lastEntry.agentId != agent.id && agent.status == AgentStatus.WAITING || agent.status == AgentStatus.PRIMED) {
+                        debounceJob?.cancel() // Cancel any previous debounce timer
+
                         val currentTime = platform.getSystemTimeMillis()
                         val newPrimedAt = if (agent.status == AgentStatus.WAITING) currentTime else agent.primedAt
                         store.dispatch(HkgAgentAction._UpdateAgentStatus(agent.id, AgentStatus.PRIMED, newPrimedAt, currentTime))
-                    }
-                }
-            }
-        }
 
-        // --- COROUTINE 2: Timer Loop ---
-        // This coroutine's ONLY job is to check the timers for PRIMED agents.
-        coroutineScope.launch {
-            while (true) {
-                delay(250) // Poll every 250ms
-                val appState = store.state.value
-                val agent = (appState.featureStates[name] as? HkgAgentFeatureState)?.agents?.values?.firstOrNull()
-                if (agent?.status == AgentStatus.PRIMED) {
-                    val currentTime = platform.getSystemTimeMillis()
-                    val timeSinceLastEntry = currentTime - (agent.lastEntryAt ?: 0L)
-                    val timeSincePrimed = currentTime - (agent.primedAt ?: 0L)
-
-                    if (timeSinceLastEntry > agent.initialWaitMillis || timeSincePrimed > agent.maxWaitMillis) {
-                        val session = (appState.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions?.get(agent.sessionId)
-                        val kgState = appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState
-                        if (session != null && kgState != null) {
-                            store.dispatch(HkgAgentAction._UpdateAgentStatus(agent.id, AgentStatus.PROCESSING, null, null))
-                            // Launch the response in a separate job to not block the timer loop
-                            launch {
-                                triggerAgentResponse(agent, session.transcript, kgState)
+                        val timeSincePrimed = currentTime - (newPrimedAt ?: currentTime)
+                        if (timeSincePrimed > agent.maxWaitMillis) {
+                            // Max wait exceeded, bypass debounce and trigger immediately.
+                            triggerResponseNow(agent.id)
+                        } else {
+                            // Launch a new, disposable debounce job.
+                            debounceJob = coroutineScope.launch {
+                                delay(agent.initialWaitMillis)
+                                triggerResponseNow(agent.id)
                             }
                         }
                     }
@@ -252,6 +239,23 @@ class HkgAgentFeature(
                 }
         }
     }
+
+    private fun triggerResponseNow(agentId: String) {
+        val store = this.store ?: return
+        coroutineScope.launch {
+            val appState = store.state.value
+            val agent = (appState.featureStates[name] as? HkgAgentFeatureState)?.agents?.get(agentId) ?: return@launch
+            val session = (appState.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions?.get(agent.sessionId) ?: return@launch
+            val kgState = appState.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: return@launch
+
+            // Ensure we only trigger if we are still in a valid state
+            if (agent.status == AgentStatus.PRIMED) {
+                store.dispatch(HkgAgentAction._UpdateAgentStatus(agent.id, AgentStatus.PROCESSING, null, null))
+                triggerAgentResponse(agent, session.transcript, kgState)
+            }
+        }
+    }
+
 
     private fun handleSessionUpdate(session: Session) {
         val store = this.store ?: return
@@ -280,7 +284,6 @@ class HkgAgentFeature(
         try {
             val promptContents = _buildPromptContents(agentSnapshot, transcriptSnapshot, kgStateSnapshot)
             if (promptContents.isEmpty()) {
-                // This case should no longer be hit with the "dumb model" logic, but is a good safeguard.
                 store.dispatch(HkgAgentAction._UpdateAgentStatus(agentSnapshot.id, AgentStatus.WAITING, null, null))
                 return
             }
@@ -297,14 +300,19 @@ class HkgAgentFeature(
             val errorMessage = "[CORE CRITICAL] An exception occurred during agent processing: ${e.message}"
             store.dispatch(SessionAction.PostEntry(agentSnapshot.sessionId, "CORE", errorMessage))
         } finally {
-            // --- Post-processing check ---
+            // --- NEW: "Clear Your Inbox, Then Listen" Logic ---
             val latestTranscript = (store.state.value.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions?.get(agentSnapshot.sessionId)?.transcript ?: transcriptSnapshot
-            if (latestTranscript.size > transcriptSnapshot.size && latestTranscript.lastOrNull()?.agentId != agentSnapshot.id) {
-                // New messages arrived. Re-prime immediately.
-                val currentTime = platform.getSystemTimeMillis()
-                store.dispatch(HkgAgentAction._UpdateAgentStatus(agentSnapshot.id, AgentStatus.PRIMED, currentTime, currentTime))
+            val hasNewMessages = latestTranscript.any { it.id > (transcriptSnapshot.lastOrNull()?.id ?: -1) && it.agentId != agentSnapshot.id }
+
+            if (hasNewMessages) {
+                // The inbox is not clear. Immediately re-process the new state.
+                val latestKgState = store.state.value.featureStates["KnowledgeGraphFeature"] as? KnowledgeGraphState ?: kgStateSnapshot
+                val latestAgentState = (store.state.value.featureStates[name] as? HkgAgentFeatureState)?.agents?.get(agentSnapshot.id) ?: agentSnapshot
+                coroutineScope.launch {
+                    triggerAgentResponse(latestAgentState, latestTranscript, latestKgState)
+                }
             } else {
-                // Conversation is quiet. Go back to waiting.
+                // The inbox is clear. It's safe to go idle.
                 store.dispatch(HkgAgentAction._UpdateAgentStatus(agentSnapshot.id, AgentStatus.WAITING, null, null))
             }
         }
@@ -316,24 +324,21 @@ class HkgAgentFeature(
         kgState: KnowledgeGraphState
     ): List<Content> {
         val personaId = agent.hkgPersonaId
-        // This is where the prompt compiler logic would go.
-        // TODO: Integrate PromptCompiler
 
         val history = transcript.map {
             val role = if (it.agentId == "USER" || it.agentId == "CORE") "user" else "model"
             Content(role, listOf(Part(it.content)))
         }
 
-        // --- FIX: Handle "Dumb Mode" by providing a generic prompt ---
         return if (personaId != null) {
-            // This is the full, context-aware prompt build
             val systemPrompt = "You are an AI assistant." // Placeholder for full compilation
             listOf(
                 Content("user", listOf(Part(systemPrompt))),
                 Content("model", listOf(Part("Understood.")))
             ) + history
         } else {
-            // This is the "Dumb Mode" prompt
+            // The "Dumb Mode" prompt should still include history.
+            if (history.isEmpty()) return emptyList() // Don't respond to an empty transcript.
             val systemPrompt = "You are a helpful assistant."
             listOf(
                 Content("user", listOf(Part(systemPrompt))),
