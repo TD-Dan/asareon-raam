@@ -10,9 +10,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.auf.core.StateManager
-import app.auf.ui.ExportView
-import app.auf.ui.HolonInspectorView
-import app.auf.ui.ImportView
 
 @Composable
 fun KnowledgeGraphView(

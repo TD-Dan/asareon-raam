@@ -2,7 +2,7 @@ package app.auf.core
 
 import app.auf.model.SettingValue
 import app.auf.service.BackupManager
-import app.auf.service.SettingsManager
+import app.auf.service.SettingsPersistenceService
 import app.auf.service.SourceCodeService
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
@@ -13,7 +13,7 @@ open class StateManager(
     private val store: Store,
     private val backupManager: BackupManager,
     internal val sourceCodeService: SourceCodeService,
-    val settingsManager: SettingsManager,
+    val settingsPersistenceService: SettingsPersistenceService,
     private val platform: PlatformDependencies,
     private val coroutineScope: CoroutineScope,
     private val features: List<Feature>

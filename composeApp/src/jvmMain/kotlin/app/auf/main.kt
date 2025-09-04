@@ -21,7 +21,7 @@ import app.auf.feature.session.SessionFeature
 import app.auf.feature.session.SessionFeatureState
 import app.auf.feature.systemclock.SystemClockFeature
 import app.auf.feature.systemclock.SystemClockState
-import app.auf.model.UserSettings
+import app.auf.core.UserSettings
 import app.auf.service.*
 import app.auf.ui.App
 import app.auf.util.PlatformDependencies
@@ -82,8 +82,8 @@ fun main() = application {
         allFeatures
     }
 
-    val settingsManager = remember { SettingsManager(platformDependencies, jsonParser, features) }
-    val savedSettings = remember { settingsManager.loadSettings() ?: UserSettings() }
+    val settingsPersistenceService = remember { SettingsPersistenceService(platformDependencies, jsonParser, features) }
+    val savedSettings = remember { settingsPersistenceService.loadSettings() ?: UserSettings() }
 
     val initialState = remember(savedSettings) {
         AppState(
@@ -101,7 +101,7 @@ fun main() = application {
             store = store,
             backupManager = backupManager,
             sourceCodeService = sourceCodeService,
-            settingsManager = settingsManager,
+            settingsPersistenceService = settingsPersistenceService,
             platform = platformDependencies,
             coroutineScope = coroutineScope,
             features = features
@@ -123,7 +123,7 @@ fun main() = application {
                 windowHeight = windowState.size.height.value.toInt(),
                 featureStates = currentState.featureStates
             )
-            settingsManager.saveSettings(currentSettingsToSave)
+            settingsPersistenceService.saveSettings(currentSettingsToSave)
             exitApplication()
         },
         title = "AUF v${Version.APP_VERSION}",

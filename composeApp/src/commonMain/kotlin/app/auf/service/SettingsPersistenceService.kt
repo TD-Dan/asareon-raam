@@ -4,10 +4,10 @@ import app.auf.core.Feature
 import app.auf.model.SettingDefinition
 import app.auf.util.BasePath
 import app.auf.util.PlatformDependencies
-import app.auf.model.UserSettings
+import app.auf.core.UserSettings
 import kotlinx.serialization.json.Json
 
-class SettingsManager(
+class SettingsPersistenceService(
     private val platform: PlatformDependencies,
     private val jsonParser: Json,
     private val features: List<Feature>

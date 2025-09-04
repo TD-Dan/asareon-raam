@@ -1,5 +1,5 @@
 // --- file: commonMain/kotlin/app/auf/ui/ExportView.kt ---
-package app.auf.ui
+package app.auf.feature.knowledgegraph
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,9 +22,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import app.auf.core.StateManager
-import app.auf.feature.knowledgegraph.KnowledgeGraphAction
-import app.auf.feature.knowledgegraph.KnowledgeGraphState
-import app.auf.feature.knowledgegraph.KnowledgeGraphViewMode
 import app.auf.util.PlatformDependencies
 
 @Composable

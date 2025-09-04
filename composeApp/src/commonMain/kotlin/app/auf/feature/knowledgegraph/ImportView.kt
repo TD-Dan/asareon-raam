@@ -1,5 +1,5 @@
 // --- file: commonMain/kotlin/app/auf/ui/ImportView.kt ---
-package app.auf.ui
+package app.auf.feature.knowledgegraph
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,7 +13,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.auf.core.StateManager
-import app.auf.feature.knowledgegraph.*
 import app.auf.util.PlatformDependencies
 
 @Composable

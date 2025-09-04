@@ -1,6 +1,5 @@
-package app.auf.model
+package app.auf.core
 
-import app.auf.core.FeatureState
 import kotlinx.serialization.Serializable
 
 @Serializable

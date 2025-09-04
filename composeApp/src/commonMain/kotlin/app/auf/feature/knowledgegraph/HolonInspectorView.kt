@@ -1,4 +1,4 @@
-package app.auf.ui
+package app.auf.feature.knowledgegraph
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -17,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import app.auf.util.JsonProvider
 import kotlinx.serialization.json.JsonElement
 

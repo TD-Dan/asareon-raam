@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import app.auf.feature.knowledgegraph.Holon as HolonData
 import app.auf.feature.session.Session
 
 // --- 1. MODEL ---

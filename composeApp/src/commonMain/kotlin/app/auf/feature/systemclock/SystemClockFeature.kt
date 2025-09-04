@@ -14,7 +14,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.*
-import app.auf.feature.hkgagent.HkgAgentFeatureState
 import app.auf.feature.session.SessionAction
 import app.auf.model.SettingDefinition
 import app.auf.model.SettingType
