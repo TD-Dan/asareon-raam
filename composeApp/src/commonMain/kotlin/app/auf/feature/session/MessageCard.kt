@@ -45,8 +45,9 @@ import app.auf.core.*
 @Composable
 fun MessageCard(
     entry: LedgerEntry,
+    sessionId: String,
     stateManager: StateManager,
-    rawContentViewIds: Set<Long> // <-- Simplified: No longer needs global state
+    rawContentViewIds: Set<Long>
 ) {
     val clipboardManager = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
@@ -72,7 +73,6 @@ fun MessageCard(
     val guardedCopyContent = "---COPY of ${authorName} entry:---\n${entry.content}\n---END OF COPY---"
     val formattedTimestamp = remember(entry.timestamp) { stateManager.formatDisplayTimestamp(entry.timestamp) }
 
-    // --- SIMPLIFIED LOGIC ---
     val isThisCardRaw = rawContentViewIds.contains(entry.id)
 
     Card(
@@ -126,7 +126,13 @@ fun MessageCard(
                             Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                            DropdownMenuItem(text = { Text("Delete (NYI)") }, onClick = { showMenu = false })
+                            DropdownMenuItem(
+                                text = { Text("Delete") },
+                                onClick = {
+                                    stateManager.dispatch(SessionAction.DeleteEntry(sessionId, entry.id))
+                                    showMenu = false
+                                }
+                            )
                         }
                     }
                 }
@@ -136,7 +142,6 @@ fun MessageCard(
                 Column {
                     Spacer(Modifier.height(8.dp))
                     if (isThisCardRaw) {
-                        // --- UPDATED: Use simplified raw renderer ---
                         RenderRawContent(entry.content)
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -154,9 +159,6 @@ fun MessageCard(
     }
 }
 
-/**
- * --- UPDATED: Simplified raw renderer without title or outer card ---
- */
 @Composable
 fun RenderRawContent(content: String) {
     Text(

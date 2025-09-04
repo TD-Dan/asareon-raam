@@ -1,6 +1,10 @@
 package app.auf.feature.session
 
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import app.auf.core.*
 import app.auf.util.BasePath
 import app.auf.util.PlatformDependencies
@@ -44,6 +48,8 @@ data class LedgerEntry(
 sealed interface SessionAction : AppAction {
     data class CreateSession(val id: String, val name: String) : SessionAction
     data class PostEntry(val sessionId: String, val agentId: String, val content: String) : SessionAction
+    data class DeleteEntry(val sessionId: String, val entryId: Long) : SessionAction
+    data class ClearSession(val sessionId: String) : SessionAction
     data class LoadSessionsSuccess(val sessions: Map<String, Session>) : SessionAction
     data object ToggleRawContentView : SessionAction
     data class ToggleMessageRawView(val entryId: Long) : SessionAction
@@ -100,6 +106,18 @@ class SessionFeature(
                 val updatedSession = targetSession.copy(transcript = updatedTranscript)
                 currentState.copy(sessions = currentState.sessions + (action.sessionId to updatedSession))
             }
+            is SessionAction.DeleteEntry -> {
+                val targetSession = currentState.sessions[action.sessionId] ?: return state
+                val updatedTranscript = targetSession.transcript.filter { it.id != action.entryId }
+                val updatedSession = targetSession.copy(transcript = updatedTranscript)
+                currentState.copy(sessions = currentState.sessions + (action.sessionId to updatedSession))
+            }
+            is SessionAction.ClearSession -> {
+                val targetSession = currentState.sessions[action.sessionId] ?: return state
+                nextEntryIdCounters[action.sessionId] = 0L // Reset the counter for this session
+                val updatedSession = targetSession.copy(transcript = emptyList())
+                currentState.copy(sessions = currentState.sessions + (action.sessionId to updatedSession))
+            }
             is SessionAction.LoadSessionsSuccess -> {
                 action.sessions.values.forEach { session ->
                     val maxId = session.transcript.maxOfOrNull { it.id } ?: 0L
@@ -141,19 +159,19 @@ class SessionFeature(
         coroutineScope.launch(Dispatchers.Main) {
             var lastProcessedEntryId = -1L
             store.state
-                .map { (it.featureStates[name] as? SessionFeatureState)?.sessions?.get("default-session")?.transcript?.lastOrNull() }
+                .map { (it.featureStates[name] as? SessionFeatureState)?.sessions?.get("default-session") }
                 .distinctUntilChanged()
-                .collect { latestEntry ->
-                    if (latestEntry != null && latestEntry.id > lastProcessedEntryId) {
+                .collect { session ->
+                    val latestEntry = session?.transcript?.lastOrNull()
+                    if (session != null && latestEntry != null && latestEntry.id > lastProcessedEntryId) {
                         lastProcessedEntryId = latestEntry.id
                         if (latestEntry.agentId == "USER") {
                             val contentBlocks = blockParser.parse(latestEntry.content)
                             for (block in contentBlocks) {
                                 if (block is CodeBlock) {
-                                    commandInterpreter.interpret(block)?.let { toolCall ->
-                                        when (toolCall.command) {
-                                            "auf_toastMessage" -> store.dispatch(AppAction.ShowToast(toolCall.argument))
-                                        }
+                                    // --- THE FIX: Use the new, more powerful interpreter ---
+                                    commandInterpreter.interpret(block, session.id)?.let { action ->
+                                        store.dispatch(action)
                                     }
                                 }
                             }
@@ -169,6 +187,23 @@ class SessionFeature(
         @Composable
         override fun StageContent(stateManager: StateManager) {
             SessionView(stateManager = stateManager, features = allFeatures)
+        }
+
+        @Composable
+        override fun MenuContent(stateManager: StateManager, onDismiss: () -> Unit) {
+            val appState by stateManager.state.collectAsState()
+            val sessionState = appState.featureStates[name] as? SessionFeatureState
+            val activeSessionId = sessionState?.sessions?.keys?.firstOrNull()
+
+            if (activeSessionId != null) {
+                DropdownMenuItem(
+                    text = { Text("Clear Current Session") },
+                    onClick = {
+                        stateManager.dispatch(SessionAction.ClearSession(activeSessionId))
+                        onDismiss()
+                    }
+                )
+            }
         }
     }
 

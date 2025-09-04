@@ -201,16 +201,22 @@ class HkgAgentFeature(
         // --- Collector 1: The Watcher (Manages Debouncing) ---
         coroutineScope.launch {
             var lastSeenEntryId = -1L
-            val initialTranscriptSize = (store.state.value.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions?.values?.firstOrNull()?.transcript?.size ?: 0
-            if (initialTranscriptSize > 0) {
-                lastSeenEntryId = (store.state.value.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions?.values?.firstOrNull()?.transcript?.last()?.id ?: -1L
-            }
 
             store.state.map {
-                (it.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions?.values?.firstOrNull()?.transcript?.lastOrNull() to
+                (it.featureStates["SessionFeature"] as? SessionFeatureState)?.sessions?.values?.firstOrNull()?.transcript to
                         (it.featureStates[name] as? HkgAgentFeatureState)?.agents?.values?.firstOrNull()
-            }.distinctUntilChanged().collect { (lastEntry, agent) ->
-                if (lastEntry == null || agent == null || lastEntry.id <= lastSeenEntryId) return@collect
+            }.distinctUntilChanged().collect { (transcript, agent) ->
+                if (transcript == null || agent == null) return@collect
+
+                // --- THE FIX: If the transcript is empty, the session was cleared. Reset our tracker. ---
+                if (transcript.isEmpty()) {
+                    lastSeenEntryId = -1L
+                    return@collect
+                }
+
+                val lastEntry = transcript.last()
+
+                if (lastEntry.id <= lastSeenEntryId) return@collect
 
                 lastSeenEntryId = lastEntry.id
                 if (lastEntry.agentId != agent.id && (agent.status == AgentStatus.WAITING || agent.status == AgentStatus.PRIMED)) {

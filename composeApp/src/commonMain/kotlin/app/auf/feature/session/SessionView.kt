@@ -68,7 +68,7 @@ fun SessionView(
     }
 
     val sendMessageAction = {
-        if (userMessage.isNotBlank() && !isAgentProcessing && activeSession != null) {
+        if (userMessage.isNotBlank() && activeSession != null) {
             stateManager.dispatch(SessionAction.PostEntry(
                 sessionId = activeSession.id,
                 agentId = "USER",
@@ -101,6 +101,7 @@ fun SessionView(
                     } else {
                         MessageCard(
                             entry = entry,
+                            sessionId = activeSession.id,
                             stateManager = stateManager,
                             rawContentViewIds = rawContentViewIds
                         )
@@ -126,7 +127,6 @@ fun SessionView(
                 }
             }
             IconButton(onClick = {
-                // --- CORRECTED: Use the unified header function for the copy action ---
                 val rawPrompt = displayedTranscript.joinToString("\n\n---\n\n") { entry ->
                     val timestamp = stateManager.formatDisplayTimestamp(entry.timestamp)
                     generateRawEntry(entry, timestamp)
@@ -162,13 +162,15 @@ fun SessionView(
                         false
                     },
                 placeholder = { Text("Enter message... (Enter to send, Shift+Enter for newline)") },
-                enabled = isChatInputEnabled && !isAgentProcessing
+                enabled = isChatInputEnabled
             )
             Spacer(modifier = Modifier.width(8.dp))
             Button(
-                onClick = { if (isAgentProcessing) stateManager.cancelMessage() else sendMessageAction() },
+                onClick = {
+                    if (isAgentProcessing) stateManager.cancelMessage() else sendMessageAction()
+                },
                 modifier = Modifier.height(56.dp),
-                enabled = isChatInputEnabled,
+                enabled = isChatInputEnabled && userMessage.isNotBlank(),
                 colors = if (isAgentProcessing) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer) else ButtonDefaults.buttonColors()
             ) {
                 if (isAgentProcessing) {
@@ -197,7 +199,6 @@ fun SessionView(
 
 @Composable
 private fun RawTranscriptEntry(entry: LedgerEntry, formattedTimestamp: String) {
-    // --- CORRECTED: Use the unified header function for the raw view rendering ---
     val fullEntryText = remember(entry, formattedTimestamp) {
         generateRawEntry(entry, formattedTimestamp)
     }

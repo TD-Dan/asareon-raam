@@ -1,24 +1,23 @@
 package app.auf.feature.session
 
+import app.auf.core.AppAction
 import app.auf.core.CodeBlock
 
 /**
  * ## Mandate
  * A stateless service that interprets a CodeBlock to determine if it represents a
- * runnable tool command. It is responsible for parsing the command syntax.
+ * runnable tool command. It is responsible for parsing the command syntax and
+ * constructing the appropriate AppAction to be dispatched.
  */
 class CommandInterpreter {
 
     /**
-     * A simple, structured data class to hold the result of a successful command parse.
+     * Attempts to parse an AppAction from a CodeBlock.
+     * @param block The CodeBlock to analyze.
+     * @param sessionId The ID of the current session, required for session-specific actions.
+     * @return An [AppAction] object if the block is a valid and recognized command, otherwise null.
      */
-    data class ToolCall(val command: String, val argument: String)
-
-    /**
-     * Attempts to parse a command from a CodeBlock.
-     * @return A [ToolCall] object if the block is a valid command, otherwise null.
-     */
-    fun interpret(block: CodeBlock): ToolCall? {
+    fun interpret(block: CodeBlock, sessionId: String): AppAction? {
         val commandPrefix = "auf_"
         if (!block.language.startsWith(commandPrefix)) {
             return null
@@ -27,23 +26,24 @@ class CommandInterpreter {
         val command = block.language
         var argument = block.content.trim()
 
-        // --- CORRECTED: Handle multiple argument formats robustly ---
-        // 1. Handle function-call style: ("argument") or ('argument')
+        // Handle multiple argument formats robustly
         if ((argument.startsWith("(\"") && argument.endsWith("\")")) ||
             (argument.startsWith("('") && argument.endsWith("')"))) {
             argument = argument.substring(2, argument.length - 2)
-        }
-        // 2. Handle simple parenthetical wrapping: (argument)
-        else if (argument.startsWith("(") && argument.endsWith(")")) {
+        } else if (argument.startsWith("(") && argument.endsWith(")")) {
             argument = argument.removeSurrounding("(", ")")
-        }
-        // 3. Handle standard quotes: "argument" or 'argument'
-        else if (argument.startsWith("\"") && argument.endsWith("\"")) {
+        } else if (argument.startsWith("\"") && argument.endsWith("\"")) {
             argument = argument.removeSurrounding("\"")
         } else if (argument.startsWith("'") && argument.endsWith("'")) {
             argument = argument.removeSurrounding("'")
         }
 
-        return ToolCall(command, argument)
+        // --- THE FIX: This is now a central "action factory" ---
+        return when (command) {
+            "auf_toastMessage" -> AppAction.ShowToast(argument)
+            "auf_clearSession" -> SessionAction.ClearSession(sessionId)
+            // Add other commands here in the future
+            else -> null // Command not recognized
+        }
     }
 }
