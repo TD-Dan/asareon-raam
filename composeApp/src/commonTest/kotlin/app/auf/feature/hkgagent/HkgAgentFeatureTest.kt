@@ -19,6 +19,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
@@ -70,7 +71,25 @@ class HkgAgentFeatureTest {
         fakeGateway = FakeAgentGateway("This is the fake AI response.")
 
         val features = mutableListOf<Feature>()
-        val fakeKgService = object : KnowledgeGraphService(platform) {}
+
+        // --- FIX: Give the KG service a valid persona file to load ---
+        platform.writeFileContent(
+            "/fake/holons/test-persona-1/test-persona-1.json",
+            """
+            {
+              "header": {
+                "id": "test-persona-1",
+                "type": "AI_Persona_Root",
+                "name": "Test Persona",
+                "summary": "A fake persona for testing.",
+                "version": "1.0"
+              },
+              "payload": {}
+            }
+            """.trimIndent()
+        )
+        val fakeKgService = KnowledgeGraphService(platform)
+
 
         agentFeature = HkgAgentFeature(fakeGateway, promptCompiler, platform, jsonParser, testScope)
         sessionFeature = SessionFeature(platform, jsonParser, testScope, features)
@@ -114,7 +133,6 @@ class HkgAgentFeatureTest {
         // --- ACT 2: Advance time past the initial wait delay ---
         val delayMillis = initialAgent.initialWaitMillis + 1
         testScope.testScheduler.advanceTimeBy(delayMillis)
-        // --- FIX: Manually advance the fake platform's clock to match the scheduler's ---
         platform.currentTime += delayMillis
         runCurrent() // Allow the timer check loop and subsequent gateway call to execute
 
@@ -124,11 +142,10 @@ class HkgAgentFeatureTest {
         assertEquals(AgentStatus.PROCESSING, processingAgent.status, "Agent should be PROCESSING after the delay.")
         assertEquals(1, fakeGateway.callCount, "AgentGateway should have been called exactly once.")
         assertNotNull(fakeGateway.lastRequest, "Gateway should have received a request.")
-        // NOTE: The test prompt builder is a placeholder. If integrated, this needs updating.
-        // For now, we confirm it's not empty and has the correct final message.
-        assert(fakeGateway.lastRequest!!.contents.isNotEmpty()) { "Request should contain prompt contents." }
+        // --- FIX: Use assertTrue for clarity ---
+        assertTrue(fakeGateway.lastRequest!!.contents.isNotEmpty(), "Request should contain prompt contents.")
 
-        
+
         // --- ACT 3: The gateway "responds" and the feature posts the new entry and resets ---
         runCurrent()
 

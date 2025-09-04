@@ -14,6 +14,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.*
+import app.auf.feature.hkgagent.HkgAgentFeatureState
 import app.auf.feature.session.SessionAction
 import app.auf.model.SettingDefinition
 import app.auf.model.SettingType
@@ -97,53 +98,5 @@ class SystemClockFeature(
             SettingDefinition("clock.isEnabled", "System Clock", "Enable Autonomous TICK", "When enabled, the application will periodically post a TICK message to the session, allowing agents to perform background introspection.", SettingType.BOOLEAN),
             SettingDefinition("clock.intervalMillis", "System Clock", "TICK Interval (milliseconds)", "The time in milliseconds between each autonomous TICK message.", SettingType.NUMERIC_LONG)
         )
-
-        @Composable
-        override fun SettingsContent(stateManager: StateManager) {
-            val appState by stateManager.state.collectAsState()
-            val clockState = appState.featureStates[name] as? SystemClockState ?: SystemClockState()
-
-            settingDefinitions.forEach { definition ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                        Text(definition.label, fontWeight = FontWeight.SemiBold)
-                        Text(definition.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 14.sp)
-                    }
-
-                    when (definition.type) {
-                        SettingType.BOOLEAN -> {
-                            Switch(
-                                checked = clockState.isEnabled,
-                                onCheckedChange = { newValue ->
-                                    stateManager.updateSetting(SettingValue(key = definition.key, value = newValue))
-                                }
-                            )
-                        }
-                        SettingType.NUMERIC_LONG -> {
-                            var textValue by remember(clockState.intervalMillis) { mutableStateOf(clockState.intervalMillis.toString()) }
-                            OutlinedTextField(
-                                value = textValue,
-                                onValueChange = {
-                                    val filtered = it.filter { char -> char.isDigit() }
-                                    if (filtered.length <= 18) {
-                                        textValue = filtered
-                                        filtered.toLongOrNull()?.let { longValue ->
-                                            stateManager.updateSetting(SettingValue(key = definition.key, value = longValue))
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.width(150.dp),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true
-                            )
-                        }
-                    }
-                }
-            }
-        }
     }
 }

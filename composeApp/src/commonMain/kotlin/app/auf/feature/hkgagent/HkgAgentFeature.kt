@@ -280,7 +280,9 @@ class HkgAgentFeature(
         try {
             val promptContents = _buildPromptContents(agentSnapshot, transcriptSnapshot, kgStateSnapshot)
             if (promptContents.isEmpty()) {
-                return // Don't respond if there is no persona selected (dumb mode).
+                // This case should no longer be hit with the "dumb model" logic, but is a good safeguard.
+                store.dispatch(HkgAgentAction._UpdateAgentStatus(agentSnapshot.id, AgentStatus.WAITING, null, null))
+                return
             }
             val request = AgentRequest(agentSnapshot.selectedModel, promptContents)
             val response = agentGateway.generateContent(request)
@@ -313,20 +315,31 @@ class HkgAgentFeature(
         transcript: List<LedgerEntry>,
         kgState: KnowledgeGraphState
     ): List<Content> {
-        val personaId = agent.hkgPersonaId ?: return emptyList() // "Dumb mode"
+        val personaId = agent.hkgPersonaId
         // This is where the prompt compiler logic would go.
-        // For now, a simplified version.
         // TODO: Integrate PromptCompiler
-        val systemPrompt = "You are an AI assistant." // Placeholder
+
         val history = transcript.map {
             val role = if (it.agentId == "USER" || it.agentId == "CORE") "user" else "model"
             Content(role, listOf(Part(it.content)))
         }
-        // A basic prompt structure for now
-        return listOf(
-            Content("user", listOf(Part(systemPrompt))),
-            Content("model", listOf(Part("Understood.")))
-        ) + history
+
+        // --- FIX: Handle "Dumb Mode" by providing a generic prompt ---
+        return if (personaId != null) {
+            // This is the full, context-aware prompt build
+            val systemPrompt = "You are an AI assistant." // Placeholder for full compilation
+            listOf(
+                Content("user", listOf(Part(systemPrompt))),
+                Content("model", listOf(Part("Understood.")))
+            ) + history
+        } else {
+            // This is the "Dumb Mode" prompt
+            val systemPrompt = "You are a helpful assistant."
+            listOf(
+                Content("user", listOf(Part(systemPrompt))),
+                Content("model", listOf(Part("Understood.")))
+            ) + history
+        }
     }
 
     inner class HkgAgentComposableProvider : Feature.ComposableProvider {
@@ -407,77 +420,6 @@ class HkgAgentFeature(
                             )
                         }
                     }
-                }
-            }
-        }
-
-        @Composable
-        override fun SettingsContent(stateManager: StateManager) {
-            val appState by stateManager.state.collectAsState()
-            val agentState = (appState.featureStates[name] as? HkgAgentFeatureState)?.agents?.values?.firstOrNull() ?: return
-
-            // --- FIX: Render UI for ALL settings this feature defines, not just a subset ---
-            val compilerSettings = agentState.compilerSettings
-
-            // --- Compiler Settings UI ---
-            settingDefinitions.filter { it.key.startsWith("compiler.") }.forEach { definition ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                        Text(definition.label, fontWeight = FontWeight.SemiBold)
-                        Text(definition.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 14.sp)
-                    }
-                    val isChecked = when (definition.key) {
-                        "compiler.removeWhitespace" -> compilerSettings.removeWhitespace
-                        "compiler.cleanHeaders" -> compilerSettings.cleanHeaders
-                        "compiler.minifyJson" -> compilerSettings.minifyJson
-                        else -> false
-                    }
-                    Switch(
-                        checked = isChecked,
-                        onCheckedChange = { newValue ->
-                            stateManager.dispatch(HkgAgentAction.UpdateCompilerSetting(SettingValue(key = definition.key, value = newValue)))
-                        }
-                    )
-                }
-            }
-
-            // --- Agent Timings UI ---
-            settingDefinitions.filter { it.key.startsWith("agent.") }.forEach { definition ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                        Text(definition.label, fontWeight = FontWeight.SemiBold)
-                        Text(definition.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 14.sp)
-                    }
-
-                    val currentValue = when(definition.key) {
-                        "agent.initialWaitMillis" -> agentState.initialWaitMillis
-                        "agent.maxWaitMillis" -> agentState.maxWaitMillis
-                        else -> 0L
-                    }
-
-                    var textValue by remember(currentValue) { mutableStateOf(currentValue.toString()) }
-                    OutlinedTextField(
-                        value = textValue,
-                        onValueChange = {
-                            val filtered = it.filter { char -> char.isDigit() }
-                            if (filtered.length <= 18) {
-                                textValue = filtered
-                                filtered.toLongOrNull()?.let { longValue ->
-                                    stateManager.dispatch(HkgAgentAction.UpdateTimingSetting(SettingValue(key = definition.key, value = longValue)))
-                                }
-                            }
-                        },
-                        modifier = Modifier.width(150.dp),
-                        singleLine = true
-                    )
                 }
             }
         }
