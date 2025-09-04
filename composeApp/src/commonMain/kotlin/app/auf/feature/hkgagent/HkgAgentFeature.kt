@@ -351,6 +351,19 @@ class HkgAgentFeature(
             SettingDefinition("agent.maxWaitMillis", "Agent Timings", "Max Wait (ms)", "The maximum time the agent will wait after the first message in a series before replying, regardless of new messages.", SettingType.NUMERIC_LONG)
         )
 
+        override fun getSettingValue(state: AppState, key: String): Any? {
+            val featureState = state.featureStates[name] as? HkgAgentFeatureState ?: return null
+            val agent = featureState.agents.values.firstOrNull() ?: return null
+            return when (key) {
+                "compiler.removeWhitespace" -> agent.compilerSettings.removeWhitespace
+                "compiler.cleanHeaders" -> agent.compilerSettings.cleanHeaders
+                "compiler.minifyJson" -> agent.compilerSettings.minifyJson
+                "agent.initialWaitMillis" -> agent.initialWaitMillis
+                "agent.maxWaitMillis" -> agent.maxWaitMillis
+                else -> null
+            }
+        }
+
         @Composable
         override fun SessionHeader(stateManager: StateManager) {
             val appState by stateManager.state.collectAsState()

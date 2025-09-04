@@ -1,8 +1,6 @@
 package app.auf.service
 
-import app.auf.core.Feature
 import app.auf.core.UserSettings
-import app.auf.model.SettingDefinition
 import app.auf.util.BasePath
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.Json
@@ -10,7 +8,6 @@ import kotlinx.serialization.json.Json
 class SettingsPersistenceService(
     private val platform: PlatformDependencies,
     private val jsonParser: Json,
-    private val features: List<Feature>
 ) {
     private val settingsFilePath: String
 
@@ -38,11 +35,5 @@ class SettingsPersistenceService(
             println("Error loading settings file. It might be corrupt. Using defaults. Error: ${e.message}")
             null
         }
-    }
-
-    // This method is no longer used by the new SettingsView, but is kept for potential future use.
-    // It correctly looks inside the composableProvider.
-    fun getSettingDefinitions(): List<SettingDefinition> {
-        return features.flatMap { it.composableProvider?.settingDefinitions ?: emptyList() }
     }
 }

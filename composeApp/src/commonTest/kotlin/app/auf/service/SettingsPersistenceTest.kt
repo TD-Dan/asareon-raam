@@ -1,8 +1,6 @@
 package app.auf.service
 
 import app.auf.core.*
-import app.auf.feature.hkgagent.HkgAgentFeatureState
-import app.auf.feature.systemclock.SystemClockState
 import app.auf.util.fakes.FakePlatformDependencies
 import kotlin.test.*
 import kotlinx.serialization.Serializable
@@ -13,88 +11,81 @@ import kotlinx.serialization.modules.subclass
 
 class SettingsPersistenceServiceTest {
 
-    // --- Test Doubles: Replicating a minimal feature set for state serialization ---
+    // --- Test Doubles: Self-contained fakes, local to this test file ---
+
     @Serializable
-    data class TestFeatureState(val value: String) : FeatureState
-    class TestFeature : Feature {
-        override val name: String = "TestFeature"
-    }
+    data class WidgetFeatureState(val count: Int) : FeatureState
+    class WidgetFeature : Feature { override val name: String = "WidgetFeature" }
+
+    @Serializable
+    data class GadgetFeatureState(val name: String, val isEnabled: Boolean) : FeatureState
+    class GadgetFeature : Feature { override val name: String = "GadgetFeature" }
 
     private lateinit var platform: FakePlatformDependencies
     private lateinit var jsonParser: Json
     private lateinit var settingsPersistenceService: SettingsPersistenceService
-    private lateinit var testFeatures: List<Feature>
 
     private val settingsFilePath = "/fake/settings/user_settings.json"
 
     @BeforeTest
     fun setup() {
         platform = FakePlatformDependencies()
-        testFeatures = listOf(TestFeature()) // Keep it simple for most tests
 
-        // CRITICAL: The JSON parser for tests MUST know about all possible FeatureState subclasses.
+        // CRITICAL: The JSON parser for this test ONLY knows about the local fakes.
+        // It has NO knowledge of SystemClockState, HkgAgentState, etc.
         jsonParser = Json {
             prettyPrint = true
             ignoreUnknownKeys = true
             serializersModule = SerializersModule {
                 polymorphic(FeatureState::class) {
-                    subclass(TestFeatureState::class)
-                    subclass(SystemClockState::class)
-                    subclass(HkgAgentFeatureState::class)
-                    // Add other real feature states here if needed for more complex tests
+                    subclass(WidgetFeatureState::class)
+                    subclass(GadgetFeatureState::class)
                 }
             }
         }
 
-        // We initialize the service in each test to control the setup.
+        // Initialize the service with its new, leaner constructor.
+        settingsPersistenceService = SettingsPersistenceService(platform, jsonParser)
     }
 
     @Test
-    fun `saveSettings and loadSettings correctly persist and restore complex UserSettings`() {
+    fun `saveSettings and loadSettings correctly persist and restore UserSettings with local fakes`() {
         // --- ARRANGE ---
-        settingsPersistenceService = SettingsPersistenceService(platform, jsonParser, testFeatures)
-
-        // Create a complex state object that mimics the real application's structure
+        // Create a complex state object using ONLY the locally defined fake states.
         val originalSettings = UserSettings(
             windowWidth = 1280,
             windowHeight = 720,
             featureStates = mapOf(
-                "TestFeature" to TestFeatureState("some data"),
-                "SystemClockFeature" to SystemClockState(isEnabled = true, intervalMillis = 99000L),
-                "HkgAgentFeature" to HkgAgentFeatureState() // Include a default state for another feature
+                "WidgetFeature" to WidgetFeatureState(count = 42),
+                "GadgetFeature" to GadgetFeatureState(name = "Zapper", isEnabled = true)
             )
         )
 
         // --- ACT ---
-        // 1. Save the settings object to the fake file system.
         settingsPersistenceService.saveSettings(originalSettings)
-
-        // 2. Load the settings back from the fake file system.
         val loadedSettings = settingsPersistenceService.loadSettings()
 
         // --- ASSERT ---
-        // Assert that a file was actually created at the correct path.
         assertTrue(platform.fileExists(settingsFilePath), "Settings file should have been created.")
-
-        // Assert that the loaded object is not null and is identical to the original.
         assertNotNull(loadedSettings, "Loaded settings should not be null.")
         assertEquals(originalSettings, loadedSettings, "Loaded settings should be equal to the original settings.")
 
-        // Go one step further and verify the types of the deserialized feature states.
-        assertIs<TestFeatureState>(loadedSettings.featureStates["TestFeature"])
-        assertIs<SystemClockState>(loadedSettings.featureStates["SystemClockFeature"])
-        assertEquals(99000L, (loadedSettings.featureStates["SystemClockFeature"] as SystemClockState).intervalMillis)
+        // Verify the types of the deserialized feature states.
+        val loadedWidgetState = loadedSettings.featureStates["WidgetFeature"]
+        val loadedGadgetState = loadedSettings.featureStates["GadgetFeature"]
+        assertIs<WidgetFeatureState>(loadedWidgetState)
+        assertIs<GadgetFeatureState>(loadedGadgetState)
+
+        // Verify the content of the deserialized states.
+        assertEquals(42, loadedWidgetState.count)
+        assertEquals(true, loadedGadgetState.isEnabled)
+        assertEquals("Zapper", loadedGadgetState.name)
     }
 
     @Test
     fun `loadSettings returns null when the settings file does not exist`() {
-        // --- ARRANGE ---
-        // Initialize with a fresh, empty platform
-        settingsPersistenceService = SettingsPersistenceService(platform, jsonParser, testFeatures)
-
         // --- ACT ---
         val loadedSettings = settingsPersistenceService.loadSettings()
-
         // --- ASSERT ---
         assertNull(loadedSettings, "Should return null when no settings file exists.")
     }
@@ -102,13 +93,9 @@ class SettingsPersistenceServiceTest {
     @Test
     fun `loadSettings returns null when the settings file is corrupt`() {
         // --- ARRANGE ---
-        // Pre-populate the fake file system with invalid JSON.
         platform.writeFileContent(settingsFilePath, "{ \"windowWidth\": 1024, \"windowHeight\": \"not-a-number\" }")
-        settingsPersistenceService = SettingsPersistenceService(platform, jsonParser, testFeatures)
-
         // --- ACT ---
         val loadedSettings = settingsPersistenceService.loadSettings()
-
         // --- ASSERT ---
         assertNull(loadedSettings, "Should return null for a corrupt settings file to prevent crashing.")
     }
@@ -118,11 +105,10 @@ class SettingsPersistenceServiceTest {
         // --- ARRANGE ---
         val settingsDirPath = "/fake/settings"
         assertFalse(platform.directories.contains(settingsDirPath), "Precondition: Directory should not exist.")
-
         // --- ACT ---
-        // The directory creation happens in the `init` block of the class.
-        settingsPersistenceService = SettingsPersistenceService(platform, jsonParser, testFeatures)
-
+        // The directory creation happens in the `init` block, which is called in setup().
+        // This test re-instantiates to make the check explicit.
+        SettingsPersistenceService(platform, jsonParser)
         // --- ASSERT ---
         assertTrue(platform.directories.contains(settingsDirPath), "Settings directory should have been created on initialization.")
     }

@@ -81,9 +81,17 @@ interface Feature {
         @Composable
         fun MenuContent(stateManager: StateManager, onDismiss: () -> Unit) {}
 
-        // This is a temporary solution to make settings discoverable
-        // A better approach might be a direct property on the Feature interface itself.
+        /**
+         * The list of settings this feature exposes to the UI.
+         */
         val settingDefinitions: List<SettingDefinition>
             get() = emptyList()
+
+        /**
+         * A new, required function to decouple the view from the state.
+         * The feature itself is responsible for finding the correct value within its
+         * own state slice, given the global AppState.
+         */
+        fun getSettingValue(state: AppState, key: String): Any? = null
     }
 }

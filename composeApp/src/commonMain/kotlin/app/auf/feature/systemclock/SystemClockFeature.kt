@@ -98,5 +98,14 @@ class SystemClockFeature(
             SettingDefinition("clock.isEnabled", "System Clock", "Enable Autonomous TICK", "When enabled, the application will periodically post a TICK message to the session, allowing agents to perform background introspection.", SettingType.BOOLEAN),
             SettingDefinition("clock.intervalMillis", "System Clock", "TICK Interval (milliseconds)", "The time in milliseconds between each autonomous TICK message.", SettingType.NUMERIC_LONG)
         )
+
+        override fun getSettingValue(state: AppState, key: String): Any? {
+            val featureState = state.featureStates[name] as? SystemClockState ?: return null
+            return when (key) {
+                "clock.isEnabled" -> featureState.isEnabled
+                "clock.intervalMillis" -> featureState.intervalMillis
+                else -> null
+            }
+        }
     }
 }

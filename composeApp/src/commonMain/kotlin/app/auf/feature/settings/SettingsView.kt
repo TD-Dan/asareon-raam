@@ -14,9 +14,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.Feature
 import app.auf.core.StateManager
-import app.auf.feature.hkgagent.HkgAgentFeatureState
-import app.auf.feature.hkgagent.HkgAgentState
-import app.auf.feature.systemclock.SystemClockState
 import app.auf.model.SettingDefinition
 import app.auf.model.SettingType
 import app.auf.model.SettingValue
@@ -70,7 +67,8 @@ fun SettingsView(
                 items(definitions, key = { it.key }) { definition ->
                     SettingRow(
                         definition = definition,
-                        stateManager = stateManager
+                        stateManager = stateManager,
+                        features = features
                     )
                 }
             }
@@ -81,39 +79,18 @@ fun SettingsView(
 @Composable
 private fun SettingRow(
     definition: SettingDefinition,
-    stateManager: StateManager
+    stateManager: StateManager,
+    features: List<Feature>
 ) {
     val appState by stateManager.state.collectAsState()
 
-    // --- NEW: Centralized logic to get the current value for any setting key ---
-    val currentValue = remember(appState, definition.key) {
-        // Find the feature that owns this setting to get its state
-        val featureName = features.find { f ->
-            f.composableProvider?.settingDefinitions?.any { it.key == definition.key } ?: false
-        }?.name ?: ""
-
-        val featureState = appState.featureStates[featureName]
-
-        // This is a bit verbose, but it's a safe way to extract the specific value
-        when (featureState) {
-            is SystemClockState -> when (definition.key) {
-                "clock.isEnabled" -> featureState.isEnabled
-                "clock.intervalMillis" -> featureState.intervalMillis
-                else -> null
-            }
-            is HkgAgentFeatureState -> {
-                val agent = featureState.agents.values.firstOrNull() ?: return@remember null
-                when (definition.key) {
-                    "compiler.removeWhitespace" -> agent.compilerSettings.removeWhitespace
-                    "compiler.cleanHeaders" -> agent.compilerSettings.cleanHeaders
-                    "compiler.minifyJson" -> agent.compilerSettings.minifyJson
-                    "agent.initialWaitMillis" -> agent.initialWaitMillis
-                    "agent.maxWaitMillis" -> agent.maxWaitMillis
-                    else -> null
-                }
-            }
-            else -> null
+    val currentValue = remember(appState, definition.key, features) {
+        // 1. Find the feature that owns this setting definition.
+        val ownerFeature = features.find { feature: Feature ->
+            feature.composableProvider?.settingDefinitions?.any { it.key == definition.key } ?: false
         }
+        // 2. Ask that feature's provider for the current value from the AppState.
+        ownerFeature?.composableProvider?.getSettingValue(appState, definition.key)
     }
 
     Row(

@@ -86,7 +86,7 @@ fun main() = application {
         allFeatures
     }
 
-    val settingsPersistenceService = remember { SettingsPersistenceService(platformDependencies, jsonParser, features) }
+    val settingsPersistenceService = remember { SettingsPersistenceService(platformDependencies, jsonParser) }
     val savedSettings = remember { settingsPersistenceService.loadSettings() ?: UserSettings() }
 
     val initialState = remember(savedSettings) {
