@@ -58,18 +58,30 @@ open class FakePlatformDependencies : PlatformDependencies() {
             }
         }
         return directChildren.map { childName ->
-            val fullPath = "$pathWithSeparator$childName"
+            val fullPath = "$pathWithSeparator$childName".removeSuffix("/")
             FileEntry(fullPath, directories.contains(fullPath))
         }
     }
 
     override fun createDirectories(path: String) {
+        // --- FIX: Correctly handle absolute paths and build the hierarchy ---
         var currentPath = ""
-        path.split(pathSeparator).forEach { part ->
+        val parts = path.split(pathSeparator)
+        // Handle the root directory for absolute paths
+        if (path.startsWith(pathSeparator)) {
+            currentPath = pathSeparator.toString()
+        }
+
+        for (part in parts) {
             if (part.isNotEmpty()) {
-                currentPath += "$part$pathSeparator"
-                // Trim trailing separator for the set
-                directories.add(currentPath.removeSuffix(pathSeparator.toString()))
+                currentPath = if (currentPath.endsWith(pathSeparator)) {
+                    "$currentPath$part"
+                } else if (currentPath.isEmpty()){
+                    part
+                } else {
+                    "$currentPath$pathSeparator$part"
+                }
+                directories.add(currentPath)
             }
         }
     }

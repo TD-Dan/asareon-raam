@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import app.auf.feature.knowledgegraph.Holon as HolonData
 import app.auf.feature.session.Session
 
 // --- 1. MODEL ---
@@ -415,7 +416,36 @@ class HkgAgentFeature(
             val appState by stateManager.state.collectAsState()
             val agentState = (appState.featureStates[name] as? HkgAgentFeatureState)?.agents?.values?.firstOrNull() ?: return
 
-            // We only want the timing settings here.
+            // --- FIX: Render UI for ALL settings this feature defines, not just a subset ---
+            val compilerSettings = agentState.compilerSettings
+
+            // --- Compiler Settings UI ---
+            settingDefinitions.filter { it.key.startsWith("compiler.") }.forEach { definition ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                        Text(definition.label, fontWeight = FontWeight.SemiBold)
+                        Text(definition.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 14.sp)
+                    }
+                    val isChecked = when (definition.key) {
+                        "compiler.removeWhitespace" -> compilerSettings.removeWhitespace
+                        "compiler.cleanHeaders" -> compilerSettings.cleanHeaders
+                        "compiler.minifyJson" -> compilerSettings.minifyJson
+                        else -> false
+                    }
+                    Switch(
+                        checked = isChecked,
+                        onCheckedChange = { newValue ->
+                            stateManager.dispatch(HkgAgentAction.UpdateCompilerSetting(SettingValue(key = definition.key, value = newValue)))
+                        }
+                    )
+                }
+            }
+
+            // --- Agent Timings UI ---
             settingDefinitions.filter { it.key.startsWith("agent.") }.forEach { definition ->
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),

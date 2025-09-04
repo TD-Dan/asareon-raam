@@ -1,10 +1,10 @@
 package app.auf.service
 
 import app.auf.core.Feature
+import app.auf.core.UserSettings
 import app.auf.model.SettingDefinition
 import app.auf.util.BasePath
 import app.auf.util.PlatformDependencies
-import app.auf.core.UserSettings
 import kotlinx.serialization.json.Json
 
 class SettingsPersistenceService(
@@ -40,9 +40,8 @@ class SettingsPersistenceService(
         }
     }
 
-    // --- CORRECTED ---
-    // This method is no longer used by the new SettingsView, but is fixed here for correctness.
-    // It now correctly looks inside the composableProvider.
+    // This method is no longer used by the new SettingsView, but is kept for potential future use.
+    // It correctly looks inside the composableProvider.
     fun getSettingDefinitions(): List<SettingDefinition> {
         return features.flatMap { it.composableProvider?.settingDefinitions ?: emptyList() }
     }
