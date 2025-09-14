@@ -61,12 +61,11 @@ interface Feature {
          */
 
         /**
-         * A slot for adding controls to the header of the main SessionView.
-         * Used by features like HkgAgentFeature to provide model/persona selectors.
-         * TODO: This is not a great way to implement this. This introduces feature awareness to the core...
+         * Renders the UI for an active agent turn. This is the core of the "Agent on the Stage"
+         * model, allowing the SessionView to remain ignorant of any specific agent's UI.
          */
         @Composable
-        fun SessionHeader(stateManager: StateManager) {}
+        fun TurnView(stateManager: StateManager, turnId: String) {}
 
         /**
          * A slot for adding DropdownMenuItems to the main application menu.
