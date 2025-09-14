@@ -1,4 +1,4 @@
-package app.auf.feature.hkgagent
+package app.auf.feature.agent
 
 import kotlinx.serialization.Serializable
 

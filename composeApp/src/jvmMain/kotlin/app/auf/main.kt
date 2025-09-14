@@ -8,19 +8,17 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import app.auf.core.*
-import app.auf.feature.hkgagent.AgentGateway
-import app.auf.feature.hkgagent.GatewayGemini
-import app.auf.feature.hkgagent.HkgAgentFeature
+import app.auf.feature.agent.AgentRuntimeFeature
+import app.auf.feature.agent.AgentGateway
+import app.auf.feature.agent.GatewayGemini
 import app.auf.feature.hkgagent.HkgAgentFeatureState
-import app.auf.feature.hkgagent.PromptCompiler
+import app.auf.feature.agent.PromptCompiler
 import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.feature.knowledgegraph.KnowledgeGraphService
 import app.auf.feature.knowledgegraph.KnowledgeGraphState
 import app.auf.feature.settings.SettingsFeature
 import app.auf.feature.session.SessionFeature
 import app.auf.feature.session.SessionFeatureState
-import app.auf.feature.systemclock.SystemClockFeature
-import app.auf.feature.systemclock.SystemClockState
 import app.auf.service.*
 import app.auf.ui.App
 import app.auf.util.PlatformDependencies
@@ -49,8 +47,8 @@ fun main() = application {
             encodeDefaults = true
             serializersModule = SerializersModule {
                 polymorphic(FeatureState::class) {
-                    subclass(SystemClockState::class)
-                    subclass(HkgAgentFeatureState::class)
+                    // REMOVED: subclass(SystemClockState::class)
+                    subclass(HkgAgentFeatureState::class) // REUSED by AgentRuntimeFeature
                     subclass(KnowledgeGraphState::class)
                     subclass(SessionFeatureState::class)
                 }
@@ -77,11 +75,12 @@ fun main() = application {
         val allFeatures = mutableListOf<Feature>()
 
         allFeatures.addAll(listOf(
-            SystemClockFeature(coroutineScope),
+            // REMOVED: SystemClockFeature(coroutineScope),
+            // REMOVED: HkgAgentFeature(...),
+            AgentRuntimeFeature(agentGateway, platformDependencies, coroutineScope), // ADDED
             KnowledgeGraphFeature(knowledgeGraphService, coroutineScope),
-            HkgAgentFeature(agentGateway, promptCompiler, platformDependencies, jsonParser, coroutineScope),
             SessionFeature(platformDependencies, jsonParser, coroutineScope, allFeatures),
-            SettingsFeature(allFeatures) // Add the new feature here
+            SettingsFeature(allFeatures)
         ))
         allFeatures
     }

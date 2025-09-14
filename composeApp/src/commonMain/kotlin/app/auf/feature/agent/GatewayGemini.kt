@@ -1,4 +1,4 @@
-package app.auf.feature.hkgagent
+package app.auf.feature.agent
 
 import io.ktor.client.*
 import io.ktor.client.call.*

@@ -1,6 +1,10 @@
 package app.auf.feature.hkgagent
 
 import app.auf.core.*
+import app.auf.feature.agent.AgentGateway
+import app.auf.feature.agent.AgentRequest
+import app.auf.feature.agent.AgentResponse
+import app.auf.feature.agent.PromptCompiler
 import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.feature.knowledgegraph.KnowledgeGraphService
 import app.auf.feature.settings.SettingsFeature

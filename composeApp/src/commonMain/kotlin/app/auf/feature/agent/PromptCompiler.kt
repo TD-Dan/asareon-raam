@@ -1,11 +1,10 @@
-package app.auf.feature.hkgagent
+package app.auf.feature.agent
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.put
 
 /**
  * A simple data class to hold the statistics from a compilation pass.
