@@ -11,7 +11,7 @@ import app.auf.core.*
 import app.auf.feature.agent.AgentRuntimeFeature
 import app.auf.feature.agent.AgentGateway
 import app.auf.feature.agent.GatewayGemini
-import app.auf.feature.hkgagent.HkgAgentFeatureState
+import app.auf.feature.agent.AgentRuntimeFeatureState // CORRECTED IMPORT
 import app.auf.feature.agent.PromptCompiler
 import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.feature.knowledgegraph.KnowledgeGraphService
@@ -47,8 +47,7 @@ fun main() = application {
             encodeDefaults = true
             serializersModule = SerializersModule {
                 polymorphic(FeatureState::class) {
-                    // REMOVED: subclass(SystemClockState::class)
-                    subclass(HkgAgentFeatureState::class) // REUSED by AgentRuntimeFeature
+                    subclass(AgentRuntimeFeatureState::class) // CORRECTED SUBCLASS
                     subclass(KnowledgeGraphState::class)
                     subclass(SessionFeatureState::class)
                 }
@@ -75,9 +74,7 @@ fun main() = application {
         val allFeatures = mutableListOf<Feature>()
 
         allFeatures.addAll(listOf(
-            // REMOVED: SystemClockFeature(coroutineScope),
-            // REMOVED: HkgAgentFeature(...),
-            AgentRuntimeFeature(agentGateway, platformDependencies, coroutineScope), // ADDED
+            AgentRuntimeFeature(agentGateway, platformDependencies, coroutineScope),
             KnowledgeGraphFeature(knowledgeGraphService, coroutineScope),
             SessionFeature(platformDependencies, jsonParser, coroutineScope, allFeatures),
             SettingsFeature(allFeatures)

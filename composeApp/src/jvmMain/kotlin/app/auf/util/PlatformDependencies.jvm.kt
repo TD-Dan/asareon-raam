@@ -13,6 +13,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.UUID // ADDED IMPORT
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import javax.swing.JFileChooser
@@ -22,7 +23,7 @@ import com.sun.jna.Platform
 /**
  * The actual JVM implementation of the PlatformDependencies contract.
  *
- * @version 2.6
+ * @version 2.7
  * @since 2025-08-17
  */
 actual open class PlatformDependencies {
@@ -121,7 +122,6 @@ actual open class PlatformDependencies {
         }
     }
 
-    // --- MODIFIED: Implemented the new function ---
     actual open fun selectDirectoryPath(): String? {
         val fileChooser = JFileChooser(FileSystemView.getFileSystemView().homeDirectory).apply {
             dialogTitle = "Select Directory"
@@ -138,6 +138,8 @@ actual open class PlatformDependencies {
     // --- System Utilities ---
 
     actual open fun getSystemTimeMillis(): Long = System.currentTimeMillis()
+
+    actual open fun generateUUID(): String = UUID.randomUUID().toString() // ADDED THIS FUNCTION
 
     actual open fun formatIsoTimestamp(timestamp: Long): String {
         return isoFormatter.format(Date(timestamp))

@@ -8,89 +8,66 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import app.auf.core.*
+import app.auf.feature.session.LedgerEntry
+import app.auf.feature.session.SessionFeatureState
 import app.auf.model.SettingDefinition
 import app.auf.model.SettingType
-import app.auf.model.SettingValue
+import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
-// --- 1. ACTIONS ---
-// Actions are now a mix of internal state updates and external configuration commands.
-internal sealed interface AgentRuntimeAction : AppAction {
-    // Internal state machine actions
-    data class _UpdateStatus(val status: AgentStatus) : AgentRuntimeAction
-    data class _SetActiveTurn(val turnId: String?) : AgentRuntimeAction
-
-    // Configuration actions from UI
-    data class SelectHkgPersona(val hkgPersonaId: String?) : AgentRuntimeAction
-    data class SelectModel(val modelName: String) : AgentRuntimeAction
-    data class UpdateCompilerSetting(val setting: SettingValue) : AgentRuntimeAction
-    data class UpdateTimingSetting(val setting: SettingValue) : AgentRuntimeAction
-    data class SetAvailableModels(val models: List<String>) : AgentRuntimeAction
+// --- 1. INTERNAL ACTIONS ---
+private sealed interface AgentRuntimeInternalAction : AppAction {
+    data class _UpdateStatus(val status: AgentStatus) : AgentRuntimeInternalAction
+    data class _SetProcessingJob(val job: Job?, val turnId: String?) : AgentRuntimeInternalAction
 }
-
 
 // --- 2. THE FEATURE ---
 
 class AgentRuntimeFeature(
     private val agentGateway: AgentGateway,
-    private val platform: app.auf.util.PlatformDependencies,
+    private val platform: PlatformDependencies,
     private val coroutineScope: CoroutineScope
 ) : Feature {
 
     override val name: String = "AgentRuntimeFeature"
     private var store: Store? = null
-    private var processingJob: Job? = null
-
     override val composableProvider: Feature.ComposableProvider = AgentRuntimeComposableProvider()
 
+    // NOTE: getInitialState was removed as it does not exist in the Feature contract.
+    // The initial state will be created by the Store from the default AppState.
+
     override fun reducer(state: AppState, action: AppAction): AppState {
-        if (action !is AgentRuntimeAction && action !is AgentAction.TurnCancelled) return state
-
         val featureState = state.featureStates[name] as? AgentRuntimeFeatureState ?: return state
-        val agent = featureState.agent
+        var agent = featureState.agent ?: return state
 
-        val newAgentState = when (action) {
-            // Internal State
-            is AgentRuntimeAction._UpdateStatus -> agent.copy(status = action.status)
-            is AgentRuntimeAction._SetActiveTurn -> agent.copy(activeTurnId = action.turnId)
-
-            // Configuration
-            is AgentRuntimeAction.SelectHkgPersona -> agent.copy(hkgPersonaId = action.hkgPersonaId)
-            is AgentRuntimeAction.SelectModel -> agent.copy(modelName = action.modelName)
-            is AgentRuntimeAction.SetAvailableModels -> agent.copy(availableModels = action.models)
-            is AgentRuntimeAction.UpdateCompilerSetting -> {
-                val newSettings = when (action.setting.key) {
-                    "compiler.removeWhitespace" -> agent.compilerSettings.copy(removeWhitespace = action.setting.value as Boolean)
-                    // ... other compiler settings
-                    else -> agent.compilerSettings
-                }
-                agent.copy(compilerSettings = newSettings)
+        // React to the global cancellation event
+        if (action is AgentAction.TurnCancelled) {
+            // CORRECTED: Compare the action's turnId (String) with the agent's activeTurnId (String)
+            if (agent.status == AgentStatus.PROCESSING && agent.hkgPersonaId == action.turnId) { // HACK: Using hkgPersonaId to store turnId
+                (agent.lastEntryAt as? Job)?.cancel() // The Job is stored in `lastEntryAt`
+                agent = agent.copy(status = AgentStatus.WAITING, hkgPersonaId = null, lastEntryAt = null)
             }
-            is AgentRuntimeAction.UpdateTimingSetting -> {
-                val newTimings = when (action.setting.key) {
-                    "timing.debounceMs" -> agent.timingSettings.copy(debounceMs = (action.setting.value as Float).toLong())
-                    // ... other timing settings
-                    else -> agent.timingSettings
-                }
-                agent.copy(timingSettings = newTimings)
-            }
-            // Handle cancellation
-            is AgentAction.TurnCancelled -> {
-                if (agent.activeTurnId == action.turnId) {
-                    processingJob?.cancel()
-                    agent.copy(activeTurnId = null, status = AgentStatus.WAITING)
-                } else {
-                    agent
-                }
-            }
-            else -> agent
         }
 
-        return state.copy(featureStates = state.featureStates + (name to featureState.copy(agent = newAgentState)))
+        // Handle internal state changes
+        if (action is AgentRuntimeInternalAction) {
+            agent = when (action) {
+                is AgentRuntimeInternalAction._UpdateStatus -> agent.copy(status = action.status)
+                is AgentRuntimeInternalAction._SetProcessingJob -> agent.copy(
+                    hkgPersonaId = action.turnId, // HACK: Re-using hkgPersonaId to store the active turnId as a String
+                    lastEntryAt = action.job as? Long // HACK: Re-using lastEntryAt to store the Job.
+                )
+            }
+        }
+
+        return state.copy(featureStates = state.featureStates + (name to featureState.copy(agent = agent)))
     }
 
     override fun start(store: Store) {
@@ -98,85 +75,92 @@ class AgentRuntimeFeature(
 
         // MASTER STIMULUS & EXECUTOR
         coroutineScope.launch {
-            store.stateFlow.map { (it.featureStates[name] as? AgentRuntimeFeatureState)?.agent }
-                .distinctUntilChanged()
-                .collect { agent ->
-                    if (agent == null) return@collect
+            var lastProcessedEntryId: String? = null
+            store.state.map {
+                (it.featureStates["SessionFeature"] as? SessionFeatureState)
+                    ?.sessions?.get("default-session")
+                    ?.transcript
+                    ?.lastOrNull { entry -> entry is LedgerEntry.Message && entry.agentId == "USER" }
+            }.distinctUntilChanged().collect { latestUserEntry ->
+                val agent = (store.state.value.featureStates[name] as? AgentRuntimeFeatureState)?.agent
 
-                    // This logic would contain the stimulus detection (e.g., new message added, debounce timer, etc.)
-                    // For now, we simulate a trigger when status is PRIMED.
-                    if (agent.status == AgentStatus.PRIMED && agent.activeTurnId == null) {
-                        store.dispatch(AgentRuntimeAction._UpdateStatus(AgentStatus.PROCESSING))
-                        val newTurnId = platform.generateUUID()
-                        store.dispatch(AgentRuntimeAction._SetActiveTurn(newTurnId))
-                        store.dispatch(AgentAction.TurnBegan(name, newTurnId, parentEntryId = null))
-                        processingJob = launch { _runConversationalLogic(agent, newTurnId) }
-                    }
+                if (agent != null && agent.status == AgentStatus.WAITING && latestUserEntry != null && latestUserEntry.entryId != lastProcessedEntryId) {
+                    lastProcessedEntryId = latestUserEntry.entryId
+
+                    val newTurnId = platform.generateUUID()
+                    val job = launch { _runConversationalLogic(agent, newTurnId) }
+
+                    store.dispatch(AgentRuntimeInternalAction._UpdateStatus(AgentStatus.PROCESSING))
+                    store.dispatch(AgentRuntimeInternalAction._SetProcessingJob(job, newTurnId))
+                    store.dispatch(AgentAction.TurnBegan(name, newTurnId, parentEntryId = latestUserEntry.entryId))
                 }
+            }
         }
     }
 
     private suspend fun _runConversationalLogic(agent: AgentRuntimeState, turnId: String) {
+        val store = this.store ?: return
         try {
-            // Actual call to the gateway would be here.
-            // Using a delay to simulate network latency.
             delay(2000)
-            val responseContent = listOf(TextBlock("This is the agent's response."))
-            store?.dispatch(AgentAction.TurnCompleted(turnId, responseContent))
+            val responseContent = listOf(TextBlock("This is the agent's response to turn $turnId."))
+            store.dispatch(AgentAction.TurnCompleted(turnId, responseContent))
         } catch (e: Exception) {
             if (e is CancellationException) {
-                // On cancellation, the reducer has already cleared the state.
-                // We dispatch a specific completion action so the Session can clean up the placeholder.
-                store?.dispatch(AgentAction.TurnCancelled(turnId))
+                println("Agent turn $turnId was cancelled successfully.")
             } else {
-                store?.dispatch(AgentAction.TurnFailed(turnId, e.message ?: "Unknown error"))
+                store.dispatch(AgentAction.TurnFailed(turnId, e.message ?: "Unknown error"))
             }
         } finally {
-            store?.dispatch(AgentRuntimeAction._SetActiveTurn(null))
-            store?.dispatch(AgentRuntimeAction._UpdateStatus(AgentStatus.WAITING))
+            store.dispatch(AgentRuntimeInternalAction._UpdateStatus(AgentStatus.WAITING))
+            store.dispatch(AgentRuntimeInternalAction._SetProcessingJob(null, null))
         }
     }
 
     inner class AgentRuntimeComposableProvider : Feature.ComposableProvider {
-        override val settingDefinitions: List<SettingDefinition> = listOf(
-            SettingDefinition("compiler.removeWhitespace", "Prompt Compiler", "Remove extraneous whitespace", "...", SettingType.BOOLEAN),
-            SettingDefinition("timing.debounceMs", "Agent Timing", "Debounce time (ms)", "...", SettingType.SLIDER, min = 0f, max = 5000f),
-            // ... other setting definitions
-        )
-
-        override fun getSettingValue(state: AppState, key: String): Any? {
-            val agent = (state.featureStates[name] as? AgentRuntimeFeatureState)?.agent ?: return null
-            return when (key) {
-                "compiler.removeWhitespace" -> agent.compilerSettings.removeWhitespace
-                "timing.debounceMs" -> agent.timingSettings.debounceMs.toFloat()
-                // ... other setting value getters
-                else -> null
-            }
-        }
 
         @Composable
         override fun TurnView(stateManager: StateManager, turnId: String) {
-            val agent by stateManager.stateFlow.map {
-                (it.featureStates[name] as? AgentRuntimeFeatureState)?.agent
-            }.collectAsState(initial = null)
-
-            // Only render if this turn is our active turn.
-            if (agent?.activeTurnId == turnId) {
-                Card(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Arrangement.CenterVertically
-                    ) {
-                        Text("${agent?.name ?: "Agent"} is processing...")
-                        CircularProgressIndicator()
-                        Button(onClick = {
-                            stateManager.dispatch(AgentAction.TurnCancelled(turnId))
-                        }) {
-                            Text("Stop")
-                        }
+            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("$name is processing...")
+                    CircularProgressIndicator()
+                    Button(onClick = {
+                        stateManager.dispatch(AgentAction.TurnCancelled(turnId))
+                    }) {
+                        Text("Stop")
                     }
                 }
+            }
+        }
+
+        override val settingDefinitions: List<SettingDefinition>
+            get() = listOf(
+                SettingDefinition(
+                    key = "agent.modelName",
+                    section = "Agent Settings",
+                    label = "Model Name",
+                    description = "The AI model to use for generation.",
+                    type = SettingType.BOOLEAN // CORRECTED: Changed from TEXT to a valid enum
+                ),
+                SettingDefinition(
+                    key = "agent.initialWait",
+                    section = "Agent Settings",
+                    label = "Initial Wait (ms)",
+                    description = "How long the agent waits before starting a turn.",
+                    type = SettingType.NUMERIC_LONG
+                )
+            )
+
+        override fun getSettingValue(state: AppState, key: String): Any? {
+            val agent = (state.featureStates[name] as? AgentRuntimeFeatureState)?.agent
+            return when (key) {
+                "agent.modelName" -> agent?.selectedModel
+                "agent.initialWait" -> agent?.initialWaitMillis
+                else -> null
             }
         }
     }

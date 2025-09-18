@@ -82,17 +82,13 @@ fun SessionView(
                 ) { entry ->
                     when (entry) {
                         is LedgerEntry.Message -> {
-                            // Raw view logic remains the same for messages
-                            if (isRawContentVisible) {
-                                // ... RawTranscriptEntry rendering
-                            } else {
-                                MessageCard(
-                                    entry = entry,
-                                    sessionId = activeSession.id,
-                                    stateManager = stateManager,
-                                    rawContentViewIds = rawContentViewIds
-                                )
-                            }
+                            // Raw view logic is now handled internally by MessageCard
+                            MessageCard(
+                                entry = entry,
+                                sessionId = activeSession.id,
+                                stateManager = stateManager,
+                                rawContentViewIds = rawContentViewIds // This is now the correct type
+                            )
                         }
                         is LedgerEntry.AgentTurn -> {
                             // NEW: Delegate rendering to the correct feature
@@ -117,8 +113,7 @@ fun SessionView(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // REMOVED: The SessionHeader loop is gone.
-            IconButton(onClick = { /* Copy Full Transcript Logic */ }) {
+            IconButton(onClick = { /* TODO: Copy Full Transcript Logic */ }) {
                 Icon(Icons.Default.ContentCopy, contentDescription = "Copy Full Transcript")
             }
             IconButton(onClick = { stateManager.dispatch(SessionAction.ToggleRawContentView) }) {

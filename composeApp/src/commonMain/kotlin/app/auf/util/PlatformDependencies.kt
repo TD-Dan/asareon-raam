@@ -58,4 +58,5 @@ expect open class PlatformDependencies() {
      * @param window The platform-specific window object (e.g., java.awt.Window).
      */
     open fun applyNativeWindowDecorations(window: Any)
+    open fun generateUUID(): String
 }

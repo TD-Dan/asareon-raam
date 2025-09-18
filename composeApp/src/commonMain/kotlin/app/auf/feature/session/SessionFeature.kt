@@ -127,7 +127,10 @@ class SessionFeature(
                         }
                     }
                 }
-                is AgentAction.TurnCancelled, is AgentAction.TurnFailed -> {
+                is AgentAction.TurnCancelled -> {
+                    targetSession.transcript.filterNot { it is LedgerEntry.AgentTurn && it.entryId == action.turnId }
+                }
+                is AgentAction.TurnFailed -> {
                     targetSession.transcript.filterNot { it is LedgerEntry.AgentTurn && it.entryId == action.turnId }
                 }
             }
@@ -182,7 +185,7 @@ class SessionFeature(
     }
 
     override fun start(store: Store) {
-        // Persistence logic remains largely the same, but uses internal actions
+        // Persistence logic
         coroutineScope.launch(Dispatchers.Default) {
             val loadedSessions = persistenceService.loadSessions()
             withContext(Dispatchers.Main) {
@@ -194,8 +197,9 @@ class SessionFeature(
             }
         }
         coroutineScope.launch(Dispatchers.Default) {
-            store.stateFlow
-                .map { (it.featureStates[name] as? SessionFeatureState)?.sessions }
+            // CORRECTED: Use .state and add explicit type hints
+            store.state
+                .map<AppState, Map<String, Session>?> { (it.featureStates[name] as? SessionFeatureState)?.sessions }
                 .distinctUntilChanged()
                 .drop(1) // Don't save on initial load
                 .collect { sessionsToSave ->
@@ -208,8 +212,9 @@ class SessionFeature(
         // Command Interpreter Logic
         coroutineScope.launch(Dispatchers.Main) {
             var lastProcessedEntryId: String? = null
-            store.stateFlow
-                .map { (it.featureStates[name] as? SessionFeatureState)?.sessions?.get("default-session")?.transcript?.lastOrNull() }
+            // CORRECTED: Use .state and add explicit type hints
+            store.state
+                .map<AppState, LedgerEntry?> { (it.featureStates[name] as? SessionFeatureState)?.sessions?.get("default-session")?.transcript?.lastOrNull() }
                 .distinctUntilChanged()
                 .collect { latestEntry ->
                     if (latestEntry != null && latestEntry is LedgerEntry.Message && latestEntry.entryId != lastProcessedEntryId) {
@@ -238,7 +243,6 @@ class SessionFeature(
 
         @Composable
         override fun MenuContent(stateManager: StateManager, onDismiss: () -> Unit) {
-            // This logic remains the same
             DropdownMenuItem(
                 text = { Text("Clear Current Session") },
                 onClick = {
@@ -258,7 +262,6 @@ class SessionFeature(
 
         fun saveSessions(sessions: Map<String, Session>) {
             try {
-                // IMPORTANT: Filter out transient entries before saving.
                 val persistentSessions = sessions.mapValues { (_, session) ->
                     session.copy(transcript = session.transcript.filter { it !is TransientEntry })
                 }

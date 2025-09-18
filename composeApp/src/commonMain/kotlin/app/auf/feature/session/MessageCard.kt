@@ -44,23 +44,23 @@ import app.auf.core.*
 
 @Composable
 fun MessageCard(
-    entry: LedgerEntry,
+    entry: LedgerEntry.Message, // CORRECTED: Now specifically takes a Message entry
     sessionId: String,
     stateManager: StateManager,
-    rawContentViewIds: Set<Long>
+    rawContentViewIds: Set<String> // CORRECTED: Changed from Set<Long> to Set<String>
 ) {
     val clipboardManager = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
     var isCollapsed by remember { mutableStateOf(false) }
 
-    val parser = remember { BlockSeparatingParser() }
-    val contentBlocks = remember(entry.content) { parser.parse(entry.content) }
+    // CORRECTED: The content is already a list of blocks, no need to parse.
+    val contentBlocks = entry.content
 
     val authorName = remember(entry.agentId) {
         when {
             entry.agentId == "USER" -> "USER"
-            entry.agentId == "CORE" -> "CORE"
-            else -> "AI"
+            entry.agentId.startsWith("AgentRuntimeFeature") -> "AI" // More robust check
+            else -> entry.agentId
         }
     }
 
@@ -70,10 +70,22 @@ fun MessageCard(
     }
 
     val elevation = if (authorName == "CORE") 0.dp else 2.dp
-    val guardedCopyContent = "---COPY of ${authorName} entry:---\n${entry.content}\n---END OF COPY---"
+
+    // CORRECTED: Build the copy content from the blocks.
+    val guardedCopyContent = remember(contentBlocks) {
+        val rawText = contentBlocks.joinToString("\n") {
+            when (it) {
+                is TextBlock -> it.text
+                is CodeBlock -> "```${it.language}\n${it.content}\n```"
+            }
+        }
+        "---COPY of ${authorName} entry:---\n$rawText\n---END OF COPY---"
+    }
+
     val formattedTimestamp = remember(entry.timestamp) { stateManager.formatDisplayTimestamp(entry.timestamp) }
 
-    val isThisCardRaw = rawContentViewIds.contains(entry.id)
+    // CORRECTED: Use entryId instead of id
+    val isThisCardRaw = rawContentViewIds.contains(entry.entryId)
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -107,7 +119,8 @@ fun MessageCard(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
-                        onClick = { stateManager.dispatch(SessionAction.ToggleMessageRawView(entry.id)) },
+                        // CORRECTED: Use entryId instead of id
+                        onClick = { stateManager.dispatch(SessionAction.ToggleMessageRawView(entry.entryId)) },
                         modifier = Modifier.size(24.dp)
                     ) {
                         Icon(
@@ -129,7 +142,8 @@ fun MessageCard(
                             DropdownMenuItem(
                                 text = { Text("Delete") },
                                 onClick = {
-                                    stateManager.dispatch(SessionAction.DeleteEntry(sessionId, entry.id))
+                                    // CORRECTED: Use entryId instead of id
+                                    stateManager.dispatch(SessionAction.DeleteEntry(sessionId, entry.entryId))
                                     showMenu = false
                                 }
                             )
@@ -141,8 +155,9 @@ fun MessageCard(
             AnimatedVisibility(visible = !isCollapsed) {
                 Column {
                     Spacer(Modifier.height(8.dp))
+                    // CORRECTED: The raw content is now the reconstructed guardedCopyContent
                     if (isThisCardRaw) {
-                        RenderRawContent(entry.content)
+                        RenderRawContent(guardedCopyContent)
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             contentBlocks.forEach { block ->
