@@ -3,7 +3,6 @@ package app.auf.core
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class ReducerTest {
 
@@ -11,7 +10,7 @@ class ReducerTest {
     fun `appReducer correctly handles ShowToast action`() {
         // Arrange
         val initialState = AppState(toastMessage = null)
-        val action = AppAction.ShowToast("Hello")
+        val action = ShowToast("Hello")
 
         // Act
         val newState = appReducer(initialState, action)
@@ -24,7 +23,7 @@ class ReducerTest {
     fun `appReducer correctly handles ClearToast action`() {
         // Arrange
         val initialState = AppState(toastMessage = "Something")
-        val action = AppAction.ClearToast
+        val action = ClearToast
 
         // Act
         val newState = appReducer(initialState, action)
@@ -37,7 +36,7 @@ class ReducerTest {
     fun `appReducer correctly handles SetActiveView action`() {
         // Arrange
         val initialState = AppState(activeViewKey = "old.key")
-        val action = AppAction.SetActiveView("new.key")
+        val action = SetActiveView("new.key")
 
         // Act
         val newState = appReducer(initialState, action)
@@ -51,7 +50,7 @@ class ReducerTest {
         // Arrange
         val initialState = AppState(toastMessage = "Unchanged")
         // FIX: Use an anonymous object for the local fake action.
-        val someFeatureAction = object : AppAction {}
+        val someFeatureAction = object : Command {}
 
         // Act
         val newState = appReducer(initialState, someFeatureAction)

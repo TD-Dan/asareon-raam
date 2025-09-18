@@ -1,7 +1,7 @@
 package app.auf.service
 
 import app.auf.core.*
-import app.auf.util.fakes.FakePlatformDependencies
+import app.auf.fakes.FakePlatformDependencies
 import kotlin.test.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json

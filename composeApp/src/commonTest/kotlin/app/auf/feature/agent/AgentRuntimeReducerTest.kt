@@ -1,9 +1,7 @@
 package app.auf.feature.agent
 
-import app.auf.core.AgentAction
-import app.auf.core.AppState
+import app.auf.core.*
 import app.auf.fakes.FakePlatformDependencies
-import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.runTest
@@ -131,7 +129,7 @@ class AgentRuntimeReducerTest {
                 )
             )
         )
-        val action = AgentAction.TurnCancelled("turn-999") // Mismatched ID
+        val action = AgentCommand.TurnCancelled("turn-999") // Mismatched ID
 
         // Act
         val newState = feature.reducer(processingState, action)

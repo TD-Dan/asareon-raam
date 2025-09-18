@@ -1,12 +1,9 @@
 package app.auf.integration
 
 import app.auf.core.*
-import app.auf.feature.agent.*
-import app.auf.feature.session.LedgerEntry
-import app.auf.feature.session.SessionAction
-import app.auf.feature.session.SessionFeature
-import app.auf.feature.session.SessionFeatureState
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.feature.agent.*
+import app.auf.feature.session.*
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -62,7 +59,7 @@ class AgentSessionIntegrationTest {
             coroutineScope = testScope
         )
 
-        store.dispatch(SessionAction._CreateSession(sessionId, "Test Session"))
+        store.dispatch(CreateSession(sessionId, "Test Session"))
         store.startFeatureLifecycles()
         testScope.runCurrent()
     }
@@ -88,7 +85,7 @@ class AgentSessionIntegrationTest {
         assertEquals(0, getTranscript().size)
 
         // ACT 1: Stimulate the agent with a user message.
-        store.dispatch(SessionAction.PostUserMessage(sessionId, "Go"))
+        store.dispatch(PostUserMessage(sessionId, "Go"))
         runCurrent()
 
         // ASSERT 1: Agent is now PROCESSING and a placeholder exists in the ledger.
@@ -111,7 +108,7 @@ class AgentSessionIntegrationTest {
     @Test
     fun `cancellation correctly interrupts processing and cleans up ledger`() = testScope.runTest {
         // ACT 1: Start the turn.
-        store.dispatch(SessionAction.PostUserMessage(sessionId, "Go"))
+        store.dispatch(PostUserMessage(sessionId, "Go"))
         runCurrent()
 
         // ASSERT 1: Verify we are in the processing state.

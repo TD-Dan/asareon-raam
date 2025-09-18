@@ -17,7 +17,7 @@ class StoreTest {
     // --- WidgetFeature ---
     @Serializable
     data class WidgetState(val count: Int = 0) : FeatureState
-    data object IncrementWidgetCount : AppAction
+    data object IncrementWidgetCount : Command
     class WidgetFeature : Feature {
         override val name: String = "WidgetFeature"
         var startWasCalled = false
@@ -35,7 +35,7 @@ class StoreTest {
     // --- GadgetFeature ---
     @Serializable
     data class GadgetState(val text: String = "initial") : FeatureState
-    data class SetGadgetText(val newText: String) : AppAction
+    data class SetGadgetText(val newText: String) : Command
     class GadgetFeature : Feature {
         override val name: String = "GadgetFeature"
         var startWasCalled = false

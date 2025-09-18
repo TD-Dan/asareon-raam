@@ -32,6 +32,16 @@ data class CompilationResult(
 )
 
 /**
+ * Defines the configuration options for a prompt compilation pass.
+ */
+data class CompilerSettings(
+    val cleanHeaders: Boolean = false,
+    val minifyJson: Boolean = false,
+    val removeWhitespace: Boolean = false
+)
+
+
+/**
  * A service responsible for transforming raw prompt strings into token-efficient versions.
  *
  * @version 1.1
@@ -40,7 +50,6 @@ data class CompilationResult(
 class PromptCompiler(private val jsonParser: Json) {
 
     private val headerFieldsToClean = setOf("version", "created_at", "modified_at", "holon_usage", "filePath", "parentId", "depth", "relationships", "sub_holons")
-    private val subHolonRefFieldsToClean = setOf("type", "summary")
 
     /**
      * The main entry point for the compiler. Takes a raw string and settings, and returns
@@ -74,7 +83,7 @@ class PromptCompiler(private val jsonParser: Json) {
         return try {
             val jsonElement = jsonParser.parseToJsonElement(content)
             Json.encodeToString(JsonElement.serializer(), jsonElement)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             content
         }
     }
@@ -97,11 +106,11 @@ class PromptCompiler(private val jsonParser: Json) {
                         put("payload", jsonElement["payload"]!!)
                     }
                 }
-                Json { prettyPrint = true }.encodeToString(JsonElement.serializer(), cleanedHolonJson)
+                Json.encodeToString(JsonElement.serializer(), cleanedHolonJson)
             } else {
                 content
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             content
         }
     }

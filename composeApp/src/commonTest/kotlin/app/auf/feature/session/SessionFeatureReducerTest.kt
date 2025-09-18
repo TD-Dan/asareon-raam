@@ -1,7 +1,7 @@
 package app.auf.feature.session
 
 import app.auf.core.*
-import app.auf.util.fakes.FakePlatformDependencies
+import app.auf.fakes.FakePlatformDependencies
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -53,7 +53,7 @@ class SessionFeatureReducerTest {
     @Test
     fun `reducer on TurnBegan appends AgentTurn to ledger`() {
         // ARRANGE
-        val action = AgentAction.TurnBegan("AgentRuntimeFeature", "turn-new", parentEntryId = null)
+        val action = AgentEvent.TurnBegan("AgentRuntimeFeature", "turn-new", parentEntryId = null)
 
         // ACT
         val newState = feature.reducer(initialState, action)
@@ -68,7 +68,7 @@ class SessionFeatureReducerTest {
     @Test
     fun `reducer on TurnBegan with parentId inserts AgentTurn in correct position`() {
         // ARRANGE
-        val action = AgentAction.TurnBegan("AgentRuntimeFeature", "turn-new", parentEntryId = "entry-1")
+        val action = AgentEvent.TurnBegan("AgentRuntimeFeature", "turn-new", parentEntryId = "entry-1")
 
         // ACT
         val newState = feature.reducer(initialState, action)
@@ -91,7 +91,7 @@ class SessionFeatureReducerTest {
             )
         )
         val completionContent = listOf(TextBlock("Done."))
-        val action = AgentAction.TurnCompleted("turn-1", completionContent)
+        val action = AgentEvent.TurnCompleted("turn-1", completionContent)
 
         // ACT
         val newState = feature.reducer(stateWithTurn, action)
@@ -113,7 +113,7 @@ class SessionFeatureReducerTest {
                 )
             )
         )
-        val action = AgentAction.TurnCancelled("turn-1")
+        val action = AgentCommand.TurnCancelled("turn-1")
 
         // ACT
         val newState = feature.reducer(stateWithTurn, action)
@@ -134,7 +134,7 @@ class SessionFeatureReducerTest {
                 )
             )
         )
-        val action = AgentAction.TurnFailed("turn-1", "Error")
+        val action = AgentEvent.TurnFailed("turn-1", "Error")
 
         // ACT
         val newState = feature.reducer(stateWithTurn, action)

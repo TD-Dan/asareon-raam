@@ -51,7 +51,7 @@ sealed interface AgentDecision {
 interface AgentCapability {
     /**
      * A unique identifier for the capability, used for registration and logging.
-     * e.g., "auf.capability.conversational_responder"
+     * E.g., "auf.capability.conversational_responder"
      */
     val id: String
 

@@ -1,7 +1,6 @@
 package app.auf.feature.session
 
-import app.auf.core.AppAction
-import app.auf.core.CodeBlock
+import app.auf.core.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -34,7 +33,7 @@ class CommandInterpreterTest {
             val block = CodeBlock("auf_toastMessage", input)
             val result = interpreter.interpret(block, testSessionId)
             assertNotNull(result)
-            assertIs<AppAction.ShowToast>(result, "Result for input '$input' should be ShowToast action.")
+            assertIs<ShowToast>(result, "Result for input '$input' should be ShowToast action.")
             assertEquals(expected, result.message)
         }
     }
@@ -44,7 +43,7 @@ class CommandInterpreterTest {
         val block = CodeBlock("auf_clearSession", "") // Argument is ignored for this command
         val result = interpreter.interpret(block, testSessionId)
         assertNotNull(result)
-        assertIs<SessionAction.ClearSession>(result)
+        assertIs<ClearSession>(result)
         assertEquals(testSessionId, result.sessionId, "The action should carry the correct session ID.")
     }
 
@@ -58,7 +57,7 @@ class CommandInterpreterTest {
         val block = CodeBlock("auf_toastMessage", multiLineContent)
         val result = interpreter.interpret(block, testSessionId)
         assertNotNull(result)
-        assertIs<AppAction.ShowToast>(result)
+        assertIs<ShowToast>(result)
         assertEquals(multiLineContent, result.message)
     }
 
@@ -67,7 +66,7 @@ class CommandInterpreterTest {
         val block = CodeBlock("auf_toastMessage", "   ")
         val result = interpreter.interpret(block, testSessionId)
         assertNotNull(result)
-        assertIs<AppAction.ShowToast>(result)
+        assertIs<ShowToast>(result)
         assertEquals("", result.message, "Argument should be trimmed to empty.")
     }
 
