@@ -20,31 +20,44 @@ data class AppState(
 )
 
 /**
- * Defines all possible actions that can be dispatched to the Store to trigger a state change.
- * This is now a pure, core-only contract.
+ * The root of all state changes. A sealed hierarchy with two exclusive branches.
  */
-interface AppAction {
-    data class ShowToast(val message: String) : AppAction
-    data object ClearToast : AppAction
-    data class SetActiveView(val key: String) : AppAction
-}
+sealed interface AppAction
 
 /**
- * The formal, system-wide contract for agent turn-based processing.
- * These actions are dispatched by agent features and primarily handled by the SessionFeature.
+ * A Command is a public intent for the system to perform an action.
  */
-sealed interface AgentAction : AppAction {
-    /** Dispatched when an agent begins a processing turn, creating a placeholder in the UI. */
-    data class TurnBegan(val agentId: String, val turnId: String, val parentEntryId: String?) : AgentAction
+sealed interface Command : AppAction
 
-    /** Dispatched when an agent successfully completes a turn, replacing the placeholder with content. */
-    data class TurnCompleted(val turnId: String, val content: List<ContentBlock>) : AgentAction
+/**
+ * An Event is an internal result, reporting that something has happened.
+ */
+sealed interface Event : AppAction
 
-    /** Dispatched when a user or the system cancels an in-progress turn. */
-    data class TurnCancelled(val turnId: String) : AgentAction
+// --- Core Commands ---
+data class ShowToast(val message: String) : Command
+data object ClearToast : Command
+data class SetActiveView(val key: String) : Command
 
-    /** Dispatched when a turn fails due to an error. */
-    data class TurnFailed(val turnId: String, val error: String) : AgentAction
+
+// --- AGENT-RELATED CONTRACTS ---
+
+/** A sealed interface for all agent-related public Commands. */
+sealed interface AgentCommand : Command {
+    /** Dispatched by the UI as a public intent to cancel a turn. */
+    data class TurnCancelled(val turnId: String) : AgentCommand
+}
+
+/** A sealed interface for all agent-related internal Events. */
+sealed interface AgentEvent : Event {
+    /** Dispatched by an agent's side-effect logic when a turn begins. */
+    data class TurnBegan(val agentId: String, val turnId: String, val parentEntryId: String?) : AgentEvent
+
+    /** Dispatched by an agent's side-effect logic when a turn completes successfully. */
+    data class TurnCompleted(val turnId: String, val content: List<ContentBlock>) : AgentEvent
+
+    /** Dispatched by an agent's side-effect logic when a turn fails. */
+    data class TurnFailed(val turnId: String, val error: String) : AgentEvent
 }
 
 
