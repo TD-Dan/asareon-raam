@@ -1,6 +1,7 @@
 package app.auf.feature.knowledgegraph
 
-import app.auf.core.AppAction
+import app.auf.core.Command
+import app.auf.core.Event
 import app.auf.core.FeatureState
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -168,25 +169,30 @@ data class SubHolonRef(
 
 
 // --- 2. ACTIONS ---
-sealed interface KnowledgeGraphAction : AppAction {
-    data object LoadGraph : KnowledgeGraphAction
-    data class LoadGraphSuccess(val result: GraphLoadResult) : KnowledgeGraphAction
-    data class LoadGraphFailure(val error: String) : KnowledgeGraphAction
-    data object RetryLoadGraph : KnowledgeGraphAction
-    data class SelectAiPersona(val holonId: String?) : KnowledgeGraphAction
-    data class InspectHolon(val holonId: String?) : KnowledgeGraphAction
-    data class ToggleHolonActive(val holonId: String) : KnowledgeGraphAction
-    data class SetCatalogueFilter(val type: String?) : KnowledgeGraphAction
-    data class SetViewMode(val mode: KnowledgeGraphViewMode) : KnowledgeGraphAction
-    data class ToggleHolonForExport(val holonId: String) : KnowledgeGraphAction
-    data object SelectAllForExport : KnowledgeGraphAction
-    data object DeselectAllForExport : KnowledgeGraphAction
-    data class ExecuteExport(val destinationPath: String) : KnowledgeGraphAction
-    data class StartImportAnalysis(val sourcePath: String) : KnowledgeGraphAction
-    data class SetImportRecursive(val isRecursive: Boolean) : KnowledgeGraphAction
-    data object ToggleShowOnlyChangedImportItems : KnowledgeGraphAction
-    data class UpdateImportAction(val sourcePath: String, val action: ImportAction) : KnowledgeGraphAction
-    data class AnalysisComplete(val items: List<ImportItem>) : KnowledgeGraphAction
-    data object ExecuteImport : KnowledgeGraphAction
-    data class ImportComplete(val result: ImportResult) : KnowledgeGraphAction
-}
+
+/** A marker interface for all KnowledgeGraph related actions. */
+interface KnowledgeGraphAction
+
+// --- Commands (Intents from UI or other features) ---
+data object LoadGraph : KnowledgeGraphAction, Command
+data object RetryLoadGraph : KnowledgeGraphAction, Command
+data class SelectAiPersona(val holonId: String?) : KnowledgeGraphAction, Command
+data class InspectHolon(val holonId: String?) : KnowledgeGraphAction, Command
+data class ToggleHolonActive(val holonId: String) : KnowledgeGraphAction, Command
+data class SetCatalogueFilter(val type: String?) : KnowledgeGraphAction, Command
+data class SetViewMode(val mode: KnowledgeGraphViewMode) : KnowledgeGraphAction, Command
+data class ToggleHolonForExport(val holonId: String) : KnowledgeGraphAction, Command
+data object SelectAllForExport : KnowledgeGraphAction, Command
+data object DeselectAllForExport : KnowledgeGraphAction, Command
+data class ExecuteExport(val destinationPath: String) : KnowledgeGraphAction, Command
+data class StartImportAnalysis(val sourcePath: String) : KnowledgeGraphAction, Command
+data class SetImportRecursive(val isRecursive: Boolean) : KnowledgeGraphAction, Command
+data object ToggleShowOnlyChangedImportItems : KnowledgeGraphAction, Command
+data class UpdateImportAction(val sourcePath: String, val action: ImportAction) : KnowledgeGraphAction, Command
+data object ExecuteImport : KnowledgeGraphAction, Command
+
+// --- Events (Results from side-effects) ---
+data class LoadGraphSuccess(val result: GraphLoadResult) : KnowledgeGraphAction, Event
+data class LoadGraphFailure(val error: String) : KnowledgeGraphAction, Event
+data class AnalysisComplete(val items: List<ImportItem>) : KnowledgeGraphAction, Event
+data class ImportComplete(val result: ImportResult) : KnowledgeGraphAction, Event

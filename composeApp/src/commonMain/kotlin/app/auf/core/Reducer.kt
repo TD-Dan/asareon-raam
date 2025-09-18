@@ -7,13 +7,13 @@ package app.auf.core
  */
 fun appReducer(state: AppState, action: AppAction): AppState {
     return when (action) {
-        is AppAction.ShowToast -> state.copy(
+        is ShowToast -> state.copy(
             toastMessage = action.message
         )
-        is AppAction.ClearToast -> state.copy(
+        is ClearToast -> state.copy(
             toastMessage = null
         )
-        is AppAction.SetActiveView -> state.copy(
+        is SetActiveView -> state.copy(
             activeViewKey = action.key
         )
         else -> state

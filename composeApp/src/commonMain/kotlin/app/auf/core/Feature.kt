@@ -37,14 +37,14 @@ interface Feature {
         /**
          * The unique key for this feature's main view, used for navigation.
          * MUST be provided if the feature has a main StageContent.
-         * e.g., "feature.session.main", "feature.knowledgegraph.import"
+         * E.g., "feature.session.main", "feature.knowledgegraph.import"
          */
         val viewKey: String?
             get() = null
 
         /**
          * The button to render in the GlobalActionRibbon.
-         * Typically dispatches AppAction.SetActiveView(viewKey).
+         * Typically, dispatches AppAction.SetActiveView(viewKey).
          */
         @Composable
         fun RibbonButton(stateManager: StateManager, isActive: Boolean) {}

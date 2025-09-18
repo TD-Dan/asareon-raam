@@ -21,18 +21,21 @@ data class AppState(
 
 /**
  * The root of all state changes. A sealed hierarchy with two exclusive branches.
+ * This guarantees that any action in the system MUST be either a Command or an Event.
  */
 sealed interface AppAction
 
 /**
  * A Command is a public intent for the system to perform an action.
+ * Any feature can create its own Commands.
  */
-sealed interface Command : AppAction
+interface Command : AppAction
 
 /**
  * An Event is an internal result, reporting that something has happened.
+ * Any feature can create its own Events.
  */
-sealed interface Event : AppAction
+interface Event : AppAction
 
 // --- Core Commands ---
 data class ShowToast(val message: String) : Command
@@ -42,21 +45,21 @@ data class SetActiveView(val key: String) : Command
 
 // --- AGENT-RELATED CONTRACTS ---
 
-/** A sealed interface for all agent-related public Commands. */
-sealed interface AgentCommand : Command {
+/** An open interface for all agent-related public Commands. */
+interface AgentCommand : Command {
     /** Dispatched by the UI as a public intent to cancel a turn. */
     data class TurnCancelled(val turnId: String) : AgentCommand
 }
 
-/** A sealed interface for all agent-related internal Events. */
-sealed interface AgentEvent : Event {
-    /** Dispatched by an agent's side-effect logic when a turn begins. */
+/** An open interface for all agent-related internal Events. */
+interface AgentEvent : Event {
+    /** Dispatched by an agent's side effect logic when a turn begins. */
     data class TurnBegan(val agentId: String, val turnId: String, val parentEntryId: String?) : AgentEvent
 
-    /** Dispatched by an agent's side-effect logic when a turn completes successfully. */
+    /** Dispatched by an agent's side effect logic when a turn completes successfully. */
     data class TurnCompleted(val turnId: String, val content: List<ContentBlock>) : AgentEvent
 
-    /** Dispatched by an agent's side-effect logic when a turn fails. */
+    /** Dispatched by an agent's side effect logic when a turn fails. */
     data class TurnFailed(val turnId: String, val error: String) : AgentEvent
 }
 

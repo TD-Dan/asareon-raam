@@ -22,7 +22,7 @@ import kotlinx.serialization.serializer
 data class SessionFeatureState(
     val sessions: Map<String, Session> = emptyMap(),
     val isRawContentVisible: Boolean = false,
-    val rawContentViewIds: Set<String> = emptySet() // Now uses stable String ID
+    val rawContentViewIds: Set<String> = emptySet()
 ) : FeatureState
 
 @Serializable
@@ -32,10 +32,9 @@ data class Session(
     val transcript: List<LedgerEntry> = emptyList()
 )
 
-// The LedgerEntry is now a sealed interface to support different types of content.
 @Serializable
 sealed interface LedgerEntry {
-    val entryId: String // Use a stable, unique String ID for keys and lookups.
+    val entryId: String
     val timestamp: Long
 
     @Serializable
@@ -51,25 +50,24 @@ sealed interface LedgerEntry {
         override val entryId: String, // This is the turnId
         override val timestamp: Long,
         val agentId: String,
-        val parentEntryId: String? // For inserting turns mid-transcript
-    ) : LedgerEntry, TransientEntry // Implements TransientEntry to prevent persistence
+        val parentEntryId: String?
+    ) : LedgerEntry, TransientEntry
 }
 
 
 // --- 2. ACTIONS ---
 
-sealed interface SessionAction : AppAction {
-    // User-facing actions
-    data class PostUserMessage(val sessionId: String, val content: String) : SessionAction
-    data class DeleteEntry(val sessionId: String, val entryId: String) : SessionAction
-    data class ClearSession(val sessionId: String) : SessionAction
-    data object ToggleRawContentView : SessionAction
-    data class ToggleMessageRawView(val entryId: String) : SessionAction
 
-    // System actions for persistence
-    data class _CreateSession(val id: String, val name: String) : SessionAction
-    data class _LoadSessionsSuccess(val sessions: Map<String, Session>) : SessionAction
-}
+// User-facing Commands
+data class PostUserMessage(val sessionId: String, val content: String) : Command
+data class DeleteEntry(val sessionId: String, val entryId: String) : Command
+data class ClearSession(val sessionId: String) : Command
+data object ToggleRawContentView : Command
+data class ToggleMessageRawView(val entryId: String) : Command
+
+// System-internal Events
+data class CreateSession(val id: String, val name: String) : Event
+data class LoadSessionsSuccess(val sessions: Map<String, Session>) : Event
 
 
 // --- 3. FEATURE IMPLEMENTATION ---
@@ -89,73 +87,82 @@ class SessionFeature(
     private val commandInterpreter = CommandInterpreter()
 
     override fun reducer(state: AppState, action: AppAction): AppState {
-        val currentState = state.featureStates[name] as? SessionFeatureState ?: SessionFeatureState()
-        val targetSessionId = "default-session" // Assuming single session for now
-        val targetSession = currentState.sessions[targetSessionId]
+        val featureState = state.featureStates[name] as? SessionFeatureState ?: return state
+        val targetSessionId = "default-session"
+        val targetSession = featureState.sessions[targetSessionId]
 
-        // Handle Agent Actions first, as they are central to the new architecture
-        if (action is AgentAction && targetSession != null) {
-            val newTranscript = when (action) {
-                is AgentAction.TurnBegan -> {
-                    val newEntry = LedgerEntry.AgentTurn(
-                        entryId = action.turnId,
-                        timestamp = platform.getSystemTimeMillis(),
-                        agentId = action.agentId,
-                        parentEntryId = action.parentEntryId
-                    )
-                    // If parentEntryId is specified, insert after it. Otherwise, append.
-                    val insertIndex = action.parentEntryId?.let { pid ->
-                        targetSession.transcript.indexOfFirst { it.entryId == pid }
-                    }
-                    if (insertIndex != null && insertIndex != -1) {
-                        targetSession.transcript.toMutableList().apply { add(insertIndex + 1, newEntry) }
-                    } else {
-                        targetSession.transcript + newEntry
-                    }
+        val newFeatureState: SessionFeatureState = when (action) {
+            // --- AGENT EVENTS & COMMANDS ---
+            is AgentEvent.TurnBegan -> {
+                if (targetSession == null) return state
+                val newEntry = LedgerEntry.AgentTurn(
+                    entryId = action.turnId,
+                    timestamp = platform.getSystemTimeMillis(),
+                    agentId = action.agentId,
+                    parentEntryId = action.parentEntryId
+                )
+                val insertIndex = action.parentEntryId?.let { pid ->
+                    targetSession.transcript.indexOfFirst { it.entryId == pid }
                 }
-                is AgentAction.TurnCompleted -> {
-                    targetSession.transcript.flatMap {
-                        if (it is LedgerEntry.AgentTurn && it.entryId == action.turnId) {
-                            listOf(LedgerEntry.Message(
-                                entryId = platform.generateUUID(),
-                                timestamp = platform.getSystemTimeMillis(),
-                                agentId = it.agentId,
-                                content = action.content
-                            ))
-                        } else {
-                            listOf(it)
-                        }
-                    }
-                }
-                is AgentAction.TurnCancelled -> {
-                    targetSession.transcript.filterNot { it is LedgerEntry.AgentTurn && it.entryId == action.turnId }
-                }
-                is AgentAction.TurnFailed -> {
-                    targetSession.transcript.filterNot { it is LedgerEntry.AgentTurn && it.entryId == action.turnId }
-                }
-            }
-            val updatedSession = targetSession.copy(transcript = newTranscript)
-            val newFeatureState = currentState.copy(sessions = currentState.sessions + (targetSessionId to updatedSession))
-            return state.copy(featureStates = state.featureStates + (name to newFeatureState))
-        }
-
-
-        // Handle Session-specific actions
-        if (action !is SessionAction) return state
-        val newFeatureState = when (action) {
-            is SessionAction.ToggleMessageRawView -> {
-                val newSet = if (currentState.rawContentViewIds.contains(action.entryId)) {
-                    currentState.rawContentViewIds - action.entryId
+                val newTranscript = if (insertIndex != null && insertIndex != -1) {
+                    targetSession.transcript.toMutableList().apply { add(insertIndex + 1, newEntry) }
                 } else {
-                    currentState.rawContentViewIds + action.entryId
+                    targetSession.transcript + newEntry
                 }
-                currentState.copy(rawContentViewIds = newSet)
+                val updatedSession = targetSession.copy(transcript = newTranscript)
+                featureState.copy(sessions = featureState.sessions + (targetSessionId to updatedSession))
             }
-            is SessionAction._CreateSession -> {
+            is AgentEvent.TurnCompleted -> {
+                if (targetSession == null) return state
+                val newTranscript = targetSession.transcript.flatMap {
+                    if (it is LedgerEntry.AgentTurn && it.entryId == action.turnId) {
+                        listOf(LedgerEntry.Message(
+                            entryId = platform.generateUUID(),
+                            timestamp = platform.getSystemTimeMillis(),
+                            agentId = it.agentId,
+                            content = action.content
+                        ))
+                    } else { listOf(it) }
+                }
+                val updatedSession = targetSession.copy(transcript = newTranscript)
+                featureState.copy(sessions = featureState.sessions + (targetSessionId to updatedSession))
+            }
+            is AgentEvent.TurnFailed -> {
+                if (targetSession == null) return state
+                val newTranscript = targetSession.transcript.flatMap {
+                    if (it is LedgerEntry.AgentTurn && it.entryId == action.turnId) {
+                        listOf(LedgerEntry.Message(
+                            entryId = platform.generateUUID(),
+                            timestamp = platform.getSystemTimeMillis(),
+                            agentId = it.agentId,
+                            content = listOf(TextBlock("ERROR: ${action.error}"))
+                        ))
+                    } else { listOf(it) }
+                }
+                val updatedSession = targetSession.copy(transcript = newTranscript)
+                featureState.copy(sessions = featureState.sessions + (targetSessionId to updatedSession))
+            }
+            is AgentCommand.TurnCancelled -> {
+                if (targetSession == null) return state
+                val newTranscript = targetSession.transcript.filterNot { it is LedgerEntry.AgentTurn && it.entryId == action.turnId }
+                val updatedSession = targetSession.copy(transcript = newTranscript)
+                featureState.copy(sessions = featureState.sessions + (targetSessionId to updatedSession))
+            }
+
+            // --- SESSION-SPECIFIC ACTIONS ---
+            is ToggleMessageRawView -> {
+                val newSet = if (featureState.rawContentViewIds.contains(action.entryId)) {
+                    featureState.rawContentViewIds - action.entryId
+                } else {
+                    featureState.rawContentViewIds + action.entryId
+                }
+                featureState.copy(rawContentViewIds = newSet)
+            }
+            is CreateSession -> {
                 val newSession = Session(id = action.id, name = action.name)
-                currentState.copy(sessions = currentState.sessions + (action.id to newSession))
+                featureState.copy(sessions = featureState.sessions + (action.id to newSession))
             }
-            is SessionAction.PostUserMessage -> {
+            is PostUserMessage -> {
                 if (targetSession == null) return state
                 val newEntry = LedgerEntry.Message(
                     entryId = platform.generateUUID(),
@@ -165,23 +172,29 @@ class SessionFeature(
                 )
                 val updatedTranscript = targetSession.transcript + newEntry
                 val updatedSession = targetSession.copy(transcript = updatedTranscript)
-                currentState.copy(sessions = currentState.sessions + (targetSessionId to updatedSession))
+                featureState.copy(sessions = featureState.sessions + (targetSessionId to updatedSession))
             }
-            is SessionAction.DeleteEntry -> {
+            is DeleteEntry -> {
                 if (targetSession == null) return state
                 val updatedTranscript = targetSession.transcript.filter { it.entryId != action.entryId }
                 val updatedSession = targetSession.copy(transcript = updatedTranscript)
-                currentState.copy(sessions = currentState.sessions + (targetSessionId to updatedSession))
+                featureState.copy(sessions = featureState.sessions + (targetSessionId to updatedSession))
             }
-            is SessionAction.ClearSession -> {
+            is ClearSession -> {
                 if (targetSession == null) return state
                 val updatedSession = targetSession.copy(transcript = emptyList())
-                currentState.copy(sessions = currentState.sessions + (targetSessionId to updatedSession))
+                featureState.copy(sessions = featureState.sessions + (targetSessionId to updatedSession))
             }
-            is SessionAction._LoadSessionsSuccess -> currentState.copy(sessions = action.sessions)
-            is SessionAction.ToggleRawContentView -> currentState.copy(isRawContentVisible = !currentState.isRawContentVisible)
+            is LoadSessionsSuccess -> featureState.copy(sessions = action.sessions)
+            is ToggleRawContentView -> featureState.copy(isRawContentVisible = !featureState.isRawContentVisible)
+            else -> return state
         }
-        return state.copy(featureStates = state.featureStates + (name to newFeatureState))
+
+        return if (newFeatureState != featureState) {
+            state.copy(featureStates = state.featureStates + (name to newFeatureState))
+        } else {
+            state
+        }
     }
 
     override fun start(store: Store) {
@@ -190,18 +203,17 @@ class SessionFeature(
             val loadedSessions = persistenceService.loadSessions()
             withContext(Dispatchers.Main) {
                 if (!loadedSessions.isNullOrEmpty()) {
-                    store.dispatch(SessionAction._LoadSessionsSuccess(loadedSessions))
+                    store.dispatch(LoadSessionsSuccess(loadedSessions))
                 } else {
-                    store.dispatch(SessionAction._CreateSession(id = "default-session", name = "Primary Session"))
+                    store.dispatch(CreateSession(id = "default-session", name = "Primary Session"))
                 }
             }
         }
         coroutineScope.launch(Dispatchers.Default) {
-            // CORRECTED: Use .state and add explicit type hints
             store.state
                 .map<AppState, Map<String, Session>?> { (it.featureStates[name] as? SessionFeatureState)?.sessions }
                 .distinctUntilChanged()
-                .drop(1) // Don't save on initial load
+                .drop(1)
                 .collect { sessionsToSave ->
                     if (sessionsToSave != null) {
                         persistenceService.saveSessions(sessionsToSave)
@@ -212,7 +224,6 @@ class SessionFeature(
         // Command Interpreter Logic
         coroutineScope.launch(Dispatchers.Main) {
             var lastProcessedEntryId: String? = null
-            // CORRECTED: Use .state and add explicit type hints
             store.state
                 .map<AppState, LedgerEntry?> { (it.featureStates[name] as? SessionFeatureState)?.sessions?.get("default-session")?.transcript?.lastOrNull() }
                 .distinctUntilChanged()
@@ -246,7 +257,7 @@ class SessionFeature(
             DropdownMenuItem(
                 text = { Text("Clear Current Session") },
                 onClick = {
-                    stateManager.dispatch(SessionAction.ClearSession("default-session"))
+                    stateManager.dispatch(ClearSession("default-session"))
                     onDismiss()
                 }
             )

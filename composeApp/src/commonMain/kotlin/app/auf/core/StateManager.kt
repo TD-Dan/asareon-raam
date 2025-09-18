@@ -35,10 +35,6 @@ open class StateManager(
 
     // --- Complex Operations & Platform Access ---
 
-    fun cancelMessage() {
-        // TODO: This will need to dispatch a feature-specific cancel action.
-    }
-
     fun formatDisplayTimestamp(timestamp: Long): String {
         return platform.formatDisplayTimestamp(timestamp)
     }
@@ -52,10 +48,10 @@ open class StateManager(
         coroutineScope.launch {
             val codebaseString = sourceCodeService.collateKtFilesToString()
             if (codebaseString.startsWith("ERROR:")) {
-                dispatch(AppAction.ShowToast(codebaseString))
+                dispatch(ShowToast(codebaseString))
             } else {
                 platform.copyToClipboard(codebaseString)
-                dispatch(AppAction.ShowToast("Source code copied to clipboard!"))
+                dispatch(ShowToast("Source code copied to clipboard!"))
             }
         }
     }

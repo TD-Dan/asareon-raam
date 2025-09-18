@@ -40,7 +40,7 @@ fun ImportView(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Import & Sync Holons", style = MaterialTheme.typography.headlineSmall)
-            IconButton(onClick = { stateManager.dispatch(KnowledgeGraphAction.SetViewMode(KnowledgeGraphViewMode.INSPECTOR)) }) {
+            IconButton(onClick = { stateManager.dispatch(SetViewMode(KnowledgeGraphViewMode.INSPECTOR)) }) {
                 Icon(Icons.Default.Close, contentDescription = "Close Import View")
             }
         }
@@ -57,7 +57,7 @@ fun ImportView(
             Spacer(modifier = Modifier.width(8.dp))
             Button(onClick = {
                 platformDependencies.selectDirectoryPath()?.let { selectedPath ->
-                    stateManager.dispatch(KnowledgeGraphAction.StartImportAnalysis(selectedPath))
+                    stateManager.dispatch(StartImportAnalysis(selectedPath))
                 }
             }) {
                 Text("Select & Analyze...")
@@ -71,14 +71,14 @@ fun ImportView(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(
                     checked = isRecursive,
-                    onCheckedChange = { stateManager.dispatch(KnowledgeGraphAction.SetImportRecursive(it)) }
+                    onCheckedChange = { stateManager.dispatch(SetImportRecursive(it)) }
                 )
                 Text("Import sub-folders recursively")
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(
                     checked = showOnlyChanged,
-                    onCheckedChange = { stateManager.dispatch(KnowledgeGraphAction.ToggleShowOnlyChangedImportItems) }
+                    onCheckedChange = { stateManager.dispatch(ToggleShowOnlyChangedImportItems) }
                 )
                 Text("Show only changed files")
             }
@@ -99,23 +99,23 @@ fun ImportView(
                         item = item,
                         selectedAction = kgState.importSelectedActions[item.sourcePath] ?: item.initialAction,
                         onActionSelected = { newAction ->
-                            stateManager.dispatch(KnowledgeGraphAction.UpdateImportAction(item.sourcePath, newAction))
+                            stateManager.dispatch(UpdateImportAction(item.sourcePath, newAction))
                         },
                         potentialParents = kgState.holonGraph.map { it.header }
                     )
-                    Divider()
+                    HorizontalDivider()
                 }
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            OutlinedButton(onClick = { stateManager.dispatch(KnowledgeGraphAction.SetViewMode(KnowledgeGraphViewMode.INSPECTOR)) }) {
+            OutlinedButton(onClick = { stateManager.dispatch(SetViewMode(KnowledgeGraphViewMode.INSPECTOR)) }) {
                 Text("Cancel")
             }
             Spacer(modifier = Modifier.width(8.dp))
             Button(
-                onClick = { stateManager.dispatch(KnowledgeGraphAction.ExecuteImport) },
+                onClick = { stateManager.dispatch(ExecuteImport) },
                 enabled = kgState.importItems.isNotEmpty()
             ) {
                 Text("Execute Import")
@@ -200,7 +200,7 @@ private fun ParentSelector(
             expanded = actionMenuExpanded,
             onDismissRequest = { actionMenuExpanded = false }
         ) {
-            ImportActionType.values().filter { it != ImportActionType.CREATE_ROOT }.forEach { actionType ->
+            ImportActionType.entries.filter { it != ImportActionType.CREATE_ROOT }.forEach { actionType ->
                 DropdownMenuItem(
                     text = { Text(actionType.toInstance(selectedAction).summary) },
                     onClick = {
@@ -233,7 +233,7 @@ private fun GenericActionSelector(
         expanded = expanded,
         onDismissRequest = { expanded = false }
     ) {
-        ImportActionType.values().filter { it != ImportActionType.CREATE_ROOT }.forEach { actionType ->
+        ImportActionType.entries.filter { it != ImportActionType.CREATE_ROOT }.forEach { actionType ->
             DropdownMenuItem(
                 text = { Text(actionType.toInstance(initialAction).summary) },
                 onClick = {
@@ -248,8 +248,8 @@ private fun GenericActionSelector(
 
 private fun ImportActionType.toInstance(initialAction: ImportAction): ImportAction {
     return when (this) {
-        ImportActionType.UPDATE -> if (initialAction is Update) initialAction else Update("")
-        ImportActionType.INTEGRATE -> if (initialAction is Integrate) initialAction else Integrate("")
+        ImportActionType.UPDATE -> initialAction as? Update ?: Update("")
+        ImportActionType.INTEGRATE -> initialAction as? Integrate ?: Integrate("")
         ImportActionType.ASSIGN_PARENT -> AssignParent()
         ImportActionType.QUARANTINE -> Quarantine("Manual Quarantine")
         ImportActionType.IGNORE -> Ignore()

@@ -26,8 +26,8 @@ class KnowledgeGraphFeature(
         if (action !is KnowledgeGraphAction) return state
         val currentState = state.featureStates[name] as? KnowledgeGraphState ?: KnowledgeGraphState()
         val newFeatureState = when (action) {
-            is KnowledgeGraphAction.LoadGraph -> currentState.copy(isLoading = true, fatalError = null, holonGraph = emptyList())
-            is KnowledgeGraphAction.LoadGraphSuccess -> {
+            is LoadGraph -> currentState.copy(isLoading = true, fatalError = null, holonGraph = emptyList())
+            is LoadGraphSuccess -> {
                 val result = action.result
                 currentState.copy(
                     isLoading = false,
@@ -38,10 +38,10 @@ class KnowledgeGraphFeature(
                     fatalError = if (result.determinedPersonaId == null && result.availableAiPersonas.isNotEmpty()) "Please select an Active Agent to begin." else result.fatalError
                 )
             }
-            is KnowledgeGraphAction.LoadGraphFailure -> currentState.copy(isLoading = false, fatalError = action.error)
-            is KnowledgeGraphAction.SelectAiPersona -> currentState.copy(aiPersonaId = action.holonId, contextualHolonIds = emptySet(), inspectedHolonId = null)
-            is KnowledgeGraphAction.InspectHolon -> currentState.copy(inspectedHolonId = action.holonId)
-            is KnowledgeGraphAction.ToggleHolonActive -> {
+            is LoadGraphFailure -> currentState.copy(isLoading = false, fatalError = action.error)
+            is SelectAiPersona -> currentState.copy(aiPersonaId = action.holonId, contextualHolonIds = emptySet(), inspectedHolonId = null)
+            is InspectHolon -> currentState.copy(inspectedHolonId = action.holonId)
+            is ToggleHolonActive -> {
                 if (action.holonId == currentState.aiPersonaId) return state
                 val newContextIds = if (currentState.contextualHolonIds.contains(action.holonId)) {
                     currentState.contextualHolonIds - action.holonId
@@ -50,8 +50,8 @@ class KnowledgeGraphFeature(
                 }
                 currentState.copy(contextualHolonIds = newContextIds)
             }
-            is KnowledgeGraphAction.SetCatalogueFilter -> currentState.copy(catalogueFilter = action.type)
-            is KnowledgeGraphAction.SetViewMode -> {
+            is SetCatalogueFilter -> currentState.copy(catalogueFilter = action.type)
+            is SetViewMode -> {
                 val newExportIds = if (action.mode == KnowledgeGraphViewMode.EXPORT) {
                     (currentState.contextualHolonIds + (currentState.aiPersonaId ?: "")).filter { it.isNotBlank() }.toSet()
                 } else {
@@ -59,7 +59,7 @@ class KnowledgeGraphFeature(
                 }
                 currentState.copy(viewMode = action.mode, holonIdsForExport = newExportIds)
             }
-            is KnowledgeGraphAction.ToggleHolonForExport -> {
+            is ToggleHolonForExport -> {
                 if (action.holonId == currentState.aiPersonaId) return state
                 val newExportIds = if (currentState.holonIdsForExport.contains(action.holonId)) {
                     currentState.holonIdsForExport - action.holonId
@@ -68,11 +68,11 @@ class KnowledgeGraphFeature(
                 }
                 currentState.copy(holonIdsForExport = newExportIds)
             }
-            is KnowledgeGraphAction.SelectAllForExport -> {
+            is SelectAllForExport -> {
                 val allIds = currentState.holonGraph.map { it.header.id }.toSet()
                 currentState.copy(holonIdsForExport = allIds)
             }
-            is KnowledgeGraphAction.DeselectAllForExport -> {
+            is DeselectAllForExport -> {
                 val personaId = currentState.aiPersonaId
                 if (personaId != null) {
                     currentState.copy(holonIdsForExport = setOf(personaId))
@@ -80,11 +80,11 @@ class KnowledgeGraphFeature(
                     currentState.copy(holonIdsForExport = emptySet())
                 }
             }
-            is KnowledgeGraphAction.StartImportAnalysis -> currentState.copy(importSourcePath = action.sourcePath, isImportRecursive = true, showOnlyChangedImportItems = false)
-            is KnowledgeGraphAction.SetImportRecursive -> currentState.copy(isImportRecursive = action.isRecursive)
-            is KnowledgeGraphAction.ToggleShowOnlyChangedImportItems -> currentState.copy(showOnlyChangedImportItems = !currentState.showOnlyChangedImportItems)
-            is KnowledgeGraphAction.AnalysisComplete -> currentState.copy(importItems = action.items, importSelectedActions = action.items.associate { it.sourcePath to it.initialAction })
-            is KnowledgeGraphAction.UpdateImportAction -> currentState.copy(importSelectedActions = currentState.importSelectedActions + (action.sourcePath to action.action))
+            is StartImportAnalysis -> currentState.copy(importSourcePath = action.sourcePath, isImportRecursive = true, showOnlyChangedImportItems = false)
+            is SetImportRecursive -> currentState.copy(isImportRecursive = action.isRecursive)
+            is ToggleShowOnlyChangedImportItems -> currentState.copy(showOnlyChangedImportItems = !currentState.showOnlyChangedImportItems)
+            is AnalysisComplete -> currentState.copy(importItems = action.items, importSelectedActions = action.items.associate { it.sourcePath to it.initialAction })
+            is UpdateImportAction -> currentState.copy(importSelectedActions = currentState.importSelectedActions + (action.sourcePath to action.action))
             else -> currentState
         }
         return state.copy(featureStates = state.featureStates + (name to newFeatureState))
@@ -92,78 +92,78 @@ class KnowledgeGraphFeature(
 
     override fun start(store: Store) {
         this.store = store
-        dispatch(KnowledgeGraphAction.LoadGraph)
+        dispatch(LoadGraph)
     }
 
     private fun dispatch(action: AppAction) {
         val store = this.store ?: return
 
         when (action) {
-            is KnowledgeGraphAction.LoadGraph, KnowledgeGraphAction.RetryLoadGraph -> {
+            is LoadGraph, is RetryLoadGraph -> {
                 store.dispatch(action)
                 coroutineScope.launch {
                     val currentPersonaId = (store.state.value.featureStates[name] as? KnowledgeGraphState)?.aiPersonaId
                     val result = service.loadGraph(currentPersonaId)
                     withContext(Dispatchers.Main) {
                         if (result.fatalError != null && result.holonGraph.isEmpty()) {
-                            store.dispatch(KnowledgeGraphAction.LoadGraphFailure(result.fatalError))
+                            store.dispatch(LoadGraphFailure(result.fatalError))
                         } else {
-                            store.dispatch(KnowledgeGraphAction.LoadGraphSuccess(result))
+                            store.dispatch(LoadGraphSuccess(result))
                         }
                     }
                 }
             }
-            is KnowledgeGraphAction.SelectAiPersona -> {
+            is SelectAiPersona -> {
                 store.dispatch(action)
-                dispatch(KnowledgeGraphAction.LoadGraph)
+                dispatch(LoadGraph)
             }
-            is KnowledgeGraphAction.StartImportAnalysis -> {
+            is StartImportAnalysis -> {
                 store.dispatch(action)
                 coroutineScope.launch {
                     val kgState = store.state.value.featureStates[name] as? KnowledgeGraphState ?: return@launch
                     val items = service.analyzeFolder(action.sourcePath, kgState.holonGraph.map { it.header }, kgState.isImportRecursive)
-                    withContext(Dispatchers.Main) { store.dispatch(KnowledgeGraphAction.AnalysisComplete(items)) }
+                    withContext(Dispatchers.Main) { store.dispatch(AnalysisComplete(items)) }
                 }
             }
-            is KnowledgeGraphAction.SetImportRecursive -> {
+            is SetImportRecursive -> {
                 store.dispatch(action)
                 coroutineScope.launch {
                     val kgState = store.state.value.featureStates[name] as? KnowledgeGraphState ?: return@launch
                     if (kgState.importSourcePath.isNotBlank()) {
                         val items = service.analyzeFolder(kgState.importSourcePath, kgState.holonGraph.map { it.header }, action.isRecursive)
-                        withContext(Dispatchers.Main) { store.dispatch(KnowledgeGraphAction.AnalysisComplete(items)) }
+                        withContext(Dispatchers.Main) { store.dispatch(AnalysisComplete(items)) }
                     }
                 }
             }
-            is KnowledgeGraphAction.ExecuteImport -> {
+            is ExecuteImport -> {
                 store.dispatch(action)
                 coroutineScope.launch {
                     val kgState = store.state.value.featureStates[name] as? KnowledgeGraphState ?: return@launch
                     val result = service.executeImport(kgState.importSelectedActions, kgState.holonGraph.map { it.header }, kgState.aiPersonaId)
                     withContext(Dispatchers.Main) {
-                        store.dispatch(KnowledgeGraphAction.ImportComplete(result))
+                        store.dispatch(ImportComplete(result))
                         if (result.failedImports.isNotEmpty()) {
                             val failedFiles = result.failedImports.keys.joinToString { it.substringAfterLast('/') }
                             val errorMessage = "Import completed with ${result.failedImports.size} errors: $failedFiles"
-                            store.dispatch(AppAction.ShowToast(errorMessage))
+                            store.dispatch(ShowToast(errorMessage))
                         }
                         if (result.successfulImports.isNotEmpty()) {
-                            store.dispatch(AppAction.ShowToast("Import successful! Reloading graph..."))
+                            store.dispatch(ShowToast("Import successful! Reloading graph..."))
                         }
-                        dispatch(KnowledgeGraphAction.LoadGraph)
-                        store.dispatch(KnowledgeGraphAction.SetViewMode(KnowledgeGraphViewMode.INSPECTOR))
+                        dispatch(LoadGraph)
+                        store.dispatch(SetViewMode(KnowledgeGraphViewMode.INSPECTOR))
                     }
                 }
             }
-            is KnowledgeGraphAction.ExecuteExport -> {
+            is ExecuteExport -> {
                 store.dispatch(action)
                 coroutineScope.launch {
                     val kgState = store.state.value.featureStates[name] as? KnowledgeGraphState ?: return@launch
                     val holonsToExport = kgState.holonGraph.filter { it.header.id in kgState.holonIdsForExport }
                     service.executeExport(action.destinationPath, holonsToExport.map { it.header })
                     withContext(Dispatchers.Main) {
-                        store.dispatch(AppAction.ShowToast("Export successful!"))
-                        store.dispatch(KnowledgeGraphAction.SetViewMode(KnowledgeGraphViewMode.INSPECTOR))
+                        store.dispatch(ShowToast("Export successful!"))
+                        store.dispatch(SetViewMode(KnowledgeGraphViewMode.INSPECTOR))
                     }
                 }
             }
@@ -175,7 +175,7 @@ class KnowledgeGraphFeature(
         override val viewKey: String = "feature.knowledgegraph.main"
         @Composable
         override fun RibbonButton(stateManager: StateManager, isActive: Boolean) {
-            IconButton(onClick = { stateManager.dispatch(AppAction.SetActiveView(viewKey)) }) {
+            IconButton(onClick = { stateManager.dispatch(SetActiveView(viewKey)) }) {
                 Icon(
                     imageVector = Icons.Default.AccountTree,
                     contentDescription = "Knowledge Graph",

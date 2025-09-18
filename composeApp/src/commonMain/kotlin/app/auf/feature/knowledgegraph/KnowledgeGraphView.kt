@@ -21,16 +21,16 @@ fun KnowledgeGraphView(
     Row {
         KnowledgeGraphCatalogueView(
             kgState = kgState,
-            onFilter = { type -> stateManager.dispatch(KnowledgeGraphAction.SetCatalogueFilter(type)) },
+            onFilter = { type -> stateManager.dispatch(SetCatalogueFilter(type)) },
             onHolonSelected = { holonId ->
                 when (kgState.viewMode) {
                     KnowledgeGraphViewMode.INSPECTOR -> {
-                        stateManager.dispatch(KnowledgeGraphAction.ToggleHolonActive(holonId))
-                        stateManager.dispatch(KnowledgeGraphAction.InspectHolon(holonId))
+                        stateManager.dispatch(ToggleHolonActive(holonId))
+                        stateManager.dispatch(InspectHolon(holonId))
                     }
 
                     KnowledgeGraphViewMode.EXPORT -> {
-                        stateManager.dispatch(KnowledgeGraphAction.ToggleHolonForExport(holonId))
+                        stateManager.dispatch(ToggleHolonForExport(holonId))
                     }
 
                     else -> {

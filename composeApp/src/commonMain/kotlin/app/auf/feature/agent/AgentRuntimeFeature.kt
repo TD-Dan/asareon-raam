@@ -16,23 +16,17 @@ import app.auf.core.*
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.*
 
-// --- 1. REVISED: MULTI-AGENT INTERNAL ACTIONS ---
-private sealed interface AgentRuntimeAction : AppAction {
-    // Gateway Management
-    data class _SetGateways(val gateways: Map<String, GatewayInfo>) : AgentRuntimeAction
+// --- 1. REVISED: INTERNAL ACTIONS USING MARKER INTERFACE PATTERN ---
+interface AgentRuntimeAction
 
-    // Agent CRUD
-    data class _AddAgent(val agent: AgentRuntimeState) : AgentRuntimeAction
-    data class _UpdateAgentConfig(val agentId: String, val gatewayId: String, val selectedModelId: String, val hkgPersonaId: String?) : AgentRuntimeAction
-    data class _RemoveAgent(val agentId: String) : AgentRuntimeAction
+private data class SetGateways(val gateways: Map<String, GatewayInfo>) : AgentRuntimeAction, Event
+private data class AddAgent(val agent: AgentRuntimeState) : AgentRuntimeAction, Event
+private data class UpdateAgentConfig(val agentId: String, val gatewayId: String, val selectedModelId: String, val hkgPersonaId: String?) : AgentRuntimeAction, Event
+private data class RemoveAgent(val agentId: String) : AgentRuntimeAction, Event
+private data class StartProcessing(val agentId: String, val turnId: String, val parentEntryId: String, val job: Job) : AgentRuntimeAction, Event
+private data class FinishProcessing(val agentId: String) : AgentRuntimeAction, Event
+private data class SetActiveAgentForManager(val agentId: String?) : AgentRuntimeAction, Event
 
-    // Turn Lifecycle
-    data class _StartProcessing(val agentId: String, val turnId: String, val parentEntryId: String, val job: Job) : AgentRuntimeAction
-    data class _FinishProcessing(val agentId: String) : AgentRuntimeAction
-
-    // UI Management
-    data class _SetActiveAgentForManager(val agentId: String?) : AgentRuntimeAction
-}
 
 // --- 2. THE FEATURE (MANAGER) ---
 
@@ -51,10 +45,10 @@ class AgentRuntimeFeature(
         val featureState = state.featureStates[name] as? AgentRuntimeFeatureState ?: return state
 
         val newFeatureState = when (action) {
-            // --- INTERNAL ACTIONS ---
+            // --- GLOBAL COMMANDS ---
+            is AgentCommand.TurnCancelled -> handleTurnCancellation(action, featureState)
+            // --- INTERNAL EVENTS ---
             is AgentRuntimeAction -> handleInternalActions(action, featureState)
-            // --- GLOBAL ACTIONS ---
-            is AgentAction.TurnCancelled -> handleTurnCancellation(action, featureState)
             else -> featureState
         }
 
@@ -67,12 +61,11 @@ class AgentRuntimeFeature(
 
     private fun handleInternalActions(action: AgentRuntimeAction, featureState: AgentRuntimeFeatureState): AgentRuntimeFeatureState {
         return when (action) {
-            is AgentRuntimeAction._SetGateways -> featureState.copy(gateways = action.gateways)
-            is AgentRuntimeAction._AddAgent -> featureState.copy(agents = featureState.agents + (action.agent.id to action.agent))
-            is AgentRuntimeAction._RemoveAgent -> featureState.copy(agents = featureState.agents - action.agentId)
-            is AgentRuntimeAction._SetActiveAgentForManager -> featureState.copy(activeAgentIdForManager = action.agentId)
-
-            is AgentRuntimeAction._UpdateAgentConfig -> {
+            is SetGateways -> featureState.copy(gateways = action.gateways)
+            is AddAgent -> featureState.copy(agents = featureState.agents + (action.agent.id to action.agent))
+            is RemoveAgent -> featureState.copy(agents = featureState.agents - action.agentId)
+            is SetActiveAgentForManager -> featureState.copy(activeAgentIdForManager = action.agentId)
+            is UpdateAgentConfig -> {
                 val agent = featureState.agents[action.agentId] ?: return featureState
                 val updatedAgent = agent.copy(
                     gatewayId = action.gatewayId,
@@ -81,25 +74,23 @@ class AgentRuntimeFeature(
                 )
                 featureState.copy(agents = featureState.agents + (action.agentId to updatedAgent))
             }
-
-            is AgentRuntimeAction._StartProcessing -> {
+            is StartProcessing -> {
                 val agent = featureState.agents[action.agentId] ?: return featureState
                 if (agent.turn !is AgentTurn.Idle) return featureState // Guard
                 val updatedAgent = agent.copy(turn = AgentTurn.Processing(action.turnId, action.parentEntryId, action.job))
                 featureState.copy(agents = featureState.agents + (action.agentId to updatedAgent))
             }
-
-            is AgentRuntimeAction._FinishProcessing -> {
+            is FinishProcessing -> {
                 val agent = featureState.agents[action.agentId] ?: return featureState
                 if (agent.turn !is AgentTurn.Processing) return featureState // Guard
                 val updatedAgent = agent.copy(turn = AgentTurn.Idle)
                 featureState.copy(agents = featureState.agents + (action.agentId to updatedAgent))
             }
+            else -> featureState
         }
     }
 
-    private fun handleTurnCancellation(action: AgentAction.TurnCancelled, featureState: AgentRuntimeFeatureState): AgentRuntimeFeatureState {
-        // Find the agent whose turn matches the cancelled turnId
+    private fun handleTurnCancellation(action: AgentCommand.TurnCancelled, featureState: AgentRuntimeFeatureState): AgentRuntimeFeatureState {
         val agentToCancel = featureState.agents.values.find {
             (it.turn as? AgentTurn.Processing)?.turnId == action.turnId
         }
@@ -114,26 +105,22 @@ class AgentRuntimeFeature(
     }
 
 
-    // --- STUBBED: SIDE EFFECT ORCHESTRATION (To be implemented in Phase 4) ---
+    // --- STUBBED: SIDE EFFECT ORCHESTRATION ---
     override fun start(store: Store) {
         this.store = store
         println("AgentRuntimeFeature.start() called. Side effect logic is not yet implemented.")
-        // LOGIC TO POPULATE GATEWAYS AND START AGENT STIMULUS OBSERVERS WILL GO HERE
     }
 
-    // --- STUBBED: UI (To be implemented in Phase 5) ---
+    // --- STUBBED: UI ---
     @Composable
     fun AgentManagerView(stateManager: StateManager) {
         Text("Agent Manager View - To be implemented")
     }
 
-    // --- COMPOSABLE PROVIDER (Partially stubbed) ---
+    // --- COMPOSABLE PROVIDER ---
     inner class AgentRuntimeComposableProvider : Feature.ComposableProvider {
-        // ... (RibbonButton, etc. will be added for the Manager View)
         @Composable
         override fun TurnView(stateManager: StateManager, turnId: String) {
-            // NOTE: This logic will need to be updated to find the correct agent
-            // from the feature state's map. For now, it's a placeholder.
             Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -143,7 +130,7 @@ class AgentRuntimeFeature(
                     Text("$name is processing turn $turnId...")
                     CircularProgressIndicator()
                     Button(onClick = {
-                        stateManager.dispatch(AgentAction.TurnCancelled(turnId))
+                        stateManager.dispatch(AgentCommand.TurnCancelled(turnId))
                     }) {
                         Text("Stop")
                     }
