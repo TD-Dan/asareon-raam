@@ -1,59 +1,73 @@
 package app.auf.feature.agent
 
 import app.auf.core.FeatureState
+import kotlinx.coroutines.Job
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
-/**
- * An enumeration of the possible lifecycle states for an Agent.
- */
+// --- TURN STATE MACHINE (Unchanged) ---
 @Serializable
-enum class AgentStatus {
-    /** The agent is idle and observing its environment. */
-    WAITING,
-    /** The agent has been stimulated and is waiting for a pause before acting. */
-    PRIMED,
-    /** The agent has committed to acting and is executing a side effect (e.g., API call). */
-    PROCESSING
+sealed interface AgentTurn {
+    @Serializable
+    data object Idle : AgentTurn
+
+    @Serializable
+    data class Processing(
+        val turnId: String,
+        val parentEntryId: String,
+        @Transient val job: Job? = null
+    ) : AgentTurn
 }
 
-@Serializable
-data class CompilerSettings(
-    val removeWhitespace: Boolean = true,
-    val cleanHeaders: Boolean = true,
-    val minifyJson: Boolean = false
-)
-
+// --- NEW: GATEWAY INFORMATION MODEL ---
 /**
- * The state for the AgentRuntimeFeature itself.
- * In the future, this could hold a map of multiple agent states if the architecture evolves.
+ * Represents the state of a single, available AgentGateway.
+ * This is populated at startup by querying the gateway.
  */
 @Serializable
-data class AgentRuntimeFeatureState(
-    // For now, we assume a single, active agent per session.
-    val agent: AgentRuntimeState? = null
-) : FeatureState
+data class GatewayInfo(
+    val id: String,
+    val availableModels: List<String> = emptyList(),
+    val isAvailable: Boolean = false // e.g., false if API key is missing
+)
 
+
+// --- REVISED: THE AGENT INSTANCE MODEL ---
 /**
- * The state for a single, active agent instance managed by the runtime.
- * This is the generic state object, repurposed from the old HkgAgentState.
+ * Represents the complete state and configuration for a single, unique agent instance.
  */
 @Serializable
 data class AgentRuntimeState(
     val id: String,
-    val sessionId: String,
+    val archetypeId: String,
+    val displayName: String,
+
+    // --- Durable Configuration (Managed by AgentManagerView) ---
+    /** The ID of the gateway this agent is configured to use. */
+    val gatewayId: String,
+    /** The specific model this agent has selected from the gateway's list. */
+    val selectedModelId: String,
     val hkgPersonaId: String? = null,
-    val availableModels: List<String> = emptyList(),
-    val selectedModel: String = "gemini-1.5-flash-latest",
-    val compilerSettings: CompilerSettings = CompilerSettings(),
-    // --- State Machine ---
-    val status: AgentStatus = AgentStatus.WAITING,
-    val primedAt: Long? = null,
-    val lastEntryAt: Long? = null,
-    // --- Configuration ---
-    val initialWaitMillis: Long = 1500L,
-    val maxWaitMillis: Long = 10000L
+
+    // --- Transient State Machine (Managed by the Reducer) ---
+    val turn: AgentTurn = AgentTurn.Idle
 ) {
-    // Convenience property derived from state
     val isProcessing: Boolean
-        get() = status == AgentStatus.PROCESSING
+        get() = turn is AgentTurn.Processing
 }
+
+
+// --- REVISED: THE FEATURE (MANAGER) STATE ---
+/**
+ * The state for the AgentRuntimeFeature. It now acts as a manager, holding a map
+ * of all active agent instances and all available gateways.
+ */
+@Serializable
+data class AgentRuntimeFeatureState(
+    /** A map of all available gateways and their models, keyed by gateway ID. */
+    val gateways: Map<String, GatewayInfo> = emptyMap(),
+    /** The collection of all agent instances, keyed by their unique `id`. */
+    val agents: Map<String, AgentRuntimeState> = emptyMap(),
+    /** The ID of the agent currently selected in the AgentManagerView, for UI purposes. */
+    val activeAgentIdForManager: String? = null
+) : FeatureState

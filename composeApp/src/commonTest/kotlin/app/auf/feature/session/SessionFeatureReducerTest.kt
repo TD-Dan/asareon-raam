@@ -6,8 +6,11 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.TestScope
 import kotlinx.serialization.json.Json
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SessionFeatureReducerTest {
 
     private lateinit var feature: SessionFeature
@@ -16,11 +19,13 @@ class SessionFeatureReducerTest {
     private val sessionId = "default-session"
     private val userEntry = LedgerEntry.Message("entry-1", 1000L, "USER", listOf(TextBlock("Hello")))
     private val agentTurnEntry = LedgerEntry.AgentTurn("turn-1", 2000L, "AgentRuntimeFeature", parentEntryId = null)
+    private lateinit var testScope: TestScope // Added for coroutine context
 
     @BeforeTest
     fun setup() {
-        // We can pass nulls and empty lists for dependencies that the reducer itself doesn't use.
-        feature = SessionFeature(platform, Json, coroutineScope = null, allFeatures = emptyList())
+        // --- FIX: Provide a TestScope instance for the feature's coroutineScope ---
+        testScope = TestScope()
+        feature = SessionFeature(platform, Json, coroutineScope = testScope, allFeatures = emptyList())
 
         initialState = AppState(
             featureStates = mapOf(

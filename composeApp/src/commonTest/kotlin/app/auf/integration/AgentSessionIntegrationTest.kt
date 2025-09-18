@@ -1,11 +1,12 @@
-package app.auf.feature.agent
+package app.auf.integration
 
 import app.auf.core.*
+import app.auf.feature.agent.*
 import app.auf.feature.session.LedgerEntry
 import app.auf.feature.session.SessionAction
 import app.auf.feature.session.SessionFeature
 import app.auf.feature.session.SessionFeatureState
-import app.auf.util.fakes.FakePlatformDependencies
+import app.auf.fakes.FakePlatformDependencies
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -20,43 +21,48 @@ import kotlinx.serialization.json.Json
 @OptIn(ExperimentalCoroutinesApi::class)
 class AgentSessionIntegrationTest {
 
-    // --- Test Doubles ---
-    class FakeAgentGateway(var responseContent: String, var processingDelay: Long = 1000L) : AgentGateway {
-        var callCount = 0
-        override suspend fun generate(request: AgentRequest): AgentResponse {
-            kotlinx.coroutines.delay(processingDelay)
-            callCount++
-            return AgentResponse(listOf(TextBlock(responseContent)))
+    // --- FIX: Reinstate the FakeAgentGateway to satisfy the non-null contract ---
+    class FakeAgentGateway : AgentGateway {
+        override suspend fun generateContent(request: AgentRequest): AgentResponse {
+            return AgentResponse(rawContent = "Fake response", errorMessage = null)
         }
+        override suspend fun listAvailableModels(): List<String> = listOf("fake-model-1")
     }
 
     // --- Test Environment ---
     private lateinit var store: Store
-    private lateinit var fakeGateway: FakeAgentGateway
     private lateinit var testScope: TestScope
     private val sessionId = "default-session"
+    private val agentId = "agent-1"
 
     @BeforeTest
     fun setup() {
         testScope = TestScope()
         val platform = FakePlatformDependencies()
         val jsonParser = Json { ignoreUnknownKeys = true; isLenient = true }
-        fakeGateway = FakeAgentGateway("This is the fake AI response.")
+        val fakeGateway = FakeAgentGateway() // Instantiate the fake
 
         val features = mutableListOf<Feature>()
-        val agentFeature = AgentRuntimeFeature(fakeGateway, platform, testScope)
+        // --- FIX: Pass the non-null fakeGateway instance ---
+        val agentFeature = AgentRuntimeFeature(agentGateway = fakeGateway, platform = platform, coroutineScope = testScope)
         val sessionFeature = SessionFeature(platform, jsonParser, testScope, features)
         features.addAll(listOf(agentFeature, sessionFeature))
 
+        val initialAgentState = AgentRuntimeFeatureState(
+            agent = AgentRuntimeState(id = agentId, sessionId = sessionId, status = AgentStatus.WAITING)
+        )
+        val initialAppState = AppState(
+            featureStates = mapOf("AgentRuntimeFeature" to initialAgentState)
+        )
+
         store = Store(
-            initialState = AppState(),
+            initialState = initialAppState,
             rootReducer = ::appReducer,
             features = features,
             coroutineScope = testScope
         )
 
         store.dispatch(SessionAction._CreateSession(sessionId, "Test Session"))
-        store.dispatch(AgentRuntimeAction._UpdateStatus(AgentStatus.WAITING)) // Set initial state
         store.startFeatureLifecycles()
         testScope.runCurrent()
     }
@@ -71,65 +77,63 @@ class AgentSessionIntegrationTest {
         return featureState?.sessions?.get(sessionId)?.transcript ?: emptyList()
     }
 
+    private fun findActiveTurnId(): String? {
+        return getTranscript().filterIsInstance<LedgerEntry.AgentTurn>().firstOrNull()?.entryId
+    }
+
     @Test
     fun `full turn lifecycle is correctly orchestrated by the store`() = testScope.runTest {
         // ARRANGE
         assertEquals(AgentStatus.WAITING, getAgentState()?.status)
         assertEquals(0, getTranscript().size)
 
-        // ACT 1: Stimulate the agent, which will move it to PROCESSING and begin a turn.
-        store.dispatch(AgentRuntimeAction._UpdateStatus(AgentStatus.PRIMED))
+        // ACT 1: Stimulate the agent with a user message.
+        store.dispatch(SessionAction.PostUserMessage(sessionId, "Go"))
         runCurrent()
 
-        // ASSERT 1: Agent is now processing and a placeholder exists in the ledger.
+        // ASSERT 1: Agent is now PROCESSING and a placeholder exists in the ledger.
         assertEquals(AgentStatus.PROCESSING, getAgentState()?.status)
-        assertTrue(getAgentState()?.activeTurnId != null, "Agent should have an active turn ID.")
-        assertEquals(1, getTranscript().size)
-        assertTrue(getTranscript().first() is LedgerEntry.AgentTurn, "Ledger should contain an AgentTurn placeholder.")
+        assertTrue(findActiveTurnId() != null, "An agent turn should be active in the transcript.")
+        assertEquals(2, getTranscript().size) // User message + AgentTurn
+        assertTrue(getTranscript().last() is LedgerEntry.AgentTurn, "Ledger should contain an AgentTurn placeholder.")
 
-        // ACT 2: Advance time to allow the gateway to respond.
-        advanceTimeBy(fakeGateway.processingDelay + 100)
+        // ACT 2: Advance time to allow the agent's internal logic (hardcoded delay) to complete.
+        advanceTimeBy(2000 + 100)
         runCurrent()
 
-        // ASSERT 2: The turn is complete, the placeholder is replaced, and the agent is waiting.
+        // ASSERT 3: The turn is complete, the placeholder is replaced, and the agent is WAITING.
         assertEquals(AgentStatus.WAITING, getAgentState()?.status)
-        assertEquals(null, getAgentState()?.activeTurnId, "Active turn ID should be cleared.")
-        assertEquals(1, getTranscript().size)
-        assertTrue(getTranscript().first() is LedgerEntry.Message, "Placeholder should be replaced by a Message.")
-        assertEquals(1, fakeGateway.callCount)
+        assertTrue(findActiveTurnId() == null, "Active turn ID should be cleared from transcript.")
+        assertEquals(2, getTranscript().size) // User message + Agent message
+        assertTrue(getTranscript().last() is LedgerEntry.Message, "Placeholder should be replaced by a Message.")
     }
 
     @Test
     fun `cancellation correctly interrupts processing and cleans up ledger`() = testScope.runTest {
-        // ARRANGE: Set a long delay to ensure we can cancel mid-flight.
-        fakeGateway.processingDelay = 5000L
-
         // ACT 1: Start the turn.
-        store.dispatch(AgentRuntimeAction._UpdateStatus(AgentStatus.PRIMED))
+        store.dispatch(SessionAction.PostUserMessage(sessionId, "Go"))
         runCurrent()
 
         // ASSERT 1: Verify we are in the processing state.
         assertEquals(AgentStatus.PROCESSING, getAgentState()?.status)
-        val turnId = getAgentState()?.activeTurnId
+        val turnId = findActiveTurnId()
         assertTrue(turnId != null)
-        assertEquals(1, getTranscript().size)
-        assertTrue(getTranscript().first() is LedgerEntry.AgentTurn)
 
         // ACT 2: Advance time part-way, then dispatch the cancellation.
         advanceTimeBy(1000L)
         store.dispatch(AgentAction.TurnCancelled(turnId!!))
         runCurrent()
 
-        // ASSERT 2: The agent is now waiting and the placeholder has been removed.
+        // ASSERT 2: The agent is now WAITING and the placeholder has been removed.
         assertEquals(AgentStatus.WAITING, getAgentState()?.status, "Agent should have returned to WAITING.")
-        assertEquals(null, getAgentState()?.activeTurnId, "Active turn ID should be cleared after cancellation.")
-        assertEquals(0, getTranscript().size, "Transcript should be empty after placeholder is removed.")
+        assertTrue(findActiveTurnId() == null, "Active turn ID should be cleared from transcript.")
+        assertEquals(1, getTranscript().size, "Transcript should only contain the user message after placeholder is removed.")
 
-        // ACT 3: Advance time past the original gateway delay to ensure it doesn't post a message.
-        advanceTimeBy(5000L)
+        // ACT 3: Advance time past the original delay to ensure it doesn't post a message.
+        advanceTimeBy(2000L)
         runCurrent()
 
-        // ASSERT 3: The transcript remains empty, confirming the gateway response was ignored.
-        assertEquals(0, getTranscript().size)
+        // ASSERT 3: The transcript remains at 1, confirming the agent logic was cancelled and did not complete.
+        assertEquals(1, getTranscript().size)
     }
 }

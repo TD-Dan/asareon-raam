@@ -1,4 +1,4 @@
-package app.auf.util.fakes
+package app.auf.fakes
 
 import app.auf.util.BasePath
 import app.auf.util.FileEntry
