@@ -28,7 +28,7 @@ sealed interface AgentTurn {
 data class GatewayInfo(
     val id: String,
     val availableModels: List<String> = emptyList(),
-    val isAvailable: Boolean = false // e.g., false if API key is missing
+    val isAvailable: Boolean = false // e.g., false if an API key is missing
 )
 
 
@@ -51,10 +51,7 @@ data class AgentRuntimeState(
 
     // --- Transient State Machine (Managed by the Reducer) ---
     val turn: AgentTurn = AgentTurn.Idle
-) {
-    val isProcessing: Boolean
-        get() = turn is AgentTurn.Processing
-}
+)
 
 
 // --- REVISED: THE FEATURE (MANAGER) STATE ---

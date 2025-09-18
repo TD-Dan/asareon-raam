@@ -24,9 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import app.auf.core.AppAction
-import app.auf.core.Feature
-import app.auf.core.StateManager
+import app.auf.core.*
 import aufapp.composeapp.generated.resources.Res
 import aufapp.composeapp.generated.resources.icon
 import org.jetbrains.compose.resources.painterResource
@@ -52,7 +50,7 @@ fun GlobalActionRibbon(
     ) {
         // --- CORRECTED: Master Home Button using typesafe resources ---
         val isDefaultViewActive = activeViewKey == appState.defaultViewKey
-        IconButton(onClick = { stateManager.dispatch(AppAction.SetActiveView(appState.defaultViewKey)) }) {
+        IconButton(onClick = { stateManager.dispatch(SetActiveView(appState.defaultViewKey)) }) {
             Icon(
                 painter = painterResource(Res.drawable.icon),
                 contentDescription = "Go to Default View (Session)",

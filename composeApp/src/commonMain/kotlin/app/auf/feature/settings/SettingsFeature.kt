@@ -6,9 +6,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import app.auf.core.AppAction
-import app.auf.core.Feature
-import app.auf.core.StateManager
+import app.auf.core.*
 
 /**
  * ## Mandate
@@ -27,7 +25,7 @@ class SettingsFeature(
 
         @Composable
         override fun RibbonButton(stateManager: StateManager, isActive: Boolean) {
-            IconButton(onClick = { stateManager.dispatch(AppAction.SetActiveView(viewKey)) }) {
+            IconButton(onClick = { stateManager.dispatch(SetActiveView(viewKey)) }) {
                 Icon(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "Settings",
@@ -41,7 +39,7 @@ class SettingsFeature(
             SettingsView(
                 stateManager = stateManager,
                 features = allFeatures,
-                onClose = { stateManager.dispatch(AppAction.SetActiveView(stateManager.state.value.defaultViewKey)) }
+                onClose = { stateManager.dispatch(SetActiveView(stateManager.state.value.defaultViewKey)) }
             )
         }
     }
