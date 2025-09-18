@@ -15,12 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.*
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.auf.core.*
 import kotlinx.coroutines.launch
 
@@ -32,7 +27,6 @@ fun SessionView(
 ) {
     val appState by stateManager.state.collectAsState()
     val sessionFeatureState = appState.featureStates["SessionFeature"] as? SessionFeatureState
-    val clipboardManager = LocalClipboardManager.current
 
     val activeSession = sessionFeatureState?.sessions?.values?.firstOrNull()
     val displayedTranscript = activeSession?.transcript ?: emptyList()
@@ -55,7 +49,7 @@ fun SessionView(
 
     val sendMessageAction = {
         if (userMessage.isNotBlank() && activeSession != null) {
-            stateManager.dispatch(SessionAction.PostUserMessage(
+            stateManager.dispatch(PostUserMessage(
                 sessionId = activeSession.id,
                 content = userMessage
             ))
@@ -116,7 +110,7 @@ fun SessionView(
             IconButton(onClick = { /* TODO: Copy Full Transcript Logic */ }) {
                 Icon(Icons.Default.ContentCopy, contentDescription = "Copy Full Transcript")
             }
-            IconButton(onClick = { stateManager.dispatch(SessionAction.ToggleRawContentView) }) {
+            IconButton(onClick = { stateManager.dispatch(ToggleRawContentView) }) {
                 Icon(Icons.Default.Code, contentDescription = "Toggle All Raw Content Views")
             }
         }

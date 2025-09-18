@@ -120,7 +120,7 @@ fun MessageCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
                         // CORRECTED: Use entryId instead of id
-                        onClick = { stateManager.dispatch(SessionAction.ToggleMessageRawView(entry.entryId)) },
+                        onClick = { stateManager.dispatch(ToggleMessageRawView(entry.entryId)) },
                         modifier = Modifier.size(24.dp)
                     ) {
                         Icon(
@@ -143,7 +143,7 @@ fun MessageCard(
                                 text = { Text("Delete") },
                                 onClick = {
                                     // CORRECTED: Use entryId instead of id
-                                    stateManager.dispatch(SessionAction.DeleteEntry(sessionId, entry.entryId))
+                                    stateManager.dispatch(DeleteEntry(sessionId, entry.entryId))
                                     showMenu = false
                                 }
                             )
