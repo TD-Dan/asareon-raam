@@ -25,6 +25,7 @@ class SessionFeatureReducerTest {
     fun setup() {
         // --- FIX: Provide a TestScope instance for the feature's coroutineScope ---
         testScope = TestScope()
+        // FIX: Provide the 'allFeatures' parameter, even if it's empty for this test.
         feature = SessionFeature(platform, Json, coroutineScope = testScope, allFeatures = emptyList())
 
         initialState = AppState(
@@ -76,8 +77,8 @@ class SessionFeatureReducerTest {
         // ASSERT
         val transcript = getTranscript(newState)
         assertEquals(2, transcript.size)
-        assertTrue(transcript[0] is LedgerEntry.Message) // The original entry
-        assertTrue(transcript[1] is LedgerEntry.AgentTurn) // The new entry inserted after
+        assertTrue(transcript is LedgerEntry.Message) // The original entry
+        assertTrue(transcript is LedgerEntry.AgentTurn) // The new entry inserted after
     }
 
     @Test
@@ -98,7 +99,7 @@ class SessionFeatureReducerTest {
 
         // ASSERT
         val transcript = getTranscript(newState)
-        assertEquals(2, transcript.size)
+        assertEquals(2, transcript.size, "FIX: Should still have 2 entries, one replaced.")
         assertTrue(transcript.last() is LedgerEntry.Message)
         assertEquals(completionContent, (transcript.last() as LedgerEntry.Message).content)
     }
@@ -113,6 +114,7 @@ class SessionFeatureReducerTest {
                 )
             )
         )
+        // FIX: Update to the correct Command type
         val action = AgentCommand.TurnCancelled("turn-1")
 
         // ACT
@@ -125,7 +127,7 @@ class SessionFeatureReducerTest {
     }
 
     @Test
-    fun `reducer on TurnFailed removes AgentTurn from ledger`() {
+    fun `reducer on TurnFailed replaces AgentTurn with an error Message`() {
         // ARRANGE
         val stateWithTurn = AppState(
             featureStates = mapOf(
@@ -134,14 +136,16 @@ class SessionFeatureReducerTest {
                 )
             )
         )
-        val action = AgentEvent.TurnFailed("turn-1", "Error")
+        val action = AgentEvent.TurnFailed("turn-1", "It broke")
 
         // ACT
         val newState = feature.reducer(stateWithTurn, action)
 
         // ASSERT
         val transcript = getTranscript(newState)
-        assertEquals(1, transcript.size)
-        assertTrue(transcript.last() is LedgerEntry.Message)
+        assertEquals(2, transcript.size, "FIX: Should still have 2 entries, one replaced with an error.")
+        val lastMessage = transcript.last()
+        assertTrue(lastMessage is LedgerEntry.Message)
+        assertTrue((lastMessage.content.first() as TextBlock).text.contains("ERROR: It broke"))
     }
 }

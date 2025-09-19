@@ -21,6 +21,7 @@ open class FakePlatformDependencies : PlatformDependencies() {
     val directories = mutableSetOf<String>()
     var clipboardContent: String? = null
     var currentTime = 1_000_000_000_000L // A fixed starting time for predictability
+    private var uuidCounter = 0 // FIX: Add a counter for predictable UUIDs
 
     override val pathSeparator: Char = '/'
 
@@ -66,23 +67,22 @@ open class FakePlatformDependencies : PlatformDependencies() {
     override fun createDirectories(path: String) {
         // --- FIX: Correctly handle absolute paths and build the hierarchy ---
         var currentPath = ""
-        val parts = path.split(pathSeparator)
+        val parts = path.split(pathSeparator).filter { it.isNotEmpty() }
         // Handle the root directory for absolute paths
         if (path.startsWith(pathSeparator)) {
             currentPath = pathSeparator.toString()
+            directories.add(currentPath)
         }
 
         for (part in parts) {
-            if (part.isNotEmpty()) {
-                currentPath = if (currentPath.endsWith(pathSeparator)) {
-                    "$currentPath$part"
-                } else if (currentPath.isEmpty()){
-                    part
-                } else {
-                    "$currentPath$pathSeparator$part"
-                }
-                directories.add(currentPath)
+            currentPath = if (currentPath.endsWith(pathSeparator)) {
+                "$currentPath$part"
+            } else if (currentPath.isEmpty()){
+                part
+            } else {
+                "$currentPath$pathSeparator$part"
             }
+            directories.add(currentPath)
         }
     }
 
@@ -129,6 +129,12 @@ open class FakePlatformDependencies : PlatformDependencies() {
 
     override fun getSystemTimeMillis(): Long {
         return currentTime
+    }
+
+    // FIX: Implement the missing function to satisfy the contract.
+    override fun generateUUID(): String {
+        uuidCounter++
+        return "fake-uuid-$uuidCounter"
     }
 
     override fun formatIsoTimestamp(timestamp: Long): String {

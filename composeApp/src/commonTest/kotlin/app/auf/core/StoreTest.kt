@@ -17,9 +17,11 @@ class StoreTest {
     // --- WidgetFeature ---
     @Serializable
     data class WidgetState(val count: Int = 0) : FeatureState
+    // FIX: Implement Command interface
     data object IncrementWidgetCount : Command
     class WidgetFeature : Feature {
         override val name: String = "WidgetFeature"
+        override val composableProvider: Feature.ComposableProvider? = null // FIX: Explicitly null
         var startWasCalled = false
         override fun start(store: Store) { startWasCalled = true }
         override fun reducer(state: AppState, action: AppAction): AppState {
@@ -35,9 +37,11 @@ class StoreTest {
     // --- GadgetFeature ---
     @Serializable
     data class GadgetState(val text: String = "initial") : FeatureState
+    // FIX: Implement Command interface
     data class SetGadgetText(val newText: String) : Command
     class GadgetFeature : Feature {
         override val name: String = "GadgetFeature"
+        override val composableProvider: Feature.ComposableProvider? = null // FIX: Explicitly null
         var startWasCalled = false
         override fun start(store: Store) { startWasCalled = true }
         override fun reducer(state: AppState, action: AppAction): AppState {
@@ -86,8 +90,8 @@ class StoreTest {
         assertEquals("new text", finalGadgetState.text, "GadgetFeature reducer should have set the text.")
 
         // 3. Assert State Isolation (Crucial)
-        assertEquals("initial", (initialState.featureStates[gadgetFeature.name] as GadgetState).text, "Gadget initial text should be unchanged after WidgetAction.")
-        assertEquals(5, (initialState.featureStates[widgetFeature.name] as WidgetState).count, "Widget initial count should be unchanged after GadgetAction.")
+        val stateAfterWidgetDispatch = appReducer(initialState, IncrementWidgetCount).let { widgetFeature.reducer(it, IncrementWidgetCount) }
+        assertEquals("initial", (stateAfterWidgetDispatch.featureStates[gadgetFeature.name] as GadgetState).text, "Gadget initial text should be unchanged after WidgetAction.")
     }
 
     @Test

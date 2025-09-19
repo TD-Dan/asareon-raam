@@ -49,7 +49,7 @@ class ReducerTest {
     fun `appReducer ignores unknown and feature-specific actions`() {
         // Arrange
         val initialState = AppState(toastMessage = "Unchanged")
-        // FIX: Use an anonymous object for the local fake action.
+        // FIX: Use an anonymous object that implements the Command interface to satisfy the sealed hierarchy.
         val someFeatureAction = object : Command {}
 
         // Act
