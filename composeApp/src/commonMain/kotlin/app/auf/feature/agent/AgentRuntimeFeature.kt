@@ -17,15 +17,15 @@ import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.*
 
 // --- 1. REVISED: INTERNAL ACTIONS USING MARKER INTERFACE PATTERN ---
-interface AgentRuntimeAction
+internal interface AgentRuntimeAction
 
-private data class SetGateways(val gateways: Map<String, GatewayInfo>) : AgentRuntimeAction, Event
-private data class AddAgent(val agent: AgentRuntimeState) : AgentRuntimeAction, Event
-private data class UpdateAgentConfig(val agentId: String, val gatewayId: String, val selectedModelId: String, val hkgPersonaId: String?) : AgentRuntimeAction, Event
-private data class RemoveAgent(val agentId: String) : AgentRuntimeAction, Event
-private data class StartProcessing(val agentId: String, val turnId: String, val parentEntryId: String, val job: Job) : AgentRuntimeAction, Event
-private data class FinishProcessing(val agentId: String) : AgentRuntimeAction, Event
-private data class SetActiveAgentForManager(val agentId: String?) : AgentRuntimeAction, Event
+internal data class SetGateways(val gateways: Map<String, GatewayInfo>) : AgentRuntimeAction, Event
+internal data class AddAgent(val agent: AgentRuntimeState) : AgentRuntimeAction, Event
+internal data class UpdateAgentConfig(val agentId: String, val gatewayId: String, val selectedModelId: String, val hkgPersonaId: String?) : AgentRuntimeAction, Event
+internal data class RemoveAgent(val agentId: String) : AgentRuntimeAction, Event
+internal data class StartProcessing(val agentId: String, val turnId: String, val parentEntryId: String, val job: Job) : AgentRuntimeAction, Event
+internal data class FinishProcessing(val agentId: String) : AgentRuntimeAction, Event
+internal data class SetActiveAgentForManager(val agentId: String?) : AgentRuntimeAction, Event
 
 
 // --- 2. THE FEATURE (MANAGER) ---
@@ -86,6 +86,7 @@ class AgentRuntimeFeature(
                 val updatedAgent = agent.copy(turn = AgentTurn.Idle)
                 featureState.copy(agents = featureState.agents + (action.agentId to updatedAgent))
             }
+            // FIX: Add required 'else' branch to satisfy the compiler.
             else -> featureState
         }
     }

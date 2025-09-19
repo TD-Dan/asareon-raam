@@ -19,13 +19,11 @@ class SessionFeatureReducerTest {
     private val sessionId = "default-session"
     private val userEntry = LedgerEntry.Message("entry-1", 1000L, "USER", listOf(TextBlock("Hello")))
     private val agentTurnEntry = LedgerEntry.AgentTurn("turn-1", 2000L, "AgentRuntimeFeature", parentEntryId = null)
-    private lateinit var testScope: TestScope // Added for coroutine context
+    private lateinit var testScope: TestScope
 
     @BeforeTest
     fun setup() {
-        // --- FIX: Provide a TestScope instance for the feature's coroutineScope ---
         testScope = TestScope()
-        // FIX: Provide the 'allFeatures' parameter, even if it's empty for this test.
         feature = SessionFeature(platform, Json, coroutineScope = testScope, allFeatures = emptyList())
 
         initialState = AppState(
@@ -77,8 +75,9 @@ class SessionFeatureReducerTest {
         // ASSERT
         val transcript = getTranscript(newState)
         assertEquals(2, transcript.size)
-        assertTrue(transcript is LedgerEntry.Message) // The original entry
-        assertTrue(transcript is LedgerEntry.AgentTurn) // The new entry inserted after
+        // CORRECTED: Check the type of the element AT the index, not the list itself.
+        assertTrue(transcript[0] is LedgerEntry.Message, "The first entry should be the original message.")
+        assertTrue(transcript[1] is LedgerEntry.AgentTurn, "The second entry should be the new agent turn.")
     }
 
     @Test
@@ -99,7 +98,7 @@ class SessionFeatureReducerTest {
 
         // ASSERT
         val transcript = getTranscript(newState)
-        assertEquals(2, transcript.size, "FIX: Should still have 2 entries, one replaced.")
+        assertEquals(2, transcript.size, "Should still have 2 entries, one replaced.")
         assertTrue(transcript.last() is LedgerEntry.Message)
         assertEquals(completionContent, (transcript.last() as LedgerEntry.Message).content)
     }
@@ -114,7 +113,6 @@ class SessionFeatureReducerTest {
                 )
             )
         )
-        // FIX: Update to the correct Command type
         val action = AgentCommand.TurnCancelled("turn-1")
 
         // ACT
@@ -143,7 +141,7 @@ class SessionFeatureReducerTest {
 
         // ASSERT
         val transcript = getTranscript(newState)
-        assertEquals(2, transcript.size, "FIX: Should still have 2 entries, one replaced with an error.")
+        assertEquals(2, transcript.size, "Should still have 2 entries, one replaced with an error.")
         val lastMessage = transcript.last()
         assertTrue(lastMessage is LedgerEntry.Message)
         assertTrue((lastMessage.content.first() as TextBlock).text.contains("ERROR: It broke"))
