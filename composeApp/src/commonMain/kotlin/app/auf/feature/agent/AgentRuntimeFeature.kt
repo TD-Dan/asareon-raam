@@ -1,3 +1,4 @@
+// --- FILE: AgentRuntimeFeature.kt ---
 package app.auf.feature.agent
 
 import androidx.compose.foundation.layout.Arrangement
@@ -15,8 +16,10 @@ import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
-// --- 1. REVISED: INTERNAL ACTIONS USING MARKER INTERFACE PATTERN ---
+// --- INTERNAL ACTIONS (Unchanged) ---
 internal interface AgentRuntimeAction
 
 internal data class SetGateways(val gateways: Map<String, GatewayInfo>) : AgentRuntimeAction, Event
@@ -28,10 +31,10 @@ internal data class FinishProcessing(val agentId: String) : AgentRuntimeAction, 
 internal data class SetActiveAgentForManager(val agentId: String?) : AgentRuntimeAction, Event
 
 
-// --- 2. THE FEATURE (MANAGER) ---
+// --- THE FEATURE (MANAGER) ---
 
 class AgentRuntimeFeature(
-    private val agentGateway: AgentGateway, // Will become a list/map later
+    private val agentGateway: AgentGateway,
     private val platform: PlatformDependencies,
     private val coroutineScope: CoroutineScope
 ) : Feature {
@@ -40,14 +43,12 @@ class AgentRuntimeFeature(
     private var store: Store? = null
     override val composableProvider: Feature.ComposableProvider = AgentRuntimeComposableProvider()
 
-    // --- NEW: MULTI-AGENT REDUCER ---
+    // --- REDUCER (Unchanged) ---
     override fun reducer(state: AppState, action: AppAction): AppState {
         val featureState = state.featureStates[name] as? AgentRuntimeFeatureState ?: return state
 
         val newFeatureState = when (action) {
-            // --- GLOBAL COMMANDS ---
             is AgentCommand.TurnCancelled -> handleTurnCancellation(action, featureState)
-            // --- INTERNAL EVENTS ---
             is AgentRuntimeAction -> handleInternalActions(action, featureState)
             else -> featureState
         }
@@ -86,7 +87,6 @@ class AgentRuntimeFeature(
                 val updatedAgent = agent.copy(turn = AgentTurn.Idle)
                 featureState.copy(agents = featureState.agents + (action.agentId to updatedAgent))
             }
-            // FIX: Add required 'else' branch to satisfy the compiler.
             else -> featureState
         }
     }
@@ -102,23 +102,65 @@ class AgentRuntimeFeature(
             return featureState.copy(agents = featureState.agents + (agent.id to updatedAgent))
         }
 
-        return featureState // No agent found for that turn
+        return featureState
     }
 
 
-    // --- STUBBED: SIDE EFFECT ORCHESTRATION ---
+    // --- SIDE EFFECT ORCHESTRATION ---
     override fun start(store: Store) {
         this.store = store
-        println("AgentRuntimeFeature.start() called. Side effect logic is not yet implemented.")
+        val agentId = "janitor-agent" // Hardcoded for now
+
+        coroutineScope.launch {
+            val initialState = store.state.value.featureStates[name] as? AgentRuntimeFeatureState
+            if (initialState?.agents?.get(agentId) == null) {
+                store.dispatch(AddAgent(AgentRuntimeState(
+                    id = agentId,
+                    archetypeId = "auf.janitor",
+                    displayName = "Janitor",
+                    gatewayId = "gemini",
+                    selectedModelId = "gemini-pro"
+                )))
+            }
+
+            store.state
+                .map { (it.featureStates[name] as? AgentRuntimeFeatureState)?.agents?.get(agentId)?.turn is AgentTurn.Idle }
+                .distinctUntilChanged()
+                .collect { isAgentIdle ->
+                    if (isAgentIdle) {
+                        println("[AgentRuntimeFeature] STIMULUS DETECTED: Agent '$agentId' is idle. Triggering turn.")
+                        triggerAgentTurn(store, agentId)
+                    }
+                }
+        }
     }
 
-    // --- STUBBED: UI ---
+    private fun triggerAgentTurn(store: Store, agentId: String) {
+        val turnId = platform.generateUUID()
+        val parentEntryId = ""
+
+        val agentJob = coroutineScope.launch {
+            delay(2000)
+            val resultBlocks = listOf(TextBlock("This is the result of the agent's work for turn $turnId."))
+            store.dispatch(AgentEvent.TurnCompleted(turnId, resultBlocks))
+            store.dispatch(FinishProcessing(agentId))
+            println("[AgentRuntimeFeature] Turn $turnId completed and dispatched.")
+        }
+
+        store.dispatch(StartProcessing(agentId, turnId, parentEntryId, agentJob))
+        // --- BUG FIX ---
+        // Dispatch the global event with the FEATURE'S name, not the specific agent's ID.
+        // This allows the SessionView to find the correct ComposableProvider for rendering.
+        store.dispatch(AgentEvent.TurnBegan(this.name, turnId, parentEntryId.ifEmpty { null }))
+        println("[AgentRuntimeFeature] Turn $turnId began and dispatched with renderer ID '${this.name}'.")
+    }
+
+    // --- UI (Unchanged) ---
     @Composable
     fun AgentManagerView(stateManager: StateManager) {
         Text("Agent Manager View - To be implemented")
     }
 
-    // --- COMPOSABLE PROVIDER ---
     inner class AgentRuntimeComposableProvider : Feature.ComposableProvider {
         @Composable
         override fun TurnView(stateManager: StateManager, turnId: String) {
