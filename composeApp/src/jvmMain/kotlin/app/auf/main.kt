@@ -11,7 +11,7 @@ import app.auf.core.*
 import app.auf.feature.agent.AgentRuntimeFeature
 import app.auf.feature.agent.AgentGateway
 import app.auf.feature.agent.GatewayGemini
-import app.auf.feature.agent.AgentRuntimeFeatureState // CORRECTED IMPORT
+import app.auf.feature.agent.AgentRuntimeFeatureState
 import app.auf.feature.agent.PromptCompiler
 import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.feature.knowledgegraph.KnowledgeGraphService
@@ -47,7 +47,7 @@ fun main() = application {
             encodeDefaults = true
             serializersModule = SerializersModule {
                 polymorphic(FeatureState::class) {
-                    subclass(AgentRuntimeFeatureState::class) // CORRECTED SUBCLASS
+                    subclass(AgentRuntimeFeatureState::class)
                     subclass(KnowledgeGraphState::class)
                     subclass(SessionFeatureState::class)
                 }
@@ -73,12 +73,14 @@ fun main() = application {
         val knowledgeGraphService = KnowledgeGraphService(platformDependencies)
         val allFeatures = mutableListOf<Feature>()
 
+        // The SessionFeature needs a reference to the list, so we add it last.
+        // This is a bit of a code smell but acceptable for the composition root.
         allFeatures.addAll(listOf(
             AgentRuntimeFeature(agentGateway, platformDependencies, coroutineScope),
             KnowledgeGraphFeature(knowledgeGraphService, coroutineScope),
-            SessionFeature(platformDependencies, jsonParser, coroutineScope, allFeatures),
-            SettingsFeature(allFeatures)
+            SettingsFeature(allFeatures) // SettingsFeature also needs the list
         ))
+        allFeatures.add(SessionFeature(platformDependencies, jsonParser, coroutineScope, allFeatures))
         allFeatures
     }
 
@@ -91,7 +93,9 @@ fun main() = application {
         )
     }
 
-    val store = remember { Store(initialState, ::appReducer, features, coroutineScope) }
+    // --- FIX APPLIED ---
+    // The Store constructor no longer takes a CoroutineScope.
+    val store = remember { Store(initialState, ::appReducer, features) }
 
     val stateManager = remember {
         val backupManager = BackupManager(platformDependencies)

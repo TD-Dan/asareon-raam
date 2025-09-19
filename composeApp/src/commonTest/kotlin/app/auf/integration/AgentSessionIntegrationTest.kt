@@ -11,12 +11,10 @@ import app.auf.feature.agent.AgentRuntimeFeature
 import app.auf.feature.session.LedgerEntry
 import app.auf.feature.session.SessionFeature
 import app.auf.feature.session.SessionFeatureState
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
-import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -24,54 +22,38 @@ import kotlin.test.assertTrue
 
 class AgentSessionIntegrationTest {
 
-    private lateinit var store: Store
-    private lateinit var agentFeature: AgentRuntimeFeature
-    private lateinit var sessionFeature: SessionFeature
-    private lateinit var platform: FakePlatformDependencies
-    private lateinit var coroutineScope: CoroutineScope
-
-    @BeforeTest
-    fun setup() {
-        platform = FakePlatformDependencies()
-        coroutineScope = CoroutineScope(Job())
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `when AgentRuntimeFeature starts a turn SessionFeature should add an AgentTurn to the transcript`() = runTest {
+        // ARRANGE
+        val platform = FakePlatformDependencies()
 
         val fakeGateway = object : AgentGateway {
             override suspend fun generateContent(request: AgentRequest) = AgentResponse("ok", null, null)
             override suspend fun listAvailableModels(): List<String> = emptyList()
         }
 
-        agentFeature = AgentRuntimeFeature(fakeGateway, platform, coroutineScope)
-        sessionFeature = SessionFeature(platform, Json, coroutineScope, listOf(agentFeature))
+        // Inject the TestScope (`this`) into the features so they run on the test scheduler.
+        val agentFeature = AgentRuntimeFeature(fakeGateway, platform, coroutineScope = this)
+        val sessionFeature = SessionFeature(platform, Json, coroutineScope = this, allFeatures = listOf(agentFeature))
 
-        // --- FIX IMPLEMENTED ---
-        // The order of features is critical for initialization. SessionFeature must be
-        // initialized before AgentRuntimeFeature to ensure a session exists when the
-        // agent feature starts dispatching events.
-        val features = listOf(sessionFeature, agentFeature)
+        val features = listOf(agentFeature, sessionFeature)
 
-        store = Store(
+        val store = Store(
             initialState = AppState(),
             rootReducer = ::appReducer,
-            features = features,
-            coroutineScope = coroutineScope
+            features = features
         )
-    }
 
-    @Test
-    fun `when AgentRuntimeFeature starts a turn SessionFeature should add an AgentTurn to the transcript`() = runTest {
         // ACT
-        // startFeatureLifecycles triggers the start() methods in the CORRECT order.
-        // 1. SessionFeature creates a default session.
-        // 2. AgentRuntimeFeature sees its agent is idle and dispatches TurnBegan.
-        // 3. SessionFeature's reducer receives TurnBegan and now correctly finds the session.
+        // 1. Enqueue the startup coroutines from the features.
         store.startFeatureLifecycles()
+        // 2. Explicitly execute all pending tasks on the scheduler.
+        runCurrent()
 
         // ASSERT
-        // The test will now pass because the transcript will become non-empty.
-        val finalState = store.state.first {
-            val sessionState = it.featureStates[sessionFeature.name] as? SessionFeatureState
-            sessionState?.sessions?.get("default-session")?.transcript?.isNotEmpty() == true
-        }
+        // 3. Now, the state is final and can be asserted on synchronously.
+        val finalState = store.state.value
 
         val sessionState = finalState.featureStates[sessionFeature.name] as SessionFeatureState
         val transcript = sessionState.sessions["default-session"]?.transcript

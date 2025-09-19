@@ -1,3 +1,4 @@
+// --- FILE: SessionFeature.kt ---
 package app.auf.feature.session
 
 import androidx.compose.material3.DropdownMenuItem
@@ -83,7 +84,10 @@ class SessionFeature(
     private val commandInterpreter = CommandInterpreter()
 
     override fun reducer(state: AppState, action: AppAction): AppState {
-        val featureState = state.featureStates[name] as? SessionFeatureState ?: return state
+        // --- FIX IMPLEMENTED ---
+        // Instead of returning if the state is null, instantiate a default state.
+        // This allows the feature to bootstrap itself into the AppState map.
+        val featureState = state.featureStates[name] as? SessionFeatureState ?: SessionFeatureState()
         val targetSessionId = "default-session"
         val targetSession = featureState.sessions[targetSessionId]
 
@@ -177,7 +181,7 @@ class SessionFeature(
             is LoadSessionsSuccess -> featureState.copy(sessions = action.sessions)
             is ToggleRawContentView -> featureState.copy(isRawContentVisible = !featureState.isRawContentVisible)
 
-            else -> return state
+            else -> featureState // Return the current state if the action is not relevant
         }
 
         return if (newFeatureState != featureState) {

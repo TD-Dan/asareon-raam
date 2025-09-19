@@ -1,6 +1,5 @@
 package app.auf.core
 
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -21,8 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 open class Store(
     initialState: AppState,
     private val rootReducer: (AppState, AppAction) -> AppState,
-    private val features: List<Feature>,
-    private val coroutineScope: CoroutineScope
+    private val features: List<Feature>
 ) {
 
     private val _state = MutableStateFlow(initialState)

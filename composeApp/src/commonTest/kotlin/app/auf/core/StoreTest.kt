@@ -68,8 +68,7 @@ class StoreTest {
         val store = Store(
             initialState = initialState,
             rootReducer = ::appReducer,
-            features = listOf(widgetFeature, gadgetFeature),
-            coroutineScope = this
+            features = listOf(widgetFeature, gadgetFeature)
         )
 
         // --- ACT ---
@@ -102,8 +101,7 @@ class StoreTest {
         val store = Store(
             initialState = AppState(),
             rootReducer = ::appReducer,
-            features = listOf(widgetFeature, gadgetFeature),
-            coroutineScope = this
+            features = listOf(widgetFeature, gadgetFeature)
         )
 
         assertFalse(widgetFeature.startWasCalled, "Widget start() should not be called before lifecycles are started.")
