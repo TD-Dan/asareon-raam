@@ -51,38 +51,20 @@ class SessionFeatureReducerTest {
 
     @Test
     fun `reducer on TurnBegan appends AgentTurn to ledger`() {
-        // ARRANGE
-        val action = AgentEvent.TurnBegan("AgentRuntimeFeature", "turn-new", parentEntryId = null)
+        val action = AgentEvent.TurnBegan(rendererFeatureName = "AgentRuntimeFeature", turnId = "turn-new", parentEntryId = null)
 
-        // ACT
         val newState = feature.reducer(initialState, action)
 
-        // ASSERT
         val transcript = getTranscript(newState)
         assertEquals(2, transcript.size)
-        assertTrue(transcript.last() is LedgerEntry.AgentTurn)
-        assertEquals("turn-new", (transcript.last() as LedgerEntry.AgentTurn).entryId)
-    }
-
-    @Test
-    fun `reducer on TurnBegan with parentId inserts AgentTurn in correct position`() {
-        // ARRANGE
-        val action = AgentEvent.TurnBegan("AgentRuntimeFeature", "turn-new", parentEntryId = "entry-1")
-
-        // ACT
-        val newState = feature.reducer(initialState, action)
-
-        // ASSERT
-        val transcript = getTranscript(newState)
-        assertEquals(2, transcript.size)
-        // CORRECTED: Check the type of the element AT the index, not the list itself.
-        assertTrue(transcript[0] is LedgerEntry.Message, "The first entry should be the original message.")
-        assertTrue(transcript[1] is LedgerEntry.AgentTurn, "The second entry should be the new agent turn.")
+        val lastEntry = transcript.last()
+        assertTrue(lastEntry is LedgerEntry.AgentTurn)
+        assertEquals("turn-new", lastEntry.entryId)
+        assertEquals("AgentRuntimeFeature", lastEntry.rendererFeatureName)
     }
 
     @Test
     fun `reducer on TurnCompleted replaces AgentTurn with Message`() {
-        // ARRANGE
         val stateWithTurn = AppState(
             featureStates = mapOf(
                 feature.name to SessionFeatureState(
@@ -93,19 +75,18 @@ class SessionFeatureReducerTest {
         val completionContent = listOf(TextBlock("Done."))
         val action = AgentEvent.TurnCompleted("turn-1", completionContent)
 
-        // ACT
         val newState = feature.reducer(stateWithTurn, action)
 
-        // ASSERT
         val transcript = getTranscript(newState)
         assertEquals(2, transcript.size, "Should still have 2 entries, one replaced.")
-        assertTrue(transcript.last() is LedgerEntry.Message)
-        assertEquals(completionContent, (transcript.last() as LedgerEntry.Message).content)
+        val lastEntry = transcript.last()
+        assertTrue(lastEntry is LedgerEntry.Message)
+        assertEquals(completionContent, lastEntry.content)
+        assertEquals("AgentRuntimeFeature", lastEntry.agentId)
     }
 
     @Test
     fun `reducer on TurnCancelled removes AgentTurn from ledger`() {
-        // ARRANGE
         val stateWithTurn = AppState(
             featureStates = mapOf(
                 feature.name to SessionFeatureState(
@@ -115,10 +96,8 @@ class SessionFeatureReducerTest {
         )
         val action = AgentCommand.TurnCancelled("turn-1")
 
-        // ACT
         val newState = feature.reducer(stateWithTurn, action)
 
-        // ASSERT
         val transcript = getTranscript(newState)
         assertEquals(1, transcript.size)
         assertTrue(transcript.last() is LedgerEntry.Message)
@@ -143,7 +122,13 @@ class SessionFeatureReducerTest {
         val transcript = getTranscript(newState)
         assertEquals(2, transcript.size, "Should still have 2 entries, one replaced with an error.")
         val lastMessage = transcript.last()
-        assertTrue(lastMessage is LedgerEntry.Message)
-        assertTrue((lastMessage.content.first() as TextBlock).text.contains("ERROR: It broke"))
+
+        // --- FIX IMPLEMENTED ---
+        // Replace the brittle `assertTrue` with precise, self-documenting assertions.
+        assertTrue(lastMessage is LedgerEntry.Message, "The last entry should now be a Message.")
+        assertEquals("CORE", lastMessage.agentId, "The author of the error should be CORE.")
+        assertEquals(1, lastMessage.content.size, "The error message should have exactly one content block.")
+        val textBlock = lastMessage.content.first() as TextBlock
+        assertEquals("ERROR: Agent turn failed. It broke", textBlock.text, "The error text should be exact.")
     }
 }

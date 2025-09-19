@@ -76,17 +76,17 @@ fun SessionView(
                 ) { entry ->
                     when (entry) {
                         is LedgerEntry.Message -> {
-                            // Raw view logic is now handled internally by MessageCard
                             MessageCard(
                                 entry = entry,
                                 sessionId = activeSession.id,
                                 stateManager = stateManager,
-                                rawContentViewIds = rawContentViewIds // This is now the correct type
+                                rawContentViewIds = rawContentViewIds
                             )
                         }
                         is LedgerEntry.AgentTurn -> {
-                            // NEW: Delegate rendering to the correct feature
-                            val agentFeature = features.find { it.name == entry.agentId }
+                            // --- REFACTORING APPLIED ---
+                            // Look up the feature using the unambiguous `rendererFeatureName`.
+                            val agentFeature = features.find { it.name == entry.rendererFeatureName }
                             agentFeature?.composableProvider?.TurnView(
                                 stateManager = stateManager,
                                 turnId = entry.entryId

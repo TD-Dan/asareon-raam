@@ -1,4 +1,3 @@
-// --- FILE: SessionFeature.kt ---
 package app.auf.feature.session
 
 import androidx.compose.material3.DropdownMenuItem
@@ -48,9 +47,9 @@ sealed interface LedgerEntry {
 
     @Serializable
     data class AgentTurn(
-        override val entryId: String, // This is the turnId
+        override val entryId: String,
         override val timestamp: Long,
-        val agentId: String, // This is the FEATURE'S name, used for rendering
+        val rendererFeatureName: String,
         val parentEntryId: String?
     ) : LedgerEntry, TransientEntry
 }
@@ -95,7 +94,7 @@ class SessionFeature(
                 val newEntry = LedgerEntry.AgentTurn(
                     entryId = action.turnId,
                     timestamp = platform.getSystemTimeMillis(),
-                    agentId = action.agentId, // The feature name for the renderer
+                    rendererFeatureName = action.rendererFeatureName,
                     parentEntryId = action.parentEntryId
                 )
                 val newTranscript = targetSession.transcript + newEntry
@@ -109,7 +108,7 @@ class SessionFeature(
                         LedgerEntry.Message(
                             entryId = platform.generateUUID(),
                             timestamp = platform.getSystemTimeMillis(),
-                            agentId = it.agentId, // Preserve the original agent/feature ID
+                            agentId = it.rendererFeatureName, // The message author is the feature that was rendering
                             content = action.content
                         )
                     } else { it }
@@ -164,7 +163,6 @@ class SessionFeature(
                 val updatedSession = targetSession.copy(transcript = updatedTranscript)
                 featureState.copy(sessions = featureState.sessions + (targetSessionId to updatedSession))
             }
-            // ... other session actions remain the same
             is DeleteEntry -> {
                 if (targetSession == null) return state
                 val updatedTranscript = targetSession.transcript.filter { it.entryId != action.entryId }
@@ -189,18 +187,21 @@ class SessionFeature(
         }
     }
 
-    // --- start() and other methods remain unchanged ---
     override fun start(store: Store) {
+        val initialState = store.state.value.featureStates[name] as? SessionFeatureState
+        if (initialState?.sessions?.isEmpty() != false) {
+            store.dispatch(CreateSession(id = "default-session", name = "Primary Session"))
+        }
+
         coroutineScope.launch(Dispatchers.Default) {
             val loadedSessions = persistenceService.loadSessions()
-            withContext(Dispatchers.Main) {
-                if (!loadedSessions.isNullOrEmpty()) {
+            if (!loadedSessions.isNullOrEmpty()) {
+                withContext(Dispatchers.Main) {
                     store.dispatch(LoadSessionsSuccess(loadedSessions))
-                } else {
-                    store.dispatch(CreateSession(id = "default-session", name = "Primary Session"))
                 }
             }
         }
+
         coroutineScope.launch(Dispatchers.Default) {
             store.state
                 .map<AppState, Map<String, Session>?> { (it.featureStates[name] as? SessionFeatureState)?.sessions }

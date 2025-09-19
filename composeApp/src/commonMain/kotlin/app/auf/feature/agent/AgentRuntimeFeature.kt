@@ -5,9 +5,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -106,7 +111,7 @@ class AgentRuntimeFeature(
     }
 
 
-    // --- SIDE EFFECT ORCHESTRATION ---
+    // --- SIDE EFFECT ORCHESTRATION (Unchanged) ---
     override fun start(store: Store) {
         this.store = store
         val agentId = "janitor-agent" // Hardcoded for now
@@ -148,20 +153,34 @@ class AgentRuntimeFeature(
         }
 
         store.dispatch(StartProcessing(agentId, turnId, parentEntryId, agentJob))
-        // --- BUG FIX ---
-        // Dispatch the global event with the FEATURE'S name, not the specific agent's ID.
-        // This allows the SessionView to find the correct ComposableProvider for rendering.
-        store.dispatch(AgentEvent.TurnBegan(this.name, turnId, parentEntryId.ifEmpty { null }))
-        println("[AgentRuntimeFeature] Turn $turnId began and dispatched with renderer ID '${this.name}'.")
+        store.dispatch(AgentEvent.TurnBegan(
+            rendererFeatureName = this.name,
+            turnId = turnId,
+            parentEntryId = parentEntryId.ifEmpty { null }
+        ))
+        println("[AgentRuntimeFeature] Turn $turnId began and dispatched with renderer feature name '${this.name}'.")
     }
 
-    // --- UI (Unchanged) ---
-    @Composable
-    fun AgentManagerView(stateManager: StateManager) {
-        Text("Agent Manager View - To be implemented")
-    }
-
+    // --- UI PROVIDER ---
     inner class AgentRuntimeComposableProvider : Feature.ComposableProvider {
+        override val viewKey: String = "feature.agent.manager"
+
+        @Composable
+        override fun RibbonButton(stateManager: StateManager, isActive: Boolean) {
+            IconButton(onClick = { stateManager.dispatch(SetActiveView(viewKey)) }) {
+                Icon(
+                    imageVector = Icons.Default.DataObject,
+                    contentDescription = "Agent Manager",
+                    tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        @Composable
+        override fun StageContent(stateManager: StateManager) {
+            AgentManagerView(stateManager)
+        }
+
         @Composable
         override fun TurnView(stateManager: StateManager, turnId: String) {
             Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {

@@ -54,7 +54,7 @@ interface AgentCommand : Command {
 /** An open interface for all agent-related internal Events. */
 interface AgentEvent : Event {
     /** Dispatched by an agent's side effect logic when a turn begins. */
-    data class TurnBegan(val agentId: String, val turnId: String, val parentEntryId: String?) : AgentEvent
+    data class TurnBegan(val rendererFeatureName: String, val turnId: String, val parentEntryId: String?) : AgentEvent
 
     /** Dispatched by an agent's side effect logic when a turn completes successfully. */
     data class TurnCompleted(val turnId: String, val content: List<ContentBlock>) : AgentEvent
