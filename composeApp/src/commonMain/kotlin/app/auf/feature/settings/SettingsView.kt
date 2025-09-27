@@ -12,9 +12,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.auf.core.Action
 import app.auf.core.Store
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 @Composable
 fun SettingsView(
@@ -59,9 +62,20 @@ fun SettingsView(
                 }
 
                 items(definitions, key = { it["key"]!!.jsonPrimitive.content }) { definitionJson ->
+                    val key = definitionJson["key"]!!.jsonPrimitive.content
+                    val defaultValue = definitionJson["defaultValue"]!!.jsonPrimitive.content
+                    val currentValue = settingsState?.values?.get(key) ?: defaultValue
+
                     SettingRow(
                         definitionJson = definitionJson,
-                        currentValue = "N/A" // Placeholder
+                        currentValue = currentValue,
+                        onValueChange = { newValue ->
+                            val payload = buildJsonObject {
+                                put("key", key)
+                                put("value", newValue.toString())
+                            }
+                            store.dispatch(Action("settings.UPDATE", payload))
+                        }
                     )
                 }
             }
@@ -72,7 +86,8 @@ fun SettingsView(
 @Composable
 private fun SettingRow(
     definitionJson: JsonObject,
-    currentValue: Any?
+    currentValue: String,
+    onValueChange: (Any) -> Unit
 ) {
     // At the view layer, we dynamically parse the properties from the JSON contract.
     val label = definitionJson["label"]?.jsonPrimitive?.content ?: "No Label"
@@ -92,14 +107,14 @@ private fun SettingRow(
         when (type) {
             "BOOLEAN" -> {
                 Switch(
-                    checked = currentValue as? Boolean ?: false,
-                    onCheckedChange = { /* TODO: dispatch action */ }
+                    checked = currentValue.toBoolean(),
+                    onCheckedChange = { onValueChange(it) }
                 )
             }
             "NUMERIC_LONG" -> {
                 OutlinedTextField(
-                    value = (currentValue as? Long ?: 0L).toString(),
-                    onValueChange = { /* TODO: dispatch action */ },
+                    value = currentValue,
+                    onValueChange = { onValueChange(it) },
                     modifier = Modifier.width(150.dp),
                     singleLine = true
                 )

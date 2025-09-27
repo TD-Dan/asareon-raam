@@ -29,6 +29,11 @@
         },
         "required": ["key", "value"]
       }
+    },
+    {
+      "action_name": "settings.OPEN_FOLDER",
+      "summary": "Requests that the application's settings folder be opened in the native file explorer.",
+      "payload_schema": null
     }
   ],
   "publishes": [

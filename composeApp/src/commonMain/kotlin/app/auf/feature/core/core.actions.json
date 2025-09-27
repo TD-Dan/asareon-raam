@@ -7,13 +7,25 @@
       "summary": "Changes the main view displayed in the UI.",
       "payload_schema": {
         "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "description": "The unique viewKey of the feature to display."
-          }
-        },
+        "properties": { "key": { "type": "string" } },
         "required": ["key"]
+      }
+    },
+    {
+      "action_name": "core.SHOW_DEFAULT_VIEW",
+      "summary": "Changes the main view to whatever is configured as the default view.",
+      "payload_schema": null
+    },
+    {
+      "action_name": "core.UPDATE_WINDOW_SIZE",
+      "summary": "Updates the application state with the new window dimensions, typically after a user resize.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "width": { "type": "integer" },
+          "height": { "type": "integer" }
+        },
+        "required": ["width", "height"]
       }
     },
     {
@@ -21,12 +33,7 @@
       "summary": "Displays a short-lived message at the bottom of the screen.",
       "payload_schema": {
         "type": "object",
-        "properties": {
-          "message": {
-            "type": "string",
-            "description": "The message to display."
-          }
-        },
+        "properties": { "message": { "type": "string" } },
         "required": ["message"]
       }
     },

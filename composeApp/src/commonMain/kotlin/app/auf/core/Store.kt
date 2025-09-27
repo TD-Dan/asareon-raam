@@ -15,10 +15,13 @@ import kotlinx.coroutines.flow.asStateFlow
  * 1. To provide a `StateFlow` of the current `AppState` for the UI to observe.
  * 2. To expose a single `dispatch` method that accepts the universal `Action`.
  * 3. To pass the state through each registered feature's reducer to calculate the new state.
- * 4. To manage the lifecycle of features, calling their `init` method once.
- * 5. To act as a gatekeeper, enforcing the application lifecycle state.
+ * 4. To trigger each feature's `onAction` side effect handler AFTER the state has been updated.
+ * 5. To manage the lifecycle of features, calling their `init` method once.
+ * 6. To act as a gatekeeper, enforcing the application lifecycle state.
  *
  * This class is part of the core scaffolding; it is completely ignorant of any specific feature's logic.
+ *
+ * @version 2.0
  */
 open class Store(
     initialState: AppState,
@@ -42,29 +45,41 @@ open class Store(
     }
 
     /**
-     * The single, generic entry point for all state changes.
-     * This method orchestrates the state transition by sequentially applying the reducer
-     * from every registered feature to the current application state.
-     *
-     * It also acts as a gatekeeper, preventing actions from being processed before the
-     * application has entered the 'RUNNING' state.
+     * The single, generic entry point for all state changes and side effects.
+     * The process is strictly ordered:
+     * 1. Check lifecycle guard.
+     * 2. Sequentially apply the reducer from every feature to calculate the new state.
+     * 3. Atomically update the state.
+     * 4. Sequentially trigger the `onAction` side effect handler for every feature.
      */
     open fun dispatch(action: Action) {
         val coreState = _state.value.featureStates["CoreFeature"] as? CoreState
         val currentLifecycle = coreState?.lifecycle ?: AppLifecycle.INITIALIZING
 
         // THE GUARD CLAUSE
+        // NOTE: The `app.STARTING` action itself is allowed through to transition the state.
         if (currentLifecycle == AppLifecycle.INITIALIZING && action.name != "app.STARTING") {
             println("ERROR: Action '${action.name}' dispatched before app started. Action ignored.")
             return
         }
 
+        // --- PHASE 1: REDUCE ---
         val previousState = _state.value
-
-        // The state is passed through each feature's reducer in sequence.
         val newState = features.fold(previousState) { currentState, feature ->
             feature.reducer(currentState, action)
         }
-        _state.value = newState
+
+        // --- PHASE 2: UPDATE STATE ---
+        // Atomically update the state if it has changed.
+        if (newState != previousState) {
+            _state.value = newState
+        }
+
+        // --- PHASE 3: SIDE-EFFECTS ---
+        // Trigger side effects for all features AFTER the state has been updated.
+        // This ensures onAction handlers always work with the most current state.
+        features.forEach { feature ->
+            feature.onAction(action, this)
+        }
     }
 }
