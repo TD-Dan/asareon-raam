@@ -24,19 +24,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import app.auf.core.*
+import app.auf.core.Action
+import app.auf.core.Feature
+import app.auf.core.Store
+import app.auf.feature.core.CoreState
 import aufapp.composeapp.generated.resources.Res
 import aufapp.composeapp.generated.resources.icon
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.jetbrains.compose.resources.painterResource
 
 @Composable
 fun GlobalActionRibbon(
-    stateManager: StateManager,
+    store: Store,
     features: List<Feature>,
     activeViewKey: String?
 ) {
     var isMenuExpanded by remember { mutableStateOf(false) }
-    val appState by stateManager.state.collectAsState()
+    val appState by store.state.collectAsState()
+    val coreState = remember(appState.featureStates) {
+        appState.featureStates["CoreFeature"] as? CoreState
+    }
+    val defaultViewKey = coreState?.defaultViewKey ?: "feature.session.main"
 
     Column(
         modifier = Modifier
@@ -49,8 +58,8 @@ fun GlobalActionRibbon(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // --- CORRECTED: Master Home Button using typesafe resources ---
-        val isDefaultViewActive = activeViewKey == appState.defaultViewKey
-        IconButton(onClick = { stateManager.dispatch(SetActiveView(appState.defaultViewKey)) }) {
+        val payload = buildJsonObject { put("key", defaultViewKey) }
+        IconButton(onClick = { store.dispatch(Action("core.SET_ACTIVE_VIEW", payload)) }) {
             Icon(
                 painter = painterResource(Res.drawable.icon),
                 contentDescription = "Go to Default View (Session)",
@@ -63,7 +72,7 @@ fun GlobalActionRibbon(
         features.forEach { feature ->
             feature.composableProvider?.let { provider ->
                 provider.RibbonButton(
-                    stateManager = stateManager,
+                    store = store,
                     isActive = provider.viewKey == activeViewKey
                 )
             }
@@ -81,7 +90,7 @@ fun GlobalActionRibbon(
                 // Render menu content from all features
                 features.forEach { feature ->
                     feature.composableProvider?.MenuContent(
-                        stateManager = stateManager,
+                        store = store,
                         onDismiss = { isMenuExpanded = false }
                     )
                 }

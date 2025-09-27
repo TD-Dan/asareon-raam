@@ -31,11 +31,9 @@ fun main() = application {
 
     Window(
         onCloseRequest = {
+            // Dispatch the closing signal and allow a moment for features to react.
             container.store.dispatch(Action("app.CLOSING"))
-            // A brief delay to allow persistence to complete before exiting.
-            // A more robust solution would involve feedback from the store.
-            // TODO: IMPORTANT
-            Thread.sleep(1000)
+            Thread.sleep(250) // A simple mechanism to allow for persistence.
             exitApplication()
         },
         title = "AUF v${Version.APP_VERSION}",
@@ -44,9 +42,9 @@ fun main() = application {
         // One-time effect to apply native decorations and signal app start.
         LaunchedEffect(Unit) {
             platformDependencies.applyNativeWindowDecorations(window)
-            container.store.startFeatureLifecycles()
+            container.store.initFeatureLifecycles()
             container.store.dispatch(Action("app.STARTING"))
         }
-        App(container)
+        App(container.store, container.features)
     }
 }

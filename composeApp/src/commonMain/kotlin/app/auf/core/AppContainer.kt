@@ -27,12 +27,11 @@ class AppContainer(
         val allFeatures = mutableListOf<Feature>()
         allFeatures.addAll(listOf(
             CoreFeature(),
-            // These features will be updated later to manage their own dependencies
-            AgentRuntimeFeature(platformDependencies, coroutineScope),
-            KnowledgeGraphFeature(platformDependencies, coroutineScope),
-            SettingsFeature(allFeatures) // This will be fixed in a later chunk
+            SettingsFeature(platformDependencies)
+            //AgentRuntimeFeature(platformDependencies, coroutineScope),
+            //KnowledgeGraphFeature(platformDependencies, coroutineScope),
+            //SessionFeature(platformDependencies, coroutineScope)
         ))
-        allFeatures.add(SessionFeature(platformDependencies, coroutineScope))
         allFeatures
     }
 

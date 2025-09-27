@@ -1,5 +1,8 @@
 package app.auf.core
 
+import app.auf.feature.core.AppLifecycle
+import app.auf.feature.core.CoreFeature
+import app.auf.feature.core.CoreState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -56,18 +59,21 @@ class StoreTest {
     @Test
     fun `store correctly orchestrates core and multiple feature reducers while maintaining state isolation`() = runTest {
         // --- ARRANGE ---
+        val coreFeature = CoreFeature()
         val widgetFeature = WidgetFeature()
         val gadgetFeature = GadgetFeature()
         val initialState = AppState(
             featureStates = mapOf(
+                coreFeature.name to CoreState(),
                 widgetFeature.name to WidgetState(count = 5),
                 gadgetFeature.name to GadgetState(text = "initial")
             )
         )
         val store = Store(
             initialState = initialState,
-            features = listOf(widgetFeature, gadgetFeature)
+            features = listOf(coreFeature, widgetFeature, gadgetFeature)
         )
+        val startAppAction = Action(name = "app.STARTING")
         val incrementWidgetAction = Action(name = "widget.INCREMENT")
         val setGadgetTextAction = Action(
             name = "gadget.SET_TEXT",
@@ -75,11 +81,18 @@ class StoreTest {
         )
 
         // --- ACT ---
+        // First, we MUST start the app to allow other actions to be processed.
+        store.dispatch(startAppAction)
         store.dispatch(incrementWidgetAction)
         store.dispatch(setGadgetTextAction)
 
         // --- ASSERT ---
         val finalState = store.state.value
+
+        // 0. Assert App Lifecycle
+        val finalCoreState = finalState.featureStates[coreFeature.name] as? CoreState
+        assertNotNull(finalCoreState)
+        assertEquals(AppLifecycle.RUNNING, finalCoreState.lifecycle, "The app lifecycle should be RUNNING.")
 
         // 1. Assert Widget Integrity
         val finalWidgetState = finalState.featureStates[widgetFeature.name] as? WidgetState
@@ -93,7 +106,7 @@ class StoreTest {
     }
 
     @Test
-    fun `startFeatureLifecycles calls init on all registered features exactly once`() = runTest {
+    fun `initFeatureLifecycles calls init on all registered features exactly once`() = runTest {
         // --- ARRANGE ---
         val widgetFeature = WidgetFeature()
         val gadgetFeature = GadgetFeature()
@@ -106,8 +119,8 @@ class StoreTest {
         assertFalse(gadgetFeature.initWasCalled, "Gadget init() should not be called before lifecycles are started.")
 
         // --- ACT ---
-        store.startFeatureLifecycles()
-        store.startFeatureLifecycles() // Call a second time to ensure it's idempotent
+        store.initFeatureLifecycles()
+        store.initFeatureLifecycles() // Call a second time to ensure it's idempotent
 
         // --- ASSERT ---
         assertTrue(widgetFeature.initWasCalled, "Widget init() should be called after lifecycles are started.")

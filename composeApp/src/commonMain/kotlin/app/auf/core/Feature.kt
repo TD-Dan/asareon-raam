@@ -24,13 +24,6 @@ interface Feature {
     fun init(store: Store) {}
 
     /**
-     * A delegation method. The system will call this on all features.
-     * The first feature to recognize the setting's key will return the appropriate
-     * feature-specific Action. Others will return null.
-     */
-    fun createActionForSetting(setting: SettingValue): Action? = null
-
-    /**
      * The single, optional provider for ALL of this feature's UI components.
      * A feature can choose to implement any combination of the functions within.
      */
@@ -70,18 +63,5 @@ interface Feature {
          */
         @Composable
         fun MenuContent(store: Store, onDismiss: () -> Unit) {}
-
-        /**
-         * The list of settings this feature exposes to the UI.
-         */
-        val settingDefinitions: List<SettingDefinition>
-            get() = emptyList()
-
-        /**
-         * A required function to decouple the view from the state.
-         * The feature itself is responsible for finding the correct value within its
-         * own state slice, given the global AppState.
-         */
-        fun getSettingValue(state: AppState, key: String): Any? = null
     }
 }
