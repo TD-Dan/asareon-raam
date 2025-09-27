@@ -116,6 +116,10 @@ class SettingsFeature(
                     }
                 }
             }
+            "settings.OPEN_FOLDER" -> {
+                val settingsPath = platformDependencies.getBasePathFor(BasePath.SETTINGS)
+                platformDependencies.openFolderInExplorer(settingsPath)
+            }
         }
 
         return if (newSettingsState != settingsState) {

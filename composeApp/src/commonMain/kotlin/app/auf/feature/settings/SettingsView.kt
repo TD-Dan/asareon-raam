@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,7 +44,11 @@ fun SettingsView(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
             Spacer(Modifier.width(16.dp))
-            Text("Application Settings", style = MaterialTheme.typography.headlineSmall)
+            Text("Application Settings", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+            // NEW: Button to open the settings folder.
+            IconButton(onClick = { store.dispatch(Action("settings.OPEN_FOLDER")) }) {
+                Icon(Icons.Default.FolderOpen, contentDescription = "Open Settings Folder")
+            }
         }
 
         LazyColumn(
@@ -114,7 +119,12 @@ private fun SettingRow(
             "NUMERIC_LONG" -> {
                 OutlinedTextField(
                     value = currentValue,
-                    onValueChange = { onValueChange(it) },
+                    onValueChange = { newValue ->
+                        // Basic validation to only allow digits
+                        if (newValue.all { it.isDigit() }) {
+                            onValueChange(newValue)
+                        }
+                    },
                     modifier = Modifier.width(150.dp),
                     singleLine = true
                 )
