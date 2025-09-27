@@ -12,15 +12,15 @@ import app.auf.model.SettingValue
  */
 interface Feature {
     val name: String
-    fun reducer(state: AppState, action: AppAction): AppState = state
-    fun start(store: Store) {}
+    fun reducer(state: AppState, action: Action): AppState = state
+    fun init(store: Store) {}
 
     /**
      * A new delegation method. The StateManager will call this on all features.
      * The first feature to recognize the setting's key will return the appropriate
-     * feature-specific AppAction. Others will return null.
+     * feature-specific Action. Others will return null.
      */
-    fun createActionForSetting(setting: SettingValue): AppAction? = null
+    fun createActionForSetting(setting: SettingValue): Action? = null
 
     /**
      * The single, optional provider for ALL of this feature's UI components.
@@ -44,7 +44,7 @@ interface Feature {
 
         /**
          * The button to render in the GlobalActionRibbon.
-         * Typically, dispatches AppAction.SetActiveView(viewKey).
+         * Typically, dispatches Action(name = "core.SET_ACTIVE_VIEW", payload = ...).
          */
         @Composable
         fun RibbonButton(stateManager: StateManager, isActive: Boolean) {}
@@ -61,11 +61,10 @@ interface Feature {
          */
 
         /**
-         * Renders the UI for an active agent turn. This is the core of the "Agent on the Stage"
-         * model, allowing the SessionView to remain ignorant of any specific agent's UI.
+         * Renders the UI for an part of the feature to be embedded inside another view.
          */
         @Composable
-        fun TurnView(stateManager: StateManager, turnId: String) {}
+        fun PartialView(stateManager: StateManager, partId: String) {}
 
         /**
          * A slot for adding DropdownMenuItems to the main application menu.

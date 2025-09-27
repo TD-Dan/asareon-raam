@@ -1,93 +1,28 @@
 package app.auf.core
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 // --- VERSION ---
 object Version {
-    const val APP_VERSION = "1.5.4"
+    const val APP_VERSION = "2.0.0-alpha"
 }
 
-// --- CORE STATE & ACTIONS ---
+// --- CORE STATE ---
 
 interface FeatureState
 
 data class AppState(
-    val toastMessage: String? = null,
-    val activeViewKey: String = "feature.session.main",
-    val defaultViewKey: String = "feature.session.main",
     val featureStates: Map<String, FeatureState> = emptyMap()
 )
 
 /**
- * The root of all state changes. A sealed hierarchy with two exclusive branches.
- * This guarantees that any action in the system MUST be either a Command or an Event.
+ * The single, universal action class for the entire application.
+ * All communication, whether intent (Command) or result (Event), flows through this class.
+ * It is based on a string name for routing and a serializable JSON string for the payload.
+ *
+ * This design enforces the 'Absolute Decoupling' and 'Manifest-Driven Contracts' principles.
  */
-sealed interface AppAction
-
-/**
- * A Command is a public intent for the system to perform an action.
- * Any feature can create its own Commands.
- */
-interface Command : AppAction
-
-/**
- * An Event is an internal result, reporting that something has happened.
- * Any feature can create its own Events.
- */
-interface Event : AppAction
-
-// --- Core Commands ---
-data class ShowToast(val message: String) : Command
-data object ClearToast : Command
-data class SetActiveView(val key: String) : Command
-
-
-// --- AGENT-RELATED CONTRACTS ---
-
-/** An open interface for all agent-related public Commands. */
-interface AgentCommand : Command {
-    /** Dispatched by the UI as a public intent to cancel a turn. */
-    data class TurnCancelled(val turnId: String) : AgentCommand
-}
-
-/** An open interface for all agent-related internal Events. */
-interface AgentEvent : Event {
-    /** Dispatched by an agent's side effect logic when a turn begins. */
-    data class TurnBegan(val rendererFeatureName: String, val turnId: String, val parentEntryId: String?) : AgentEvent
-
-    /** Dispatched by an agent's side effect logic when a turn completes successfully. */
-    data class TurnCompleted(val turnId: String, val content: List<ContentBlock>) : AgentEvent
-
-    /** Dispatched by an agent's side effect logic when a turn fails. */
-    data class TurnFailed(val turnId: String, val error: String) : AgentEvent
-}
-
-
-// --- UI MODELS (Used by multiple features) ---
-
-/**
- * A marker interface for LedgerEntry types that should NOT be persisted to disk.
- * This is used to filter out transient, runtime-only entries like agent processing indicators.
- */
-interface TransientEntry
-
 @Serializable
-sealed interface ContentBlock {
-    val summary: String
-}
-
-@Serializable
-@SerialName("TextBlock")
-data class TextBlock(
-    val text: String,
-    override val summary: String = "Text block: \"${text.take(50).replace("\n", " ")}...\""
-) : ContentBlock
-
-@Serializable
-@SerialName("CodeBlock")
-data class CodeBlock(
-    val language: String,
-    val content: String,
-    override val summary: String = "Code Block: $language"
-) : ContentBlock
+data class Action(val name: String, val payload: JsonObject? = null)

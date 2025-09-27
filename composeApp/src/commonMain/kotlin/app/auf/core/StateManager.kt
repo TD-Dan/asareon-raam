@@ -25,7 +25,7 @@ open class StateManager(
      * The single, generic entry point for all state changes.
      * The UI is responsible for creating the appropriate Action object.
      */
-    fun dispatch(action: AppAction) {
+    fun dispatch(action: Action) {
         store.dispatch(action)
     }
 
@@ -39,6 +39,8 @@ open class StateManager(
         return platform.formatDisplayTimestamp(timestamp)
     }
 
+
+
     fun openBackupFolder() {
         backupManager.createBackup("on-export-view")
         backupManager.openBackupFolder()
@@ -48,10 +50,10 @@ open class StateManager(
         coroutineScope.launch {
             val codebaseString = sourceCodeService.collateKtFilesToString()
             if (codebaseString.startsWith("ERROR:")) {
-                dispatch(ShowToast(codebaseString))
+                dispatch(Action(name = "core.SHOW_TOAST", payload = codebaseString))
             } else {
                 platform.copyToClipboard(codebaseString)
-                dispatch(ShowToast("Source code copied to clipboard!"))
+                dispatch(Action(name = "core.SHOW_TOAST", payload = "Source code copied to clipboard!"))
             }
         }
     }
