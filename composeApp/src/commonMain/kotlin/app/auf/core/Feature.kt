@@ -3,23 +3,32 @@ package app.auf.core
 import androidx.compose.runtime.Composable
 
 /**
- * ---
- * ## Mandate
  * Defines the universal contract for a self-contained, modular feature plugin within the AUF app.
  * This is the cornerstone of the "Core Ignorance" and "Contextual Granularity" principles.
+ *
+ * @version 2.0
  */
 interface Feature {
     val name: String
 
     /**
-     * A pure function that calculates a new AppState based on the current state and a given action.
+     * A PURE function that calculates a new AppState based on the current state and a given action.
+     * It MUST NOT perform any side effects (I/O, network, etc.).
      * If the feature does not handle the action, it MUST return the state unmodified.
      */
     fun reducer(state: AppState, action: Action): AppState = state
 
     /**
-     * Called exactly once by the Store when the application starts.
-     * Use this for one-time setup, like dispatching an initial action to load data.
+     * The designated place to handle SIDE EFFECTS (I/O, coroutines, etc.) in response to an action.
+     * The Store calls this function for every feature on every action, AFTER the reducers
+     * have calculated the new state. This allows features to react to events and dispatch
+     * new actions.
+     */
+    fun onAction(action: Action, store: Store) {}
+
+    /**
+     * Called exactly once by the Store when the application is being assembled.
+     * Use this for one-time, synchronous setup. DO NOT dispatch actions here.
      */
     fun init(store: Store) {}
 

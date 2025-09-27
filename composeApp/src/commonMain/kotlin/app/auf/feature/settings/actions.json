@@ -1,6 +1,0 @@
-{
-  "feature_name": "SettingsFeature",
-  "summary": "A stateless 'host' feature that provides the UI for application settings. It dynamically renders settings definitions from all other features but has no actions or state of its own.",
-  "listensFor": [],
-  "publishes": []
-}
