@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * 3. To pass the state through each registered feature's reducer to calculate the new state.
  * 4. To manage the lifecycle of features, calling their `init` method once.
  *
- * Is part of CORE: Does not know anything of specific features!
+ * This class is part of the core scaffolding; it is completely ignorant of any specific feature's logic.
  */
 open class Store(
     initialState: AppState,
@@ -38,7 +38,11 @@ open class Store(
         }
     }
 
-
+    /**
+     * The single, generic entry point for all state changes.
+     * This method orchestrates the state transition by sequentially applying the reducer
+     * from every registered feature to the current application state.
+     */
     open fun dispatch(action: Action) {
         val previousState = _state.value
 
