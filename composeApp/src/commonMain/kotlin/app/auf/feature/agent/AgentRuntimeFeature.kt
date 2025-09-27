@@ -1,4 +1,3 @@
-// --- FILE: AgentRuntimeFeature.kt ---
 package app.auf.feature.agent
 
 import androidx.compose.foundation.layout.Arrangement
@@ -24,7 +23,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
-// --- INTERNAL ACTIONS (Unchanged) ---
+// --- INTERNAL ACTIONS ---
 internal interface AgentRuntimeAction
 
 internal data class SetGateways(val gateways: Map<String, GatewayInfo>) : AgentRuntimeAction, Event
@@ -111,14 +110,17 @@ class AgentRuntimeFeature(
     }
 
 
-    // --- SIDE EFFECT ORCHESTRATION (Unchanged) ---
+    // --- SIDE EFFECT ORCHESTRATION ---
     override fun start(store: Store) {
         this.store = store
         val agentId = "janitor-agent" // Hardcoded for now
 
         coroutineScope.launch {
-            val initialState = store.state.value.featureStates[name] as? AgentRuntimeFeatureState
-            if (initialState?.agents?.get(agentId) == null) {
+            // This coroutine now bootstraps the agent if it doesn't exist
+            // NOTE: This is a placeholder for proper agent creation and management
+            val agentExists = (store.state.value.featureStates[name] as? AgentRuntimeFeatureState)
+                ?.agents?.containsKey(agentId) == true
+            if (!agentExists) {
                 store.dispatch(AddAgent(AgentRuntimeState(
                     id = agentId,
                     archetypeId = "auf.janitor",
@@ -127,13 +129,22 @@ class AgentRuntimeFeature(
                     selectedModelId = "gemini-pro"
                 )))
             }
+        }
 
+        coroutineScope.launch {
+            // --- FIX IMPLEMENTED ---
+            // This collector now observes a more robust condition:
+            // "Does an agent with our target ID exist, AND is its turn Idle?"
             store.state
-                .map { (it.featureStates[name] as? AgentRuntimeFeatureState)?.agents?.get(agentId)?.turn is AgentTurn.Idle }
+                .map { state ->
+                    val featureState = state.featureStates[name] as? AgentRuntimeFeatureState
+                    featureState?.agents?.get(agentId)?.turn is AgentTurn.Idle
+                }
                 .distinctUntilChanged()
-                .collect { isAgentIdle ->
-                    if (isAgentIdle) {
-                        println("[AgentRuntimeFeature] STIMULUS DETECTED: Agent '$agentId' is idle. Triggering turn.")
+                .collect { isAgentReady ->
+                    // This will now fire `true` as soon as the agent is added and idle.
+                    if (isAgentReady == true) {
+                        println("[AgentRuntimeFeature] STIMULUS DETECTED: Agent '$agentId' is ready. Triggering turn.")
                         triggerAgentTurn(store, agentId)
                     }
                 }
@@ -145,7 +156,10 @@ class AgentRuntimeFeature(
         val parentEntryId = ""
 
         val agentJob = coroutineScope.launch {
-            delay(2000)
+            // A small delay to ensure this doesn't execute in the same dispatcher cycle
+            // as the state change that triggered it, preventing potential re-trigger loops.
+            // NOTE: This is a horrible hack and unstable as hell
+            delay(1)
             val resultBlocks = listOf(TextBlock("This is the result of the agent's work for turn $turnId."))
             store.dispatch(AgentEvent.TurnCompleted(turnId, resultBlocks))
             store.dispatch(FinishProcessing(agentId))
