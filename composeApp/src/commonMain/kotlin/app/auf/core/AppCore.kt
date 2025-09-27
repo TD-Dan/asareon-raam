@@ -32,3 +32,4 @@ interface FeatureState
  */
 @Serializable
 data class Action(val name: String, val payload: JsonObject? = null)
+

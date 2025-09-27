@@ -1,0 +1,40 @@
+{
+  "feature_name": "CoreFeature",
+  "summary": "Handles core, application-level state and UI logic like navigation and toast messages.",
+  "listensFor": [
+    {
+      "action_name": "core.SET_ACTIVE_VIEW",
+      "summary": "Changes the main view displayed in the UI.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The unique viewKey of the feature to display."
+          }
+        },
+        "required": ["key"]
+      }
+    },
+    {
+      "action_name": "core.SHOW_TOAST",
+      "summary": "Displays a short-lived message at the bottom of the screen.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "The message to display."
+          }
+        },
+        "required": ["message"]
+      }
+    },
+    {
+      "action_name": "core.CLEAR_TOAST",
+      "summary": "Immediately hides the currently displayed toast message.",
+      "payload_schema": null
+    }
+  ],
+  "publishes": []
+}

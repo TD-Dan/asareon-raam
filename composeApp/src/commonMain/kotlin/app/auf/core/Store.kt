@@ -1,5 +1,7 @@
 package app.auf.core
 
+import app.auf.feature.core.AppLifecycle
+import app.auf.feature.core.CoreState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * 2. To expose a single `dispatch` method that accepts the universal `Action`.
  * 3. To pass the state through each registered feature's reducer to calculate the new state.
  * 4. To manage the lifecycle of features, calling their `init` method once.
+ * 5. To act as a gatekeeper, enforcing the application lifecycle state.
  *
  * This class is part of the core scaffolding; it is completely ignorant of any specific feature's logic.
  */
@@ -31,7 +34,7 @@ open class Store(
      * Kicks off the `init` lifecycle method for all registered features.
      * This should only be called once, after the store has been fully initialized.
      */
-    fun startFeatureLifecycles() {
+    fun initFeatureLifecycles() {
         if (!lifecycleStarted) {
             features.forEach { it.init(this) }
             lifecycleStarted = true
@@ -42,8 +45,20 @@ open class Store(
      * The single, generic entry point for all state changes.
      * This method orchestrates the state transition by sequentially applying the reducer
      * from every registered feature to the current application state.
+     *
+     * It also acts as a gatekeeper, preventing actions from being processed before the
+     * application has entered the 'RUNNING' state.
      */
     open fun dispatch(action: Action) {
+        val coreState = _state.value.featureStates["CoreFeature"] as? CoreState
+        val currentLifecycle = coreState?.lifecycle ?: AppLifecycle.INITIALIZING
+
+        // THE GUARD CLAUSE
+        if (currentLifecycle == AppLifecycle.INITIALIZING && action.name != "app.STARTING") {
+            println("ERROR: Action '${action.name}' dispatched before app started. Action ignored.")
+            return
+        }
+
         val previousState = _state.value
 
         // The state is passed through each feature's reducer in sequence.

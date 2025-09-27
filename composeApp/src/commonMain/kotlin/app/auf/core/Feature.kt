@@ -1,8 +1,6 @@
 package app.auf.core
 
 import androidx.compose.runtime.Composable
-import app.auf.model.SettingDefinition
-import app.auf.model.SettingValue
 
 /**
  * ---

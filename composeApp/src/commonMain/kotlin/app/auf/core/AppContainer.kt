@@ -1,0 +1,40 @@
+package app.auf.di
+
+import app.auf.core.Feature
+import app.auf.core.Store
+import app.auf.core.AppState
+import app.auf.feature.core.CoreFeature
+import app.auf.feature.settings.SettingsFeature
+//import app.auf.feature.agent.AgentRuntimeFeature
+//import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
+//import app.auf.feature.session.SessionFeature
+import app.auf.util.PlatformDependencies
+import kotlinx.coroutines.CoroutineScope
+
+/**
+ * ## Mandate
+ * A pure, stateless factory for instantiating and wiring together all application components.
+ * It contains no behavioral logic or services. It ONLY connects the parts.
+ * This class is platform-agnostic and resides in commonMain.
+ */
+class AppContainer(
+    platformDependencies: PlatformDependencies,
+    coroutineScope: CoroutineScope
+) {
+    // Features are responsible for creating their own internal dependencies.
+    // The container is only responsible for instantiating the features themselves.
+    val features: List<Feature> = run {
+        val allFeatures = mutableListOf<Feature>()
+        allFeatures.addAll(listOf(
+            CoreFeature(),
+            // These features will be updated later to manage their own dependencies
+            AgentRuntimeFeature(platformDependencies, coroutineScope),
+            KnowledgeGraphFeature(platformDependencies, coroutineScope),
+            SettingsFeature(allFeatures) // This will be fixed in a later chunk
+        ))
+        allFeatures.add(SessionFeature(platformDependencies, coroutineScope))
+        allFeatures
+    }
+
+    val store: Store = Store(AppState(), features)
+}
