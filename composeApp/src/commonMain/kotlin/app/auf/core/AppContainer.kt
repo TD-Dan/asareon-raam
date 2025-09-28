@@ -35,5 +35,5 @@ class AppContainer(
         allFeatures
     }
 
-    val store: Store = Store(AppState(), features)
+    val store: Store = Store(AppState(), features, platformDependencies)
 }

@@ -32,6 +32,13 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
     }
     private val displayFormatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
+    private val logFilePath: String by lazy {
+        val logDir = getBasePathFor(BasePath.LOGS)
+        createDirectories(logDir)
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        "$logDir${File.separatorChar}session-$timestamp.log"
+    }
+
 
     actual open val pathSeparator: Char = File.separatorChar
 
@@ -70,14 +77,16 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
     }
 
     actual open fun getBasePathFor(type: BasePath): String {
-        return when (type) {
-            BasePath.SETTINGS -> File(rootDataDir, "settings").absolutePath
-            BasePath.BACKUPS -> File(rootDataDir, "backups").absolutePath
-            // Project-relative paths remain unchanged.
-            BasePath.HOLONS -> File("holons").absolutePath
-            BasePath.FRAMEWORK -> File("framework").absolutePath
-            BasePath.SESSIONS -> File( "sessions").absolutePath
+        val path = when (type) {
+            BasePath.SETTINGS -> "settings"
+            BasePath.BACKUPS -> "backups"
+            BasePath.LOGS -> "logs"
+            // Project-relative paths are handled differently.
+            BasePath.HOLONS -> return File("holons").absolutePath
+            BasePath.FRAMEWORK -> return File("framework").absolutePath
+            BasePath.SESSIONS -> return File("sessions").absolutePath
         }
+        return File(rootDataDir, path).absolutePath
     }
 
     actual open fun getFileName(path: String): String = File(path).name
@@ -162,6 +171,26 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
     actual open fun applyNativeWindowDecorations(window: Any) {
         if (Platform.isWindows() && window is Window) {
             WindowsDarkMode.enable(window)
+        }
+    }
+
+    // --- Durable & Real-time Logging Implementation ---
+    @Synchronized
+    actual open fun log(level: LogLevel, tag: String, message: String) {
+        val logLine = "[${displayFormatter.format(Date())}] [${level.name}] [$tag] $message"
+
+        // 1. Always print to the appropriate console stream for real-time feedback.
+        when (level) {
+            LogLevel.ERROR -> System.err.println(logLine)
+            else -> println(logLine)
+        }
+
+        // 2. Attempt to write to the persistent log file for post-mortem debugging.
+        try {
+            File(logFilePath).appendText(logLine + "\n")
+        } catch (e: Exception) {
+            // If file logging fails, report the failure itself to the console.
+            System.err.println("!!! FAILED TO WRITE TO LOG FILE: ${e.message} !!!")
         }
     }
 }

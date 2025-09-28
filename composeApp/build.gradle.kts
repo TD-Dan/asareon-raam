@@ -98,8 +98,11 @@ kotlin {
             implementation(libs.jna.platform)
         }
         jvmTest.dependencies {
-            implementation(kotlin("test-junit"))
-            implementation(libs.compose.ui.test.junit4)
+            implementation(libs.kotlin.test.junit5)
+            implementation(libs.junit.jupiter.api)
+            runtimeOnly(libs.junit.jupiter.engine)
+
+            // Dependencies for the code under test
             implementation(libs.ktor.client.cio)
             implementation(libs.jna)
             implementation(libs.jna.platform)
@@ -113,6 +116,10 @@ kotlin {
             implementation(libs.ktor.client.js)
         }
     }
+}
+
+tasks.withType<Test> {
+    useJUnitPlatform()
 }
 
 android {
@@ -137,10 +144,9 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21 // <-- MODIFIED from VERSION_11 to VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21 // <-- MODIFIED from VERSION_11 to VERSION_21
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
-    // <-- MODIFIED: Added this block to align the Kotlin toolchain for Android
     kotlin {
         jvmToolchain(21)
     }

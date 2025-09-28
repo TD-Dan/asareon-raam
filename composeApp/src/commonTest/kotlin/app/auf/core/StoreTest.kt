@@ -1,8 +1,11 @@
 package app.auf.core
 
+import app.auf.fakes.CapturedLog
+import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.core.CoreState
+import app.auf.util.LogLevel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -17,9 +20,9 @@ import kotlinx.serialization.json.put
 @OptIn(ExperimentalCoroutinesApi::class)
 class StoreTest {
 
-    // --- Test Doubles: Self-contained fakes to simulate real features ---
+    private val testAppVersion = "2.0.0-test"
 
-    // --- WidgetFeature ---
+    // --- Test Doubles: Self-contained fakes, co-located within the test file. ---
     @Serializable
     data class WidgetState(val count: Int = 0) : FeatureState
     class WidgetFeature : Feature {
@@ -37,7 +40,6 @@ class StoreTest {
         }
     }
 
-    // --- GadgetFeature ---
     @Serializable
     data class GadgetState(val text: String = "initial") : FeatureState
     class GadgetFeature : Feature {
@@ -62,6 +64,7 @@ class StoreTest {
         val coreFeature = CoreFeature()
         val widgetFeature = WidgetFeature()
         val gadgetFeature = GadgetFeature()
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
         val initialState = AppState(
             featureStates = mapOf(
                 coreFeature.name to CoreState(),
@@ -71,7 +74,8 @@ class StoreTest {
         )
         val store = Store(
             initialState = initialState,
-            features = listOf(coreFeature, widgetFeature, gadgetFeature)
+            features = listOf(coreFeature, widgetFeature, gadgetFeature),
+            platformDependencies = fakePlatform
         )
         val startAppAction = Action(name = "app.STARTING")
         val incrementWidgetAction = Action(name = "widget.INCREMENT")
@@ -81,7 +85,6 @@ class StoreTest {
         )
 
         // --- ACT ---
-        // First, we MUST start the app to allow other actions to be processed.
         store.dispatch(startAppAction)
         store.dispatch(incrementWidgetAction)
         store.dispatch(setGadgetTextAction)
@@ -89,20 +92,44 @@ class StoreTest {
         // --- ASSERT ---
         val finalState = store.state.value
 
-        // 0. Assert App Lifecycle
         val finalCoreState = finalState.featureStates[coreFeature.name] as? CoreState
         assertNotNull(finalCoreState)
-        assertEquals(AppLifecycle.RUNNING, finalCoreState.lifecycle, "The app lifecycle should be RUNNING.")
+        assertEquals(AppLifecycle.RUNNING, finalCoreState.lifecycle)
 
-        // 1. Assert Widget Integrity
         val finalWidgetState = finalState.featureStates[widgetFeature.name] as? WidgetState
         assertNotNull(finalWidgetState)
-        assertEquals(6, finalWidgetState.count, "WidgetFeature reducer should have incremented the count.")
+        assertEquals(6, finalWidgetState.count)
 
-        // 2. Assert Gadget Integrity
         val finalGadgetState = finalState.featureStates[gadgetFeature.name] as? GadgetState
         assertNotNull(finalGadgetState)
-        assertEquals("new value", finalGadgetState.text, "GadgetFeature reducer should have set the text.")
+        assertEquals("new value", finalGadgetState.text)
+    }
+
+    @Test
+    fun `store ignores action and logs error when dispatched before app STARTING`() = runTest {
+        // --- ARRANGE ---
+        val coreFeature = CoreFeature()
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
+        val initialState = AppState(featureStates = mapOf(coreFeature.name to CoreState()))
+        val store = Store(
+            initialState = initialState,
+            features = listOf(coreFeature),
+            platformDependencies = fakePlatform
+        )
+        val illegalAction = Action("widget.INCREMENT")
+
+        // --- ACT ---
+        store.dispatch(illegalAction)
+
+        // --- ASSERT ---
+        val finalState = store.state.value
+        assertEquals(initialState, finalState, "State must not change when an action is dispatched before start.")
+
+        assertEquals(1, fakePlatform.capturedLogs.size, "An error should have been logged.")
+        val log = fakePlatform.capturedLogs.first()
+        assertEquals(LogLevel.ERROR, log.level)
+        assertEquals("Store", log.tag)
+        assertTrue(log.message.contains("Action 'widget.INCREMENT' dispatched before app started"), "The log message is incorrect.")
     }
 
     @Test
@@ -110,20 +137,22 @@ class StoreTest {
         // --- ARRANGE ---
         val widgetFeature = WidgetFeature()
         val gadgetFeature = GadgetFeature()
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
         val store = Store(
             initialState = AppState(),
-            features = listOf(widgetFeature, gadgetFeature)
+            features = listOf(widgetFeature, gadgetFeature),
+            platformDependencies = fakePlatform
         )
 
-        assertFalse(widgetFeature.initWasCalled, "Widget init() should not be called before lifecycles are started.")
-        assertFalse(gadgetFeature.initWasCalled, "Gadget init() should not be called before lifecycles are started.")
+        assertFalse(widgetFeature.initWasCalled)
+        assertFalse(gadgetFeature.initWasCalled)
 
         // --- ACT ---
         store.initFeatureLifecycles()
-        store.initFeatureLifecycles() // Call a second time to ensure it's idempotent
+        store.initFeatureLifecycles() // Idempotency check
 
         // --- ASSERT ---
-        assertTrue(widgetFeature.initWasCalled, "Widget init() should be called after lifecycles are started.")
-        assertTrue(gadgetFeature.initWasCalled, "Gadget init() should be called after lifecycles are started.")
+        assertTrue(widgetFeature.initWasCalled)
+        assertTrue(gadgetFeature.initWasCalled)
     }
 }

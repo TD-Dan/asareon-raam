@@ -5,6 +5,7 @@ import app.auf.core.AppState
 import app.auf.core.Store
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.util.BasePath
+import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.buildJsonObject
@@ -20,13 +21,15 @@ class SettingsFeatureTest {
 
     /**
      * A lightweight, controllable fake of the Store for testing `onAction` side effects.
-     * FIX: It now correctly overrides the `state` property, ensuring that the feature
-     * under test can observe state changes from the test itself.
+     * It now accepts a PlatformDependencies instance to satisfy the base class constructor.
      */
-    private class FakeStore(initialState: AppState) : Store(initialState, emptyList()) {
+    private class FakeStore(
+        initialState: AppState,
+        platformDependencies: PlatformDependencies
+    ) : Store(initialState, emptyList(), platformDependencies) {
         val dispatchedActions = mutableListOf<Action>()
         private val _fakeState = MutableStateFlow(initialState)
-        override val state = _fakeState.asStateFlow() // This override is the critical fix.
+        override val state = _fakeState.asStateFlow()
 
         override fun dispatch(action: Action) {
             dispatchedActions.add(action)
@@ -155,7 +158,7 @@ class SettingsFeatureTest {
         // Arrange
         val platform = FakePlatformDependencies(testAppVersion)
         val feature = SettingsFeature(platform)
-        val fakeStore = FakeStore(AppState())
+        val fakeStore = FakeStore(AppState(), platform)
         feature.init(fakeStore)
         val action = Action("app.STARTING")
 
@@ -175,7 +178,7 @@ class SettingsFeatureTest {
         platform.writeFileContent(settingsPath, """{ "file.key": "file.value" }""")
 
         val feature = SettingsFeature(platform)
-        val fakeStore = FakeStore(AppState())
+        val fakeStore = FakeStore(AppState(), platform)
         feature.init(fakeStore)
         val action = Action("settings.LOAD")
 
@@ -198,7 +201,7 @@ class SettingsFeatureTest {
         val stateAfterReducer = AppState(featureStates = mapOf(feature.name to SettingsState(
             values = mapOf("key1" to "value1", "key2" to "value2")
         )))
-        val fakeStore = FakeStore(AppState())
+        val fakeStore = FakeStore(AppState(), platform)
         fakeStore.setState(stateAfterReducer) // Manually set the store's state
         feature.init(fakeStore)
         val action = Action("settings.UPDATE")
@@ -220,7 +223,7 @@ class SettingsFeatureTest {
         val platform = FakePlatformDependencies(testAppVersion)
         val feature = SettingsFeature(platform)
         val initialState = AppState(featureStates = mapOf(feature.name to SettingsState(values = mapOf("a" to "b"))))
-        val fakeStore = FakeStore(initialState)
+        val fakeStore = FakeStore(initialState, platform)
         feature.init(fakeStore)
         val action = Action("settings.UPDATE") // An action that triggers a side-effect
 

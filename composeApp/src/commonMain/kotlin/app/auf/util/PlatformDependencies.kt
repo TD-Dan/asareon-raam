@@ -14,17 +14,19 @@ enum class BasePath {
     BACKUPS,
     HOLONS,
     FRAMEWORK,
-    SESSIONS
+    SESSIONS,
+    LOGS
 }
+
+/**
+ * Defines the severity level for a log message.
+ */
+enum class LogLevel { INFO, WARN, ERROR }
 
 /**
  * Defines a platform-agnostic contract for ALL platform-specific functionalities.
  * This class and its members are marked 'open' to allow for test fakes to inherit from it.
- *
- * @version 2.5
- * @since 2025-08-17
  */
-// FIX: The constructor now requires the application version string.
 expect open class PlatformDependencies(appVersion: String) {
     open val pathSeparator: Char
 
@@ -60,4 +62,14 @@ expect open class PlatformDependencies(appVersion: String) {
      */
     open fun applyNativeWindowDecorations(window: Any)
     open fun generateUUID(): String
+
+    // --- Logging ---
+    /**
+     * Logs a message to the platform's standard output or logging system.
+     *
+     * @param level The severity level of the message.
+     * @param tag A short string identifying the source of the message (e.g., the class name).
+     * @param message The content of the log message.
+     */
+    open fun log(level: LogLevel, tag: String, message: String)
 }

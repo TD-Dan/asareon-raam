@@ -2,6 +2,8 @@ package app.auf.core
 
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
+import app.auf.util.LogLevel
+import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -21,11 +23,11 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * This class is part of the core scaffolding; it is completely ignorant of any specific feature's logic.
  *
- * @version 2.0
  */
 open class Store(
     initialState: AppState,
-    private val features: List<Feature>
+    private val features: List<Feature>,
+    private val platformDependencies: PlatformDependencies
 ) {
 
     private val _state = MutableStateFlow(initialState)
@@ -57,9 +59,14 @@ open class Store(
         val currentLifecycle = coreState?.lifecycle ?: AppLifecycle.INITIALIZING
 
         // THE GUARD CLAUSE
-        // NOTE: The `app.STARTING` action itself is allowed through to transition the state.
+        // An action was dispatched before the app finished starting. This is a critical
+        // lifecycle violation. We must log it as an error and ignore the action.
         if (currentLifecycle == AppLifecycle.INITIALIZING && action.name != "app.STARTING") {
-            println("ERROR: Action '${action.name}' dispatched before app started. Action ignored.")
+            platformDependencies.log(
+                level = LogLevel.ERROR,
+                tag = "Store",
+                message = "Action '${action.name}' dispatched before app started. Action ignored."
+            )
             return
         }
 

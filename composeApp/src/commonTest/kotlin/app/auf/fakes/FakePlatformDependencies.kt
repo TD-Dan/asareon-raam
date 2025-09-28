@@ -2,35 +2,33 @@ package app.auf.fakes
 
 import app.auf.util.BasePath
 import app.auf.util.FileEntry
+import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 
-// FIX: A new data class to hold both content and a timestamp for a fake file.
 private data class FakeFile(val content: String, val lastModified: Long)
 
 /**
- * A "Fake" implementation of the PlatformDependencies contract for use in unit tests.
- * This class simulates platform interactions in a predictable, in-memory way, removing
- * dependencies on the actual file system, system clock, or UI.
- *
- * @property files A mutable map to simulate a file system where the key is the path
- *                 and the value is the file's metadata (content and timestamp).
- * @property directories A mutable set to keep track of created directory paths.
- * @property clipboardContent A string to simulate the system clipboard.
- * @property currentTime A controllable value for the system time in milliseconds.
+ * A public data class to hold a captured log message for test assertions.
+ * Its visibility is now correct.
  */
-// FIX: Implement the new constructor.
+data class CapturedLog(val level: LogLevel, val tag: String, val message: String)
+
+/**
+ * A "Fake" implementation of the PlatformDependencies contract for use in unit tests.
+ *
+ * @property capturedLogs A public list to store all log messages for test assertions.
+ */
 open class FakePlatformDependencies(
     private val appVersion: String
 ) : PlatformDependencies(appVersion) {
     private val files = mutableMapOf<String, FakeFile>()
     val directories = mutableSetOf<String>()
     var clipboardContent: String? = null
-    var currentTime = 1_000_000_000_000L // A fixed starting time for predictability
+    var currentTime = 1_000_000_000_000L
     private var uuidCounter = 0
+    val capturedLogs = mutableListOf<CapturedLog>() // This property is now correctly defined.
 
     override val pathSeparator: Char = '/'
-
-    // --- File & Directory I/O ---
 
     override fun readFileContent(path: String): String {
         return files[path]?.content ?: throw Exception("Fake file not found at path: $path")
@@ -50,10 +48,8 @@ open class FakePlatformDependencies(
 
     override fun listDirectory(path: String): List<FileEntry> {
         if (!directories.contains(path)) return emptyList()
-
         val directChildren = mutableSetOf<String>()
         val pathWithSeparator = if (path.endsWith(pathSeparator)) path else "$path$pathSeparator"
-
         (files.keys + directories).forEach { entryPath ->
             if (entryPath.startsWith(pathWithSeparator)) {
                 val relativePath = entryPath.removePrefix(pathWithSeparator)
@@ -76,7 +72,6 @@ open class FakePlatformDependencies(
             currentPath = pathSeparator.toString()
             directories.add(currentPath)
         }
-
         for (part in parts) {
             currentPath = if (currentPath.endsWith(pathSeparator)) {
                 "$currentPath$part"
@@ -91,7 +86,6 @@ open class FakePlatformDependencies(
 
     override fun copyFile(sourcePath: String, destinationPath: String) {
         val sourceFile = files[sourcePath] ?: throw Exception("Fake source file not found: $sourcePath")
-        // FIX: Ensure copied files also get the current timestamp.
         files[destinationPath] = sourceFile.copy(lastModified = currentTime)
     }
 
@@ -101,11 +95,7 @@ open class FakePlatformDependencies(
     }
 
     override fun getBasePathFor(type: BasePath): String {
-        return when (type) {
-            BasePath.SETTINGS -> "/fake/$appVersion/${type.name.lowercase()}"
-            BasePath.BACKUPS -> "/fake/$appVersion/${type.name.lowercase()}"
-            else -> "/fake/$appVersion/${type.name.lowercase()}"
-        }
+        return "/fake/$appVersion/${type.name.lowercase()}"
     }
 
     override fun getFileName(path: String): String {
@@ -120,13 +110,9 @@ open class FakePlatformDependencies(
         return files[path]?.lastModified ?: directories.find { it == path }?.let { currentTime } ?: 0L
     }
 
-    // --- Complex Operations (No-Op for most tests) ---
-
     override fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String) { /* No-op */ }
     override fun openFolderInExplorer(path: String) { /* No-op */ }
     override fun selectDirectoryPath(): String? = "/fake/selected/directory"
-
-    // --- System Utilities ---
 
     override fun getSystemTimeMillis(): Long = currentTime
     override fun generateUUID(): String {
@@ -137,4 +123,8 @@ open class FakePlatformDependencies(
     override fun formatDisplayTimestamp(timestamp: Long): String = "DISPLAY_TIMESTAMP_$timestamp"
     override fun copyToClipboard(text: String) { clipboardContent = text }
     override fun applyNativeWindowDecorations(window: Any) { /* No-op */ }
+
+    override fun log(level: LogLevel, tag: String, message: String) {
+        capturedLogs.add(CapturedLog(level, tag, message))
+    }
 }
