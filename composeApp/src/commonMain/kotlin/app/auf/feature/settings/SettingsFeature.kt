@@ -75,53 +75,48 @@ class SettingsFeature(
     }
 
     override fun reducer(state: AppState, action: Action): AppState {
-        val settingsState = state.featureStates[name] as? SettingsState ?: SettingsState()
-        var newSettingsState = settingsState
+        // Get the current feature state, or a default if it doesn't exist.
+        val currentFeatureState = state.featureStates[name] as? SettingsState ?: SettingsState()
 
-        when (action.name) {
+        // The new, corrected reducer logic. Each branch is responsible for returning a complete state.
+        return when (action.name) {
             "settings.ADD" -> {
-                action.payload?.let { definitionJson ->
-                    val key = definitionJson["key"]?.jsonPrimitive?.content
-                    val defaultValue = definitionJson["defaultValue"]?.jsonPrimitive?.content
-                    if (key != null && defaultValue != null && settingsState.definitions.none { it["key"]?.jsonPrimitive?.content == key }) {
-                        newSettingsState = settingsState.copy(
-                            definitions = settingsState.definitions + definitionJson,
-                            values = settingsState.values + (key to defaultValue)
-                        )
-                    }
+                val definitionJson = action.payload ?: return state
+                val key = definitionJson["key"]?.jsonPrimitive?.content
+                val defaultValue = definitionJson["defaultValue"]?.jsonPrimitive?.content
+
+                if (key != null && defaultValue != null && currentFeatureState.definitions.none { it["key"]?.jsonPrimitive?.content == key }) {
+                    val newDefinitions = currentFeatureState.definitions + definitionJson
+                    val newValues = currentFeatureState.values + (key to defaultValue)
+                    val newFeatureState = currentFeatureState.copy(definitions = newDefinitions, values = newValues)
+                    state.copy(featureStates = state.featureStates + (name to newFeatureState))
+                } else {
+                    state // Key was null, defaultValue was null, or key already exists
                 }
             }
-            "settings.LOADED" -> {
-                val loadedValues = action.payload?.let {
-                    it.mapValues { entry -> entry.value.jsonPrimitive.content }
-                } ?: emptyMap()
 
-                val valuesWithDefaults = settingsState.definitions.associate { def ->
+            "settings.LOADED" -> {
+                val loadedValues = action.payload?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap()
+                val valuesWithDefaults = currentFeatureState.definitions.associate { def ->
                     val key = def["key"]!!.jsonPrimitive.content
                     val defaultValue = def["defaultValue"]!!.jsonPrimitive.content
                     key to (loadedValues[key] ?: defaultValue)
                 }
-
-                newSettingsState = settingsState.copy(values = valuesWithDefaults)
+                val newFeatureState = currentFeatureState.copy(values = valuesWithDefaults)
+                state.copy(featureStates = state.featureStates + (name to newFeatureState))
             }
+
             "settings.UPDATE" -> {
-                action.payload?.let {
-                    val key = it["key"]?.jsonPrimitive?.content
-                    val value = it["value"]?.jsonPrimitive?.content
-                    if (key != null && value != null) {
-                        newSettingsState = settingsState.copy(
-                            values = settingsState.values + (key to value)
-                        )
-                    }
-                }
-            }
-            "settings.OPEN_FOLDER" -> { /* No-op, handled in onAction */ }
-        }
+                val payload = action.payload ?: return state
+                val key = payload["key"]?.jsonPrimitive?.content ?: return state
+                val value = payload["value"]?.jsonPrimitive?.content ?: return state
 
-        return if (newSettingsState != settingsState) {
-            state.copy(featureStates = state.featureStates + (name to newSettingsState))
-        } else {
-            state
+                val newValues = currentFeatureState.values + (key to value)
+                val newFeatureState = currentFeatureState.copy(values = newValues)
+                state.copy(featureStates = state.featureStates + (name to newFeatureState))
+            }
+
+            else -> state // For any other action, return the state unmodified.
         }
     }
 

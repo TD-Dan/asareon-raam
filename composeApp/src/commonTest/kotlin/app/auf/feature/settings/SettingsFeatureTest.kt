@@ -5,6 +5,8 @@ import app.auf.core.AppState
 import app.auf.core.Store
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
+import app.auf.feature.core.CoreFeature
+import app.auf.feature.core.CoreState
 import app.auf.util.BasePath
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -173,17 +175,21 @@ class SettingsFeatureTest {
     fun `dispatching UPDATE action correctly reduces state AND saves to disk via onAction`() {
         // Arrange
         val platform = FakePlatformDependencies(testAppVersion)
-        val feature = SettingsFeature(platform)
+        val coreFeature = CoreFeature()
+        val settingsFeature = SettingsFeature(platform)
 
-        // 1. Set up an initial state with a setting definition and an old value.
-        val initialState = AppState(featureStates = mapOf(feature.name to SettingsState(
-            definitions = listOf(createAddAction("key1", "default").payload!!),
-            values = mapOf("key1" to "old_value")
-        )))
+        // 1. Set up an initial state with all necessary features and values.
+        val initialState = AppState(featureStates = mapOf(
+            coreFeature.name to CoreState(),
+            settingsFeature.name to SettingsState(
+                definitions = listOf(createAddAction("key1", "default").payload!!),
+                values = mapOf("key1" to "old_value")
+            )
+        ))
 
-        // 2. Use the REAL store to correctly sequence reducer -> onAction.
-        val store = Store(initialState, listOf(feature), platform)
-        feature.init(store) // Manually call init for this test setup.
+        // 2. Use the REAL store, now with all required features.
+        val store = Store(initialState, listOf(coreFeature, settingsFeature), platform)
+        settingsFeature.init(store)
 
         // 3. Define the action that triggers the whole process.
         val updateAction = Action("settings.UPDATE", buildJsonObject {
@@ -192,12 +198,14 @@ class SettingsFeatureTest {
         })
 
         // Act
-        // This single dispatch triggers both the reducer and the onAction handler.
+        // 1. First, we MUST move the app out of the INITIALIZING state.
+        store.dispatch(Action("app.STARTING"))
+        // 2. Now, dispatch the action under test.
         store.dispatch(updateAction)
 
         // Assert
         // 1. Assert state was updated correctly by the reducer.
-        val finalState = store.state.value.featureStates[feature.name] as? SettingsState
+        val finalState = store.state.value.featureStates[settingsFeature.name] as? SettingsState
         assertNotNull(finalState)
         assertEquals("new_value", finalState.values["key1"])
 
