@@ -8,11 +8,12 @@ import kotlin.test.assertTrue
 
 class SettingsPersistenceTest {
 
+    private val testAppVersion = "2.0.0-test"
+
     @Test
     fun `loadSettings returns empty map when file does not exist`() {
         // Arrange
-        // FIX: Pass a version string to the constructor
-        val fakePlatform = FakePlatformDependencies("v-test")
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
         val persistence = SettingsPersistence(fakePlatform)
 
         // Act
@@ -25,8 +26,7 @@ class SettingsPersistenceTest {
     @Test
     fun `saveSettings and loadSettings correctly write and read data`() {
         // Arrange
-        // FIX: Pass a version string to the constructor
-        val fakePlatform = FakePlatformDependencies("v-test")
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
         val persistence = SettingsPersistence(fakePlatform)
         val settingsToSave = mapOf("key1" to "value1", "key2" to "true")
         val expectedPath = fakePlatform.getBasePathFor(BasePath.SETTINGS) + fakePlatform.pathSeparator + "settings.json"
@@ -37,15 +37,14 @@ class SettingsPersistenceTest {
         val loadedSettings = persistence.loadSettings()
 
         // Assert
-        assertTrue(fakePlatform.fileExists(expectedPath), "The settings file should have been created at '$expectedPath'.")
+        assertTrue(fakePlatform.fileExists(expectedPath), "The settings file should have been created.")
         assertEquals(settingsToSave, loadedSettings, "Loaded settings should match the saved settings.")
     }
 
     @Test
     fun `loadSettings returns empty map for corrupt JSON`() {
         // Arrange
-        // FIX: Pass a version string to the constructor
-        val fakePlatform = FakePlatformDependencies("v-test")
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
         val persistence = SettingsPersistence(fakePlatform)
         val settingsPath = fakePlatform.getBasePathFor(BasePath.SETTINGS) + fakePlatform.pathSeparator + "settings.json"
         fakePlatform.writeFileContent(settingsPath, "this is not valid json")

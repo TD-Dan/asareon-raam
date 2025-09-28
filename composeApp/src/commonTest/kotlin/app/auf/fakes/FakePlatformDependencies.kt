@@ -18,9 +18,10 @@ private data class FakeFile(val content: String, val lastModified: Long)
  * @property clipboardContent A string to simulate the system clipboard.
  * @property currentTime A controllable value for the system time in milliseconds.
  */
-open class FakePlatformDependencies : PlatformDependencies() {
-
-    // FIX: The file system now stores FakeFile objects instead of just Strings.
+// FIX: Implement the new constructor.
+open class FakePlatformDependencies(
+    private val appVersion: String
+) : PlatformDependencies(appVersion) {
     private val files = mutableMapOf<String, FakeFile>()
     val directories = mutableSetOf<String>()
     var clipboardContent: String? = null
@@ -40,7 +41,6 @@ open class FakePlatformDependencies : PlatformDependencies() {
         if (parent != null) {
             createDirectories(parent)
         }
-        // FIX: When writing a file, store the content AND the current fake time.
         files[path] = FakeFile(content, currentTime)
     }
 
@@ -101,7 +101,11 @@ open class FakePlatformDependencies : PlatformDependencies() {
     }
 
     override fun getBasePathFor(type: BasePath): String {
-        return "/fake/${type.name.lowercase()}"
+        return when (type) {
+            BasePath.SETTINGS -> "/fake/$appVersion/${type.name.lowercase()}"
+            BasePath.BACKUPS -> "/fake/$appVersion/${type.name.lowercase()}"
+            else -> "/fake/$appVersion/${type.name.lowercase()}"
+        }
     }
 
     override fun getFileName(path: String): String {
@@ -113,7 +117,6 @@ open class FakePlatformDependencies : PlatformDependencies() {
     }
 
     override fun getLastModified(path: String): Long {
-        // FIX: Return the specific timestamp for the file, or the global time for directories.
         return files[path]?.lastModified ?: directories.find { it == path }?.let { currentTime } ?: 0L
     }
 

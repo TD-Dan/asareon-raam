@@ -11,6 +11,7 @@ import app.auf.di.AppContainer
 import app.auf.feature.core.CoreState
 import app.auf.ui.App
 import app.auf.util.PlatformDependencies
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.serialization.json.buildJsonObject
@@ -21,16 +22,18 @@ import kotlinx.serialization.json.put
  * The pure, logic-less entry point for the application.
  * Its ONLY responsibilities are to:
  * 1. Set up the native window and top-level composition scope.
- * 2. Instantiate the AppContainer.
+ * 2. Instantiate the AppContainer, injecting the app version into PlatformDependencies.
  * 3. Render the root App UI.
  * 4. Read the initial window size from the CoreState.
  * 5. Dispatch lifecycle and window resize actions.
  *
- * @version 2.0
+ * @version 2.1
  */
+@OptIn(FlowPreview::class)
 fun main() = application {
     val coroutineScope = rememberCoroutineScope()
-    val platformDependencies = remember { PlatformDependencies() }
+    // FIX: Explicitly inject the app version into PlatformDependencies at instantiation.
+    val platformDependencies = remember { PlatformDependencies(Version.APP_VERSION_MAJOR) }
     val container = remember(platformDependencies, coroutineScope) {
         AppContainer(platformDependencies, coroutineScope)
     }
@@ -76,7 +79,7 @@ fun main() = application {
 
                     // Only dispatch if the size is actually different from the state
                     // to prevent redundant updates.
-                    if (width != coreState?.windowWidth || height != coreState?.windowHeight) {
+                    if (width != coreState?.windowWidth || height != coreState.windowHeight) {
                         val payload = buildJsonObject {
                             put("width", width)
                             put("height", height)

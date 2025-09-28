@@ -21,10 +21,11 @@ enum class BasePath {
  * Defines a platform-agnostic contract for ALL platform-specific functionalities.
  * This class and its members are marked 'open' to allow for test fakes to inherit from it.
  *
- * @version 2.4
+ * @version 2.5
  * @since 2025-08-17
  */
-expect open class PlatformDependencies() {
+// FIX: The constructor now requires the application version string.
+expect open class PlatformDependencies(appVersion: String) {
     open val pathSeparator: Char
 
     // --- File & Directory I/O ---

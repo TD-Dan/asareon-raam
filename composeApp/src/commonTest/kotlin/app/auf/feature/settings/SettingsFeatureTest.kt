@@ -16,6 +16,8 @@ import kotlin.test.assertTrue
 
 class SettingsFeatureTest {
 
+    private val testAppVersion = "2.0.0-test"
+
     /**
      * A lightweight, controllable fake of the Store for testing `onAction` side effects.
      * FIX: It now correctly overrides the `state` property, ensuring that the feature
@@ -51,7 +53,7 @@ class SettingsFeatureTest {
     @Test
     fun `reducer ADD registers a new setting and applies its default value`() {
         // Arrange
-        val platform = FakePlatformDependencies()
+        val platform = FakePlatformDependencies(testAppVersion)
         val feature = SettingsFeature(platform)
         val initialState = AppState(featureStates = mapOf(feature.name to SettingsState()))
         val action = createAddAction("test.key", "123")
@@ -69,7 +71,7 @@ class SettingsFeatureTest {
     @Test
     fun `reducer ADD ignores a definition if the key already exists`() {
         // Arrange
-        val platform = FakePlatformDependencies()
+        val platform = FakePlatformDependencies(testAppVersion)
         val feature = SettingsFeature(platform)
         val addAction = createAddAction("test.key", "123")
         // Start with a state that already has the key registered
@@ -87,7 +89,7 @@ class SettingsFeatureTest {
     @Test
     fun `reducer UPDATE changes the value for an existing key`() {
         // Arrange
-        val platform = FakePlatformDependencies()
+        val platform = FakePlatformDependencies(testAppVersion)
         val feature = SettingsFeature(platform)
         val initialState = AppState(featureStates = mapOf(feature.name to SettingsState(values = mapOf("test.key" to "old_value"))))
         val action = Action("settings.UPDATE", buildJsonObject {
@@ -107,7 +109,7 @@ class SettingsFeatureTest {
     @Test
     fun `reducer LOADED replaces all values and applies defaults`() {
         // Arrange
-        val platform = FakePlatformDependencies()
+        val platform = FakePlatformDependencies(testAppVersion)
         val feature = SettingsFeature(platform)
         // State has two definitions, but only one current value
         val initialState = AppState(featureStates = mapOf(feature.name to SettingsState(
@@ -134,7 +136,7 @@ class SettingsFeatureTest {
     @Test
     fun `reducer ignores unknown actions`() {
         // Arrange
-        val platform = FakePlatformDependencies()
+        val platform = FakePlatformDependencies(testAppVersion)
         val feature = SettingsFeature(platform)
         val initialState = AppState(featureStates = mapOf(feature.name to SettingsState()))
         val action = Action("some.other.feature.ACTION")
@@ -151,7 +153,7 @@ class SettingsFeatureTest {
     @Test
     fun `onAction for app STARTING dispatches settings LOAD`() {
         // Arrange
-        val platform = FakePlatformDependencies()
+        val platform = FakePlatformDependencies(testAppVersion)
         val feature = SettingsFeature(platform)
         val fakeStore = FakeStore(AppState())
         feature.init(fakeStore)
@@ -168,7 +170,7 @@ class SettingsFeatureTest {
     @Test
     fun `onAction for settings LOAD reads file and dispatches LOADED`() {
         // Arrange
-        val platform = FakePlatformDependencies()
+        val platform = FakePlatformDependencies(testAppVersion)
         val settingsPath = platform.getBasePathFor(BasePath.SETTINGS) + platform.pathSeparator + "settings.json"
         platform.writeFileContent(settingsPath, """{ "file.key": "file.value" }""")
 
@@ -190,7 +192,7 @@ class SettingsFeatureTest {
     @Test
     fun `onAction for settings UPDATE saves the latest values to disk`() {
         // Arrange
-        val platform = FakePlatformDependencies()
+        val platform = FakePlatformDependencies(testAppVersion)
         val feature = SettingsFeature(platform)
         // The store's state reflects the new value AFTER the reducer has run
         val stateAfterReducer = AppState(featureStates = mapOf(feature.name to SettingsState(
@@ -215,7 +217,7 @@ class SettingsFeatureTest {
     @Test
     fun `onAction does NOT modify state`() {
         // Arrange
-        val platform = FakePlatformDependencies()
+        val platform = FakePlatformDependencies(testAppVersion)
         val feature = SettingsFeature(platform)
         val initialState = AppState(featureStates = mapOf(feature.name to SettingsState(values = mapOf("a" to "b"))))
         val fakeStore = FakeStore(initialState)

@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 // --- VERSION ---
 object Version {
     const val APP_VERSION = "2.0.0-alpha"
+    const val APP_VERSION_MAJOR = "v2"
 }
 
 // --- CORE STATE ---

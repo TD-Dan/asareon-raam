@@ -13,7 +13,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
-import java.util.UUID // ADDED IMPORT
+import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import javax.swing.JFileChooser
@@ -22,11 +22,10 @@ import com.sun.jna.Platform
 
 /**
  * The actual JVM implementation of the PlatformDependencies contract.
- *
- * @version 2.7
- * @since 2025-08-17
  */
-actual open class PlatformDependencies {
+actual open class PlatformDependencies actual constructor(appVersion: String) {
+
+    private val rootDataDir = File(System.getProperty("user.home"), ".auf/$appVersion").absolutePath
 
     private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
         timeZone = TimeZone.getTimeZone("UTC")
@@ -72,8 +71,9 @@ actual open class PlatformDependencies {
 
     actual open fun getBasePathFor(type: BasePath): String {
         return when (type) {
-            BasePath.SETTINGS -> File(System.getProperty("user.home"), ".auf").absolutePath
-            BasePath.BACKUPS -> File(getBasePathFor(BasePath.SETTINGS), "backups").absolutePath
+            BasePath.SETTINGS -> File(rootDataDir, "settings").absolutePath
+            BasePath.BACKUPS -> File(rootDataDir, "backups").absolutePath
+            // Project-relative paths remain unchanged.
             BasePath.HOLONS -> File("holons").absolutePath
             BasePath.FRAMEWORK -> File("framework").absolutePath
             BasePath.SESSIONS -> File( "sessions").absolutePath
@@ -139,7 +139,7 @@ actual open class PlatformDependencies {
 
     actual open fun getSystemTimeMillis(): Long = System.currentTimeMillis()
 
-    actual open fun generateUUID(): String = UUID.randomUUID().toString() // ADDED THIS FUNCTION
+    actual open fun generateUUID(): String = UUID.randomUUID().toString()
 
     actual open fun formatIsoTimestamp(timestamp: Long): String {
         return isoFormatter.format(Date(timestamp))
