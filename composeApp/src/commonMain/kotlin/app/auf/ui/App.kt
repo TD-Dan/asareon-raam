@@ -21,7 +21,7 @@ fun App(store: Store, features: List<Feature>) {
     coreState?.toastMessage?.let { message ->
         LaunchedEffect(message) {
             snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
-            store.dispatch(Action("core.CLEAR_TOAST"))
+            store.dispatch(Action("core.CLEAR_TOAST", null, "app"))
         }
     }
 

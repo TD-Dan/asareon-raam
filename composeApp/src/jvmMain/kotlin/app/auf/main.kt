@@ -1,6 +1,7 @@
 package app.auf
 
 import androidx.compose.runtime.*
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
@@ -27,22 +28,19 @@ import kotlinx.serialization.json.put
  * 4. Read the initial window size from the CoreState.
  * 5. Dispatch lifecycle and window resize actions.
  *
- * @version 2.1
+ * @version 2.2
  */
 @OptIn(FlowPreview::class)
 fun main() = application {
     val coroutineScope = rememberCoroutineScope()
-    // FIX: Explicitly inject the app version into PlatformDependencies at instantiation.
     val platformDependencies = remember { PlatformDependencies(Version.APP_VERSION_MAJOR) }
     val container = remember(platformDependencies, coroutineScope) {
         AppContainer(platformDependencies, coroutineScope)
     }
 
-    // Collect the app state to read the initial window size.
     val appState by container.store.state.collectAsState()
     val coreState = appState.featureStates["CoreFeature"] as? CoreState
 
-    // Use the state to initialize the window, with defaults if the state isn't ready.
     val windowState = rememberWindowState(
         width = (coreState?.windowWidth ?: 1200).dp,
         height = (coreState?.windowHeight ?: 800).dp
@@ -50,10 +48,8 @@ fun main() = application {
 
     Window(
         onCloseRequest = {
-            // Dispatch the closing signal and allow a moment for features to react.
             container.store.dispatch(Action("app.CLOSING"))
-            // TODO: IMPLEMENT Proper 'wait for features to close' check
-            Thread.sleep(250) // A simple dangerous stupid mechanism to allow for persistence.
+            Thread.sleep(250)
             exitApplication()
         },
         title = "AUF v${Version.APP_VERSION}",
@@ -66,9 +62,23 @@ fun main() = application {
             container.store.dispatch(Action("app.STARTING"))
         }
 
-        // Observe window size changes and dispatch actions to the store.
-        // `snapshotFlow` turns compose state reads into a flow, and `debounce`
-        // prevents an action storm during rapid resizing.
+        // --- THE FIX: PART 1 ---
+        // This effect SYNCHRONIZES THE WINDOW TO THE STATE.
+        // It runs whenever CoreState's dimensions change, ensuring the window size
+        // always reflects the single source of truth. This fixes both the startup
+        // race and the update blindness.
+        LaunchedEffect(coreState?.windowWidth, coreState?.windowHeight) {
+            coreState?.let {
+                val stateSize = DpSize(it.windowWidth.dp, it.windowHeight.dp)
+                if (windowState.size != stateSize) {
+                    windowState.size = stateSize
+                }
+            }
+        }
+
+        // --- THE FIX: PART 2 ---
+        // This effect SYNCHRONIZES THE STATE TO THE WINDOW (after user mouse-drags).
+        // It observes user-driven size changes and dispatches them to the store.
         LaunchedEffect(windowState) {
             snapshotFlow { windowState.size }
                 .debounce(500L)
@@ -77,9 +87,7 @@ fun main() = application {
                     val width = newSize.width.value.toInt()
                     val height = newSize.height.value.toInt()
 
-                    // Only dispatch if the size is actually different from the state
-                    // to prevent redundant updates.
-                    if (width != coreState?.windowWidth || height != coreState.windowHeight) {
+                    if (width != coreState?.windowWidth || height != (coreState.windowHeight)) {
                         val payload = buildJsonObject {
                             put("width", width)
                             put("height", height)

@@ -58,7 +58,7 @@ open class Store(
         platformDependencies.log(
             level = LogLevel.INFO,
             tag = "Store",
-            message = "Dispatching Action: '${action.name}'"
+            message = "Dispatching: $action"
         )
         // THE GUARD CLAUSE
         // An action was dispatched before the app finished starting. This is a critical
@@ -67,7 +67,7 @@ open class Store(
             platformDependencies.log(
                 level = LogLevel.ERROR,
                 tag = "Store",
-                message = "Action '${action.name}' dispatched before app started. Action ignored."
+                message = "Action $action dispatched before app started. Action ignored."
             )
             return
         }

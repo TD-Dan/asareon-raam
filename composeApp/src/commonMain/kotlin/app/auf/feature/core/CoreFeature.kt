@@ -50,8 +50,9 @@ class CoreFeature : Feature {
                         put("label", "Window Width")
                         put("description", "The width of the application window in pixels.")
                         put("section", "Appearance")
-                        put("defaultValue", "1200")
-                    })
+                        put("defaultValue", "1200")},
+                        "core"
+                    )
                 )
                 store.dispatch(
                     Action("settings.ADD", buildJsonObject {
@@ -60,8 +61,9 @@ class CoreFeature : Feature {
                         put("label", "Window Height")
                         put("description", "The height of the application window in pixels.")
                         put("section", "Appearance")
-                        put("defaultValue", "800")
-                    })
+                        put("defaultValue", "800")},
+                        "core"
+                    )
                 )
             }
             "core.UPDATE_WINDOW_SIZE" -> {
@@ -72,11 +74,11 @@ class CoreFeature : Feature {
                     store.dispatch(Action("settings.UPDATE", buildJsonObject {
                         put("key", settingKeyWidth)
                         put("value", it.windowWidth.toString())
-                    }))
+                    }, "core"))
                     store.dispatch(Action("settings.UPDATE", buildJsonObject {
                         put("key", settingKeyHeight)
                         put("value", it.windowHeight.toString())
-                    }))
+                    }, "core"))
                 }
             }
         }
@@ -127,6 +129,29 @@ class CoreFeature : Feature {
                     windowWidth = width ?: coreState.windowWidth,
                     windowHeight = height ?: coreState.windowHeight
                 )
+            }
+            "settings.VALUE_CHANGED" -> {
+                // When a setting is changed via the UI, listen for the broadcast and update our state.
+                val payload = action.payload ?: return state
+                val key = payload["key"]?.jsonPrimitive?.content
+                val value = payload["value"]?.jsonPrimitive?.content
+
+                when (key) {
+                    settingKeyWidth -> {
+                        value?.toIntOrNull()?.let { newWidth ->
+                            if (newWidth != coreState.windowWidth) {
+                                newCoreState = coreState.copy(windowWidth = newWidth)
+                            }
+                        }
+                    }
+                    settingKeyHeight -> {
+                        value?.toIntOrNull()?.let { newHeight ->
+                            if (newHeight != coreState.windowHeight) {
+                                newCoreState = coreState.copy(windowHeight = newHeight)
+                            }
+                        }
+                    }
+                }
             }
         }
 

@@ -28,9 +28,17 @@ interface FeatureState
  * The single, universal action class for the entire application.
  * All communication, whether intent (Command) or result (Event), flows through this class.
  * It is based on a string name for routing and a serializable JSON object for the payload.
- *
+ * The originator can contain an uuid or feature name for debugging or other purposes.
  * This design enforces the 'Absolute Decoupling' and 'Manifest-Driven Contracts' principles.
  */
 @Serializable
-data class Action(val name: String, val payload: JsonObject? = null)
+data class Action(val name: String, val payload: JsonObject? = null, val originator: String? = null) {
+
+    override fun toString(): String {
+        return "<'${name}'" +
+                originator?.let { " from '$it'" }.orEmpty() +
+                payload?.let { " with '${it.toString()}'" }.orEmpty() +
+                ">"
+    }
+}
 

@@ -49,6 +49,18 @@
         "type": "object",
         "description": "A map of setting keys to their string-encoded values."
       }
+    },
+    {
+      "action_name": "settings.VALUE_CHANGED",
+      "summary": "[PUBLIC] Broadcasts that a specific setting's value has been changed by the user or another system.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "value": { "type": "string" }
+        },
+        "required": ["key", "value"]
+      }
     }
   ]
 }

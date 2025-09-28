@@ -45,7 +45,7 @@ class SettingsFeature(
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
             "app.STARTING" -> {
-                store.dispatch(Action("settings.LOAD"))
+                store.dispatch(Action("settings.LOAD", null, "settings"))
             }
 
             "settings.LOAD" -> {
@@ -55,7 +55,7 @@ class SettingsFeature(
                         put(key, JsonPrimitive(value))
                     }
                 }
-                store.dispatch(Action("settings.LOADED", payload))
+                store.dispatch(Action("settings.LOADED", payload, "settings"))
             }
 
             "settings.UPDATE" -> {
@@ -64,6 +64,12 @@ class SettingsFeature(
                 val latestSettingsState = store.state.value.featureStates[name] as? SettingsState
                 latestSettingsState?.let {
                     persistence.saveSettings(it.values)
+                }
+
+                // NEW: After persisting, broadcast the change publicly.
+                // The original action's payload contains the key and value that changed.
+                action.payload?.let { payload ->
+                    store.dispatch(Action("settings.VALUE_CHANGED", payload, "settings"))
                 }
             }
 
@@ -126,7 +132,7 @@ class SettingsFeature(
         @Composable
         override fun RibbonButton(store: Store, isActive: Boolean) {
             val payload = buildJsonObject { put("key", viewKey) }
-            IconButton(onClick = { store.dispatch(Action("core.SET_ACTIVE_VIEW", payload)) }) {
+            IconButton(onClick = { store.dispatch(Action("core.SET_ACTIVE_VIEW", payload, "settings")) }) {
                 Icon(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "Settings",
@@ -139,7 +145,7 @@ class SettingsFeature(
         override fun StageContent(store: Store) {
             SettingsView(
                 store = store,
-                onClose = { store.dispatch(Action("core.SHOW_DEFAULT_VIEW")) }
+                onClose = { store.dispatch(Action("core.SHOW_DEFAULT_VIEW", null, "settings")) }
             )
         }
     }

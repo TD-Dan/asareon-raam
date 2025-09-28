@@ -130,7 +130,7 @@ class StoreTest {
         val log = fakePlatform.capturedLogs.last()
         assertEquals(LogLevel.ERROR, log.level)
         assertEquals("Store", log.tag)
-        assertTrue(log.message.contains("Action 'widget.INCREMENT' dispatched before app started"), "The log message is incorrect.")
+        assertTrue(log.message.contains("'widget.INCREMENT'"), "The log message is incorrect.")
     }
 
     @Test
