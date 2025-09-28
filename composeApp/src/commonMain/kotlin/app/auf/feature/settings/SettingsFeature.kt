@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import app.auf.core.*
 import app.auf.util.PlatformDependencies
 import app.auf.util.BasePath
+import app.auf.util.LogLevel
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import kotlinx.serialization.encodeToString
@@ -43,12 +44,10 @@ class SettingsFeature(
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
-            // After the app has started, dispatch a command to ourselves to load settings.
             "app.STARTING" -> {
                 store.dispatch(Action("settings.LOAD"))
             }
 
-            // The command to load from disk.
             "settings.LOAD" -> {
                 val loadedValues = persistence.loadSettings()
                 val payload = buildJsonObject {
@@ -59,7 +58,6 @@ class SettingsFeature(
                 store.dispatch(Action("settings.LOADED", payload))
             }
 
-            // The command to update a value.
             "settings.UPDATE" -> {
                 // The reducer has already updated the state in memory.
                 // Our side effect is to persist the *entire*, new state to disk.
@@ -67,6 +65,11 @@ class SettingsFeature(
                 latestSettingsState?.let {
                     persistence.saveSettings(it.values)
                 }
+            }
+
+            "settings.OPEN_FOLDER" -> {
+                val settingsPath = platformDependencies.getBasePathFor(BasePath.SETTINGS)
+                platformDependencies.openFolderInExplorer(settingsPath)
             }
         }
     }
@@ -79,21 +82,16 @@ class SettingsFeature(
             "settings.ADD" -> {
                 action.payload?.let { definitionJson ->
                     val key = definitionJson["key"]?.jsonPrimitive?.content
-                    // FIX: Also extract the defaultValue to add to the values map.
                     val defaultValue = definitionJson["defaultValue"]?.jsonPrimitive?.content
                     if (key != null && defaultValue != null && settingsState.definitions.none { it["key"]?.jsonPrimitive?.content == key }) {
                         newSettingsState = settingsState.copy(
                             definitions = settingsState.definitions + definitionJson,
-                            // FIX: Atomically add the default value to the values map.
                             values = settingsState.values + (key to defaultValue)
                         )
                     }
                 }
             }
             "settings.LOADED" -> {
-                // When settings are loaded, merge them with the current values.
-                // The file on disk is the source of truth for values.
-                // We also apply the default values for any setting that was not in the file.
                 val loadedValues = action.payload?.let {
                     it.mapValues { entry -> entry.value.jsonPrimitive.content }
                 } ?: emptyMap()
@@ -107,7 +105,6 @@ class SettingsFeature(
                 newSettingsState = settingsState.copy(values = valuesWithDefaults)
             }
             "settings.UPDATE" -> {
-                // Immediately update the value in the state for instant UI feedback.
                 action.payload?.let {
                     val key = it["key"]?.jsonPrimitive?.content
                     val value = it["value"]?.jsonPrimitive?.content
@@ -118,10 +115,7 @@ class SettingsFeature(
                     }
                 }
             }
-            "settings.OPEN_FOLDER" -> {
-                val settingsPath = platformDependencies.getBasePathFor(BasePath.SETTINGS)
-                platformDependencies.openFolderInExplorer(settingsPath)
-            }
+            "settings.OPEN_FOLDER" -> { /* No-op, handled in onAction */ }
         }
 
         return if (newSettingsState != settingsState) {
@@ -150,7 +144,7 @@ class SettingsFeature(
         override fun StageContent(store: Store) {
             SettingsView(
                 store = store,
-                onClose = { store.dispatch(Action("core.NAVIGATE_TO_DEFAULT_VIEW")) }
+                onClose = { store.dispatch(Action("core.SHOW_DEFAULT_VIEW")) }
             )
         }
     }
@@ -158,9 +152,6 @@ class SettingsFeature(
 
 /**
  * A private, internal class responsible for all file I/O operations for the SettingsFeature.
- * It is NOT a shared service. Its existence is an implementation detail of this feature.
- * This encapsulation ensures that no other part of the application can access the settings
- * file directly, enforcing the "API via Actions" principle.
  */
 internal class SettingsPersistence(
     private val platformDependencies: PlatformDependencies
@@ -176,17 +167,13 @@ internal class SettingsPersistence(
         ignoreUnknownKeys = true
     }
 
-    /**
-     * Loads the settings map from the canonical settings.json file.
-     * If the file doesn't exist, it returns an empty map.
-     */
     fun loadSettings(): Map<String, String> {
         return if (platformDependencies.fileExists(settingsFilePath)) {
             try {
                 val content = platformDependencies.readFileContent(settingsFilePath)
                 json.decodeFromString<Map<String, String>>(content)
             } catch (e: Exception) {
-                println("ERROR: Failed to load or parse settings.json: ${e.message}")
+                platformDependencies.log(LogLevel.ERROR, "SettingsPersistence", "Failed to load or parse settings.json: ${e.message}")
                 emptyMap()
             }
         } else {
@@ -194,17 +181,12 @@ internal class SettingsPersistence(
         }
     }
 
-    /**
-     * Saves the entire settings map to the canonical settings.json file.
-     * This overwrites the previous file, ensuring the disk is always in sync
-     * with the latest application state.
-     */
     fun saveSettings(values: Map<String, String>) {
         try {
             val content = json.encodeToString(values)
             platformDependencies.writeFileContent(settingsFilePath, content)
         } catch (e: Exception) {
-            println("ERROR: Failed to save settings.json: ${e.message}")
+            platformDependencies.log(LogLevel.ERROR, "SettingsPersistence", "Failed to save settings.json: ${e.message}")
         }
     }
 }

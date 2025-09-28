@@ -102,7 +102,7 @@ class CoreFeature : Feature {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<SetActiveViewPayload>(it) }
                 newCoreState = payload?.let { coreState.copy(activeViewKey = it.key) } ?: coreState
             }
-            "core.NAVIGATE_TO_DEFAULT_VIEW" -> {
+            "core.SHOW_DEFAULT_VIEW" -> {
                 newCoreState = coreState.copy(activeViewKey = coreState.defaultViewKey)
             }
             "core.UPDATE_WINDOW_SIZE" -> {

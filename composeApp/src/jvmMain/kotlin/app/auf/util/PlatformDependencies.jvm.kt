@@ -1,9 +1,10 @@
 package app.auf.util
 
+import com.sun.jna.Platform
 import java.awt.Desktop
 import java.awt.Toolkit
-import java.awt.datatransfer.StringSelection
 import java.awt.Window
+import java.awt.datatransfer.StringSelection
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -18,7 +19,6 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileSystemView
-import com.sun.jna.Platform
 
 /**
  * The actual JVM implementation of the PlatformDependencies contract.
@@ -126,7 +126,7 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
             try {
                 Desktop.getDesktop().open(dir)
             } catch (e: Exception) {
-                println("Failed to open folder: ${e.message}")
+                log(LogLevel.ERROR, "PlatformDependencies", "Failed to open folder at path '$path': ${e.message}")
             }
         }
     }
@@ -163,11 +163,7 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
         val clipboard = Toolkit.getDefaultToolkit().systemClipboard
         clipboard.setContents(selection, selection)
     }
-    /**
-     * On the JVM, this function checks if the OS is Windows and if the passed
-     * object is a valid AWT Window. If so, it invokes our JNA utility to
-     * enable the dark mode title bar. On other OSes (macOS, Linux), it does nothing.
-     */
+
     actual open fun applyNativeWindowDecorations(window: Any) {
         if (Platform.isWindows() && window is Window) {
             WindowsDarkMode.enable(window)
@@ -178,18 +174,13 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
     @Synchronized
     actual open fun log(level: LogLevel, tag: String, message: String) {
         val logLine = "[${displayFormatter.format(Date())}] [${level.name}] [$tag] $message"
-
-        // 1. Always print to the appropriate console stream for real-time feedback.
         when (level) {
             LogLevel.ERROR -> System.err.println(logLine)
             else -> println(logLine)
         }
-
-        // 2. Attempt to write to the persistent log file for post-mortem debugging.
         try {
             File(logFilePath).appendText(logLine + "\n")
         } catch (e: Exception) {
-            // If file logging fails, report the failure itself to the console.
             System.err.println("!!! FAILED TO WRITE TO LOG FILE: ${e.message} !!!")
         }
     }

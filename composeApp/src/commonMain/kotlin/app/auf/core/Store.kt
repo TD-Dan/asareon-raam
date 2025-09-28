@@ -10,8 +10,6 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * The central state container for the Unidirectional Data Flow (UDF) architecture.
  *
- * ---
- * ## Mandate
  * This class holds the single source of truth: the application's state (`AppState`). Its
  * responsibilities are:
  * 1. To provide a `StateFlow` of the current `AppState` for the UI to observe.
@@ -57,7 +55,11 @@ open class Store(
     open fun dispatch(action: Action) {
         val coreState = _state.value.featureStates["CoreFeature"] as? CoreState
         val currentLifecycle = coreState?.lifecycle ?: AppLifecycle.INITIALIZING
-
+        platformDependencies.log(
+            level = LogLevel.INFO,
+            tag = "Store",
+            message = "Dispatching Action: '${action.name}'"
+        )
         // THE GUARD CLAUSE
         // An action was dispatched before the app finished starting. This is a critical
         // lifecycle violation. We must log it as an error and ignore the action.
