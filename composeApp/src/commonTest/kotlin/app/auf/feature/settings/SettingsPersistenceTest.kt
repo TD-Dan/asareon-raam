@@ -11,7 +11,8 @@ class SettingsPersistenceTest {
     @Test
     fun `loadSettings returns empty map when file does not exist`() {
         // Arrange
-        val fakePlatform = FakePlatformDependencies()
+        // FIX: Pass a version string to the constructor
+        val fakePlatform = FakePlatformDependencies("v-test")
         val persistence = SettingsPersistence(fakePlatform)
 
         // Act
@@ -24,7 +25,8 @@ class SettingsPersistenceTest {
     @Test
     fun `saveSettings and loadSettings correctly write and read data`() {
         // Arrange
-        val fakePlatform = FakePlatformDependencies()
+        // FIX: Pass a version string to the constructor
+        val fakePlatform = FakePlatformDependencies("v-test")
         val persistence = SettingsPersistence(fakePlatform)
         val settingsToSave = mapOf("key1" to "value1", "key2" to "true")
         val expectedPath = fakePlatform.getBasePathFor(BasePath.SETTINGS) + fakePlatform.pathSeparator + "settings.json"
@@ -35,14 +37,15 @@ class SettingsPersistenceTest {
         val loadedSettings = persistence.loadSettings()
 
         // Assert
-        assertTrue(fakePlatform.fileExists(expectedPath), "The settings file should have been created.")
+        assertTrue(fakePlatform.fileExists(expectedPath), "The settings file should have been created at '$expectedPath'.")
         assertEquals(settingsToSave, loadedSettings, "Loaded settings should match the saved settings.")
     }
 
     @Test
     fun `loadSettings returns empty map for corrupt JSON`() {
         // Arrange
-        val fakePlatform = FakePlatformDependencies()
+        // FIX: Pass a version string to the constructor
+        val fakePlatform = FakePlatformDependencies("v-test")
         val persistence = SettingsPersistence(fakePlatform)
         val settingsPath = fakePlatform.getBasePathFor(BasePath.SETTINGS) + fakePlatform.pathSeparator + "settings.json"
         fakePlatform.writeFileContent(settingsPath, "this is not valid json")

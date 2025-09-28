@@ -19,8 +19,6 @@ import kotlinx.serialization.json.JsonObject
  * A feature that provides the UI and persistence logic for all application settings.
  * It discovers settings by listening for 'settings.ADD' actions and persists the
  * current values to disk.
- *
- * @version 2.0
  */
 @Serializable
 data class SettingsState(
@@ -64,7 +62,7 @@ class SettingsFeature(
             // The command to update a value.
             "settings.UPDATE" -> {
                 // The reducer has already updated the state in memory.
-                // Our side-effect is to persist the *entire*, new state to disk.
+                // Our side effect is to persist the *entire*, new state to disk.
                 val latestSettingsState = store.state.value.featureStates[name] as? SettingsState
                 latestSettingsState?.let {
                     persistence.saveSettings(it.values)
@@ -81,9 +79,13 @@ class SettingsFeature(
             "settings.ADD" -> {
                 action.payload?.let { definitionJson ->
                     val key = definitionJson["key"]?.jsonPrimitive?.content
-                    if (key != null && settingsState.definitions.none { it["key"]?.jsonPrimitive?.content == key }) {
+                    // FIX: Also extract the defaultValue to add to the values map.
+                    val defaultValue = definitionJson["defaultValue"]?.jsonPrimitive?.content
+                    if (key != null && defaultValue != null && settingsState.definitions.none { it["key"]?.jsonPrimitive?.content == key }) {
                         newSettingsState = settingsState.copy(
-                            definitions = settingsState.definitions + definitionJson
+                            definitions = settingsState.definitions + definitionJson,
+                            // FIX: Atomically add the default value to the values map.
+                            values = settingsState.values + (key to defaultValue)
                         )
                     }
                 }
@@ -148,7 +150,7 @@ class SettingsFeature(
         override fun StageContent(store: Store) {
             SettingsView(
                 store = store,
-                onClose = { store.dispatch(Action("core.SHOW_DEFAULT_VIEW")) }
+                onClose = { store.dispatch(Action("core.NAVIGATE_TO_DEFAULT_VIEW")) }
             )
         }
     }

@@ -29,7 +29,7 @@ open class Store(
 ) {
 
     private val _state = MutableStateFlow(initialState)
-    val state = _state.asStateFlow()
+    open val state = _state.asStateFlow()
 
     private var lifecycleStarted = false
 
