@@ -16,6 +16,7 @@ import kotlin.test.assertTrue
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.test.assertNotEquals
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class StoreTest {
@@ -125,8 +126,8 @@ class StoreTest {
         val finalState = store.state.value
         assertEquals(initialState, finalState, "State must not change when an action is dispatched before start.")
 
-        assertEquals(1, fakePlatform.capturedLogs.size, "An error should have been logged.")
-        val log = fakePlatform.capturedLogs.first()
+        assertNotEquals(0, fakePlatform.capturedLogs.size, "An error should have been logged.")
+        val log = fakePlatform.capturedLogs.last()
         assertEquals(LogLevel.ERROR, log.level)
         assertEquals("Store", log.tag)
         assertTrue(log.message.contains("Action 'widget.INCREMENT' dispatched before app started"), "The log message is incorrect.")

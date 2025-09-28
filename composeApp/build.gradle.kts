@@ -88,12 +88,13 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test")
+            implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.compose.ui.test.junit4)
         }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.ktor.client.cio)
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing")
+            implementation(libs.kotlinx.coroutines.swing)
             implementation(libs.jna)
             implementation(libs.jna.platform)
         }
@@ -153,6 +154,9 @@ android {
     dependencies {
         debugImplementation(compose.uiTooling)
     }
+}
+dependencies {
+    testImplementation(libs.junit)
 }
 
 compose.desktop {

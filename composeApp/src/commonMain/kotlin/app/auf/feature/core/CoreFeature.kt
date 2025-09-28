@@ -26,7 +26,6 @@ data class CoreState(
  * including the application lifecycle, UI navigation, and window size.
  * It also demonstrates how a feature can register its own settings.
  *
- * @version 2.1
  */
 class CoreFeature : Feature {
     override val name: String = "CoreFeature"

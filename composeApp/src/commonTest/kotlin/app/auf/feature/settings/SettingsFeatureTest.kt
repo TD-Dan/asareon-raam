@@ -4,10 +4,8 @@ import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.Store
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.fakes.FakeStore
 import app.auf.util.BasePath
-import app.auf.util.PlatformDependencies
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.Test
@@ -18,27 +16,6 @@ import kotlin.test.assertTrue
 class SettingsFeatureTest {
 
     private val testAppVersion = "2.0.0-test"
-
-    /**
-     * A lightweight, controllable fake of the Store for testing `onAction` side effects.
-     * It now accepts a PlatformDependencies instance to satisfy the base class constructor.
-     */
-    private class FakeStore(
-        initialState: AppState,
-        platformDependencies: PlatformDependencies
-    ) : Store(initialState, emptyList(), platformDependencies) {
-        val dispatchedActions = mutableListOf<Action>()
-        private val _fakeState = MutableStateFlow(initialState)
-        override val state = _fakeState.asStateFlow()
-
-        override fun dispatch(action: Action) {
-            dispatchedActions.add(action)
-        }
-
-        fun setState(newState: AppState) {
-            _fakeState.value = newState
-        }
-    }
 
     private fun createAddAction(key: String, defaultValue: String): Action {
         return Action("settings.ADD", buildJsonObject {
@@ -151,7 +128,7 @@ class SettingsFeatureTest {
         assertEquals(initialState, newState, "State should be unchanged for an unknown action.")
     }
 
-    // --- onAction TESTS (Side Effects & State Immutability) ---
+    // --- onAction TESTS (Side Effects & Integration) ---
 
     @Test
     fun `onAction for app STARTING dispatches settings LOAD`() {
@@ -193,28 +170,42 @@ class SettingsFeatureTest {
     }
 
     @Test
-    fun `onAction for settings UPDATE saves the latest values to disk`() {
+    fun `dispatching UPDATE action correctly reduces state AND saves to disk via onAction`() {
         // Arrange
         val platform = FakePlatformDependencies(testAppVersion)
         val feature = SettingsFeature(platform)
-        // The store's state reflects the new value AFTER the reducer has run
-        val stateAfterReducer = AppState(featureStates = mapOf(feature.name to SettingsState(
-            values = mapOf("key1" to "value1", "key2" to "value2")
+
+        // 1. Set up an initial state with a setting definition and an old value.
+        val initialState = AppState(featureStates = mapOf(feature.name to SettingsState(
+            definitions = listOf(createAddAction("key1", "default").payload!!),
+            values = mapOf("key1" to "old_value")
         )))
-        val fakeStore = FakeStore(AppState(), platform)
-        fakeStore.setState(stateAfterReducer) // Manually set the store's state
-        feature.init(fakeStore)
-        val action = Action("settings.UPDATE")
+
+        // 2. Use the REAL store to correctly sequence reducer -> onAction.
+        val store = Store(initialState, listOf(feature), platform)
+        feature.init(store) // Manually call init for this test setup.
+
+        // 3. Define the action that triggers the whole process.
+        val updateAction = Action("settings.UPDATE", buildJsonObject {
+            put("key", "key1")
+            put("value", "new_value")
+        })
 
         // Act
-        feature.onAction(action, fakeStore)
+        // This single dispatch triggers both the reducer and the onAction handler.
+        store.dispatch(updateAction)
 
         // Assert
+        // 1. Assert state was updated correctly by the reducer.
+        val finalState = store.state.value.featureStates[feature.name] as? SettingsState
+        assertNotNull(finalState)
+        assertEquals("new_value", finalState.values["key1"])
+
+        // 2. Assert the side-effect happened correctly in onAction.
         val settingsPath = platform.getBasePathFor(BasePath.SETTINGS) + platform.pathSeparator + "settings.json"
         assertTrue(platform.fileExists(settingsPath), "Settings file should have been created.")
         val fileContent = platform.readFileContent(settingsPath)
-        assertTrue(fileContent.contains(""""key1": "value1""""), "File content is incorrect.")
-        assertTrue(fileContent.contains(""""key2": "value2""""), "File content is incorrect.")
+        assertTrue(fileContent.contains(""""key1": "new_value""""), "File content is incorrect.")
     }
 
     @Test
