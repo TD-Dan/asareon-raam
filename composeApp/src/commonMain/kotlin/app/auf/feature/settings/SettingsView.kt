@@ -1,4 +1,3 @@
-
 package app.auf.feature.settings
 
 import androidx.compose.foundation.layout.*
@@ -21,7 +20,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import kotlin.text.get
 
 @Composable
 fun SettingsView(
@@ -48,8 +46,7 @@ fun SettingsView(
             }
             Spacer(Modifier.width(16.dp))
             Text("Application Settings", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            // NEW: Button to open the settings folder.
-            IconButton(onClick = { store.dispatch(Action("settings.OPEN_FOLDER", null, "settings")) }) {
+            IconButton(onClick = { store.dispatch(Action("settings.OPEN_FOLDER")) }) {
                 Icon(Icons.Default.FolderOpen, contentDescription = "Open Settings Folder")
             }
         }
@@ -82,7 +79,7 @@ fun SettingsView(
                                 put("key", key)
                                 put("value", newValue.toString())
                             }
-                            store.dispatch(Action("settings.UPDATE", payload, "settings"))
+                            store.dispatch(Action("settings.UPDATE", payload))
                         }
                     )
                 }
@@ -97,7 +94,6 @@ private fun SettingRow(
     currentValue: String,
     onValueChange: (Any) -> Unit
 ) {
-    // At the view layer, we dynamically parse the properties from the JSON contract.
     val label = definitionJson["label"]?.jsonPrimitive?.content ?: "No Label"
     val description = definitionJson["description"]?.jsonPrimitive?.content ?: ""
     val type = definitionJson["type"]?.jsonPrimitive?.content
@@ -120,31 +116,22 @@ private fun SettingRow(
                 )
             }
             "NUMERIC_LONG" -> {
-                // 1. Local state for the text field's immediate value.
-                var localValue by remember { mutableStateOf(currentValue) }
+                // --- THE FIX ---
+                // The `remember` call is now keyed to `currentValue`. When the external
+                // `currentValue` changes (e.g., from a mouse drag), this entire
+                // block is re-initialized, ensuring the UI displays the correct state.
+                var localValue by remember(currentValue) { mutableStateOf(currentValue) }
 
-                // 2. An effect to synchronize our local state if the global state changes
-                // (e.g., from a window resize or loading settings).
-                LaunchedEffect(currentValue) {
-                    if (localValue != currentValue) {
-                        localValue = currentValue
-                    }
-                }
-
-                // 3. The debouncing effect. It runs whenever the user-edited localValue changes.
                 LaunchedEffect(localValue) {
-                    // Only dispatch if the local text field value is different from the canonical
-                    // value in the store. This prevents dispatching when the view loads.
                     if (localValue != currentValue) {
-                        delay(400L) // Wait for 400ms of inactivity.
-                        onValueChange(localValue) // Dispatch the action with the final value.
+                        delay(1000L) // Debounce user input
+                        onValueChange(localValue)
                     }
                 }
 
                 OutlinedTextField(
-                    value = localValue, // The text field is now bound to our local state.
+                    value = localValue,
                     onValueChange = { newValue ->
-                        // Basic validation: only allow digits and update the local state on every keystroke.
                         if (newValue.all { it.isDigit() }) {
                             localValue = newValue
                         }
