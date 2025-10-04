@@ -133,13 +133,13 @@ class SettingsFeatureTest {
     // --- onAction TESTS (Side Effects & Integration) ---
 
     @Test
-    fun `onAction for app STARTING dispatches settings LOAD`() {
+    fun `onAction for app INITIALIZING dispatches settings LOAD`() {
         // Arrange
         val platform = FakePlatformDependencies(testAppVersion)
         val feature = SettingsFeature(platform)
         val fakeStore = FakeStore(AppState(), platform)
         feature.init(fakeStore)
-        val action = Action("app.STARTING")
+        val action = Action("app.INITIALIZING")
 
         // Act
         feature.onAction(action, fakeStore)
@@ -198,7 +198,9 @@ class SettingsFeatureTest {
         })
 
         // Act
-        // 1. First, we MUST move the app out of the INITIALIZING state.
+        // 1. First, we MUST INITIALIZE app.
+        store.dispatch(Action("app.INITIALIZING"))
+        // 1. Second, we MUST move the app out of the INITIALIZING state.
         store.dispatch(Action("app.STARTING"))
         // 2. Now, dispatch the action under test.
         store.dispatch(updateAction)

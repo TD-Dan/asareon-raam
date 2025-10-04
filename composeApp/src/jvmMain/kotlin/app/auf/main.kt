@@ -31,7 +31,7 @@ fun main() = application {
 
     val container = remember(platformDependencies, coroutineScope) {
         AppContainer(platformDependencies, coroutineScope).also {
-            it.store.initFeatureLifacyclces()
+            it.store.initFeatureLifecycles()
         }
     }
 

@@ -21,7 +21,7 @@ open class Store(
 
     private var lifecycleStarted = false
 
-    fun initFeatureLifacyclces() {
+    fun initFeatureLifecycles() {
         if (!lifecycleStarted) {
             features.forEach { it.init(this) }
             lifecycleStarted = true
@@ -32,9 +32,9 @@ open class Store(
      * The single, generic entry point for all state changes and side effects.
      * The process is a strictly ordered, synchronous, blocking call:
      *
-     * 1.  **Guard:** The action is validated against the current `AppLifecycle` state.
-     * 2.  **Reduce:** The `reducer` from every feature is called sequentially to calculate the new state.
-     * 3.  **Update:** The central state is atomically updated.
+     * 1.  **Guard: ** The action is validated against the current `AppLifecycle` state.
+     * 2.  **Reduce: ** The `reducer` from every feature is called sequentially to calculate the new state.
+     * 3.  **Update: ** The central state is atomically updated.
      * 4.  **`onAction`:** The `onAction` side effect handler from every feature is called sequentially.
      *
      * This synchronous and sequential execution is the foundation of the application's

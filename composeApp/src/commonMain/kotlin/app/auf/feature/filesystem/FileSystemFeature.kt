@@ -59,15 +59,15 @@ class FileSystemFeature(
                 store.dispatch(Action("settings.ADD", buildJsonObject {
                     put("key", settingKeyWhitelist)
                     put("type", "STRING_SET") // Custom type for persistence
-                    put("label", "FS Whitelisted Paths")
-                    put("description", "A comma-separated list of whitelisted directory paths.")
+                    put("label", "Whitelisted Paths")
+                    put("description", "A comma-separated list of whitelisted directory paths that the app is allowed to edit.")
                     put("section", "FileSystem")
                     put("defaultValue", "")
                 }, name))
                 store.dispatch(Action("settings.ADD", buildJsonObject {
                     put("key", settingKeyFavorites)
                     put("type", "STRING_SET")
-                    put("label", "FS Favorite Paths")
+                    put("label", "Favorite Paths")
                     put("description", "A comma-separated list of favorite directory paths.")
                     put("section", "FileSystem")
                     put("defaultValue", "")
