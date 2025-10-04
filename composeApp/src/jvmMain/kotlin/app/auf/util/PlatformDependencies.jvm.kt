@@ -95,6 +95,8 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
 
     actual open fun getLastModified(path: String): Long = File(path).lastModified()
 
+    actual open fun getUserHomePath(): String = System.getProperty("user.home")
+
 
     // --- Complex Operations ---
 

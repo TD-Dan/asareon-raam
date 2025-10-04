@@ -110,6 +110,8 @@ open class FakePlatformDependencies(
         return files[path]?.lastModified ?: directories.find { it == path }?.let { currentTime } ?: 0L
     }
 
+    override fun getUserHomePath(): String = "/fake/user/home"
+
     override fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String) { /* No-op */ }
     override fun openFolderInExplorer(path: String) { /* No-op */ }
     override fun selectDirectoryPath(): String? = "/fake/selected/directory"

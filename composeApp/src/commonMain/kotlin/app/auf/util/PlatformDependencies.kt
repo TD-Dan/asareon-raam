@@ -1,12 +1,12 @@
 package app.auf.util
 
-import kotlinx.serialization.Serializable // Import added
+import kotlinx.serialization.Serializable
 
 /**
  * A simple, platform-agnostic description of a file system entry.
  * CORRECTED: This class is now serializable to be used in FeatureState.
  */
-@Serializable // Annotation added
+@Serializable
 data class FileEntry(val path: String, val isDirectory: Boolean)
 
 /**
@@ -46,6 +46,7 @@ expect open class PlatformDependencies(appVersion: String) {
     open fun getFileName(path: String): String
     open fun getParentDirectory(path: String): String?
     open fun getLastModified(path: String): Long
+    open fun getUserHomePath(): String // Function added
 
     // --- Complex Operations ---
     open fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String)

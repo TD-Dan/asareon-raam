@@ -44,6 +44,15 @@ class PlatformDependenciesJvmTest {
     }
 
     @Test
+    fun `getUserHomePath returns correct path from system property`() {
+        // Act
+        val actualHomePath = platform.getUserHomePath()
+
+        // Assert
+        assertEquals(userHome.absolutePath, actualHomePath)
+    }
+
+    @Test
     fun `getBasePathFor creates correct versioned paths for user-data directories`() {
         // Arrange
         val expectedSettingsPath = File(userHome, ".auf/$testAppVersion/settings").absolutePath
