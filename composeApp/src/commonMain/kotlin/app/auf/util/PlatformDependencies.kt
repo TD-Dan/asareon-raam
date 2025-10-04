@@ -1,8 +1,12 @@
 package app.auf.util
 
+import kotlinx.serialization.Serializable // Import added
+
 /**
  * A simple, platform-agnostic description of a file system entry.
+ * CORRECTED: This class is now serializable to be used in FeatureState.
  */
+@Serializable // Annotation added
 data class FileEntry(val path: String, val isDirectory: Boolean)
 
 /**

@@ -1,0 +1,95 @@
+{
+  "feature_name": "FileSystemFeature",
+  "summary": "Acts as the sole, transactional, and secure gateway to the file system.",
+  "listensFor": [
+    {
+      "action_name": "filesystem.NAVIGATE",
+      "summary": "Requests to change the currently viewed directory path.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "action_name": "filesystem.STAGE_CREATE",
+      "summary": "Stages a new 'Create' operation in the transaction buffer.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "content": { "type": "string" }
+        },
+        "required": ["path", "content"]
+      }
+    },
+    {
+      "action_name": "filesystem.STAGE_UPDATE",
+      "summary": "Stages a new 'Update' operation in the transaction buffer.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "newContent": { "type": "string" }
+        },
+        "required": ["path", "newContent"]
+      }
+    },
+    {
+      "action_name": "filesystem.STAGE_DELETE",
+      "summary": "Stages a new 'Delete' operation in the transaction buffer.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "action_name": "filesystem.COMMIT",
+      "summary": "Executes all staged operations within the security sandbox.",
+      "payload_schema": null
+    },
+    {
+      "action_name": "filesystem.DISCARD",
+      "summary": "Clears all staged operations without executing them.",
+      "payload_schema": null
+    }
+  ],
+  "publishes": [
+    {
+      "action_name": "filesystem.NAVIGATION_UPDATED",
+      "summary": "Broadcasts that the directory listing has been successfully updated.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "listing": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": { "type": "string" },
+                "isDirectory": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "action_name": "filesystem.NAVIGATION_FAILED",
+      "summary": "Broadcasts that a navigation attempt failed.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "error": { "type": "string" }
+        }
+      }
+    }
+  ]
+}
