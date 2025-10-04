@@ -49,15 +49,16 @@ data class FileSystemState(
     // --- Browser State ---
     val currentPath: String? = null,
     val rootItems: List<FileSystemItem> = emptyList(), // The root of the file tree
-    val bookmarks: List<String> = emptyList(),
     val error: String? = null,
 
     // --- Transactional State ---
     /** The list of pending file changes to be committed. This is the "staging area". */
     val stagedOperations: List<FileOperation> = emptyList(),
 
-    // --- Security State ---
+    // --- Security & Personalization State ---
     /** A set of absolute directory paths where file operations are permitted. */
-    val whitelistedPaths: Set<String> = emptySet()
+    val whitelistedPaths: Set<String> = emptySet(),
+    /** A set of absolute directory paths marked as favorites by the user. */
+    val favoritePaths: Set<String> = emptySet()
 
 ) : FeatureState

@@ -17,6 +17,60 @@
       "payload_schema": null
     },
     {
+      "action_name": "filesystem.EXPAND_ALL",
+      "summary": "Recursively expands a directory in the tree view to a safe depth.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"]
+      }
+    },
+    {
+      "action_name": "filesystem.COLLAPSE_ALL",
+      "summary": "Recursively collapses a directory and all its children in the tree view.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"]
+      }
+    },
+    {
+      "action_name": "filesystem.ADD_WHITELIST_PATH",
+      "summary": "Adds a new directory path to the security whitelist.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"]
+      }
+    },
+    {
+      "action_name": "filesystem.REMOVE_WHITELIST_PATH",
+      "summary": "Removes a directory path from the security whitelist.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"]
+      }
+    },
+    {
+      "action_name": "filesystem.ADD_FAVORITE_PATH",
+      "summary": "Adds a new directory path to the user's favorites.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"]
+      }
+    },
+    {
+      "action_name": "filesystem.REMOVE_FAVORITE_PATH",
+      "summary": "Removes a directory path from the user's favorites.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"]
+      }
+    },
+    {
       "action_name": "filesystem.TOGGLE_ITEM_EXPANDED",
       "summary": "Toggles the expanded/collapsed state of a directory in the tree view.",
       "payload_schema": {

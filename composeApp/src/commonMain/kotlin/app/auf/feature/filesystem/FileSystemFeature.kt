@@ -19,6 +19,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * ## Mandate
@@ -37,7 +38,7 @@ class FileSystemFeature(
     override val composableProvider: Feature.ComposableProvider = FileSystemComposableProvider()
 
     // --- Private serializable classes for decoding action payloads ---
-    @Serializable private data class NavigatePayload(val path: String)
+    @Serializable private data class PathPayload(val path: String)
     @Serializable private data class NavigationUpdatedPayload(val path: String, val listing: List<FileEntry>)
     @Serializable private data class NavigationFailedPayload(val path: String, val error: String)
     @Serializable private data class StageCreatePayload(val path: String, val content: String)
@@ -45,6 +46,10 @@ class FileSystemFeature(
 
     @Serializable private data class ToggleItemPayload(val path: String, val recursive: Boolean = false)
     @Serializable private data class DirectoryLoadedPayload(val parentPath: String, val children: List<FileEntry>)
+
+    // --- Constants for settings keys ---
+    private val settingKeyWhitelist = "filesystem.whitelistedPaths"
+    private val settingKeyFavorites = "filesystem.favoritePaths"
 
 
     override fun onAction(action: Action, store: Store) {
@@ -54,9 +59,28 @@ class FileSystemFeature(
                 val homePath = platformDependencies.getUserHomePath()
                 val payload = buildJsonObject { put("path", homePath) }
                 store.dispatch(Action("filesystem.NAVIGATE", payload, name))
+
+                // Register our settings with the SettingsFeature.
+                // These won't be visible in the SettingsView UI, which is desired.
+                store.dispatch(Action("settings.ADD", buildJsonObject {
+                    put("key", settingKeyWhitelist)
+                    put("type", "STRING_SET") // Custom type for persistence
+                    put("label", "FS Whitelisted Paths")
+                    put("description", "A comma-separated list of whitelisted directory paths.")
+                    put("section", "FileSystem")
+                    put("defaultValue", "")
+                }, name))
+                store.dispatch(Action("settings.ADD", buildJsonObject {
+                    put("key", settingKeyFavorites)
+                    put("type", "STRING_SET")
+                    put("label", "FS Favorite Paths")
+                    put("description", "A comma-separated list of favorite directory paths.")
+                    put("section", "FileSystem")
+                    put("defaultValue", "")
+                }, name))
             }
             "filesystem.NAVIGATE" -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<NavigatePayload>(it) } ?: return
+                val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
                 try {
                     val listing = platformDependencies.listDirectory(payload.path)
                     val listingJson = buildJsonArray { listing.forEach { add(Json.encodeToJsonElement(it)) } }
@@ -137,6 +161,33 @@ class FileSystemFeature(
                     store.dispatch(Action("core.SHOW_TOAST", payload, name))
                 }
             }
+            // --- Actions that trigger persistence ---
+            "filesystem.ADD_WHITELIST_PATH", "filesystem.REMOVE_WHITELIST_PATH" -> {
+                val state = store.state.value.featureStates[name] as? FileSystemState ?: return
+                val path = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: return
+                val newSet = if (action.name == "filesystem.ADD_WHITELIST_PATH") {
+                    state.whitelistedPaths + path
+                } else {
+                    state.whitelistedPaths - path
+                }
+                store.dispatch(Action("settings.UPDATE", buildJsonObject {
+                    put("key", settingKeyWhitelist)
+                    put("value", serializeSet(newSet))
+                }, name))
+            }
+            "filesystem.ADD_FAVORITE_PATH", "filesystem.REMOVE_FAVORITE_PATH" -> {
+                val state = store.state.value.featureStates[name] as? FileSystemState ?: return
+                val path = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: return
+                val newSet = if (action.name == "filesystem.ADD_FAVORITE_PATH") {
+                    state.favoritePaths + path
+                } else {
+                    state.favoritePaths - path
+                }
+                store.dispatch(Action("settings.UPDATE", buildJsonObject {
+                    put("key", settingKeyFavorites)
+                    put("value", serializeSet(newSet))
+                }, name))
+            }
         }
     }
 
@@ -187,7 +238,7 @@ class FileSystemFeature(
                 }
             }
             "filesystem.TOGGLE_ITEM_EXPANDED" -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<ToggleItemPayload>(it) }
+                val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }
                 payload?.let {
                     newFeatureState = resolvedFeatureState.copy(
                         rootItems = updateItemByPath(resolvedFeatureState.rootItems, it.path) { item ->
@@ -199,11 +250,10 @@ class FileSystemFeature(
             "filesystem.TOGGLE_ITEM_SELECTED" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<ToggleItemPayload>(it) } ?: return state
                 val (path, isRecursive) = payload
-                // Determine the target state. If a directory is indeterminate or off, the target is ON. If it's ON, the target is OFF.
                 val targetItem = findItemByPath(resolvedFeatureState.rootItems, path)
                 val targetState = if (targetItem?.isDirectory == true) {
                     val stats = getSelectionStats(targetItem)
-                    stats.selectedCount < stats.totalCount // If not fully selected, become fully selected. Otherwise, become deselected.
+                    stats.selectedCount < stats.totalCount
                 } else {
                     !(targetItem?.isSelected ?: false)
                 }
@@ -213,6 +263,51 @@ class FileSystemFeature(
                         item.copy(isSelected = targetState)
                     }
                 )
+            }
+            "filesystem.EXPAND_ALL" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
+                newFeatureState = resolvedFeatureState.copy(
+                    rootItems = updateExpansionStateRecursive(resolvedFeatureState.rootItems, payload.path, true)
+                )
+            }
+            "filesystem.COLLAPSE_ALL" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
+                newFeatureState = resolvedFeatureState.copy(
+                    rootItems = updateExpansionStateRecursive(resolvedFeatureState.rootItems, payload.path, false)
+                )
+            }
+            "filesystem.ADD_WHITELIST_PATH" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
+                newFeatureState = resolvedFeatureState.copy(whitelistedPaths = resolvedFeatureState.whitelistedPaths + payload.path)
+            }
+            "filesystem.REMOVE_WHITELIST_PATH" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
+                newFeatureState = resolvedFeatureState.copy(whitelistedPaths = resolvedFeatureState.whitelistedPaths - payload.path)
+            }
+            "filesystem.ADD_FAVORITE_PATH" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
+                newFeatureState = resolvedFeatureState.copy(favoritePaths = resolvedFeatureState.favoritePaths + payload.path)
+            }
+            "filesystem.REMOVE_FAVORITE_PATH" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
+                newFeatureState = resolvedFeatureState.copy(favoritePaths = resolvedFeatureState.favoritePaths - payload.path)
+            }
+            "settings.LOADED" -> {
+                val loadedValues = action.payload
+                val whitelistStr = loadedValues?.get(settingKeyWhitelist)?.jsonPrimitive?.content
+                val favoritesStr = loadedValues?.get(settingKeyFavorites)?.jsonPrimitive?.content
+                newFeatureState = resolvedFeatureState.copy(
+                    whitelistedPaths = deserializeSet(whitelistStr),
+                    favoritePaths = deserializeSet(favoritesStr)
+                )
+            }
+            "settings.VALUE_CHANGED" -> {
+                val key = action.payload?.get("key")?.jsonPrimitive?.content
+                val value = action.payload?.get("value")?.jsonPrimitive?.content
+                when (key) {
+                    settingKeyWhitelist -> newFeatureState = resolvedFeatureState.copy(whitelistedPaths = deserializeSet(value))
+                    settingKeyFavorites -> newFeatureState = resolvedFeatureState.copy(favoritePaths = deserializeSet(value))
+                }
             }
             "filesystem.STAGE_CREATE" -> { /* ... existing code ... */ }
             "filesystem.STAGE_DELETE" -> { /* ... existing code ... */ }
@@ -224,7 +319,28 @@ class FileSystemFeature(
         } ?: state
     }
 
+    // --- Serialization Helpers ---
+    private fun serializeSet(set: Set<String>): String = set.joinToString(",")
+    private fun deserializeSet(str: String?): Set<String> = str?.split(',')?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+
+
     // --- Recursive Helper Functions for Immutable Updates ---
+
+    private fun updateExpansionStateRecursive(items: List<FileSystemItem>, path: String, expand: Boolean): List<FileSystemItem> {
+        return items.map { item ->
+            when {
+                item.path == path -> expandOrCollapse(item, expand, 3) // Start recursion on target
+                path.startsWith(item.path) && item.children != null -> item.copy(children = updateExpansionStateRecursive(item.children, path, expand))
+                else -> item
+            }
+        }
+    }
+
+    private fun expandOrCollapse(item: FileSystemItem, expand: Boolean, maxDepth: Int): FileSystemItem {
+        if (!item.isDirectory || maxDepth <= 0) return item.copy(isExpanded = expand)
+        val updatedChildren = item.children?.map { child -> expandOrCollapse(child, expand, maxDepth - 1) }
+        return item.copy(isExpanded = expand, children = updatedChildren)
+    }
 
     private fun updateItemByPath(items: List<FileSystemItem>, path: String, update: (FileSystemItem) -> FileSystemItem): List<FileSystemItem> {
         return items.map { item ->
