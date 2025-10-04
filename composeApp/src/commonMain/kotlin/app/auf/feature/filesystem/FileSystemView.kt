@@ -9,34 +9,26 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.Action
 import app.auf.core.Store
 import app.auf.util.FileEntry
+import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 @Composable
-fun FileSystemView(store: Store) {
+fun FileSystemView(
+    store: Store,
+    platformDependencies: PlatformDependencies // THE FIX: Accept the dependency.
+) {
     val fsState by remember {
         derivedStateOf { store.state.value.featureStates["FileSystemFeature"] as? FileSystemState }
-    }
-
-    // Trigger initial navigation if path is not set
-    LaunchedEffect(fsState?.currentPath) {
-        if (fsState?.currentPath == null) {
-            // In a real app, this would be the user's home or a bookmarked dir.
-            // For now, we can leave it null or try a root path.
-            // Let's assume onAction will handle an initial load.
-        }
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -47,27 +39,38 @@ fun FileSystemView(store: Store) {
             modifier = Modifier.padding(bottom = 8.dp)
         )
         Text(
-            text = fsState?.currentPath ?: "No directory selected.",
+            text = fsState?.currentPath ?: "Loading...",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 16.dp)
         )
         HorizontalDivider()
 
+        // --- Error Panel ---
+        fsState?.error?.let { errorMessage ->
+            ErrorPanel(errorMessage)
+        }
+
         // --- Directory Listing ---
-        if (fsState?.currentDirectoryListing?.isEmpty() == true) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Directory is empty or inaccessible.")
-            }
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(fsState?.currentDirectoryListing ?: emptyList(), key = { it.path }) { entry ->
-                    FileRow(entry = entry, onClick = {
-                        if (entry.isDirectory) {
-                            val payload = buildJsonObject { put("path", entry.path) }
-                            store.dispatch(Action("filesystem.NAVIGATE", payload, "filesystem.ui"))
-                        }
-                    })
+        if (fsState?.error == null) {
+            if (fsState?.currentDirectoryListing?.isEmpty() == true && fsState?.currentPath != null) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Directory is empty.")
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(fsState?.currentDirectoryListing ?: emptyList(), key = { it.path }) { entry ->
+                        FileRow(
+                            entry = entry,
+                            pathSeparator = platformDependencies.pathSeparator, // THE FIX: Pass the primitive down.
+                            onClick = {
+                                if (entry.isDirectory) {
+                                    val payload = buildJsonObject { put("path", entry.path) }
+                                    store.dispatch(Action("filesystem.NAVIGATE", payload, "filesystem.ui"))
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -75,7 +78,29 @@ fun FileSystemView(store: Store) {
 }
 
 @Composable
-private fun FileRow(entry: FileEntry, onClick: () -> Unit) {
+private fun ErrorPanel(message: String) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Text(
+            text = message,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+            modifier = Modifier.padding(16.dp)
+        )
+    }
+}
+
+
+@Composable
+private fun FileRow(
+    entry: FileEntry,
+    pathSeparator: Char, // THE FIX: Accept the character as an argument.
+    onClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -90,7 +115,7 @@ private fun FileRow(entry: FileEntry, onClick: () -> Unit) {
             tint = if (entry.isDirectory) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = entry.path.substringAfterLast('/'), // Simple name extraction
+            text = entry.path.substringAfterLast(pathSeparator), // THE FIX: Use the passed-in character.
             style = MaterialTheme.typography.bodyLarge
         )
     }

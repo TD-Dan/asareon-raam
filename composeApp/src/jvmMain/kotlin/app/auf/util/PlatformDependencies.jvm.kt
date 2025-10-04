@@ -8,6 +8,7 @@ import java.awt.datatransfer.StringSelection
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.text.SimpleDateFormat
@@ -55,7 +56,17 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
     actual open fun fileExists(path: String): Boolean = File(path).exists()
 
     actual open fun listDirectory(path: String): List<FileEntry> {
-        return File(path).listFiles()
+        val directory = File(path)
+        // --- THE FIX (TSK-FS-009) ---
+        // Add explicit guard clauses to prevent silent failures.
+        if (!directory.exists()) {
+            throw IOException("Navigation failed: Path does not exist '$path'")
+        }
+        if (!directory.isDirectory) {
+            throw IOException("Navigation failed: Path is not a directory '$path'")
+        }
+        // --- END FIX ---
+        return directory.listFiles()
             ?.map { FileEntry(it.absolutePath, it.isDirectory) }
             ?: emptyList()
     }

@@ -45,6 +45,12 @@ class FileSystemFeature(
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
+            "app.STARTING" -> {
+                // When the app starts, automatically navigate to the user's home directory.
+                val homePath = platformDependencies.getUserHomePath()
+                val payload = buildJsonObject { put("path", homePath) }
+                store.dispatch(Action("filesystem.NAVIGATE", payload, name))
+            }
             "filesystem.NAVIGATE" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<NavigatePayload>(it) } ?: return
                 try {
@@ -150,7 +156,8 @@ class FileSystemFeature(
 
         @Composable
         override fun StageContent(store: Store) {
-            FileSystemView(store)
+            // THE FIX: Pass the dependency from the feature down into the view.
+            FileSystemView(store, platformDependencies)
         }
     }
 }
