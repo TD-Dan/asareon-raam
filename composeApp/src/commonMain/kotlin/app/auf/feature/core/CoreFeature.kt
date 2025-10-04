@@ -44,6 +44,7 @@ class CoreFeature(
     // Payloads for serialization
     @Serializable private data class SetActiveViewPayload(val key: String)
     @Serializable private data class ShowToastPayload(val message: String)
+    @Serializable private data class CopyToClipboardPayload(val text: String)
     @Serializable private data class UpdateWindowSizePayload(val width: Int, val height: Int)
 
     // Define keys for settings to avoid magic strings
@@ -95,6 +96,14 @@ class CoreFeature(
             "core.OPEN_LOGS_FOLDER" -> {
                 val logsPath = platformDependencies.getBasePathFor(BasePath.LOGS)
                 platformDependencies.openFolderInExplorer(logsPath)
+            }
+            "core.COPY_TO_CLIPBOARD" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<CopyToClipboardPayload>(it) }
+                payload?.let {
+                    platformDependencies.copyToClipboard(it.text)
+                    val toastPayload = buildJsonObject { put("message", "Copied to clipboard.") }
+                    store.dispatch(Action("core.SHOW_TOAST", toastPayload, "core"))
+                }
             }
         }
     }

@@ -1,7 +1,6 @@
 package app.auf.feature.filesystem
 
 import app.auf.core.FeatureState
-import app.auf.util.FileEntry
 import kotlinx.serialization.Serializable
 
 /**
@@ -26,6 +25,20 @@ sealed interface FileOperation {
 }
 
 /**
+ * A recursive data class representing a single node in the file system tree view.
+ * It contains state for selection, expansion, and its children.
+ */
+@Serializable
+data class FileSystemItem(
+    val path: String,
+    val name: String,
+    val isDirectory: Boolean,
+    val children: List<FileSystemItem>? = null, // Null means not yet loaded
+    val isExpanded: Boolean = false,
+    val isSelected: Boolean = false
+)
+
+/**
  * The state container for the FileSystemFeature.
  *
  * It models the state of the browser (current path, bookmarks, listing) and, critically,
@@ -35,7 +48,7 @@ sealed interface FileOperation {
 data class FileSystemState(
     // --- Browser State ---
     val currentPath: String? = null,
-    val currentDirectoryListing: List<FileEntry> = emptyList(),
+    val rootItems: List<FileSystemItem> = emptyList(), // The root of the file tree
     val bookmarks: List<String> = emptyList(),
     val error: String? = null,
 

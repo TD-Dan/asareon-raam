@@ -4,15 +4,14 @@ import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.util.FileEntry
-import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class FileSystemFeatureReducerTest {
 
@@ -26,10 +25,9 @@ class FileSystemFeatureReducerTest {
     )
 
     @Test
-    fun `reducer NAVIGATION_UPDATED correctly updates path and listing and clears error`() {
+    fun `reducer NAVIGATION_UPDATED correctly updates path and rootItems and clears error`() {
         // Arrange
         val initialState = createAppState(FileSystemState(error = "Old error"))
-        val fileListing = listOf(FileEntry("/test/file.txt", false))
         val payload = buildJsonObject {
             put("path", "/test")
             putJsonArray("listing") {
@@ -48,15 +46,16 @@ class FileSystemFeatureReducerTest {
         // Assert
         assertNotNull(newFsState)
         assertEquals("/test", newFsState.currentPath)
-        assertEquals(fileListing, newFsState.currentDirectoryListing)
+        assertEquals(1, newFsState.rootItems.size)
+        assertEquals("file.txt", newFsState.rootItems.first().name)
         assertNull(newFsState.error, "Error should be cleared on a successful navigation.")
     }
 
     @Test
-    fun `reducer NAVIGATION_FAILED sets error message and clears listing`() {
+    fun `reducer NAVIGATION_FAILED sets error message and clears rootItems`() {
         // Arrange
         val initialState = createAppState(FileSystemState(
-            currentDirectoryListing = listOf(FileEntry("/old/path", true))
+            rootItems = listOf(FileSystemItem("/old/path", "path", true))
         ))
         val payload = buildJsonObject {
             put("path", "/bad/path")
@@ -71,7 +70,7 @@ class FileSystemFeatureReducerTest {
         // Assert
         assertNotNull(newFsState)
         assertEquals("Directory not found", newFsState.error)
-        assertEquals(emptyList(), newFsState.currentDirectoryListing, "Listing should be cleared on failure.")
+        assertTrue(newFsState.rootItems.isEmpty(), "rootItems should be cleared on failure.")
     }
 
     @Test
