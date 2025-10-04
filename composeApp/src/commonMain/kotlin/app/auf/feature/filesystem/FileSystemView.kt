@@ -1,11 +1,12 @@
 package app.auf.feature.filesystem
 
+import androidx.compose.foundation.ContextMenuArea
+import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.onClick
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Description
@@ -21,7 +22,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.auf.core.Action
 import app.auf.core.Store
 import app.auf.util.PlatformDependencies
@@ -37,6 +40,7 @@ fun FileSystemView(
     val fsState = appState.featureStates["FileSystemFeature"] as? FileSystemState
     val parentPath = fsState?.currentPath?.let { platformDependencies.getParentDirectory(it) }
     var isFavoritesMenuExpanded by remember { mutableStateOf(false) }
+    var isWhitelistMenuExpanded by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         // --- Header ---
@@ -44,7 +48,50 @@ fun FileSystemView(
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("File System", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+            Text("Local File System Access", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+            Button(
+                onClick = { store.dispatch(Action("filesystem.COPY_SELECTION_TO_CLIPBOARD", null, "filesystem.ui")) },
+                enabled = fsState?.rootItems?.any { findSelectedFiles(listOf(it)).isNotEmpty() } == true
+            ) {
+                Text("Copy selection")
+            }
+            Spacer(Modifier.width(8.dp))
+            IconButton(
+                onClick = { parentPath?.let { store.dispatch(Action("filesystem.NAVIGATE", buildJsonObject { put("path", it) }, "filesystem.ui")) } },
+                enabled = parentPath != null
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Go Up")
+            }
+            IconButton(onClick = { store.dispatch(Action("filesystem.SELECT_DIRECTORY_UI", null, "filesystem.ui")) }) {
+                Icon(Icons.Default.FolderOpen, contentDescription = "Select Folder")
+            }
+
+            // Whitelist Dropdown
+            Box {
+                IconButton(
+                    onClick = { isWhitelistMenuExpanded = true },
+                    enabled = fsState?.whitelistedPaths?.isNotEmpty() == true
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Navigate to Whitelisted Folder")
+                }
+                DropdownMenu(
+                    expanded = isWhitelistMenuExpanded,
+                    onDismissRequest = { isWhitelistMenuExpanded = false }
+                ) {
+                    Text("Whitelisted Folders", modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium)
+                    HorizontalDivider()
+                    fsState?.whitelistedPaths?.sorted()?.forEach { path ->
+                        DropdownMenuItem(
+                            text = { Text(path) },
+                            onClick = {
+                                store.dispatch(Action("filesystem.NAVIGATE", buildJsonObject { put("path", path) }, "filesystem.ui"))
+                                isWhitelistMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
             // Favorites Dropdown
             Box {
                 IconButton(
@@ -61,30 +108,12 @@ fun FileSystemView(
                         DropdownMenuItem(
                             text = { Text(path) },
                             onClick = {
-                                val payload = buildJsonObject { put("path", path) }
-                                store.dispatch(Action("filesystem.NAVIGATE", payload, "filesystem.ui"))
+                                store.dispatch(Action("filesystem.NAVIGATE", buildJsonObject { put("path", path) }, "filesystem.ui"))
                                 isFavoritesMenuExpanded = false
                             }
                         )
                     }
                 }
-            }
-
-            Button(
-                onClick = { store.dispatch(Action("filesystem.COPY_SELECTION_TO_CLIPBOARD", null, "filesystem.ui")) },
-                enabled = fsState?.rootItems?.any { findSelectedFiles(listOf(it)).isNotEmpty() } == true
-            ) {
-                Text("Copy selection")
-            }
-            Spacer(Modifier.width(8.dp))
-            IconButton(
-                onClick = { parentPath?.let { store.dispatch(Action("filesystem.NAVIGATE", buildJsonObject { put("path", it) }, "filesystem.ui")) } },
-                enabled = parentPath != null
-            ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Go Up")
-            }
-            IconButton(onClick = { store.dispatch(Action("filesystem.SELECT_DIRECTORY_UI", null, "filesystem.ui")) }) {
-                Icon(Icons.Default.FolderOpen, contentDescription = "Select Folder")
             }
         }
 
@@ -172,18 +201,32 @@ private fun FileRow(
     onNavigate: () -> Unit,
     onContextMenuAction: (String) -> Unit
 ) {
-    var isContextMenuVisible by remember { mutableStateOf(false) }
-
-    Box {
+    // Use ContextMenuArea for right-click support
+    ContextMenuArea(
+        items = {
+            if (item.isDirectory) {
+                listOf(
+                    ContextMenuItem("Expand All") { onContextMenuAction("filesystem.EXPAND_ALL") },
+                    ContextMenuItem("Collapse All") { onContextMenuAction("filesystem.COLLAPSE_ALL") },
+                    // Divider is not standard, use custom items or separate menus
+                    ContextMenuItem(if (fsState?.favoritePaths?.contains(item.path) == true) "Remove from Favorites" else "Add to Favorites") {
+                        onContextMenuAction(if (fsState?.favoritePaths?.contains(item.path) == true) "filesystem.REMOVE_FAVORITE_PATH" else "filesystem.ADD_FAVORITE_PATH")
+                    },
+                    ContextMenuItem(if (fsState?.whitelistedPaths?.contains(item.path) == true) "Remove from Whitelist" else "Add to Whitelist") {
+                        onContextMenuAction(if (fsState?.whitelistedPaths?.contains(item.path) == true) "filesystem.REMOVE_WHITELIST_PATH" else "filesystem.ADD_WHITELIST_PATH")
+                    }
+                )
+            } else {
+                emptyList()
+            }
+        }
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable(onClick = onNavigate)
                 .padding(start = (level * 24).dp)
-                .padding(vertical = 1.dp) // Halved vertical padding
-                .onClick(
-                    onClick = onNavigate,
-                    onLongClick = { if (item.isDirectory) isContextMenuVisible = true }
-                ),
+                .padding(vertical = 1.dp), // Halved vertical padding
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
@@ -212,29 +255,35 @@ private fun FileRow(
                 tint = if (item.isDirectory) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            val isWhitelisted = fsState != null && isPathWhitelisted(item.path, fsState.whitelistedPaths, platformDependencies)
-            val textColor = if (isWhitelisted) {
+            val whitelistStatus = getWhitelistStatus(item.path, fsState?.whitelistedPaths ?: emptySet(), platformDependencies)
+            val textColor = if (whitelistStatus != WhitelistStatus.NONE) {
                 MaterialTheme.colorScheme.onSurface
             } else {
                 MaterialTheme.colorScheme.outline // Darker grey for non-whitelisted items
             }
 
-            Text(
-                text = item.name,
-                style = MaterialTheme.typography.bodyLarge,
-                color = textColor,
-            )
-
-            Spacer(Modifier.weight(1f)) // Pushes subsequent items to the right
-
-            if (item.isDirectory && isWhitelisted) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = "Whitelisted",
-                    tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f),
-                    modifier = Modifier.size(16.dp)
+            // --- THE FIX: Use a Row for horizontal alignment ---
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = textColor,
                 )
+                if (whitelistStatus != WhitelistStatus.NONE) {
+                    val indicatorText = if (whitelistStatus == WhitelistStatus.ROOT) "Whitelisted - Filesystem editing allowed!" else "Editing allowed!"
+                    Text(
+                        text = "($indicatorText)",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontStyle = FontStyle.Italic,
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
             }
+
 
             if (fsState?.favoritePaths?.contains(item.path) == true) {
                 Icon(
@@ -245,39 +294,21 @@ private fun FileRow(
                 )
             }
         }
-
-        if (item.isDirectory) {
-            DropdownMenu(
-                expanded = isContextMenuVisible,
-                onDismissRequest = { isContextMenuVisible = false }
-            ) {
-                DropdownMenuItem(text = { Text("Expand All") }, onClick = { onContextMenuAction("filesystem.EXPAND_ALL"); isContextMenuVisible = false })
-                DropdownMenuItem(text = { Text("Collapse All") }, onClick = { onContextMenuAction("filesystem.COLLAPSE_ALL"); isContextMenuVisible = false })
-                HorizontalDivider()
-                if (fsState?.favoritePaths?.contains(item.path) == true) {
-                    DropdownMenuItem(text = { Text("Remove from Favorites") }, onClick = { onContextMenuAction("filesystem.REMOVE_FAVORITE_PATH"); isContextMenuVisible = false })
-                } else {
-                    DropdownMenuItem(text = { Text("Add to Favorites") }, onClick = { onContextMenuAction("filesystem.ADD_FAVORITE_PATH"); isContextMenuVisible = false })
-                }
-                if (fsState?.whitelistedPaths?.contains(item.path) == true) {
-                    DropdownMenuItem(text = { Text("Remove from Whitelist") }, onClick = { onContextMenuAction("filesystem.REMOVE_WHITELIST_PATH"); isContextMenuVisible = false })
-                } else {
-                    DropdownMenuItem(text = { Text("Add to Whitelist") }, onClick = { onContextMenuAction("filesystem.ADD_WHITELIST_PATH"); isContextMenuVisible = false })
-                }
-            }
-        }
     }
 }
 
-private fun isPathWhitelisted(path: String, whitelistedPaths: Set<String>, platform: PlatformDependencies): Boolean {
-    var current: String? = path
+private enum class WhitelistStatus { NONE, ROOT, DESCENDANT }
+private fun getWhitelistStatus(path: String, whitelistedPaths: Set<String>, platform: PlatformDependencies): WhitelistStatus {
+    if (whitelistedPaths.contains(path)) return WhitelistStatus.ROOT
+
+    var current: String? = platform.getParentDirectory(path)
     while (current != null) {
         if (whitelistedPaths.contains(current)) {
-            return true
+            return WhitelistStatus.DESCENDANT
         }
         current = platform.getParentDirectory(current)
     }
-    return false
+    return WhitelistStatus.NONE
 }
 
 private fun determineSelectionState(item: FileSystemItem): ToggleableState {

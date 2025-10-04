@@ -17,6 +17,15 @@
       "payload_schema": null
     },
     {
+      "action_name": "filesystem.LOAD_CHILDREN",
+      "summary": "[INTERNAL] Triggers a side-effect to load a directory's children from disk.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"]
+      }
+    },
+    {
       "action_name": "filesystem.EXPAND_ALL",
       "summary": "Recursively expands a directory in the tree view to a safe depth.",
       "payload_schema": {

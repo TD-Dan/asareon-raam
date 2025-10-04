@@ -81,21 +81,7 @@ class FileSystemFeature(
             }
             "filesystem.NAVIGATE" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
-                try {
-                    val listing = platformDependencies.listDirectory(payload.path)
-                    val listingJson = buildJsonArray { listing.forEach { add(Json.encodeToJsonElement(it)) } }
-                    val successPayload = buildJsonObject {
-                        put("path", payload.path)
-                        put("listing", listingJson)
-                    }
-                    store.dispatch(Action("filesystem.NAVIGATION_UPDATED", successPayload, name))
-                } catch (e: Exception) {
-                    val errorPayload = buildJsonObject {
-                        put("path", payload.path)
-                        put("error", e.message ?: "An unknown error occurred.")
-                    }
-                    store.dispatch(Action("filesystem.NAVIGATION_FAILED", errorPayload, name))
-                }
+                store.dispatch(Action("filesystem.LOAD_CHILDREN", buildJsonObject { put("path", payload.path) }, name))
             }
             "filesystem.SELECT_DIRECTORY_UI" -> {
                 val selectedPath = platformDependencies.selectDirectoryPath()
@@ -105,22 +91,63 @@ class FileSystemFeature(
                 }
             }
             "filesystem.TOGGLE_ITEM_EXPANDED" -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<ToggleItemPayload>(it) } ?: return
                 val state = store.state.value.featureStates[name] as? FileSystemState ?: return
-                // Check if we need to load children
+                val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
                 val item = findItemByPath(state.rootItems, payload.path)
+                // If the item is a directory and its children haven't been loaded yet, dispatch an action to load them.
                 if (item?.isDirectory == true && item.children == null) {
-                    try {
-                        val children = platformDependencies.listDirectory(payload.path)
-                        val childrenJson = buildJsonArray { children.forEach { add(Json.encodeToJsonElement(it)) } }
-                        val successPayload = buildJsonObject {
-                            put("parentPath", payload.path)
-                            put("children", childrenJson)
+                    store.dispatch(Action("filesystem.LOAD_CHILDREN", action.payload, name))
+                }
+            }
+            "filesystem.TOGGLE_ITEM_SELECTED" -> {
+                // --- THE FIX: Handle recursive selection as a side-effect ---
+                val state = store.state.value.featureStates[name] as? FileSystemState ?: return
+                val payload = action.payload?.let { Json.decodeFromJsonElement<ToggleItemPayload>(it) } ?: return
+                if (payload.recursive) {
+                    val item = findItemByPath(state.rootItems, payload.path)
+                    if (item != null) {
+                        dispatchLoadChildrenRecursive(item, 3, store)
+                    }
+                }
+            }
+            "filesystem.EXPAND_ALL" -> {
+                val state = store.state.value.featureStates[name] as? FileSystemState ?: return
+                val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
+                val item = findItemByPath(state.rootItems, payload.path)
+                if (item != null) {
+                    // This recursive function will dispatch LOAD_CHILDREN for any unloaded directories it finds.
+                    dispatchLoadChildrenRecursive(item, 3, store)
+                }
+            }
+            "filesystem.LOAD_CHILDREN" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
+                try {
+                    val children = platformDependencies.listDirectory(payload.path)
+                    val childrenJson = buildJsonArray { children.forEach { add(Json.encodeToJsonElement(it)) } }
+                    val successPayload = buildJsonObject {
+                        put("parentPath", payload.path)
+                        put("children", childrenJson)
+                    }
+                    store.dispatch(Action("filesystem.DIRECTORY_LOADED", successPayload, name))
+                } catch (e: Exception) {
+                    val errorPayload = buildJsonObject { put("message", "Failed to read directory ${payload.path}: ${e.message}") }
+                    store.dispatch(Action("core.SHOW_TOAST", errorPayload, name))
+                }
+            }
+            "filesystem.DIRECTORY_LOADED" -> {
+                // --- THE FIX: Propagate selection state to newly loaded children ---
+                val state = store.state.value.featureStates[name] as? FileSystemState ?: return
+                val payload = action.payload?.let { Json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return
+                val parentItem = findItemByPath(state.rootItems, payload.parentPath)
+
+                // If the parent is selected, the new children must also be selected.
+                if (parentItem?.isSelected == true) {
+                    payload.children.forEach { childEntry ->
+                        val childPayload = buildJsonObject {
+                            put("path", childEntry.path)
+                            put("recursive", true)
                         }
-                        store.dispatch(Action("filesystem.DIRECTORY_LOADED", successPayload, name))
-                    } catch (e: Exception) {
-                        val errorPayload = buildJsonObject { put("message", "Failed to read directory ${payload.path}: ${e.message}") }
-                        store.dispatch(Action("core.SHOW_TOAST", errorPayload, name))
+                        store.dispatch(Action("filesystem.TOGGLE_ITEM_SELECTED", childPayload, name))
                     }
                 }
             }
@@ -200,41 +227,37 @@ class FileSystemFeature(
             "app.STARTING" -> {
                 if (currentFeatureState == null) { newFeatureState = resolvedFeatureState }
             }
-            "filesystem.NAVIGATION_UPDATED" -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<NavigationUpdatedPayload>(it) }
-                payload?.let {
-                    newFeatureState = resolvedFeatureState.copy(
-                        currentPath = it.path,
-                        rootItems = it.listing.map { entry ->
-                            FileSystemItem(
-                                path = entry.path,
-                                name = platformDependencies.getFileName(entry.path),
-                                isDirectory = entry.isDirectory
-                            )
-                        },
-                        error = null
+            "filesystem.DIRECTORY_LOADED" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return state
+                val isNavigating = resolvedFeatureState.currentPath == payload.parentPath
+
+                val newChildren = payload.children.map { entry -> FileSystemItem(
+                    path = entry.path,
+                    name = platformDependencies.getFileName(entry.path),
+                    isDirectory = entry.isDirectory
+                )}
+
+                newFeatureState = if (isNavigating) {
+                    // This is the result of a main navigation action
+                    resolvedFeatureState.copy(rootItems = newChildren, error = null)
+                } else {
+                    // This is the result of expanding a sub-directory
+                    resolvedFeatureState.copy(
+                        rootItems = updateItemByPath(resolvedFeatureState.rootItems, payload.parentPath) { item ->
+                            item.copy(children = newChildren)
+                        }
                     )
                 }
+            }
+            "filesystem.NAVIGATE" -> {
+                // The new pure part of navigate: update the current path immediately.
+                val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
+                newFeatureState = resolvedFeatureState.copy(currentPath = payload.path)
             }
             "filesystem.NAVIGATION_FAILED" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<NavigationFailedPayload>(it) }
                 payload?.let {
                     newFeatureState = resolvedFeatureState.copy(error = it.error, rootItems = emptyList())
-                }
-            }
-            "filesystem.DIRECTORY_LOADED" -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<DirectoryLoadedPayload>(it) }
-                payload?.let {
-                    val newChildren = it.children.map { entry -> FileSystemItem(
-                        path = entry.path,
-                        name = platformDependencies.getFileName(entry.path),
-                        isDirectory = entry.isDirectory
-                    )}
-                    newFeatureState = resolvedFeatureState.copy(
-                        rootItems = updateItemByPath(resolvedFeatureState.rootItems, it.parentPath) { item ->
-                            item.copy(children = newChildren)
-                        }
-                    )
                 }
             }
             "filesystem.TOGGLE_ITEM_EXPANDED" -> {
@@ -253,6 +276,7 @@ class FileSystemFeature(
                 val targetItem = findItemByPath(resolvedFeatureState.rootItems, path)
                 val targetState = if (targetItem?.isDirectory == true) {
                     val stats = getSelectionStats(targetItem)
+                    // If not fully selected (or indeterminate), the new state is ON. Otherwise, it's OFF.
                     stats.selectedCount < stats.totalCount
                 } else {
                     !(targetItem?.isSelected ?: false)
@@ -318,6 +342,22 @@ class FileSystemFeature(
             state.copy(featureStates = state.featureStates + (name to it))
         } ?: state
     }
+
+    // --- Side Effect Helpers ---
+    private fun dispatchLoadChildrenRecursive(item: FileSystemItem, maxDepth: Int, store: Store) {
+        if (maxDepth <= 0) return
+        if (item.isDirectory) {
+            if (item.children == null) {
+                // This directory is unloaded, dispatch an action to load it.
+                val payload = buildJsonObject { put("path", item.path) }
+                store.dispatch(Action("filesystem.LOAD_CHILDREN", payload, name))
+            } else {
+                // This directory is loaded, recurse into its children.
+                item.children.forEach { child -> dispatchLoadChildrenRecursive(child, maxDepth - 1, store) }
+            }
+        }
+    }
+
 
     // --- Serialization Helpers ---
     private fun serializeSet(set: Set<String>): String = set.joinToString(",")
@@ -408,11 +448,12 @@ class FileSystemFeature(
 
     private data class SelectionStats(val selectedCount: Int, val totalCount: Int)
     private fun getSelectionStats(item: FileSystemItem): SelectionStats {
-        if (!item.isDirectory || item.children == null) {
+        if (!item.isDirectory) {
             return SelectionStats(if (item.isSelected) 1 else 0, 1)
         }
-        if (item.children.isEmpty()) {
-            return SelectionStats(0, 0) // An empty directory has 0 items
+        if (item.children == null || item.children.isEmpty()) {
+            // An unloaded or empty directory has 0 selectable children.
+            return SelectionStats(0, 0)
         }
         val childrenStats = item.children.map { getSelectionStats(it) }
         return SelectionStats(
