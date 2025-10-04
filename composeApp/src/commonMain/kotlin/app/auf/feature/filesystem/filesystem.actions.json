@@ -14,6 +14,11 @@
       }
     },
     {
+      "action_name": "filesystem.SELECT_DIRECTORY_UI",
+      "summary": "Triggers the native OS file chooser to select a directory.",
+      "payload_schema": null
+    },
+    {
       "action_name": "filesystem.STAGE_CREATE",
       "summary": "Stages a new 'Create' operation in the transaction buffer.",
       "payload_schema": {

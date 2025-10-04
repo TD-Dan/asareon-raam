@@ -74,6 +74,13 @@ class FileSystemFeature(
                     store.dispatch(Action("filesystem.NAVIGATION_FAILED", errorPayload, name))
                 }
             }
+            "filesystem.SELECT_DIRECTORY_UI" -> {
+                val selectedPath = platformDependencies.selectDirectoryPath()
+                if (selectedPath != null) {
+                    val payload = buildJsonObject { put("path", selectedPath) }
+                    store.dispatch(Action("filesystem.NAVIGATE", payload, name))
+                }
+            }
         }
     }
 

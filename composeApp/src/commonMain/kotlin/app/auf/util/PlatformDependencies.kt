@@ -46,7 +46,7 @@ expect open class PlatformDependencies(appVersion: String) {
     open fun getFileName(path: String): String
     open fun getParentDirectory(path: String): String?
     open fun getLastModified(path: String): Long
-    open fun getUserHomePath(): String // Function added
+    open fun getUserHomePath(): String
 
     // --- Complex Operations ---
     open fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String)

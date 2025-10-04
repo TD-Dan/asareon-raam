@@ -5,13 +5,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -25,19 +26,49 @@ import kotlinx.serialization.json.put
 @Composable
 fun FileSystemView(
     store: Store,
-    platformDependencies: PlatformDependencies // THE FIX: Accept the dependency.
+    platformDependencies: PlatformDependencies
 ) {
-    val fsState by remember {
-        derivedStateOf { store.state.value.featureStates["FileSystemFeature"] as? FileSystemState }
-    }
+    // --- BUG FIX ---
+    // Collect the entire app state flow. This ensures that whenever the store emits
+    // a new state, this composable will be recomposed.
+    val appState by store.state.collectAsState()
+    // Derive the feature-specific state within the composable body.
+    val fsState = appState.featureStates["FileSystemFeature"] as? FileSystemState
+    // --- END BUG FIX ---
+
+    val parentPath = fsState?.currentPath?.let { platformDependencies.getParentDirectory(it) }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         // --- Header ---
-        Text(
-            text = "File System",
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "File System",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.weight(1f)
+            )
+            // --- FEATURE: Up Button ---
+            IconButton(
+                onClick = {
+                    parentPath?.let {
+                        val payload = buildJsonObject { put("path", it) }
+                        store.dispatch(Action("filesystem.NAVIGATE", payload, "filesystem.ui"))
+                    }
+                },
+                enabled = parentPath != null
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Go Up")
+            }
+            // --- FEATURE: Select Folder Button ---
+            IconButton(
+                onClick = { store.dispatch(Action("filesystem.SELECT_DIRECTORY_UI", null, "filesystem.ui")) }
+            ) {
+                Icon(Icons.Default.FolderOpen, contentDescription = "Select Folder")
+            }
+        }
+
         Text(
             text = fsState?.currentPath ?: "Loading...",
             style = MaterialTheme.typography.bodyMedium,
@@ -62,7 +93,7 @@ fun FileSystemView(
                     items(fsState?.currentDirectoryListing ?: emptyList(), key = { it.path }) { entry ->
                         FileRow(
                             entry = entry,
-                            pathSeparator = platformDependencies.pathSeparator, // THE FIX: Pass the primitive down.
+                            pathSeparator = platformDependencies.pathSeparator,
                             onClick = {
                                 if (entry.isDirectory) {
                                     val payload = buildJsonObject { put("path", entry.path) }
@@ -98,7 +129,7 @@ private fun ErrorPanel(message: String) {
 @Composable
 private fun FileRow(
     entry: FileEntry,
-    pathSeparator: Char, // THE FIX: Accept the character as an argument.
+    pathSeparator: Char,
     onClick: () -> Unit
 ) {
     Row(
@@ -115,7 +146,7 @@ private fun FileRow(
             tint = if (entry.isDirectory) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = entry.path.substringAfterLast(pathSeparator), // THE FIX: Use the passed-in character.
+            text = entry.path.substringAfterLast(pathSeparator),
             style = MaterialTheme.typography.bodyLarge
         )
     }

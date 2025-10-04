@@ -47,7 +47,7 @@ open class FakePlatformDependencies(
     }
 
     override fun listDirectory(path: String): List<FileEntry> {
-        if (!directories.contains(path)) return emptyList()
+        if (!directories.contains(path)) throw java.io.IOException("Path does not exist '$path'")
         val directChildren = mutableSetOf<String>()
         val pathWithSeparator = if (path.endsWith(pathSeparator)) path else "$path$pathSeparator"
         (files.keys + directories).forEach { entryPath ->
@@ -103,7 +103,8 @@ open class FakePlatformDependencies(
     }
 
     override fun getParentDirectory(path: String): String? {
-        return if (path.contains(pathSeparator)) path.substringBeforeLast(pathSeparator) else null
+        if (!path.contains(pathSeparator) || path == "/") return null
+        return path.substringBeforeLast(pathSeparator).ifEmpty { "/" }
     }
 
     override fun getLastModified(path: String): Long {
