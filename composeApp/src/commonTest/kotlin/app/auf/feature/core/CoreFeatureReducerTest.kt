@@ -2,6 +2,7 @@ package feature.core
 
 import app.auf.core.Action
 import app.auf.core.AppState
+import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.core.CoreState
 import kotlinx.serialization.json.buildJsonObject
@@ -13,7 +14,8 @@ import kotlin.test.assertNull
 
 class CoreFeatureReducerTest {
 
-    private val coreFeature = CoreFeature()
+    private val testAppVersion = "2.0.0-test"
+    private val coreFeature = CoreFeature(FakePlatformDependencies(testAppVersion))
     private val featureName = coreFeature.name
 
     @Test

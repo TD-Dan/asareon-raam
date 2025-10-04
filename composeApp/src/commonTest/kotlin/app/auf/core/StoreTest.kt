@@ -62,10 +62,10 @@ class StoreTest {
     @Test
     fun `store correctly orchestrates core and multiple feature reducers while maintaining state isolation`() = runTest {
         // --- ARRANGE ---
-        val coreFeature = CoreFeature()
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
+        val coreFeature = CoreFeature(fakePlatform)
         val widgetFeature = WidgetFeature()
         val gadgetFeature = GadgetFeature()
-        val fakePlatform = FakePlatformDependencies(testAppVersion)
         val initialState = AppState(
             featureStates = mapOf(
                 coreFeature.name to CoreState(),
@@ -109,8 +109,8 @@ class StoreTest {
     @Test
     fun `store ignores action and logs error when dispatched before app STARTING`() = runTest {
         // --- ARRANGE ---
-        val coreFeature = CoreFeature()
         val fakePlatform = FakePlatformDependencies(testAppVersion)
+        val coreFeature = CoreFeature(fakePlatform)
         val initialState = AppState(featureStates = mapOf(coreFeature.name to CoreState()))
         val store = Store(
             initialState = initialState,

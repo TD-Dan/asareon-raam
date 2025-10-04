@@ -174,9 +174,9 @@ class SettingsFeatureTest {
     @Test
     fun `dispatching UPDATE action correctly reduces state AND saves to disk via onAction`() {
         // Arrange
-        val platform = FakePlatformDependencies(testAppVersion)
-        val coreFeature = CoreFeature()
-        val settingsFeature = SettingsFeature(platform)
+        val fakeplatform = FakePlatformDependencies(testAppVersion)
+        val coreFeature = CoreFeature(fakeplatform)
+        val settingsFeature = SettingsFeature(fakeplatform)
 
         // 1. Set up an initial state with all necessary features and values.
         val initialState = AppState(featureStates = mapOf(
@@ -188,7 +188,7 @@ class SettingsFeatureTest {
         ))
 
         // 2. Use the REAL store, now with all required features.
-        val store = Store(initialState, listOf(coreFeature, settingsFeature), platform)
+        val store = Store(initialState, listOf(coreFeature, settingsFeature), fakeplatform)
         settingsFeature.init(store)
 
         // 3. Define the action that triggers the whole process.
@@ -210,9 +210,9 @@ class SettingsFeatureTest {
         assertEquals("new_value", finalState.values["key1"])
 
         // 2. Assert the side-effect happened correctly in onAction.
-        val settingsPath = platform.getBasePathFor(BasePath.SETTINGS) + platform.pathSeparator + "settings.json"
-        assertTrue(platform.fileExists(settingsPath), "Settings file should have been created.")
-        val fileContent = platform.readFileContent(settingsPath)
+        val settingsPath = fakeplatform.getBasePathFor(BasePath.SETTINGS) + fakeplatform.pathSeparator + "settings.json"
+        assertTrue(fakeplatform.fileExists(settingsPath), "Settings file should have been created.")
+        val fileContent = fakeplatform.readFileContent(settingsPath)
         assertTrue(fileContent.contains(""""key1": "new_value""""), "File content is incorrect.")
     }
 
