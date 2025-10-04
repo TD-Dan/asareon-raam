@@ -4,8 +4,10 @@ import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -31,7 +33,7 @@ class FileSystemFeatureOnActionTest {
             ))
         )))
         val fakeStore = FakeStore(state, platform)
-        val action = Action("filesystem.EXPAND_ALL", buildJsonObject { put("path", "/a") })
+        val action = Action("filesystem.EXPAND_ALL", buildJsonObject { put("path", JsonPrimitive("/a")) })
 
         // Act
         feature.onAction(action, fakeStore)
@@ -50,8 +52,8 @@ class FileSystemFeatureOnActionTest {
         )))
         val fakeStore = FakeStore(state, platform)
         val action = Action("filesystem.TOGGLE_ITEM_SELECTED", buildJsonObject {
-            put("path", "/a")
-            put("recursive", true)
+            put("path", JsonPrimitive("/a"))
+            put("recursive", JsonPrimitive(true))
         })
 
         // Act
@@ -71,11 +73,11 @@ class FileSystemFeatureOnActionTest {
         )))
         val fakeStore = FakeStore(state, platform)
         val payload = buildJsonObject {
-            put("parentPath", "/a")
+            put("parentPath", JsonPrimitive("/a"))
             putJsonArray("children") {
                 add(buildJsonObject {
-                    put("path", "/a/file.txt")
-                    put("isDirectory", false)
+                    put("path", JsonPrimitive("/a/file.txt"))
+                    put("isDirectory", JsonPrimitive(false))
                 })
             }
         }
@@ -94,7 +96,7 @@ class FileSystemFeatureOnActionTest {
     fun `onAction ADD_WHITELIST_PATH dispatches settings UPDATE`() {
         val state = createAppState(FileSystemState(whitelistedPaths = setOf("path1")))
         val fakeStore = FakeStore(state, platform)
-        val action = Action("filesystem.ADD_WHITELIST_PATH", buildJsonObject { put("path", "path2") })
+        val action = Action("filesystem.ADD_WHITELIST_PATH", buildJsonObject { put("path", JsonPrimitive("path2")) })
 
         feature.onAction(action, fakeStore)
 

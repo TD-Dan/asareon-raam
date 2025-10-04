@@ -35,10 +35,17 @@ interface FeatureState
 data class Action(val name: String, val payload: JsonObject? = null, val originator: String? = null) {
 
     override fun toString(): String {
+        val payloadString = payload?.let {
+            val raw = it.toString()
+            if (raw.length > 200) {
+                "'${raw.take(200)}...'"
+            } else {
+                "'$raw'"
+            }
+        }
         return "<'${name}'" +
                 originator?.let { " from '$it'" }.orEmpty() +
-                payload?.let { " with '${it.toString()}'" }.orEmpty() +
+                payloadString?.let { " with $it" }.orEmpty() +
                 ">"
     }
 }
-

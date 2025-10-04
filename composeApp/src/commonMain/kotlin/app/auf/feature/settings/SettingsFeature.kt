@@ -93,7 +93,13 @@ class SettingsFeature(
 
                 if (key != null && defaultValue != null && currentFeatureState.definitions.none { it["key"]?.jsonPrimitive?.content == key }) {
                     val newDefinitions = currentFeatureState.definitions + definitionJson
-                    val newValues = currentFeatureState.values + (key to defaultValue)
+                    // --- THE FIX: Only apply the default value if the key is not already present. ---
+                    // This prevents overwriting values that were just loaded from disk.
+                    val newValues = if (currentFeatureState.values.containsKey(key)) {
+                        currentFeatureState.values
+                    } else {
+                        currentFeatureState.values + (key to defaultValue)
+                    }
                     val newFeatureState = currentFeatureState.copy(definitions = newDefinitions, values = newValues)
                     state.copy(featureStates = state.featureStates + (name to newFeatureState))
                 } else {
