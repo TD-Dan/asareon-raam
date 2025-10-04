@@ -41,7 +41,13 @@ class FileSystemViewTest {
         // Set the content for the test rule inside the theme
         composeTestRule.setContent {
             AppTheme {
-                FileSystemView(store = fakeStore)
+                // --- THE FIX ---
+                // The required platformDependencies parameter is now correctly passed.
+                FileSystemView(
+                    store = fakeStore,
+                    platformDependencies = fakePlatform
+                )
+                // --- END FIX ---
             }
         }
     }
@@ -66,7 +72,7 @@ class FileSystemViewTest {
         setViewState(state)
 
         // Assert
-        composeTestRule.onNodeWithText("Directory is empty or inaccessible.").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Directory is empty.").assertIsDisplayed()
     }
 
     @Test

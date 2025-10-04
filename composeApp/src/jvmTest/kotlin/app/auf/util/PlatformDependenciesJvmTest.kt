@@ -3,8 +3,10 @@ package app.auf.util
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.io.IOException
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -128,6 +130,46 @@ class PlatformDependenciesJvmTest {
         assertTrue(entries.any { it.path.endsWith("file1.txt") && !it.isDirectory }, "Should contain file1.txt")
         assertTrue(entries.any { it.path.endsWith("subdir") && it.isDirectory }, "Should contain subdir.")
     }
+
+    @Test
+    fun `listDirectory throws IOException for non-existent path`() {
+        // Arrange
+        val nonExistentPath = File(tempDir, "non_existent_dir").absolutePath
+
+        // Act & Assert
+        val exception = assertThrows<IOException> {
+            platform.listDirectory(nonExistentPath)
+        }
+        assertTrue(exception.message!!.contains("Path does not exist"), "Exception message is incorrect.")
+    }
+
+    @Test
+    fun `listDirectory throws IOException for path that is a file`() {
+        // Arrange
+        val filePath = File(tempDir, "i_am_a_file.txt").absolutePath
+        platform.writeFileContent(filePath, "content") // Ensure the file exists
+
+        // Act & Assert
+        val exception = assertThrows<IOException> {
+            platform.listDirectory(filePath)
+        }
+        assertTrue(exception.message!!.contains("Path is not a directory"), "Exception message is incorrect.")
+    }
+
+    @Test
+    fun `deleteFile removes the specified file`() {
+        // Arrange
+        val fileToDelete = File(tempDir, "to_delete.txt")
+        platform.writeFileContent(fileToDelete.absolutePath, "content")
+        assertTrue(fileToDelete.exists(), "Precondition failed: File was not created.")
+
+        // Act
+        platform.deleteFile(fileToDelete.absolutePath)
+
+        // Assert
+        assertFalse(fileToDelete.exists(), "File should have been deleted.")
+    }
+
 
     @Test
     fun `log function creates and writes to a versioned log file`() {
