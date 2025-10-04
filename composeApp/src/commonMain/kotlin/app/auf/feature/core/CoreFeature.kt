@@ -7,6 +7,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import app.auf.core.*
+import app.auf.util.BasePath
+import app.auf.util.PlatformDependencies
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
@@ -33,7 +35,9 @@ data class CoreState(
  * It also demonstrates how a feature can register its own settings.
  *
  */
-class CoreFeature : Feature {
+class CoreFeature(
+    private val platformDependencies: PlatformDependencies
+) : Feature {
     override val name: String = "CoreFeature"
     override val composableProvider: Feature.ComposableProvider = CoreComposableProvider()
 
@@ -87,6 +91,10 @@ class CoreFeature : Feature {
                         put("value", it.windowHeight.toString())
                     }, "core"))
                 }
+            }
+            "core.OPEN_LOGS_FOLDER" -> {
+                val logsPath = platformDependencies.getBasePathFor(BasePath.LOGS)
+                platformDependencies.openFolderInExplorer(logsPath)
             }
         }
     }
@@ -192,7 +200,6 @@ class CoreFeature : Feature {
 
         @Composable
         override fun StageContent(store: Store) {
-            // This is the only change in this file.
             AboutView(store)
         }
     }

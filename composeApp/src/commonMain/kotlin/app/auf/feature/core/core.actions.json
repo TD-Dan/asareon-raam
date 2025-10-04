@@ -41,6 +41,20 @@
       "action_name": "core.CLEAR_TOAST",
       "summary": "Immediately hides the currently displayed toast message.",
       "payload_schema": null
+    },
+    {
+      "action_name": "core.OPEN_LOGS_FOLDER",
+      "summary": "Requests that the application's logs folder be opened in the native file explorer.",
+      "payload_schema": null
+    },
+    {
+      "action_name": "core.COPY_TO_CLIPBOARD",
+      "summary": "Copies the provided text to the system clipboard.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "text": { "type": "string" } },
+        "required": ["text"]
+      }
     }
   ],
   "publishes": []
