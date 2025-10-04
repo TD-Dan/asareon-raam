@@ -1,7 +1,18 @@
 package app.auf.feature.filesystem
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import app.auf.core.Action
 import app.auf.core.Feature
+import app.auf.core.Store
 import app.auf.util.PlatformDependencies
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * ## Mandate
@@ -17,7 +28,29 @@ class FileSystemFeature(
     private val platformDependencies: PlatformDependencies
 ) : Feature {
     override val name: String = "FileSystemFeature"
+    override val composableProvider: Feature.ComposableProvider = FileSystemComposableProvider()
 
     // The reducer and onAction handlers will be implemented in subsequent tasks (TSK-FS-005).
-    // The composableProvider will be implemented in TSK-FS-003 and TSK-FS-006.
+
+    inner class FileSystemComposableProvider : Feature.ComposableProvider {
+        override val viewKey: String = "feature.filesystem.main"
+
+        @Composable
+        override fun RibbonButton(store: Store, isActive: Boolean) {
+            val payload = buildJsonObject { put("key", viewKey) }
+            IconButton(onClick = { store.dispatch(Action("core.SET_ACTIVE_VIEW", payload, "filesystem.ui")) }) {
+                Icon(
+                    imageVector = Icons.Default.Folder,
+                    contentDescription = "File System Browser",
+                    tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        @Composable
+        override fun StageContent(store: Store) {
+            // This is a placeholder that will be fully implemented in TSK-FS-006.
+            Text("File System Browser Placeholder")
+        }
+    }
 }
