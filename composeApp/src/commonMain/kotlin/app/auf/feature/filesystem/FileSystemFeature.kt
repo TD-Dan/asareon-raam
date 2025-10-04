@@ -5,14 +5,20 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import app.auf.core.Action
+import app.auf.core.AppState
 import app.auf.core.Feature
 import app.auf.core.Store
+import app.auf.util.FileEntry
 import app.auf.util.PlatformDependencies
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.encodeToJsonElement
 
 /**
  * ## Mandate
@@ -30,7 +36,102 @@ class FileSystemFeature(
     override val name: String = "FileSystemFeature"
     override val composableProvider: Feature.ComposableProvider = FileSystemComposableProvider()
 
-    // The reducer and onAction handlers will be implemented in subsequent tasks (TSK-FS-005).
+    // --- Private serializable classes for decoding action payloads ---
+    @Serializable private data class NavigatePayload(val path: String)
+    @Serializable private data class NavigationUpdatedPayload(val path: String, val listing: List<FileEntry>)
+    @Serializable private data class NavigationFailedPayload(val path: String, val error: String)
+    @Serializable private data class StageCreatePayload(val path: String, val content: String)
+    @Serializable private data class StageDeletePayload(val path: String)
+
+    override fun onAction(action: Action, store: Store) {
+        when (action.name) {
+            "filesystem.NAVIGATE" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<NavigatePayload>(it) } ?: return
+                try {
+                    val listing = platformDependencies.listDirectory(payload.path)
+                    // The payload for NAVIGATION_UPDATED must now be a proper JSON array of objects
+                    val listingJson = buildJsonArray {
+                        listing.forEach { entry ->
+                            add(Json.encodeToJsonElement(entry))
+                        }
+                    }
+                    val successPayload = buildJsonObject {
+                        put("path", payload.path)
+                        put("listing", listingJson)
+                    }
+                    store.dispatch(Action("filesystem.NAVIGATION_UPDATED", successPayload, name))
+                } catch (e: Exception) {
+                    val errorPayload = buildJsonObject {
+                        put("path", payload.path)
+                        put("error", e.message ?: "An unknown error occurred.")
+                    }
+                    store.dispatch(Action("filesystem.NAVIGATION_FAILED", errorPayload, name))
+                }
+            }
+        }
+    }
+
+    override fun reducer(state: AppState, action: Action): AppState {
+        val currentFeatureState = state.featureStates[name] as? FileSystemState
+        // If the feature state doesn't exist yet, we start with a default one.
+        val resolvedFeatureState = currentFeatureState ?: FileSystemState()
+        var newFeatureState: FileSystemState? = null
+
+        when (action.name) {
+            // --- THE FIX: Initialize our state on app startup ---
+            "app.STARTING" -> {
+                // If our state doesn't exist in the map, this is our chance to add it.
+                if (currentFeatureState == null) {
+                    newFeatureState = resolvedFeatureState
+                }
+            }
+            "filesystem.NAVIGATION_UPDATED" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<NavigationUpdatedPayload>(it) }
+                payload?.let {
+                    newFeatureState = resolvedFeatureState.copy(
+                        currentPath = it.path,
+                        currentDirectoryListing = it.listing,
+                        error = null
+                    )
+                }
+            }
+            "filesystem.NAVIGATION_FAILED" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<NavigationFailedPayload>(it) }
+                payload?.let {
+                    newFeatureState = resolvedFeatureState.copy(
+                        error = it.error,
+                        currentDirectoryListing = emptyList()
+                    )
+                }
+            }
+            "filesystem.STAGE_CREATE" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<StageCreatePayload>(it) }
+                payload?.let {
+                    val operation = FileOperation.Create(it.path, it.content)
+                    newFeatureState = resolvedFeatureState.copy(
+                        stagedOperations = resolvedFeatureState.stagedOperations + operation
+                    )
+                }
+            }
+            "filesystem.STAGE_DELETE" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<StageDeletePayload>(it) }
+                payload?.let {
+                    val operation = FileOperation.Delete(it.path)
+                    newFeatureState = resolvedFeatureState.copy(
+                        stagedOperations = resolvedFeatureState.stagedOperations + operation
+                    )
+                }
+            }
+            "filesystem.DISCARD" -> {
+                newFeatureState = resolvedFeatureState.copy(stagedOperations = emptyList())
+            }
+        }
+
+        return newFeatureState?.let {
+            state.copy(featureStates = state.featureStates + (name to it))
+        } ?: state
+    }
+
 
     inner class FileSystemComposableProvider : Feature.ComposableProvider {
         override val viewKey: String = "feature.filesystem.main"
@@ -49,8 +150,7 @@ class FileSystemFeature(
 
         @Composable
         override fun StageContent(store: Store) {
-            // This is a placeholder that will be fully implemented in TSK-FS-006.
-            Text("File System Browser Placeholder")
+            FileSystemView(store)
         }
     }
 }
