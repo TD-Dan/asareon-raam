@@ -9,18 +9,6 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * The central state container for the Unidirectional Data Flow (UDF) architecture.
- *
- * This class holds the single source of truth: the application's state (`AppState`). Its
- * responsibilities are:
- * 1. To provide a `StateFlow` of the current `AppState` for the UI to observe.
- * 2. To expose a single `dispatch` method that accepts the universal `Action`.
- * 3. To pass the state through each registered feature's reducer to calculate the new state.
- * 4. To trigger each feature's `onAction` side effect handler AFTER the state has been updated.
- * 5. To manage the lifecycle of features, calling their `init` method once.
- * 6. To act as a gatekeeper, enforcing the application lifecycle state.
- *
- * This class is part of the core scaffolding; it is completely ignorant of any specific feature's logic.
- *
  */
 open class Store(
     initialState: AppState,
@@ -33,11 +21,7 @@ open class Store(
 
     private var lifecycleStarted = false
 
-    /**
-     * Kicks off the `init` lifecycle method for all registered features.
-     * This should only be called once, after the store has been fully initialized.
-     */
-    fun initFeatureLifecycles() {
+    fun initFeatureLifacyclces() {
         if (!lifecycleStarted) {
             features.forEach { it.init(this) }
             lifecycleStarted = true
@@ -46,28 +30,37 @@ open class Store(
 
     /**
      * The single, generic entry point for all state changes and side effects.
-     * The process is strictly ordered:
-     * 1. Check lifecycle guard.
-     * 2. Sequentially apply the reducer from every feature to calculate the new state.
-     * 3. Atomically update the state.
-     * 4. Sequentially trigger the `onAction` side effect handler for every feature.
+     * The process is a strictly ordered, synchronous, blocking call:
+     *
+     * 1.  **Guard:** The action is validated against the current `AppLifecycle` state.
+     * 2.  **Reduce:** The `reducer` from every feature is called sequentially to calculate the new state.
+     * 3.  **Update:** The central state is atomically updated.
+     * 4.  **`onAction`:** The `onAction` side effect handler from every feature is called sequentially.
+     *
+     * This synchronous and sequential execution is the foundation of the application's
+     * deterministic startup process. The function will not return until all phases are complete.
      */
     open fun dispatch(action: Action) {
         val coreState = _state.value.featureStates["CoreFeature"] as? CoreState
-        val currentLifecycle = coreState?.lifecycle ?: AppLifecycle.INITIALIZING
+        val currentLifecycle = coreState?.lifecycle ?: AppLifecycle.BOOTING
         platformDependencies.log(
             level = LogLevel.INFO,
             tag = "Store",
             message = "Dispatching: $action"
         )
-        // THE GUARD CLAUSE
-        // An action was dispatched before the app finished starting. This is a critical
-        // lifecycle violation. We must log it as an error and ignore the action.
-        if (currentLifecycle == AppLifecycle.INITIALIZING && action.name != "app.STARTING") {
+
+        val isActionAllowed = when (currentLifecycle) {
+            AppLifecycle.BOOTING -> action.name == "app.INITIALIZING"
+            AppLifecycle.INITIALIZING -> true // Allow all actions during the init/load phase
+            AppLifecycle.RUNNING -> action.name != "app.INITIALIZING" && action.name != "app.STARTING"
+            AppLifecycle.CLOSING -> action.name == "app.CLOSING" // Only allow closing action
+        }
+
+        if (!isActionAllowed) {
             platformDependencies.log(
                 level = LogLevel.ERROR,
                 tag = "Store",
-                message = "Action $action dispatched before app started. Action ignored."
+                message = "Action '$action' dispatched in invalid lifecycle state '$currentLifecycle'. Action ignored."
             )
             return
         }
@@ -79,14 +72,11 @@ open class Store(
         }
 
         // --- PHASE 2: UPDATE STATE ---
-        // Atomically update the state if it has changed.
         if (newState != previousState) {
             _state.value = newState
         }
 
         // --- PHASE 3: SIDE-EFFECTS ---
-        // Trigger side effects for all features AFTER the state has been updated.
-        // This ensures onAction handlers always work with the most current state.
         features.forEach { feature ->
             feature.onAction(action, this)
         }

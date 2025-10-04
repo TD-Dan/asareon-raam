@@ -23,12 +23,24 @@ interface Feature {
      * The Store calls this function for every feature on every action, AFTER the reducers
      * have calculated the new state. This allows features to react to events and dispatch
      * new actions.
+     *
+     * ### Synchronous Startup Mandate
+     * The Store guarantees that this `onAction` method is invoked synchronously and sequentially
+     * on all features within a single `dispatch` call. During the critical `app.INITIALIZING`
+     * lifecycle phase, any work performed in this method MUST be synchronous.
+     * Launching a "fire-and-forget" coroutine for an essential setup task is a critical
+     * architectural violation, as it breaks the deterministic startup sequence.
+     * The `app.STARTING`phase can be used to launch long taking asynchronous jobs whose outcome
+     * is not deterministic.
+     *
+     * @see P-SYSTEM-002: Synchronous Startup Mandate
      */
     fun onAction(action: Action, store: Store) {}
 
     /**
      * Called exactly once by the Store when the application is being assembled.
-     * Use this for one-time, synchronous setup. DO NOT dispatch actions here.
+     * Use this for one-time, synchronous setup of a feature's internal dependencies.
+     * DO NOT dispatch actions here, as the application lifecycle has not yet begun.
      */
     fun init(store: Store) {}
 

@@ -54,14 +54,8 @@ class FileSystemFeature(
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
-            "app.STARTING" -> {
-                // When the app starts, automatically navigate to the user's home directory.
-                val homePath = platformDependencies.getUserHomePath()
-                val payload = buildJsonObject { put("path", homePath) }
-                store.dispatch(Action("filesystem.NAVIGATE", payload, name))
-
-                // Register our settings with the SettingsFeature.
-                // These won't be visible in the SettingsView UI, which is desired.
+            "app.INITIALIZING" -> {
+                // Phase 1: Register settings definitions.
                 store.dispatch(Action("settings.ADD", buildJsonObject {
                     put("key", settingKeyWhitelist)
                     put("type", "STRING_SET") // Custom type for persistence
@@ -78,6 +72,12 @@ class FileSystemFeature(
                     put("section", "FileSystem")
                     put("defaultValue", "")
                 }, name))
+            }
+            "app.STARTING" -> {
+                // Phase 2: Execute runtime logic now that settings are loaded.
+                val homePath = platformDependencies.getUserHomePath()
+                val payload = buildJsonObject { put("path", homePath) }
+                store.dispatch(Action("filesystem.NAVIGATE", payload, name))
             }
             "filesystem.NAVIGATE" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return

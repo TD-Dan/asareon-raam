@@ -31,7 +31,7 @@ fun main() = application {
 
     val container = remember(platformDependencies, coroutineScope) {
         AppContainer(platformDependencies, coroutineScope).also {
-            it.store.initFeatureLifecycles()
+            it.store.initFeatureLifacyclces()
         }
     }
 
@@ -52,10 +52,23 @@ fun main() = application {
         title = "AUF v${Version.APP_VERSION}",
         state = windowState
     ) {
-        // One-time effect to apply native decorations and signal app start.
+        /**
+         * ## Hardened Startup Lifecycle Orchestration
+         * This effect orchestrates the critical, two-phase application startup to prevent race conditions.
+         * The sequence is guaranteed to be synchronous and sequential because `store.dispatch()` is a
+         * blocking call that completes all reducer and onAction invocations before returning.
+         *
+         * @see P-SYSTEM-002: Synchronous Startup Mandate
+         */
         LaunchedEffect(Unit) {
             platformDependencies.applyNativeWindowDecorations(window)
-            // initFeatureLifecycles has already been called. We only dispatch the start action.
+            // Phase 1: INITIALIZING. Triggers all features to register their settings definitions.
+            // The SettingsFeature then chains the load-from-disk sequence. All features must complete
+            // their synchronous setup in this phase.
+            container.store.dispatch(Action("app.INITIALIZING"))
+
+            // Phase 2: STARTING. Signals that all setup is complete. Features can now execute
+            // their main runtime logic (e.g., navigating, starting timers).
             container.store.dispatch(Action("app.STARTING"))
         }
 

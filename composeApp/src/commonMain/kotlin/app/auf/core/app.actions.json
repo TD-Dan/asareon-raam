@@ -1,0 +1,22 @@
+{
+  "feature_name": "Application Lifecycle",
+  "summary": "Defines the global, cross-cutting actions that orchestrate the application's startup and shutdown sequences. These actions are typically dispatched only by the main application entry point.",
+  "listensFor": [],
+  "publishes": [
+    {
+      "action_name": "app.INITIALIZING",
+      "summary": "The first action dispatched at startup. Its purpose is to trigger the synchronous, pre-runtime setup phase. Features MUST use this signal to register their settings definitions. Long-running or asynchronous tasks are strictly forbidden during this phase.",
+      "payload_schema": null
+    },
+    {
+      "action_name": "app.STARTING",
+      "summary": "The second action dispatched at startup, after INITIALIZING is complete. This signals that all settings have been registered and loaded, and the application is fully hydrated. Features use this signal to begin their main runtime logic (e.g., navigating to a default view, starting timers).",
+      "payload_schema": null
+    },
+    {
+      "action_name": "app.CLOSING",
+      "summary": "Dispatched when the user requests to close the application. Features can listen for this to perform any necessary cleanup before the process terminates.",
+      "payload_schema": null
+    }
+  ]
+}

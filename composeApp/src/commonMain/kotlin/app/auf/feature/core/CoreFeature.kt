@@ -16,14 +16,19 @@ import kotlinx.serialization.json.*
  * The explicit lifecycle state of the application.
  * Managed exclusively by the CoreFeature in response to Actions from the main host.
  */
-enum class AppLifecycle { INITIALIZING, RUNNING, CLOSING }
+enum class AppLifecycle {
+    BOOTING,                // The initial state before any actions are dispatched.
+    INITIALIZING,           // The stage for registering settings and loading from disk.
+    RUNNING,                // The application is fully hydrated and operational.
+    CLOSING                 // The application is shutting down.
+}
 
 @Serializable
 data class CoreState(
     val toastMessage: String? = null,
     val activeViewKey: String = "feature.session.main",
     val defaultViewKey: String = "feature.session.main",
-    val lifecycle: AppLifecycle = AppLifecycle.INITIALIZING,
+    val lifecycle: AppLifecycle = AppLifecycle.BOOTING,
     // Add window dimensions to the state with sensible defaults.
     val windowWidth: Int = 1200,
     val windowHeight: Int = 800
@@ -53,7 +58,7 @@ class CoreFeature(
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
-            "app.STARTING" -> {
+            "app.INITIALIZING" -> {
                 // Register our window settings with the SettingsFeature
                 store.dispatch(
                     Action("settings.ADD", buildJsonObject {
@@ -115,6 +120,9 @@ class CoreFeature(
 
         when (action.name) {
             // Lifecycle Actions
+            "app.INITIALIZING" -> {
+                newCoreState = coreState.copy(lifecycle = AppLifecycle.INITIALIZING)
+            }
             "app.STARTING" -> {
                 newCoreState = coreState.copy(lifecycle = AppLifecycle.RUNNING)
             }
