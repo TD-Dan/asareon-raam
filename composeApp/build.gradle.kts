@@ -89,7 +89,7 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
-            implementation(libs.compose.ui.test.junit4)
+            // THE FIX: Removed compose.ui.test.junit4 from here, as it's JVM-specific.
         }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
@@ -102,6 +102,11 @@ kotlin {
             implementation(libs.kotlin.test.junit5)
             implementation(libs.junit.jupiter.api)
             runtimeOnly(libs.junit.jupiter.engine)
+
+            // THE FIX: Added JUnit 4 UI testing framework for Compose Desktop.
+            implementation(libs.compose.ui.test.junit4)
+            // THE FIX: Added the Vintage Engine to allow the JUnit 5 runner to run JUnit 4 tests.
+            runtimeOnly(libs.junit.vintage.engine)
 
             // Dependencies for the code under test
             implementation(libs.ktor.client.cio)
@@ -155,9 +160,10 @@ android {
         debugImplementation(compose.uiTooling)
     }
 }
-dependencies {
-    testImplementation(libs.junit)
-}
+// THE FIX: Removed the redundant top-level dependency block.
+// dependencies {
+//    testImplementation(libs.junit)
+// }
 
 compose.desktop {
     application {
