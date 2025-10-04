@@ -4,6 +4,7 @@ import app.auf.core.Feature
 import app.auf.core.Store
 import app.auf.core.AppState
 import app.auf.feature.core.CoreFeature
+import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.feature.settings.SettingsFeature
 //import app.auf.feature.agent.AgentRuntimeFeature
 //import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
@@ -27,7 +28,8 @@ class AppContainer(
         val allFeatures = mutableListOf<Feature>()
         allFeatures.addAll(listOf(
             CoreFeature(platformDependencies),
-            SettingsFeature(platformDependencies)
+            SettingsFeature(platformDependencies),
+            FileSystemFeature(platformDependencies) // Feature added
             //AgentRuntimeFeature(platformDependencies, coroutineScope),
             //KnowledgeGraphFeature(platformDependencies, coroutineScope),
             //SessionFeature(platformDependencies, coroutineScope)
