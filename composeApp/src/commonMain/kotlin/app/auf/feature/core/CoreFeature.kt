@@ -1,5 +1,11 @@
 package app.auf.feature.core
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import app.auf.core.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
@@ -29,6 +35,7 @@ data class CoreState(
  */
 class CoreFeature : Feature {
     override val name: String = "CoreFeature"
+    override val composableProvider: Feature.ComposableProvider = CoreComposableProvider()
 
     // Payloads for serialization
     @Serializable private data class SetActiveViewPayload(val key: String)
@@ -159,6 +166,34 @@ class CoreFeature : Feature {
             state.copy(featureStates = state.featureStates + (name to newCoreState))
         } else {
             state
+        }
+    }
+
+    inner class CoreComposableProvider : Feature.ComposableProvider {
+        override val viewKey: String = "feature.core.about"
+
+        @Composable
+        override fun MenuContent(store: Store, onDismiss: () -> Unit) {
+            DropdownMenuItem(
+                text = { Text("About") },
+                onClick = {
+                    val payload = buildJsonObject { put("key", viewKey) }
+                    store.dispatch(Action("core.SET_ACTIVE_VIEW", payload, "core.ui"))
+                    onDismiss()
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = "About Application"
+                    )
+                }
+            )
+        }
+
+        @Composable
+        override fun StageContent(store: Store) {
+            // This is the only change in this file.
+            AboutView(store)
         }
     }
 }
