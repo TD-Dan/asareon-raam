@@ -10,16 +10,15 @@ import kotlinx.serialization.Serializable
 data class FileEntry(val path: String, val isDirectory: Boolean)
 
 /**
- * A type-safe enumeration of all canonical base paths managed by the AUF application.
- * This is used to prevent "magic string" errors when requesting paths from PlatformDependencies.
+ * A type-safe enumeration of the fundamental security zones for file system access.
+ * This is the implementation of the "Principle of Minimal Platform Knowledge". The platform
+ * layer has no awareness of specific features like "settings" or "logs".
  */
 enum class BasePath {
-    SETTINGS,
-    BACKUPS,
-    HOLONS,
-    FRAMEWORK,
-    SESSIONS,
-    LOGS
+    /** The root directory for all internal, application-managed data (e.g., ~/.auf/v2/). */
+    APP_ZONE,
+    /** The user's home directory, serving as the default root for user-initiated file operations. */
+    USER_ZONE
 }
 
 /**

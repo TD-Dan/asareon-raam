@@ -55,35 +55,19 @@ class PlatformDependenciesJvmTest {
     }
 
     @Test
-    fun `getBasePathFor creates correct versioned paths for user-data directories`() {
+    fun `getBasePathFor returns correct paths for APP_ZONE and USER_ZONE`() {
         // Arrange
-        val expectedSettingsPath = File(userHome, ".auf/$testAppVersion/settings").absolutePath
-        val expectedLogsPath = File(userHome, ".auf/$testAppVersion/logs").absolutePath
-        val expectedBackupsPath = File(userHome, ".auf/$testAppVersion/backups").absolutePath
+        val expectedAppZonePath = File(userHome, ".auf/$testAppVersion").absolutePath
+        val expectedUserZonePath = userHome.absolutePath
 
         // Act
-        val actualSettingsPath = platform.getBasePathFor(BasePath.SETTINGS)
-        val actualLogsPath = platform.getBasePathFor(BasePath.LOGS)
-        val actualBackupsPath = platform.getBasePathFor(BasePath.BACKUPS)
+        val actualAppZonePath = platform.getBasePathFor(BasePath.APP_ZONE)
+        val actualUserZonePath = platform.getBasePathFor(BasePath.USER_ZONE)
 
         // Assert
-        assertEquals(expectedSettingsPath, actualSettingsPath)
-        assertEquals(expectedLogsPath, actualLogsPath)
-        assertEquals(expectedBackupsPath, actualBackupsPath)
+        assertEquals(expectedAppZonePath, actualAppZonePath, "APP_ZONE path is incorrect.")
+        assertEquals(expectedUserZonePath, actualUserZonePath, "USER_ZONE path is incorrect.")
     }
-
-    @Test
-    fun `getBasePathFor returns correct project-relative paths`() {
-        // Arrange
-        val expectedHolonsPath = File("holons").absolutePath
-
-        // Act
-        val actualHolonsPath = platform.getBasePathFor(BasePath.HOLONS)
-
-        // Assert
-        assertEquals(expectedHolonsPath, actualHolonsPath)
-    }
-
 
     @Test
     fun `writeFileContent and readFileContent work correctly`() {
@@ -172,14 +156,13 @@ class PlatformDependenciesJvmTest {
 
 
     @Test
-    fun `log function creates and writes to a versioned log file`() {
+    fun `log function creates and writes to a versioned log file within the APP_ZONE`() {
         // Act
         platform.log(LogLevel.INFO, "TestTag", "This is a test log message.")
 
         // Assert
-        val majorVersion = testAppVersion.split('.').first()
-        val logDir = File(userHome, ".auf/$majorVersion/logs")
-        assertTrue(logDir.exists(), "Log directory should have been created.")
+        val logDir = File(userHome, ".auf/$testAppVersion/logs")
+        assertTrue(logDir.exists(), "Log directory should have been created in the APP_ZONE.")
         assertTrue(logDir.isDirectory, "Log path should be a directory.")
 
         val logFiles = logDir.listFiles()

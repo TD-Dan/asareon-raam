@@ -34,7 +34,8 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
     private val displayFormatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
     private val logFilePath: String by lazy {
-        val logDir = getBasePathFor(BasePath.LOGS)
+        // Correctly construct the log path from the App Zone root.
+        val logDir = File(getBasePathFor(BasePath.APP_ZONE), "logs").absolutePath
         createDirectories(logDir)
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         "$logDir${File.separatorChar}session-$timestamp.log"
@@ -88,16 +89,10 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
     }
 
     actual open fun getBasePathFor(type: BasePath): String {
-        val path = when (type) {
-            BasePath.SETTINGS -> "settings"
-            BasePath.BACKUPS -> "backups"
-            BasePath.LOGS -> "logs"
-            // Project-relative paths are handled differently.
-            BasePath.HOLONS -> return File("holons").absolutePath
-            BasePath.FRAMEWORK -> return File("framework").absolutePath
-            BasePath.SESSIONS -> return File("sessions").absolutePath
+        return when (type) {
+            BasePath.APP_ZONE -> rootDataDir
+            BasePath.USER_ZONE -> getUserHomePath()
         }
-        return File(rootDataDir, path).absolutePath
     }
 
     actual open fun getFileName(path: String): String = File(path).name

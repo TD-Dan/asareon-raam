@@ -47,7 +47,7 @@ open class FakePlatformDependencies(
     }
 
     override fun listDirectory(path: String): List<FileEntry> {
-        if (!directories.contains(path)) throw java.io.IOException("Path does not exist '$path'")
+        if (!directories.contains(path)) throw Exception("Path does not exist '$path'")
         val directChildren = mutableSetOf<String>()
         val pathWithSeparator = if (path.endsWith(pathSeparator)) path else "$path$pathSeparator"
         (files.keys + directories).forEach { entryPath ->
@@ -95,7 +95,10 @@ open class FakePlatformDependencies(
     }
 
     override fun getBasePathFor(type: BasePath): String {
-        return "/fake/$appVersion/${type.name.lowercase()}"
+        return when (type) {
+            BasePath.APP_ZONE -> "/fake/.auf/$appVersion"
+            BasePath.USER_ZONE -> getUserHomePath()
+        }
     }
 
     override fun getFileName(path: String): String {
