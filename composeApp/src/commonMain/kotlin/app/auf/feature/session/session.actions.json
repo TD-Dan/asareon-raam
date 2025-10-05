@@ -55,7 +55,7 @@
       }
     },
     {
-      "action_name": "session.LOADED",
+      "action_name": "session.internal.LOADED",
       "summary": "[INTERNAL] Dispatched after all session transcripts have been loaded from disk.",
       "payload_schema": {
         "type": "object",

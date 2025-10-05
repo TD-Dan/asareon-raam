@@ -48,7 +48,7 @@ class SettingsFeature(
                 store.dispatch(this.name, Action("settings.LOAD"))
             }
 
-            "settings.LOAD" -> {
+            "settings.internal.LOAD" -> {
                 val loadedValues = persistence.loadSettings()
                 val payload = buildJsonObject {
                     for ((key, value) in loadedValues) {
