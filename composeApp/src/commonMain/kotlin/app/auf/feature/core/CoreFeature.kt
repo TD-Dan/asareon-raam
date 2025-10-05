@@ -61,26 +61,26 @@ class CoreFeature(
             "app.INITIALIZING" -> {
                 // Register our window settings with the SettingsFeature
                 store.dispatch(
+                    this.name,
                     Action("settings.ADD", buildJsonObject {
                         put("key", settingKeyWidth)
                         put("type", "NUMERIC_LONG") // SettingsView will render a text field
                         put("label", "Window Width")
                         put("description", "The width of the application window in pixels.")
                         put("section", "Appearance")
-                        put("defaultValue", "1200")},
-                        "core"
-                    )
+                        put("defaultValue", "1200")
+                    })
                 )
                 store.dispatch(
+                    this.name,
                     Action("settings.ADD", buildJsonObject {
                         put("key", settingKeyHeight)
                         put("type", "NUMERIC_LONG")
                         put("label", "Window Height")
                         put("description", "The height of the application window in pixels.")
                         put("section", "Appearance")
-                        put("defaultValue", "800")},
-                        "core"
-                    )
+                        put("defaultValue", "800")
+                    })
                 )
             }
             "core.UPDATE_WINDOW_SIZE" -> {
@@ -88,14 +88,14 @@ class CoreFeature(
                 // SettingsFeature to persist the new values.
                 val coreState = store.state.value.featureStates[name] as? CoreState
                 coreState?.let {
-                    store.dispatch(Action("settings.UPDATE", buildJsonObject {
+                    store.dispatch(this.name, Action("settings.UPDATE", buildJsonObject {
                         put("key", settingKeyWidth)
                         put("value", it.windowWidth.toString())
-                    }, "core"))
-                    store.dispatch(Action("settings.UPDATE", buildJsonObject {
+                    }))
+                    store.dispatch(this.name, Action("settings.UPDATE", buildJsonObject {
                         put("key", settingKeyHeight)
                         put("value", it.windowHeight.toString())
-                    }, "core"))
+                    }))
                 }
             }
             "core.OPEN_LOGS_FOLDER" -> {
@@ -107,7 +107,7 @@ class CoreFeature(
                 payload?.let {
                     platformDependencies.copyToClipboard(it.text)
                     val toastPayload = buildJsonObject { put("message", "Copied to clipboard.") }
-                    store.dispatch(Action("core.SHOW_TOAST", toastPayload, "core"))
+                    store.dispatch(this.name, Action("core.SHOW_TOAST", toastPayload))
                 }
             }
         }
@@ -203,7 +203,7 @@ class CoreFeature(
                 text = { Text("About") },
                 onClick = {
                     val payload = buildJsonObject { put("key", viewKey) }
-                    store.dispatch(Action("core.SET_ACTIVE_VIEW", payload, "core.ui"))
+                    store.dispatch("core.ui", Action("core.SET_ACTIVE_VIEW", payload))
                     onDismiss()
                 },
                 leadingIcon = {

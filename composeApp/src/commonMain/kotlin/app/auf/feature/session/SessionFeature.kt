@@ -4,11 +4,15 @@ import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.Feature
 import app.auf.core.Store
+import app.auf.util.BasePath
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.put
 
 class SessionFeature(
     private val platformDependencies: PlatformDependencies,
@@ -21,8 +25,8 @@ class SessionFeature(
     @Serializable private data class PostPayload(val sessionId: String, val agentId: String, val message: String)
     @Serializable private data class SessionIdPayload(val sessionId: String)
 
-
     private val blockParser = BlockSeparatingParser()
+    private val json = Json { prettyPrint = true }
 
     override fun reducer(state: AppState, action: Action): AppState {
         // Get the current state for this feature, or create a default one if it doesn't exist.
@@ -99,7 +103,31 @@ class SessionFeature(
     }
 
     override fun onAction(action: Action, store: Store) {
-        // To be implemented via TDD
+        when (action.name) {
+            "session.POST" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<PostPayload>(it) } ?: return
+                persistSession(store, payload.sessionId)
+            }
+        }
+    }
+
+    private fun persistSession(store: Store, sessionId: String) {
+        val currentState = store.state.value.featureStates[name] as? SessionState ?: return
+        val sessionToSave = currentState.sessions[sessionId] ?: return
+
+        val sessionsBasePath = platformDependencies.getBasePathFor(BasePath.SESSIONS)
+        platformDependencies.createDirectories(sessionsBasePath) // Ensure the directory exists
+        val filePath = "$sessionsBasePath${platformDependencies.pathSeparator}$sessionId.json"
+
+        val fileContent = json.encodeToString(sessionToSave)
+
+        val fileSystemPayload = buildJsonObject {
+            put("path", filePath)
+            put("newContent", fileContent)
+        }
+
+        // We use STAGE_UPDATE because it handles both creation and update safely.
+        store.dispatch(this.name, Action("filesystem.STAGE_UPDATE", fileSystemPayload))
     }
 
     override val composableProvider: Feature.ComposableProvider?

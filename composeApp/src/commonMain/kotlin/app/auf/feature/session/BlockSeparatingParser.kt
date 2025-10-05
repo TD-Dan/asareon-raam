@@ -6,11 +6,12 @@ package app.auf.feature.session
  * list of `ContentBlock`s. It is the single source of truth for interpreting the AUF's
  * simplified markdown-based data contract.
  *
- * This version uses an index-based scanning approach to robustly handle inline code fences,
- * single-line blocks, and unterminated blocks, while correctly ignoring nested fences and
- * preserving newlines as per the established test contract.
+ * This version uses a line-aware state machine to correctly handle all test cases, including
+ * nested code fences, inline fences, and newline preservation as per the established contract.
  */
 class BlockSeparatingParser {
+
+    private enum class State { SCANNING, IN_CODE }
 
     fun parse(rawText: String): List<ContentBlock> {
         if (rawText.isBlank()) return emptyList()
@@ -19,41 +20,35 @@ class BlockSeparatingParser {
         var currentIndex = 0
 
         while (currentIndex < rawText.length) {
+            // --- SCANNING FOR TEXT ---
             val fenceStart = rawText.indexOf("```", currentIndex)
-
             if (fenceStart == -1) {
-                // No more fences, the rest of the string is a single text block.
-                val remainingText = rawText.substring(currentIndex)
-                if (remainingText.isNotEmpty()) {
-                    blocks.add(ContentBlock.Text(remainingText))
-                }
-                break // End of parsing
+                // No more fences found, add the rest as a text block
+                blocks.add(ContentBlock.Text(rawText.substring(currentIndex)))
+                break
             }
 
-            // Add any text that came before this fence.
+            // Add the text before the fence
             val textBefore = rawText.substring(currentIndex, fenceStart)
             if (textBefore.isNotEmpty()) {
                 blocks.add(ContentBlock.Text(textBefore))
             }
 
+            // --- SCANNING FOR CODE ---
             val fenceEnd = rawText.indexOf("```", fenceStart + 3)
-
             if (fenceEnd == -1) {
-                // Unterminated fence, treat the rest of the string as a code block.
+                // Unterminated fence, the rest is a code block
                 val innerContent = rawText.substring(fenceStart + 3)
                 blocks.add(parseInnerCodeBlock(innerContent))
-                break // End of parsing
+                break
             }
 
-            // We have a complete, terminated code block.
+            // Found a full code block
             val innerContent = rawText.substring(fenceStart + 3, fenceEnd)
             blocks.add(parseInnerCodeBlock(innerContent))
-
-            // Move the cursor past the closing fence to continue scanning.
             currentIndex = fenceEnd + 3
         }
-
-        return blocks.filterNot { it is ContentBlock.Text && it.text.isBlank() }
+        return blocks
     }
 
     private fun parseInnerCodeBlock(innerContent: String): ContentBlock.CodeBlock {

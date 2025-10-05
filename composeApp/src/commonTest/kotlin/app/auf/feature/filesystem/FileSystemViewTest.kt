@@ -2,6 +2,7 @@ package app.auf.feature.filesystem
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
@@ -98,6 +99,7 @@ class FileSystemViewTest {
         // Assert
         val dispatchedAction = fakeStore.dispatchedActions.last()
         assertEquals("filesystem.NAVIGATE", dispatchedAction.name)
+        assertEquals("filesystem.ui", dispatchedAction.originator)
         assertEquals(
             "/fake/user/home/Documents",
             dispatchedAction.payload?.get("path")?.toString()?.trim('"')
@@ -127,6 +129,7 @@ class FileSystemViewTest {
 
         // Assert
         assertNotNull(dispatchedAction, "A TOGGLE_ITEM_SELECTED action should have been dispatched.")
+        assertEquals("filesystem.ui", dispatchedAction.originator)
         assertEquals(
             filePath,
             dispatchedAction.payload?.get("path")?.toString()?.trim('"')

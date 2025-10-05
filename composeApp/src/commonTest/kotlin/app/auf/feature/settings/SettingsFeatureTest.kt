@@ -146,7 +146,9 @@ class SettingsFeatureTest {
 
         // Assert
         assertEquals(1, fakeStore.dispatchedActions.size)
-        assertEquals("settings.LOAD", fakeStore.dispatchedActions.first().name)
+        val dispatched = fakeStore.dispatchedActions.first()
+        assertEquals("settings.LOAD", dispatched.name)
+        assertEquals(feature.name, dispatched.originator)
     }
 
     @Test
@@ -168,6 +170,7 @@ class SettingsFeatureTest {
         assertEquals(1, fakeStore.dispatchedActions.size)
         val dispatched = fakeStore.dispatchedActions.first()
         assertEquals("settings.LOADED", dispatched.name)
+        assertEquals(feature.name, dispatched.originator)
         assertEquals("file.value", dispatched.payload?.get("file.key")?.toString()?.trim('"'))
     }
 
@@ -199,11 +202,11 @@ class SettingsFeatureTest {
 
         // Act
         // 1. First, we MUST INITIALIZE app.
-        store.dispatch(Action("app.INITIALIZING"))
+        store.dispatch("system.main", Action("app.INITIALIZING"))
         // 1. Second, we MUST move the app out of the INITIALIZING state.
-        store.dispatch(Action("app.STARTING"))
+        store.dispatch("system.main", Action("app.STARTING"))
         // 2. Now, dispatch the action under test.
-        store.dispatch(updateAction)
+        store.dispatch(settingsFeature.name, updateAction)
 
         // Assert
         // 1. Assert state was updated correctly by the reducer.

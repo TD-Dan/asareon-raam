@@ -44,7 +44,7 @@ class StoreTest {
         val initialState = store.state.value
 
         // Act
-        store.dispatch(Action("test.INCREMENT"))
+        store.dispatch("test.feature", Action("test.INCREMENT"))
         val finalState = store.state.value
 
         // Assert
@@ -58,7 +58,7 @@ class StoreTest {
         val initialState = store.state.value
 
         // Act
-        store.dispatch(Action("app.INITIALIZING"))
+        store.dispatch("system.main", Action("app.INITIALIZING"))
         val finalState = store.state.value
 
         // Assert
@@ -74,7 +74,7 @@ class StoreTest {
         val initialTestState = store.state.value.featureStates["TestFeature"] as TestState
 
         // Act
-        store.dispatch(Action("test.INCREMENT"))
+        store.dispatch("test.feature", Action("test.INCREMENT"))
         val finalTestState = store.state.value.featureStates["TestFeature"] as TestState
 
         // Assert
@@ -89,11 +89,11 @@ class StoreTest {
         val initialState = store.state.value
 
         // Act & Assert for app.INITIALIZING
-        store.dispatch(Action("app.INITIALIZING"))
+        store.dispatch("system.main", Action("app.INITIALIZING"))
         assertEquals(initialState, store.state.value, "State should not change for app.INITIALIZING in RUNNING state.")
 
         // Act & Assert for app.STARTING
-        store.dispatch(Action("app.STARTING"))
+        store.dispatch("system.main", Action("app.STARTING"))
         assertEquals(initialState, store.state.value, "State should not change for app.STARTING in RUNNING state.")
     }
 
@@ -104,7 +104,7 @@ class StoreTest {
         val initialTestState = store.state.value.featureStates["TestFeature"] as TestState
 
         // Act
-        store.dispatch(Action("test.INCREMENT"))
+        store.dispatch("test.feature", Action("test.INCREMENT"))
         val finalTestState = store.state.value.featureStates["TestFeature"] as TestState
 
         // Assert

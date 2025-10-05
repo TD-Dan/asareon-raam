@@ -19,10 +19,14 @@ class FakeStore(
     private val _fakeState = MutableStateFlow(initialState)
     override val state = _fakeState.asStateFlow()
 
-    override fun dispatch(action: Action) {
-        // To make the fake more realistic, we can optionally apply the real reducer logic
-        // before capturing the action, but for now, we just capture.
-        dispatchedActions.add(action)
+    /**
+     * Captures the dispatched action after stamping it with the originator,
+     * mimicking the behavior of the real Store for accurate testing.
+     */
+    override fun dispatch(originator: String, action: Action) {
+        // To make the fake more realistic, we stamp the action just like the real store.
+        val stampedAction = action.copy(originator = originator)
+        dispatchedActions.add(stampedAction)
     }
 
     fun setState(newState: AppState) {

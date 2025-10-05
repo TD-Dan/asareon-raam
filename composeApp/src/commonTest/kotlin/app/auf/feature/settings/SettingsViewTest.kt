@@ -45,9 +45,9 @@ class SettingsViewTest {
         platformDependencies: PlatformDependencies
     ) : Store(initialState, features, platformDependencies) {
         val dispatchedActions = mutableListOf<Action>()
-        override fun dispatch(action: Action) {
-            dispatchedActions.add(action)
-            super.dispatch(action)
+        override fun dispatch(originator: String, action: Action) {
+            dispatchedActions.add(action.copy(originator = originator))
+            super.dispatch(originator, action)
         }
     }
 
@@ -67,8 +67,8 @@ class SettingsViewTest {
         initialState = settingsFeature.reducer(initialState, addAction1)
         testStore = TestStore(initialState, features, fakePlatform)
         features.forEach { it.init(testStore) }
-        testStore.dispatch(Action("app.INITIALIZING"))
-        testStore.dispatch(Action("app.STARTING"))
+        testStore.dispatch("system.test", Action("app.INITIALIZING"))
+        testStore.dispatch("system.test", Action("app.STARTING"))
         testStore.dispatchedActions.clear()
         composeTestRule.setContent {
             SettingsView(store = testStore, onClose = {})
@@ -86,6 +86,7 @@ class SettingsViewTest {
 
         val inputAction = testStore.dispatchedActions.find { it.name == "settings.INPUT_CHANGED" }
         assertNotNull(inputAction, "Action 'settings.INPUT_CHANGED' should be dispatched immediately.")
+        assertEquals("settings.ui", inputAction.originator)
         assertEquals("9991024", inputAction.payload?.get("value")?.jsonPrimitive?.content)
 
         // Verify that UPDATE has NOT been dispatched yet.
@@ -100,5 +101,6 @@ class SettingsViewTest {
         val dispatchedAction = testStore.dispatchedActions.lastOrNull()
         assertNotNull(dispatchedAction)
         assertEquals("settings.OPEN_FOLDER", dispatchedAction.name)
+        assertEquals("settings.ui", dispatchedAction.originator)
     }
 }

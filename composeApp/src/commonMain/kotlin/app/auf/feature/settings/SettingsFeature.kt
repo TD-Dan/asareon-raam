@@ -45,7 +45,7 @@ class SettingsFeature(
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
             "app.INITIALIZING" -> {
-                store.dispatch(Action("settings.LOAD", null, "settings"))
+                store.dispatch(this.name, Action("settings.LOAD"))
             }
 
             "settings.LOAD" -> {
@@ -55,7 +55,7 @@ class SettingsFeature(
                         put(key, JsonPrimitive(value))
                     }
                 }
-                store.dispatch(Action("settings.LOADED", payload, "settings"))
+                store.dispatch(this.name, Action("settings.LOADED", payload))
             }
 
             "settings.INPUT_CHANGED" -> {
@@ -69,7 +69,7 @@ class SettingsFeature(
                         put("key", key)
                         put("value", value)
                     }
-                    store.dispatch(Action("settings.UPDATE", updatePayload, "settings"))
+                    store.dispatch(name, Action("settings.UPDATE", updatePayload))
                 }
             }
 
@@ -79,7 +79,7 @@ class SettingsFeature(
                     persistence.saveSettings(it.values)
                 }
                 action.payload?.let { payload ->
-                    store.dispatch(Action("settings.VALUE_CHANGED", payload, "settings"))
+                    store.dispatch(this.name, Action("settings.VALUE_CHANGED", payload))
                 }
             }
 
@@ -156,7 +156,7 @@ class SettingsFeature(
         @Composable
         override fun RibbonButton(store: Store, isActive: Boolean) {
             val payload = buildJsonObject { put("key", viewKey) }
-            IconButton(onClick = { store.dispatch(Action("core.SET_ACTIVE_VIEW", payload, "settings")) }) {
+            IconButton(onClick = { store.dispatch("settings.ui", Action("core.SET_ACTIVE_VIEW", payload)) }) {
                 Icon(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "Settings",
@@ -169,43 +169,8 @@ class SettingsFeature(
         override fun StageContent(store: Store) {
             SettingsView(
                 store = store,
-                onClose = { store.dispatch(Action("core.SHOW_DEFAULT_VIEW", null, "settings")) }
+                onClose = { store.dispatch("settings.ui", Action("core.SHOW_DEFAULT_VIEW")) }
             )
-        }
-    }
-}
-
-internal class SettingsPersistence(
-    private val platformDependencies: PlatformDependencies
-) {
-    private val settingsFilePath: String by lazy {
-        val basePath = platformDependencies.getBasePathFor(BasePath.SETTINGS)
-        platformDependencies.createDirectories(basePath)
-        "$basePath${platformDependencies.pathSeparator}settings.json"
-    }
-
-    private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
-
-    fun loadSettings(): Map<String, String> {
-        return if (platformDependencies.fileExists(settingsFilePath)) {
-            try {
-                val content = platformDependencies.readFileContent(settingsFilePath)
-                json.decodeFromString<Map<String, String>>(content)
-            } catch (e: Exception) {
-                platformDependencies.log(LogLevel.ERROR, "SettingsPersistence", "Failed to load or parse settings.json: ${e.message}")
-                emptyMap()
-            }
-        } else {
-            emptyMap()
-        }
-    }
-
-    fun saveSettings(values: Map<String, String>) {
-        try {
-            val content = json.encodeToString(values)
-            platformDependencies.writeFileContent(settingsFilePath, content)
-        } catch (e: Exception) {
-            platformDependencies.log(LogLevel.ERROR, "SettingsPersistence", "Failed to save settings.json: ${e.message}")
         }
     }
 }

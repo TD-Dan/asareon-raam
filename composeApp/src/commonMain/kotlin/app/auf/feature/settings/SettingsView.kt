@@ -44,7 +44,7 @@ fun SettingsView(
             }
             Spacer(Modifier.width(16.dp))
             Text("Application Settings", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            IconButton(onClick = { store.dispatch(Action("settings.OPEN_FOLDER")) }) {
+            IconButton(onClick = { store.dispatch("settings.ui", Action("settings.OPEN_FOLDER")) }) {
                 Icon(Icons.Default.FolderOpen, contentDescription = "Open Settings Folder")
             }
         }
@@ -83,7 +83,7 @@ fun SettingsView(
                                 "BOOLEAN" -> "settings.UPDATE" // Booleans update instantly
                                 else -> "settings.INPUT_CHANGED" // Text fields are debounced
                             }
-                            store.dispatch(Action(actionName, payload))
+                            store.dispatch("settings.ui", Action(actionName, payload))
                         }
                     )
                 }

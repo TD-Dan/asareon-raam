@@ -56,38 +56,38 @@ class FileSystemFeature(
         when (action.name) {
             "app.INITIALIZING" -> {
                 // Phase 1: Register settings definitions.
-                store.dispatch(Action("settings.ADD", buildJsonObject {
+                store.dispatch(this.name, Action("settings.ADD", buildJsonObject {
                     put("key", settingKeyWhitelist)
                     put("type", "STRING_SET") // Custom type for persistence
                     put("label", "Whitelisted Paths")
                     put("description", "A comma-separated list of whitelisted directory paths that the app is allowed to edit.")
                     put("section", "FileSystem")
                     put("defaultValue", "")
-                }, name))
-                store.dispatch(Action("settings.ADD", buildJsonObject {
+                }))
+                store.dispatch(this.name, Action("settings.ADD", buildJsonObject {
                     put("key", settingKeyFavorites)
                     put("type", "STRING_SET")
                     put("label", "Favorite Paths")
                     put("description", "A comma-separated list of favorite directory paths.")
                     put("section", "FileSystem")
                     put("defaultValue", "")
-                }, name))
+                }))
             }
             "app.STARTING" -> {
                 // Phase 2: Execute runtime logic now that settings are loaded.
                 val homePath = platformDependencies.getUserHomePath()
                 val payload = buildJsonObject { put("path", homePath) }
-                store.dispatch(Action("filesystem.NAVIGATE", payload, name))
+                store.dispatch(this.name, Action("filesystem.NAVIGATE", payload))
             }
             "filesystem.NAVIGATE" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
-                store.dispatch(Action("filesystem.LOAD_CHILDREN", buildJsonObject { put("path", payload.path) }, name))
+                store.dispatch(this.name, Action("filesystem.LOAD_CHILDREN", buildJsonObject { put("path", payload.path) }))
             }
             "filesystem.SELECT_DIRECTORY_UI" -> {
                 val selectedPath = platformDependencies.selectDirectoryPath()
                 if (selectedPath != null) {
                     val payload = buildJsonObject { put("path", selectedPath) }
-                    store.dispatch(Action("filesystem.NAVIGATE", payload, name))
+                    store.dispatch(this.name, Action("filesystem.NAVIGATE", payload))
                 }
             }
             "filesystem.TOGGLE_ITEM_EXPANDED" -> {
@@ -96,7 +96,7 @@ class FileSystemFeature(
                 val item = findItemByPath(state.rootItems, payload.path)
                 // If the item is a directory and its children haven't been loaded yet, dispatch an action to load them.
                 if (item?.isDirectory == true && item.children == null) {
-                    store.dispatch(Action("filesystem.LOAD_CHILDREN", action.payload, name))
+                    store.dispatch(this.name, Action("filesystem.LOAD_CHILDREN", action.payload))
                 }
             }
             "filesystem.TOGGLE_ITEM_SELECTED" -> {
@@ -128,10 +128,10 @@ class FileSystemFeature(
                         put("parentPath", payload.path)
                         put("children", childrenJson)
                     }
-                    store.dispatch(Action("filesystem.DIRECTORY_LOADED", successPayload, name))
+                    store.dispatch(this.name, Action("filesystem.DIRECTORY_LOADED", successPayload))
                 } catch (e: Exception) {
                     val errorPayload = buildJsonObject { put("message", "Failed to read directory ${payload.path}: ${e.message}") }
-                    store.dispatch(Action("core.SHOW_TOAST", errorPayload, name))
+                    store.dispatch(this.name, Action("core.SHOW_TOAST", errorPayload))
                 }
             }
             "filesystem.DIRECTORY_LOADED" -> {
@@ -147,7 +147,7 @@ class FileSystemFeature(
                             put("path", childEntry.path)
                             put("recursive", true)
                         }
-                        store.dispatch(Action("filesystem.TOGGLE_ITEM_SELECTED", childPayload, name))
+                        store.dispatch(this.name, Action("filesystem.TOGGLE_ITEM_SELECTED", childPayload))
                     }
                 }
             }
@@ -156,7 +156,7 @@ class FileSystemFeature(
                 val selectedFiles = findSelectedFiles(state.rootItems)
                 if (selectedFiles.isEmpty()) {
                     val payload = buildJsonObject { put("message", "No files selected.") }
-                    store.dispatch(Action("core.SHOW_TOAST", payload, name))
+                    store.dispatch(this.name, Action("core.SHOW_TOAST", payload))
                     return
                 }
 
@@ -180,12 +180,12 @@ class FileSystemFeature(
                 if (stringBuilder.isNotEmpty()) {
                     val text = stringBuilder.toString().trim()
                     val payload = buildJsonObject { put("text", text) }
-                    store.dispatch(Action("core.COPY_TO_CLIPBOARD", payload, name))
+                    store.dispatch(this.name, Action("core.COPY_TO_CLIPBOARD", payload))
                 }
 
                 if (errorCount > 0) {
                     val payload = buildJsonObject { put("message", "Failed to read $errorCount selected files.") }
-                    store.dispatch(Action("core.SHOW_TOAST", payload, name))
+                    store.dispatch(this.name, Action("core.SHOW_TOAST", payload))
                 }
             }
             // --- Actions that trigger persistence ---
@@ -197,10 +197,10 @@ class FileSystemFeature(
                 } else {
                     state.whitelistedPaths - path
                 }
-                store.dispatch(Action("settings.UPDATE", buildJsonObject {
+                store.dispatch(this.name, Action("settings.UPDATE", buildJsonObject {
                     put("key", settingKeyWhitelist)
                     put("value", serializeSet(newSet))
-                }, name))
+                }))
             }
             "filesystem.ADD_FAVORITE_PATH", "filesystem.REMOVE_FAVORITE_PATH" -> {
                 val state = store.state.value.featureStates[name] as? FileSystemState ?: return
@@ -210,10 +210,10 @@ class FileSystemFeature(
                 } else {
                     state.favoritePaths - path
                 }
-                store.dispatch(Action("settings.UPDATE", buildJsonObject {
+                store.dispatch(this.name, Action("settings.UPDATE", buildJsonObject {
                     put("key", settingKeyFavorites)
                     put("value", serializeSet(newSet))
-                }, name))
+                }))
             }
         }
     }
@@ -350,7 +350,7 @@ class FileSystemFeature(
             if (item.children == null) {
                 // This directory is unloaded, dispatch an action to load it.
                 val payload = buildJsonObject { put("path", item.path) }
-                store.dispatch(Action("filesystem.LOAD_CHILDREN", payload, name))
+                store.dispatch(this.name, Action("filesystem.LOAD_CHILDREN", payload))
             } else {
                 // This directory is loaded, recurse into its children.
                 item.children.forEach { child -> dispatchLoadChildrenRecursive(child, maxDepth - 1, store) }
@@ -469,7 +469,7 @@ class FileSystemFeature(
         @Composable
         override fun RibbonButton(store: Store, isActive: Boolean) {
             val payload = buildJsonObject { put("key", viewKey) }
-            IconButton(onClick = { store.dispatch(Action("core.SET_ACTIVE_VIEW", payload, "filesystem.ui")) }) {
+            IconButton(onClick = { store.dispatch("filesystem.ui", Action("core.SET_ACTIVE_VIEW", payload)) }) {
                 Icon(
                     imageVector = Icons.Default.Folder,
                     contentDescription = "File System Browser",

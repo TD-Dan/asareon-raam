@@ -32,53 +32,63 @@ open class Store(
      * The single, generic entry point for all state changes and side effects.
      * The process is a strictly ordered, synchronous, blocking call:
      *
-     * 1.  **Guard: ** The action is validated against the current `AppLifecycle` state.
-     * 2.  **Reduce: ** The `reducer` from every feature is called sequentially to calculate the new state.
-     * 3.  **Update: ** The central state is atomically updated.
-     * 4.  **`onAction`:** The `onAction` side effect handler from every feature is called sequentially.
+     * 1.  **Stamp:** The action is stamped with the verified `originator`.
+     * 2.  **Guard: ** The stamped action is validated against the current `AppLifecycle` state.
+     * 3.  **Reduce: ** The `reducer` from every feature is called sequentially to calculate the new state.
+     * 4.  **Update: ** The central state is atomically updated.
+     * 5.  **`onAction`:** The `onAction` side effect handler from every feature is called sequentially.
      *
      * This synchronous and sequential execution is the foundation of the application's
      * deterministic startup process. The function will not return until all phases are complete.
+     *
+     * @param originator A non-repudiable string identifying the caller (e.g., a feature's name).
+     * @param action The action to be dispatched.
      */
-    open fun dispatch(action: Action) {
+    open fun dispatch(originator: String, action: Action) {
+        // --- PHASE 0: STAMP ---
+        // Create a new, trusted action instance with the Store-verified originator.
+        // This makes the originator non-repudiable.
+        val stampedAction = action.copy(originator = originator)
+
         val coreState = _state.value.featureStates["CoreFeature"] as? CoreState
         val currentLifecycle = coreState?.lifecycle ?: AppLifecycle.BOOTING
         platformDependencies.log(
             level = LogLevel.INFO,
             tag = "Store",
-            message = "Dispatching: $action"
+            message = "Dispatching: $stampedAction"
         )
 
+        // --- PHASE 1: GUARD ---
         val isActionAllowed = when (currentLifecycle) {
-            AppLifecycle.BOOTING -> action.name == "app.INITIALIZING"
+            AppLifecycle.BOOTING -> stampedAction.name == "app.INITIALIZING"
             AppLifecycle.INITIALIZING -> true // Allow all actions during the init/load phase
-            AppLifecycle.RUNNING -> action.name != "app.INITIALIZING" && action.name != "app.STARTING"
-            AppLifecycle.CLOSING -> action.name == "app.CLOSING" // Only allow closing action
+            AppLifecycle.RUNNING -> stampedAction.name != "app.INITIALIZING" && stampedAction.name != "app.STARTING"
+            AppLifecycle.CLOSING -> stampedAction.name == "app.CLOSING" // Only allow closing action
         }
 
         if (!isActionAllowed) {
             platformDependencies.log(
                 level = LogLevel.ERROR,
                 tag = "Store",
-                message = "Action '$action' dispatched in invalid lifecycle state '$currentLifecycle'. Action ignored."
+                message = "Action '$stampedAction' dispatched in invalid lifecycle state '$currentLifecycle'. Action ignored."
             )
             return
         }
 
-        // --- PHASE 1: REDUCE ---
+        // --- PHASE 2: REDUCE ---
         val previousState = _state.value
         val newState = features.fold(previousState) { currentState, feature ->
-            feature.reducer(currentState, action)
+            feature.reducer(currentState, stampedAction)
         }
 
-        // --- PHASE 2: UPDATE STATE ---
+        // --- PHASE 3: UPDATE STATE ---
         if (newState != previousState) {
             _state.value = newState
         }
 
-        // --- PHASE 3: SIDE-EFFECTS ---
+        // --- PHASE 4: SIDE-EFFECTS ---
         features.forEach { feature ->
-            feature.onAction(action, this)
+            feature.onAction(stampedAction, this)
         }
     }
 }
