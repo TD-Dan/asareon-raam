@@ -526,10 +526,17 @@ class FileSystemFeature(
 
 
     inner class FileSystemComposableProvider : Feature.ComposableProvider {
-        override val viewKey: String = "feature.filesystem.main"
+        private val viewKey = "feature.filesystem.main"
 
+        // CORRECTED: Use the new `stageViews` map.
+        override val stageViews: Map<String, @Composable (Store) -> Unit> = mapOf(
+            viewKey to { store -> FileSystemView(store, platformDependencies) }
+        )
+
+        // CORRECTED: Use the new `RibbonContent` slot.
         @Composable
-        override fun RibbonButton(store: Store, isActive: Boolean) {
+        override fun RibbonContent(store: Store, activeViewKey: String?) {
+            val isActive = activeViewKey == viewKey
             val payload = buildJsonObject { put("key", viewKey) }
             IconButton(onClick = { store.dispatch("filesystem.ui", Action("core.SET_ACTIVE_VIEW", payload)) }) {
                 Icon(
@@ -538,11 +545,6 @@ class FileSystemFeature(
                     tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
-
-        @Composable
-        override fun StageContent(store: Store) {
-            FileSystemView(store, platformDependencies)
         }
     }
 }

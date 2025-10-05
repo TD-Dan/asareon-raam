@@ -196,14 +196,17 @@ class CoreFeature(
     }
 
     inner class CoreComposableProvider : Feature.ComposableProvider {
-        override val viewKey: String = "feature.core.about"
+        // CORRECTED: Use the new `stageViews` map.
+        override val stageViews: Map<String, @Composable (Store) -> Unit> = mapOf(
+            "feature.core.about" to { store -> AboutView(store) }
+        )
 
         @Composable
         override fun MenuContent(store: Store, onDismiss: () -> Unit) {
             DropdownMenuItem(
                 text = { Text("About") },
                 onClick = {
-                    val payload = buildJsonObject { put("key", viewKey) }
+                    val payload = buildJsonObject { put("key", "feature.core.about") }
                     store.dispatch("core.ui", Action("core.SET_ACTIVE_VIEW", payload))
                     onDismiss()
                 },
@@ -214,11 +217,6 @@ class CoreFeature(
                     )
                 }
             )
-        }
-
-        @Composable
-        override fun StageContent(store: Store) {
-            AboutView(store)
         }
     }
 }

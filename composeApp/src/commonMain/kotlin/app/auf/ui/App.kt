@@ -43,10 +43,15 @@ private fun MainAppContent(store: Store, features: List<Feature>) {
     val appState by store.state.collectAsState()
     val activeViewKey = (appState.featureStates["CoreFeature"] as? CoreState)?.activeViewKey
 
-    // Find the feature whose ComposableProvider has the currently active key.
-    val activeFeatureProvider = features
-        .mapNotNull { it.composableProvider }
-        .find { it.viewKey == activeViewKey }
+    // CORRECTED: The logic now searches all features' `stageViews` maps for the active key.
+    // This is more efficient and correctly supports the new, more flexible contract.
+    val activeStageContent: (@Composable (Store) -> Unit)? = remember(features, activeViewKey) {
+        features
+            .asSequence() // Use sequence for efficiency
+            .mapNotNull { it.composableProvider?.stageViews }
+            .mapNotNull { it[activeViewKey] }
+            .firstOrNull()
+    }
 
     Row(Modifier.fillMaxSize()) {
         // 1. The Ribbon is built dynamically from ALL features.
@@ -55,8 +60,12 @@ private fun MainAppContent(store: Store, features: List<Feature>) {
 
         // 2. The Stage renders the content from the ONE active feature.
         Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-            activeFeatureProvider?.StageContent(store)
-                ?: Text("Error: No view found for key '$activeViewKey'")
+            // CORRECTED: Invoke the composable function found in the map.
+            if (activeStageContent != null) {
+                activeStageContent(store)
+            } else {
+                Text("Error: No view found for key '$activeViewKey'")
+            }
         }
     }
 }

@@ -6,7 +6,7 @@ import androidx.compose.runtime.Composable
  * Defines the universal contract for a self-contained, modular feature plugin within the AUF app.
  * This is the cornerstone of the "Core Ignorance" and "Contextual Granularity" principles.
  *
- * @version 2.0
+ * @version 2.1 - Evolved to support multiple views and ribbon content per feature.
  */
 interface Feature {
     val name: String
@@ -63,25 +63,22 @@ interface Feature {
 
     interface ComposableProvider {
         /**
-         * The unique key for this feature's main view, used for navigation.
-         * MUST be provided if the feature has a main StageContent.
-         * E.g., "feature.session.main", "feature.knowledgegraph.import"
+         * A map of unique view keys to the composable functions that render them.
+         * This allows a single feature to provide multiple, distinct views for the main stage.
+         *
+         * Example:
+         * "feature.session.main" to { store -> SessionView(store) },
+         * "feature.session.manager" to { store -> SessionsManagerView(store) }
          */
-        val viewKey: String?
-            get() = null
+        val stageViews: Map<String, @Composable (Store) -> Unit>
+            get() = emptyMap()
 
         /**
-         * The button to render in the GlobalActionRibbon.
-         * Typically, dispatches Action(name = "core.SET_ACTIVE_VIEW", payload = ...).
+         * A slot for rendering one or more buttons or other components in the GlobalActionRibbon.
+         * This flexible slot replaces the previous, single-button contract.
          */
         @Composable
-        fun RibbonButton(store: Store, isActive: Boolean) {}
-
-        /**
-         * The main content to render on the ActionStage when this feature's viewKey is active.
-         */
-        @Composable
-        fun StageContent(store: Store) {}
+        fun RibbonContent(store: Store, activeViewKey: String?) {}
 
         /**
          * Renders a part of the feature's UI to be embedded inside another view.

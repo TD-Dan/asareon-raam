@@ -176,10 +176,22 @@ class SettingsFeature(
     }
 
     inner class SettingsComposableProvider : Feature.ComposableProvider {
-        override val viewKey: String = "feature.settings.main"
+        private val viewKey = "feature.settings.main"
 
+        // CORRECTED: Use the new `stageViews` map.
+        override val stageViews: Map<String, @Composable (Store) -> Unit> = mapOf(
+            viewKey to { store ->
+                SettingsView(
+                    store = store,
+                    onClose = { store.dispatch("settings.ui", Action("core.SHOW_DEFAULT_VIEW")) }
+                )
+            }
+        )
+
+        // CORRECTED: Use the new `RibbonContent` slot.
         @Composable
-        override fun RibbonButton(store: Store, isActive: Boolean) {
+        override fun RibbonContent(store: Store, activeViewKey: String?) {
+            val isActive = activeViewKey == viewKey
             val payload = buildJsonObject { put("key", viewKey) }
             IconButton(onClick = { store.dispatch("settings.ui", Action("core.SET_ACTIVE_VIEW", payload)) }) {
                 Icon(
@@ -188,14 +200,6 @@ class SettingsFeature(
                     tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
-
-        @Composable
-        override fun StageContent(store: Store) {
-            SettingsView(
-                store = store,
-                onClose = { store.dispatch("settings.ui", Action("core.SHOW_DEFAULT_VIEW")) }
-            )
         }
     }
 }

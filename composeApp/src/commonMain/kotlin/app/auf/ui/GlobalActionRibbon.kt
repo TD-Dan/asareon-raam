@@ -68,14 +68,12 @@ fun GlobalActionRibbon(
             )
         }
 
-        // Render ribbon buttons from all OTHER features
+        // CORRECTED: Render ribbon content from all features using the new flexible slot.
         features.forEach { feature ->
-            feature.composableProvider?.let { provider ->
-                provider.RibbonButton(
-                    store = store,
-                    isActive = provider.viewKey == activeViewKey
-                )
-            }
+            feature.composableProvider?.RibbonContent(
+                store = store,
+                activeViewKey = activeViewKey
+            )
         }
 
         // The main application menu
