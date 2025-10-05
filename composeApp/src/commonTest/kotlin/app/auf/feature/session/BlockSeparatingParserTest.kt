@@ -30,7 +30,7 @@ class BlockSeparatingParserTest {
               val indented = true
               ```
             And some more text.
-        """.trimMargin()
+        """.trimIndent()
 
         val result = parser.parse(rawResponse)
         assertEquals(3, result.size)
@@ -38,11 +38,11 @@ class BlockSeparatingParserTest {
         assertIs<ContentBlock.CodeBlock>(result[1])
         assertIs<ContentBlock.Text>(result[2])
 
-        assertEquals("Here is some text.\n              ", (result[0] as ContentBlock.Text).text)
+        assertEquals("Here is some text.\n", (result[0] as ContentBlock.Text).text)
         val codeBlock = result[1] as ContentBlock.CodeBlock
         assertEquals("kotlin", codeBlock.language)
-        assertEquals("val indented = true\n              ", codeBlock.code)
-        assertEquals("\n            And some more text.", (result[2] as ContentBlock.Text).text)
+        assertEquals("val indented = true\n", codeBlock.code)
+        assertEquals("And some more text.\n", (result[2] as ContentBlock.Text).text)
     }
 
     @Test

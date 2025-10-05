@@ -42,24 +42,6 @@
         "properties": { "sessionId": { "type": "string" } },
         "required": ["sessionId"]
       }
-    },
-    {
-      "action_name": "session.ADD_TO_FOCUS",
-      "summary": "Adds a session to the tab bar in the main view, making it easily accessible.",
-      "payload_schema": {
-        "type": "object",
-        "properties": { "sessionId": { "type": "string" } },
-        "required": ["sessionId"]
-      }
-    },
-    {
-      "action_name": "session.REMOVE_FROM_FOCUS",
-      "summary": "Removes a session from the tab bar in the main view (closes the tab). This does not delete the session.",
-      "payload_schema": {
-        "type": "object",
-        "properties": { "sessionId": { "type": "string" } },
-        "required": ["sessionId"]
-      }
     }
   ],
   "publishes": [

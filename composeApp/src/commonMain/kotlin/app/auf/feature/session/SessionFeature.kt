@@ -18,6 +18,9 @@ class SessionFeature(
 
     // Private, serializable data classes for decoding action payloads safely.
     @Serializable private data class CreateSessionPayload(val name: String? = null)
+    @Serializable private data class PostPayload(val sessionId: String, val agentId: String, val message: String)
+    @Serializable private data class SessionIdPayload(val sessionId: String)
+
 
     private val blockParser = BlockSeparatingParser()
 
@@ -44,6 +47,47 @@ class SessionFeature(
                 newFeatureState = currentFeatureState.copy(
                     sessions = currentFeatureState.sessions + (newId to newSession)
                 )
+            }
+            "session.POST" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<PostPayload>(it) } ?: return state
+                val targetSession = currentFeatureState.sessions[payload.sessionId] ?: return state
+
+                val newEntry = LedgerEntry(
+                    id = platformDependencies.generateUUID(),
+                    timestamp = platformDependencies.getSystemTimeMillis(),
+                    agentId = payload.agentId,
+                    rawContent = payload.message,
+                    content = blockParser.parse(payload.message)
+                )
+
+                val updatedSession = targetSession.copy(ledger = targetSession.ledger + newEntry)
+                newFeatureState = currentFeatureState.copy(
+                    sessions = currentFeatureState.sessions + (payload.sessionId to updatedSession)
+                )
+            }
+            "session.DELETE" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<SessionIdPayload>(it) } ?: return state
+                if (!currentFeatureState.sessions.containsKey(payload.sessionId)) return state // No-op if not found
+
+                val newSessions = currentFeatureState.sessions - payload.sessionId
+                // If we deleted the active session, clear the active ID.
+                val newActiveId = if (currentFeatureState.activeSessionId == payload.sessionId) {
+                    null
+                } else {
+                    currentFeatureState.activeSessionId
+                }
+
+                newFeatureState = currentFeatureState.copy(
+                    sessions = newSessions,
+                    activeSessionId = newActiveId
+                )
+            }
+            "session.SET_ACTIVE_TAB" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<SessionIdPayload>(it) } ?: return state
+                // Only update if the session ID is valid, otherwise no-op.
+                if (currentFeatureState.sessions.containsKey(payload.sessionId)) {
+                    newFeatureState = currentFeatureState.copy(activeSessionId = payload.sessionId)
+                }
             }
         }
 
