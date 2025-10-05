@@ -42,7 +42,7 @@ data class CoreState(
 class CoreFeature(
     private val platformDependencies: PlatformDependencies
 ) : Feature {
-    override val name: String = "CoreFeature"
+    override val name: String = "core"
     override val composableProvider: Feature.ComposableProvider = CoreComposableProvider()
 
     // Payloads for serialization

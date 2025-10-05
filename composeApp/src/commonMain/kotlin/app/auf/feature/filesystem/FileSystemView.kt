@@ -39,7 +39,7 @@ fun FileSystemView(
     platformDependencies: PlatformDependencies
 ) {
     val appState by store.state.collectAsState()
-    val fsState = appState.featureStates["FileSystemFeature"] as? FileSystemState
+    val fsState = appState.featureStates["filesystem"] as? FileSystemState
     val parentPath = fsState?.currentPath?.let { platformDependencies.getParentDirectory(it) }
     var isFavoritesMenuExpanded by remember { mutableStateOf(false) }
     var isWhitelistMenuExpanded by remember { mutableStateOf(false) }

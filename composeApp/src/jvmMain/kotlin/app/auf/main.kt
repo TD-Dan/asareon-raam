@@ -36,7 +36,7 @@ fun main() = application {
     }
 
     val appState by container.store.state.collectAsState()
-    val coreState = appState.featureStates["CoreFeature"] as? CoreState
+    val coreState = appState.featureStates["core"] as? CoreState
 
     val windowState = rememberWindowState(
         width = (coreState?.windowWidth ?: 1200).dp,
@@ -90,7 +90,7 @@ fun main() = application {
                 .collect { newSize ->
                     val width = newSize.width.value.toInt()
                     val height = newSize.height.value.toInt()
-                    val currentCoreState = container.store.state.value.featureStates["CoreFeature"] as? CoreState
+                    val currentCoreState = container.store.state.value.featureStates["core"] as? CoreState
 
                     if (width != currentCoreState?.windowWidth || height != currentCoreState.windowHeight) {
                         val payload = buildJsonObject {

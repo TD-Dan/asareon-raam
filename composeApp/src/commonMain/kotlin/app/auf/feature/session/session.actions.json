@@ -1,5 +1,5 @@
 {
-  "feature_name": "SessionFeature",
+  "feature_name": "session",
   "summary": "Acts as a pure, passive data manager for multiple, concurrent session transcripts (the 'Public Ledger').",
   "listensFor": [
     {

@@ -28,7 +28,7 @@ import kotlinx.serialization.json.*
 class FileSystemFeature(
     private val platformDependencies: PlatformDependencies
 ) : Feature {
-    override val name: String = "FileSystemFeature"
+    override val name: String = "filesystem"
     override val composableProvider: Feature.ComposableProvider = FileSystemComposableProvider()
 
     // --- Private serializable classes for decoding action payloads ---

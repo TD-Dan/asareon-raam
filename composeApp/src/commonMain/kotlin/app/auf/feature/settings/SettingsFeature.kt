@@ -29,7 +29,7 @@ data class SettingsState(
 class SettingsFeature(
     private val platformDependencies: PlatformDependencies
 ) : Feature {
-    override val name: String = "SettingsFeature"
+    override val name: String = "settings"
     override val composableProvider: Feature.ComposableProvider = SettingsComposableProvider()
 
     private val featureScope = CoroutineScope(Dispatchers.Default)

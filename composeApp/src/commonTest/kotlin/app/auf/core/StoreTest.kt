@@ -30,7 +30,7 @@ class StoreTest {
         val features = listOf(CoreFeature(platform), TestFeature())
         val initialState = AppState(
             featureStates = mapOf(
-                "CoreFeature" to initialCoreState,
+                "core" to initialCoreState,
                 "TestFeature" to TestState()
             )
         )
@@ -63,7 +63,7 @@ class StoreTest {
 
         // Assert
         assertNotEquals(initialState, finalState, "State should have changed.")
-        val finalCoreState = finalState.featureStates["CoreFeature"] as CoreState
+        val finalCoreState = finalState.featureStates["core"] as CoreState
         assertEquals(AppLifecycle.INITIALIZING, finalCoreState.lifecycle)
     }
 

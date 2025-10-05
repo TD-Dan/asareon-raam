@@ -26,7 +26,7 @@ fun SettingsView(
     onClose: () -> Unit
 ) {
     val appState by store.state.collectAsState()
-    val settingsState = appState.featureStates["SettingsFeature"] as? SettingsState
+    val settingsState = appState.featureStates["settings"] as? SettingsState
 
     val groupedSettings = remember(settingsState?.definitions) {
         settingsState?.definitions?.groupBy { it["section"]?.jsonPrimitive?.content ?: "Uncategorized" } ?: emptyMap()

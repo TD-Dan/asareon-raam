@@ -13,7 +13,7 @@ import app.auf.feature.core.CoreState
 fun App(store: Store, features: List<Feature>) {
     val appState by store.state.collectAsState()
     val coreState = remember(appState.featureStates) {
-        appState.featureStates["CoreFeature"] as? CoreState
+        appState.featureStates["core"] as? CoreState
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -41,10 +41,9 @@ fun App(store: Store, features: List<Feature>) {
 @Composable
 private fun MainAppContent(store: Store, features: List<Feature>) {
     val appState by store.state.collectAsState()
-    val activeViewKey = (appState.featureStates["CoreFeature"] as? CoreState)?.activeViewKey
+    val activeViewKey = (appState.featureStates["core"] as? CoreState)?.activeViewKey
 
-    // CORRECTED: The logic now searches all features' `stageViews` maps for the active key.
-    // This is more efficient and correctly supports the new, more flexible contract.
+
     val activeStageContent: (@Composable (Store) -> Unit)? = remember(features, activeViewKey) {
         features
             .asSequence() // Use sequence for efficiency

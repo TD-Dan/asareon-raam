@@ -89,7 +89,7 @@ open class Store(
             return
         }
 
-        val coreState = _state.value.featureStates["CoreFeature"] as? CoreState
+        val coreState = _state.value.featureStates["core"] as? CoreState
         val currentLifecycle = coreState?.lifecycle ?: AppLifecycle.BOOTING
         platformDependencies.log(
             level = LogLevel.INFO,

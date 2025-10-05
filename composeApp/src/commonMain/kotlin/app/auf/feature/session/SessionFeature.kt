@@ -1,5 +1,12 @@
 package app.auf.feature.session
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import app.auf.core.*
 import app.auf.util.FileEntry
 import app.auf.util.LogLevel
@@ -13,7 +20,7 @@ class SessionFeature(
     private val platformDependencies: PlatformDependencies,
     private val coroutineScope: CoroutineScope
 ) : Feature {
-    override val name: String = "SessionFeature"
+    override val name: String = "session"
 
     // Private, serializable data classes for decoding action payloads safely.
     @Serializable private data class CreateSessionPayload(val name: String? = null)
@@ -167,6 +174,41 @@ class SessionFeature(
         } ?: state
     }
 
-    override val composableProvider: Feature.ComposableProvider?
-        get() = null // To be implemented
+    // --- NEW: UI Implementation ---
+    override val composableProvider = object : Feature.ComposableProvider {
+        private val VIEW_KEY_MAIN = "feature.session.main"
+        private val VIEW_KEY_MANAGER = "feature.session.manager"
+
+        override val stageViews: Map<String, @Composable (Store) -> Unit> = mapOf(
+            VIEW_KEY_MAIN to { store -> SessionView(store) },
+            VIEW_KEY_MANAGER to { store -> SessionsManagerView(store) }
+        )
+
+        @Composable
+        override fun RibbonContent(store: Store, activeViewKey: String?) {
+            // Button 1: Session Manager
+            IconButton(onClick = {
+                val payload = buildJsonObject { put("key", VIEW_KEY_MANAGER) }
+                store.dispatch("session.ui", Action("core.SET_ACTIVE_VIEW", payload))
+            }) {
+                Icon(
+                    imageVector = Icons.Default.ViewList,
+                    contentDescription = "Session Manager",
+                    tint = if (activeViewKey == VIEW_KEY_MANAGER) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Button 2: Active Session View (Your requested addition)
+            IconButton(onClick = {
+                val payload = buildJsonObject { put("key", VIEW_KEY_MAIN) }
+                store.dispatch("session.ui", Action("core.SET_ACTIVE_VIEW", payload))
+            }) {
+                Icon(
+                    imageVector = Icons.Default.ChatBubble,
+                    contentDescription = "Active Session",
+                    tint = if (activeViewKey == VIEW_KEY_MAIN) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
 }

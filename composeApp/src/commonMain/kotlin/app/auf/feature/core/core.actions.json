@@ -1,5 +1,5 @@
 {
-  "feature_name": "CoreFeature",
+  "feature_name": "core",
   "summary": "Handles core, application-level state and UI logic like navigation and toast messages.",
   "listensFor": [
     {

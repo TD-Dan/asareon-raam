@@ -84,7 +84,7 @@ class SettingsFeatureIntegrationTest {
     fun `app INITIALIZING action correctly loads persisted settings from disk`() {
         // ARRANGE
         // 1. Pre-populate a settings file on disk.
-        val settingsFeatureName = "SettingsFeature"
+        val settingsFeatureName = "settings"
         val expectedSandboxPath = platform.getBasePathFor(app.auf.util.BasePath.APP_ZONE) +
                 platform.pathSeparator + settingsFeatureName
         File(expectedSandboxPath).mkdirs()

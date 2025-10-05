@@ -1,5 +1,5 @@
 {
-  "feature_name": "FileSystemFeature",
+  "feature_name": "filesystem",
   "summary": "Acts as the sole, transactional, and secure gateway to the file system.",
   "listensFor": [
     {

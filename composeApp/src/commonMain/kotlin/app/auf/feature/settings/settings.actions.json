@@ -1,5 +1,5 @@
 {
-  "feature_name": "SettingsFeature",
+  "feature_name": "settings",
   "summary": "Manages the persistence, state, and UI for all application settings. Other features register their settings with this one.",
   "listensFor": [
     {

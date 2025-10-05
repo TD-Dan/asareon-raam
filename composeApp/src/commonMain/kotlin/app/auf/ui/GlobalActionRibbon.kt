@@ -43,7 +43,7 @@ fun GlobalActionRibbon(
     var isMenuExpanded by remember { mutableStateOf(false) }
     val appState by store.state.collectAsState()
     val coreState = remember(appState.featureStates) {
-        appState.featureStates["CoreFeature"] as? CoreState
+        appState.featureStates["core"] as? CoreState
     }
     val defaultViewKey = coreState?.defaultViewKey ?: "feature.session.main"
 

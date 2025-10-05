@@ -90,7 +90,7 @@ class SessionFeatureOnActionTest {
         // CORRECTED: The initial state must include a CoreState with a RUNNING lifecycle
         // to bypass the Store's lifecycle guard.
         val initialState = AppState(featureStates = mapOf(
-            "CoreFeature" to CoreState(lifecycle = AppLifecycle.RUNNING),
+            "core" to CoreState(lifecycle = AppLifecycle.RUNNING),
             feature.name to SessionState(sessions = mapOf("sid-1" to initialSession))
         ))
         val store = TestStore(initialState, listOf(feature, CoreFeature(fakePlatform)), fakePlatform)

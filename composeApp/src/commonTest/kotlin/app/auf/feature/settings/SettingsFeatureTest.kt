@@ -129,7 +129,7 @@ class SettingsFeatureTest {
 
         // Act
         // Manually trigger the private data channel, simulating a response from FileSystemFeature
-        store.deliverPrivateData("FileSystemFeature", feature.name, privateData)
+        store.deliverPrivateData("filesystem", feature.name, privateData)
 
         // Assert
         assertEquals(1, store.dispatchedActions.size)
