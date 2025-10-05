@@ -26,9 +26,11 @@ fun SettingsView(
     store: Store,
     onClose: () -> Unit
 ) {
-    val settingsState by remember {
-        derivedStateOf { store.state.value.featureStates["SettingsFeature"] as? SettingsState }
-    }
+    // --- THE FIX ---
+    // Use the standard `collectAsState` to ensure the view reliably recomposes when the store's state changes.
+    // The previous `remember { derivedStateOf { ... } }` was an anti-pattern and the root cause of the bug.
+    val appState by store.state.collectAsState()
+    val settingsState = appState.featureStates["SettingsFeature"] as? SettingsState
 
     val groupedSettings = remember(settingsState?.definitions) {
         settingsState?.definitions?.groupBy { it["section"]?.jsonPrimitive?.content ?: "Uncategorized" } ?: emptyMap()
@@ -116,10 +118,6 @@ private fun SettingRow(
                 )
             }
             "NUMERIC_LONG" -> {
-                // --- THE FIX ---
-                // The `remember` call is now keyed to `currentValue`. When the external
-                // `currentValue` changes (e.g., from a mouse drag), this entire
-                // block is re-initialized, ensuring the UI displays the correct state.
                 var localValue by remember(currentValue) { mutableStateOf(currentValue) }
 
                 LaunchedEffect(localValue) {

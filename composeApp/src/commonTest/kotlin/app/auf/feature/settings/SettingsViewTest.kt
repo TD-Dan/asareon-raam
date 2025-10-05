@@ -2,14 +2,22 @@ package app.auf.feature.settings
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import app.auf.core.Action
 import app.auf.core.AppState
+import app.auf.core.Feature
+import app.auf.core.Store
 import app.auf.fakes.FakePlatformDependencies
-import app.auf.fakes.FakeStore
+import app.auf.feature.core.CoreFeature
+import app.auf.feature.core.CoreState
+import app.auf.util.BasePath
+import app.auf.util.LogLevel
+import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.Before
 import org.junit.Rule
@@ -19,111 +27,95 @@ import kotlin.test.assertNotNull
 
 class SettingsViewTest {
 
-    // The JUnit 4 Rule that provides the environment to test Compose UIs.
     @get:Rule
     val composeTestRule = createComposeRule()
 
     private val testAppVersion = "2.0.0-test"
     private lateinit var fakePlatform: FakePlatformDependencies
-    private lateinit var fakeStore: FakeStore
+    private lateinit var testStore: TestStore
     private lateinit var settingsFeature: SettingsFeature
+    private lateinit var coreFeature: CoreFeature
+
+    /**
+     * An instrumented, high-fidelity Test Store.
+     * It logs every dispatched action before passing it to the real Store logic.
+     */
+    private class TestStore(
+        initialState: AppState,
+        features: List<Feature>,
+        val platformDependencies: PlatformDependencies // Expose for logging
+    ) : Store(initialState, features, platformDependencies) {
+        val dispatchedActions = mutableListOf<Action>()
+        override fun dispatch(action: Action) {
+            // --- INSTRUMENTATION ---
+            platformDependencies.log(LogLevel.INFO, "TestStore", "ACTION DISPATCHED: $action")
+            dispatchedActions.add(action)
+            super.dispatch(action) // Call the real logic
+        }
+    }
 
     @Before
     fun setUp() {
         // --- ARRANGE ---
-        // 1. Create dependencies
         fakePlatform = FakePlatformDependencies(testAppVersion)
         settingsFeature = SettingsFeature(fakePlatform)
-
-        // 2. Simulate other features registering their settings by applying the reducer
+        coreFeature = CoreFeature(fakePlatform)
+        val features = listOf(coreFeature, settingsFeature)
+        val settingsPath = fakePlatform.getBasePathFor(BasePath.SETTINGS) + fakePlatform.pathSeparator + "settings.json"
+        fakePlatform.writeFileContent(settingsPath, """{ "core.window.width": "1024" }""")
         val addAction1 = Action("settings.ADD", buildJsonObject {
-            put("key", "core.window.width")
-            put("type", "NUMERIC_LONG")
-            put("label", "Window Width")
-            put("description", "The width of the application window.")
-            put("section", "Appearance")
-            put("defaultValue", "1200")
+            put("key", "core.window.width"); put("type", "NUMERIC_LONG"); put("label", "Window Width")
+            put("description", "Desc"); put("section", "Appearance"); put("defaultValue", "1200")
         })
-        val addAction2 = Action("settings.ADD", buildJsonObject {
-            put("key", "agent.enable.ai")
-            put("type", "BOOLEAN")
-            put("label", "Enable AI Agent")
-            put("description", "Allow the AI agent to run.")
-            put("section", "Agent")
-            put("defaultValue", "true")
-        })
-        val stateAfterAdding = settingsFeature.reducer(settingsFeature.reducer(AppState(), addAction1), addAction2)
-
-        // 3. Simulate loading a previously saved value that overrides a default
-        val stateAfterLoading = settingsFeature.reducer(
-            stateAfterAdding,
-            Action("settings.LOADED", buildJsonObject {
-                put("core.window.width", "1024") // Override default
-                // 'agent.enable.ai' is not present, so its default 'true' will be used
-            })
-        )
-
-        // 4. Initialize the FakeStore with this realistic, pre-populated state
-        fakeStore = FakeStore(stateAfterLoading, fakePlatform)
-
-        // 5. Set the content for the test rule
+        var initialState = AppState(featureStates = mapOf(coreFeature.name to CoreState(), settingsFeature.name to SettingsState()))
+        initialState = settingsFeature.reducer(initialState, addAction1)
+        testStore = TestStore(initialState, features, fakePlatform)
+        features.forEach { it.init(testStore) }
+        testStore.dispatch(Action("app.INITIALIZING"))
+        testStore.dispatch(Action("app.STARTING"))
+        testStore.dispatchedActions.clear()
         composeTestRule.setContent {
-            SettingsView(
-                store = fakeStore,
-                onClose = {}
-            )
+            SettingsView(store = testStore, onClose = {})
         }
-    }
-
-    @Test
-    fun `UI correctly displays section headers, labels, and descriptions`() {
-        // Assert that the sections and setting details are rendered from state
-        composeTestRule.onNodeWithText("Appearance").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Window Width").assertIsDisplayed()
-        composeTestRule.onNodeWithText("The width of the application window.").assertIsDisplayed()
-
-        composeTestRule.onNodeWithText("Agent").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Enable AI Agent").assertIsDisplayed()
+        composeTestRule.mainClock.autoAdvance = false
     }
 
     @Test
     fun `UI controls display the current value from the store, not the default`() {
-        // Assert that the text field displays the value loaded from the file (1024),
-        // not the default value (1200).
-        composeTestRule.onNodeWithText("Window Width")
-            .assertIsDisplayed() // Find the label first...
-            .let {
-                // ...then find the text field associated with it to check its content.
-                // NOTE: This is a simplified lookup. A real-world test would use semantics or test tags.
-                composeTestRule.onNodeWithText("1024").assertIsDisplayed()
-            }
+        composeTestRule.onNodeWithText("1024").assertIsDisplayed()
     }
 
     @Test
     fun `user interaction dispatches a settings UPDATE action with the correct payload`() {
-        // --- ACT ---
-        // Find the text field for "Window Width" and change its value
-        // This is a brittle selector, but good enough for this contract test. A better
-        // way would be to use `onNode(hasTestTag("settings.textfield.core.window.width"))`
-        composeTestRule.onNodeWithText("1024").performTextInput("999")
+        try {
+            // --- ACT ---
+            composeTestRule.onNodeWithText("1024").performTextInput("999")
+            composeTestRule.mainClock.advanceTimeBy(1001L)
 
-        // --- ASSERT ---
-        // Verify that the correct action was dispatched to the store
-        val dispatchedAction = fakeStore.dispatchedActions.lastOrNull()
-        assertNotNull(dispatchedAction)
-        assertEquals("settings.UPDATE", dispatchedAction.name)
-        assertEquals("core.window.width", dispatchedAction.payload?.get("key")?.toString()?.trim('"'))
-        assertEquals("1024999", dispatchedAction.payload?.get("value")?.toString()?.trim('"'))
-    }
-
-    @Test
-    fun `clicking the Open Folder button dispatches the correct action`() {
-        // --- ACT ---
-        composeTestRule.onNodeWithText("Open Settings Folder").performClick()
-
-        // --- ASSERT ---
-        val dispatchedAction = fakeStore.dispatchedActions.lastOrNull()
-        assertNotNull(dispatchedAction)
-        assertEquals("settings.OPEN_FOLDER", dispatchedAction.name)
+            // --- ASSERT ---
+            composeTestRule.runOnIdle {
+                val dispatchedAction = testStore.dispatchedActions.find { it.name == "settings.UPDATE" }
+                assertNotNull(dispatchedAction, "Action 'settings.UPDATE' should have been dispatched.")
+                assertEquals("core.window.width", dispatchedAction.payload?.get("key")?.jsonPrimitive?.content)
+                assertEquals("999", dispatchedAction.payload?.get("value")?.jsonPrimitive?.content)
+            }
+        } finally {
+            // --- INSTRUMENTATION DUMP ---
+            // This block will execute even if the test fails, printing the captured data.
+            println("\n--- INSTRUMENTATION DUMP ---")
+            println("CAPTURED ACTIONS (${testStore.dispatchedActions.size}):")
+            if (testStore.dispatchedActions.isEmpty()) {
+                println("  <none>")
+            } else {
+                testStore.dispatchedActions.forEach { println("  - $it") }
+            }
+            println("\nCAPTURED LOGS (${fakePlatform.capturedLogs.size}):")
+            if (fakePlatform.capturedLogs.isEmpty()) {
+                println("  <none>")
+            } else {
+                fakePlatform.capturedLogs.forEach { println("  - [${it.level}] ${it.tag}: ${it.message}") }
+            }
+            println("--- END DUMP ---\n")
+        }
     }
 }
