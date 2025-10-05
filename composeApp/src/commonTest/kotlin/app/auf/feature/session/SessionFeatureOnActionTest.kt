@@ -2,6 +2,9 @@ package app.auf.feature.session
 
 import app.auf.core.*
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.feature.core.AppLifecycle
+import app.auf.feature.core.CoreFeature
+import app.auf.feature.core.CoreState
 import app.auf.util.FileEntry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -84,10 +87,13 @@ class SessionFeatureOnActionTest {
         val fakePlatform = FakePlatformDependencies(testAppVersion)
         val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
         val initialSession = Session(id = "sid-1", name = "Initial", ledger = emptyList(), createdAt = 1L)
+        // CORRECTED: The initial state must include a CoreState with a RUNNING lifecycle
+        // to bypass the Store's lifecycle guard.
         val initialState = AppState(featureStates = mapOf(
+            "CoreFeature" to CoreState(lifecycle = AppLifecycle.RUNNING),
             feature.name to SessionState(sessions = mapOf("sid-1" to initialSession))
         ))
-        val store = TestStore(initialState, listOf(feature), fakePlatform)
+        val store = TestStore(initialState, listOf(feature, CoreFeature(fakePlatform)), fakePlatform)
 
         val postAction = Action("session.POST", buildJsonObject {
             put("sessionId", "sid-1")
@@ -101,7 +107,7 @@ class SessionFeatureOnActionTest {
 
         // ASSERT
         val writeAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_WRITE" }
-        assertNotNull(writeAction)
+        assertNotNull(writeAction, "A filesystem.SYSTEM_WRITE action should have been dispatched.")
         assertEquals(feature.name, writeAction.originator)
         assertEquals("sid-1.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
         assertNotNull(writeAction.payload?.get("content")?.jsonPrimitive?.content)

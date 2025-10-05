@@ -87,6 +87,11 @@ class SessionFeature(
         var newFeatureState: SessionState? = null
 
         when (action.name) {
+            // CORRECTED: Handle INITIALIZING to ensure the feature's state slice is created at startup.
+            "system.INITIALIZING" -> {
+                // Simply creating a copy of the default state is enough to trigger it being added to the AppState map.
+                newFeatureState = currentFeatureState.copy()
+            }
             "session.CREATE" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<CreateSessionPayload>(it) }
                 val newId = platformDependencies.generateUUID()
