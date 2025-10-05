@@ -8,7 +8,7 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import app.auf.core.Action
 import app.auf.core.Version
-import app.auf.di.AppContainer
+import app.auf.core.AppContainer
 import app.auf.feature.core.CoreState
 import app.auf.ui.App
 import app.auf.util.PlatformDependencies

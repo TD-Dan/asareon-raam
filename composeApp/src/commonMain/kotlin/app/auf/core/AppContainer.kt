@@ -1,14 +1,11 @@
-package app.auf.di
+package app.auf.core
 
-import app.auf.core.Feature
-import app.auf.core.Store
-import app.auf.core.AppState
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.feature.settings.SettingsFeature
+import app.auf.feature.session.SessionFeature
 //import app.auf.feature.agent.AgentRuntimeFeature
 //import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
-//import app.auf.feature.session.SessionFeature
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 
@@ -29,10 +26,10 @@ class AppContainer(
         allFeatures.addAll(listOf(
             CoreFeature(platformDependencies),
             SettingsFeature(platformDependencies),
-            FileSystemFeature(platformDependencies) // Feature added
+            FileSystemFeature(platformDependencies),
+            SessionFeature(platformDependencies, coroutineScope)
             //AgentRuntimeFeature(platformDependencies, coroutineScope),
-            //KnowledgeGraphFeature(platformDependencies, coroutineScope),
-            //SessionFeature(platformDependencies, coroutineScope)
+            //KnowledgeGraphFeature(platformDependencies, coroutineScope)
         ))
         allFeatures
     }

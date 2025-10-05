@@ -1,0 +1,84 @@
+{
+  "feature_name": "SessionFeature",
+  "summary": "Acts as a pure, passive data manager for multiple, concurrent session transcripts (the 'Public Ledger').",
+  "listensFor": [
+    {
+      "action_name": "session.CREATE",
+      "summary": "Creates a new, empty session transcript.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "An optional user-friendly name for the new session." }
+        }
+      }
+    },
+    {
+      "action_name": "session.DELETE",
+      "summary": "Deletes an entire session transcript by its ID.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "sessionId": { "type": "string" } },
+        "required": ["sessionId"]
+      }
+    },
+    {
+      "action_name": "session.POST",
+      "summary": "Posts a new message to a specific session's ledger.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": { "type": "string" },
+          "agentId": { "type": "string" },
+          "message": { "type": "string" }
+        },
+        "required": ["sessionId", "agentId", "message"]
+      }
+    },
+    {
+      "action_name": "session.SET_ACTIVE_TAB",
+      "summary": "Sets the currently visible session in the main tabbed view.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "sessionId": { "type": "string" } },
+        "required": ["sessionId"]
+      }
+    },
+    {
+      "action_name": "session.ADD_TO_FOCUS",
+      "summary": "Adds a session to the tab bar in the main view, making it easily accessible.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "sessionId": { "type": "string" } },
+        "required": ["sessionId"]
+      }
+    },
+    {
+      "action_name": "session.REMOVE_FROM_FOCUS",
+      "summary": "Removes a session from the tab bar in the main view (closes the tab). This does not delete the session.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "sessionId": { "type": "string" } },
+        "required": ["sessionId"]
+      }
+    }
+  ],
+  "publishes": [
+    {
+      "action_name": "session.UPDATED",
+      "summary": "Broadcasts that a session has been updated (e.g., a new message was posted).",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "sessionId": { "type": "string" } },
+        "required": ["sessionId"]
+      }
+    },
+    {
+      "action_name": "session.LOADED",
+      "summary": "[INTERNAL] Dispatched after all session transcripts have been loaded from disk.",
+      "payload_schema": {
+        "type": "object",
+        "description": "A map of session IDs to Session objects."
+      }
+    }
+  ]
+}
