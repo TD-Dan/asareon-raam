@@ -58,7 +58,7 @@ class StoreTest {
         val initialState = store.state.value
 
         // Act
-        store.dispatch("system.main", Action("app.INITIALIZING"))
+        store.dispatch("system.main", Action("system.INITIALIZING"))
         val finalState = store.state.value
 
         // Assert
@@ -88,13 +88,13 @@ class StoreTest {
         val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING))
         val initialState = store.state.value
 
-        // Act & Assert for app.INITIALIZING
-        store.dispatch("system.main", Action("app.INITIALIZING"))
-        assertEquals(initialState, store.state.value, "State should not change for app.INITIALIZING in RUNNING state.")
+        // Act & Assert for system.INITIALIZING
+        store.dispatch("system.main", Action("system.INITIALIZING"))
+        assertEquals(initialState, store.state.value, "State should not change for system.INITIALIZING in RUNNING state.")
 
-        // Act & Assert for app.STARTING
-        store.dispatch("system.main", Action("app.STARTING"))
-        assertEquals(initialState, store.state.value, "State should not change for app.STARTING in RUNNING state.")
+        // Act & Assert for system.STARTING
+        store.dispatch("system.main", Action("system.STARTING"))
+        assertEquals(initialState, store.state.value, "State should not change for system.STARTING in RUNNING state.")
     }
 
     @Test

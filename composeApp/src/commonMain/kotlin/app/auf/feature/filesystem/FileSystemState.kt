@@ -59,6 +59,8 @@ data class FileSystemState(
     /** A set of absolute directory paths where file operations are permitted. */
     val whitelistedPaths: Set<String> = emptySet(),
     /** A set of absolute directory paths marked as favorites by the user. */
-    val favoritePaths: Set<String> = emptySet()
+    val favoritePaths: Set<String> = emptySet(),
+    /** The runtime ACL mapping a feature's name to its secure, sandboxed directory path. */
+    val sandboxedPaths: Map<String, String> = emptyMap()
 
 ) : FeatureState

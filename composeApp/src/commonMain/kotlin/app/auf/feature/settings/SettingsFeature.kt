@@ -44,7 +44,7 @@ class SettingsFeature(
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
-            "app.INITIALIZING" -> {
+            "system.INITIALIZING" -> {
                 store.dispatch(this.name, Action("settings.LOAD"))
             }
 

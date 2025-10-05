@@ -54,7 +54,7 @@ class FileSystemFeature(
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
-            "app.INITIALIZING" -> {
+            "system.INITIALIZING" -> {
                 // Phase 1: Register settings definitions.
                 store.dispatch(this.name, Action("settings.ADD", buildJsonObject {
                     put("key", settingKeyWhitelist)
@@ -73,7 +73,7 @@ class FileSystemFeature(
                     put("defaultValue", "")
                 }))
             }
-            "app.STARTING" -> {
+            "system.STARTING" -> {
                 // Phase 2: Execute runtime logic now that settings are loaded.
                 val homePath = platformDependencies.getUserHomePath()
                 val payload = buildJsonObject { put("path", homePath) }
@@ -224,7 +224,7 @@ class FileSystemFeature(
         var newFeatureState: FileSystemState? = null
 
         when (action.name) {
-            "app.STARTING" -> {
+            "system.STARTING" -> {
                 if (currentFeatureState == null) { newFeatureState = resolvedFeatureState }
             }
             "filesystem.DIRECTORY_LOADED" -> {

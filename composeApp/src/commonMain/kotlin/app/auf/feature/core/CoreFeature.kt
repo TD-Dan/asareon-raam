@@ -58,7 +58,7 @@ class CoreFeature(
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
-            "app.INITIALIZING" -> {
+            "system.INITIALIZING" -> {
                 // Register our window settings with the SettingsFeature
                 store.dispatch(
                     this.name,
@@ -120,13 +120,13 @@ class CoreFeature(
 
         when (action.name) {
             // Lifecycle Actions
-            "app.INITIALIZING" -> {
+            "system.INITIALIZING" -> {
                 newCoreState = coreState.copy(lifecycle = AppLifecycle.INITIALIZING)
             }
-            "app.STARTING" -> {
+            "system.STARTING" -> {
                 newCoreState = coreState.copy(lifecycle = AppLifecycle.RUNNING)
             }
-            "app.CLOSING" -> {
+            "system.CLOSING" -> {
                 newCoreState = coreState.copy(lifecycle = AppLifecycle.CLOSING)
             }
 

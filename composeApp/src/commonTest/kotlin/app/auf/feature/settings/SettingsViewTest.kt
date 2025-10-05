@@ -67,8 +67,8 @@ class SettingsViewTest {
         initialState = settingsFeature.reducer(initialState, addAction1)
         testStore = TestStore(initialState, features, fakePlatform)
         features.forEach { it.init(testStore) }
-        testStore.dispatch("system.test", Action("app.INITIALIZING"))
-        testStore.dispatch("system.test", Action("app.STARTING"))
+        testStore.dispatch("system.test", Action("system.INITIALIZING"))
+        testStore.dispatch("system.test", Action("system.STARTING"))
         testStore.dispatchedActions.clear()
         composeTestRule.setContent {
             SettingsView(store = testStore, onClose = {})

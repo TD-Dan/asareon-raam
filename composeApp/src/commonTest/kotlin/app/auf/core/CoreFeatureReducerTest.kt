@@ -19,7 +19,7 @@ class CoreFeatureReducerTest {
     fun `reducer transitions from BOOTING to INITIALIZING on app_INITIALIZING`() {
         // Arrange
         val initialState = createAppState(CoreState(lifecycle = AppLifecycle.BOOTING))
-        val action = Action("app.INITIALIZING")
+        val action = Action("system.INITIALIZING")
 
         // Act
         val newState = feature.reducer(initialState, action)
@@ -33,7 +33,7 @@ class CoreFeatureReducerTest {
     fun `reducer transitions from INITIALIZING to RUNNING on app_STARTING`() {
         // Arrange
         val initialState = createAppState(CoreState(lifecycle = AppLifecycle.INITIALIZING))
-        val action = Action("app.STARTING")
+        val action = Action("system.STARTING")
 
         // Act
         val newState = feature.reducer(initialState, action)
@@ -47,7 +47,7 @@ class CoreFeatureReducerTest {
     fun `reducer transitions to CLOSING on app_CLOSING`() {
         // Arrange
         val initialState = createAppState(CoreState(lifecycle = AppLifecycle.RUNNING))
-        val action = Action("app.CLOSING")
+        val action = Action("system.CLOSING")
 
         // Act
         val newState = feature.reducer(initialState, action)

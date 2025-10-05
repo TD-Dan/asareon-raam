@@ -139,7 +139,7 @@ class SettingsFeatureTest {
         val feature = SettingsFeature(platform)
         val fakeStore = FakeStore(AppState(), platform)
         feature.init(fakeStore)
-        val action = Action("app.INITIALIZING")
+        val action = Action("system.INITIALIZING")
 
         // Act
         feature.onAction(action, fakeStore)
@@ -202,9 +202,9 @@ class SettingsFeatureTest {
 
         // Act
         // 1. First, we MUST INITIALIZE app.
-        store.dispatch("system.main", Action("app.INITIALIZING"))
+        store.dispatch("system.main", Action("system.INITIALIZING"))
         // 1. Second, we MUST move the app out of the INITIALIZING state.
-        store.dispatch("system.main", Action("app.STARTING"))
+        store.dispatch("system.main", Action("system.STARTING"))
         // 2. Now, dispatch the action under test.
         store.dispatch(settingsFeature.name, updateAction)
 

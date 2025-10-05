@@ -45,7 +45,7 @@ fun main() = application {
 
     Window(
         onCloseRequest = {
-            container.store.dispatch("system.main", Action("app.CLOSING"))
+            container.store.dispatch("system.main", Action("system.CLOSING"))
             Thread.sleep(250)
             exitApplication()
         },
@@ -65,11 +65,11 @@ fun main() = application {
             // Phase 1: INITIALIZING. Triggers all features to register their settings definitions.
             // The SettingsFeature then chains the load-from-disk sequence. All features must complete
             // their synchronous setup in this phase.
-            container.store.dispatch("system.main", Action("app.INITIALIZING"))
+            container.store.dispatch("system.main", Action("system.INITIALIZING"))
 
             // Phase 2: STARTING. Signals that all setup is complete. Features can now execute
             // their main runtime logic (e.g., navigating, starting timers).
-            container.store.dispatch("system.main", Action("app.STARTING"))
+            container.store.dispatch("system.main", Action("system.STARTING"))
         }
 
         // Synchronizes THE WINDOW TO THE STATE.
