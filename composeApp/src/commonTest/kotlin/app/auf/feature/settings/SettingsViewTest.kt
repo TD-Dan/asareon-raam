@@ -14,8 +14,9 @@ import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.core.CoreState
 import app.auf.util.BasePath
-import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -24,7 +25,9 @@ import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewTest {
 
     @get:Rule
@@ -36,27 +39,20 @@ class SettingsViewTest {
     private lateinit var settingsFeature: SettingsFeature
     private lateinit var coreFeature: CoreFeature
 
-    /**
-     * An instrumented, high-fidelity Test Store.
-     * It logs every dispatched action before passing it to the real Store logic.
-     */
     private class TestStore(
         initialState: AppState,
         features: List<Feature>,
-        val platformDependencies: PlatformDependencies // Expose for logging
+        platformDependencies: PlatformDependencies
     ) : Store(initialState, features, platformDependencies) {
         val dispatchedActions = mutableListOf<Action>()
         override fun dispatch(action: Action) {
-            // --- INSTRUMENTATION ---
-            platformDependencies.log(LogLevel.INFO, "TestStore", "ACTION DISPATCHED: $action")
             dispatchedActions.add(action)
-            super.dispatch(action) // Call the real logic
+            super.dispatch(action)
         }
     }
 
     @Before
     fun setUp() {
-        // --- ARRANGE ---
         fakePlatform = FakePlatformDependencies(testAppVersion)
         settingsFeature = SettingsFeature(fakePlatform)
         coreFeature = CoreFeature(fakePlatform)
@@ -77,45 +73,32 @@ class SettingsViewTest {
         composeTestRule.setContent {
             SettingsView(store = testStore, onClose = {})
         }
-        composeTestRule.mainClock.autoAdvance = false
     }
 
     @Test
-    fun `UI controls display the current value from the store, not the default`() {
+    fun `UI controls display the current value from the store`() = runTest {
         composeTestRule.onNodeWithText("1024").assertIsDisplayed()
     }
 
     @Test
-    fun `user interaction dispatches a settings UPDATE action with the correct payload`() {
-        try {
-            // --- ACT ---
-            composeTestRule.onNodeWithText("1024").performTextInput("999")
-            composeTestRule.mainClock.advanceTimeBy(1001L)
+    fun `user typing in text field dispatches INPUT_CHANGED immediately`() = runTest {
+        composeTestRule.onNodeWithText("1024").performTextInput("999")
 
-            // --- ASSERT ---
-            composeTestRule.runOnIdle {
-                val dispatchedAction = testStore.dispatchedActions.find { it.name == "settings.UPDATE" }
-                assertNotNull(dispatchedAction, "Action 'settings.UPDATE' should have been dispatched.")
-                assertEquals("core.window.width", dispatchedAction.payload?.get("key")?.jsonPrimitive?.content)
-                assertEquals("999", dispatchedAction.payload?.get("value")?.jsonPrimitive?.content)
-            }
-        } finally {
-            // --- INSTRUMENTATION DUMP ---
-            // This block will execute even if the test fails, printing the captured data.
-            println("\n--- INSTRUMENTATION DUMP ---")
-            println("CAPTURED ACTIONS (${testStore.dispatchedActions.size}):")
-            if (testStore.dispatchedActions.isEmpty()) {
-                println("  <none>")
-            } else {
-                testStore.dispatchedActions.forEach { println("  - $it") }
-            }
-            println("\nCAPTURED LOGS (${fakePlatform.capturedLogs.size}):")
-            if (fakePlatform.capturedLogs.isEmpty()) {
-                println("  <none>")
-            } else {
-                fakePlatform.capturedLogs.forEach { println("  - [${it.level}] ${it.tag}: ${it.message}") }
-            }
-            println("--- END DUMP ---\n")
-        }
+        val inputAction = testStore.dispatchedActions.find { it.name == "settings.INPUT_CHANGED" }
+        assertNotNull(inputAction, "Action 'settings.INPUT_CHANGED' should be dispatched immediately.")
+        assertEquals("9991024", inputAction.payload?.get("value")?.jsonPrimitive?.content)
+
+        // Verify that UPDATE has NOT been dispatched yet.
+        val updateAction = testStore.dispatchedActions.find { it.name == "settings.UPDATE" }
+        assertNull(updateAction, "Action 'settings.UPDATE' should not be dispatched immediately.")
+    }
+
+    @Test
+    fun `clicking the Open Folder button dispatches the correct action`() = runTest {
+        composeTestRule.onNodeWithContentDescription("Open Settings Folder").performClick()
+
+        val dispatchedAction = testStore.dispatchedActions.lastOrNull()
+        assertNotNull(dispatchedAction)
+        assertEquals("settings.OPEN_FOLDER", dispatchedAction.name)
     }
 }

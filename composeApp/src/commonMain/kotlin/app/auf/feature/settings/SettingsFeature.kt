@@ -7,26 +7,25 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import app.auf.core.*
-import app.auf.util.PlatformDependencies
 import app.auf.util.BasePath
 import app.auf.util.LogLevel
+import app.auf.util.PlatformDependencies
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.*
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.*
 
-/**
- * A feature that provides the UI and persistence logic for all application settings.
- * It discovers settings by listening for 'settings.ADD' actions and persists the
- * current values to disk.
- */
 @Serializable
 data class SettingsState(
-    // The canonical list of all setting definitions, stored as the raw JSON received.
     val definitions: List<JsonObject> = emptyList(),
-    // The current values for all settings, keyed by their unique key.
-    val values: Map<String, String> = emptyMap()
+    // The canonical, persisted values for all settings.
+    val values: Map<String, String> = emptyMap(),
+    // A transient map of user input that has not yet been debounced and persisted.
+    val inputValues: Map<String, String> = emptyMap()
 ) : FeatureState
 
 class SettingsFeature(
@@ -35,8 +34,9 @@ class SettingsFeature(
     override val name: String = "SettingsFeature"
     override val composableProvider: Feature.ComposableProvider = SettingsComposableProvider()
 
-    // Internal, encapsulated persistence logic. Not visible outside this class.
     private lateinit var persistence: SettingsPersistence
+    private val featureScope = CoroutineScope(Dispatchers.Default)
+    private val debounceJobs = mutableMapOf<String, Job>()
 
     override fun init(store: Store) {
         persistence = SettingsPersistence(platformDependencies)
@@ -58,16 +58,26 @@ class SettingsFeature(
                 store.dispatch(Action("settings.LOADED", payload, "settings"))
             }
 
+            "settings.INPUT_CHANGED" -> {
+                val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
+                val value = action.payload.get("value")?.jsonPrimitive?.content ?: return
+
+                debounceJobs[key]?.cancel()
+                debounceJobs[key] = featureScope.launch {
+                    delay(750L) // Debounce delay
+                    val updatePayload = buildJsonObject {
+                        put("key", key)
+                        put("value", value)
+                    }
+                    store.dispatch(Action("settings.UPDATE", updatePayload, "settings"))
+                }
+            }
+
             "settings.UPDATE" -> {
-                // The reducer has already updated the state in memory.
-                // Our side effect is to persist the *entire*, new state to disk.
                 val latestSettingsState = store.state.value.featureStates[name] as? SettingsState
                 latestSettingsState?.let {
                     persistence.saveSettings(it.values)
                 }
-
-                // NEW: After persisting, broadcast the change publicly.
-                // The original action's payload contains the key and value that changed.
                 action.payload?.let { payload ->
                     store.dispatch(Action("settings.VALUE_CHANGED", payload, "settings"))
                 }
@@ -81,10 +91,8 @@ class SettingsFeature(
     }
 
     override fun reducer(state: AppState, action: Action): AppState {
-        // Get the current feature state, or a default if it doesn't exist.
         val currentFeatureState = state.featureStates[name] as? SettingsState ?: SettingsState()
 
-        // The new, corrected reducer logic. Each branch is responsible for returning a complete state.
         return when (action.name) {
             "settings.ADD" -> {
                 val definitionJson = action.payload ?: return state
@@ -93,8 +101,6 @@ class SettingsFeature(
 
                 if (key != null && defaultValue != null && currentFeatureState.definitions.none { it["key"]?.jsonPrimitive?.content == key }) {
                     val newDefinitions = currentFeatureState.definitions + definitionJson
-                    // --- THE FIX: Only apply the default value if the key is not already present. ---
-                    // This prevents overwriting values that were just loaded from disk.
                     val newValues = if (currentFeatureState.values.containsKey(key)) {
                         currentFeatureState.values
                     } else {
@@ -103,7 +109,7 @@ class SettingsFeature(
                     val newFeatureState = currentFeatureState.copy(definitions = newDefinitions, values = newValues)
                     state.copy(featureStates = state.featureStates + (name to newFeatureState))
                 } else {
-                    state // Key was null, defaultValue was null, or key already exists
+                    state
                 }
             }
 
@@ -114,7 +120,17 @@ class SettingsFeature(
                     val defaultValue = def["defaultValue"]!!.jsonPrimitive.content
                     key to (loadedValues[key] ?: defaultValue)
                 }
-                val newFeatureState = currentFeatureState.copy(values = valuesWithDefaults)
+                val newFeatureState = currentFeatureState.copy(values = valuesWithDefaults, inputValues = valuesWithDefaults)
+                state.copy(featureStates = state.featureStates + (name to newFeatureState))
+            }
+
+            "settings.INPUT_CHANGED" -> {
+                val payload = action.payload ?: return state
+                val key = payload["key"]?.jsonPrimitive?.content ?: return state
+                val value = payload["value"]?.jsonPrimitive?.content ?: return state
+
+                val newInputs = currentFeatureState.inputValues + (key to value)
+                val newFeatureState = currentFeatureState.copy(inputValues = newInputs)
                 state.copy(featureStates = state.featureStates + (name to newFeatureState))
             }
 
@@ -123,12 +139,14 @@ class SettingsFeature(
                 val key = payload["key"]?.jsonPrimitive?.content ?: return state
                 val value = payload["value"]?.jsonPrimitive?.content ?: return state
 
+                // Persist the final debounced value to both maps.
                 val newValues = currentFeatureState.values + (key to value)
-                val newFeatureState = currentFeatureState.copy(values = newValues)
+                val newInputs = currentFeatureState.inputValues + (key to value)
+                val newFeatureState = currentFeatureState.copy(values = newValues, inputValues = newInputs)
                 state.copy(featureStates = state.featureStates + (name to newFeatureState))
             }
 
-            else -> state // For any other action, return the state unmodified.
+            else -> state
         }
     }
 
@@ -157,9 +175,6 @@ class SettingsFeature(
     }
 }
 
-/**
- * A private, internal class responsible for all file I/O operations for the SettingsFeature.
- */
 internal class SettingsPersistence(
     private val platformDependencies: PlatformDependencies
 ) {
@@ -169,10 +184,7 @@ internal class SettingsPersistence(
         "$basePath${platformDependencies.pathSeparator}settings.json"
     }
 
-    private val json = Json {
-        prettyPrint = true
-        ignoreUnknownKeys = true
-    }
+    private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
 
     fun loadSettings(): Map<String, String> {
         return if (platformDependencies.fileExists(settingsFilePath)) {

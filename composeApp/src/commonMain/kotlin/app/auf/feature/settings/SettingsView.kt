@@ -15,7 +15,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.Action
 import app.auf.core.Store
-import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -26,9 +25,6 @@ fun SettingsView(
     store: Store,
     onClose: () -> Unit
 ) {
-    // --- THE FIX ---
-    // Use the standard `collectAsState` to ensure the view reliably recomposes when the store's state changes.
-    // The previous `remember { derivedStateOf { ... } }` was an anti-pattern and the root cause of the bug.
     val appState by store.state.collectAsState()
     val settingsState = appState.featureStates["SettingsFeature"] as? SettingsState
 
@@ -71,7 +67,8 @@ fun SettingsView(
                 items(definitions, key = { it["key"]!!.jsonPrimitive.content }) { definitionJson ->
                     val key = definitionJson["key"]!!.jsonPrimitive.content
                     val defaultValue = definitionJson["defaultValue"]!!.jsonPrimitive.content
-                    val currentValue = settingsState?.values?.get(key) ?: defaultValue
+                    // The UI now displays the transient input value for responsiveness.
+                    val currentValue = settingsState?.inputValues?.get(key) ?: settingsState?.values?.get(key) ?: defaultValue
 
                     SettingRow(
                         definitionJson = definitionJson,
@@ -81,7 +78,12 @@ fun SettingsView(
                                 put("key", key)
                                 put("value", newValue.toString())
                             }
-                            store.dispatch(Action("settings.UPDATE", payload))
+                            // Dispatch the correct action based on the setting type
+                            val actionName = when (definitionJson["type"]?.jsonPrimitive?.content) {
+                                "BOOLEAN" -> "settings.UPDATE" // Booleans update instantly
+                                else -> "settings.INPUT_CHANGED" // Text fields are debounced
+                            }
+                            store.dispatch(Action(actionName, payload))
                         }
                     )
                 }
@@ -118,20 +120,11 @@ private fun SettingRow(
                 )
             }
             "NUMERIC_LONG" -> {
-                var localValue by remember(currentValue) { mutableStateOf(currentValue) }
-
-                LaunchedEffect(localValue) {
-                    if (localValue != currentValue) {
-                        delay(1000L) // Debounce user input
-                        onValueChange(localValue)
-                    }
-                }
-
                 OutlinedTextField(
-                    value = localValue,
-                    onValueChange = { newValue ->
-                        if (newValue.all { it.isDigit() }) {
-                            localValue = newValue
+                    value = currentValue,
+                    onValueChange = {
+                        if (it.isEmpty() || it.all { char -> char.isDigit() }) {
+                            onValueChange(it)
                         }
                     },
                     modifier = Modifier.width(150.dp),

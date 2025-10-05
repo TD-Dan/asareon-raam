@@ -19,8 +19,20 @@
       }
     },
     {
+      "action_name": "settings.INPUT_CHANGED",
+      "summary": "[INTERNAL] Signals that the user has typed into a setting's input field. Triggers debounced persistence.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "value": { "type": "string" }
+        },
+        "required": ["key", "value"]
+      }
+    },
+    {
       "action_name": "settings.UPDATE",
-      "summary": "Changes the current value of a setting and persists it to disk.",
+      "summary": "Changes the current value of a setting and persists it to disk. Typically triggered by the feature itself after a debounce.",
       "payload_schema": {
         "type": "object",
         "properties": {
