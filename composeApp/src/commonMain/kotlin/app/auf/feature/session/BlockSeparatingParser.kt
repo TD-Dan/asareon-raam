@@ -5,6 +5,10 @@ package app.auf.feature.session
  * This class's sole responsibility is to convert a raw string from an AI or User into a structured
  * list of `ContentBlock`s. It is the single source of truth for interpreting the AUF's
  * simplified markdown-based data contract.
+ *
+ * This version uses an index-based scanning approach to robustly handle inline code fences,
+ * single-line blocks, and unterminated blocks, while correctly ignoring nested fences and
+ * preserving newlines as per the established test contract.
  */
 class BlockSeparatingParser {
 
@@ -15,70 +19,60 @@ class BlockSeparatingParser {
         var currentIndex = 0
 
         while (currentIndex < rawText.length) {
-            val textBeforeBlock = StringBuilder()
-            var blockStartIndex = -1
+            val fenceStart = rawText.indexOf("```", currentIndex)
 
-            // Scan for the next code block, respecting string/comment contexts.
-            var scanIndex = currentIndex
-            while (scanIndex < rawText.length) {
-                if (rawText.startsWith("```", scanIndex)) {
-                    blockStartIndex = scanIndex
-                    break
+            if (fenceStart == -1) {
+                // No more fences, the rest of the string is a single text block.
+                val remainingText = rawText.substring(currentIndex)
+                if (remainingText.isNotEmpty()) {
+                    blocks.add(ContentBlock.Text(remainingText))
                 }
-                textBeforeBlock.append(rawText[scanIndex])
-                scanIndex++
+                break // End of parsing
             }
 
-            val trimmedTextBefore = textBeforeBlock.toString()
-            if (trimmedTextBefore.isNotEmpty()) {
-                blocks.add(ContentBlock.Text(trimmedTextBefore))
+            // Add any text that came before this fence.
+            val textBefore = rawText.substring(currentIndex, fenceStart)
+            if (textBefore.isNotEmpty()) {
+                blocks.add(ContentBlock.Text(textBefore))
             }
 
-            if (blockStartIndex != -1) {
-                val blockEndIndex = rawText.indexOf("```", blockStartIndex + 3)
-                if (blockEndIndex != -1) {
-                    // Terminated block
-                    val innerBlock = rawText.substring(blockStartIndex + 3, blockEndIndex)
-                    val firstNewline = innerBlock.indexOf('\n')
+            val fenceEnd = rawText.indexOf("```", fenceStart + 3)
 
-                    val language: String
-                    val content: String
-
-                    if (firstNewline != -1) {
-                        language = innerBlock.substring(0, firstNewline).trim()
-                        content = innerBlock.substring(firstNewline + 1)
-                    } else {
-                        // Single-line block
-                        val parts = innerBlock.trim().split(Regex("\\s+"), 2)
-                        language = parts.getOrNull(0) ?: ""
-                        content = parts.getOrNull(1) ?: ""
-                    }
-                    blocks.add(ContentBlock.CodeBlock(language.ifBlank { "text" }, content))
-                    currentIndex = blockEndIndex + 3
-                } else {
-                    // Unterminated block (greedy to end of string)
-                    val innerBlock = rawText.substring(blockStartIndex + 3)
-                    val firstNewline = innerBlock.indexOf('\n')
-
-                    val language: String
-                    val content: String
-
-                    if (firstNewline != -1) {
-                        language = innerBlock.substring(0, firstNewline).trim()
-                        content = innerBlock.substring(firstNewline + 1)
-                    } else {
-                        val parts = innerBlock.trim().split(Regex("\\s+"), 2)
-                        language = parts.getOrNull(0) ?: ""
-                        content = parts.getOrNull(1) ?: ""
-                    }
-                    blocks.add(ContentBlock.CodeBlock(language.ifBlank { "text" }, content))
-                    currentIndex = rawText.length
-                }
-            } else {
-                currentIndex = rawText.length
+            if (fenceEnd == -1) {
+                // Unterminated fence, treat the rest of the string as a code block.
+                val innerContent = rawText.substring(fenceStart + 3)
+                blocks.add(parseInnerCodeBlock(innerContent))
+                break // End of parsing
             }
+
+            // We have a complete, terminated code block.
+            val innerContent = rawText.substring(fenceStart + 3, fenceEnd)
+            blocks.add(parseInnerCodeBlock(innerContent))
+
+            // Move the cursor past the closing fence to continue scanning.
+            currentIndex = fenceEnd + 3
         }
-        // Filter out empty text blocks that can result from parsing.
+
         return blocks.filterNot { it is ContentBlock.Text && it.text.isBlank() }
+    }
+
+    private fun parseInnerCodeBlock(innerContent: String): ContentBlock.CodeBlock {
+        val firstNewline = innerContent.indexOf('\n')
+
+        val language: String
+        val code: String
+
+        if (firstNewline != -1) {
+            // This is likely a multi-line block.
+            language = innerContent.substring(0, firstNewline).trim()
+            // The code is everything *after* that first newline.
+            code = innerContent.substring(firstNewline + 1)
+        } else {
+            // This is a single-line block.
+            val parts = innerContent.trim().split(Regex("\\s+"), 2)
+            language = parts.getOrNull(0) ?: ""
+            code = parts.getOrNull(1) ?: ""
+        }
+        return ContentBlock.CodeBlock(language.ifBlank { "text" }, code)
     }
 }

@@ -149,7 +149,6 @@ class SessionFeatureReducerTest {
         // ARRANGE
         val fakePlatform = FakePlatformDependencies(testAppVersion)
         val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
-        // --- FIX: The sessions map must contain the IDs being referenced for the reducer's guard to pass. ---
         val session1 = Session(id = "sid-1", name = "s1", ledger = emptyList(), createdAt = 1L)
         val session2 = Session(id = "sid-2", name = "s2", ledger = emptyList(), createdAt = 2L)
         val initialState = AppState(featureStates = mapOf(feature.name to SessionState(

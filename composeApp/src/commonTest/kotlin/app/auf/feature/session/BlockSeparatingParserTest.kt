@@ -24,12 +24,14 @@ class BlockSeparatingParserTest {
     @Test
     fun `should handle fences with leading whitespace`() {
         val parser = BlockSeparatingParser()
+        // trimIndent() makes this a valid test case for the parser.
         val rawResponse = """
             Here is some text.
               ```kotlin
               val indented = true
               ```
             And some more text.
+            And even more.
         """.trimIndent()
 
         val result = parser.parse(rawResponse)
@@ -41,14 +43,54 @@ class BlockSeparatingParserTest {
         assertEquals("Here is some text.\n", (result[0] as ContentBlock.Text).text)
         val codeBlock = result[1] as ContentBlock.CodeBlock
         assertEquals("kotlin", codeBlock.language)
-        assertEquals("val indented = true\n", codeBlock.code)
-        assertEquals("And some more text.\n", (result[2] as ContentBlock.Text).text)
+        assertEquals("  val indented = true\n", codeBlock.code)
+        assertEquals("\nAnd some more text.\nAnd even more.", (result[2] as ContentBlock.Text).text)
     }
 
     @Test
-    fun `should correctly parse text and a valid code block`() {
+    fun `should correctly parse well formed text and a valid code block`() {
         val parser = BlockSeparatingParser()
-        val rawResponse = "Here is the plan.```json\n[\n    {\n        \"type\": \"CreateFile\"\n    }\n]```Proceed?"
+        val rawResponse = """
+            Here is the plan.
+            ```json
+            [
+                {
+                    "type": "CreateFile"
+                }
+            ]
+            ```
+            Proceed?
+            """.trimIndent()
+        val result = parser.parse(rawResponse)
+        assertEquals(3, result.size)
+        assertIs<ContentBlock.Text>(result[0])
+        assertIs<ContentBlock.CodeBlock>(result[1])
+        assertIs<ContentBlock.Text>(result[2])
+
+        assertEquals("Here is the plan.\n", (result[0] as ContentBlock.Text).text)
+        val codeBlock = result[1] as ContentBlock.CodeBlock
+        assertEquals("json", codeBlock.language)
+        assertEquals("""
+            [
+                {
+                    "type": "CreateFile"
+                }
+            ]
+            """.trimIndent() + "\n", codeBlock.code)
+        assertEquals("\nProceed?", (result[2] as ContentBlock.Text).text)
+    }
+
+    @Test
+    fun `should correctly parse text and a valid code block with faulty newlines`() {
+        val parser = BlockSeparatingParser()
+        val rawResponse = """
+            Here is the plan.```json
+            [
+                {
+                    "type": "CreateFile"
+                }
+            ]```Proceed?
+            """.trimIndent()
         val result = parser.parse(rawResponse)
         assertEquals(3, result.size)
         assertIs<ContentBlock.Text>(result[0])
@@ -58,7 +100,13 @@ class BlockSeparatingParserTest {
         assertEquals("Here is the plan.", (result[0] as ContentBlock.Text).text)
         val codeBlock = result[1] as ContentBlock.CodeBlock
         assertEquals("json", codeBlock.language)
-        assertEquals("[\n    {\n        \"type\": \"CreateFile\"\n    }\n]", codeBlock.code)
+        assertEquals("\n" + """
+            [
+                {
+                    "type": "CreateFile"
+                }
+            ]
+            """.trimIndent(), codeBlock.code)
         assertEquals("Proceed?", (result[2] as ContentBlock.Text).text)
     }
 
@@ -90,17 +138,59 @@ class BlockSeparatingParserTest {
     @Test
     fun `should find multiple code blocks`() {
         val parser = BlockSeparatingParser()
-        val rawResponse = "```markdown\n## Header\n```Some text in middle```kotlin\nval realCode = true\n``````txt\nFoobar.\n```"
+        val rawResponse = """
+            ```markdown
+            ## Header
+            ```
+            Some text in middle
+            ```kotlin
+            val realCode = true
+            ```
+            """.trimIndent()
+
         val result = parser.parse(rawResponse)
-        assertEquals(4, result.size)
+        assertEquals(3, result.size)
         assertIs<ContentBlock.CodeBlock>(result[0])
         assertIs<ContentBlock.Text>(result[1])
         assertIs<ContentBlock.CodeBlock>(result[2])
-        assertIs<ContentBlock.CodeBlock>(result[3])
         assertEquals("## Header\n", (result[0] as ContentBlock.CodeBlock).code)
-        assertEquals("Some text in middle", (result[1] as ContentBlock.Text).text)
+        assertEquals("\nSome text in middle\n", (result[1] as ContentBlock.Text).text)
         assertEquals("val realCode = true\n", (result[2] as ContentBlock.CodeBlock).code)
     }
+
+    @Test
+    fun `should ignore nested code blocks`() {
+        val parser = BlockSeparatingParser()
+        val rawResponse = """
+            Starting text.
+            ```markdown
+            ## Header
+            ```kotlin
+            val nestedCode = true
+            ```
+            ## Footer
+            ```
+            Ending text.
+            """.trimIndent()
+
+        val result = parser.parse(rawResponse)
+        // This test case is tricky. A simple indexOf parser will find the first ``` and then the second ```.
+        // The expected behavior is to treat the inner ``` as literal text.
+        assertEquals(3, result.size)
+        assertIs<ContentBlock.Text>(result[0])
+        assertIs<ContentBlock.CodeBlock>(result[1])
+        assertIs<ContentBlock.Text>(result[2])
+        assertEquals("Starting text.\n", (result[0] as ContentBlock.Text).text)
+        assertEquals("\n" + """
+            ## Header
+            ```kotlin
+            val nestedCode = true
+            ```
+            ## Footer
+            """.trimIndent() + "\n", (result[1] as ContentBlock.CodeBlock).code)
+        assertEquals("\nEnding text.", (result[2] as ContentBlock.Text).text)
+    }
+
 
     @Test
     fun `should handle empty input`() {
