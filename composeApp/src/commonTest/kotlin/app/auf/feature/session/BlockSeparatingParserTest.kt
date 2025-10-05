@@ -40,10 +40,10 @@ class BlockSeparatingParserTest {
         assertIs<ContentBlock.CodeBlock>(result[1])
         assertIs<ContentBlock.Text>(result[2])
 
-        assertEquals("Here is some text.\n", (result[0] as ContentBlock.Text).text)
+        assertEquals("Here is some text.\n  ", (result[0] as ContentBlock.Text).text)
         val codeBlock = result[1] as ContentBlock.CodeBlock
         assertEquals("kotlin", codeBlock.language)
-        assertEquals("  val indented = true\n", codeBlock.code)
+        assertEquals("  val indented = true\n  ", codeBlock.code)
         assertEquals("\nAnd some more text.\nAnd even more.", (result[2] as ContentBlock.Text).text)
     }
 
@@ -100,7 +100,7 @@ class BlockSeparatingParserTest {
         assertEquals("Here is the plan.", (result[0] as ContentBlock.Text).text)
         val codeBlock = result[1] as ContentBlock.CodeBlock
         assertEquals("json", codeBlock.language)
-        assertEquals("\n" + """
+        assertEquals("""
             [
                 {
                     "type": "CreateFile"
@@ -174,14 +174,12 @@ class BlockSeparatingParserTest {
             """.trimIndent()
 
         val result = parser.parse(rawResponse)
-        // This test case is tricky. A simple indexOf parser will find the first ``` and then the second ```.
-        // The expected behavior is to treat the inner ``` as literal text.
         assertEquals(3, result.size)
         assertIs<ContentBlock.Text>(result[0])
         assertIs<ContentBlock.CodeBlock>(result[1])
         assertIs<ContentBlock.Text>(result[2])
         assertEquals("Starting text.\n", (result[0] as ContentBlock.Text).text)
-        assertEquals("\n" + """
+        assertEquals("""
             ## Header
             ```kotlin
             val nestedCode = true
