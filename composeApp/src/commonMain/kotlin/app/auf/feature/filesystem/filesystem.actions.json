@@ -26,6 +26,11 @@
       }
     },
     {
+      "action_name": "filesystem.SYSTEM_LIST",
+      "summary": "[INTERNAL-SANDBOXED] Requests a listing of files in the originator's private sandbox.",
+      "payload_schema": null
+    },
+    {
       "action_name": "filesystem.SYSTEM_READ",
       "summary": "[INTERNAL-SANDBOXED] Requests to read a file from the originator's private sandbox.",
       "payload_schema": {
@@ -59,6 +64,15 @@
       "action_name": "filesystem.OPEN_SYSTEM_FOLDER",
       "summary": "[INTERNAL-SANDBOXED] Requests to open the originator's private sandbox in the OS file explorer.",
       "payload_schema": null
+    },
+    {
+      "action_name": "filesystem.OPEN_APP_SUBFOLDER",
+      "summary": "[INTERNAL] Requests to open a well-known subfolder within the app's secure data zone (e.g., 'logs').",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "folder": { "type": "string" } },
+        "required": ["folder"]
+      }
     },
     {
       "action_name": "filesystem.EXPAND_ALL",

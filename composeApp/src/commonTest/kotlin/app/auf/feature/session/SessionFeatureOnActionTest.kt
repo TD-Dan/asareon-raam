@@ -2,12 +2,9 @@ package app.auf.feature.session
 
 import app.auf.core.*
 import app.auf.fakes.FakePlatformDependencies
-import app.auf.util.BasePath
-import app.auf.util.PlatformDependencies
+import app.auf.util.FileEntry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -21,28 +18,68 @@ class SessionFeatureOnActionTest {
 
     /**
      * A high-fidelity TestStore that correctly mimics the real Store's dispatch lifecycle
-     * (reducer -> state update -> onAction) for robust side-effect testing.
+     * and allows manual invocation of onPrivateData for robust side-effect testing.
      */
     private class TestStore(
         initialState: AppState,
         private val features: List<Feature>,
-        platformDependencies: PlatformDependencies
+        platformDependencies: FakePlatformDependencies
     ) : Store(initialState, features, platformDependencies) {
         val dispatchedActions = mutableListOf<Action>()
 
         override fun dispatch(originator: String, action: Action) {
-            // Mimic the real dispatch sequence for accurate testing.
-            // 1. Capture the action.
             val stampedAction = action.copy(originator = originator)
             dispatchedActions.add(stampedAction)
+            super.dispatch(originator, action) // Run real reducers and onAction
+        }
 
-            // 2. Run the real reducer logic to update state.
-            super.dispatch(originator, action)
+        // Expose deliverPrivateData for test setup
+        public override fun deliverPrivateData(originator: String, recipient: String, data: Any) {
+            super.deliverPrivateData(originator, recipient, data)
         }
     }
 
     @Test
-    fun `onAction for session POST dispatches filesystem STAGE_UPDATE`() {
+    fun `onAction for system STARTING dispatches filesystem SYSTEM_LIST`() {
+        // ARRANGE
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
+        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
+        val store = TestStore(AppState(), listOf(feature), fakePlatform)
+
+        // ACT
+        feature.onAction(Action("system.STARTING"), store)
+
+        // ASSERT
+        val dispatched = store.dispatchedActions.singleOrNull()
+        assertNotNull(dispatched)
+        assertEquals("filesystem.SYSTEM_LIST", dispatched.name)
+        assertEquals(feature.name, dispatched.originator)
+    }
+
+    @Test
+    fun `onPrivateData with file list dispatches SYSTEM_READ for each json file`() {
+        // ARRANGE
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
+        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
+        val store = TestStore(AppState(), listOf(feature), fakePlatform)
+        val fileList = listOf(
+            FileEntry("/path/to/session1.json", false),
+            FileEntry("/path/to/readme.txt", false),
+            FileEntry("/path/to/session2.json", false)
+        )
+
+        // ACT
+        feature.onPrivateData(fileList, store)
+
+        // ASSERT
+        val readActions = store.dispatchedActions.filter { it.name == "filesystem.SYSTEM_READ" }
+        assertEquals(2, readActions.size, "Should only dispatch READ for .json files.")
+        assertEquals("session1.json", readActions[0].payload?.get("subpath")?.jsonPrimitive?.content)
+        assertEquals("session2.json", readActions[1].payload?.get("subpath")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `onAction for session POST dispatches filesystem SYSTEM_WRITE`() {
         // ARRANGE
         val fakePlatform = FakePlatformDependencies(testAppVersion)
         val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
@@ -51,42 +88,41 @@ class SessionFeatureOnActionTest {
             feature.name to SessionState(sessions = mapOf("sid-1" to initialSession))
         ))
         val store = TestStore(initialState, listOf(feature), fakePlatform)
-        feature.init(store)
 
         val postAction = Action("session.POST", buildJsonObject {
             put("sessionId", "sid-1")
-            put("agentId", "user-daniel")
-            put("message", "Live long and prosper.")
+            put("agentId", "user")
+            put("message", "test")
         })
 
         // ACT
-        // The original dispatcher must be identified. Let's assume it's a UI component.
+        // Dispatching the action will run the reducer (updating state) then onAction.
         store.dispatch("session.ui", postAction)
 
         // ASSERT
-        // The store should have captured two actions: the original POST, and the subsequent STAGE_UPDATE.
-        assertEquals(2, store.dispatchedActions.size)
+        val writeAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_WRITE" }
+        assertNotNull(writeAction)
+        assertEquals(feature.name, writeAction.originator)
+        assertEquals("sid-1.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
+        assertNotNull(writeAction.payload?.get("content")?.jsonPrimitive?.content)
+    }
 
-        val fileSystemAction = store.dispatchedActions.last()
-        assertEquals("filesystem.STAGE_UPDATE", fileSystemAction.name)
-        assertEquals(feature.name, fileSystemAction.originator, "The originator of the filesystem action should be the SessionFeature itself.")
+    @Test
+    fun `onAction for session DELETE dispatches filesystem SYSTEM_DELETE`() {
+        // ARRANGE
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
+        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
+        val store = TestStore(AppState(), listOf(feature), fakePlatform)
+        val deleteAction = Action("session.DELETE", buildJsonObject { put("sessionId", "sid-1") })
 
+        // ACT
+        feature.onAction(deleteAction, store)
 
-        // Verify the payload of the filesystem action.
-        val payload = fileSystemAction.payload
-        assertNotNull(payload)
-
-        // Check path
-        val sessionsBasePath = fakePlatform.getBasePathFor(BasePath.SESSIONS)
-        val expectedPath = "$sessionsBasePath/sid-1.json"
-        assertEquals(expectedPath, payload["path"]?.jsonPrimitive?.content)
-
-        // Check content
-        val updatedSession = store.state.value.featureStates[feature.name]
-            ?.let { it as SessionState }
-            ?.sessions?.get("sid-1")
-        assertNotNull(updatedSession)
-        val expectedJsonContent = Json { prettyPrint = true }.encodeToString(updatedSession)
-        assertEquals(expectedJsonContent, payload["newContent"]?.jsonPrimitive?.content)
+        // ASSERT
+        val deleteSysAction = store.dispatchedActions.singleOrNull()
+        assertNotNull(deleteSysAction)
+        assertEquals("filesystem.SYSTEM_DELETE", deleteSysAction.name)
+        assertEquals(feature.name, deleteSysAction.originator)
+        assertEquals("sid-1.json", deleteSysAction.payload?.get("subpath")?.jsonPrimitive?.content)
     }
 }

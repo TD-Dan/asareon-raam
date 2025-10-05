@@ -7,7 +7,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import app.auf.core.*
-import app.auf.util.BasePath
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
@@ -99,8 +98,10 @@ class CoreFeature(
                 }
             }
             "core.OPEN_LOGS_FOLDER" -> {
-                val logsPath = platformDependencies.getBasePathFor(BasePath.LOGS)
-                platformDependencies.openFolderInExplorer(logsPath)
+                // CORRECTED: We no longer know the path. We ask the FileSystemFeature to open it.
+                store.dispatch(this.name, Action("filesystem.OPEN_APP_SUBFOLDER", buildJsonObject {
+                    put("folder", "logs")
+                }))
             }
             "core.COPY_TO_CLIPBOARD" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<CopyToClipboardPayload>(it) }

@@ -6,20 +6,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import app.auf.core.Action
-import app.auf.core.AppState
-import app.auf.core.Feature
-import app.auf.core.Store
+import app.auf.core.*
+import app.auf.util.BasePath
 import app.auf.util.FileEntry
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.*
 
 /**
  * ## Mandate
@@ -28,8 +21,9 @@ import kotlinx.serialization.json.jsonPrimitive
  * This feature provides a transactional buffer for all file I/O operations, enforcing
  * the constitutional `DIRECTIVE_ALIGNMENT_AND_RATIFICATION` through a "staging" and
  * "commit" model. No file is ever touched without being part of an explicit,
+
  * user-approved transaction. It also enforces a strict security sandbox via a
- * user-configurable path whitelist.
+ * user-configurable path whitelist and an originator-based system sandbox.
  */
 class FileSystemFeature(
     private val platformDependencies: PlatformDependencies
@@ -39,20 +33,35 @@ class FileSystemFeature(
 
     // --- Private serializable classes for decoding action payloads ---
     @Serializable private data class PathPayload(val path: String)
-    @Serializable private data class NavigationUpdatedPayload(val path: String, val listing: List<FileEntry>)
-    @Serializable private data class NavigationFailedPayload(val path: String, val error: String)
     @Serializable private data class StageCreatePayload(val path: String, val content: String)
-    @Serializable private data class StageDeletePayload(val path: String)
-
     @Serializable private data class ToggleItemPayload(val path: String, val recursive: Boolean = false)
     @Serializable private data class DirectoryLoadedPayload(val parentPath: String, val children: List<FileEntry>)
+    @Serializable private data class NavigationFailedPayload(val path: String, val error: String)
+
+    // Payloads for new SYSTEM actions
+    @Serializable private data class SystemReadPayload(val subpath: String)
+    @Serializable private data class SystemWritePayload(val subpath: String, val content: String)
+    @Serializable private data class SystemDeletePayload(val subpath: String)
+    @Serializable private data class OpenAppSubfolderPayload(val folder: String)
+
 
     // --- Constants for settings keys ---
     private val settingKeyWhitelist = "filesystem.whitelistedPaths"
     private val settingKeyFavorites = "filesystem.favoritePaths"
 
+    /**
+     * Constructs the absolute path to a feature's private, sandboxed directory.
+     * This is a core security function.
+     */
+    private fun getSandboxPathFor(originator: String): String {
+        val appZoneRoot = platformDependencies.getBasePathFor(BasePath.APP_ZONE)
+        val safeOriginator = originator.replace(Regex("[^a-zA-Z0-9_-]"), "_") // Sanitize for safety
+        return "$appZoneRoot${platformDependencies.pathSeparator}$safeOriginator"
+    }
 
     override fun onAction(action: Action, store: Store) {
+        val originator = action.originator ?: return // All actions requiring side effects must have an originator.
+
         when (action.name) {
             "system.INITIALIZING" -> {
                 // Phase 1: Register settings definitions.
@@ -100,7 +109,6 @@ class FileSystemFeature(
                 }
             }
             "filesystem.TOGGLE_ITEM_SELECTED" -> {
-                // --- THE FIX: Handle recursive selection as a side-effect ---
                 val state = store.state.value.featureStates[name] as? FileSystemState ?: return
                 val payload = action.payload?.let { Json.decodeFromJsonElement<ToggleItemPayload>(it) } ?: return
                 if (payload.recursive) {
@@ -135,7 +143,6 @@ class FileSystemFeature(
                 }
             }
             "filesystem.DIRECTORY_LOADED" -> {
-                // --- THE FIX: Propagate selection state to newly loaded children ---
                 val state = store.state.value.featureStates[name] as? FileSystemState ?: return
                 val payload = action.payload?.let { Json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return
                 val parentItem = findItemByPath(state.rootItems, payload.parentPath)
@@ -215,17 +222,89 @@ class FileSystemFeature(
                     put("value", serializeSet(newSet))
                 }))
             }
+            // --- NEW: Secure Sandbox Actions ---
+            "filesystem.SYSTEM_LIST" -> {
+                val sandboxPath = getSandboxPathFor(originator)
+                try {
+                    // Ensure directory exists before listing
+                    if (!platformDependencies.fileExists(sandboxPath)) {
+                        platformDependencies.createDirectories(sandboxPath)
+                    }
+                    val listing = platformDependencies.listDirectory(sandboxPath)
+                    store.deliverPrivateData(this.name, originator, listing)
+                } catch (e: Exception) {
+                    // If listing fails, deliver an empty list.
+                    store.deliverPrivateData(this.name, originator, emptyList<FileEntry>())
+                }
+            }
+            "filesystem.SYSTEM_READ" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<SystemReadPayload>(it) } ?: return
+                val sandboxPath = getSandboxPathFor(originator)
+                val fullPath = "$sandboxPath${platformDependencies.pathSeparator}${payload.subpath}"
+                try {
+                    val content = platformDependencies.readFileContent(fullPath)
+                    val responsePayload = buildJsonObject {
+                        put("subpath", payload.subpath)
+                        put("content", content)
+                    }
+                    store.deliverPrivateData(this.name, originator, responsePayload)
+                } catch (e: Exception) {
+                    // Fail silently for reads of non-existent files, but deliver an empty response.
+                    val responsePayload = buildJsonObject {
+                        put("subpath", payload.subpath)
+                        put("content", JsonNull)
+                    }
+                    store.deliverPrivateData(this.name, originator, responsePayload)
+                }
+            }
+            "filesystem.SYSTEM_WRITE" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<SystemWritePayload>(it) } ?: return
+                val sandboxPath = getSandboxPathFor(originator)
+                val fullPath = "$sandboxPath${platformDependencies.pathSeparator}${payload.subpath}"
+                try {
+                    platformDependencies.writeFileContent(fullPath, payload.content)
+                } catch (e: Exception) {
+                    // Log the error but do not crash the app
+                    store.dispatch(this.name, Action("core.SHOW_TOAST", buildJsonObject {
+                        put("message", "Error writing to system file: ${e.message}")
+                    }))
+                }
+            }
+            "filesystem.SYSTEM_DELETE" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<SystemDeletePayload>(it) } ?: return
+                val sandboxPath = getSandboxPathFor(originator)
+                val fullPath = "$sandboxPath${platformDependencies.pathSeparator}${payload.subpath}"
+                if (platformDependencies.fileExists(fullPath)) {
+                    platformDependencies.deleteFile(fullPath)
+                }
+            }
+            "filesystem.OPEN_SYSTEM_FOLDER" -> {
+                val sandboxPath = getSandboxPathFor(originator)
+                platformDependencies.openFolderInExplorer(sandboxPath)
+            }
+            "filesystem.OPEN_APP_SUBFOLDER" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<OpenAppSubfolderPayload>(it) } ?: return
+                val appZoneRoot = platformDependencies.getBasePathFor(BasePath.APP_ZONE)
+                val fullPath = "$appZoneRoot${platformDependencies.pathSeparator}${payload.folder}"
+                platformDependencies.openFolderInExplorer(fullPath)
+            }
         }
     }
 
     override fun reducer(state: AppState, action: Action): AppState {
         val currentFeatureState = state.featureStates[name] as? FileSystemState
+        // If the state for this feature doesn't exist yet, create a default one.
+        // This is crucial for the very first action (`system.STARTING`).
+        if (currentFeatureState == null && action.name != "system.STARTING") return state
         val resolvedFeatureState = currentFeatureState ?: FileSystemState()
-        var newFeatureState: FileSystemState? = null
 
-        when (action.name) {
+        // --- REFACTORED REDUCER LOGIC ---
+        // The `when` block is now an expression that returns the new FileSystemState.
+        // This enforces purity and eliminates the compiler errors.
+        val newFeatureState = when (action.name) {
             "system.STARTING" -> {
-                if (currentFeatureState == null) { newFeatureState = resolvedFeatureState }
+                // This action's only job in this reducer is to ensure the state exists.
+                resolvedFeatureState
             }
             "filesystem.DIRECTORY_LOADED" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return state
@@ -237,7 +316,7 @@ class FileSystemFeature(
                     isDirectory = entry.isDirectory
                 )}
 
-                newFeatureState = if (isNavigating) {
+                if (isNavigating) {
                     // This is the result of a main navigation action
                     resolvedFeatureState.copy(rootItems = newChildren, error = null)
                 } else {
@@ -250,25 +329,20 @@ class FileSystemFeature(
                 }
             }
             "filesystem.NAVIGATE" -> {
-                // The new pure part of navigate: update the current path immediately.
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
-                newFeatureState = resolvedFeatureState.copy(currentPath = payload.path)
+                resolvedFeatureState.copy(currentPath = payload.path)
             }
             "filesystem.NAVIGATION_FAILED" -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<NavigationFailedPayload>(it) }
-                payload?.let {
-                    newFeatureState = resolvedFeatureState.copy(error = it.error, rootItems = emptyList())
-                }
+                val payload = action.payload?.let { Json.decodeFromJsonElement<NavigationFailedPayload>(it) } ?: return state
+                resolvedFeatureState.copy(error = payload.error, rootItems = emptyList())
             }
             "filesystem.TOGGLE_ITEM_EXPANDED" -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }
-                payload?.let {
-                    newFeatureState = resolvedFeatureState.copy(
-                        rootItems = updateItemByPath(resolvedFeatureState.rootItems, it.path) { item ->
-                            item.copy(isExpanded = !item.isExpanded)
-                        }
-                    )
-                }
+                val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
+                resolvedFeatureState.copy(
+                    rootItems = updateItemByPath(resolvedFeatureState.rootItems, payload.path) { item ->
+                        item.copy(isExpanded = !item.isExpanded)
+                    }
+                )
             }
             "filesystem.TOGGLE_ITEM_SELECTED" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<ToggleItemPayload>(it) } ?: return state
@@ -282,7 +356,7 @@ class FileSystemFeature(
                     !(targetItem?.isSelected ?: false)
                 }
 
-                newFeatureState = resolvedFeatureState.copy(
+                resolvedFeatureState.copy(
                     rootItems = updateItemByPath(resolvedFeatureState.rootItems, path, isRecursive) { item ->
                         item.copy(isSelected = targetState)
                     }
@@ -290,37 +364,37 @@ class FileSystemFeature(
             }
             "filesystem.EXPAND_ALL" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
-                newFeatureState = resolvedFeatureState.copy(
+                resolvedFeatureState.copy(
                     rootItems = updateExpansionStateRecursive(resolvedFeatureState.rootItems, payload.path, true)
                 )
             }
             "filesystem.COLLAPSE_ALL" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
-                newFeatureState = resolvedFeatureState.copy(
+                resolvedFeatureState.copy(
                     rootItems = updateExpansionStateRecursive(resolvedFeatureState.rootItems, payload.path, false)
                 )
             }
             "filesystem.ADD_WHITELIST_PATH" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
-                newFeatureState = resolvedFeatureState.copy(whitelistedPaths = resolvedFeatureState.whitelistedPaths + payload.path)
+                resolvedFeatureState.copy(whitelistedPaths = resolvedFeatureState.whitelistedPaths + payload.path)
             }
             "filesystem.REMOVE_WHITELIST_PATH" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
-                newFeatureState = resolvedFeatureState.copy(whitelistedPaths = resolvedFeatureState.whitelistedPaths - payload.path)
+                resolvedFeatureState.copy(whitelistedPaths = resolvedFeatureState.whitelistedPaths - payload.path)
             }
             "filesystem.ADD_FAVORITE_PATH" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
-                newFeatureState = resolvedFeatureState.copy(favoritePaths = resolvedFeatureState.favoritePaths + payload.path)
+                resolvedFeatureState.copy(favoritePaths = resolvedFeatureState.favoritePaths + payload.path)
             }
             "filesystem.REMOVE_FAVORITE_PATH" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
-                newFeatureState = resolvedFeatureState.copy(favoritePaths = resolvedFeatureState.favoritePaths - payload.path)
+                resolvedFeatureState.copy(favoritePaths = resolvedFeatureState.favoritePaths - payload.path)
             }
             "settings.LOADED" -> {
                 val loadedValues = action.payload
                 val whitelistStr = loadedValues?.get(settingKeyWhitelist)?.jsonPrimitive?.content
                 val favoritesStr = loadedValues?.get(settingKeyFavorites)?.jsonPrimitive?.content
-                newFeatureState = resolvedFeatureState.copy(
+                resolvedFeatureState.copy(
                     whitelistedPaths = deserializeSet(whitelistStr),
                     favoritePaths = deserializeSet(favoritesStr)
                 )
@@ -329,18 +403,25 @@ class FileSystemFeature(
                 val key = action.payload?.get("key")?.jsonPrimitive?.content
                 val value = action.payload?.get("value")?.jsonPrimitive?.content
                 when (key) {
-                    settingKeyWhitelist -> newFeatureState = resolvedFeatureState.copy(whitelistedPaths = deserializeSet(value))
-                    settingKeyFavorites -> newFeatureState = resolvedFeatureState.copy(favoritePaths = deserializeSet(value))
+                    settingKeyWhitelist -> resolvedFeatureState.copy(whitelistedPaths = deserializeSet(value))
+                    settingKeyFavorites -> resolvedFeatureState.copy(favoritePaths = deserializeSet(value))
+                    else -> resolvedFeatureState
                 }
             }
-            "filesystem.STAGE_CREATE" -> { /* ... existing code ... */ }
-            "filesystem.STAGE_DELETE" -> { /* ... existing code ... */ }
-            "filesystem.DISCARD" -> { /* ... existing code ... */ }
+            "filesystem.STAGE_CREATE", "filesystem.STAGE_DELETE", "filesystem.DISCARD" -> {
+                // These actions do not have a reducer implementation yet.
+                resolvedFeatureState
+            }
+            // If the action is not handled, return the current state unchanged.
+            else -> resolvedFeatureState
         }
 
-        return newFeatureState?.let {
-            state.copy(featureStates = state.featureStates + (name to it))
-        } ?: state
+        // If the feature's state has changed, create a new AppState with the updated slice.
+        return if (newFeatureState != resolvedFeatureState) {
+            state.copy(featureStates = state.featureStates + (name to newFeatureState))
+        } else {
+            state
+        }
     }
 
     // --- Side Effect Helpers ---

@@ -33,7 +33,7 @@ open class Store(
      * public action bus. This is a privileged operation. The act of delivery is logged
      * for audibility, but the payload content is NOT.
      */
-    fun deliverPrivateData(originator: String, recipient: String, data: Any) {
+    open fun deliverPrivateData(originator: String, recipient: String, data: Any) {
         // Log the event for audit purposes, WITHOUT logging the sensitive data.
         platformDependencies.log(
             level = LogLevel.INFO,

@@ -7,8 +7,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import app.auf.core.*
-import app.auf.util.BasePath
-import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,28 +32,49 @@ class SettingsFeature(
     override val name: String = "SettingsFeature"
     override val composableProvider: Feature.ComposableProvider = SettingsComposableProvider()
 
-    private lateinit var persistence: SettingsPersistence
     private val featureScope = CoroutineScope(Dispatchers.Default)
     private val debounceJobs = mutableMapOf<String, Job>()
+    private val settingsFileName = "settings.json"
 
-    override fun init(store: Store) {
-        persistence = SettingsPersistence(platformDependencies)
+    // This feature no longer needs an init() block.
+
+    override fun onPrivateData(data: Any, store: Store) {
+        // This is the secure callback for the result of our filesystem.SYSTEM_READ request.
+        val payload = data as? JsonObject ?: return
+        val subpath = payload["subpath"]?.jsonPrimitive?.content
+        val content = payload["content"]?.jsonPrimitive?.contentOrNull
+
+        if (subpath == settingsFileName) {
+            val loadedValues = if (content != null) {
+                try {
+                    Json.decodeFromString<Map<String, String>>(content)
+                } catch (e: Exception) {
+                    emptyMap()
+                }
+            } else {
+                emptyMap()
+            }
+
+            // Create a payload for our internal LOADED action.
+            val loadedPayload = buildJsonObject {
+                for ((key, value) in loadedValues) {
+                    put(key, JsonPrimitive(value))
+                }
+            }
+            // Dispatch the internal action to hydrate the reducer.
+            store.dispatch(this.name, Action("settings.LOADED", loadedPayload))
+        }
     }
+
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
             "system.INITIALIZING" -> {
-                store.dispatch(this.name, Action("settings.LOAD"))
-            }
-
-            "settings.internal.LOAD" -> {
-                val loadedValues = persistence.loadSettings()
-                val payload = buildJsonObject {
-                    for ((key, value) in loadedValues) {
-                        put(key, JsonPrimitive(value))
-                    }
-                }
-                store.dispatch(this.name, Action("settings.LOADED", payload))
+                // Instead of loading directly, we securely request our settings file
+                // from the FileSystemFeature's sandbox.
+                store.dispatch(this.name, Action("filesystem.SYSTEM_READ", buildJsonObject {
+                    put("subpath", settingsFileName)
+                }))
             }
 
             "settings.INPUT_CHANGED" -> {
@@ -74,18 +93,24 @@ class SettingsFeature(
             }
 
             "settings.UPDATE" -> {
-                val latestSettingsState = store.state.value.featureStates[name] as? SettingsState
-                latestSettingsState?.let {
-                    persistence.saveSettings(it.values)
-                }
+                val latestSettingsState = store.state.value.featureStates[name] as? SettingsState ?: return
+                // The values have already been updated in the state by the reducer.
+                // Now, we securely request the FileSystemFeature to persist them.
+                val contentToSave = Json.encodeToString(latestSettingsState.values)
+                store.dispatch(this.name, Action("filesystem.SYSTEM_WRITE", buildJsonObject {
+                    put("subpath", settingsFileName)
+                    put("content", contentToSave)
+                }))
+
+                // We must still broadcast the public VALUE_CHANGED event for other features.
                 action.payload?.let { payload ->
                     store.dispatch(this.name, Action("settings.VALUE_CHANGED", payload))
                 }
             }
 
             "settings.OPEN_FOLDER" -> {
-                val settingsPath = platformDependencies.getBasePathFor(BasePath.SETTINGS)
-                platformDependencies.openFolderInExplorer(settingsPath)
+                // We no longer know the path. We just ask the FileSystemFeature to open our sandbox.
+                store.dispatch(this.name, Action("filesystem.OPEN_SYSTEM_FOLDER"))
             }
         }
     }

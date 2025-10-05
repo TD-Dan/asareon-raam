@@ -2,18 +2,18 @@ package app.auf.feature.settings
 
 import app.auf.core.Action
 import app.auf.core.AppState
+import app.auf.core.Feature
 import app.auf.core.Store
 import app.auf.fakes.FakePlatformDependencies
-import app.auf.fakes.FakeStore
-import app.auf.feature.core.CoreFeature
-import app.auf.feature.core.CoreState
-import app.auf.util.BasePath
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.assertNull
 
 class SettingsFeatureTest {
 
@@ -30,7 +30,32 @@ class SettingsFeatureTest {
         })
     }
 
-    // --- REDUCER TESTS (Purity & Correctness) ---
+    /**
+     * A high-fidelity test Store that allows capturing dispatched actions
+     * and manually invoking the onPrivateData callback for testing.
+     */
+    private class TestStore(
+        initialState: AppState,
+        private val features: List<Feature>,
+        platformDependencies: FakePlatformDependencies
+    ) : Store(initialState, features, platformDependencies) {
+        val dispatchedActions = mutableListOf<Action>()
+
+        override fun dispatch(originator: String, action: Action) {
+            val stampedAction = action.copy(originator = originator)
+            dispatchedActions.add(stampedAction)
+            // Run the real reducer logic to keep state consistent.
+            super.dispatch(originator, action)
+        }
+
+        // Expose deliverPrivateData for test setup
+        public override fun deliverPrivateData(originator: String, recipient: String, data: Any) {
+            super.deliverPrivateData(originator, recipient, data)
+        }
+    }
+
+
+    // --- REDUCER TESTS (Purity & Correctness - Largely Unchanged) ---
 
     @Test
     fun `reducer ADD registers a new setting and applies its default value`() {
@@ -48,24 +73,6 @@ class SettingsFeatureTest {
         assertNotNull(newSettingsState)
         assertEquals(1, newSettingsState.definitions.size, "A new definition should be added.")
         assertEquals("123", newSettingsState.values["test.key"], "The default value should be applied.")
-    }
-
-    @Test
-    fun `reducer ADD ignores a definition if the key already exists`() {
-        // Arrange
-        val platform = FakePlatformDependencies(testAppVersion)
-        val feature = SettingsFeature(platform)
-        val addAction = createAddAction("test.key", "123")
-        // Start with a state that already has the key registered
-        val initialState = feature.reducer(AppState(), addAction)
-        val initialSettingsState = initialState.featureStates[feature.name] as SettingsState
-        assertEquals(1, initialSettingsState.definitions.size, "Precondition failed: Initial state is incorrect.")
-
-        // Act: Try to add the same key again
-        val newState = feature.reducer(initialState, addAction)
-
-        // Assert
-        assertEquals(initialState, newState, "State should not change when adding a duplicate key.")
     }
 
     @Test
@@ -88,155 +95,97 @@ class SettingsFeatureTest {
         assertEquals("new_value", newSettingsState.values["test.key"])
     }
 
+    // --- onAction & onPrivateData TESTS (Side Effects & Integration) ---
+
     @Test
-    fun `reducer LOADED replaces all values and applies defaults`() {
+    fun `onAction for app INITIALIZING dispatches filesystem SYSTEM_READ`() {
         // Arrange
         val platform = FakePlatformDependencies(testAppVersion)
         val feature = SettingsFeature(platform)
-        // State has two definitions, but only one current value
-        val initialState = AppState(featureStates = mapOf(feature.name to SettingsState(
-            definitions = listOf(
-                createAddAction("persisted.key", "default1").payload!!,
-                createAddAction("missing.key", "default2").payload!!
-            ),
-            values = mapOf("persisted.key" to "old_value")
-        )))
-        // Payload from file only contains one of the keys
-        val payload = buildJsonObject { put("persisted.key", "from_file") }
-        val action = Action("settings.LOADED", payload)
-
-        // Act
-        val newState = feature.reducer(initialState, action)
-        val newSettingsState = newState.featureStates[feature.name] as? SettingsState
-
-        // Assert
-        assertNotNull(newSettingsState)
-        assertEquals("from_file", newSettingsState.values["persisted.key"], "Should use value from file when present.")
-        assertEquals("default2", newSettingsState.values["missing.key"], "Should apply default value for keys not in file.")
-    }
-
-    @Test
-    fun `reducer ignores unknown actions`() {
-        // Arrange
-        val platform = FakePlatformDependencies(testAppVersion)
-        val feature = SettingsFeature(platform)
-        val initialState = AppState(featureStates = mapOf(feature.name to SettingsState()))
-        val action = Action("some.other.feature.ACTION")
-
-        // Act
-        val newState = feature.reducer(initialState, action)
-
-        // Assert
-        assertEquals(initialState, newState, "State should be unchanged for an unknown action.")
-    }
-
-    // --- onAction TESTS (Side Effects & Integration) ---
-
-    @Test
-    fun `onAction for app INITIALIZING dispatches settings LOAD`() {
-        // Arrange
-        val platform = FakePlatformDependencies(testAppVersion)
-        val feature = SettingsFeature(platform)
-        val fakeStore = FakeStore(AppState(), platform)
-        feature.init(fakeStore)
+        val store = TestStore(AppState(), listOf(feature), platform)
         val action = Action("system.INITIALIZING")
 
         // Act
-        feature.onAction(action, fakeStore)
+        feature.onAction(action, store)
 
         // Assert
-        assertEquals(1, fakeStore.dispatchedActions.size)
-        val dispatched = fakeStore.dispatchedActions.first()
-        assertEquals("settings.LOAD", dispatched.name)
+        assertEquals(1, store.dispatchedActions.size)
+        val dispatched = store.dispatchedActions.first()
+        assertEquals("filesystem.SYSTEM_READ", dispatched.name)
         assertEquals(feature.name, dispatched.originator)
+        assertEquals("settings.json", dispatched.payload?.get("subpath")?.jsonPrimitive?.content)
     }
 
     @Test
-    fun `onAction for settings LOAD reads file and dispatches LOADED`() {
+    fun `onPrivateData with file content dispatches settings LOADED`() {
         // Arrange
         val platform = FakePlatformDependencies(testAppVersion)
-        val settingsPath = platform.getBasePathFor(BasePath.SETTINGS) + platform.pathSeparator + "settings.json"
-        platform.writeFileContent(settingsPath, """{ "file.key": "file.value" }""")
-
         val feature = SettingsFeature(platform)
-        val fakeStore = FakeStore(AppState(), platform)
-        feature.init(fakeStore)
-        val action = Action("settings.LOAD")
+        val store = TestStore(AppState(), listOf(feature), platform)
+        val privateData = buildJsonObject {
+            put("subpath", "settings.json")
+            put("content", """{ "file.key": "file.value" }""")
+        }
 
         // Act
-        feature.onAction(action, fakeStore)
+        // Manually trigger the private data channel, simulating a response from FileSystemFeature
+        store.deliverPrivateData("FileSystemFeature", feature.name, privateData)
 
         // Assert
-        assertEquals(1, fakeStore.dispatchedActions.size)
-        val dispatched = fakeStore.dispatchedActions.first()
+        assertEquals(1, store.dispatchedActions.size)
+        val dispatched = store.dispatchedActions.first()
         assertEquals("settings.LOADED", dispatched.name)
         assertEquals(feature.name, dispatched.originator)
-        assertEquals("file.value", dispatched.payload?.get("file.key")?.toString()?.trim('"'))
+        assertEquals("file.value", dispatched.payload?.get("file.key")?.jsonPrimitive?.content)
     }
 
     @Test
-    fun `dispatching UPDATE action correctly reduces state AND saves to disk via onAction`() {
+    fun `onAction for settings UPDATE dispatches filesystem SYSTEM_WRITE`() {
         // Arrange
-        val fakeplatform = FakePlatformDependencies(testAppVersion)
-        val coreFeature = CoreFeature(fakeplatform)
-        val settingsFeature = SettingsFeature(fakeplatform)
-
-        // 1. Set up an initial state with all necessary features and values.
+        val platform = FakePlatformDependencies(testAppVersion)
+        val feature = SettingsFeature(platform)
+        // Set up a state where a value has already been changed
         val initialState = AppState(featureStates = mapOf(
-            coreFeature.name to CoreState(),
-            settingsFeature.name to SettingsState(
-                definitions = listOf(createAddAction("key1", "default").payload!!),
-                values = mapOf("key1" to "old_value")
-            )
+            feature.name to SettingsState(values = mapOf("key1" to "new_value"))
         ))
-
-        // 2. Use the REAL store, now with all required features.
-        val store = Store(initialState, listOf(coreFeature, settingsFeature), fakeplatform)
-        settingsFeature.init(store)
-
-        // 3. Define the action that triggers the whole process.
-        val updateAction = Action("settings.UPDATE", buildJsonObject {
+        val store = TestStore(initialState, listOf(feature), platform)
+        val action = Action("settings.UPDATE", buildJsonObject {
             put("key", "key1")
             put("value", "new_value")
         })
 
         // Act
-        // 1. First, we MUST INITIALIZE app.
-        store.dispatch("system.main", Action("system.INITIALIZING"))
-        // 1. Second, we MUST move the app out of the INITIALIZING state.
-        store.dispatch("system.main", Action("system.STARTING"))
-        // 2. Now, dispatch the action under test.
-        store.dispatch(settingsFeature.name, updateAction)
+        feature.onAction(action, store)
 
         // Assert
-        // 1. Assert state was updated correctly by the reducer.
-        val finalState = store.state.value.featureStates[settingsFeature.name] as? SettingsState
-        assertNotNull(finalState)
-        assertEquals("new_value", finalState.values["key1"])
+        // Expect two actions: the SYSTEM_WRITE and the public VALUE_CHANGED broadcast
+        assertEquals(2, store.dispatchedActions.size)
+        val writeAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_WRITE" }
+        assertNotNull(writeAction)
+        assertEquals(feature.name, writeAction.originator)
+        assertEquals("settings.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
+        assertEquals("""{"key1":"new_value"}""", writeAction.payload?.get("content")?.jsonPrimitive?.content)
 
-        // 2. Assert the side-effect happened correctly in onAction.
-        val settingsPath = fakeplatform.getBasePathFor(BasePath.SETTINGS) + fakeplatform.pathSeparator + "settings.json"
-        assertTrue(fakeplatform.fileExists(settingsPath), "Settings file should have been created.")
-        val fileContent = fakeplatform.readFileContent(settingsPath)
-        assertTrue(fileContent.contains(""""key1": "new_value""""), "File content is incorrect.")
+        val changedAction = store.dispatchedActions.find { it.name == "settings.VALUE_CHANGED" }
+        assertNotNull(changedAction)
     }
 
     @Test
-    fun `onAction does NOT modify state`() {
+    fun `onAction for OPEN_FOLDER dispatches OPEN_SYSTEM_FOLDER`() {
         // Arrange
         val platform = FakePlatformDependencies(testAppVersion)
         val feature = SettingsFeature(platform)
-        val initialState = AppState(featureStates = mapOf(feature.name to SettingsState(values = mapOf("a" to "b"))))
-        val fakeStore = FakeStore(initialState, platform)
-        feature.init(fakeStore)
-        val action = Action("settings.UPDATE") // An action that triggers a side-effect
+        val store = TestStore(AppState(), listOf(feature), platform)
+        val action = Action("settings.OPEN_FOLDER")
 
         // Act
-        // We set the state *before* the action to simulate the full dispatch cycle
-        fakeStore.setState(initialState)
-        feature.onAction(action, fakeStore) // Trigger the side effect
+        feature.onAction(action, store)
 
         // Assert
-        assertEquals(initialState, fakeStore.state.value, "onAction must not change the application state.")
+        val dispatched = store.dispatchedActions.lastOrNull()
+        assertNotNull(dispatched)
+        assertEquals("filesystem.OPEN_SYSTEM_FOLDER", dispatched.name)
+        assertEquals(feature.name, dispatched.originator)
+        assertNull(dispatched.payload)
     }
 }

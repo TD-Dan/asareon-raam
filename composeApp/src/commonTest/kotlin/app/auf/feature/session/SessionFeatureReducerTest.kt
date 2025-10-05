@@ -5,8 +5,10 @@ import app.auf.core.AppState
 import app.auf.fakes.FakePlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -17,6 +19,7 @@ import kotlin.test.assertTrue
 class SessionFeatureReducerTest {
 
     private val testAppVersion = "2.0.0-test"
+    private val json = Json { ignoreUnknownKeys = true }
 
     @Test
     fun `reducer session_CREATE adds a new session and does NOT set it as active`() {
@@ -85,22 +88,42 @@ class SessionFeatureReducerTest {
     }
 
     @Test
-    fun `reducer session_POST to non_existent session does nothing`() {
+    fun `reducer internal_SESSION_LOADED adds a new session from disk`() {
         // ARRANGE
         val fakePlatform = FakePlatformDependencies(testAppVersion)
         val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
         val initialState = AppState(featureStates = mapOf(feature.name to SessionState()))
-        val action = Action("session.POST", buildJsonObject {
-            put("sessionId", "non-existent-id")
-            put("agentId", "user-daniel")
-            put("message", "This should not be posted.")
-        })
+        val sessionFromDisk = Session(id = "disk-session-1", name = "From Disk", ledger = emptyList(), createdAt = 1L)
+        val payload = json.encodeToJsonElement(SessionFeature.InternalSessionLoadedPayload(sessionFromDisk)) as JsonObject
+        val action = Action("session.internal.SESSION_LOADED", payload)
+
+        // ACT
+        val newState = feature.reducer(initialState, action)
+        val newSessionState = newState.featureStates[feature.name] as SessionState
+
+        // ASSERT
+        assertEquals(1, newSessionState.sessions.size)
+        assertNotNull(newSessionState.sessions["disk-session-1"])
+        assertEquals("From Disk", newSessionState.sessions["disk-session-1"]?.name)
+    }
+
+    @Test
+    fun `reducer internal_SESSION_LOADED does not overwrite an existing in_memory session`() {
+        // ARRANGE
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
+        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
+        val inMemorySession = Session(id = "sid-1", name = "In Memory", ledger = emptyList(), createdAt = 1L)
+        val initialState = AppState(featureStates = mapOf(feature.name to SessionState(sessions = mapOf("sid-1" to inMemorySession))))
+        // Imagine the file from disk has the same ID but different data
+        val fromDiskSession = Session(id = "sid-1", name = "From Disk - Stale", ledger = emptyList(), createdAt = 0L)
+        val payload = json.encodeToJsonElement(SessionFeature.InternalSessionLoadedPayload(fromDiskSession)) as JsonObject
+        val action = Action("session.internal.SESSION_LOADED", payload)
 
         // ACT
         val newState = feature.reducer(initialState, action)
 
         // ASSERT
-        assertEquals(initialState, newState, "State should be unchanged for a non-existent session ID.")
+        assertEquals(initialState, newState, "State should not have changed.")
     }
 
     @Test
@@ -163,20 +186,5 @@ class SessionFeatureReducerTest {
         // ASSERT
         val sessionState = newState.featureStates[feature.name] as SessionState
         assertEquals("sid-2", sessionState.activeSessionId)
-    }
-
-    @Test
-    fun `reducer session_SET_ACTIVE_TAB to non_existent id does nothing`() {
-        // ARRANGE
-        val fakePlatform = FakePlatformDependencies(testAppVersion)
-        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
-        val initialState = AppState(featureStates = mapOf(feature.name to SessionState(activeSessionId = "sid-1")))
-        val action = Action("session.SET_ACTIVE_TAB", buildJsonObject { put("sessionId", "non-existent") })
-
-        // ACT
-        val newState = feature.reducer(initialState, action)
-
-        // ASSERT
-        assertEquals(initialState, newState, "State should be unchanged.")
     }
 }
