@@ -19,7 +19,7 @@ class SessionFeature(
     @Serializable private data class CreateSessionPayload(val name: String? = null)
     @Serializable private data class PostPayload(val sessionId: String, val agentId: String, val message: String)
     @Serializable private data class SessionIdPayload(val sessionId: String)
-    @Serializable private data class InternalSessionLoadedPayload(val session: Session)
+    @Serializable internal data class InternalSessionLoadedPayload(val session: Session)
 
     private val blockParser = BlockSeparatingParser()
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }

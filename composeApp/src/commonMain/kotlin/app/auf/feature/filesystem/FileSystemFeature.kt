@@ -293,19 +293,9 @@ class FileSystemFeature(
 
     override fun reducer(state: AppState, action: Action): AppState {
         val currentFeatureState = state.featureStates[name] as? FileSystemState
-        // If the state for this feature doesn't exist yet, create a default one.
-        // This is crucial for the very first action (`system.STARTING`).
-        if (currentFeatureState == null && action.name != "system.STARTING") return state
         val resolvedFeatureState = currentFeatureState ?: FileSystemState()
 
-        // --- REFACTORED REDUCER LOGIC ---
-        // The `when` block is now an expression that returns the new FileSystemState.
-        // This enforces purity and eliminates the compiler errors.
         val newFeatureState = when (action.name) {
-            "system.STARTING" -> {
-                // This action's only job in this reducer is to ensure the state exists.
-                resolvedFeatureState
-            }
             "filesystem.DIRECTORY_LOADED" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return state
                 val isNavigating = resolvedFeatureState.currentPath == payload.parentPath
@@ -317,10 +307,8 @@ class FileSystemFeature(
                 )}
 
                 if (isNavigating) {
-                    // This is the result of a main navigation action
                     resolvedFeatureState.copy(rootItems = newChildren, error = null)
                 } else {
-                    // This is the result of expanding a sub-directory
                     resolvedFeatureState.copy(
                         rootItems = updateItemByPath(resolvedFeatureState.rootItems, payload.parentPath) { item ->
                             item.copy(children = newChildren)
@@ -350,7 +338,6 @@ class FileSystemFeature(
                 val targetItem = findItemByPath(resolvedFeatureState.rootItems, path)
                 val targetState = if (targetItem?.isDirectory == true) {
                     val stats = getSelectionStats(targetItem)
-                    // If not fully selected (or indeterminate), the new state is ON. Otherwise, it's OFF.
                     stats.selectedCount < stats.totalCount
                 } else {
                     !(targetItem?.isSelected ?: false)
@@ -408,16 +395,10 @@ class FileSystemFeature(
                     else -> resolvedFeatureState
                 }
             }
-            "filesystem.STAGE_CREATE", "filesystem.STAGE_DELETE", "filesystem.DISCARD" -> {
-                // These actions do not have a reducer implementation yet.
-                resolvedFeatureState
-            }
-            // If the action is not handled, return the current state unchanged.
             else -> resolvedFeatureState
         }
 
-        // If the feature's state has changed, create a new AppState with the updated slice.
-        return if (newFeatureState != resolvedFeatureState) {
+        return if (newFeatureState != resolvedFeatureState || currentFeatureState == null) {
             state.copy(featureStates = state.featureStates + (name to newFeatureState))
         } else {
             state

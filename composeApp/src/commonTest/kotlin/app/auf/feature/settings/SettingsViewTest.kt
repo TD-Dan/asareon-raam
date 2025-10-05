@@ -57,7 +57,9 @@ class SettingsViewTest {
         settingsFeature = SettingsFeature(fakePlatform)
         coreFeature = CoreFeature(fakePlatform)
         val features = listOf(coreFeature, settingsFeature)
-        val settingsPath = fakePlatform.getBasePathFor(BasePath.SETTINGS) + fakePlatform.pathSeparator + "settings.json"
+        // Correctly construct the sandboxed path for the settings file.
+        val settingsSandbox = fakePlatform.getBasePathFor(BasePath.APP_ZONE) + fakePlatform.pathSeparator + settingsFeature.name
+        val settingsPath = settingsSandbox + fakePlatform.pathSeparator + "settings.json"
         fakePlatform.writeFileContent(settingsPath, """{ "core.window.width": "1024" }""")
         val addAction1 = Action("settings.ADD", buildJsonObject {
             put("key", "core.window.width"); put("type", "NUMERIC_LONG"); put("label", "Window Width")

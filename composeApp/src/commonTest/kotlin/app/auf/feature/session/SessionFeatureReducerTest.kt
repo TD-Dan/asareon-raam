@@ -6,6 +6,7 @@ import app.auf.fakes.FakePlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.encodeToJsonElement
@@ -94,8 +95,8 @@ class SessionFeatureReducerTest {
         val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
         val initialState = AppState(featureStates = mapOf(feature.name to SessionState()))
         val sessionFromDisk = Session(id = "disk-session-1", name = "From Disk", ledger = emptyList(), createdAt = 1L)
-        val payload = json.encodeToJsonElement(SessionFeature.InternalSessionLoadedPayload(sessionFromDisk)) as JsonObject
-        val action = Action("session.internal.SESSION_LOADED", payload)
+        val payload = json.encodeToJsonElement(SessionFeature.InternalSessionLoadedPayload(sessionFromDisk))
+        val action = Action("session.internal.SESSION_LOADED", payload as JsonObject)
 
         // ACT
         val newState = feature.reducer(initialState, action)
@@ -116,8 +117,8 @@ class SessionFeatureReducerTest {
         val initialState = AppState(featureStates = mapOf(feature.name to SessionState(sessions = mapOf("sid-1" to inMemorySession))))
         // Imagine the file from disk has the same ID but different data
         val fromDiskSession = Session(id = "sid-1", name = "From Disk - Stale", ledger = emptyList(), createdAt = 0L)
-        val payload = json.encodeToJsonElement(SessionFeature.InternalSessionLoadedPayload(fromDiskSession)) as JsonObject
-        val action = Action("session.internal.SESSION_LOADED", payload)
+        val payload = json.encodeToJsonElement(SessionFeature.InternalSessionLoadedPayload(fromDiskSession))
+        val action = Action("session.internal.SESSION_LOADED", payload as JsonObject)
 
         // ACT
         val newState = feature.reducer(initialState, action)
