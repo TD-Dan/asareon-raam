@@ -1,5 +1,7 @@
+
 package app.auf.core
 
+import app.auf.feature.agent.AgentRuntimeFeature
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.feature.gateway.GatewayFeature
@@ -7,7 +9,6 @@ import app.auf.feature.gateway.gemini.GeminiProvider
 import app.auf.feature.gateway.openai.OpenAIProvider
 import app.auf.feature.settings.SettingsFeature
 import app.auf.feature.session.SessionFeature
-//import app.auf.feature.agent.AgentRuntimeFeature
 //import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
@@ -25,8 +26,7 @@ class AppContainer(
     // Features are responsible for creating their own internal dependencies.
     // The container is only responsible for instantiating the features themselves.
     val features: List<Feature> = run {
-        // Instantiate the new GatewayFeature with its concrete providers.
-        // Adding or removing providers is now a one-line change in this list.
+        // Instantiate the GatewayFeature with its concrete providers.
         val gatewayFeature = GatewayFeature(
             coroutineScope,
             providers = listOf(
@@ -41,8 +41,8 @@ class AppContainer(
             SettingsFeature(platformDependencies),
             FileSystemFeature(platformDependencies),
             SessionFeature(platformDependencies, coroutineScope),
-            gatewayFeature // Add the new feature to the application.
-            //AgentRuntimeFeature(platformDependencies, coroutineScope),
+            gatewayFeature,
+            AgentRuntimeFeature(platformDependencies, coroutineScope)
             //KnowledgeGraphFeature(platformDependencies, coroutineScope)
         ))
         allFeatures
