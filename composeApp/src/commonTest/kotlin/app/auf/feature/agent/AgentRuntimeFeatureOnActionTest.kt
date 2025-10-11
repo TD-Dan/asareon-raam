@@ -87,7 +87,7 @@ class AgentRuntimeFeatureOnActionTest {
     }
 
     @Test
-    fun `agent DELETE action dispatches filesystem SYSTEM_DELETE for the agent's directory`() {
+    fun `agent DELETE action dispatches filesystem SYSTEM_DELETE_DIRECTORY for the agent's directory`() {
         // ARRANGE
         val agent = AgentInstance("aid-1", "Test", "p", "m", "m")
         val (feature, store) = createTestEnvironment(initialAgents = listOf(agent))
@@ -97,7 +97,7 @@ class AgentRuntimeFeatureOnActionTest {
         store.dispatch("ui", deleteAction)
 
         // ASSERT
-        val deleteSysAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_DELETE" }
+        val deleteSysAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_DELETE_DIRECTORY" }
         assertNotNull(deleteSysAction)
         assertEquals(feature.name, deleteSysAction.originator)
         assertEquals("aid-1", deleteSysAction.payload?.get("subpath")?.jsonPrimitive?.content, "Should delete the entire directory.")

@@ -154,6 +154,25 @@ class PlatformDependenciesJvmTest {
         assertFalse(fileToDelete.exists(), "File should have been deleted.")
     }
 
+    @Test
+    fun `deleteDirectory removes directory and its contents`() {
+        // Arrange
+        val dirToDelete = File(tempDir, "dir_to_delete")
+        val subDir = File(dirToDelete, "subdir")
+        val fileInSubDir = File(subDir, "file.txt")
+
+        platform.createDirectories(subDir.absolutePath)
+        platform.writeFileContent(fileInSubDir.absolutePath, "content")
+        assertTrue(dirToDelete.exists(), "Precondition: Root directory should exist.")
+        assertTrue(fileInSubDir.exists(), "Precondition: Nested file should exist.")
+
+        // Act
+        platform.deleteDirectory(dirToDelete.absolutePath)
+
+        // Assert
+        assertFalse(dirToDelete.exists(), "Directory should have been deleted.")
+        assertFalse(fileInSubDir.exists(), "Nested file should also be deleted.")
+    }
 
     @Test
     fun `log function creates and writes to a versioned log file within the APP_ZONE`() {

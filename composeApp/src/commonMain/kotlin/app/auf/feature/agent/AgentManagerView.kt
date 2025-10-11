@@ -33,10 +33,37 @@ fun AgentManagerView(store: Store) {
     val gatewayState = remember(appState.featureStates) {
         appState.featureStates["gateway"] as? GatewayState
     }
+    var agentToDelete by remember { mutableStateOf<AgentInstance?>(null) }
 
     LaunchedEffect(Unit) {
         // Ensure we have the latest list of models from the gateway.
         store.dispatch("ui.agentManager", Action("gateway.REQUEST_AVAILABLE_MODELS"))
+    }
+
+    // --- Confirmation Dialog ---
+    agentToDelete?.let { agent ->
+        AlertDialog(
+            onDismissRequest = { agentToDelete = null },
+            title = { Text("Delete Agent?") },
+            text = { Text("Are you sure you want to permanently delete '${agent.name}'? This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val payload = buildJsonObject { put("agentId", agent.id) }
+                        store.dispatch("ui.agentManager", Action("agent.DELETE", payload))
+                        agentToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                Button(onClick = { agentToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -73,7 +100,13 @@ fun AgentManagerView(store: Store) {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(agentState.agents.values.toList(), key = { it.id }) { agent ->
-                    AgentCard(agent, sessionState, gatewayState, store)
+                    AgentCard(
+                        agent = agent,
+                        sessionState = sessionState,
+                        gatewayState = gatewayState,
+                        store = store,
+                        onDeleteRequest = { agentToDelete = it }
+                    )
                 }
             }
         }
@@ -86,7 +119,8 @@ private fun AgentCard(
     agent: AgentInstance,
     sessionState: SessionState?,
     gatewayState: GatewayState?,
-    store: Store
+    store: Store,
+    onDeleteRequest: (AgentInstance) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -101,7 +135,7 @@ private fun AgentCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                maxItemsInEachRow = 3 // Simple heuristic for responsiveness
+                maxItemsInEachRow = 2 // Simple heuristic for responsiveness
             ) {
                 // Placed in Box with weight to allow flexible filling of space in the FlowRow
                 Box(modifier = Modifier.weight(1f)) {
@@ -124,12 +158,9 @@ private fun AgentCard(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = {
-                        val payload = buildJsonObject { put("agentId", agent.id) }
-                        store.dispatch("ui.agentManager", Action("agent.DELETE", payload))
-                    },
-                ) { Icon(Icons.Default.Delete, contentDescription = "Delete Agent") }
+                IconButton(onClick = { onDeleteRequest(agent) }) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete Agent")
+                }
 
                 Spacer(Modifier.width(8.dp))
 

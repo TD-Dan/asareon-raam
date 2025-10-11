@@ -156,7 +156,7 @@ class AgentRuntimeFeature(
             "agent.DELETE" -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 // Request to delete the entire agent's sandbox directory.
-                store.dispatch(this.name, Action("filesystem.SYSTEM_DELETE", buildJsonObject {
+                store.dispatch(this.name, Action("filesystem.SYSTEM_DELETE_DIRECTORY", buildJsonObject {
                     put("subpath", agentId)
                 }))
                 broadcastUpdate(store)

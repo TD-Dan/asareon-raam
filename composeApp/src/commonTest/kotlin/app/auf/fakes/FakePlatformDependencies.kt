@@ -91,6 +91,18 @@ open class FakePlatformDependencies(
 
     override fun deleteFile(path: String) {
         files.remove(path)
+    }
+
+    override fun deleteDirectory(path: String) {
+        val pathWithSeparator = if (path.endsWith(pathSeparator)) path else "$path$pathSeparator"
+
+        // Remove all files within the directory using a predicate
+        files.keys.removeAll { it.startsWith(pathWithSeparator) }
+
+        // Remove all subdirectories using a predicate
+        directories.removeAll { it.startsWith(pathWithSeparator) }
+
+        // Remove the directory itself
         directories.remove(path)
     }
 
