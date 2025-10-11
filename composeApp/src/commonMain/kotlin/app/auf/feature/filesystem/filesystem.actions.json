@@ -66,6 +66,15 @@
       }
     },
     {
+      "action_name": "filesystem.SYSTEM_DELETE_DIRECTORY",
+      "summary": "[INTERNAL-SANDBOXED] Requests to recursively delete a directory from the originator's private sandbox.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "subpath": { "type": "string" } },
+        "required": ["subpath"]
+      }
+    },
+    {
       "action_name": "filesystem.OPEN_SYSTEM_FOLDER",
       "summary": "[INTERNAL-SANDBOXED] Requests to open the originator's private sandbox in the OS file explorer.",
       "payload_schema": null

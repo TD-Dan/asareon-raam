@@ -41,6 +41,7 @@ expect open class PlatformDependencies(appVersion: String) {
     open fun createDirectories(path: String)
     open fun copyFile(sourcePath: String, destinationPath: String)
     open fun deleteFile(path: String)
+    open fun deleteDirectory(path: String) // NEW
     open fun getBasePathFor(type: BasePath): String
     open fun getFileName(path: String): String
     open fun getParentDirectory(path: String): String?

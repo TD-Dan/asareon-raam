@@ -88,6 +88,10 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
         File(path).delete()
     }
 
+    actual open fun deleteDirectory(path: String) {
+        File(path).deleteRecursively()
+    }
+
     actual open fun getBasePathFor(type: BasePath): String {
         return when (type) {
             BasePath.APP_ZONE -> rootDataDir

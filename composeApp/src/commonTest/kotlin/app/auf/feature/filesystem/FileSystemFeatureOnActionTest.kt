@@ -17,6 +17,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
@@ -194,5 +195,35 @@ class FileSystemFeatureOnActionTest {
         assertNotNull(privateData, "Private data should have been delivered.")
         assertEquals(subpath, privateData["subpath"]?.jsonPrimitive?.content)
         assertEquals(originalContent, privateData["content"]?.jsonPrimitive?.content, "Delivered content should be the decrypted original.")
+    }
+
+    @Test
+    fun `SYSTEM_DELETE_DIRECTORY recursively deletes a directory and its contents`() {
+        // Arrange
+        val store = createRunningStore()
+        val originator = "agent"
+        val dirSubpath = "agent-to-delete"
+        val fileSubpath = "$dirSubpath/agent.json"
+        val sandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator"
+        val fullDirPath = "$sandboxPath/$dirSubpath"
+        val fullFilePath = "$sandboxPath/$fileSubpath"
+
+        // Manually create the directory and a file inside it on the fake platform.
+        platform.createDirectories(fullDirPath)
+        platform.writeFileContent(fullFilePath, "{}")
+        assertTrue(platform.fileExists(fullDirPath), "Precondition: Directory should exist.")
+        assertTrue(platform.fileExists(fullFilePath), "Precondition: File inside directory should exist.")
+
+        val action = Action("filesystem.SYSTEM_DELETE_DIRECTORY", buildJsonObject {
+            put("subpath", dirSubpath)
+        })
+
+        // Act
+        feature.onAction(action.copy(originator = originator), store)
+
+        // Assert
+        // This test relies on the FakePlatformDependencies correctly implementing recursive delete.
+        assertFalse(platform.fileExists(fullDirPath), "Directory should have been deleted.")
+        assertFalse(platform.fileExists(fullFilePath), "File inside directory should have been deleted.")
     }
 }

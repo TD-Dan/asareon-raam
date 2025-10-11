@@ -46,6 +46,7 @@ class FileSystemFeature(
     // --- MODIFICATION: Add `encrypt` flag to the write payload ---
     @Serializable private data class SystemWritePayload(val subpath: String, val content: String, val encrypt: Boolean = false)
     @Serializable private data class SystemDeletePayload(val subpath: String)
+    @Serializable private data class SystemDeleteDirectoryPayload(val subpath: String) // NEW
     @Serializable private data class OpenAppSubfolderPayload(val folder: String)
 
 
@@ -288,6 +289,14 @@ class FileSystemFeature(
                 val fullPath = "$sandboxPath${platformDependencies.pathSeparator}${payload.subpath}"
                 if (platformDependencies.fileExists(fullPath)) {
                     platformDependencies.deleteFile(fullPath)
+                }
+            }
+            "filesystem.SYSTEM_DELETE_DIRECTORY" -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<SystemDeleteDirectoryPayload>(it) } ?: return
+                val sandboxPath = getSandboxPathFor(originator)
+                val fullPath = "$sandboxPath${platformDependencies.pathSeparator}${payload.subpath}"
+                if (platformDependencies.fileExists(fullPath)) {
+                    platformDependencies.deleteDirectory(fullPath)
                 }
             }
             "filesystem.OPEN_SYSTEM_FOLDER" -> {

@@ -106,15 +106,25 @@ class AgentRuntimeFeatureOnActionTest {
     @Test
     fun `system STARTING action dispatches filesystem SYSTEM_LIST`() {
         // ARRANGE
-        val (feature, store) = createTestEnvironment()
+        // Create a special store that starts in the BOOTING state to correctly test the lifecycle.
+        val coreFeature = CoreFeature(fakePlatform)
+        val agentFeature = AgentRuntimeFeature(fakePlatform, scope)
+        val fileSystemFeature = FileSystemFeature(fakePlatform)
+        val features = listOf(coreFeature, agentFeature, fileSystemFeature)
+        val bootState = AppState(featureStates = mapOf(coreFeature.name to CoreState(lifecycle = AppLifecycle.BOOTING)))
+        val store = TestStore(bootState, features, fakePlatform)
 
         // ACT
+        // 1. First, dispatch INITIALIZING to move the store to the correct state.
+        store.dispatch("system", Action("system.INITIALIZING"))
+        // 2. Now, dispatch STARTING, which should pass the guard.
         store.dispatch("system", Action("system.STARTING"))
+
 
         // ASSERT
         val listAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_LIST" }
         assertNotNull(listAction)
-        assertEquals(feature.name, listAction.originator)
+        assertEquals(agentFeature.name, listAction.originator)
     }
 
     @Test

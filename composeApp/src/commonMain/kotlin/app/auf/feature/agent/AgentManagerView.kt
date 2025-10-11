@@ -44,7 +44,7 @@ fun AgentManagerView(store: Store) {
             TopAppBar(
                 title = { Text("Agent Manager") },
                 actions = {
-                    IconButton(onClick = {
+                    Button(onClick = {
                         val payload = buildJsonObject {
                             put("name", "New Agent")
                             put("personaId", "keel-20250914T142800Z")
@@ -55,6 +55,8 @@ fun AgentManagerView(store: Store) {
                         store.dispatch("ui.agentManager", Action("agent.CREATE", payload))
                     }) {
                         Icon(Icons.Default.Add, contentDescription = "Create New Agent")
+                        Spacer(Modifier.width(8.dp))
+                        Text("New Agent")
                     }
                 }
             )
@@ -91,19 +93,16 @@ private fun AgentCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-
+            // --- Agent Name (Editable) ---
+            AgentNameEditor(agent, store)
 
             // --- Responsive Configuration Row ---
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                maxItemsInEachRow = 2 // Simple heuristic for responsiveness
+                maxItemsInEachRow = 3 // Simple heuristic for responsiveness
             ) {
-                Box(modifier = Modifier.weight(1f)) {
-                    // --- Agent Name (Editable) ---
-                    AgentNameEditor(agent, store)
-                }
                 // Placed in Box with weight to allow flexible filling of space in the FlowRow
                 Box(modifier = Modifier.weight(1f)) {
                     SessionSelector(agent, sessionState, store)
