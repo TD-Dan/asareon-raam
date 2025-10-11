@@ -13,9 +13,9 @@ class AgentFeatureReducerTest {
 
     private val testAppVersion = "2.0.0-test"
 
-    private fun createFeatureAndInitialState(vararg initialAgents: AgentInstance): Pair<AgentFeature, AppState> {
+    private fun createFeatureAndInitialState(vararg initialAgents: AgentInstance): Pair<AgentRuntimeFeature, AppState> {
         val fakePlatform = FakePlatformDependencies(testAppVersion)
-        val feature = AgentFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
+        val feature = AgentRuntimeFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
         val initialAgentMap = initialAgents.associateBy { it.id }
         val initialState = AppState(
             featureStates = mapOf(feature.name to AgentRuntimeState(agents = initialAgentMap))

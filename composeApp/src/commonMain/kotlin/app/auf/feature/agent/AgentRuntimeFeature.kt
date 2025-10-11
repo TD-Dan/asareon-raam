@@ -11,7 +11,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 
-class AgentFeature(
+class AgentRuntimeFeature(
     private val platformDependencies: PlatformDependencies,
     private val coroutineScope: CoroutineScope
 ) : Feature {
@@ -36,7 +36,8 @@ class AgentFeature(
 
     private fun handleCreateAgent(action: Action, currentFeatureState: AgentRuntimeState, state: AppState): AppState {
         val payload = action.payload ?: return state
-        val name = payload["name"]?.jsonPrimitive?.contentOrNull ?: return state
+        // --- FIX: Renamed local variable to avoid shadowing the feature's 'name' property ---
+        val agentName = payload["name"]?.jsonPrimitive?.contentOrNull ?: return state
         val personaId = payload["personaId"]?.jsonPrimitive?.contentOrNull ?: return state
         val modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: return state
         val modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: return state
@@ -45,7 +46,7 @@ class AgentFeature(
         val newAgentId = platformDependencies.generateUUID()
         val newAgent = AgentInstance(
             id = newAgentId,
-            name = name,
+            name = agentName, // Use the correctly named variable
             personaId = personaId,
             modelProvider = modelProvider,
             modelName = modelName,
@@ -55,6 +56,7 @@ class AgentFeature(
 
         val newAgents = currentFeatureState.agents + (newAgentId to newAgent)
         val newFeatureState = currentFeatureState.copy(agents = newAgents)
+        // --- FIX: This now correctly uses the feature's 'name' property ("agent") as the key ---
         return state.copy(featureStates = state.featureStates + (name to newFeatureState))
     }
 
