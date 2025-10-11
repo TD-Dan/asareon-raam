@@ -1,120 +1,109 @@
 package app.auf.feature.settings
 
-import app.auf.core.Action
-import app.auf.core.AppState
-import app.auf.core.Store
+import app.auf.core.*
+import app.auf.fakes.FakePlatformDependencies
+import app.auf.feature.core.CoreFeature
 import app.auf.feature.filesystem.FileSystemFeature
+import app.auf.util.BasePath
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
 import java.io.File
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 /**
- * Integration test to verify the full persistence and loading cycle of the SettingsFeature
- * through its collaboration with the FileSystemFeature against a real temporary file system.
+ * A high-fidelity test for the SettingsFeature that uses the REAL Store,
+ * the REAL FileSystemFeature, and a FakePlatformDependencies to interact with a
+ * temporary, in-memory file system. This verifies the full, integrated data flow.
  */
 class SettingsFeatureIntegrationTest {
 
-    @TempDir
-    lateinit var tempDir: File
+    private val testAppVersion = "2.0.0-test"
+    private lateinit var fakePlatform: FakePlatformDependencies
+    private lateinit var testStore: Store
+    private lateinit var settingsFeature: SettingsFeature
+    private lateinit var fileSystemFeature: FileSystemFeature
+    private lateinit var coreFeature: CoreFeature
+    private lateinit var settingsSandboxPath: String
+    private lateinit var settingsFilePath: String
 
-    private val testAppVersion = "v2-integration"
-    private lateinit var userHome: File
-    private lateinit var platform: PlatformDependencies
 
     @BeforeEach
     fun setUp() {
-        // Set up a fake user home inside the temporary directory to isolate the test.
-        userHome = File(tempDir, "fake_user_home")
-        userHome.mkdir()
-        System.setProperty("user.home", userHome.absolutePath)
-        platform = PlatformDependencies(testAppVersion)
+        // 1. Initialize dependencies.
+        fakePlatform = FakePlatformDependencies(testAppVersion)
+        coreFeature = CoreFeature(fakePlatform)
+        settingsFeature = SettingsFeature(fakePlatform)
+        fileSystemFeature = FileSystemFeature(fakePlatform)
+        val features = listOf(coreFeature, settingsFeature, fileSystemFeature)
+
+        // 2. Define critical file paths for assertions.
+        settingsSandboxPath = fakePlatform.getBasePathFor(BasePath.APP_ZONE) + fakePlatform.pathSeparator + settingsFeature.name
+        settingsFilePath = settingsSandboxPath + fakePlatform.pathSeparator + "settings.json"
+
+        // 3. Create the Store with a BOOTING state.
+        val initialState = AppState() // Start fresh
+        testStore = Store(initialState, features, fakePlatform)
+
+        // 4. Manually run the one-time init() for all features.
+        testStore.initFeatureLifecycles()
+
+        // 5. Run the full, synchronous startup lifecycle. This is the key fix.
+        // It moves the store from BOOTING -> INITIALIZING -> RUNNING.
+        testStore.dispatch("system.test", Action("system.INITIALIZING"))
     }
 
-    @AfterEach
-    fun tearDown() {
-        System.clearProperty("user.home")
-    }
 
     @Test
     fun `settings UPDATE action correctly persists settings to disk via FileSystemFeature`() {
-        // ARRANGE
-        val settingsFeature = SettingsFeature(platform)
-        val fileSystemFeature = FileSystemFeature(platform)
-        val features = listOf(settingsFeature, fileSystemFeature)
-        val store = Store(AppState(), features, platform)
-        features.forEach { it.init(store) }
+        // Arrange: Add a setting definition to the store after it has initialized.
+        val addAction = Action("settings.ADD", buildJsonObject {
+            put("key", "test.key"); put("type", "STRING"); put("label", "Test")
+            put("description", "A test key"); put("section", "Testing"); put("defaultValue", "default")
+        })
+        testStore.dispatch("test.setup", addAction)
 
-        // Manually add a setting definition
-        store.dispatch("test.setup", Action("settings.ADD", buildJsonObject {
-            put("key", "test.key")
-            put("type", "STRING")
-            put("label", "Test")
-            put("description", "A test key")
-            put("section", "Testing")
-            put("defaultValue", "default")
-        }))
-
-        // ACT
-        // Dispatch an UPDATE action, which should trigger the onAction persistence logic.
-        store.dispatch(settingsFeature.name, Action("settings.UPDATE", buildJsonObject {
+        // Act: Dispatch the UPDATE action to trigger the persistence side-effect.
+        val updateAction = Action("settings.UPDATE", buildJsonObject {
             put("key", "test.key")
             put("value", "persisted_value")
-        }))
+        })
+        testStore.dispatch(settingsFeature.name, updateAction)
 
-        // ASSERT
-        // Verify that the file was actually written to the correct sandboxed location.
-        val expectedSandboxPath = platform.getBasePathFor(app.auf.util.BasePath.APP_ZONE) +
-                platform.pathSeparator + settingsFeature.name
-        val expectedFile = File(expectedSandboxPath, "settings.json")
-
-        assertTrue(expectedFile.exists(), "settings.json file should have been created in the sandbox.")
-        val fileContent = expectedFile.readText()
-        assertEquals("""{"test.key":"persisted_value"}""", fileContent)
+        // Assert
+        // Check that the file was actually created by the FileSystemFeature in the fake file system.
+        assertTrue(fakePlatform.fileExists(settingsFilePath), "settings.json file should have been created in the sandbox.")
+        val fileContent = fakePlatform.readFileContent(settingsFilePath)
+        // The content should be a JSON map of all settings, including the one we updated.
+        assertTrue(fileContent.contains(""""test.key":"persisted_value""""), "The persisted file content is incorrect.")
     }
+
 
     @Test
     fun `app INITIALIZING action correctly loads persisted settings from disk`() {
-        // ARRANGE
-        // 1. Pre-populate a settings file on disk.
-        val settingsFeatureName = "settings"
-        val expectedSandboxPath = platform.getBasePathFor(app.auf.util.BasePath.APP_ZONE) +
-                platform.pathSeparator + settingsFeatureName
-        File(expectedSandboxPath).mkdirs()
-        File(expectedSandboxPath, "settings.json").writeText("""{"test.key":"loaded_value"}""")
+        // Arrange
+        // Pre-populate the fake file system with a settings file before the test runs.
+        fakePlatform.writeFileContent(settingsFilePath, """{ "test.key": "loaded_value" }""")
 
-        // 2. Set up a new "restarted" app instance.
-        val settingsFeature = SettingsFeature(platform)
-        val fileSystemFeature = FileSystemFeature(platform)
-        val features = listOf(settingsFeature, fileSystemFeature)
-        val store = Store(AppState(), features, platform)
-        features.forEach { it.init(store) }
+        // Add a setting definition that matches the key in the pre-populated file.
+        val addAction = Action("settings.ADD", buildJsonObject {
+            put("key", "test.key"); put("type", "STRING"); put("label", "Test")
+            put("description", "A test key"); put("section", "Testing"); put("defaultValue", "default")
+        })
+        testStore.dispatch("test.setup", addAction)
 
-        // 3. Register the setting definition so the feature knows about "test.key".
-        store.dispatch("test.setup", Action("settings.ADD", buildJsonObject {
-            put("key", "test.key")
-            put("type", "STRING")
-            put("label", "Test")
-            put("description", "A test key")
-            put("section", "Testing")
-            put("defaultValue", "default")
-        }))
+        // Act
+        // The `system.INITIALIZING` action was already dispatched in setUp().
+        // This action triggers SettingsFeature to dispatch `filesystem.SYSTEM_READ`, and its
+        // onPrivateData handler then dispatches `settings.LOADED`.
+        // We just need to check the final state.
+        val finalState = testStore.state.value.featureStates[settingsFeature.name] as? SettingsState
 
-        // ACT
-        // Dispatch the app lifecycle action that triggers loading.
-        store.dispatch("system.main", Action("system.INITIALIZING"))
-
-        // ASSERT
-        // Verify that the feature's state was correctly hydrated from the file.
-        val finalSettingsState = store.state.value.featureStates[settingsFeatureName] as? SettingsState
-        assertNotNull(finalSettingsState)
-        assertEquals("loaded_value", finalSettingsState.values["test.key"])
+        // Assert
+        assertNotNull(finalState, "SettingsState should not be null.")
+        assertEquals("loaded_value", finalState.values["test.key"], "The value from the persisted file was not loaded correctly.")
     }
 }
