@@ -135,9 +135,9 @@ private fun AgentCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                maxItemsInEachRow = 2 // Simple heuristic for responsiveness
+                maxItemsInEachRow = 3 // Simple heuristic for responsiveness
             ) {
-                // Placed in Box with weight to allow flexible filling of space in the FlowRow
+                // Placed in a Box with weight to allow flexible filling of space in the FlowRow
                 Box(modifier = Modifier.weight(1f)) {
                     SessionSelector(agent, sessionState, store)
                 }
