@@ -3,10 +3,9 @@ package app.auf.feature.agent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,6 +33,7 @@ fun AgentManagerView(store: Store) {
         appState.featureStates["gateway"] as? GatewayState
     }
     var agentToDelete by remember { mutableStateOf<AgentInstance?>(null) }
+    val editingAgentId = agentState?.editingAgentId
 
     LaunchedEffect(Unit) {
         // Ensure we have the latest list of models from the gateway.
@@ -100,12 +100,18 @@ fun AgentManagerView(store: Store) {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(agentState.agents.values.toList(), key = { it.id }) { agent ->
+                    val isEditing = agent.id == editingAgentId
                     AgentCard(
                         agent = agent,
+                        isEditing = isEditing,
                         sessionState = sessionState,
                         gatewayState = gatewayState,
                         store = store,
-                        onDeleteRequest = { agentToDelete = it }
+                        onDeleteRequest = { agentToDelete = it },
+                        onEditRequest = {
+                            val payload = buildJsonObject { put("agentId", agent.id) }
+                            store.dispatch("ui.agentManager", Action("agent.SET_EDITING", payload))
+                        }
                     )
                 }
             }
@@ -113,51 +119,41 @@ fun AgentManagerView(store: Store) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AgentCard(
     agent: AgentInstance,
+    isEditing: Boolean,
     sessionState: SessionState?,
     gatewayState: GatewayState?,
     store: Store,
-    onDeleteRequest: (AgentInstance) -> Unit
+    onDeleteRequest: (AgentInstance) -> Unit,
+    onEditRequest: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            // --- Agent Name (Editable) ---
-            AgentNameEditor(agent, store)
-
-            // --- Responsive Configuration Row ---
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                maxItemsInEachRow = 3 // Simple heuristic for responsiveness
-            ) {
-                // Placed in a Box with weight to allow flexible filling of space in the FlowRow
-                Box(modifier = Modifier.weight(1f)) {
-                    SessionSelector(agent, sessionState, store)
-                }
-                Box(modifier = Modifier.weight(1f)) {
-                    ProviderSelector(agent, gatewayState, store)
-                }
-                Box(modifier = Modifier.weight(1f)) {
-                    ModelSelector(agent, gatewayState, store)
-                }
+            // Switch between read-only and editing views
+            if (isEditing) {
+                AgentEditorView(agent, sessionState, gatewayState, store)
+            } else {
+                AgentReadOnlyView(agent)
             }
 
-
-            Text("Status: ${agent.status}", style = MaterialTheme.typography.bodySmall)
-
-            // --- Action Buttons ---
+            // --- Action Buttons (Common to both views) ---
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                IconButton(onClick = onEditRequest) {
+                    Icon(
+                        imageVector = if (isEditing) Icons.Default.Done else Icons.Default.Edit,
+                        contentDescription = if (isEditing) "Done Editing" else "Edit Agent"
+                    )
+                }
+
                 IconButton(onClick = { onDeleteRequest(agent) }) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete Agent")
                 }
@@ -169,12 +165,63 @@ private fun AgentCard(
                         val payload = buildJsonObject { put("agentId", agent.id) }
                         store.dispatch("ui.agentManager", Action("agent.TRIGGER_MANUAL_TURN", payload))
                     },
-                    enabled = agent.status == AgentStatus.IDLE
+                    enabled = agent.status != AgentStatus.PROCESSING
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = "Trigger Turn")
                     Spacer(Modifier.width(4.dp))
                     Text("Trigger")
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AgentReadOnlyView(agent: AgentInstance) {
+    SelectionContainer {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(agent.name, style = MaterialTheme.typography.titleLarge)
+            Text("Session: ${agent.primarySessionId ?: "Not Subscribed"}", style = MaterialTheme.typography.bodyMedium)
+            Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
+            Text("Status: ${agent.status}", style = MaterialTheme.typography.bodyMedium)
+
+            if (agent.status == AgentStatus.ERROR && agent.errorMessage != null) {
+                Text(
+                    text = agent.errorMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AgentEditorView(
+    agent: AgentInstance,
+    sessionState: SessionState?,
+    gatewayState: GatewayState?,
+    store: Store
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        AgentNameEditor(agent, store)
+
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            maxItemsInEachRow = 3
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                SessionSelector(agent, sessionState, store)
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                ProviderSelector(agent, gatewayState, store)
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(agent, gatewayState, store)
             }
         }
     }

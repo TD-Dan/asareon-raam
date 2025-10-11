@@ -4,6 +4,9 @@ import app.auf.core.Action
 import app.auf.feature.gateway.AgentGatewayProvider
 import app.auf.feature.gateway.GatewayRequest
 import app.auf.feature.gateway.GatewayResponse
+import app.auf.feature.gateway.mapExceptionToUserMessage
+import app.auf.util.LogLevel
+import app.auf.util.PlatformDependencies
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
@@ -44,17 +47,17 @@ private data class ModelInfo(
 /**
  * A concrete implementation of the AgentGatewayProvider for the Google Gemini API.
  */
-class GeminiProvider : AgentGatewayProvider {
+class GeminiProvider(
+    private val platformDependencies: PlatformDependencies
+) : AgentGatewayProvider {
     override val id: String = "gemini"
     private val apiKeySettingKey = "gateway.gemini.apiKey"
+    private val API_HOST = "generativelanguage.googleapis.com"
 
     private val json = Json { ignoreUnknownKeys = true }
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
-        defaultRequest {
-            url { protocol = URLProtocol.HTTPS }
-            header(HttpHeaders.ContentType, ContentType.Application.Json)
-        }
+        // REMOVED: The ambiguous defaultRequest block. We will use full URLs.
         install(HttpTimeout) { requestTimeoutMillis = 60_000 }
     }
 
@@ -66,7 +69,6 @@ class GeminiProvider : AgentGatewayProvider {
             put("description", "API Key for Google AI Gemini models.")
             put("section", "API Keys")
             put("defaultValue", "")
-            // --- MODIFICATION: Mark this setting as sensitive ---
             put("isSensitive", true)
         }
         dispatch(Action("settings.ADD", payload))
@@ -77,7 +79,8 @@ class GeminiProvider : AgentGatewayProvider {
         if (apiKey.isBlank()) return emptyList()
 
         return try {
-            val response: ListModelsResponse = client.get("generativelace.googleapis.com/v1beta/models") {
+            // CORRECTED: Use a full, explicit URL.
+            val response: ListModelsResponse = client.get("https://$API_HOST/v1beta/models") {
                 parameter("key", apiKey)
             }.body()
             response.models
@@ -85,7 +88,7 @@ class GeminiProvider : AgentGatewayProvider {
                 .map { it.name.replace("models/", "") }
                 .sorted()
         } catch (e: Exception) {
-            println("ERROR: Failed to fetch Gemini models: ${e.message}")
+            platformDependencies.log(LogLevel.WARN, id, "Failed to fetch Gemini models: ${e.message}")
             emptyList()
         }
     }
@@ -96,15 +99,16 @@ class GeminiProvider : AgentGatewayProvider {
             return GatewayResponse(null, "Gemini API Key is not configured.", request.correlationId)
         }
 
-        // THE FIX: Manually construct the provider-specific request body.
-        // The provider's job is to wrap the universal `contents` array into its own format.
         val apiRequest = buildJsonObject {
             put("contents", request.contents)
         }
 
         return try {
-            val response: GenerateContentResponse = client.post("generativelanguage.googleapis.com/v1beta/models/${request.modelName}:generateContent") {
+            // CORRECTED: Use a full, explicit URL.
+            val apiUrl = "https://$API_HOST/v1beta/models/${request.modelName}:generateContent"
+            val response: GenerateContentResponse = client.post(apiUrl) {
                 parameter("key", apiKey)
+                contentType(ContentType.Application.Json)
                 setBody(apiRequest)
             }.body()
 
@@ -118,8 +122,9 @@ class GeminiProvider : AgentGatewayProvider {
 
             GatewayResponse(rawText, null, request.correlationId)
         } catch (e: Exception) {
-            println("ERROR: Gemini content generation failed: ${e.message}")
-            GatewayResponse(null, "A client-side exception occurred: ${e.message}", request.correlationId)
+            platformDependencies.log(LogLevel.ERROR, id, "Content generation failed: ${e.message}")
+            val userMessage = mapExceptionToUserMessage(e)
+            GatewayResponse(null, userMessage, request.correlationId)
         }
     }
 }

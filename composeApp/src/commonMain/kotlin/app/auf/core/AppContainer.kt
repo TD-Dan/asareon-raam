@@ -1,4 +1,3 @@
-
 package app.auf.core
 
 import app.auf.feature.agent.AgentRuntimeFeature
@@ -30,8 +29,9 @@ class AppContainer(
         val gatewayFeature = GatewayFeature(
             coroutineScope,
             providers = listOf(
-                GeminiProvider(),
-                OpenAIProvider()
+                // CORRECTED: Inject PlatformDependencies into each provider.
+                GeminiProvider(platformDependencies),
+                OpenAIProvider(platformDependencies)
             )
         )
 

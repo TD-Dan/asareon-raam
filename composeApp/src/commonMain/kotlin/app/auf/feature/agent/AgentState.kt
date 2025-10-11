@@ -2,6 +2,7 @@ package app.auf.feature.agent
 
 import app.auf.core.FeatureState
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * Defines the possible lifecycle states for an AgentInstance.
@@ -29,7 +30,15 @@ data class AgentInstance(
     val modelProvider: String, // e.g., "gemini" or "openai"
     val modelName: String, // e.g., "gemini-2.5-pro"
     val primarySessionId: String? = null, // The session this agent will post its responses to.
-    val status: AgentStatus = AgentStatus.IDLE
+
+    // Status is now a transient, in-memory state. It will not be saved to disk.
+    // When an agent is loaded, it will always default to IDLE.
+    @Transient
+    val status: AgentStatus = AgentStatus.IDLE,
+
+    // A transient message for displaying errors in the UI. Also not saved.
+    @Transient
+    val errorMessage: String? = null
 )
 
 /**
@@ -38,5 +47,9 @@ data class AgentInstance(
  */
 @Serializable
 data class AgentRuntimeState(
-    val agents: Map<String, AgentInstance> = emptyMap()
+    val agents: Map<String, AgentInstance> = emptyMap(),
+
+    // The ID of the agent currently being edited in the UI. This is transient UI state.
+    @Transient
+    val editingAgentId: String? = null
 ) : FeatureState

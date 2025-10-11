@@ -4,6 +4,9 @@ import app.auf.core.Action
 import app.auf.feature.gateway.AgentGatewayProvider
 import app.auf.feature.gateway.GatewayRequest
 import app.auf.feature.gateway.GatewayResponse
+import app.auf.feature.gateway.mapExceptionToUserMessage
+import app.auf.util.LogLevel
+import app.auf.util.PlatformDependencies
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
@@ -32,20 +35,17 @@ private data class ApiError(val message: String)
 /**
  * A concrete implementation of the AgentGatewayProvider for the OpenAI API.
  */
-class OpenAIProvider : AgentGatewayProvider {
+class OpenAIProvider(
+    private val platformDependencies: PlatformDependencies
+) : AgentGatewayProvider {
     override val id: String = "openai"
     private val apiKeySettingKey = "gateway.openai.apiKey"
+    private val API_HOST = "api.openai.com"
 
     private val json = Json { ignoreUnknownKeys = true }
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
-        defaultRequest {
-            url {
-                protocol = URLProtocol.HTTPS
-                host = "api.openai.com"
-            }
-            header(HttpHeaders.ContentType, ContentType.Application.Json)
-        }
+        // REMOVED: The ambiguous defaultRequest block. We will use full URLs.
         install(HttpTimeout) { requestTimeoutMillis = 60_000 }
     }
 
@@ -57,7 +57,6 @@ class OpenAIProvider : AgentGatewayProvider {
             put("description", "API Key for OpenAI models (e.g., GPT-4o).")
             put("section", "API Keys")
             put("defaultValue", "")
-            // --- MODIFICATION: Mark this setting as sensitive ---
             put("isSensitive", true)
         }
         dispatch(Action("settings.ADD", payload))
@@ -76,16 +75,17 @@ class OpenAIProvider : AgentGatewayProvider {
             return GatewayResponse(null, "OpenAI API Key is not configured.", request.correlationId)
         }
 
-        // THE FIX: Manually construct the provider-specific request body.
-        // This removes the problematic OpenAIChatRequest data class and fixes the compile error.
         val apiRequest = buildJsonObject {
             put("model", request.modelName)
             put("messages", request.contents)
         }
 
         return try {
-            val response: OpenAIChatResponse = client.post("v1/chat/completions") {
+            // CORRECTED: Use a full, explicit URL.
+            val apiUrl = "https://$API_HOST/v1/chat/completions"
+            val response: OpenAIChatResponse = client.post(apiUrl) {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
+                contentType(ContentType.Application.Json)
                 setBody(apiRequest)
             }.body()
 
@@ -98,8 +98,9 @@ class OpenAIProvider : AgentGatewayProvider {
 
             GatewayResponse(rawText, null, request.correlationId)
         } catch (e: Exception) {
-            println("ERROR: OpenAI content generation failed: ${e.message}")
-            GatewayResponse(null, "A client-side exception occurred: ${e.message}", request.correlationId)
+            platformDependencies.log(LogLevel.ERROR, id, "Content generation failed: ${e.message}")
+            val userMessage = mapExceptionToUserMessage(e)
+            GatewayResponse(null, userMessage, request.correlationId)
         }
     }
 }

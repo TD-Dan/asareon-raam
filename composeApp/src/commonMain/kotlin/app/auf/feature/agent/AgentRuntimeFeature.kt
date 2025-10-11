@@ -38,6 +38,7 @@ class AgentRuntimeFeature(
             "session.DELETE" -> handleSessionDeleted(action, currentFeatureState)
             "agent.internal.SET_STATUS" -> handleSetStatus(action, currentFeatureState)
             "agent.internal.AGENT_LOADED" -> handleAgentLoaded(action, currentFeatureState)
+            "agent.SET_EDITING" -> handleSetEditing(action, currentFeatureState)
             else -> null
         }
 
@@ -61,8 +62,7 @@ class AgentRuntimeFeature(
             personaId = personaId,
             modelProvider = modelProvider,
             modelName = modelName,
-            primarySessionId = primarySessionId,
-            status = AgentStatus.IDLE
+            primarySessionId = primarySessionId
         )
 
         val newAgents = currentFeatureState.agents + (newAgentId to newAgent)
@@ -109,11 +109,17 @@ class AgentRuntimeFeature(
         val payload = action.payload ?: return currentFeatureState
         val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
         val agentToUpdate = currentFeatureState.agents[agentId] ?: return currentFeatureState
-        val newStatus = try {
-            json.decodeFromJsonElement<AgentStatus>(payload["status"] ?: return currentFeatureState)
-        } catch (e: Exception) { return currentFeatureState }
 
-        val updatedAgent = agentToUpdate.copy(status = newStatus)
+        val newStatusString = payload["status"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
+        val newStatus = try { AgentStatus.valueOf(newStatusString) } catch (e: Exception) { return currentFeatureState }
+
+        val newErrorMessage = if (newStatus == AgentStatus.ERROR) {
+            payload["error"]?.jsonPrimitive?.contentOrNull
+        } else {
+            null // Clear error message for any non-error status
+        }
+
+        val updatedAgent = agentToUpdate.copy(status = newStatus, errorMessage = newErrorMessage)
         val newAgents = currentFeatureState.agents + (agentId to updatedAgent)
         return currentFeatureState.copy(agents = newAgents)
     }
@@ -124,6 +130,13 @@ class AgentRuntimeFeature(
         if (currentFeatureState.agents.containsKey(agent.id)) return currentFeatureState
         val newAgents = currentFeatureState.agents + (agent.id to agent)
         return currentFeatureState.copy(agents = newAgents)
+    }
+
+    private fun handleSetEditing(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState {
+        val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull
+        // If the ID is the same as the current editing ID, toggle it off.
+        val nextId = if (agentId == currentFeatureState.editingAgentId) null else agentId
+        return currentFeatureState.copy(editingAgentId = nextId)
     }
 
 
@@ -195,18 +208,21 @@ class AgentRuntimeFeature(
         val sessionState = appState.featureStates["session"] as? SessionState ?: return
         val agent = agentState.agents[agentId] ?: return
 
-        if (agent.status != AgentStatus.IDLE) return
+        // Allow re-triggering if the agent is IDLE or in an ERROR state.
+        if (agent.status == AgentStatus.PROCESSING || agent.status == AgentStatus.WAITING) return
 
         val targetSessionId = agent.primarySessionId
         if (targetSessionId == null) {
-            postErrorMessage(agent, "Cannot start turn: Agent is not subscribed to a primary session.", store)
-            setAgentStatus(agentId, AgentStatus.ERROR, store); return
+            val errorMsg = "Cannot start turn: Agent is not subscribed to a primary session."
+            postErrorMessage(agent, errorMsg, store)
+            setAgentStatus(agentId, AgentStatus.ERROR, store, errorMsg); return
         }
 
         val targetSession = sessionState.sessions[targetSessionId]
         if (targetSession == null || targetSession.ledger.isEmpty()) {
-            postErrorMessage(agent, "Cannot start turn: Primary session is empty or not found.", store)
-            setAgentStatus(agentId, AgentStatus.ERROR, store); return
+            val errorMsg = "Cannot start turn: Primary session is empty or not found."
+            postErrorMessage(agent, errorMsg, store)
+            setAgentStatus(agentId, AgentStatus.ERROR, store, errorMsg); return
         }
 
         setAgentStatus(agentId, AgentStatus.PROCESSING, store)
@@ -275,7 +291,7 @@ class AgentRuntimeFeature(
         if (data.errorMessage != null) {
             val errorMessage = "[AGENT ERROR] Generation failed: ${data.errorMessage}"
             postErrorMessage(agent, errorMessage, store)
-            setAgentStatus(agentId, AgentStatus.ERROR, store)
+            setAgentStatus(agentId, AgentStatus.ERROR, store, errorMessage)
         } else {
             val responseContent = data.rawContent ?: "[AGENT ERROR] Received empty response from gateway."
             val postPayload = buildJsonObject {
@@ -288,10 +304,13 @@ class AgentRuntimeFeature(
         }
     }
 
-    private fun setAgentStatus(agentId: String, status: AgentStatus, store: Store) {
+    private fun setAgentStatus(agentId: String, status: AgentStatus, store: Store, error: String? = null) {
         val payload = buildJsonObject {
             put("agentId", agentId)
-            put("status", Json.encodeToJsonElement(status))
+            put("status", status.name)
+            if (error != null) {
+                put("error", error)
+            }
         }
         store.dispatch(this.name, Action("agent.internal.SET_STATUS", payload))
     }
