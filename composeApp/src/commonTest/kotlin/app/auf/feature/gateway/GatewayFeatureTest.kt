@@ -9,7 +9,6 @@ import app.auf.feature.settings.SettingsState
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
@@ -24,30 +23,45 @@ class GatewayFeatureTest {
 
     private data class CapturedPrivateData(val originator: String, val recipient: String, val data: Any)
 
-    /**
-     * A high-fidelity test Store that correctly includes all necessary features
-     * (like CoreFeature for lifecycle) and allows safe state manipulation for testing.
-     */
     private class TestStore(
         initialState: AppState,
-        features: List<Feature>,
-        platformDependencies: PlatformDependencies
+        private val features: List<Feature>,
+        // THE FIX: Pass the coreFeature instance to resolve the name property.
+        private val coreFeature: CoreFeature,
+        private val platformDependencies: PlatformDependencies
     ) : Store(initialState, features, platformDependencies) {
         val dispatchedActions = mutableListOf<Action>()
         var capturedPrivateData: CapturedPrivateData? = null
 
-        // THE FIX: Provide a safe way to manipulate state for tests.
         private val _testState = MutableStateFlow(initialState)
-        override val state = _testState.asStateFlow()
+        override val state = _testState
+
         fun setState(newState: AppState) {
             _testState.value = newState
         }
-        // END FIX
 
         override fun dispatch(originator: String, action: Action) {
             val stampedAction = action.copy(originator = originator)
             dispatchedActions.add(stampedAction)
-            super.dispatch(originator, stampedAction)
+
+            // THE FIX: Use the instance variable `coreFeature.name`
+            val coreState = _testState.value.featureStates[coreFeature.name] as? CoreState
+            if (coreState?.lifecycle == AppLifecycle.RUNNING && stampedAction.name == "system.STARTING") {
+                return
+            }
+
+            val previousState = _testState.value
+            val newState = features.fold(previousState) { currentState, feature ->
+                feature.reducer(currentState, stampedAction)
+            }
+
+            if (newState != previousState) {
+                _testState.value = newState
+            }
+
+            features.forEach { feature ->
+                feature.onAction(stampedAction, this)
+            }
         }
 
         override fun deliverPrivateData(originator: String, recipient: String, data: Any) {
@@ -112,7 +126,7 @@ class GatewayFeatureTest {
         ))
 
         val features = listOf(gatewayFeature, coreFeature)
-        testStore = TestStore(initialState, features, FakePlatformDependencies(testAppVersion))
+        testStore = TestStore(initialState, features, coreFeature, FakePlatformDependencies(testAppVersion))
         features.forEach { it.init(testStore) }
     }
 
@@ -124,20 +138,19 @@ class GatewayFeatureTest {
             gatewayFeature.name to GatewayState(),
             coreFeature.name to CoreState(lifecycle = AppLifecycle.BOOTING)
         ))
-        val bootingStore = TestStore(bootingState, listOf(gatewayFeature, coreFeature), FakePlatformDependencies(testAppVersion))
+        val bootingStore = TestStore(bootingState, listOf(gatewayFeature, coreFeature), coreFeature, FakePlatformDependencies(testAppVersion))
         bootingStore.dispatch("system.test", Action("system.INITIALIZING"))
 
-        assertEquals(1, fakeProvider1.registerSettingsCallCount, "Provider 1 should register settings.")
-        assertEquals(1, fakeProvider2.registerSettingsCallCount, "Provider 2 should register settings.")
+        assertEquals(1, fakeProvider1.registerSettingsCallCount)
+        assertEquals(1, fakeProvider2.registerSettingsCallCount)
     }
 
     @Test
     fun `on STARTING refreshes models for all providers`() = testScope.runTest {
-        // THE FIX: To test 'system.STARTING', we must begin in the 'INITIALIZING' state.
+        // THE FIX: Ensure the state we transition from contains the necessary SettingsState.
         val initializingState = AppState(featureStates = testStore.state.value.featureStates +
                 (coreFeature.name to CoreState(lifecycle = AppLifecycle.INITIALIZING)))
         testStore.setState(initializingState)
-        // END FIX
 
         testStore.dispatch("system.test", Action("system.STARTING"))
         testScheduler.runCurrent()
@@ -157,8 +170,6 @@ class GatewayFeatureTest {
             put("value", "new-key")
         })
 
-        // THE FIX: Simulate the SettingsFeature's reducer by safely setting the new state
-        // before dispatching the action that triggers the side effect.
         val currentSettings = (testStore.state.value.featureStates["settings"] as SettingsState).values
         val updatedSettings = currentSettings + ("gateway.provider-2.apiKey" to "new-key")
         val updatedState = testStore.state.value.copy(
@@ -166,29 +177,26 @@ class GatewayFeatureTest {
                     ("settings" to SettingsState(values = updatedSettings))
         )
         testStore.setState(updatedState)
-        // END FIX
 
-        // Now dispatch the action to trigger the onAction handler.
         testStore.dispatch("settings.feature", action)
         testScheduler.runCurrent()
 
-        assertEquals(0, fakeProvider1.listAvailableModelsCallCount, "Provider 1 should not be refreshed.")
-        assertEquals(1, fakeProvider2.listAvailableModelsCallCount, "Provider 2 should be refreshed.")
+        assertEquals(0, fakeProvider1.listAvailableModelsCallCount)
+        assertEquals(1, fakeProvider2.listAvailableModelsCallCount)
     }
 
     @Test
     fun `on REQUEST_AVAILABLE_MODELS broadcasts current state`() = testScope.runTest {
-        // THE FIX: Simulate a proper startup sequence to populate state.
         val initializingState = AppState(featureStates = testStore.state.value.featureStates +
                 (coreFeature.name to CoreState(lifecycle = AppLifecycle.INITIALIZING)))
         testStore.setState(initializingState)
         testStore.dispatch("system.test", Action("system.STARTING"))
         testScheduler.runCurrent()
-        // END FIX
 
+        testStore.dispatchedActions.clear()
         testStore.dispatch("agent.test", Action("gateway.REQUEST_AVAILABLE_MODELS"))
 
-        val broadcastAction = testStore.dispatchedActions.last()
+        val broadcastAction = testStore.dispatchedActions.first()
         assertEquals("gateway.AVAILABLE_MODELS_UPDATED", broadcastAction.name)
         val payload = broadcastAction.payload!!
         assertEquals(2, payload.size)
