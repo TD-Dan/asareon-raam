@@ -1,0 +1,74 @@
+{
+  "feature_name": "gateway",
+  "summary": "Acts as a secure, centralized router for all generative AI service requests. It is the single source of truth for available providers and models.",
+  "listensFor": [
+    {
+      "action_name": "gateway.GENERATE_CONTENT",
+      "summary": "Requests content generation from a specific provider.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "description": "The ID of the target provider (e.g., 'gemini', 'openai')."
+          },
+          "modelName": {
+            "type": "string",
+            "description": "The specific model to use (e.g., 'gemini-2.5-pro')."
+          },
+          "correlationId": {
+            "type": "string",
+            "description": "A unique ID to correlate this request with its response."
+          },
+          "contents": {
+            "type": "object",
+            "description": "The provider-agnostic prompt content as a JSON object."
+          }
+        },
+        "required": [
+          "providerId",
+          "modelName",
+          "correlationId",
+          "contents"
+        ]
+      }
+    },
+    {
+      "action_name": "gateway.REQUEST_AVAILABLE_MODELS",
+      "summary": "Requests that the GatewayFeature broadcast the current list of available models.",
+      "payload_schema": null
+    }
+  ],
+  "publishes": [
+    {
+      "action_name": "gateway.AVAILABLE_MODELS_UPDATED",
+      "summary": "Broadcasts the list of currently available providers and their models.",
+      "payload_schema": {
+        "type": "object",
+        "description": "A map where the key is the provider ID and the value is a list of model name strings."
+      }
+    },
+    {
+      "action_name": "gateway.internal.MODELS_UPDATED",
+      "summary": "[INTERNAL] Dispatched after a provider's model list has been fetched. Used to update the feature's internal state.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "providerId",
+          "models"
+        ]
+      }
+    }
+  ]
+}
