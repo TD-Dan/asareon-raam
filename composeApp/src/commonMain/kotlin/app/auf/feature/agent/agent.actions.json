@@ -1,0 +1,65 @@
+{
+  "feature_name": "agent",
+  "summary": "Hosts and manages the lifecycle of autonomous, HKG-driven AI agents.",
+  "listensFor": [
+    {
+      "action_name": "agent.CREATE",
+      "summary": "Creates a new agent instance with the specified configuration.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "personaId": { "type": "string", "description": "The ID of the AI_Persona_Root holon file. (For future use)" },
+          "modelProvider": { "type": "string" },
+          "modelName": { "type": "string" },
+          "primarySessionId": { "type": ["string", "null"], "description": "The session this agent will post its responses to." }
+        },
+        "required": ["name", "personaId", "modelProvider", "modelName"]
+      }
+    },
+    {
+      "action_name": "agent.UPDATE_CONFIG",
+      "summary": "Updates the configuration of an existing agent instance. All payload properties are optional.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string" },
+          "name": { "type": "string" },
+          "personaId": { "type": "string" },
+          "modelProvider": { "type": "string" },
+          "modelName": { "type": "string" },
+          "primarySessionId": { "type": ["string", "null"] }
+        },
+        "required": ["agentId"]
+      }
+    },
+    {
+      "action_name": "agent.DELETE",
+      "summary": "Deletes an agent instance.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "agentId": { "type": "string" } },
+        "required": ["agentId"]
+      }
+    },
+    {
+      "action_name": "agent.TRIGGER_MANUAL_TURN",
+      "summary": "Manually triggers a single cognitive cycle for a specific agent.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "agentId": { "type": "string" } },
+        "required": ["agentId"]
+      }
+    }
+  ],
+  "publishes": [
+    {
+      "action_name": "agent.UPDATED",
+      "summary": "Broadcasts that the state of agents has changed.",
+      "payload_schema": {
+        "type": "object",
+        "description": "The entire AgentRuntimeState object."
+      }
+    }
+  ]
+}
