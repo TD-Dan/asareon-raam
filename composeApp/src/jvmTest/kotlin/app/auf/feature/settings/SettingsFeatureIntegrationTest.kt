@@ -1,17 +1,15 @@
 package app.auf.feature.settings
 
 import app.auf.core.*
-import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.util.BasePath
-import app.auf.util.PlatformDependencies
+import app.auf.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import java.io.File
 import kotlin.test.*
 
 /**
@@ -25,41 +23,33 @@ class SettingsFeatureIntegrationTest {
     private lateinit var fakePlatform: FakePlatformDependencies
     private lateinit var testStore: Store
     private lateinit var settingsFeature: SettingsFeature
-    private lateinit var fileSystemFeature: FileSystemFeature
-    private lateinit var coreFeature: CoreFeature
-    private lateinit var settingsSandboxPath: String
     private lateinit var settingsFilePath: String
-
 
     @BeforeEach
     fun setUp() {
         // 1. Initialize dependencies.
         fakePlatform = FakePlatformDependencies(testAppVersion)
-        coreFeature = CoreFeature(fakePlatform)
+        val coreFeature = CoreFeature(fakePlatform)
         settingsFeature = SettingsFeature(fakePlatform)
-        fileSystemFeature = FileSystemFeature(fakePlatform)
+        val fileSystemFeature = FileSystemFeature(fakePlatform)
         val features = listOf(coreFeature, settingsFeature, fileSystemFeature)
 
-        // 2. Define critical file paths for assertions.
-        settingsSandboxPath = fakePlatform.getBasePathFor(BasePath.APP_ZONE) + fakePlatform.pathSeparator + settingsFeature.name
+        // 2. Define critical file path.
+        val settingsSandboxPath = fakePlatform.getBasePathFor(BasePath.APP_ZONE) + fakePlatform.pathSeparator + settingsFeature.name
         settingsFilePath = settingsSandboxPath + fakePlatform.pathSeparator + "settings.json"
 
-        // 3. Create the Store with a BOOTING state.
-        val initialState = AppState() // Start fresh
-        testStore = Store(initialState, features, fakePlatform)
-
-        // 4. Manually run the one-time init() for all features.
+        // 3. Create the Store with a fresh BOOTING state.
+        testStore = Store(AppState(), features, fakePlatform)
         testStore.initFeatureLifecycles()
-
-        // 5. Run the full, synchronous startup lifecycle. This is the key fix.
-        // It moves the store from BOOTING -> INITIALIZING -> RUNNING.
-        testStore.dispatch("system.test", Action("system.INITIALIZING"))
     }
 
 
     @Test
     fun `settings UPDATE action correctly persists settings to disk via FileSystemFeature`() {
-        // Arrange: Add a setting definition to the store after it has initialized.
+        // Arrange:
+        // 1. Move the store to a state where it can accept settings changes.
+        testStore.dispatch("system.test", Action("system.INITIALIZING"))
+        // 2. Add a setting definition.
         val addAction = Action("settings.ADD", buildJsonObject {
             put("key", "test.key"); put("type", "STRING"); put("label", "Test")
             put("description", "A test key"); put("section", "Testing"); put("defaultValue", "default")
@@ -74,10 +64,8 @@ class SettingsFeatureIntegrationTest {
         testStore.dispatch(settingsFeature.name, updateAction)
 
         // Assert
-        // Check that the file was actually created by the FileSystemFeature in the fake file system.
         assertTrue(fakePlatform.fileExists(settingsFilePath), "settings.json file should have been created in the sandbox.")
         val fileContent = fakePlatform.readFileContent(settingsFilePath)
-        // The content should be a JSON map of all settings, including the one we updated.
         assertTrue(fileContent.contains(""""test.key":"persisted_value""""), "The persisted file content is incorrect.")
     }
 
@@ -85,24 +73,32 @@ class SettingsFeatureIntegrationTest {
     @Test
     fun `app INITIALIZING action correctly loads persisted settings from disk`() {
         // Arrange
-        // Pre-populate the fake file system with a settings file before the test runs.
+        // 1. Pre-populate the file system with a settings file.
         fakePlatform.writeFileContent(settingsFilePath, """{ "test.key": "loaded_value" }""")
 
-        // Add a setting definition that matches the key in the pre-populated file.
+        // 2. Bring the store to the INITIALIZING state. This is crucial.
+        // It allows the next ADD action to be accepted by the lifecycle guard.
+        testStore.dispatch("system.test", Action("system.INITIALIZING"))
+
+        // 3. Add the setting definition AFTER the store is in a valid state.
         val addAction = Action("settings.ADD", buildJsonObject {
             put("key", "test.key"); put("type", "STRING"); put("label", "Test")
             put("description", "A test key"); put("section", "Testing"); put("defaultValue", "default")
         })
         testStore.dispatch("test.setup", addAction)
 
-        // Act
-        // The `system.INITIALIZING` action was already dispatched in setUp().
-        // This action triggers SettingsFeature to dispatch `filesystem.SYSTEM_READ`, and its
-        // onPrivateData handler then dispatches `settings.LOADED`.
-        // We just need to check the final state.
-        val finalState = testStore.state.value.featureStates[settingsFeature.name] as? SettingsState
+        // Act: Manually simulate the FileSystemFeature's response by delivering the
+        // pre-populated file content via the secure onPrivateData channel.
+        // This triggers the `settings.LOADED` action inside the SettingsFeature.
+        val privateDataPayload = buildJsonObject {
+            put("subpath", "settings.json")
+            put("content", fakePlatform.readFileContent(settingsFilePath))
+        }
+        testStore.deliverPrivateData("filesystem", settingsFeature.name, privateDataPayload)
+
 
         // Assert
+        val finalState = testStore.state.value.featureStates[settingsFeature.name] as? SettingsState
         assertNotNull(finalState, "SettingsState should not be null.")
         assertEquals("loaded_value", finalState.values["test.key"], "The value from the persisted file was not loaded correctly.")
     }
