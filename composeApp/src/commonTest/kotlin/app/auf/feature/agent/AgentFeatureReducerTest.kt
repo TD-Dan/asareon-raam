@@ -5,8 +5,11 @@ import app.auf.core.AppState
 import app.auf.fakes.FakePlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
 import kotlin.test.*
 
 class AgentFeatureReducerTest {
@@ -136,6 +139,25 @@ class AgentFeatureReducerTest {
         val agentState = newState.featureStates[feature.name] as? AgentRuntimeState
         assertNotNull(agentState)
         assertEquals(AgentStatus.PROCESSING, agentState.agents["agent-1"]?.status)
+    }
+
+    @Test
+    fun `reducer for internal AGENT_LOADED adds agent from payload`() {
+        // ARRANGE
+        val (feature, initialState) = createFeatureAndInitialState() // Start with zero agents
+        val agentFromDisk = AgentInstance("agent-from-disk", "Disk Agent", "p-disk", "prov", "model")
+        val payload = Json.encodeToJsonElement(agentFromDisk).jsonObject
+        val action = Action("agent.internal.AGENT_LOADED", payload)
+
+        // ACT
+        val newState = feature.reducer(initialState, action)
+
+        // ASSERT
+        val agentState = newState.featureStates[feature.name] as? AgentRuntimeState
+        assertNotNull(agentState)
+        assertEquals(1, agentState.agents.size)
+        assertNotNull(agentState.agents["agent-from-disk"])
+        assertEquals("Disk Agent", agentState.agents["agent-from-disk"]?.name)
     }
 
     @Test

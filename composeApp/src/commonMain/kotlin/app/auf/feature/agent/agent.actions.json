@@ -60,6 +60,14 @@
         "type": "object",
         "description": "The entire AgentRuntimeState object."
       }
+    },
+    {
+      "action_name": "agent.internal.AGENT_LOADED",
+      "summary": "[INTERNAL] Dispatched after an agent's configuration has been read from its sandbox. Used to populate the feature's state.",
+      "payload_schema": {
+        "type": "object",
+        "description": "A single AgentInstance object."
+      }
     }
   ]
 }

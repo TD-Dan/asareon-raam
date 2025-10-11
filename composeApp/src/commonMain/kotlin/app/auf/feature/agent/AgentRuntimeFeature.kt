@@ -10,8 +10,11 @@ import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
 import app.auf.feature.gateway.GatewayResponse
 import app.auf.feature.session.SessionState
+import app.auf.util.FileEntry
+import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
 class AgentRuntimeFeature(
@@ -20,29 +23,35 @@ class AgentRuntimeFeature(
 ) : Feature {
     override val name: String = "agent"
 
-    // A private, lenient JSON instance for safe payload decoding.
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
+    private val AGENT_CONFIG_FILENAME = "agent.json"
+
+    // --- REDUCER (Pure State Logic) ---
 
     override fun reducer(state: AppState, action: Action): AppState {
         val currentFeatureState = state.featureStates[name] as? AgentRuntimeState ?: AgentRuntimeState()
 
-        return when (action.name) {
-            "agent.CREATE" -> handleCreateAgent(action, currentFeatureState, state)
-            "agent.DELETE" -> handleDeleteAgent(action, currentFeatureState, state)
-            "agent.UPDATE_CONFIG" -> handleUpdateConfig(action, currentFeatureState, state)
-            "session.DELETE" -> handleSessionDeleted(action, currentFeatureState, state)
-            // Internal actions for managing the cognitive cycle state
-            "agent.internal.SET_STATUS" -> handleSetStatus(action, currentFeatureState, state)
-            else -> state
+        val newFeatureState = when (action.name) {
+            "agent.CREATE" -> handleCreateAgent(action, currentFeatureState)
+            "agent.DELETE" -> handleDeleteAgent(action, currentFeatureState)
+            "agent.UPDATE_CONFIG" -> handleUpdateConfig(action, currentFeatureState)
+            "session.DELETE" -> handleSessionDeleted(action, currentFeatureState)
+            "agent.internal.SET_STATUS" -> handleSetStatus(action, currentFeatureState)
+            "agent.internal.AGENT_LOADED" -> handleAgentLoaded(action, currentFeatureState)
+            else -> null
         }
+
+        return newFeatureState?.let {
+            state.copy(featureStates = state.featureStates + (name to it))
+        } ?: state
     }
 
-    private fun handleCreateAgent(action: Action, currentFeatureState: AgentRuntimeState, state: AppState): AppState {
-        val payload = action.payload ?: return state
-        val agentName = payload["name"]?.jsonPrimitive?.contentOrNull ?: return state
-        val personaId = payload["personaId"]?.jsonPrimitive?.contentOrNull ?: return state
-        val modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: return state
-        val modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: return state
+    private fun handleCreateAgent(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState {
+        val payload = action.payload ?: return currentFeatureState
+        val agentName = payload["name"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
+        val personaId = payload["personaId"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
+        val modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
+        val modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
         val primarySessionId = payload["primarySessionId"]?.jsonPrimitive?.contentOrNull
 
         val newAgentId = platformDependencies.generateUUID()
@@ -57,21 +66,19 @@ class AgentRuntimeFeature(
         )
 
         val newAgents = currentFeatureState.agents + (newAgentId to newAgent)
-        val newFeatureState = currentFeatureState.copy(agents = newAgents)
-        return state.copy(featureStates = state.featureStates + (name to newFeatureState))
+        return currentFeatureState.copy(agents = newAgents)
     }
 
-    private fun handleDeleteAgent(action: Action, currentFeatureState: AgentRuntimeState, state: AppState): AppState {
-        val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
+    private fun handleDeleteAgent(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState {
+        val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
         val newAgents = currentFeatureState.agents.filterKeys { it != agentId }
-        val newFeatureState = currentFeatureState.copy(agents = newAgents)
-        return state.copy(featureStates = state.featureStates + (name to newFeatureState))
+        return currentFeatureState.copy(agents = newAgents)
     }
 
-    private fun handleUpdateConfig(action: Action, currentFeatureState: AgentRuntimeState, state: AppState): AppState {
-        val payload = action.payload ?: return state
-        val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
-        val agentToUpdate = currentFeatureState.agents[agentId] ?: return state
+    private fun handleUpdateConfig(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState {
+        val payload = action.payload ?: return currentFeatureState
+        val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
+        val agentToUpdate = currentFeatureState.agents[agentId] ?: return currentFeatureState
 
         val updatedAgent = agentToUpdate.copy(
             name = payload["name"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.name,
@@ -86,53 +93,98 @@ class AgentRuntimeFeature(
         )
 
         val newAgents = currentFeatureState.agents + (agentId to updatedAgent)
-        val newFeatureState = currentFeatureState.copy(agents = newAgents)
-        return state.copy(featureStates = state.featureStates + (name to newFeatureState))
+        return currentFeatureState.copy(agents = newAgents)
     }
 
-    private fun handleSessionDeleted(action: Action, currentFeatureState: AgentRuntimeState, state: AppState): AppState {
-        val deletedSessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return state
-
+    private fun handleSessionDeleted(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState {
+        val deletedSessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
         val newAgents = currentFeatureState.agents.mapValues { (_, agent) ->
-            if (agent.primarySessionId == deletedSessionId) {
-                agent.copy(primarySessionId = null)
-            } else {
-                agent
-            }
+            if (agent.primarySessionId == deletedSessionId) agent.copy(primarySessionId = null) else agent
         }
-
-        if (newAgents == currentFeatureState.agents) return state
-
-        val newFeatureState = currentFeatureState.copy(agents = newAgents)
-        return state.copy(featureStates = state.featureStates + (name to newFeatureState))
+        if (newAgents == currentFeatureState.agents) return currentFeatureState
+        return currentFeatureState.copy(agents = newAgents)
     }
 
-    private fun handleSetStatus(action: Action, currentFeatureState: AgentRuntimeState, state: AppState): AppState {
-        val payload = action.payload ?: return state
-        val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
-        val agentToUpdate = currentFeatureState.agents[agentId] ?: return state
+    private fun handleSetStatus(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState {
+        val payload = action.payload ?: return currentFeatureState
+        val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
+        val agentToUpdate = currentFeatureState.agents[agentId] ?: return currentFeatureState
         val newStatus = try {
-            json.decodeFromJsonElement<AgentStatus>(payload["status"] ?: return state)
-        } catch (e: Exception) {
-            return state // Ignore malformed status
-        }
+            json.decodeFromJsonElement<AgentStatus>(payload["status"] ?: return currentFeatureState)
+        } catch (e: Exception) { return currentFeatureState }
 
         val updatedAgent = agentToUpdate.copy(status = newStatus)
         val newAgents = currentFeatureState.agents + (agentId to updatedAgent)
-        val newFeatureState = currentFeatureState.copy(agents = newAgents)
-        return state.copy(featureStates = state.featureStates + (name to newFeatureState))
+        return currentFeatureState.copy(agents = newAgents)
     }
+
+    private fun handleAgentLoaded(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState {
+        val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return currentFeatureState
+        // Avoid overwriting an agent that might already be in memory.
+        if (currentFeatureState.agents.containsKey(agent.id)) return currentFeatureState
+        val newAgents = currentFeatureState.agents + (agent.id to agent)
+        return currentFeatureState.copy(agents = newAgents)
+    }
+
+
+    // --- ON_ACTION (Side Effect Orchestration) ---
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
-            "agent.TRIGGER_MANUAL_TURN" -> beginCognitiveCycle(action, store)
-            "agent.CREATE", "agent.DELETE", "agent.UPDATE_CONFIG", "session.DELETE" -> {
-                // After our state has been changed by the reducer, broadcast the update.
-                val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
-                val payload = json.encodeToJsonElement(agentState).jsonObject
-                store.dispatch(this.name, Action("agent.UPDATED", payload))
+            "system.STARTING" -> {
+                // Request a listing of our root sandbox to discover persisted agent directories.
+                store.dispatch(this.name, Action("filesystem.SYSTEM_LIST"))
             }
+            "agent.CREATE", "agent.UPDATE_CONFIG" -> {
+                // After the reducer has updated the state, persist the relevant agent.json.
+                val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull
+                // For CREATE, the agentId isn't in the payload, so we find the newest one.
+                    ?: agentState.agents.keys.lastOrNull()
+                    ?: return
+                val agentToSave = agentState.agents[agentId] ?: return
+
+                val fileContent = json.encodeToString(AgentInstance.serializer(), agentToSave)
+                val subpath = "${agentToSave.id}/$AGENT_CONFIG_FILENAME"
+
+                store.dispatch(this.name, Action("filesystem.SYSTEM_WRITE", buildJsonObject {
+                    put("subpath", subpath)
+                    put("content", fileContent)
+                }))
+                broadcastUpdate(store)
+            }
+            "agent.DELETE" -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                // Request to delete the entire agent's sandbox directory.
+                store.dispatch(this.name, Action("filesystem.SYSTEM_DELETE", buildJsonObject {
+                    put("subpath", agentId)
+                }))
+                broadcastUpdate(store)
+            }
+            "session.DELETE" -> {
+                // If a session was deleted, we need to re-save any agents that were subscribed to it.
+                val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+                val deletedSessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return
+                agentState.agents.values
+                    .filter { it.primarySessionId == deletedSessionId }
+                    .forEach { agentToUpdate ->
+                        val fileContent = json.encodeToString(AgentInstance.serializer(), agentToUpdate)
+                        val subpath = "${agentToUpdate.id}/$AGENT_CONFIG_FILENAME"
+                        store.dispatch(this.name, Action("filesystem.SYSTEM_WRITE", buildJsonObject {
+                            put("subpath", subpath)
+                            put("content", fileContent)
+                        }))
+                    }
+                broadcastUpdate(store)
+            }
+            "agent.TRIGGER_MANUAL_TURN" -> beginCognitiveCycle(action, store)
         }
+    }
+
+    private fun broadcastUpdate(store: Store) {
+        val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+        val payload = json.encodeToJsonElement(agentState).jsonObject
+        store.dispatch(this.name, Action("agent.UPDATED", payload))
     }
 
     private fun beginCognitiveCycle(action: Action, store: Store) {
@@ -143,35 +195,28 @@ class AgentRuntimeFeature(
         val sessionState = appState.featureStates["session"] as? SessionState ?: return
         val agent = agentState.agents[agentId] ?: return
 
-        if (agent.status != AgentStatus.IDLE) {
-            return
-        }
+        if (agent.status != AgentStatus.IDLE) return
 
         val targetSessionId = agent.primarySessionId
         if (targetSessionId == null) {
             postErrorMessage(agent, "Cannot start turn: Agent is not subscribed to a primary session.", store)
-            setAgentStatus(agentId, AgentStatus.ERROR, store)
-            return
+            setAgentStatus(agentId, AgentStatus.ERROR, store); return
         }
 
         val targetSession = sessionState.sessions[targetSessionId]
         if (targetSession == null || targetSession.ledger.isEmpty()) {
             postErrorMessage(agent, "Cannot start turn: Primary session is empty or not found.", store)
-            setAgentStatus(agentId, AgentStatus.ERROR, store)
-            return
+            setAgentStatus(agentId, AgentStatus.ERROR, store); return
         }
 
         setAgentStatus(agentId, AgentStatus.PROCESSING, store)
 
+        // For now, we still just use the last message. A more complex implementation would build a history.
         val lastMessage = targetSession.ledger.last().rawContent
         val contentsPayload = buildJsonArray {
             add(buildJsonObject {
                 put("role", "user")
-                put("parts", buildJsonArray {
-                    add(buildJsonObject {
-                        put("text", lastMessage)
-                    })
-                })
+                put("parts", buildJsonArray { add(buildJsonObject { put("text", lastMessage) }) })
             })
         }
 
@@ -184,18 +229,46 @@ class AgentRuntimeFeature(
         store.dispatch(this.name, Action("gateway.GENERATE_CONTENT", gatewayPayload))
     }
 
-    override fun onPrivateData(data: Any, store: Store) {
-        if (data !is GatewayResponse) return
+    // --- ON_PRIVATE_DATA (Async Data Handling) ---
 
+    override fun onPrivateData(data: Any, store: Store) {
+        when (data) {
+            is List<*> -> { // Case 1: Received directory listing from FileSystemFeature
+                val fileEntries = data.filterIsInstance<FileEntry>()
+                fileEntries.filter { it.isDirectory }.forEach { dirEntry ->
+                    val agentId = platformDependencies.getFileName(dirEntry.path)
+                    val configPath = "$agentId/$AGENT_CONFIG_FILENAME"
+                    store.dispatch(this.name, Action("filesystem.SYSTEM_READ", buildJsonObject {
+                        put("subpath", configPath)
+                    }))
+                }
+            }
+            is JsonObject -> { // Case 2: Received agent.json file content from FileSystemFeature
+                val content = data["content"]?.jsonPrimitive?.contentOrNull ?: return
+                try {
+                    val agent = json.decodeFromString<AgentInstance>(content)
+                    // Dispatch an internal action to load this agent into the state via the reducer.
+                    store.dispatch(this.name, Action("agent.internal.AGENT_LOADED", Json.encodeToJsonElement(agent) as JsonObject))
+                } catch (e: Exception) {
+                    platformDependencies.log(
+                        level = LogLevel.ERROR,
+                        tag = name,
+                        message = "Failed to parse agent config file: ${data["subpath"]}. Error: ${e.message}"
+                    )
+                }
+            }
+            is GatewayResponse -> { // Case 3: Received response from GatewayFeature
+                handleGatewayResponse(data, store)
+            }
+        }
+    }
+
+    private fun handleGatewayResponse(data: GatewayResponse, store: Store) {
         val agentId = data.correlationId
         val agent = (store.state.value.featureStates[name] as? AgentRuntimeState)?.agents?.get(agentId)
 
         if (agent == null) {
-            platformDependencies.log(
-                level = app.auf.util.LogLevel.WARN,
-                tag = name,
-                message = "Received GatewayResponse for deleted agent '$agentId'. Discarding."
-            )
+            platformDependencies.log(LogLevel.WARN, name, "Received GatewayResponse for deleted agent '$agentId'. Discarding.")
             return
         }
 
@@ -232,6 +305,9 @@ class AgentRuntimeFeature(
         }
         store.dispatch(this.name, Action("session.POST", postPayload))
     }
+
+
+    // --- UI PROVIDER ---
 
     override val composableProvider: ComposableProvider = object : ComposableProvider {
         override val stageViews: Map<String, @Composable (Store) -> Unit> =
