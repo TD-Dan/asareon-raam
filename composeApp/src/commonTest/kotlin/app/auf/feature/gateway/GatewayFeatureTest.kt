@@ -26,7 +26,6 @@ class GatewayFeatureTest {
     private class TestStore(
         initialState: AppState,
         private val features: List<Feature>,
-        // THE FIX: Pass the coreFeature instance to resolve the name property.
         private val coreFeature: CoreFeature,
         private val platformDependencies: PlatformDependencies
     ) : Store(initialState, features, platformDependencies) {
@@ -44,7 +43,6 @@ class GatewayFeatureTest {
             val stampedAction = action.copy(originator = originator)
             dispatchedActions.add(stampedAction)
 
-            // THE FIX: Use the instance variable `coreFeature.name`
             val coreState = _testState.value.featureStates[coreFeature.name] as? CoreState
             if (coreState?.lifecycle == AppLifecycle.RUNNING && stampedAction.name == "system.STARTING") {
                 return
@@ -147,7 +145,6 @@ class GatewayFeatureTest {
 
     @Test
     fun `on STARTING refreshes models for all providers`() = testScope.runTest {
-        // THE FIX: Ensure the state we transition from contains the necessary SettingsState.
         val initializingState = AppState(featureStates = testStore.state.value.featureStates +
                 (coreFeature.name to CoreState(lifecycle = AppLifecycle.INITIALIZING)))
         testStore.setState(initializingState)
@@ -196,7 +193,8 @@ class GatewayFeatureTest {
         testStore.dispatchedActions.clear()
         testStore.dispatch("agent.test", Action("gateway.REQUEST_AVAILABLE_MODELS"))
 
-        val broadcastAction = testStore.dispatchedActions.first()
+        // THE FIX: The action we want to check is the LAST one dispatched, which is the result.
+        val broadcastAction = testStore.dispatchedActions.last()
         assertEquals("gateway.AVAILABLE_MODELS_UPDATED", broadcastAction.name)
         val payload = broadcastAction.payload!!
         assertEquals(2, payload.size)
