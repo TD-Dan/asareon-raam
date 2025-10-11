@@ -1,10 +1,7 @@
 package app.auf.feature.gateway.gemini
 
 import app.auf.core.Action
-import app.auf.feature.gateway.AgentGatewayProvider
-import app.auf.feature.gateway.GatewayRequest
-import app.auf.feature.gateway.GatewayResponse
-import app.auf.feature.gateway.mapExceptionToUserMessage
+import app.auf.feature.gateway.*
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import io.ktor.client.*
@@ -16,6 +13,7 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -57,7 +55,6 @@ class GeminiProvider(
     private val json = Json { ignoreUnknownKeys = true }
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
-        // REMOVED: The ambiguous defaultRequest block. We will use full URLs.
         install(HttpTimeout) { requestTimeoutMillis = 60_000 }
     }
 
@@ -79,7 +76,6 @@ class GeminiProvider(
         if (apiKey.isBlank()) return emptyList()
 
         return try {
-            // CORRECTED: Use a full, explicit URL.
             val response: ListModelsResponse = client.get("https://$API_HOST/v1beta/models") {
                 parameter("key", apiKey)
             }.body()
@@ -99,12 +95,21 @@ class GeminiProvider(
             return GatewayResponse(null, "Gemini API Key is not configured.", request.correlationId)
         }
 
-        val apiRequest = buildJsonObject {
-            put("contents", request.contents)
+        // CORRECTED: Transform the universal message list into the Gemini-specific JSON structure.
+        val apiContents = buildJsonArray {
+            request.contents.forEach { message ->
+                add(buildJsonObject {
+                    put("role", message.role)
+                    put("parts", buildJsonArray {
+                        add(buildJsonObject { put("text", message.content) })
+                    })
+                })
+            }
         }
+        val apiRequest = buildJsonObject { put("contents", apiContents) }
+
 
         return try {
-            // CORRECTED: Use a full, explicit URL.
             val apiUrl = "https://$API_HOST/v1beta/models/${request.modelName}:generateContent"
             val response: GenerateContentResponse = client.post(apiUrl) {
                 parameter("key", apiKey)

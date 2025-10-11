@@ -1,17 +1,20 @@
 package app.auf.feature.gateway
 
 import app.auf.core.Action
-import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.Serializable
 
 /**
- * A generic, provider-agnostic request for content generation.
- * This is the data model used on the main application action bus.
+ * A new, universal, provider-agnostic data class for a single message in a conversation.
+ */
+@Serializable
+data class GatewayMessage(val role: String, val content: String)
+
+/**
+ * The generic request for content generation, now using a type-safe list of universal messages.
  */
 data class GatewayRequest(
     val modelName: String,
-    // CORRECTED: The universal prompt format is a JSON Array, which is the
-    // common structure for multi-turn chat conversations.
-    val contents: JsonArray,
+    val contents: List<GatewayMessage>,
     val correlationId: String
 )
 

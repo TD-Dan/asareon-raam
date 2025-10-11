@@ -18,6 +18,7 @@ import kotlin.test.*
 class GatewayFeatureTest {
 
     private val testAppVersion = "2.0.0-test"
+    private val json = Json { ignoreUnknownKeys = true }
 
     // --- Test Doubles & Fakes ---
 
@@ -38,6 +39,7 @@ class GatewayFeatureTest {
         fun setState(newState: AppState) {
             _testState.value = newState
         }
+
 
         override fun dispatch(originator: String, action: Action) {
             val stampedAction = action.copy(originator = originator)
@@ -108,10 +110,11 @@ class GatewayFeatureTest {
     @BeforeTest
     fun setup() {
         testScope = TestScope()
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
         fakeProvider1 = FakeAgentGatewayProvider("provider-1")
         fakeProvider2 = FakeAgentGatewayProvider("provider-2", modelsToReturn = listOf("gpt-x"))
         gatewayFeature = GatewayFeature(testScope, listOf(fakeProvider1, fakeProvider2))
-        coreFeature = CoreFeature(FakePlatformDependencies(testAppVersion))
+        coreFeature = CoreFeature(fakePlatform)
 
         val settingsValues = mapOf(
             "gateway.provider-1.apiKey" to "key1",
@@ -124,7 +127,7 @@ class GatewayFeatureTest {
         ))
 
         val features = listOf(gatewayFeature, coreFeature)
-        testStore = TestStore(initialState, features, coreFeature, FakePlatformDependencies(testAppVersion))
+        testStore = TestStore(initialState, features, coreFeature, fakePlatform)
         features.forEach { it.init(testStore) }
     }
 
@@ -193,7 +196,6 @@ class GatewayFeatureTest {
         testStore.dispatchedActions.clear()
         testStore.dispatch("agent.test", Action("gateway.REQUEST_AVAILABLE_MODELS"))
 
-        // THE FIX: The action we want to check is the LAST one dispatched, which is the result.
         val broadcastAction = testStore.dispatchedActions.last()
         assertEquals("gateway.AVAILABLE_MODELS_UPDATED", broadcastAction.name)
         val payload = broadcastAction.payload!!
@@ -204,13 +206,19 @@ class GatewayFeatureTest {
     fun `on GENERATE_CONTENT routes to correct provider and delivers response privately`() = testScope.runTest {
         val originatorId = "agent-feature-1"
         val correlationId = "test-turn-123"
-        val prompt = buildJsonArray { add(buildJsonObject { put("role", "user") }) }
+
+        // CORRECTED: Create a proper List<GatewayMessage> and serialize it,
+        // mimicking the behavior of the real AgentRuntimeFeature.
+        val messages = listOf(GatewayMessage("user", "Test prompt"))
+        val contentsPayload = json.encodeToJsonElement(messages)
+
         val action = Action("gateway.GENERATE_CONTENT", buildJsonObject {
             put("providerId", "provider-2")
             put("modelName", "gpt-x")
             put("correlationId", correlationId)
-            put("contents", prompt)
+            put("contents", contentsPayload)
         })
+
         testStore.dispatch(originatorId, action)
         testScheduler.runCurrent()
 

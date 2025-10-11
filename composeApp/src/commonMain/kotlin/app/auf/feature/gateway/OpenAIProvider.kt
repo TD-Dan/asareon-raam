@@ -1,10 +1,7 @@
 package app.auf.feature.gateway.openai
 
 import app.auf.core.Action
-import app.auf.feature.gateway.AgentGatewayProvider
-import app.auf.feature.gateway.GatewayRequest
-import app.auf.feature.gateway.GatewayResponse
-import app.auf.feature.gateway.mapExceptionToUserMessage
+import app.auf.feature.gateway.*
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import io.ktor.client.*
@@ -18,6 +15,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.encodeToJsonElement
 
 // --- Data Contracts specific to the OpenAI API ---
 @Serializable
@@ -45,7 +43,6 @@ class OpenAIProvider(
     private val json = Json { ignoreUnknownKeys = true }
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
-        // REMOVED: The ambiguous defaultRequest block. We will use full URLs.
         install(HttpTimeout) { requestTimeoutMillis = 60_000 }
     }
 
@@ -75,13 +72,14 @@ class OpenAIProvider(
             return GatewayResponse(null, "OpenAI API Key is not configured.", request.correlationId)
         }
 
+        // CORRECTED: Transform the universal message list into the OpenAI-specific JSON structure.
+        // The GatewayMessage data class serializes directly to the format OpenAI expects.
         val apiRequest = buildJsonObject {
             put("model", request.modelName)
-            put("messages", request.contents)
+            put("messages", json.encodeToJsonElement(request.contents))
         }
 
         return try {
-            // CORRECTED: Use a full, explicit URL.
             val apiUrl = "https://$API_HOST/v1/chat/completions"
             val response: OpenAIChatResponse = client.post(apiUrl) {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")

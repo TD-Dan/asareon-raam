@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -8,6 +9,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
+import app.auf.feature.gateway.GatewayMessage
 import app.auf.feature.gateway.GatewayResponse
 import app.auf.feature.session.SessionState
 import app.auf.util.FileEntry
@@ -227,20 +229,15 @@ class AgentRuntimeFeature(
 
         setAgentStatus(agentId, AgentStatus.PROCESSING, store)
 
-        // For now, we still just use the last message. A more complex implementation would build a history.
+        // CORRECTED: Build a universal message list, not a provider-specific JSON object.
         val lastMessage = targetSession.ledger.last().rawContent
-        val contentsPayload = buildJsonArray {
-            add(buildJsonObject {
-                put("role", "user")
-                put("parts", buildJsonArray { add(buildJsonObject { put("text", lastMessage) }) })
-            })
-        }
+        val messages = listOf(GatewayMessage("user", lastMessage))
 
         val gatewayPayload = buildJsonObject {
             put("providerId", agent.modelProvider)
             put("modelName", agent.modelName)
             put("correlationId", agent.id)
-            put("contents", contentsPayload)
+            put("contents", Json.encodeToJsonElement(messages))
         }
         store.dispatch(this.name, Action("gateway.GENERATE_CONTENT", gatewayPayload))
     }
@@ -343,7 +340,7 @@ class AgentRuntimeFeature(
                 }
             ) {
                 Icon(
-                    imageVector = Icons.Default.SmartToy,
+                    imageVector = Icons.Default.Bolt,
                     contentDescription = "Agent Manager",
                     tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )

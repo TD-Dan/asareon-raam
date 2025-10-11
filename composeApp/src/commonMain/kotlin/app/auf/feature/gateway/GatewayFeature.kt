@@ -16,6 +16,7 @@ class GatewayFeature(
     // The feature's only internal, transient state is this private map of its plugins.
     private val providerMap = providers.associateBy { it.id }
     private val providerApiKeys = providers.map { "gateway.${it.id}.apiKey" }.toSet()
+    private val json = Json { ignoreUnknownKeys = true }
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
@@ -61,8 +62,10 @@ class GatewayFeature(
         val modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: return
         val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
 
-        // THE FIX: Correctly parse the payload field as a JsonArray.
-        val contents = payload["contents"]?.jsonArray ?: return
+        // CORRECTED: Decode the payload into our type-safe, universal list of messages.
+        val contents = payload["contents"]?.jsonArray?.let {
+            json.decodeFromJsonElement<List<GatewayMessage>>(it)
+        } ?: return
 
         val provider = providerMap[providerId] ?: return // Silently ignore unknown providers
         val settingsState = store.state.value.featureStates["settings"] as? SettingsState ?: return

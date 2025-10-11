@@ -8,29 +8,23 @@
       "payload_schema": {
         "type": "object",
         "properties": {
-          "providerId": {
-            "type": "string",
-            "description": "The ID of the target provider (e.g., 'gemini', 'openai')."
-          },
-          "modelName": {
-            "type": "string",
-            "description": "The specific model to use (e.g., 'gemini-2.5-pro')."
-          },
-          "correlationId": {
-            "type": "string",
-            "description": "A unique ID to correlate this request with its response."
-          },
+          "providerId": { "type": "string" },
+          "modelName": { "type": "string" },
+          "correlationId": { "type": "string" },
           "contents": {
-            "type": "object",
-            "description": "The provider-agnostic prompt content as a JSON object."
+            "type": "array",
+            "description": "The provider-agnostic prompt content as a list of GatewayMessage objects.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": { "type": "string" },
+                "content": { "type": "string" }
+              },
+              "required": ["role", "content"]
+            }
           }
         },
-        "required": [
-          "providerId",
-          "modelName",
-          "correlationId",
-          "contents"
-        ]
+        "required": [ "providerId", "modelName", "correlationId", "contents" ]
       }
     },
     {
@@ -54,20 +48,10 @@
       "payload_schema": {
         "type": "object",
         "properties": {
-          "providerId": {
-            "type": "string"
-          },
-          "models": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
+          "providerId": { "type": "string" },
+          "models": { "type": "array", "items": { "type": "string" } }
         },
-        "required": [
-          "providerId",
-          "models"
-        ]
+        "required": ["providerId", "models"]
       }
     }
   ]
