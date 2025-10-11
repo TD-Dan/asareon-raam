@@ -20,6 +20,7 @@ import app.auf.core.Store
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AgentManagerView(store: Store) {
     val appState by store.state.collectAsState()
