@@ -135,7 +135,7 @@ private fun SettingRow(
                 OutlinedTextField(
                     value = currentValue.replace(",", "\n"),
                     onValueChange = { onValueChange(it.replace("\n", ",")) },
-                    modifier = Modifier.width(250.dp).height(120.dp),
+                    modifier = Modifier.weight(1.5f).height(120.dp),
                     singleLine = false,
                     label = { Text("One entry per line") }
                 )
@@ -144,7 +144,7 @@ private fun SettingRow(
                 OutlinedTextField(
                     value = currentValue,
                     onValueChange = { onValueChange(it) },
-                    modifier = Modifier.width(250.dp),
+                    modifier = Modifier.weight(1.5f),
                     singleLine = true
                 )
             }
