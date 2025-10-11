@@ -96,10 +96,20 @@ class SettingsFeature(
                 val latestSettingsState = store.state.value.featureStates[name] as? SettingsState ?: return
                 // The values have already been updated in the state by the reducer.
                 // Now, we securely request the FileSystemFeature to persist them.
+
+                // --- MODIFICATION: Check if the setting is sensitive ---
+                val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
+                val definition = latestSettingsState.definitions.find { it["key"]?.jsonPrimitive?.content == key }
+                val isSensitive = definition?.get("isSensitive")?.jsonPrimitive?.booleanOrNull ?: false
+
                 val contentToSave = Json.encodeToString(latestSettingsState.values)
                 store.dispatch(this.name, Action("filesystem.SYSTEM_WRITE", buildJsonObject {
                     put("subpath", settingsFileName)
                     put("content", contentToSave)
+                    // Conditionally add the encryption flag.
+                    if (isSensitive) {
+                        put("encrypt", true)
+                    }
                 }))
 
                 // We must still broadcast the public VALUE_CHANGED event for other features.
@@ -185,7 +195,6 @@ class SettingsFeature(
     inner class SettingsComposableProvider : Feature.ComposableProvider {
         private val viewKey = "feature.settings.main"
 
-        // CORRECTED: Use the new `stageViews` map.
         override val stageViews: Map<String, @Composable (Store) -> Unit> = mapOf(
             viewKey to { store ->
                 SettingsView(
@@ -195,7 +204,6 @@ class SettingsFeature(
             }
         )
 
-        // CORRECTED: Use the new `RibbonContent` slot.
         @Composable
         override fun RibbonContent(store: Store, activeViewKey: String?) {
             val isActive = activeViewKey == viewKey

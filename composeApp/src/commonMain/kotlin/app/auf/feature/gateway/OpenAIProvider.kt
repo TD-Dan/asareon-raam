@@ -57,6 +57,8 @@ class OpenAIProvider : AgentGatewayProvider {
             put("description", "API Key for OpenAI models (e.g., GPT-4o).")
             put("section", "API Keys")
             put("defaultValue", "")
+            // --- MODIFICATION: Mark this setting as sensitive ---
+            put("isSensitive", true)
         }
         dispatch(Action("settings.ADD", payload))
     }

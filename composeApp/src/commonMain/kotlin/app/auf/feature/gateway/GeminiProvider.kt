@@ -66,6 +66,8 @@ class GeminiProvider : AgentGatewayProvider {
             put("description", "API Key for Google AI Gemini models.")
             put("section", "API Keys")
             put("defaultValue", "")
+            // --- MODIFICATION: Mark this setting as sensitive ---
+            put("isSensitive", true)
         }
         dispatch(Action("settings.ADD", payload))
     }

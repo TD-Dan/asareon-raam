@@ -31,6 +31,9 @@ class FileSystemFeature(
     override val name: String = "filesystem"
     override val composableProvider: Feature.ComposableProvider = FileSystemComposableProvider()
 
+    // --- NEW: Instantiate the encryption utility ---
+    private val cryptoManager = CryptoManager()
+
     // --- Private serializable classes for decoding action payloads ---
     @Serializable private data class PathPayload(val path: String)
     @Serializable private data class StageCreatePayload(val path: String, val content: String)
@@ -40,7 +43,8 @@ class FileSystemFeature(
 
     // Payloads for new SYSTEM actions
     @Serializable private data class SystemReadPayload(val subpath: String)
-    @Serializable private data class SystemWritePayload(val subpath: String, val content: String)
+    // --- MODIFICATION: Add `encrypt` flag to the write payload ---
+    @Serializable private data class SystemWritePayload(val subpath: String, val content: String, val encrypt: Boolean = false)
     @Serializable private data class SystemDeletePayload(val subpath: String)
     @Serializable private data class OpenAppSubfolderPayload(val folder: String)
 
@@ -242,10 +246,12 @@ class FileSystemFeature(
                 val sandboxPath = getSandboxPathFor(originator)
                 val fullPath = "$sandboxPath${platformDependencies.pathSeparator}${payload.subpath}"
                 try {
-                    val content = platformDependencies.readFileContent(fullPath)
+                    val rawContent = platformDependencies.readFileContent(fullPath)
+                    // --- MODIFICATION: Transparently attempt decryption ---
+                    val decryptedContent = cryptoManager.decrypt(rawContent)
                     val responsePayload = buildJsonObject {
                         put("subpath", payload.subpath)
-                        put("content", content)
+                        put("content", decryptedContent)
                     }
                     store.deliverPrivateData(this.name, originator, responsePayload)
                 } catch (e: Exception) {
@@ -262,7 +268,13 @@ class FileSystemFeature(
                 val sandboxPath = getSandboxPathFor(originator)
                 val fullPath = "$sandboxPath${platformDependencies.pathSeparator}${payload.subpath}"
                 try {
-                    platformDependencies.writeFileContent(fullPath, payload.content)
+                    // --- MODIFICATION: Conditionally encrypt content before writing ---
+                    val contentToWrite = if (payload.encrypt) {
+                        cryptoManager.encrypt(payload.content)
+                    } else {
+                        payload.content
+                    }
+                    platformDependencies.writeFileContent(fullPath, contentToWrite)
                 } catch (e: Exception) {
                     // Log the error but do not crash the app
                     store.dispatch(this.name, Action("core.SHOW_TOAST", buildJsonObject {

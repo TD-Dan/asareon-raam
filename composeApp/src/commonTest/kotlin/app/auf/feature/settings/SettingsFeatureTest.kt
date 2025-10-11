@@ -7,6 +7,7 @@ import app.auf.core.Store
 import app.auf.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -14,12 +15,13 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class SettingsFeatureTest {
 
     private val testAppVersion = "2.0.0-test"
 
-    private fun createAddAction(key: String, defaultValue: String): Action {
+    private fun createAddAction(key: String, defaultValue: String, isSensitive: Boolean = false): Action {
         return Action("settings.ADD", buildJsonObject {
             put("key", key)
             put("type", "NUMERIC_LONG")
@@ -27,6 +29,9 @@ class SettingsFeatureTest {
             put("description", "$key Desc")
             put("section", "Test Section")
             put("defaultValue", defaultValue)
+            if (isSensitive) {
+                put("isSensitive", true)
+            }
         })
     }
 
@@ -165,9 +170,36 @@ class SettingsFeatureTest {
         assertEquals(feature.name, writeAction.originator)
         assertEquals("settings.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
         assertEquals("""{"key1":"new_value"}""", writeAction.payload?.get("content")?.jsonPrimitive?.content)
+        // Verify encryption flag is NOT present for non-sensitive data
+        assertNull(writeAction.payload?.get("encrypt")?.jsonPrimitive?.booleanOrNull)
+
 
         val changedAction = store.dispatchedActions.find { it.name == "settings.VALUE_CHANGED" }
         assertNotNull(changedAction)
+    }
+
+    @Test
+    fun `onAction for settings UPDATE dispatches encrypted SYSTEM_WRITE for sensitive data`() {
+        // Arrange
+        val platform = FakePlatformDependencies(testAppVersion)
+        val feature = SettingsFeature(platform)
+        val addSensitiveAction = createAddAction("api.key", "default", isSensitive = true)
+        val updateAction = Action("settings.UPDATE", buildJsonObject {
+            put("key", "api.key")
+            put("value", "secret-value")
+        })
+        // 1. Create a state with the sensitive definition already registered.
+        val initialState = feature.reducer(AppState(featureStates = mapOf(feature.name to SettingsState())), addSensitiveAction)
+        val store = TestStore(initialState, listOf(feature), platform)
+
+        // Act
+        feature.onAction(updateAction, store)
+
+        // Assert
+        val writeAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_WRITE" }
+        assertNotNull(writeAction)
+        // Verify the encryption flag IS present
+        assertTrue(writeAction.payload?.get("encrypt")?.jsonPrimitive?.booleanOrNull ?: false)
     }
 
     @Test

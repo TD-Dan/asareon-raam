@@ -1,5 +1,5 @@
 {
-  "feature_name": "Application Lifecycle",
+  "feature_name": "system",
   "summary": "Defines the global, cross-cutting actions that orchestrate the application's startup and shutdown sequences. These actions are typically dispatched only by the main application entry point.",
   "listensFor": [],
   "publishes": [
