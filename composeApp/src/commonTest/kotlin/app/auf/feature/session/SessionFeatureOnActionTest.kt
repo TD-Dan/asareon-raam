@@ -8,16 +8,20 @@ import app.auf.feature.core.CoreState
 import app.auf.util.FileEntry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.TestScope
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class SessionFeatureOnActionTest {
 
     private val testAppVersion = "2.0.0-test"
+    private val scope = CoroutineScope(Dispatchers.Unconfined)
+    private val coreFeature = CoreFeature(FakePlatformDependencies(testAppVersion))
 
     /**
      * A high-fidelity TestStore that correctly mimics the real Store's dispatch lifecycle
@@ -42,11 +46,29 @@ class SessionFeatureOnActionTest {
         }
     }
 
+    /** Helper function to create an environment that passes the lifecycle guard for runtime actions. */
+    private fun createStoreWithRunningLifecycle(fakePlatform: FakePlatformDependencies, vararg initialSessions: Session): TestStore {
+        val sessionFeature = SessionFeature(fakePlatform, scope)
+        // Need CoreFeature to manage and set the lifecycle state
+        val features = listOf(coreFeature, sessionFeature)
+
+        val initialSessionMap = initialSessions.associateBy { it.id }
+
+        // Set state directly to RUNNING to bypass the complex boot sequence for these tests
+        val initialState = AppState(featureStates = mapOf(
+            coreFeature.name to CoreState(lifecycle = AppLifecycle.RUNNING),
+            sessionFeature.name to SessionState(sessions = initialSessionMap)
+        ))
+
+        return TestStore(initialState, features, fakePlatform)
+    }
+
     @Test
     fun `onAction for system STARTING dispatches filesystem SYSTEM_LIST`() {
         // ARRANGE
         val fakePlatform = FakePlatformDependencies(testAppVersion)
-        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
+        val feature = SessionFeature(fakePlatform, scope)
+        // Store in BOOTING state is fine for this test as we call onAction directly
         val store = TestStore(AppState(), listOf(feature), fakePlatform)
 
         // ACT
@@ -63,7 +85,7 @@ class SessionFeatureOnActionTest {
     fun `onPrivateData with file list dispatches SYSTEM_READ for each json file`() {
         // ARRANGE
         val fakePlatform = FakePlatformDependencies(testAppVersion)
-        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
+        val feature = SessionFeature(fakePlatform, scope)
         val store = TestStore(AppState(), listOf(feature), fakePlatform)
         val fileList = listOf(
             FileEntry("/path/to/session1.json", false),
@@ -72,7 +94,8 @@ class SessionFeatureOnActionTest {
         )
 
         // ACT
-        feature.onPrivateData(fileList, store)
+        // Manually trigger the private data path
+        store.deliverPrivateData("filesystem", feature.name, fileList)
 
         // ASSERT
         val readActions = store.dispatchedActions.filter { it.name == "filesystem.SYSTEM_READ" }
@@ -85,15 +108,10 @@ class SessionFeatureOnActionTest {
     fun `onAction for session POST dispatches filesystem SYSTEM_WRITE`() {
         // ARRANGE
         val fakePlatform = FakePlatformDependencies(testAppVersion)
-        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
         val initialSession = Session(id = "sid-1", name = "Initial", ledger = emptyList(), createdAt = 1L)
-        // CORRECTED: The initial state must include a CoreState with a RUNNING lifecycle
-        // to bypass the Store's lifecycle guard.
-        val initialState = AppState(featureStates = mapOf(
-            "core" to CoreState(lifecycle = AppLifecycle.RUNNING),
-            feature.name to SessionState(sessions = mapOf("sid-1" to initialSession))
-        ))
-        val store = TestStore(initialState, listOf(feature, CoreFeature(fakePlatform)), fakePlatform)
+
+        // Use helper to set up store in RUNNING state
+        val store = createStoreWithRunningLifecycle(fakePlatform, initialSession)
 
         val postAction = Action("session.POST", buildJsonObject {
             put("sessionId", "sid-1")
@@ -108,7 +126,7 @@ class SessionFeatureOnActionTest {
         // ASSERT
         val writeAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_WRITE" }
         assertNotNull(writeAction, "A filesystem.SYSTEM_WRITE action should have been dispatched.")
-        assertEquals(feature.name, writeAction.originator)
+        assertEquals("session", writeAction.originator) // Originator of the side effect is the feature
         assertEquals("sid-1.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
         assertNotNull(writeAction.payload?.get("content")?.jsonPrimitive?.content)
     }
@@ -117,18 +135,20 @@ class SessionFeatureOnActionTest {
     fun `onAction for session DELETE dispatches filesystem SYSTEM_DELETE`() {
         // ARRANGE
         val fakePlatform = FakePlatformDependencies(testAppVersion)
-        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
-        val store = TestStore(AppState(), listOf(feature), fakePlatform)
+        // Store must be RUNNING for session.DELETE to pass the guard.
+        val store = createStoreWithRunningLifecycle(fakePlatform)
         val deleteAction = Action("session.DELETE", buildJsonObject { put("sessionId", "sid-1") })
 
         // ACT
-        feature.onAction(deleteAction, store)
+        // Use full dispatch cycle to ensure lifecycle guard passes
+        store.dispatch("session.ui", deleteAction)
 
         // ASSERT
-        val deleteSysAction = store.dispatchedActions.singleOrNull()
+        // Note: The reducer runs first, then onAction runs, dispatching the SYSTEM_DELETE
+        val deleteSysAction = store.dispatchedActions.lastOrNull()
         assertNotNull(deleteSysAction)
         assertEquals("filesystem.SYSTEM_DELETE", deleteSysAction.name)
-        assertEquals(feature.name, deleteSysAction.originator)
+        assertEquals("session", deleteSysAction.originator)
         assertEquals("sid-1.json", deleteSysAction.payload?.get("subpath")?.jsonPrimitive?.content)
     }
 }
