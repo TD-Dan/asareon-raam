@@ -1,4 +1,3 @@
-
 package app.auf.feature.filesystem
 
 import androidx.compose.foundation.ContextMenuArea
@@ -208,6 +207,7 @@ private fun FileRow(
         items = {
             if (item.isDirectory) {
                 listOf(
+                    ContextMenuItem("Browse from here") { onNavigate() },
                     ContextMenuItem("Expand All") { onContextMenuAction("filesystem.EXPAND_ALL") },
                     ContextMenuItem("Collapse All") { onContextMenuAction("filesystem.COLLAPSE_ALL") },
                     // Divider is not standard, use custom items or separate menus
@@ -226,7 +226,7 @@ private fun FileRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onNavigate)
+                .clickable(onClick = onToggleSelect)
                 .padding(start = (level * 24).dp)
                 .padding(vertical = 1.dp), // Halved vertical padding
             verticalAlignment = Alignment.CenterVertically,

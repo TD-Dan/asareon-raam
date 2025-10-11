@@ -100,7 +100,7 @@ private fun SettingRow(
 ) {
     val label = definitionJson["label"]?.jsonPrimitive?.content ?: "No Label"
     val description = definitionJson["description"]?.jsonPrimitive?.content ?: ""
-    val type = definitionJson["type"]?.jsonPrimitive?.content
+    val type = definitionJson["type"]?.jsonPrimitive?.content ?: ""
 
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -128,6 +128,23 @@ private fun SettingRow(
                         }
                     },
                     modifier = Modifier.width(150.dp),
+                    singleLine = true
+                )
+            }
+            "STRING_SET" -> {
+                OutlinedTextField(
+                    value = currentValue.replace(",", "\n"),
+                    onValueChange = { onValueChange(it.replace("\n", ",")) },
+                    modifier = Modifier.width(250.dp).height(120.dp),
+                    singleLine = false,
+                    label = { Text("One entry per line") }
+                )
+            }
+            "STRING" -> {
+                OutlinedTextField(
+                    value = currentValue,
+                    onValueChange = { onValueChange(it) },
+                    modifier = Modifier.width(250.dp),
                     singleLine = true
                 )
             }

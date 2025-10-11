@@ -140,12 +140,19 @@ class SettingsFeature(
 
             "settings.LOADED" -> {
                 val loadedValues = action.payload?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap()
-                val valuesWithDefaults = currentFeatureState.definitions.associate { def ->
+
+                // --- FIX for data loss race condition ---
+                // 1. Establish a baseline map of all known default values from definitions.
+                val allDefaults = currentFeatureState.definitions.associate { def ->
                     val key = def["key"]!!.jsonPrimitive.content
                     val defaultValue = def["defaultValue"]!!.jsonPrimitive.content
-                    key to (loadedValues[key] ?: defaultValue)
+                    key to defaultValue
                 }
-                val newFeatureState = currentFeatureState.copy(values = valuesWithDefaults, inputValues = valuesWithDefaults)
+                // 2. Merge the loaded values on top of the defaults. This overwrites defaults with
+                //    any saved values, but preserves defaults for settings not in the saved file.
+                val finalValues = allDefaults + loadedValues
+
+                val newFeatureState = currentFeatureState.copy(values = finalValues, inputValues = finalValues)
                 state.copy(featureStates = state.featureStates + (name to newFeatureState))
             }
 

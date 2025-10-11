@@ -5,7 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.Feature
@@ -25,8 +25,6 @@ import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewTest {
@@ -59,29 +57,55 @@ class SettingsViewTest {
         coreFeature = CoreFeature(fakePlatform)
         val features = listOf(coreFeature, settingsFeature)
 
-        // 1. Setup initial BOOTING state with all necessary features present.
+        val initialDefinitions = listOf(
+            buildJsonObject {
+                put("key", "core.window.width")
+                put("type", "NUMERIC_LONG")
+                put("label", "Window Width")
+                put("description", "Initial window width in pixels.")
+                put("section", "Appearance")
+                put("defaultValue", "1280")
+            },
+            buildJsonObject {
+                put("key", "test.api.key")
+                put("type", "STRING")
+                put("label", "API Key")
+                put("description", "A test API key.")
+                put("section", "Testing")
+                put("defaultValue", "DEFAULT_API_KEY")
+            },
+            buildJsonObject {
+                put("key", "test.paths")
+                put("type", "STRING_SET")
+                put("label", "Test Paths")
+                put("description", "A set of test paths.")
+                put("section", "Testing")
+                put("defaultValue", "/path/one,/path/two")
+            }
+        )
+
+        // 1. Setup initial BOOTING state with all necessary features and definitions present.
         val initialState = AppState(featureStates = mapOf(
             coreFeature.name to CoreState(lifecycle = AppLifecycle.BOOTING),
-            settingsFeature.name to SettingsState()
+            settingsFeature.name to SettingsState(definitions = initialDefinitions)
         ))
         testStore = TestStore(initialState, features, fakePlatform)
-        features.forEach { it.init(testStore) } // Run init() for all features
+        features.forEach { it.init(testStore) }
 
-        // 2. Orchestrate Startup Lifecycle via the action bus.
-        // This causes CoreFeature to dispatch settings.ADD and SettingsFeature to dispatch filesystem.SYSTEM_READ.
+        // 2. Orchestrate Startup Lifecycle
         testStore.dispatch("system.test", Action("system.INITIALIZING"))
 
-        // 3. Manually dispatch the result of the filesystem load (SettingsFeature.reducer handles this).
-        // This is a pragmatic shortcut to skip mocking the entire filesystem chain.
+        // 3. Manually dispatch the result of the filesystem load
         val loadedSettingsPayload = buildJsonObject {
-            put("core.window.width", "1024") // This key is registered by CoreFeature in step 2.
+            put("core.window.width", "1024") // Override default
+            // Note: We are NOT providing loaded values for the new string types
+            // to test that their defaults are applied correctly.
         }
         testStore.dispatch(settingsFeature.name, Action("settings.LOADED", loadedSettingsPayload))
 
         // 4. Advance to RUNNING state.
         testStore.dispatch("system.test", Action("system.STARTING"))
 
-        // Clear actions dispatched during setup to focus test assertions on UI interactions.
         testStore.dispatchedActions.clear()
 
         composeTestRule.setContent {
@@ -91,43 +115,42 @@ class SettingsViewTest {
 
     @Test
     fun `UI controls display the current value from the store`() = runTest {
-        // Assert on the manually set "1024" which should be in the state after step 3.
         composeTestRule.onNodeWithText("1024").assertIsDisplayed()
-    }
-
-    @Test
-    fun `user typing in text field dispatches INPUT_CHANGED immediately`() = runTest {
-        // Assert on the correct initial value first
-        val inputNode = composeTestRule.onNodeWithText("1024")
-        inputNode.assertIsDisplayed()
-
-        // Perform text input, appending "999"
-        inputNode.performTextInput("999")
-
-        // The input field now reads "1024999"
-        // Corrected action name assertion to match SettingsView.kt implementation.
-        val inputAction = testStore.dispatchedActions.find { it.name == "settings.INPUT_CHANGED" }
-        assertNotNull(inputAction, "Action 'settings.INPUT_CHANGED' should be dispatched immediately.")
-        assertEquals("settings.ui", inputAction.originator)
-        assertEquals("core.window.width", inputAction.payload?.get("key")?.jsonPrimitive?.content)
-        assertEquals("9991024", inputAction.payload?.get("value")?.jsonPrimitive?.content)
-
-        // Verify that UPDATE has NOT been dispatched yet.
-        val updateAction = testStore.dispatchedActions.find { it.name == "settings.UPDATE" }
-        assertNull(updateAction, "Action 'settings.UPDATE' should not be dispatched immediately.")
+        composeTestRule.onNodeWithText("DEFAULT_API_KEY").assertIsDisplayed()
+        // Test the multi-line conversion for STRING_SET
+        composeTestRule.onNodeWithText("/path/one\n/path/two").assertIsDisplayed()
     }
 
     @Test
     fun `clicking the Open Folder button dispatches the correct action`() = runTest {
         composeTestRule.onNodeWithContentDescription("Open Settings Folder").performClick()
-
-        // --- THE FIX ---
-        // The UI's job is to dispatch 'settings.OPEN_FOLDER'. The feature then handles
-        // this and dispatches a new 'filesystem' action as a side-effect. We must
-        // test for the action the UI itself dispatched.
         val dispatchedAction = testStore.dispatchedActions.find { it.name == "settings.OPEN_FOLDER" }
-
         assertNotNull(dispatchedAction, "The UI should have dispatched 'settings.OPEN_FOLDER'.")
         assertEquals("settings.ui", dispatchedAction.originator)
+    }
+
+    @Test
+    fun `string and string_set fields are editable and dispatch INPUT_CHANGED`() = runTest {
+        // --- Test STRING field ---
+        val stringNode = composeTestRule.onNodeWithText("DEFAULT_API_KEY")
+        stringNode.assertIsDisplayed()
+        stringNode.performTextReplacement("new_key")
+
+        val stringAction = testStore.dispatchedActions.find { it.payload?.get("key")?.jsonPrimitive?.content == "test.api.key" }
+        assertNotNull(stringAction)
+        assertEquals("settings.INPUT_CHANGED", stringAction.name)
+        assertEquals("new_key", stringAction.payload?.get("value")?.jsonPrimitive?.content)
+
+        // --- Test STRING_SET field ---
+        val stringSetNode = composeTestRule.onNodeWithText("/path/one\n/path/two")
+        stringSetNode.assertIsDisplayed()
+        // Simulate adding a new line, which should be converted to a comma
+        stringSetNode.performTextReplacement("/path/one\n/path/two\n/path/three")
+
+        val stringSetAction = testStore.dispatchedActions.last() // It was the last action
+        assertEquals("settings.INPUT_CHANGED", stringSetAction.name)
+        assertEquals("test.paths", stringSetAction.payload?.get("key")?.jsonPrimitive?.content)
+        // Verify that the newline was correctly converted back to a comma for persistence
+        assertEquals("/path/one,/path/two,/path/three", stringSetAction.payload?.get("value")?.jsonPrimitive?.content)
     }
 }

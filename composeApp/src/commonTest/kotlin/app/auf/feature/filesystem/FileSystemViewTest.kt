@@ -85,28 +85,6 @@ class FileSystemViewTest {
     }
 
     @Test
-    fun `clicking a directory dispatches a NAVIGATE action with the correct path`() {
-        // Arrange
-        val state = FileSystemState(
-            currentPath = "/fake/user/home",
-            rootItems = listOf(FileSystemItem("/fake/user/home/Documents", "Documents", true))
-        )
-        setViewState(state)
-
-        // Act
-        composeTestRule.onNodeWithText("Documents").performClick()
-
-        // Assert
-        val dispatchedAction = fakeStore.dispatchedActions.last()
-        assertEquals("filesystem.NAVIGATE", dispatchedAction.name)
-        assertEquals("filesystem.ui", dispatchedAction.originator)
-        assertEquals(
-            "/fake/user/home/Documents",
-            dispatchedAction.payload?.get("path")?.toString()?.trim('"')
-        )
-    }
-
-    @Test
     fun `clicking checkbox dispatches TOGGLE_ITEM_SELECTED action`() {
         // Arrange
         val filePath = "/fake/home/file.txt"
