@@ -54,7 +54,6 @@ class OpenAIProvider(
             put("description", "API Key for OpenAI models (e.g., GPT-4o).")
             put("section", "API Keys")
             put("defaultValue", "")
-            put("isSensitive", true)
         }
         dispatch(Action("settings.ADD", payload))
     }

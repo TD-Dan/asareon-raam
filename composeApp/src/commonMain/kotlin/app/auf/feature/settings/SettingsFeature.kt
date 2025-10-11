@@ -97,19 +97,15 @@ class SettingsFeature(
                 // The values have already been updated in the state by the reducer.
                 // Now, we securely request the FileSystemFeature to persist them.
 
-                // --- MODIFICATION: Check if the setting is sensitive ---
-                val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
-                val definition = latestSettingsState.definitions.find { it["key"]?.jsonPrimitive?.content == key }
-                val isSensitive = definition?.get("isSensitive")?.jsonPrimitive?.booleanOrNull ?: false
-
                 val contentToSave = Json.encodeToString(latestSettingsState.values)
                 store.dispatch(this.name, Action("filesystem.SYSTEM_WRITE", buildJsonObject {
                     put("subpath", settingsFileName)
                     put("content", contentToSave)
-                    // Conditionally add the encryption flag.
-                    if (isSensitive) {
-                        put("encrypt", true)
-                    }
+                    // --- THE FIX ---
+                    // Hardcode the encryption flag to true. This ensures the entire
+                    // settings file is always encrypted at rest, regardless of which
+                    // setting triggered the update.
+                    put("encrypt", true)
                 }))
 
                 // We must still broadcast the public VALUE_CHANGED event for other features.

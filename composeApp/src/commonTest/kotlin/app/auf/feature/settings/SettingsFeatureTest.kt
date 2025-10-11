@@ -21,7 +21,7 @@ class SettingsFeatureTest {
 
     private val testAppVersion = "2.0.0-test"
 
-    private fun createAddAction(key: String, defaultValue: String, isSensitive: Boolean = false): Action {
+    private fun createAddAction(key: String, defaultValue: String): Action {
         return Action("settings.ADD", buildJsonObject {
             put("key", key)
             put("type", "NUMERIC_LONG")
@@ -29,9 +29,6 @@ class SettingsFeatureTest {
             put("description", "$key Desc")
             put("section", "Test Section")
             put("defaultValue", defaultValue)
-            if (isSensitive) {
-                put("isSensitive", true)
-            }
         })
     }
 
@@ -176,30 +173,6 @@ class SettingsFeatureTest {
 
         val changedAction = store.dispatchedActions.find { it.name == "settings.VALUE_CHANGED" }
         assertNotNull(changedAction)
-    }
-
-    @Test
-    fun `onAction for settings UPDATE dispatches encrypted SYSTEM_WRITE for sensitive data`() {
-        // Arrange
-        val platform = FakePlatformDependencies(testAppVersion)
-        val feature = SettingsFeature(platform)
-        val addSensitiveAction = createAddAction("api.key", "default", isSensitive = true)
-        val updateAction = Action("settings.UPDATE", buildJsonObject {
-            put("key", "api.key")
-            put("value", "secret-value")
-        })
-        // 1. Create a state with the sensitive definition already registered.
-        val initialState = feature.reducer(AppState(featureStates = mapOf(feature.name to SettingsState())), addSensitiveAction)
-        val store = TestStore(initialState, listOf(feature), platform)
-
-        // Act
-        feature.onAction(updateAction, store)
-
-        // Assert
-        val writeAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_WRITE" }
-        assertNotNull(writeAction)
-        // Verify the encryption flag IS present
-        assertTrue(writeAction.payload?.get("encrypt")?.jsonPrimitive?.booleanOrNull ?: false)
     }
 
     @Test

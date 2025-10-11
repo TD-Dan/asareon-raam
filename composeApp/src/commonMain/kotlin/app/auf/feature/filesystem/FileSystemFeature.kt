@@ -74,7 +74,7 @@ class FileSystemFeature(
                     put("key", settingKeyWhitelist)
                     put("type", "STRING_SET") // Custom type for persistence
                     put("label", "Whitelisted Paths")
-                    put("description", "A comma-separated list of whitelisted directory paths that the app is allowed to edit.")
+                    put("description", "Whitelisted directory paths that the app is allowed to edit.")
                     put("section", "FileSystem")
                     put("defaultValue", "")
                 }))
@@ -82,7 +82,7 @@ class FileSystemFeature(
                     put("key", settingKeyFavorites)
                     put("type", "STRING_SET")
                     put("label", "Favorite Paths")
-                    put("description", "A comma-separated list of favorite directory paths.")
+                    put("description", "A list of favorite directory paths.")
                     put("section", "FileSystem")
                     put("defaultValue", "")
                 }))
