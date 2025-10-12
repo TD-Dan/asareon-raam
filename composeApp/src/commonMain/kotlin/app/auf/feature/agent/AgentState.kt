@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.FeatureState
+import kotlinx.coroutines.Job
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
@@ -38,7 +39,11 @@ data class AgentInstance(
 
     // A transient message for displaying errors in the UI. Also not saved.
     @Transient
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+
+    // A transient reference to the agent's active turn job, for cancellation.
+    @Transient
+    val turnJob: Job? = null
 )
 
 /**
@@ -48,6 +53,12 @@ data class AgentInstance(
 @Serializable
 data class AgentRuntimeState(
     val agents: Map<String, AgentInstance> = emptyMap(),
+
+    /** A local cache of session IDs to their human-readable names. */
+    val sessionNames: Map<String, String> = emptyMap(),
+
+    /** A local cache of available models from the GatewayFeature. */
+    val availableModels: Map<String, List<String>> = emptyMap(),
 
     // The ID of the agent currently being edited in the UI. This is transient UI state.
     @Transient

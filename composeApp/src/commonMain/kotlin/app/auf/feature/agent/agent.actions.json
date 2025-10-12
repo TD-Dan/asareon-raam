@@ -52,6 +52,15 @@
       }
     },
     {
+      "action_name": "agent.CANCEL_TURN",
+      "summary": "Cancels an agent's currently processing turn.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "agentId": { "type": "string" } },
+        "required": ["agentId"]
+      }
+    },
+    {
       "action_name": "agent.SET_EDITING",
       "summary": "Sets which agent is currently being edited in the UI.",
       "payload_schema": {
@@ -60,11 +69,6 @@
           "agentId": { "type": ["string", "null"] }
         }
       }
-    },
-    {
-      "action_name": "agent.REQUEST_AGENT_NAMES",
-      "summary": "Requests that the AgentRuntimeFeature broadcast its current list of agent names.",
-      "payload_schema": null
     }
   ],
   "publishes": [
@@ -81,7 +85,13 @@
       "summary": "Broadcasts the verified map of agent IDs to their names.",
       "payload_schema": {
         "type": "object",
-        "description": "An object where the key is the agent ID (string) and the value is the agent's name (string)."
+        "properties": {
+          "names": {
+            "type": "object",
+            "description": "A map where the key is the agent ID and the value is the agent's name."
+          }
+        },
+        "required": ["names"]
       }
     },
     {
@@ -103,6 +113,18 @@
           "error": { "type": ["string", "null"] }
         },
         "required": ["agentId", "status"]
+      }
+    },
+    {
+      "action_name": "agent.internal.SET_TURN_JOB",
+      "summary": "[INTERNAL] Associates a coroutine Job with an agent's turn. Used for cancellation.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string" },
+          "job": { "type": "object", "description": "The Job instance. Not serializable." }
+        },
+        "required": ["agentId", "job"]
       }
     }
   ]

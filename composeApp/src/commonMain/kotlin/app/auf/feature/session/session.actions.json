@@ -125,11 +125,6 @@
         },
         "required": ["sessionId", "messageId"]
       }
-    },
-    {
-      "action_name": "session.REQUEST_SESSION_NAMES",
-      "summary": "Requests that the SessionFeature broadcast its current list of session names.",
-      "payload_schema": null
     }
   ],
   "publishes": [
@@ -147,7 +142,13 @@
       "summary": "Broadcasts the verified map of session IDs to their names. Can only be dispatched by the SessionFeature.",
       "payload_schema": {
         "type": "object",
-        "description": "An object where the key is the session ID (string) and the value is the session's name (string)."
+        "properties": {
+          "names": {
+            "type": "object",
+            "description": "A map where the key is the session ID and the value is the session's name."
+          }
+        },
+        "required": ["names"]
       }
     },
     {
