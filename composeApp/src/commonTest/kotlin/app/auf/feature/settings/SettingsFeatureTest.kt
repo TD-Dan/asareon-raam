@@ -167,8 +167,12 @@ class SettingsFeatureTest {
         assertEquals(feature.name, writeAction.originator)
         assertEquals("settings.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
         assertEquals("""{"key1":"new_value"}""", writeAction.payload?.get("content")?.jsonPrimitive?.content)
-        // Verify encryption flag is NOT present for non-sensitive data
-        assertNull(writeAction.payload?.get("encrypt")?.jsonPrimitive?.booleanOrNull)
+
+        // --- CORRECTED ASSERTION ---
+        // Verify that the encryption flag is ALWAYS present and true, as per the security mandate.
+        val encryptFlag = writeAction.payload?.get("encrypt")?.jsonPrimitive?.booleanOrNull
+        assertNotNull(encryptFlag, "The 'encrypt' flag must always be present on settings writes.")
+        assertTrue(encryptFlag, "The 'encrypt' flag must always be true to enforce at-rest encryption.")
 
 
         val changedAction = store.dispatchedActions.find { it.name == "settings.VALUE_CHANGED" }
