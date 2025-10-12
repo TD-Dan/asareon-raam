@@ -23,12 +23,18 @@ class SessionFeatureOnActionTest {
     private val coreFeature = CoreFeature(FakePlatformDependencies(testAppVersion))
     private val json = Json { ignoreUnknownKeys = true }
 
-    // THE FIX: Define a minimal set of valid actions required for this specific test class.
     private val testActionRegistry = setOf(
-        "system.STARTING", "filesystem.SYSTEM_LIST", "session.REQUEST_SESSION_NAMES",
-        "session.CREATE", "session.publish.SESSION_NAMES_UPDATED",
-        "session.POST", "filesystem.SYSTEM_WRITE",
-        "session.DELETE", "filesystem.SYSTEM_DELETE"
+        // THE FIX: The lifecycle actions are also required.
+        "system.INITIALIZING",
+        "system.STARTING",
+        "session.REQUEST_SESSION_NAMES",
+        "session.CREATE",
+        "session.publish.SESSION_NAMES_UPDATED",
+        "session.POST",
+        "session.DELETE",
+        "filesystem.SYSTEM_LIST",
+        "filesystem.SYSTEM_WRITE",
+        "filesystem.SYSTEM_DELETE"
     )
 
     private class TestStore(
@@ -61,8 +67,11 @@ class SessionFeatureOnActionTest {
     fun `onAction for system STARTING dispatches SYSTEM_LIST and REQUEST_SESSION_NAMES`() {
         val fakePlatform = FakePlatformDependencies(testAppVersion)
         val feature = SessionFeature(fakePlatform, scope)
-        val store = TestStore(AppState(featureStates = mapOf(coreFeature.name to CoreState())), listOf(coreFeature, feature), fakePlatform, testActionRegistry)
+        // THE FIX: Start in the BOOTING state to correctly test the lifecycle.
+        val store = TestStore(AppState(featureStates = mapOf(coreFeature.name to CoreState(lifecycle = AppLifecycle.BOOTING))), listOf(coreFeature, feature), fakePlatform, testActionRegistry)
 
+        // THE FIX: Dispatch INITIALIZING first to move to the correct state.
+        store.dispatch("system.test", Action("system.INITIALIZING"))
         store.dispatch("system.test", Action("system.STARTING"))
 
         val listAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_LIST" }

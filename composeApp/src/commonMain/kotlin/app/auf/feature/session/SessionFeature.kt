@@ -71,9 +71,29 @@ class SessionFeature(
                 store.dispatch(this.name, Action("filesystem.SYSTEM_LIST"))
                 store.dispatch(this.name, Action("session.REQUEST_SESSION_NAMES"))
             }
+            // --- THE FIX: Merged session.DELETE into this block to ensure broadcast happens ---
             "session.CREATE", "session.UPDATE_CONFIG", "session.DELETE", "session.internal.LOADED" -> {
+                // After the reducer has run, broadcast the new set of session names.
                 val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
                 broadcastSessionNames(sessionState, store)
+
+                // If this was a delete action, we also need to dispatch the file system side effect.
+                if (action.name == "session.DELETE") {
+                    val payload = action.payload ?: return
+                    val identifier = payload["session"]?.jsonPrimitive?.contentOrNull ?: return
+                    // The reducer has already removed the session, so we resolve the ID from the action payload,
+                    // not from the current (already modified) state.
+                    val sessionIdToDelete = if (identifier.startsWith("fake-uuid-") || identifier.length > 20) {
+                        identifier
+                    } else {
+                        // This fallback is now less reliable since the session is gone, but we keep it for robustness.
+                        // The primary path is resolving by ID directly from the action.
+                        sessionState.sessions.entries.find { it.value.name == identifier }?.key ?: identifier
+                    }
+                    store.dispatch(this.name, Action("filesystem.SYSTEM_DELETE", buildJsonObject {
+                        put("subpath", "$sessionIdToDelete.json")
+                    }))
+                }
             }
             "session.REQUEST_SESSION_NAMES" -> {
                 val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
@@ -87,19 +107,6 @@ class SessionFeature(
                     else -> null
                 }
                 sessionId?.let { persistSession(it, store) }
-            }
-            "session.DELETE" -> {
-                val payload = action.payload ?: return
-                val identifier = payload["session"]?.jsonPrimitive?.contentOrNull ?: return
-                val sessionIdToDelete = if (identifier.startsWith("fake-uuid-") || identifier.length > 20) {
-                    identifier
-                } else {
-                    val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
-                    sessionState.sessions.entries.find { it.value.name == identifier }?.key ?: identifier
-                }
-                store.dispatch(this.name, Action("filesystem.SYSTEM_DELETE", buildJsonObject {
-                    put("subpath", "$sessionIdToDelete.json")
-                }))
             }
         }
     }

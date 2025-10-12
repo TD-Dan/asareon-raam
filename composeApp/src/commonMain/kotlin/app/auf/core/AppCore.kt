@@ -37,8 +37,8 @@ data class Action(val name: String, val payload: JsonObject? = null, val origina
     override fun toString(): String {
         val payloadString = payload?.let {
             val raw = it.toString()
-            if (raw.length > 200) {
-                "'${raw.take(200)}...'"
+            if (raw.length > 130) {
+                "'${raw.take(130)}...'"
             } else {
                 "'$raw'"
             }

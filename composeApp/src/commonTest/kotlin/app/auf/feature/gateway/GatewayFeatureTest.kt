@@ -20,37 +20,31 @@ class GatewayFeatureTest {
     private val testAppVersion = "2.0.0-test"
     private val json = Json { ignoreUnknownKeys = true }
 
-    // THE FIX: Define a minimal set of valid actions required for this specific test class.
     private val testActionRegistry = setOf(
         "system.INITIALIZING", "system.STARTING",
         "settings.publish.VALUE_CHANGED",
         "gateway.REQUEST_AVAILABLE_MODELS", "gateway.publish.AVAILABLE_MODELS_UPDATED",
-        "gateway.GENERATE_CONTENT"
+        "gateway.GENERATE_CONTENT",
+        "gateway.internal.MODELS_UPDATED"
     )
 
     private data class CapturedPrivateData(val originator: String, val recipient: String, val data: Any)
 
+    // --- THE FIX: The TestStore should no longer shadow the parent state. ---
+    // It should inherit the real Store's state management and just add spying capabilities.
     private class TestStore(
         initialState: AppState,
-        private val features: List<Feature>,
-        private val coreFeature: CoreFeature,
-        private val platformDependencies: PlatformDependencies,
+        features: List<Feature>,
+        platformDependencies: PlatformDependencies,
         validActionNames: Set<String>
     ) : Store(initialState, features, platformDependencies, validActionNames) {
         val dispatchedActions = mutableListOf<Action>()
         var capturedPrivateData: CapturedPrivateData? = null
 
-        private val _testState = MutableStateFlow(initialState)
-        override val state = _testState
-
-        fun setState(newState: AppState) {
-            _testState.value = newState
-        }
-
         override fun dispatch(originator: String, action: Action) {
             val stampedAction = action.copy(originator = originator)
             dispatchedActions.add(stampedAction)
-            // Lifecycle check is now handled by the real Store, so we can simplify this fake.
+            // Let the real Store handle all state logic.
             super.dispatch(originator, action)
         }
 
@@ -115,7 +109,7 @@ class GatewayFeatureTest {
         ))
 
         val features = listOf(gatewayFeature, coreFeature)
-        testStore = TestStore(initialState, features, coreFeature, fakePlatform, testActionRegistry)
+        testStore = TestStore(initialState, features, fakePlatform, testActionRegistry)
         features.forEach { it.init(testStore) }
     }
 
@@ -125,7 +119,7 @@ class GatewayFeatureTest {
             gatewayFeature.name to GatewayState(),
             coreFeature.name to CoreState(lifecycle = AppLifecycle.BOOTING)
         ))
-        val bootingStore = TestStore(bootingState, listOf(gatewayFeature, coreFeature), coreFeature, FakePlatformDependencies(testAppVersion), testActionRegistry)
+        val bootingStore = TestStore(bootingState, listOf(gatewayFeature, coreFeature), FakePlatformDependencies(testAppVersion), testActionRegistry)
         bootingStore.dispatch("system.test", Action("system.INITIALIZING"))
 
         assertEquals(1, fakeProvider1.registerSettingsCallCount)
@@ -134,10 +128,15 @@ class GatewayFeatureTest {
 
     @Test
     fun `on STARTING refreshes models for all providers`() = testScope.runTest {
-        val initializingState = AppState(featureStates = testStore.state.value.featureStates +
-                (coreFeature.name to CoreState(lifecycle = AppLifecycle.INITIALIZING)))
-        testStore.setState(initializingState)
+        // Start from BOOTING to test the full lifecycle transition
+        val bootingState = AppState(featureStates = mapOf(
+            "settings" to SettingsState(values = mapOf("gateway.provider-1.apiKey" to "k1", "gateway.provider-2.apiKey" to "k2")),
+            gatewayFeature.name to GatewayState(),
+            coreFeature.name to CoreState(lifecycle = AppLifecycle.BOOTING)
+        ))
+        testStore = TestStore(bootingState, listOf(gatewayFeature, coreFeature), FakePlatformDependencies(testAppVersion), testActionRegistry)
 
+        testStore.dispatch("system.test", Action("system.INITIALIZING"))
         testStore.dispatch("system.test", Action("system.STARTING"))
         testScheduler.runCurrent()
 
@@ -156,14 +155,6 @@ class GatewayFeatureTest {
             put("value", "new-key")
         })
 
-        val currentSettings = (testStore.state.value.featureStates["settings"] as SettingsState).values
-        val updatedSettings = currentSettings + ("gateway.provider-2.apiKey" to "new-key")
-        val updatedState = testStore.state.value.copy(
-            featureStates = testStore.state.value.featureStates +
-                    ("settings" to SettingsState(values = updatedSettings))
-        )
-        testStore.setState(updatedState)
-
         testStore.dispatch("settings.feature", action)
         testScheduler.runCurrent()
 
@@ -173,19 +164,25 @@ class GatewayFeatureTest {
 
     @Test
     fun `on REQUEST_AVAILABLE_MODELS broadcasts current state`() = testScope.runTest {
-        val initializingState = AppState(featureStates = testStore.state.value.featureStates +
-                (coreFeature.name to CoreState(lifecycle = AppLifecycle.INITIALIZING)))
-        testStore.setState(initializingState)
+        // First, populate the state by running the STARTING sequence.
+        val bootingState = AppState(featureStates = mapOf(
+            "settings" to (testStore.state.value.featureStates["settings"] as SettingsState),
+            gatewayFeature.name to GatewayState(),
+            coreFeature.name to CoreState(lifecycle = AppLifecycle.BOOTING)
+        ))
+        testStore = TestStore(bootingState, listOf(gatewayFeature, coreFeature), FakePlatformDependencies(testAppVersion), testActionRegistry)
+        testStore.dispatch("system.test", Action("system.INITIALIZING"))
         testStore.dispatch("system.test", Action("system.STARTING"))
         testScheduler.runCurrent()
 
+        // Now, with state populated, test the REQUEST action.
         testStore.dispatchedActions.clear()
         testStore.dispatch("agent.test", Action("gateway.REQUEST_AVAILABLE_MODELS"))
 
         val broadcastAction = testStore.dispatchedActions.last()
         assertEquals("gateway.publish.AVAILABLE_MODELS_UPDATED", broadcastAction.name)
         val payload = broadcastAction.payload!!
-        assertEquals(2, payload.size)
+        assertEquals(2, payload.size, "Payload should contain model lists for two providers.")
     }
 
     @Test
