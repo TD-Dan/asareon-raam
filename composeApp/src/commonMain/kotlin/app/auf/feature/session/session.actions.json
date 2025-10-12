@@ -4,7 +4,7 @@
   "listensFor": [
     {
       "action_name": "session.CREATE",
-      "summary": "Creates a new, empty session transcript.",
+      "summary": "Creates a new, empty session transcript. If the name exists, a numeric suffix will be added.",
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -13,45 +13,141 @@
       }
     },
     {
-      "action_name": "session.DELETE",
-      "summary": "Deletes an entire session transcript by its ID.",
+      "action_name": "session.UPDATE_CONFIG",
+      "summary": "Updates the configuration of an existing session. Targets the session via the 'session' property (ID or name).",
       "payload_schema": {
         "type": "object",
-        "properties": { "sessionId": { "type": "string" } },
-        "required": ["sessionId"]
+        "properties": {
+          "session": { "type": "string", "description": "The ID or name of the session to update." },
+          "name": { "type": "string", "description": "The new name for the session. Will be de-duplicated if necessary." }
+        },
+        "required": ["session"]
+      }
+    },
+    {
+      "action_name": "session.DELETE",
+      "summary": "Deletes an entire session transcript. Targets the session via the 'session' property (ID or name).",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": { "type": "string", "description": "The ID or name of the session to delete." }
+        },
+        "required": ["session"]
       }
     },
     {
       "action_name": "session.POST",
-      "summary": "Posts a new message to a specific session's ledger.",
+      "summary": "Posts a new message to a specific session's ledger. Targets the session via the 'session' property (ID or name).",
       "payload_schema": {
         "type": "object",
         "properties": {
-          "sessionId": { "type": "string" },
+          "session": { "type": "string", "description": "The ID or name of the target session." },
           "agentId": { "type": "string" },
           "message": { "type": "string" }
         },
-        "required": ["sessionId", "agentId", "message"]
+        "required": ["session", "agentId", "message"]
+      }
+    },
+    {
+      "action_name": "session.UPDATE_MESSAGE",
+      "summary": "Updates the raw content of an existing message. Targets the session via the 'session' property (ID or name).",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": { "type": "string", "description": "The ID or name of the target session." },
+          "messageId": { "type": "string" },
+          "newContent": { "type": "string" }
+        },
+        "required": ["session", "messageId", "newContent"]
+      }
+    },
+    {
+      "action_name": "session.DELETE_MESSAGE",
+      "summary": "Deletes a single message from a session's ledger. Targets the session via the 'session' property (ID or name).",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": { "type": "string", "description": "The ID or name of the target session." },
+          "messageId": { "type": "string" }
+        },
+        "required": ["session", "messageId"]
       }
     },
     {
       "action_name": "session.SET_ACTIVE_TAB",
-      "summary": "Sets the currently visible session in the main tabbed view.",
+      "summary": "Sets the currently visible session in the main tabbed view. Targets the session via the 'session' property (ID or name).",
       "payload_schema": {
         "type": "object",
-        "properties": { "sessionId": { "type": "string" } },
-        "required": ["sessionId"]
+        "properties": {
+          "session": { "type": "string", "description": "The ID or name of the session to make active." }
+        },
+        "required": ["session"]
       }
+    },
+    {
+      "action_name": "session.SET_EDITING_SESSION_NAME",
+      "summary": "Sets which session name is currently being edited in the UI.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "sessionId": { "type": ["string", "null"] } }
+      }
+    },
+    {
+      "action_name": "session.SET_EDITING_MESSAGE",
+      "summary": "Sets which message is currently being edited in the UI and pre-loads its content.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "messageId": { "type": ["string", "null"] }
+        }
+      }
+    },
+    {
+      "action_name": "session.TOGGLE_MESSAGE_COLLAPSED",
+      "summary": "Toggles the collapsed/expanded state for a single message.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": { "type": "string" },
+          "messageId": { "type": "string" }
+        },
+        "required": ["sessionId", "messageId"]
+      }
+    },
+    {
+      "action_name": "session.TOGGLE_MESSAGE_RAW_VIEW",
+      "summary": "Toggles the raw/parsed view for a single message.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": { "type": "string" },
+          "messageId": { "type": "string" }
+        },
+        "required": ["sessionId", "messageId"]
+      }
+    },
+    {
+      "action_name": "session.REQUEST_SESSION_NAMES",
+      "summary": "Requests that the SessionFeature broadcast its current list of session names.",
+      "payload_schema": null
     }
   ],
   "publishes": [
     {
-      "action_name": "session.UPDATED",
+      "action_name": "session.publish.UPDATED",
       "summary": "Broadcasts that a session has been updated (e.g., a new message was posted).",
       "payload_schema": {
         "type": "object",
         "properties": { "sessionId": { "type": "string" } },
         "required": ["sessionId"]
+      }
+    },
+    {
+      "action_name": "session.publish.SESSION_NAMES_UPDATED",
+      "summary": "Broadcasts the verified map of session IDs to their names. Can only be dispatched by the SessionFeature.",
+      "payload_schema": {
+        "type": "object",
+        "description": "An object where the key is the session ID (string) and the value is the session's name (string)."
       }
     },
     {

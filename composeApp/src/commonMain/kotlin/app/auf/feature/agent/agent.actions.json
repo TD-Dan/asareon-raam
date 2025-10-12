@@ -60,15 +60,28 @@
           "agentId": { "type": ["string", "null"] }
         }
       }
+    },
+    {
+      "action_name": "agent.REQUEST_AGENT_NAMES",
+      "summary": "Requests that the AgentRuntimeFeature broadcast its current list of agent names.",
+      "payload_schema": null
     }
   ],
   "publishes": [
     {
-      "action_name": "agent.UPDATED",
+      "action_name": "agent.publish.UPDATED",
       "summary": "Broadcasts that the state of agents has changed.",
       "payload_schema": {
         "type": "object",
         "description": "The entire AgentRuntimeState object."
+      }
+    },
+    {
+      "action_name": "agent.publish.AGENT_NAMES_UPDATED",
+      "summary": "Broadcasts the verified map of agent IDs to their names.",
+      "payload_schema": {
+        "type": "object",
+        "description": "An object where the key is the agent ID (string) and the value is the agent's name (string)."
       }
     },
     {

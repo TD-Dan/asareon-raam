@@ -31,6 +31,16 @@ data class LedgerEntry(
 )
 
 /**
+ * NEW: Represents the persistent UI state for a single message.
+ * Storing this within the Session object ensures it is saved across restarts.
+ */
+@Serializable
+data class MessageUiState(
+    val isCollapsed: Boolean = false,
+    val isRawView: Boolean = false
+)
+
+/**
  * Represents a single, continuous session transcript.
  */
 @Serializable
@@ -38,7 +48,9 @@ data class Session(
     val id: String,
     val name: String,
     val ledger: List<LedgerEntry>,
-    val createdAt: Long
+    val createdAt: Long,
+    /** A map of message IDs to their persistent UI state. */
+    val messageUiState: Map<String, MessageUiState> = emptyMap()
 )
 
 /**
@@ -53,6 +65,15 @@ data class SessionState(
     /** The ID of the session currently visible in the main view. */
     val activeSessionId: String? = null,
 
+    /** TRANSIENT UI STATE: The ID of the session whose name is being edited. */
+    val editingSessionId: String? = null,
+
+    /** TRANSIENT UI STATE: The ID of the message being edited. */
+    val editingMessageId: String? = null,
+
+    /** TRANSIENT UI STATE: The raw content of the message being edited. */
+    val editingMessageContent: String? = null,
+
     /** A transient error message for display in the UI. */
-    val error: String? = "null"
+    val error: String? = null
 ) : FeatureState

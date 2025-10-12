@@ -8,6 +8,33 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
+ * A helper class to encapsulate the three-part structure of our action names.
+ * e.g., "session.publish.NAMES_UPDATED"
+ */
+private data class ParsedActionName(
+    val feature: String,
+    val type: ActionType,
+) {
+    enum class ActionType { PUBLIC, INTERNAL, PUBLISH, SYSTEM }
+}
+
+/**
+ * Parses a string action name into its constituent parts for routing and security checks.
+ */
+private fun parseActionName(name: String): ParsedActionName {
+    val parts = name.split('.')
+    val featureName = parts.getOrNull(0) ?: "unknown"
+    val actionType = when {
+        featureName == "system" -> ParsedActionName.ActionType.SYSTEM
+        parts.getOrNull(1) == "internal" -> ParsedActionName.ActionType.INTERNAL
+        parts.getOrNull(1) == "publish" -> ParsedActionName.ActionType.PUBLISH
+        else -> ParsedActionName.ActionType.PUBLIC
+    }
+    return ParsedActionName(featureName, actionType)
+}
+
+
+/**
  * The central state container for the Unidirectional Data Flow (UDF) architecture.
  */
 open class Store(
@@ -47,37 +74,28 @@ open class Store(
 
     /**
      * The single, generic entry point for all state changes and side effects.
-     * The process is a strictly ordered, synchronous, blocking call:
+     * This method has been hardened to support three classes of actions:
+     * - **Commands (Public):** e.g., `session.POST`. Broadcast to all features.
+     * - **Internal Events:** e.g., `session.internal.LOADED`. Routed ONLY to the owning feature.
+     * - **Published Events:** e.g., `session.publish.UPDATED`. Broadcast to all features, but can only be dispatched by the owning feature.
      *
-     * 1.  **Stamp:** The action is stamped with the verified `originator`.
-     * 2.  **Authorize & Guard:** The stamped action is validated against originator rules and the current `AppLifecycle` state.
-     * 3.  **Reduce: ** The `reducer` from every feature is called sequentially to calculate the new state.
-     * 4.  **Update: ** The central state is atomically updated.
-     * 5.  **`onAction`:** The `onAction` side effect handler from every feature is called sequentially.
-     *
-     * This synchronous and sequential execution is the foundation of the application's
-     * deterministic startup process. The function will not return until all phases are complete.
-     *
-     * @param originator A non-repudiable string identifying the caller (e.g., a feature's name).
-     * @param action The action to be dispatched.
+     * The process is a strictly ordered, synchronous call:
+     * 1.  **Stamp & Parse:** The action is stamped and its name is parsed.
+     * 2.  **Authorize & Guard:** The action is validated against originator rules and the current `AppLifecycle`.
+     * 3.  **Route & Reduce:** Based on the action type, the action is either broadcast to all reducers or routed to a single reducer to calculate the new state.
+     * 4.  **Update:** The central state is atomically updated.
+     * 5.  **Route & `onAction`:** The action is routed to the appropriate side-effect handlers.
      */
     open fun dispatch(originator: String, action: Action) {
-        // --- PHASE 0: STAMP ---
+        // --- PHASE 1: STAMP & PARSE ---
         val stampedAction = action.copy( originator = originator)
+        val parsedName = parseActionName(stampedAction.name)
 
-        // --- PHASE 1: AUTHORIZATION GUARD (P-SEC-003 and System Privilege) ---
-        val actionNameParts = stampedAction.name.split('.')
-        val isAuthorized = when {
-            // Rule 1: System-Privileged Actions (e.g., "system.INITIALIZING")
-            actionNameParts.getOrNull(0) == "system" -> {
-                originator.startsWith("system")
-            }
-            // Rule 2: Feature-Internal Actions (e.g., "filesystem.internal.LOADED")
-            actionNameParts.getOrNull(1) == "internal" -> {
-                originator == actionNameParts.getOrNull(0)
-            }
-            // Rule 3: Public Actions
-            else -> true
+        // --- PHASE 2: AUTHORIZATION & LIFECYCLE GUARDS ---
+        val isAuthorized = when (parsedName.type) {
+            ParsedActionName.ActionType.SYSTEM -> originator.startsWith("system")
+            ParsedActionName.ActionType.INTERNAL, ParsedActionName.ActionType.PUBLISH -> originator == parsedName.feature
+            ParsedActionName.ActionType.PUBLIC -> true
         }
 
         if (!isAuthorized) {
@@ -97,12 +115,11 @@ open class Store(
             message = "Dispatching: $stampedAction"
         )
 
-        // --- PHASE 2: LIFECYCLE GUARD ---
         val isActionAllowed = when (currentLifecycle) {
             AppLifecycle.BOOTING -> stampedAction.name == "system.INITIALIZING"
-            AppLifecycle.INITIALIZING -> true // Allow all actions during the init/load phase
+            AppLifecycle.INITIALIZING -> true
             AppLifecycle.RUNNING -> stampedAction.name != "system.INITIALIZING" && stampedAction.name != "system.STARTING"
-            AppLifecycle.CLOSING -> stampedAction.name == "system.CLOSING" // Only allow closing action
+            AppLifecycle.CLOSING -> stampedAction.name == "system.CLOSING"
         }
 
         if (!isActionAllowed) {
@@ -114,20 +131,36 @@ open class Store(
             return
         }
 
-        // --- PHASE 3: REDUCE ---
-        val previousState = _state.value
-        val newState = features.fold(previousState) { currentState, feature ->
-            feature.reducer(currentState, stampedAction)
-        }
-
-        // --- PHASE 4: UPDATE STATE ---
-        if (newState != previousState) {
-            _state.value = newState
-        }
-
-        // --- PHASE 5: SIDE-EFFECTS ---
-        features.forEach { feature ->
-            feature.onAction(stampedAction, this)
+        // --- PHASE 3, 4, 5: ROUTE, REDUCE, UPDATE, NOTIFY ---
+        if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
+            // Targeted dispatch for internal actions
+            val targetFeature = features.find { it.name == parsedName.feature }
+            if (targetFeature != null) {
+                val previousState = _state.value
+                val newState = targetFeature.reducer(previousState, stampedAction)
+                if (newState != previousState) {
+                    _state.value = newState
+                }
+                targetFeature.onAction(stampedAction, this)
+            } else {
+                platformDependencies.log(
+                    level = LogLevel.ERROR,
+                    tag = "Store",
+                    message = "Internal action '${stampedAction.name}' dispatched, but target feature '${parsedName.feature}' not found."
+                )
+            }
+        } else {
+            // Broadcast dispatch for all other action types
+            val previousState = _state.value
+            val newState = features.fold(previousState) { currentState, feature ->
+                feature.reducer(currentState, stampedAction)
+            }
+            if (newState != previousState) {
+                _state.value = newState
+            }
+            features.forEach { feature ->
+                feature.onAction(stampedAction, this)
+            }
         }
     }
 }

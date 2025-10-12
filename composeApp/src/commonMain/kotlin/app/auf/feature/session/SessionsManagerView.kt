@@ -1,11 +1,15 @@
 package app.auf.feature.session
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +27,7 @@ fun SessionsManagerView(store: Store) {
     val sessions = remember(sessionState?.sessions) {
         sessionState?.sessions?.values?.sortedByDescending { it.createdAt } ?: emptyList()
     }
+    val editingSessionId = sessionState?.editingSessionId
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         // --- Header ---
@@ -51,7 +56,11 @@ fun SessionsManagerView(store: Store) {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(sessions, key = { it.id }) { session ->
-                    SessionManagerCard(session, store)
+                    if (session.id == editingSessionId) {
+                        SessionManagerCardEditor(session, store)
+                    } else {
+                        SessionManagerCard(session, store)
+                    }
                 }
             }
         }
@@ -60,25 +69,76 @@ fun SessionsManagerView(store: Store) {
 
 @Composable
 private fun SessionManagerCard(session: Session, store: Store) {
-    val payload = remember(session.id) {
-        buildJsonObject { put("sessionId", session.id) }
-    }
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(session.name, style = MaterialTheme.typography.titleMedium)
-                Text("ID: ${session.id}", style = MaterialTheme.typography.bodySmall)
-                Text("Messages: ${session.ledger.size}", style = MaterialTheme.typography.bodySmall)
+                Text("ID: ${session.id}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Messages: ${session.ledger.size}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = { store.dispatch("session.ui", Action("session.DELETE", payload)) }) {
+            // Edit Button
+            IconButton(onClick = {
+                val payload = buildJsonObject { put("sessionId", session.id) }
+                store.dispatch("session.ui", Action("session.SET_EDITING_SESSION_NAME", payload))
+            }) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit Session Name")
+            }
+            // Delete Button
+            IconButton(onClick = {
+                val payload = buildJsonObject { put("session", session.id) }
+                store.dispatch("session.ui", Action("session.DELETE", payload))
+            }) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete Session")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SessionManagerCardEditor(session: Session, store: Store) {
+    var name by remember(session.id) { mutableStateOf(session.name) }
+
+    val cancelAction = {
+        val payload = buildJsonObject { put("sessionId", null as String?) }
+        store.dispatch("session.ui", Action("session.SET_EDITING_SESSION_NAME", payload))
+    }
+    val saveAction = {
+        val payload = buildJsonObject {
+            put("session", session.id)
+            put("name", name)
+        }
+        store.dispatch("session.ui", Action("session.UPDATE_CONFIG", payload))
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Session Name") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                IconButton(onClick = cancelAction) {
+                    Icon(Icons.Default.Cancel, "Cancel Edit")
+                }
+                IconButton(onClick = saveAction) {
+                    Icon(Icons.Default.Save, "Save Name")
+                }
             }
         }
     }
