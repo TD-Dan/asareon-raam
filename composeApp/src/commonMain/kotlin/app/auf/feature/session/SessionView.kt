@@ -34,55 +34,55 @@ fun SessionView(store: Store) {
     val activeTabIndex = remember(activeSession, sessions) {
         sessions.indexOf(activeSession).coerceAtLeast(0)
     }
+    val allFeatures = remember(appState) {
+        // A placeholder to get the feature list. In a real DI scenario, this would be injected.
+        // For now, we are relying on the fact that the store has access to them, but the UI doesn't.
+        // This is a temporary solution to make the PartialView pattern work.
+        // In a proper implementation, the list of features would be passed down from the root App composable.
+        val featureList = mutableListOf<Feature>()
+        appState.featureStates.keys.forEach { featureName ->
+            val feature = object : Feature { // Create dummy features to access composableProvider
+                override val name: String = featureName
+                override val composableProvider: Feature.ComposableProvider?
+                    get() = (store as? Store)?.let { s ->
+                        val realFeatures = s.javaClass.getDeclaredField("features").let {
+                            it.isAccessible = true
+                            it.get(s) as List<Feature>
+                        }
+                        realFeatures.find { it.name == featureName }?.composableProvider
+                    }
+            }
+            featureList.add(feature)
+        }
+        featureList
+    }
+
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // --- Tab Bar and New Session Button ---
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (sessions.isNotEmpty()) {
-                TabRow(
-                    selectedTabIndex = activeTabIndex,
-                    modifier = Modifier.weight(1f)
-                ) {
+                TabRow(selectedTabIndex = activeTabIndex, modifier = Modifier.weight(1f)) {
                     sessions.forEach { session ->
-                        SessionTab(
-                            store = store,
-                            session = session,
-                            isSelected = session.id == activeSession?.id,
-                            isEditing = session.id == sessionState?.editingSessionId
-                        )
+                        SessionTab(store, session, session.id == activeSession?.id, session.id == sessionState?.editingSessionId)
                     }
                 }
             } else {
-                Spacer(modifier = Modifier.weight(1f)) // Fills space if no tabs
+                Spacer(modifier = Modifier.weight(1f))
             }
-
             IconButton(onClick = { store.dispatch("session.ui", Action("session.CREATE")) }) {
-                Icon(Icons.Default.Add, contentDescription = "New Session")
+                Icon(Icons.Default.Add, "New Session")
             }
         }
 
-        // --- Main Content ---
         if (activeSession == null) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No active session. Create one to begin.")
-            }
+            Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No active session. Create one to begin.") }
         } else {
-            LedgerPane(
-                store = store,
-                activeSession = activeSession,
-                sessionState = sessionState,
-                modifier = Modifier.weight(1f)
-            )
-            MessageInput(
-                onSend = { message ->
-                    val payload = buildJsonObject {
-                        put("session", activeSession.id)
-                        put("agentId", "user")
-                        put("message", message)
-                    }
-                    store.dispatch("session.ui", Action("session.POST", payload))
-                }
-            )
+            LedgerPane(store, activeSession, sessionState, allFeatures, Modifier.weight(1f))
+            MessageInput { message ->
+                store.dispatch("session.ui", Action("session.POST", buildJsonObject {
+                    put("session", activeSession.id); put("agentId", "user"); put("message", message)
+                }))
+            }
         }
     }
 }
@@ -93,89 +93,76 @@ private fun SessionTab(store: Store, session: Session, isSelected: Boolean, isEd
     if (isEditing) {
         var text by remember(session.id) { mutableStateOf(session.name) }
         OutlinedTextField(
-            value = text,
-            onValueChange = { text = it },
+            value = text, onValueChange = { text = it },
             modifier = Modifier.padding(4.dp).onKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
-                    store.dispatch("session.ui", Action("session.UPDATE_CONFIG", buildJsonObject {
-                        put("session", session.id)
-                        put("name", text)
-                    }))
-                    return@onKeyEvent true
-                }
-                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                    store.dispatch("session.ui", Action("session.SET_EDITING_SESSION_NAME", buildJsonObject {
-                        put("sessionId", null as String?)
-                    }))
-                    return@onKeyEvent true
+                if (event.type == KeyEventType.KeyDown) {
+                    when (event.key) {
+                        Key.Enter -> {
+                            store.dispatch("session.ui", Action("session.UPDATE_CONFIG", buildJsonObject {
+                                put("session", session.id); put("name", text)
+                            }))
+                            return@onKeyEvent true
+                        }
+                        Key.Escape -> {
+                            store.dispatch("session.ui", Action("session.SET_EDITING_SESSION_NAME", buildJsonObject {
+                                put("sessionId", null as String?)
+                            }))
+                            return@onKeyEvent true
+                        }
+                    }
                 }
                 false
-            },
-            singleLine = true,
-            textStyle = MaterialTheme.typography.labelLarge
+            }, singleLine = true, textStyle = MaterialTheme.typography.labelLarge
         )
     } else {
         Tab(
             selected = isSelected,
-            onClick = {
-                val payload = buildJsonObject { put("session", session.id) }
-                store.dispatch("session.ui", Action("session.SET_ACTIVE_TAB", payload))
-            },
+            onClick = { store.dispatch("session.ui", Action("session.SET_ACTIVE_TAB", buildJsonObject { put("session", session.id) })) },
             modifier = Modifier.combinedClickable(
-                onClick = {
-                    val payload = buildJsonObject { put("session", session.id) }
-                    store.dispatch("session.ui", Action("session.SET_ACTIVE_TAB", payload))
-                },
-                onDoubleClick = {
-                    val payload = buildJsonObject { put("sessionId", session.id) }
-                    store.dispatch("session.ui", Action("session.SET_EDITING_SESSION_NAME", payload))
-                }
+                onClick = { store.dispatch("session.ui", Action("session.SET_ACTIVE_TAB", buildJsonObject { put("session", session.id) })) },
+                onDoubleClick = { store.dispatch("session.ui", Action("session.SET_EDITING_SESSION_NAME", buildJsonObject { put("sessionId", session.id) })) }
             )
-        ) {
-            Text(session.name, maxLines = 1, modifier = Modifier.padding(vertical = 12.dp))
-        }
+        ) { Text(session.name, maxLines = 1, modifier = Modifier.padding(vertical = 12.dp)) }
     }
 }
-
 
 @Composable
 private fun LedgerPane(
     store: Store,
     activeSession: Session,
     sessionState: SessionState?,
+    features: List<Feature>,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val agentNames = sessionState?.agentNames ?: emptyMap()
+    val lastAgentId = activeSession.ledger.lastOrNull()?.agentId?.takeIf { it != "user" && it != "system" }
 
     LaunchedEffect(activeSession.ledger.size) {
         if (activeSession.ledger.isNotEmpty()) {
-            coroutineScope.launch {
-                listState.animateScrollToItem(activeSession.ledger.lastIndex)
-            }
+            coroutineScope.launch { listState.animateScrollToItem(activeSession.ledger.size) }
         }
     }
 
-    LazyColumn(state = listState, modifier = modifier.padding(8.dp)) {
-        items(activeSession.ledger, key = { it.id }) { entry ->
-            val agentName = remember(entry.agentId, agentNames) {
-                when {
-                    entry.agentId == "user" -> "User"
-                    entry.agentId.startsWith("system") -> "System"
-                    else -> agentNames[entry.agentId] ?: entry.agentId // Fallback to ID
+    Column(modifier = modifier) {
+        LazyColumn(state = listState, modifier = Modifier.weight(1f).padding(8.dp)) {
+            items(activeSession.ledger, key = { it.id }) { entry ->
+                val agentName = remember(entry.agentId, agentNames) {
+                    agentNames[entry.agentId] ?: entry.agentId.takeIf { it != "user" } ?: "User"
+                }
+                LedgerEntryCard(store, activeSession, entry, agentName, sessionState?.editingMessageId == entry.id, sessionState?.editingMessageContent)
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+        // --- Agent Avatar Card Injection Point ---
+        if (lastAgentId != null) {
+            Box(modifier = Modifier.padding(horizontal = 8.dp).padding(bottom = 8.dp)) {
+                // Ask all features if they can provide a partial view for this agent ID.
+                features.forEach { feature ->
+                    feature.composableProvider?.PartialView(store = store, partId = lastAgentId)
                 }
             }
-
-            LedgerEntryCard(
-                store = store,
-                session = activeSession,
-                entry = entry,
-                agentName = agentName,
-                isEditingThisMessage = sessionState?.editingMessageId == entry.id,
-                editingContent = sessionState?.editingMessageContent
-            )
-            Spacer(Modifier.height(8.dp))
         }
     }
 }
@@ -183,42 +170,22 @@ private fun LedgerPane(
 @Composable
 private fun MessageInput(onSend: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shadowElevation = 8.dp
-    ) {
-        Row(
-            modifier = Modifier.padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+    Surface(modifier = Modifier.fillMaxWidth(), shadowElevation = 8.dp) {
+        Row(Modifier.padding(8.dp), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
-                modifier = Modifier
-                    .weight(1f)
-                    .onKeyEvent { event ->
-                        if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && (event.isCtrlPressed || event.isMetaPressed)) {
-                            if (text.isNotBlank()) {
-                                onSend(text)
-                                text = ""
-                            }
-                            return@onKeyEvent true
-                        }
-                        false
-                    },
+                modifier = Modifier.weight(1f).onKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && (event.isCtrlPressed || event.isMetaPressed)) {
+                        if (text.isNotBlank()) { onSend(text); text = "" }
+                        return@onKeyEvent true
+                    }
+                    false
+                },
                 placeholder = { Text("Enter message (Ctrl+Enter to send)...") }
             )
-            Spacer(Modifier.width(8.dp))
-            IconButton(
-                onClick = {
-                    if (text.isNotBlank()) {
-                        onSend(text)
-                        text = ""
-                    }
-                },
-                enabled = text.isNotBlank()
-            ) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+            IconButton(onClick = { if (text.isNotBlank()) { onSend(text); text = "" } }, enabled = text.isNotBlank()) {
+                Icon(Icons.AutoMirrored.Filled.Send, "Send")
             }
         }
     }

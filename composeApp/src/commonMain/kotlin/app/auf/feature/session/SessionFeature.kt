@@ -33,6 +33,7 @@ class SessionFeature(
     @Serializable private data class SetEditingMessagePayload(val messageId: String?)
     @Serializable private data class ToggleMessageUiPayload(val sessionId: String, val messageId: String)
     @Serializable internal data class InternalSessionLoadedPayload(val sessions: Map<String, Session>)
+    @Serializable private data class AgentNamesUpdatedPayload(val names: Map<String, String>)
 
 
     private val blockParser = BlockSeparatingParser()
@@ -67,35 +68,30 @@ class SessionFeature(
         when (action.name) {
             "system.STARTING" -> {
                 store.dispatch(this.name, Action("filesystem.SYSTEM_LIST"))
-                store.dispatch(this.name, Action("session.REQUEST_SESSION_NAMES"))
+                // No longer need to request names, will get them from broadcast
             }
-            // --- THE FIX: Merged session.DELETE into this block to ensure broadcast happens ---
-            "session.CREATE", "session.UPDATE_CONFIG", "session.DELETE", "session.internal.LOADED" -> {
-                // After the reducer has run, broadcast the new set of session names.
+            "session.CREATE" -> {
+                // After the reducer has created the session, persist it immediately.
+                val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
+                // The new session is always set as active by the reducer.
+                sessionState.activeSessionId?.let { persistSession(it, store) }
+                broadcastSessionNames(sessionState, store)
+            }
+            "session.UPDATE_CONFIG", "session.DELETE", "session.internal.LOADED" -> {
                 val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
                 broadcastSessionNames(sessionState, store)
-
-                // If this was a delete action, we also need to dispatch the file system side effect.
                 if (action.name == "session.DELETE") {
                     val payload = action.payload ?: return
                     val identifier = payload["session"]?.jsonPrimitive?.contentOrNull ?: return
-                    // The reducer has already removed the session, so we resolve the ID from the action payload,
-                    // not from the current (already modified) state.
                     val sessionIdToDelete = if (identifier.startsWith("fake-uuid-") || identifier.length > 20) {
                         identifier
                     } else {
-                        // This fallback is now less reliable since the session is gone, but we keep it for robustness.
-                        // The primary path is resolving by ID directly from the action.
                         sessionState.sessions.entries.find { it.value.name == identifier }?.key ?: identifier
                     }
                     store.dispatch(this.name, Action("filesystem.SYSTEM_DELETE", buildJsonObject {
                         put("subpath", "$sessionIdToDelete.json")
                     }))
                 }
-            }
-            "session.REQUEST_SESSION_NAMES" -> {
-                val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
-                broadcastSessionNames(sessionState, store)
             }
             "session.POST", "session.UPDATE_MESSAGE", "session.DELETE_MESSAGE",
             "session.TOGGLE_MESSAGE_COLLAPSED", "session.TOGGLE_MESSAGE_RAW_VIEW" -> {
@@ -161,13 +157,8 @@ class SessionFeature(
         when (action.name) {
             "system.INITIALIZING" -> newFeatureState = currentFeatureState.copy()
             "agent.publish.AGENT_NAMES_UPDATED" -> {
-                try {
-                    val names = payload?.get("names")?.let { json.decodeFromJsonElement(MapSerializer(String.serializer(), String.serializer()), it) } ?: return state
-                    newFeatureState = currentFeatureState.copy(agentNames = names)
-                } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, name, "Payload decoding failed for '${action.name}'. Error: ${e.message}")
-                    return state
-                }
+                val decoded = try { payload?.let { json.decodeFromJsonElement(AgentNamesUpdatedPayload.serializer(), it) } } catch(e: Exception) { null } ?: return state
+                newFeatureState = currentFeatureState.copy(agentNames = decoded.names)
             }
             "session.CREATE" -> {
                 val decoded = try { payload?.let { json.decodeFromJsonElement(CreatePayload.serializer(), it) } } catch(e: Exception) { null }
