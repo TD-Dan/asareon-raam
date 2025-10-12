@@ -229,7 +229,6 @@ class AgentRuntimeFeature(
 
         setAgentStatus(agentId, AgentStatus.PROCESSING, store)
 
-        // CORRECTED: Build a universal message list, not a provider-specific JSON object.
         val lastMessage = targetSession.ledger.last().rawContent
         val messages = listOf(GatewayMessage("user", lastMessage))
 
@@ -292,7 +291,8 @@ class AgentRuntimeFeature(
         } else {
             val responseContent = data.rawContent ?: "[AGENT ERROR] Received empty response from gateway."
             val postPayload = buildJsonObject {
-                put("sessionId", agent.primarySessionId)
+                // --- THE FIX: Use "session" to match the SessionFeature's contract ---
+                put("session", agent.primarySessionId)
                 put("agentId", agent.id)
                 put("message", responseContent)
             }
@@ -315,7 +315,8 @@ class AgentRuntimeFeature(
     private fun postErrorMessage(agent: AgentInstance, message: String, store: Store) {
         if (agent.primarySessionId == null) return
         val postPayload = buildJsonObject {
-            put("sessionId", agent.primarySessionId)
+            // --- THE FIX: Use "session" to match the SessionFeature's contract ---
+            put("session", agent.primarySessionId)
             put("agentId", agent.id)
             put("message", message)
         }

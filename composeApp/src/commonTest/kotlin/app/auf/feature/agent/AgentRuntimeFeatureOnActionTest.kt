@@ -28,7 +28,6 @@ class AgentRuntimeFeatureOnActionTest {
     private val fakePlatform = FakePlatformDependencies(testAppVersion)
     private val json = Json { ignoreUnknownKeys = true }
 
-    // THE FIX: A hardcoded registry for this integration-style unit test.
     private val testActionRegistry = setOf(
         "system.INITIALIZING", "system.STARTING",
         "agent.CREATE", "agent.DELETE", "agent.TRIGGER_MANUAL_TURN", "agent.internal.SET_STATUS", "agent.internal.AGENT_LOADED",
@@ -197,7 +196,8 @@ class AgentRuntimeFeatureOnActionTest {
         feature.onPrivateData(response, store)
         val postAction = store.dispatchedActions.find { it.name == "session.POST" }
         assertNotNull(postAction)
-        assertEquals("sid-1", postAction.payload?.get("sessionId")?.jsonPrimitive?.content)
+        // --- THE FIX: Assert for the correct key, "session", which matches the contract. ---
+        assertEquals("sid-1", postAction.payload?.get("session")?.jsonPrimitive?.content)
         val setStatusAction = store.dispatchedActions.find { it.name == "agent.internal.SET_STATUS" }
         assertNotNull(setStatusAction)
         assertEquals("\"IDLE\"", setStatusAction.payload?.get("status").toString())

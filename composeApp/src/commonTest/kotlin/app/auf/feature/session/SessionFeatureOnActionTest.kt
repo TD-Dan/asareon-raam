@@ -24,7 +24,6 @@ class SessionFeatureOnActionTest {
     private val json = Json { ignoreUnknownKeys = true }
 
     private val testActionRegistry = setOf(
-        // THE FIX: The lifecycle actions are also required.
         "system.INITIALIZING",
         "system.STARTING",
         "session.REQUEST_SESSION_NAMES",
@@ -67,10 +66,8 @@ class SessionFeatureOnActionTest {
     fun `onAction for system STARTING dispatches SYSTEM_LIST and REQUEST_SESSION_NAMES`() {
         val fakePlatform = FakePlatformDependencies(testAppVersion)
         val feature = SessionFeature(fakePlatform, scope)
-        // THE FIX: Start in the BOOTING state to correctly test the lifecycle.
         val store = TestStore(AppState(featureStates = mapOf(coreFeature.name to CoreState(lifecycle = AppLifecycle.BOOTING))), listOf(coreFeature, feature), fakePlatform, testActionRegistry)
 
-        // THE FIX: Dispatch INITIALIZING first to move to the correct state.
         store.dispatch("system.test", Action("system.INITIALIZING"))
         store.dispatch("system.test", Action("system.STARTING"))
 
@@ -130,15 +127,16 @@ class SessionFeatureOnActionTest {
 
         store.dispatch("session.ui", deleteAction)
 
-        val deleteSysAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_DELETE" }
-        assertNotNull(deleteSysAction)
-        assertEquals("session", deleteSysAction.originator)
-        assertEquals("sid-1.json", deleteSysAction.payload?.get("subpath")?.jsonPrimitive?.content)
-
-        val broadcastAction = store.dispatchedActions.last()
-        assertEquals("session.publish.SESSION_NAMES_UPDATED", broadcastAction.name)
+        // --- THE FIX: Assert on both dispatched actions specifically ---
+        val broadcastAction = store.dispatchedActions.find { it.name == "session.publish.SESSION_NAMES_UPDATED" }
+        assertNotNull(broadcastAction, "The names update broadcast should have been dispatched.")
         val names = broadcastAction.payload?.get("names")?.let { json.decodeFromJsonElement(MapSerializer(String.serializer(), String.serializer()), it) }
         assertNotNull(names)
         assertTrue(names.isEmpty(), "The broadcasted name map should now be empty.")
+
+        val deleteSysAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_DELETE" }
+        assertNotNull(deleteSysAction, "The filesystem delete action should have been dispatched.")
+        assertEquals("session", deleteSysAction.originator)
+        assertEquals("sid-1.json", deleteSysAction.payload?.get("subpath")?.jsonPrimitive?.content)
     }
 }
