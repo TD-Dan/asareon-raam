@@ -165,7 +165,7 @@ class GatewayFeatureTest {
 
     @Test
     fun `on settings VALUE_CHANGED refreshes models for the correct provider`() = testScope.runTest {
-        val action = Action("settings.VALUE_CHANGED", buildJsonObject {
+        val action = Action("settings.publish.VALUE_CHANGED", buildJsonObject {
             put("key", "gateway.provider-2.apiKey")
             put("value", "new-key")
         })
@@ -197,7 +197,7 @@ class GatewayFeatureTest {
         testStore.dispatch("agent.test", Action("gateway.REQUEST_AVAILABLE_MODELS"))
 
         val broadcastAction = testStore.dispatchedActions.last()
-        assertEquals("gateway.AVAILABLE_MODELS_UPDATED", broadcastAction.name)
+        assertEquals("gateway.publish.AVAILABLE_MODELS_UPDATED", broadcastAction.name)
         val payload = broadcastAction.payload!!
         assertEquals(2, payload.size)
     }

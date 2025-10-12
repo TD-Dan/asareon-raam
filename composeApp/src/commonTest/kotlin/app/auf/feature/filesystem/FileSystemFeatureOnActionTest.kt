@@ -118,7 +118,7 @@ class FileSystemFeatureOnActionTest {
                 })
             }
         }
-        val action = Action("filesystem.DIRECTORY_LOADED", payload)
+        val action = Action("filesystem.internal.DIRECTORY_LOADED", payload)
 
         // Act
         feature.onAction(action.copy(originator = feature.name), store)

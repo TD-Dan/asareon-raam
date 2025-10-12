@@ -152,7 +152,7 @@ class CoreFeature(
             "core.CLEAR_TOAST" -> newCoreState = coreState.copy(toastMessage = null)
 
             // Cross-Feature Reaction
-            "settings.LOADED" -> {
+            "settings.publish.LOADED" -> {
                 // When settings are loaded, check if our keys are present and hydrate our state.
                 val loadedValues = action.payload
                 val width = loadedValues?.get(settingKeyWidth)?.jsonPrimitive?.content?.toIntOrNull()
@@ -163,7 +163,7 @@ class CoreFeature(
                     windowHeight = height ?: coreState.windowHeight
                 )
             }
-            "settings.VALUE_CHANGED" -> {
+            "settings.publish.VALUE_CHANGED" -> {
                 // When a setting is changed via the UI, listen for the broadcast and update our state.
                 val payload = action.payload ?: return state
                 val key = payload["key"]?.jsonPrimitive?.content

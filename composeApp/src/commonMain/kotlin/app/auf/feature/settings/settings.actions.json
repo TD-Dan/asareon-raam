@@ -55,15 +55,15 @@
       "payload_schema": null
     },
     {
-      "action_name": "settings.internal.LOADED",
-      "summary": "[INTERNAL] Action dispatched after settings have been successfully loaded from disk.",
+      "action_name": "settings.publish.LOADED",
+      "summary": "Action dispatched after settings have been successfully loaded from disk.",
       "payload_schema": {
         "type": "object",
         "description": "A map of setting keys to their string-encoded values."
       }
     },
     {
-      "action_name": "settings.VALUE_CHANGED",
+      "action_name": "settings.publish.VALUE_CHANGED",
       "summary": "Broadcasts that a specific setting's value has been changed by the user or another system.",
       "payload_schema": {
         "type": "object",

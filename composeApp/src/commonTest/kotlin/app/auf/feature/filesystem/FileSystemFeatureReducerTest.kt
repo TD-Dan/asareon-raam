@@ -39,7 +39,7 @@ class FileSystemFeatureReducerTest {
                 })
             }
         }
-        val action = Action("filesystem.DIRECTORY_LOADED", payload)
+        val action = Action("filesystem.internal.DIRECTORY_LOADED", payload)
 
         // Act
         // To test correctly, we must first be in the navigating state
@@ -65,7 +65,7 @@ class FileSystemFeatureReducerTest {
             put("path", "/bad/path")
             put("error", "Directory not found")
         }
-        val action = Action("filesystem.NAVIGATION_FAILED", payload)
+        val action = Action("filesystem.publish.NAVIGATION_FAILED", payload)
 
         // Act
         val newState = feature.reducer(initialState, action)
@@ -179,7 +179,7 @@ class FileSystemFeatureReducerTest {
             put("filesystem.whitelistedPaths", "path1,path2")
             put("filesystem.favoritePaths", "fav1")
         }
-        val action = Action("settings.LOADED", payload)
+        val action = Action("settings.publish.LOADED", payload)
         val newState = feature.reducer(initialState, action)
         val newFsState = newState.featureStates[featureName] as FileSystemState
         assertEquals(setOf("path1", "path2"), newFsState.whitelistedPaths)

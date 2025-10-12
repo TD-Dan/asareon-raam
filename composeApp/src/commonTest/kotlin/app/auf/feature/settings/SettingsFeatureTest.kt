@@ -136,7 +136,7 @@ class SettingsFeatureTest {
         // Assert
         assertEquals(1, store.dispatchedActions.size)
         val dispatched = store.dispatchedActions.first()
-        assertEquals("settings.LOADED", dispatched.name)
+        assertEquals("settings.publish.LOADED", dispatched.name)
         assertEquals(feature.name, dispatched.originator)
         assertEquals("file.value", dispatched.payload?.get("file.key")?.jsonPrimitive?.content)
     }
@@ -175,7 +175,7 @@ class SettingsFeatureTest {
         assertTrue(encryptFlag, "The 'encrypt' flag must always be true to enforce at-rest encryption.")
 
 
-        val changedAction = store.dispatchedActions.find { it.name == "settings.VALUE_CHANGED" }
+        val changedAction = store.dispatchedActions.find { it.name == "settings.publish.VALUE_CHANGED" }
         assertNotNull(changedAction)
     }
 

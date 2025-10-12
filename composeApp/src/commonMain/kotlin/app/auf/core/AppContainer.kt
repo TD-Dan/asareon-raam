@@ -1,5 +1,6 @@
 package app.auf.core
 
+import app.auf.core.generated.ActionRegistrySource
 import app.auf.feature.agent.AgentRuntimeFeature
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.filesystem.FileSystemFeature
@@ -48,5 +49,10 @@ class AppContainer(
         allFeatures
     }
 
-    val store: Store = Store(AppState(), features, platformDependencies)
+    val store: Store = Store(
+        initialState = AppState(),
+        features = features,
+        platformDependencies = platformDependencies,
+        validActionNames = ActionRegistrySource.allActionNames
+    )
 }

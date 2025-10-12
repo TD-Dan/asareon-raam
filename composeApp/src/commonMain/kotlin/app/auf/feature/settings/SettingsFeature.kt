@@ -62,7 +62,7 @@ class SettingsFeature(
                 }
             }
             // Dispatch the internal action to hydrate the reducer.
-            store.dispatch(this.name, Action("settings.LOADED", loadedPayload))
+            store.dispatch(this.name, Action("settings.publish.LOADED", loadedPayload))
         }
     }
 
@@ -110,7 +110,7 @@ class SettingsFeature(
 
                 // We must still broadcast the public VALUE_CHANGED event for other features.
                 action.payload?.let { payload ->
-                    store.dispatch(this.name, Action("settings.VALUE_CHANGED", payload))
+                    store.dispatch(this.name, Action("settings.publish.VALUE_CHANGED", payload))
                 }
             }
 
@@ -144,7 +144,7 @@ class SettingsFeature(
                 }
             }
 
-            "settings.LOADED" -> {
+            "settings.publish.LOADED" -> {
                 val loadedValues = action.payload?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap()
 
                 // --- FIX for data loss race condition ---

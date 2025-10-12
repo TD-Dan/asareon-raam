@@ -34,7 +34,7 @@ class GatewayFeature(
                 }
             }
 
-            "settings.VALUE_CHANGED" -> {
+            "settings.publish.VALUE_CHANGED" -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
                 // If one of our known API keys changed, trigger a model refresh for that provider.
                 if (key in providerApiKeys) {
@@ -46,7 +46,7 @@ class GatewayFeature(
             "gateway.REQUEST_AVAILABLE_MODELS" -> {
                 val gatewayState = store.state.value.featureStates[name] as? GatewayState ?: return
                 val payload = Json.encodeToJsonElement(gatewayState.availableModels).jsonObject
-                store.dispatch(this.name, Action("gateway.AVAILABLE_MODELS_UPDATED", payload))
+                store.dispatch(this.name, Action("gateway.publish.AVAILABLE_MODELS_UPDATED", payload))
             }
 
             "gateway.GENERATE_CONTENT" -> {

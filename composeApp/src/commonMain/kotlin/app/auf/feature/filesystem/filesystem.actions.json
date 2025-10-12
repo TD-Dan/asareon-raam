@@ -214,7 +214,7 @@
   ],
   "publishes": [
     {
-      "action_name": "filesystem.NAVIGATION_UPDATED",
+      "action_name": "filesystem.publish.NAVIGATION_UPDATED",
       "summary": "Broadcasts that the directory listing has been successfully updated.",
       "payload_schema": {
         "type": "object",
@@ -228,7 +228,7 @@
       }
     },
     {
-      "action_name": "filesystem.NAVIGATION_FAILED",
+      "action_name": "filesystem.publish.NAVIGATION_FAILED",
       "summary": "Broadcasts that a navigation attempt failed.",
       "payload_schema": {
         "type": "object",
@@ -239,7 +239,7 @@
       }
     },
     {
-      "action_name": "filesystem.DIRECTORY_LOADED",
+      "action_name": "filesystem.internal.DIRECTORY_LOADED",
       "summary": "[INTERNAL] Dispatched after a directory's children have been loaded from disk.",
       "payload_schema": {
         "type": "object",

@@ -199,7 +199,7 @@ class AgentRuntimeFeature(
     private fun broadcastUpdate(store: Store) {
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val payload = json.encodeToJsonElement(agentState).jsonObject
-        store.dispatch(this.name, Action("agent.UPDATED", payload))
+        store.dispatch(this.name, Action("agent.publish.UPDATED", payload))
     }
 
     private fun beginCognitiveCycle(action: Action, store: Store) {

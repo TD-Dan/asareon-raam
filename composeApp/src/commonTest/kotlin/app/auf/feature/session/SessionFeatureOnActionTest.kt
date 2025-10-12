@@ -25,7 +25,7 @@ class SessionFeatureOnActionTest {
 
     /**
      * A high-fidelity TestStore that correctly mimics the real Store's dispatch lifecycle
-     * and allows manual invocation of onPrivateData for robust side-effect testing.
+     * and allows manual invocation of onPrivateData for robust side effect testing.
      */
     private class TestStore(
         initialState: AppState,

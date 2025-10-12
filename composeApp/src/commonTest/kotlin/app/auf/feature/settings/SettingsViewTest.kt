@@ -101,7 +101,7 @@ class SettingsViewTest {
             // Note: We are NOT providing loaded values for the new string types
             // to test that their defaults are applied correctly.
         }
-        testStore.dispatch(settingsFeature.name, Action("settings.LOADED", loadedSettingsPayload))
+        testStore.dispatch(settingsFeature.name, Action("settings.publish.LOADED", loadedSettingsPayload))
 
         // 4. Advance to RUNNING state.
         testStore.dispatch("system.test", Action("system.STARTING"))

@@ -1,8 +1,19 @@
+
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
-import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig
+        import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+        import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
+        import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+        import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig
+        import kotlinx.serialization.json.*
+
+        buildscript {
+            repositories {
+                mavenCentral()
+            }
+            dependencies {
+                classpath("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+            }
+        }
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -12,6 +23,68 @@ plugins {
     alias(libs.plugins.composeHotReload)
     alias(libs.plugins.kotlinxSerialization)
 }
+
+tasks.register("generateActionRegistry") {
+    description = "Generates a Kotlin source file containing all valid action names from *.actions.json manifests."
+    group = "auf"
+
+    // --- Configuration ---
+    // Corrected input directory to scan all feature folders.
+    val inputDir = file("src/commonMain/kotlin/app/auf")
+    val outputFile = file("$buildDir/generated/kotlin/app/auf/core/generated/ActionRegistrySource.kt")
+
+    // --- Gradle Inputs/Outputs for build caching and up-to-date checks ---
+    inputs.dir(inputDir)
+    outputs.file(outputFile)
+
+    // --- Task Action ---
+    doLast {
+        val json = Json { ignoreUnknownKeys = true }
+        val actionNames = mutableSetOf<String>()
+
+        inputDir.walkTopDown().forEach { file ->
+            if (file.isFile && file.name.endsWith(".actions.json")) {
+                try {
+                    val content = file.readText()
+                    val manifest = json.parseToJsonElement(content).jsonObject
+
+                    (manifest["listensFor"] as? JsonArray)?.forEach {
+                        val actionName = (it as? JsonObject)?.get("action_name")?.jsonPrimitive?.content
+                        if (actionName != null) actionNames.add(actionName)
+                    }
+                    (manifest["publishes"] as? JsonArray)?.forEach {
+                        val actionName = (it as? JsonObject)?.get("action_name")?.jsonPrimitive?.content
+                        if (actionName != null) actionNames.add(actionName)
+                    }
+                } catch (e: Exception) {
+                    throw GradleException("Failed to parse action manifest: ${file.path}. Error: ${e.message}", e)
+                }
+            }
+        }
+
+        val sortedActionNames = actionNames.sorted()
+
+        val fileContent = """
+            package app.auf.core.generated
+
+            /**
+             * THIS IS A GENERATED FILE. DO NOT EDIT.
+             * Contains a compile-time set of all valid action names,
+             * generated from the *.actions.json manifests during the build process.
+             */
+            internal object ActionRegistrySource {
+                val allActionNames: Set<String> = setOf(
+                    ${sortedActionNames.joinToString(separator = ",\n                    ") { "\"$it\"" }}
+                )
+            }
+        """.trimIndent()
+
+        outputFile.parentFile.mkdirs()
+        outputFile.writeText(fileContent)
+        println("Generated ActionRegistrySource.kt with ${actionNames.size} actions.")
+    }
+}
+
 
 kotlin {
 
@@ -65,7 +138,15 @@ kotlin {
         binaries.executable()
     }
 
+    // This ensures our file is generated before any compilation happens.
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        dependsOn(tasks.getByName("generateActionRegistry"))
+    }
+
     sourceSets {
+        // This tells the compiler to include our generated file in the build.
+        commonMain.get().kotlin.srcDir("$buildDir/generated/kotlin")
+
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
@@ -89,7 +170,6 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
-            // THE FIX: Removed compose.ui.test.junit4 from here, as it's JVM-specific.
         }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
@@ -103,9 +183,7 @@ kotlin {
             implementation(libs.junit.jupiter.api)
             runtimeOnly(libs.junit.jupiter.engine)
 
-            // THE FIX: Added JUnit 4 UI testing framework for Compose Desktop.
             implementation(libs.compose.ui.test.junit4)
-            // THE FIX: Added the Vintage Engine to allow the JUnit 5 runner to run JUnit 4 tests.
             runtimeOnly(libs.junit.vintage.engine)
 
             // Dependencies for the code under test
@@ -160,10 +238,6 @@ android {
         debugImplementation(compose.uiTooling)
     }
 }
-// THE FIX: Removed the redundant top-level dependency block.
-// dependencies {
-//    testImplementation(libs.junit)
-// }
 
 compose.desktop {
     application {

@@ -141,13 +141,13 @@ class FileSystemFeature(
                         put("parentPath", payload.path)
                         put("children", childrenJson)
                     }
-                    store.dispatch(this.name, Action("filesystem.DIRECTORY_LOADED", successPayload))
+                    store.dispatch(this.name, Action("filesystem.internal.DIRECTORY_LOADED", successPayload))
                 } catch (e: Exception) {
                     val errorPayload = buildJsonObject { put("message", "Failed to read directory ${payload.path}: ${e.message}") }
                     store.dispatch(this.name, Action("core.SHOW_TOAST", errorPayload))
                 }
             }
-            "filesystem.DIRECTORY_LOADED" -> {
+            "filesystem.internal.DIRECTORY_LOADED" -> {
                 val state = store.state.value.featureStates[name] as? FileSystemState ?: return
                 val payload = action.payload?.let { Json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return
                 val parentItem = findItemByPath(state.rootItems, payload.parentPath)
@@ -317,7 +317,7 @@ class FileSystemFeature(
         val resolvedFeatureState = currentFeatureState ?: FileSystemState()
 
         val newFeatureState = when (action.name) {
-            "filesystem.DIRECTORY_LOADED" -> {
+            "filesystem.internal.DIRECTORY_LOADED" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return state
                 val isNavigating = resolvedFeatureState.currentPath == payload.parentPath
 
@@ -341,7 +341,7 @@ class FileSystemFeature(
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
                 resolvedFeatureState.copy(currentPath = payload.path)
             }
-            "filesystem.NAVIGATION_FAILED" -> {
+            "filesystem.publish.NAVIGATION_FAILED" -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<NavigationFailedPayload>(it) } ?: return state
                 resolvedFeatureState.copy(error = payload.error, rootItems = emptyList())
             }
@@ -398,7 +398,7 @@ class FileSystemFeature(
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return state
                 resolvedFeatureState.copy(favoritePaths = resolvedFeatureState.favoritePaths - payload.path)
             }
-            "settings.LOADED" -> {
+            "settings.publish.LOADED" -> {
                 val loadedValues = action.payload
                 val whitelistStr = loadedValues?.get(settingKeyWhitelist)?.jsonPrimitive?.content
                 val favoritesStr = loadedValues?.get(settingKeyFavorites)?.jsonPrimitive?.content
@@ -407,7 +407,7 @@ class FileSystemFeature(
                     favoritePaths = deserializeSet(favoritesStr)
                 )
             }
-            "settings.VALUE_CHANGED" -> {
+            "settings.publish.VALUE_CHANGED" -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.content
                 val value = action.payload?.get("value")?.jsonPrimitive?.content
                 when (key) {

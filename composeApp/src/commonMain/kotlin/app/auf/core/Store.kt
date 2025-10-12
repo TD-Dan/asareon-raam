@@ -40,7 +40,8 @@ private fun parseActionName(name: String): ParsedActionName {
 open class Store(
     initialState: AppState,
     private val features: List<Feature>,
-    private val platformDependencies: PlatformDependencies
+    private val platformDependencies: PlatformDependencies,
+    private val validActionNames: Set<String>
 ) {
 
     private val _state = MutableStateFlow(initialState)
@@ -81,7 +82,7 @@ open class Store(
      *
      * The process is a strictly ordered, synchronous call:
      * 1.  **Stamp & Parse:** The action is stamped and its name is parsed.
-     * 2.  **Authorize & Guard:** The action is validated against originator rules and the current `AppLifecycle`.
+     * 2.  **Authorize & Guard:** The action is validated against the Action Registry, originator rules, and the current `AppLifecycle`.
      * 3.  **Route & Reduce:** Based on the action type, the action is either broadcast to all reducers or routed to a single reducer to calculate the new state.
      * 4.  **Update:** The central state is atomically updated.
      * 5.  **Route & `onAction`:** The action is routed to the appropriate side-effect handlers.
@@ -92,6 +93,17 @@ open class Store(
         val parsedName = parseActionName(stampedAction.name)
 
         // --- PHASE 2: AUTHORIZATION & LIFECYCLE GUARDS ---
+
+        // NEW: Action Registry Guard
+        if (!validActionNames.contains(stampedAction.name)) {
+            platformDependencies.log(
+                level = LogLevel.ERROR,
+                tag = "Store",
+                message = "SECURITY VIOLATION: Unknown Action '${stampedAction.name}' dispatched by '$originator'. Action ignored."
+            )
+            return
+        }
+
         val isAuthorized = when (parsedName.type) {
             ParsedActionName.ActionType.SYSTEM -> originator.startsWith("system")
             ParsedActionName.ActionType.INTERNAL, ParsedActionName.ActionType.PUBLISH -> originator == parsedName.feature

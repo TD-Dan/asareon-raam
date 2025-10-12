@@ -35,7 +35,7 @@
   ],
   "publishes": [
     {
-      "action_name": "gateway.AVAILABLE_MODELS_UPDATED",
+      "action_name": "gateway.publish.AVAILABLE_MODELS_UPDATED",
       "summary": "Broadcasts the list of currently available providers and their models.",
       "payload_schema": {
         "type": "object",
