@@ -4,9 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import app.auf.core.Action
-import app.auf.core.Feature
-import app.auf.core.Store
+import app.auf.core.*
 import app.auf.feature.core.CoreState
 
 @Composable

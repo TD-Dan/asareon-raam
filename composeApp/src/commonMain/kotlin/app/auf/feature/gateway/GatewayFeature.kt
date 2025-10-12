@@ -1,7 +1,7 @@
 package app.auf.feature.gateway
 
 import app.auf.core.*
-import app.auf.feature.settings.SettingsState
+import app.auf.feature.settings.SettingsState //TODO: THIS IS A VIOLATION AND NEEDS TO BE FIXED
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*

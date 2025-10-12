@@ -26,8 +26,7 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.auf.core.Action
-import app.auf.core.Store
+import app.auf.core.*
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put

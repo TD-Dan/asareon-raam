@@ -11,10 +11,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import app.auf.core.Action
-import app.auf.core.Store
-import app.auf.feature.gateway.GatewayState
-import app.auf.feature.session.SessionState
+import app.auf.core.*
+import app.auf.feature.gateway.GatewayState  //TODO: THIS IS A VIOLATION AND NEEDS TO BE FIXED
+import app.auf.feature.session.SessionState  //TODO: THIS IS A VIOLATION AND NEEDS TO BE FIXED
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put

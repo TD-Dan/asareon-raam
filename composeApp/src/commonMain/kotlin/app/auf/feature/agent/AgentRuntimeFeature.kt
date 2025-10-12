@@ -9,9 +9,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
-import app.auf.feature.gateway.GatewayMessage
-import app.auf.feature.gateway.GatewayResponse
-import app.auf.feature.session.SessionState
+import app.auf.feature.gateway.GatewayMessage  //TODO: THIS IS A VIOLATION AND NEEDS TO BE FIXED
+import app.auf.feature.gateway.GatewayResponse  //TODO: THIS IS A VIOLATION AND NEEDS TO BE FIXED
+import app.auf.feature.session.SessionState  //TODO: THIS IS A VIOLATION AND NEEDS TO BE FIXED
 import app.auf.util.FileEntry
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
