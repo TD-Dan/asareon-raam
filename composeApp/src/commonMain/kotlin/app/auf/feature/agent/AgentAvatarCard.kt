@@ -11,11 +11,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.auf.core.Action
 import app.auf.core.Store
+import app.auf.feature.session.Session
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 @Composable
-fun AgentAvatarCard(agent: AgentInstance, store: Store) {
+fun AgentAvatarCard(agent: AgentInstance, session: Session, store: Store) {
     OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -57,10 +58,13 @@ fun AgentAvatarCard(agent: AgentInstance, store: Store) {
                     // Show Trigger button otherwise
                     Button(
                         onClick = {
-                            val payload = buildJsonObject { put("agentId", agent.id) }
+                            val payload = buildJsonObject {
+                                put("agentId", agent.id)
+                                put("lastMessage", session.ledger.lastOrNull()?.rawContent ?: "")
+                            }
                             store.dispatch("ui.agentAvatar", Action("agent.TRIGGER_MANUAL_TURN", payload))
                         },
-                        enabled = agent.status == AgentStatus.IDLE || agent.status == AgentStatus.ERROR
+                        enabled = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.ERROR) && session.ledger.isNotEmpty()
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = "Trigger Turn")
                         Spacer(Modifier.width(4.dp))

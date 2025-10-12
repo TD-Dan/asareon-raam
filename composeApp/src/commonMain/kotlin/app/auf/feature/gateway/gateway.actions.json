@@ -35,11 +35,30 @@
   ],
   "publishes": [
     {
+      "action_name": "gateway.publish.CONTENT_GENERATED",
+      "summary": "Broadcasts the result of a content generation request.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": { "type": "string" },
+          "rawContent": { "type": ["string", "null"] },
+          "errorMessage": { "type": ["string", "null"] }
+        },
+        "required": ["correlationId"]
+      }
+    },
+    {
       "action_name": "gateway.publish.AVAILABLE_MODELS_UPDATED",
       "summary": "Broadcasts the list of currently available providers and their models.",
       "payload_schema": {
         "type": "object",
-        "description": "A map where the key is the provider ID and the value is a list of model name strings."
+        "properties": {
+          "models": {
+            "type": "object",
+            "description": "A map where the key is the provider ID and the value is a list of model name strings."
+          }
+        },
+        "required": ["models"]
       }
     },
     {

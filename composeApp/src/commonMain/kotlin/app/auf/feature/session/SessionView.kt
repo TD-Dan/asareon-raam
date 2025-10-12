@@ -19,6 +19,8 @@ import app.auf.core.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.reflect.full.declaredMemberProperties
+import kotlin.reflect.jvm.isAccessible
 
 @Composable
 fun SessionView(store: Store) {
@@ -34,27 +36,20 @@ fun SessionView(store: Store) {
     val activeTabIndex = remember(activeSession, sessions) {
         sessions.indexOf(activeSession).coerceAtLeast(0)
     }
-    val allFeatures = remember(appState) {
-        // A placeholder to get the feature list. In a real DI scenario, this would be injected.
-        // For now, we are relying on the fact that the store has access to them, but the UI doesn't.
-        // This is a temporary solution to make the PartialView pattern work.
-        // In a proper implementation, the list of features would be passed down from the root App composable.
-        val featureList = mutableListOf<Feature>()
-        appState.featureStates.keys.forEach { featureName ->
-            val feature = object : Feature { // Create dummy features to access composableProvider
-                override val name: String = featureName
-                override val composableProvider: Feature.ComposableProvider?
-                    get() = (store as? Store)?.let { s ->
-                        val realFeatures = s.javaClass.getDeclaredField("features").let {
-                            it.isAccessible = true
-                            it.get(s) as List<Feature>
-                        }
-                        realFeatures.find { it.name == featureName }?.composableProvider
-                    }
+
+    // HACK: A reflection-based way to get the list of features without modifying the App composable signature.
+    // This is not ideal for production but works for our current constraints.
+    val allFeatures = remember(store) {
+        try {
+            val featuresField = store::class.declaredMemberProperties.find { it.name == "features" }
+            featuresField?.let {
+                it.isAccessible = true
+                @Suppress("UNCHECKED_CAST")
+                it.get(store) as? List<Feature>
             }
-            featureList.add(feature)
-        }
-        featureList
+        } catch (e: Exception) {
+            null
+        } ?: emptyList()
     }
 
 
@@ -109,6 +104,7 @@ private fun SessionTab(store: Store, session: Session, isSelected: Boolean, isEd
                             }))
                             return@onKeyEvent true
                         }
+                        else -> {}
                     }
                 }
                 false
@@ -137,11 +133,14 @@ private fun LedgerPane(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val agentNames = sessionState?.agentNames ?: emptyMap()
-    val lastAgentId = activeSession.ledger.lastOrNull()?.agentId?.takeIf { it != "user" && it != "system" }
+    val lastAgentId = activeSession.ledger.lastOrNull()?.agentId?.takeIf { it != "user" && !it.startsWith("system") }
 
     LaunchedEffect(activeSession.ledger.size) {
-        if (activeSession.ledger.isNotEmpty()) {
-            coroutineScope.launch { listState.animateScrollToItem(activeSession.ledger.size) }
+        // Scroll to the new item, but check size to avoid scrolling on initial load.
+        if (activeSession.ledger.size > 1) {
+            coroutineScope.launch {
+                listState.animateScrollToItem(activeSession.ledger.size)
+            }
         }
     }
 
@@ -149,16 +148,18 @@ private fun LedgerPane(
         LazyColumn(state = listState, modifier = Modifier.weight(1f).padding(8.dp)) {
             items(activeSession.ledger, key = { it.id }) { entry ->
                 val agentName = remember(entry.agentId, agentNames) {
-                    agentNames[entry.agentId] ?: entry.agentId.takeIf { it != "user" } ?: "User"
+                    when {
+                        entry.agentId == "user" -> "User"
+                        entry.agentId.startsWith("system") -> "System"
+                        else -> agentNames[entry.agentId] ?: entry.agentId // Fallback to ID
+                    }
                 }
                 LedgerEntryCard(store, activeSession, entry, agentName, sessionState?.editingMessageId == entry.id, sessionState?.editingMessageContent)
                 Spacer(Modifier.height(8.dp))
             }
         }
-        // --- Agent Avatar Card Injection Point ---
         if (lastAgentId != null) {
             Box(modifier = Modifier.padding(horizontal = 8.dp).padding(bottom = 8.dp)) {
-                // Ask all features if they can provide a partial view for this agent ID.
                 features.forEach { feature ->
                     feature.composableProvider?.PartialView(store = store, partId = lastAgentId)
                 }

@@ -47,8 +47,11 @@
       "summary": "Manually triggers a single cognitive cycle for a specific agent.",
       "payload_schema": {
         "type": "object",
-        "properties": { "agentId": { "type": "string" } },
-        "required": ["agentId"]
+        "properties": {
+          "agentId": { "type": "string" },
+          "lastMessage": { "type": "string", "description": "The content of the last message in the session, used as context." }
+        },
+        "required": ["agentId", "lastMessage"]
       }
     },
     {
@@ -121,10 +124,9 @@
       "payload_schema": {
         "type": "object",
         "properties": {
-          "agentId": { "type": "string" },
-          "job": { "type": "object", "description": "The Job instance. Not serializable." }
+          "agentId": { "type": "string" }
         },
-        "required": ["agentId", "job"]
+        "required": ["agentId"]
       }
     }
   ]

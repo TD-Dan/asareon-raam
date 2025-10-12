@@ -12,7 +12,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
-import kotlinx.coroutines.delay
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -72,9 +71,9 @@ fun AgentManagerView(store: Store) {
             Box(Modifier.fillMaxSize().padding(paddingValues), Alignment.Center) { Text("No agents configured.") }
         } else {
             LazyColumn(
-                Modifier.fillMaxSize().padding(paddingValues),
-                PaddingValues(16.dp),
-                Arrangement.spacedBy(16.dp)
+                modifier = Modifier.fillMaxSize().padding(paddingValues),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(agentState.agents.values.toList(), key = { it.id }) { agent ->
                     AgentCard(
@@ -167,7 +166,12 @@ private fun AgentEditorView(
             }
         }
 
-        FlowRow(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp), Arrangement.spacedBy(8.dp), 3) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            maxItemsInEachRow = 3
+        ) {
             Box(Modifier.weight(1f)) { SessionSelector(agent, agentState, store) }
             Box(Modifier.weight(1f)) { ProviderSelector(agent, agentState, store) }
             Box(Modifier.weight(1f)) { ModelSelector(agent, agentState, store) }
