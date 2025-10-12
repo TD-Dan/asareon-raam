@@ -20,7 +20,13 @@ class GatewayFeatureTest {
     private val testAppVersion = "2.0.0-test"
     private val json = Json { ignoreUnknownKeys = true }
 
-    // --- Test Doubles & Fakes ---
+    // THE FIX: Define a minimal set of valid actions required for this specific test class.
+    private val testActionRegistry = setOf(
+        "system.INITIALIZING", "system.STARTING",
+        "settings.publish.VALUE_CHANGED",
+        "gateway.REQUEST_AVAILABLE_MODELS", "gateway.publish.AVAILABLE_MODELS_UPDATED",
+        "gateway.GENERATE_CONTENT"
+    )
 
     private data class CapturedPrivateData(val originator: String, val recipient: String, val data: Any)
 
@@ -28,8 +34,9 @@ class GatewayFeatureTest {
         initialState: AppState,
         private val features: List<Feature>,
         private val coreFeature: CoreFeature,
-        private val platformDependencies: PlatformDependencies
-    ) : Store(initialState, features, platformDependencies) {
+        private val platformDependencies: PlatformDependencies,
+        validActionNames: Set<String>
+    ) : Store(initialState, features, platformDependencies, validActionNames) {
         val dispatchedActions = mutableListOf<Action>()
         var capturedPrivateData: CapturedPrivateData? = null
 
@@ -40,28 +47,11 @@ class GatewayFeatureTest {
             _testState.value = newState
         }
 
-
         override fun dispatch(originator: String, action: Action) {
             val stampedAction = action.copy(originator = originator)
             dispatchedActions.add(stampedAction)
-
-            val coreState = _testState.value.featureStates[coreFeature.name] as? CoreState
-            if (coreState?.lifecycle == AppLifecycle.RUNNING && stampedAction.name == "system.STARTING") {
-                return
-            }
-
-            val previousState = _testState.value
-            val newState = features.fold(previousState) { currentState, feature ->
-                feature.reducer(currentState, stampedAction)
-            }
-
-            if (newState != previousState) {
-                _testState.value = newState
-            }
-
-            features.forEach { feature ->
-                feature.onAction(stampedAction, this)
-            }
+            // Lifecycle check is now handled by the real Store, so we can simplify this fake.
+            super.dispatch(originator, action)
         }
 
         override fun deliverPrivateData(originator: String, recipient: String, data: Any) {
@@ -98,8 +88,6 @@ class GatewayFeatureTest {
         }
     }
 
-    // --- Test Setup ---
-
     private lateinit var fakeProvider1: FakeAgentGatewayProvider
     private lateinit var fakeProvider2: FakeAgentGatewayProvider
     private lateinit var gatewayFeature: GatewayFeature
@@ -127,11 +115,9 @@ class GatewayFeatureTest {
         ))
 
         val features = listOf(gatewayFeature, coreFeature)
-        testStore = TestStore(initialState, features, coreFeature, fakePlatform)
+        testStore = TestStore(initialState, features, coreFeature, fakePlatform, testActionRegistry)
         features.forEach { it.init(testStore) }
     }
-
-    // --- Test Cases ---
 
     @Test
     fun `on INITIALIZING registers settings for all providers`() = testScope.runTest {
@@ -139,7 +125,7 @@ class GatewayFeatureTest {
             gatewayFeature.name to GatewayState(),
             coreFeature.name to CoreState(lifecycle = AppLifecycle.BOOTING)
         ))
-        val bootingStore = TestStore(bootingState, listOf(gatewayFeature, coreFeature), coreFeature, FakePlatformDependencies(testAppVersion))
+        val bootingStore = TestStore(bootingState, listOf(gatewayFeature, coreFeature), coreFeature, FakePlatformDependencies(testAppVersion), testActionRegistry)
         bootingStore.dispatch("system.test", Action("system.INITIALIZING"))
 
         assertEquals(1, fakeProvider1.registerSettingsCallCount)
@@ -207,8 +193,6 @@ class GatewayFeatureTest {
         val originatorId = "agent-feature-1"
         val correlationId = "test-turn-123"
 
-        // CORRECTED: Create a proper List<GatewayMessage> and serialize it,
-        // mimicking the behavior of the real AgentRuntimeFeature.
         val messages = listOf(GatewayMessage("user", "Test prompt"))
         val contentsPayload = json.encodeToJsonElement(messages)
 

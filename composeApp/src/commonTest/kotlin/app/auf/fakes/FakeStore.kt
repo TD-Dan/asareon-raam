@@ -13,8 +13,11 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class FakeStore(
     initialState: AppState,
-    platformDependencies: PlatformDependencies
-) : Store(initialState, emptyList(), platformDependencies) {
+    platformDependencies: PlatformDependencies,
+    // THE FIX: Added the required parameter to match the parent Store's constructor.
+    // We provide a default for convenience in simple UI tests that don't care about the registry.
+    private val validActionNames: Set<String> = emptySet()
+) : Store(initialState, emptyList(), platformDependencies, validActionNames) {
     val dispatchedActions = mutableListOf<Action>()
     private val _fakeState = MutableStateFlow(initialState)
     override val state = _fakeState.asStateFlow()
@@ -22,6 +25,8 @@ class FakeStore(
     /**
      * Captures the dispatched action after stamping it with the originator,
      * mimicking the behavior of the real Store for accurate testing.
+     * This fake implementation bypasses the registry check, as its purpose
+     * is to test UI interactions and side-effect dispatching, not the store's guards.
      */
     override fun dispatch(originator: String, action: Action) {
         // To make the fake more realistic, we stamp the action just like the real store.

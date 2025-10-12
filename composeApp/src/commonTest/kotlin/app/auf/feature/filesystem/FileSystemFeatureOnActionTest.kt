@@ -28,12 +28,21 @@ class FileSystemFeatureOnActionTest {
     private val feature = FileSystemFeature(platform)
     private val coreFeature = CoreFeature(platform)
 
+    // THE FIX: Define a minimal set of valid actions required for this specific test class.
+    private val testActionRegistry = setOf(
+        "filesystem.EXPAND_ALL", "filesystem.LOAD_CHILDREN",
+        "filesystem.TOGGLE_ITEM_SELECTED", "filesystem.internal.DIRECTORY_LOADED",
+        "filesystem.ADD_WHITELIST_PATH", "settings.UPDATE",
+        "filesystem.SYSTEM_WRITE", "filesystem.SYSTEM_READ", "filesystem.SYSTEM_DELETE_DIRECTORY"
+    )
+
     /** A high-fidelity store that includes the CoreFeature to manage lifecycle state. */
     private class TestStore(
         initialState: AppState,
         private val features: List<Feature>,
-        platformDependencies: FakePlatformDependencies
-    ) : Store(initialState, features, platformDependencies) {
+        platformDependencies: FakePlatformDependencies,
+        validActionNames: Set<String>
+    ) : Store(initialState, features, platformDependencies, validActionNames) {
         val dispatchedActions = mutableListOf<Action>()
         var capturedPrivateData: Any? = null
         override fun dispatch(originator: String, action: Action) {
@@ -57,7 +66,7 @@ class FileSystemFeatureOnActionTest {
                 coreFeature.name to CoreState(lifecycle = AppLifecycle.RUNNING)
             )
         )
-        return TestStore(initialState, listOf(feature, coreFeature), platform)
+        return TestStore(initialState, listOf(feature, coreFeature), platform, testActionRegistry)
     }
 
     @Test
@@ -72,7 +81,6 @@ class FileSystemFeatureOnActionTest {
         val action = Action("filesystem.EXPAND_ALL", buildJsonObject { put("path", JsonPrimitive("/a")) })
 
         // Act
-        // We must dispatch from the feature itself to trigger the onAction handler
         feature.onAction(action.copy(originator = feature.name), store)
 
         // Assert
@@ -140,7 +148,6 @@ class FileSystemFeatureOnActionTest {
         val dispatched = store.dispatchedActions.find { it.name == "settings.UPDATE" }
         assertNotNull(dispatched)
         assertEquals("filesystem.whitelistedPaths", dispatched.payload?.get("key")?.jsonPrimitive?.content)
-        // Order is not guaranteed in sets, so check for presence of both items
         val value = dispatched.payload?.get("value")?.jsonPrimitive?.content ?: ""
         assertTrue(value.contains("path1"))
         assertTrue(value.contains("path2"))
@@ -179,7 +186,6 @@ class FileSystemFeatureOnActionTest {
         val subpath = "test.json"
         val sandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator/$subpath"
 
-        // Manually encrypt and write the file to the fake filesystem to set up the test condition.
         val encryptedContent = CryptoManager().encrypt(originalContent)
         platform.writeFileContent(sandboxPath, encryptedContent)
 
@@ -208,7 +214,6 @@ class FileSystemFeatureOnActionTest {
         val fullDirPath = "$sandboxPath/$dirSubpath"
         val fullFilePath = "$sandboxPath/$fileSubpath"
 
-        // Manually create the directory and a file inside it on the fake platform.
         platform.createDirectories(fullDirPath)
         platform.writeFileContent(fullFilePath, "{}")
         assertTrue(platform.fileExists(fullDirPath), "Precondition: Directory should exist.")
@@ -222,7 +227,6 @@ class FileSystemFeatureOnActionTest {
         feature.onAction(action.copy(originator = originator), store)
 
         // Assert
-        // This test relies on the FakePlatformDependencies correctly implementing recursive delete.
         assertFalse(platform.fileExists(fullDirPath), "Directory should have been deleted.")
         assertFalse(platform.fileExists(fullFilePath), "File inside directory should have been deleted.")
     }

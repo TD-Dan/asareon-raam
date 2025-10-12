@@ -38,11 +38,18 @@ class SettingsViewTest {
     private lateinit var settingsFeature: SettingsFeature
     private lateinit var coreFeature: CoreFeature
 
+    // THE FIX: Define a minimal set of valid actions required for this specific test class.
+    private val testActionRegistry = setOf(
+        "system.INITIALIZING", "system.STARTING",
+        "settings.OPEN_FOLDER", "settings.INPUT_CHANGED", "settings.publish.LOADED"
+    )
+
     private class TestStore(
         initialState: AppState,
         features: List<Feature>,
-        platformDependencies: PlatformDependencies
-    ) : Store(initialState, features, platformDependencies) {
+        platformDependencies: PlatformDependencies,
+        validActionNames: Set<String>
+    ) : Store(initialState, features, platformDependencies, validActionNames) {
         val dispatchedActions = mutableListOf<Action>()
         override fun dispatch(originator: String, action: Action) {
             dispatchedActions.add(action.copy(originator = originator))
@@ -84,26 +91,20 @@ class SettingsViewTest {
             }
         )
 
-        // 1. Setup initial BOOTING state with all necessary features and definitions present.
         val initialState = AppState(featureStates = mapOf(
             coreFeature.name to CoreState(lifecycle = AppLifecycle.BOOTING),
             settingsFeature.name to SettingsState(definitions = initialDefinitions)
         ))
-        testStore = TestStore(initialState, features, fakePlatform)
+        testStore = TestStore(initialState, features, fakePlatform, testActionRegistry)
         features.forEach { it.init(testStore) }
 
-        // 2. Orchestrate Startup Lifecycle
         testStore.dispatch("system.test", Action("system.INITIALIZING"))
 
-        // 3. Manually dispatch the result of the filesystem load
         val loadedSettingsPayload = buildJsonObject {
-            put("core.window.width", "1024") // Override default
-            // Note: We are NOT providing loaded values for the new string types
-            // to test that their defaults are applied correctly.
+            put("core.window.width", "1024")
         }
         testStore.dispatch(settingsFeature.name, Action("settings.publish.LOADED", loadedSettingsPayload))
 
-        // 4. Advance to RUNNING state.
         testStore.dispatch("system.test", Action("system.STARTING"))
 
         testStore.dispatchedActions.clear()
@@ -117,7 +118,6 @@ class SettingsViewTest {
     fun `UI controls display the current value from the store`() = runTest {
         composeTestRule.onNodeWithText("1024").assertIsDisplayed()
         composeTestRule.onNodeWithText("DEFAULT_API_KEY").assertIsDisplayed()
-        // Test the multi-line conversion for STRING_SET
         composeTestRule.onNodeWithText("/path/one\n/path/two").assertIsDisplayed()
     }
 
@@ -131,7 +131,6 @@ class SettingsViewTest {
 
     @Test
     fun `string and string_set fields are editable and dispatch INPUT_CHANGED`() = runTest {
-        // --- Test STRING field ---
         val stringNode = composeTestRule.onNodeWithText("DEFAULT_API_KEY")
         stringNode.assertIsDisplayed()
         stringNode.performTextReplacement("new_key")
@@ -141,16 +140,13 @@ class SettingsViewTest {
         assertEquals("settings.INPUT_CHANGED", stringAction.name)
         assertEquals("new_key", stringAction.payload?.get("value")?.jsonPrimitive?.content)
 
-        // --- Test STRING_SET field ---
         val stringSetNode = composeTestRule.onNodeWithText("/path/one\n/path/two")
         stringSetNode.assertIsDisplayed()
-        // Simulate adding a new line, which should be converted to a comma
         stringSetNode.performTextReplacement("/path/one\n/path/two\n/path/three")
 
-        val stringSetAction = testStore.dispatchedActions.last() // It was the last action
+        val stringSetAction = testStore.dispatchedActions.last()
         assertEquals("settings.INPUT_CHANGED", stringSetAction.name)
         assertEquals("test.paths", stringSetAction.payload?.get("key")?.jsonPrimitive?.content)
-        // Verify that the newline was correctly converted back to a comma for persistence
         assertEquals("/path/one,/path/two,/path/three", stringSetAction.payload?.get("value")?.jsonPrimitive?.content)
     }
 }

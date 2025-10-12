@@ -27,7 +27,9 @@ class FileSystemViewTest {
     fun setUp() {
         fakePlatform = FakePlatformDependencies(testAppVersion)
         feature = FileSystemFeature(fakePlatform)
-        fakeStore = FakeStore(AppState(), fakePlatform)
+        // THE FIX: Provide a fake registry to the FakeStore constructor.
+        val validActions = setOf("filesystem.TOGGLE_ITEM_SELECTED")
+        fakeStore = FakeStore(AppState(), fakePlatform, validActions)
     }
 
     private fun setViewState(state: FileSystemState) {
@@ -46,30 +48,25 @@ class FileSystemViewTest {
 
     @Test
     fun `view displays current path correctly`() {
-        // Arrange
         val state = FileSystemState(currentPath = "/fake/user/home/documents")
         setViewState(state)
 
-        // Assert
         composeTestRule.onNodeWithText("/fake/user/home/documents").assertIsDisplayed()
     }
 
     @Test
     fun `view displays empty message when listing is empty and path is set`() {
-        // Arrange
         val state = FileSystemState(
             currentPath = "/fake/user/home/empty_dir",
             rootItems = emptyList()
         )
         setViewState(state)
 
-        // Assert
         composeTestRule.onNodeWithText("Directory is empty.").assertIsDisplayed()
     }
 
     @Test
     fun `view renders file and directory entries from state`() {
-        // Arrange
         val state = FileSystemState(
             currentPath = "/fake/user/home",
             rootItems = listOf(
@@ -79,14 +76,12 @@ class FileSystemViewTest {
         )
         setViewState(state)
 
-        // Assert
         composeTestRule.onNodeWithText("Documents").assertIsDisplayed()
         composeTestRule.onNodeWithText("notes.txt").assertIsDisplayed()
     }
 
     @Test
     fun `clicking checkbox dispatches TOGGLE_ITEM_SELECTED action`() {
-        // Arrange
         val filePath = "/fake/home/file.txt"
         val state = FileSystemState(
             currentPath = "/fake/home",
@@ -95,17 +90,12 @@ class FileSystemViewTest {
         setViewState(state)
         fakeStore.dispatchedActions.clear()
 
-        // Act
-        // --- THE FIX ---
-        // Use the explicit and robust testTag to select the checkbox.
         composeTestRule
             .onNodeWithTag("checkbox-$filePath")
             .performClick()
-        // --- END FIX ---
 
         val dispatchedAction = fakeStore.dispatchedActions.find { it.name == "filesystem.TOGGLE_ITEM_SELECTED" }
 
-        // Assert
         assertNotNull(dispatchedAction, "A TOGGLE_ITEM_SELECTED action should have been dispatched.")
         assertEquals("filesystem.ui", dispatchedAction.originator)
         assertEquals(

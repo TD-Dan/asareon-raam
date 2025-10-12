@@ -28,11 +28,21 @@ class AgentRuntimeFeatureOnActionTest {
     private val fakePlatform = FakePlatformDependencies(testAppVersion)
     private val json = Json { ignoreUnknownKeys = true }
 
+    // THE FIX: A hardcoded registry for this integration-style unit test.
+    private val testActionRegistry = setOf(
+        "system.INITIALIZING", "system.STARTING",
+        "agent.CREATE", "agent.DELETE", "agent.TRIGGER_MANUAL_TURN", "agent.internal.SET_STATUS", "agent.internal.AGENT_LOADED",
+        "filesystem.SYSTEM_WRITE", "filesystem.SYSTEM_DELETE_DIRECTORY", "filesystem.SYSTEM_LIST", "filesystem.SYSTEM_READ",
+        "gateway.GENERATE_CONTENT",
+        "session.POST"
+    )
+
     private class TestStore(
         initialState: AppState,
         features: List<Feature>,
-        platformDependencies: PlatformDependencies
-    ) : Store(initialState, features, platformDependencies) {
+        platformDependencies: PlatformDependencies,
+        validActionNames: Set<String>
+    ) : Store(initialState, features, platformDependencies, validActionNames) {
         val dispatchedActions = mutableListOf<Action>()
         override fun dispatch(originator: String, action: Action) {
             val stampedAction = action.copy(originator = originator)
@@ -47,7 +57,7 @@ class AgentRuntimeFeatureOnActionTest {
     ): Pair<AgentRuntimeFeature, TestStore> {
         val coreFeature = CoreFeature(fakePlatform)
         val sessionFeature = SessionFeature(fakePlatform, scope)
-        val fileSystemFeature = FileSystemFeature(fakePlatform) // <-- Now included
+        val fileSystemFeature = FileSystemFeature(fakePlatform)
         val agentFeature = AgentRuntimeFeature(fakePlatform, scope)
 
         val features = listOf(coreFeature, sessionFeature, fileSystemFeature, agentFeature)
@@ -58,7 +68,7 @@ class AgentRuntimeFeatureOnActionTest {
             agentFeature.name to AgentRuntimeState(agents = initialAgents.associateBy { it.id })
         ))
 
-        val store = TestStore(initialState, features, fakePlatform)
+        val store = TestStore(initialState, features, fakePlatform, testActionRegistry)
         return agentFeature to store
     }
 
@@ -106,18 +116,15 @@ class AgentRuntimeFeatureOnActionTest {
     @Test
     fun `system STARTING action dispatches filesystem SYSTEM_LIST`() {
         // ARRANGE
-        // Create a special store that starts in the BOOTING state to correctly test the lifecycle.
         val coreFeature = CoreFeature(fakePlatform)
         val agentFeature = AgentRuntimeFeature(fakePlatform, scope)
         val fileSystemFeature = FileSystemFeature(fakePlatform)
         val features = listOf(coreFeature, agentFeature, fileSystemFeature)
         val bootState = AppState(featureStates = mapOf(coreFeature.name to CoreState(lifecycle = AppLifecycle.BOOTING)))
-        val store = TestStore(bootState, features, fakePlatform)
+        val store = TestStore(bootState, features, fakePlatform, testActionRegistry)
 
         // ACT
-        // 1. First, dispatch INITIALIZING to move the store to the correct state.
         store.dispatch("system", Action("system.INITIALIZING"))
-        // 2. Now, dispatch STARTING, which should pass the guard.
         store.dispatch("system", Action("system.STARTING"))
 
 
@@ -166,8 +173,6 @@ class AgentRuntimeFeatureOnActionTest {
         assertEquals(feature.name, loadedAction.originator)
         assertEquals("loaded-agent-1", loadedAction.payload?.get("id")?.jsonPrimitive?.content)
     }
-
-    // --- Cognitive Cycle tests remain the same as they don't depend on persistence details ---
 
     @Test
     fun `TRIGGER_MANUAL_TURN dispatches SET_STATUS and GENERATE_CONTENT on success`() {

@@ -23,26 +23,29 @@ class SessionFeatureOnActionTest {
     private val coreFeature = CoreFeature(FakePlatformDependencies(testAppVersion))
     private val json = Json { ignoreUnknownKeys = true }
 
-    /**
-     * A high-fidelity TestStore that correctly mimics the real Store's dispatch lifecycle
-     * and allows manual invocation of onPrivateData for robust side effect testing.
-     */
+    // THE FIX: Define a minimal set of valid actions required for this specific test class.
+    private val testActionRegistry = setOf(
+        "system.STARTING", "filesystem.SYSTEM_LIST", "session.REQUEST_SESSION_NAMES",
+        "session.CREATE", "session.publish.SESSION_NAMES_UPDATED",
+        "session.POST", "filesystem.SYSTEM_WRITE",
+        "session.DELETE", "filesystem.SYSTEM_DELETE"
+    )
+
     private class TestStore(
         initialState: AppState,
         private val features: List<Feature>,
-        platformDependencies: FakePlatformDependencies
-    ) : Store(initialState, features, platformDependencies) {
+        platformDependencies: FakePlatformDependencies,
+        validActionNames: Set<String>
+    ) : Store(initialState, features, platformDependencies, validActionNames) {
         val dispatchedActions = mutableListOf<Action>()
 
         override fun dispatch(originator: String, action: Action) {
             val stampedAction = action.copy(originator = originator)
             dispatchedActions.add(stampedAction)
-            // It's crucial to call super.dispatch to test the real reducer and onAction logic.
             super.dispatch(originator, action)
         }
     }
 
-    /** Helper function to create an environment that passes the lifecycle guard for runtime actions. */
     private fun createStoreWithRunningLifecycle(fakePlatform: FakePlatformDependencies, vararg initialSessions: Session): TestStore {
         val sessionFeature = SessionFeature(fakePlatform, scope)
         val features = listOf(coreFeature, sessionFeature)
@@ -51,19 +54,17 @@ class SessionFeatureOnActionTest {
             coreFeature.name to CoreState(lifecycle = AppLifecycle.RUNNING),
             sessionFeature.name to SessionState(sessions = initialSessionMap)
         ))
-        return TestStore(initialState, features, fakePlatform)
+        return TestStore(initialState, features, fakePlatform, testActionRegistry)
     }
 
     @Test
     fun `onAction for system STARTING dispatches SYSTEM_LIST and REQUEST_SESSION_NAMES`() {
         val fakePlatform = FakePlatformDependencies(testAppVersion)
         val feature = SessionFeature(fakePlatform, scope)
-        val store = TestStore(AppState(), listOf(coreFeature, feature), fakePlatform)
+        val store = TestStore(AppState(featureStates = mapOf(coreFeature.name to CoreState())), listOf(coreFeature, feature), fakePlatform, testActionRegistry)
 
-        // ACT: We must use the real dispatch cycle to trigger onAction handlers.
         store.dispatch("system.test", Action("system.STARTING"))
 
-        // ASSERT
         val listAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_LIST" }
         val requestNamesAction = store.dispatchedActions.find { it.name == "session.REQUEST_SESSION_NAMES" }
 
@@ -79,10 +80,8 @@ class SessionFeatureOnActionTest {
         val fakePlatform = FakePlatformDependencies(testAppVersion)
         val store = createStoreWithRunningLifecycle(fakePlatform)
 
-        // ACT
         store.dispatch("session.ui", Action("session.CREATE"))
 
-        // ASSERT
         val broadcastAction = store.dispatchedActions.last()
         assertEquals("session.publish.SESSION_NAMES_UPDATED", broadcastAction.name)
         assertEquals("session", broadcastAction.originator)

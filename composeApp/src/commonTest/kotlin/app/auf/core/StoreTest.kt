@@ -26,6 +26,14 @@ class StoreTest {
 
     private val platform = FakePlatformDependencies("v2-test")
 
+    // THE FIX: Define a minimal set of valid actions required for this specific test class.
+    private val testActionRegistry = setOf(
+        "system.INITIALIZING",
+        "system.STARTING",
+        "system.CLOSING",
+        "test.INCREMENT"
+    )
+
     private fun createStore(initialCoreState: CoreState): Store {
         val features = listOf(CoreFeature(platform), TestFeature())
         val initialState = AppState(
@@ -34,8 +42,24 @@ class StoreTest {
                 "TestFeature" to TestState()
             )
         )
-        return Store(initialState, features, platform)
+        // THE FIX: Pass the action registry to the Store constructor.
+        return Store(initialState, features, platform, testActionRegistry)
     }
+
+    @Test
+    fun `store guard blocks unknown actions`() {
+        // ARRANGE
+        val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING))
+        val initialState = store.state.value
+
+        // ACT: Dispatch an action that is NOT in our testActionRegistry
+        store.dispatch("test.feature", Action("test.UNKNOWN_ACTION"))
+        val finalState = store.state.value
+
+        // ASSERT
+        assertEquals(initialState, finalState, "State should not have changed for an unknown action.")
+    }
+
 
     @Test
     fun `store guard blocks normal actions when BOOTING`() {
