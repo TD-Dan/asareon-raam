@@ -20,9 +20,7 @@ import kotlinx.serialization.json.*
 @Serializable
 data class SettingsState(
     val definitions: List<JsonObject> = emptyList(),
-    // The canonical, persisted values for all settings.
     val values: Map<String, String> = emptyMap(),
-    // A transient map of user input that has not yet been debounced and persisted.
     val inputValues: Map<String, String> = emptyMap()
 ) : FeatureState
 
@@ -36,180 +34,92 @@ class SettingsFeature(
     private val debounceJobs = mutableMapOf<String, Job>()
     private val settingsFileName = "settings.json"
 
-    // This feature no longer needs an init() block.
-
     override fun onPrivateData(data: Any, store: Store) {
-        // This is the secure callback for the result of our filesystem.SYSTEM_READ request.
         val payload = data as? JsonObject ?: return
-        val subpath = payload["subpath"]?.jsonPrimitive?.content
-        val content = payload["content"]?.jsonPrimitive?.contentOrNull
-
-        if (subpath == settingsFileName) {
-            val loadedValues = if (content != null) {
-                try {
-                    Json.decodeFromString<Map<String, String>>(content)
-                } catch (e: Exception) {
-                    emptyMap()
-                }
-            } else {
-                emptyMap()
-            }
-
-            // Create a payload for our internal LOADED action.
-            val loadedPayload = buildJsonObject {
-                for ((key, value) in loadedValues) {
-                    put(key, JsonPrimitive(value))
-                }
-            }
-            // Dispatch the internal action to hydrate the reducer.
-            store.dispatch(this.name, Action("settings.publish.LOADED", loadedPayload))
+        if (payload["subpath"]?.jsonPrimitive?.content == settingsFileName) {
+            val loadedValues = payload["content"]?.jsonPrimitive?.contentOrNull?.let {
+                try { Json.decodeFromString<Map<String, String>>(it) } catch (e: Exception) { emptyMap() }
+            } ?: emptyMap()
+            store.dispatch(this.name, Action("settings.publish.LOADED", buildJsonObject {
+                loadedValues.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
+            }))
         }
     }
 
-
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
-            "system.INITIALIZING" -> {
-                // Instead of loading directly, we securely request our settings file
-                // from the FileSystemFeature's sandbox.
-                store.dispatch(this.name, Action("filesystem.SYSTEM_READ", buildJsonObject {
-                    put("subpath", settingsFileName)
-                }))
-            }
-
+            "system.INITIALIZING" -> store.dispatch(this.name, Action("filesystem.SYSTEM_READ", buildJsonObject { put("subpath", settingsFileName) }))
             "settings.INPUT_CHANGED" -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
                 val value = action.payload.get("value")?.jsonPrimitive?.content ?: return
-
                 debounceJobs[key]?.cancel()
                 debounceJobs[key] = featureScope.launch {
-                    delay(750L) // Debounce delay
-                    val updatePayload = buildJsonObject {
-                        put("key", key)
-                        put("value", value)
-                    }
-                    store.dispatch(name, Action("settings.UPDATE", updatePayload))
+                    delay(750L)
+                    store.dispatch(name, Action("settings.UPDATE", buildJsonObject { put("key", key); put("value", value) }))
                 }
             }
-
             "settings.UPDATE" -> {
                 val latestSettingsState = store.state.value.featureStates[name] as? SettingsState ?: return
-                // The values have already been updated in the state by the reducer.
-                // Now, we securely request the FileSystemFeature to persist them.
-
-                val contentToSave = Json.encodeToString(latestSettingsState.values)
                 store.dispatch(this.name, Action("filesystem.SYSTEM_WRITE", buildJsonObject {
                     put("subpath", settingsFileName)
-                    put("content", contentToSave)
-                    // --- THE FIX ---
-                    // Hardcode the encryption flag to true. This ensures the entire
-                    // settings file is always encrypted at rest, regardless of which
-                    // setting triggered the update.
+                    put("content", Json.encodeToString(latestSettingsState.values))
                     put("encrypt", true)
                 }))
-
-                // We must still broadcast the public VALUE_CHANGED event for other features.
-                action.payload?.let { payload ->
-                    store.dispatch(this.name, Action("settings.publish.VALUE_CHANGED", payload))
-                }
+                action.payload?.let { store.dispatch(this.name, Action("settings.publish.VALUE_CHANGED", it)) }
             }
-
-            "settings.OPEN_FOLDER" -> {
-                // We no longer know the path. We just ask the FileSystemFeature to open our sandbox.
-                store.dispatch(this.name, Action("filesystem.OPEN_SYSTEM_FOLDER"))
-            }
+            "settings.OPEN_FOLDER" -> store.dispatch(this.name, Action("filesystem.OPEN_SYSTEM_FOLDER"))
         }
     }
 
     override fun reducer(state: AppState, action: Action): AppState {
         val currentFeatureState = state.featureStates[name] as? SettingsState ?: SettingsState()
-
-        return when (action.name) {
+        var newFeatureState: SettingsState? = null
+        val payload = action.payload
+        when (action.name) {
             "settings.ADD" -> {
-                val definitionJson = action.payload ?: return state
-                val key = definitionJson["key"]?.jsonPrimitive?.content
-                val defaultValue = definitionJson["defaultValue"]?.jsonPrimitive?.content
-
-                if (key != null && defaultValue != null && currentFeatureState.definitions.none { it["key"]?.jsonPrimitive?.content == key }) {
-                    val newDefinitions = currentFeatureState.definitions + definitionJson
-                    val newValues = if (currentFeatureState.values.containsKey(key)) {
-                        currentFeatureState.values
-                    } else {
-                        currentFeatureState.values + (key to defaultValue)
-                    }
-                    val newFeatureState = currentFeatureState.copy(definitions = newDefinitions, values = newValues)
-                    state.copy(featureStates = state.featureStates + (name to newFeatureState))
-                } else {
-                    state
+                val key = payload?.get("key")?.jsonPrimitive?.content ?: return state
+                val defaultValue = payload["defaultValue"]?.jsonPrimitive?.content ?: return state
+                if (currentFeatureState.definitions.none { it["key"]?.jsonPrimitive?.content == key }) {
+                    val newValues = if (currentFeatureState.values.containsKey(key)) currentFeatureState.values else currentFeatureState.values + (key to defaultValue)
+                    newFeatureState = currentFeatureState.copy(definitions = currentFeatureState.definitions + payload, values = newValues)
                 }
             }
-
             "settings.publish.LOADED" -> {
-                val loadedValues = action.payload?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap()
-
-                // --- FIX for data loss race condition ---
-                // 1. Establish a baseline map of all known default values from definitions.
-                val allDefaults = currentFeatureState.definitions.associate { def ->
-                    val key = def["key"]!!.jsonPrimitive.content
-                    val defaultValue = def["defaultValue"]!!.jsonPrimitive.content
-                    key to defaultValue
+                val loadedValues = payload?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap()
+                val allDefaults = currentFeatureState.definitions.associate {
+                    it["key"]!!.jsonPrimitive.content to it["defaultValue"]!!.jsonPrimitive.content
                 }
-                // 2. Merge the loaded values on top of the defaults. This overwrites defaults with
-                //    any saved values, but preserves defaults for settings not in the saved file.
                 val finalValues = allDefaults + loadedValues
-
-                val newFeatureState = currentFeatureState.copy(values = finalValues, inputValues = finalValues)
-                state.copy(featureStates = state.featureStates + (name to newFeatureState))
+                newFeatureState = currentFeatureState.copy(values = finalValues, inputValues = finalValues)
             }
-
             "settings.INPUT_CHANGED" -> {
-                val payload = action.payload ?: return state
-                val key = payload["key"]?.jsonPrimitive?.content ?: return state
+                val key = payload?.get("key")?.jsonPrimitive?.content ?: return state
                 val value = payload["value"]?.jsonPrimitive?.content ?: return state
-
-                val newInputs = currentFeatureState.inputValues + (key to value)
-                val newFeatureState = currentFeatureState.copy(inputValues = newInputs)
-                state.copy(featureStates = state.featureStates + (name to newFeatureState))
+                newFeatureState = currentFeatureState.copy(inputValues = currentFeatureState.inputValues + (key to value))
             }
-
             "settings.UPDATE" -> {
-                val payload = action.payload ?: return state
-                val key = payload["key"]?.jsonPrimitive?.content ?: return state
+                val key = payload?.get("key")?.jsonPrimitive?.content ?: return state
                 val value = payload["value"]?.jsonPrimitive?.content ?: return state
-
-                // Persist the final debounced value to both maps.
-                val newValues = currentFeatureState.values + (key to value)
-                val newInputs = currentFeatureState.inputValues + (key to value)
-                val newFeatureState = currentFeatureState.copy(values = newValues, inputValues = newInputs)
-                state.copy(featureStates = state.featureStates + (name to newFeatureState))
+                newFeatureState = currentFeatureState.copy(
+                    values = currentFeatureState.values + (key to value),
+                    inputValues = currentFeatureState.inputValues + (key to value)
+                )
             }
-
-            else -> state
         }
+        return newFeatureState?.let { if (it != currentFeatureState) state.copy(featureStates = state.featureStates + (name to it)) else state } ?: state
     }
 
     inner class SettingsComposableProvider : Feature.ComposableProvider {
         private val viewKey = "feature.settings.main"
-
-        override val stageViews: Map<String, @Composable (Store) -> Unit> = mapOf(
-            viewKey to { store ->
-                SettingsView(
-                    store = store,
-                    onClose = { store.dispatch("settings.ui", Action("core.SHOW_DEFAULT_VIEW")) }
-                )
+        override val stageViews: Map<String, @Composable (Store, List<Feature>) -> Unit> = mapOf(
+            viewKey to { store, _ ->
+                SettingsView(store = store, onClose = { store.dispatch("settings.ui", Action("core.SHOW_DEFAULT_VIEW")) })
             }
         )
-
-        @Composable
-        override fun RibbonContent(store: Store, activeViewKey: String?) {
+        @Composable override fun RibbonContent(store: Store, activeViewKey: String?) {
             val isActive = activeViewKey == viewKey
-            val payload = buildJsonObject { put("key", viewKey) }
-            IconButton(onClick = { store.dispatch("settings.ui", Action("core.SET_ACTIVE_VIEW", payload)) }) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "Settings",
-                    tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            IconButton(onClick = { store.dispatch("settings.ui", Action("core.SET_ACTIVE_VIEW", buildJsonObject { put("key", viewKey) })) }) {
+                Icon(Icons.Default.Settings, "Settings", tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

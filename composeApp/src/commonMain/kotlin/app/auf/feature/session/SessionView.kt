@@ -19,11 +19,9 @@ import app.auf.core.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlin.reflect.full.declaredMemberProperties
-import kotlin.reflect.jvm.isAccessible
 
 @Composable
-fun SessionView(store: Store) {
+fun SessionView(store: Store, features: List<Feature>) {
     val appState by store.state.collectAsState()
     val sessionState = appState.featureStates["session"] as? SessionState
 
@@ -36,22 +34,6 @@ fun SessionView(store: Store) {
     val activeTabIndex = remember(activeSession, sessions) {
         sessions.indexOf(activeSession).coerceAtLeast(0)
     }
-
-    // HACK: A reflection-based way to get the list of features without modifying the App composable signature.
-    // This is not ideal for production but works for our current constraints.
-    val allFeatures = remember(store) {
-        try {
-            val featuresField = store::class.declaredMemberProperties.find { it.name == "features" }
-            featuresField?.let {
-                it.isAccessible = true
-                @Suppress("UNCHECKED_CAST")
-                it.get(store) as? List<Feature>
-            }
-        } catch (e: Exception) {
-            null
-        } ?: emptyList()
-    }
-
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -72,7 +54,7 @@ fun SessionView(store: Store) {
         if (activeSession == null) {
             Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No active session. Create one to begin.") }
         } else {
-            LedgerPane(store, activeSession, sessionState, allFeatures, Modifier.weight(1f))
+            LedgerPane(store, activeSession, sessionState, features, Modifier.weight(1f))
             MessageInput { message ->
                 store.dispatch("session.ui", Action("session.POST", buildJsonObject {
                     put("session", activeSession.id); put("agentId", "user"); put("message", message)
@@ -136,7 +118,6 @@ private fun LedgerPane(
     val lastAgentId = activeSession.ledger.lastOrNull()?.agentId?.takeIf { it != "user" && !it.startsWith("system") }
 
     LaunchedEffect(activeSession.ledger.size) {
-        // Scroll to the new item, but check size to avoid scrolling on initial load.
         if (activeSession.ledger.size > 1) {
             coroutineScope.launch {
                 listState.animateScrollToItem(activeSession.ledger.size)
@@ -161,7 +142,7 @@ private fun LedgerPane(
         if (lastAgentId != null) {
             Box(modifier = Modifier.padding(horizontal = 8.dp).padding(bottom = 8.dp)) {
                 features.forEach { feature ->
-                    feature.composableProvider?.PartialView(store = store, partId = lastAgentId)
+                    feature.composableProvider?.PartialView(store = store, partId = lastAgentId, context = activeSession)
                 }
             }
         }

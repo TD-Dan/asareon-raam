@@ -28,8 +28,6 @@ fun App(store: Store, features: List<Feature>) {
             snackbarHost = { SnackbarHost(snackbarHostState) }
         ) { paddingValues ->
             Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-                // The main content is no longer gated by a specific feature's state.
-                // It renders the generic application structure.
                 MainAppContent(store, features)
             }
         }
@@ -41,25 +39,21 @@ private fun MainAppContent(store: Store, features: List<Feature>) {
     val appState by store.state.collectAsState()
     val activeViewKey = (appState.featureStates["core"] as? CoreState)?.activeViewKey
 
-
-    val activeStageContent: (@Composable (Store) -> Unit)? = remember(features, activeViewKey) {
+    val activeStageContent: (@Composable (Store, List<Feature>) -> Unit)? = remember(features, activeViewKey) {
         features
-            .asSequence() // Use sequence for efficiency
+            .asSequence()
             .mapNotNull { it.composableProvider?.stageViews }
             .mapNotNull { it[activeViewKey] }
             .firstOrNull()
     }
 
     Row(Modifier.fillMaxSize()) {
-        // 1. The Ribbon is built dynamically from ALL features.
         GlobalActionRibbon(store, features, activeViewKey)
         VerticalDivider()
-
-        // 2. The Stage renders the content from the ONE active feature.
         Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-            // CORRECTED: Invoke the composable function found in the map.
             if (activeStageContent != null) {
-                activeStageContent(store)
+                // Pass the full feature list down to the active view.
+                activeStageContent(store, features)
             } else {
                 Text("Error: No view found for key '$activeViewKey'")
             }
