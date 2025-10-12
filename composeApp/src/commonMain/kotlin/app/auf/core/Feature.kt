@@ -6,7 +6,6 @@ import androidx.compose.runtime.Composable
  * Defines the universal contract for a self-contained, modular feature plugin within the AUF app.
  * This is the cornerstone of the "Core Ignorance" and "Contextual Granularity" principles.
  *
- * @version 2.2 - Evolved to support context passing for Partial Views and DI for Stage Views.
  */
 interface Feature {
     val name: String
