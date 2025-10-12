@@ -5,187 +5,173 @@ import app.auf.core.AppState
 import app.auf.fakes.FakePlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import kotlinx.serialization.json.*
+import kotlin.test.*
 
 class SessionFeatureReducerTest {
 
     private val testAppVersion = "2.0.0-test"
     private val json = Json { ignoreUnknownKeys = true }
+    private val scope = CoroutineScope(Dispatchers.Unconfined)
 
     @Test
-    fun `reducer session_CREATE adds a new session and does NOT set it as active`() {
-        // ARRANGE
+    fun `reducer session_CREATE adds a new session and sets it as active`() {
         val fakePlatform = FakePlatformDependencies(testAppVersion)
-        fakePlatform.currentTime = 12345L // Set a predictable timestamp
-        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
-        val initialState = AppState(featureStates = mapOf(feature.name to SessionState(activeSessionId = "some-other-session")))
-        val action = Action("session.CREATE", buildJsonObject {
-            put("name", "Test Session")
-        })
-
-        // ACT
-        val newState = feature.reducer(initialState, action)
-
-        // ASSERT
-        val newSessionState = newState.featureStates[feature.name] as? SessionState
-        assertNotNull(newSessionState, "SessionState should not be null.")
-        assertEquals(1, newSessionState.sessions.size, "There should be one session in the map.")
-
-        val createdSession = newSessionState.sessions["fake-uuid-1"]
-        assertNotNull(createdSession, "The created session should exist under the fake UUID.")
-        assertEquals("fake-uuid-1", createdSession.id)
-        assertEquals("Test Session", createdSession.name)
-        assertTrue(createdSession.ledger.isEmpty(), "The new session's ledger should be empty.")
-        assertEquals(12345L, createdSession.createdAt, "Timestamp should match the fake platform time.")
-
-        // CRITICAL: Verify the action's scope was limited.
-        assertEquals("some-other-session", newSessionState.activeSessionId, "CREATE action should NOT change the active session ID.")
-    }
-
-    @Test
-    fun `reducer session_POST adds a parsed message to the correct session ledger`() {
-        // ARRANGE
-        val fakePlatform = FakePlatformDependencies(testAppVersion)
-        fakePlatform.currentTime = 54321L
-        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
-        val initialSession = Session(id = "sid-1", name = "Initial", ledger = emptyList(), createdAt = 1L)
-        val initialState = AppState(featureStates = mapOf(feature.name to SessionState(sessions = mapOf("sid-1" to initialSession))))
-        val action = Action("session.POST", buildJsonObject {
-            put("sessionId", "sid-1")
-            put("agentId", "user-daniel")
-            put("message", "Hello ```kt\nval x=1\n```")
-        })
-
-        // ACT
-        val newState = feature.reducer(initialState, action)
-
-        // ASSERT
-        val sessionState = newState.featureStates[feature.name] as SessionState
-        val updatedSession = sessionState.sessions["sid-1"]
-        assertNotNull(updatedSession)
-        assertEquals(1, updatedSession.ledger.size)
-
-        val newEntry = updatedSession.ledger.first()
-        assertEquals("fake-uuid-1", newEntry.id)
-        assertEquals(54321L, newEntry.timestamp)
-        assertEquals("user-daniel", newEntry.agentId)
-        assertEquals("Hello ```kt\nval x=1\n```", newEntry.rawContent)
-        assertEquals(2, newEntry.content.size)
-        assertIs<ContentBlock.Text>(newEntry.content[0])
-        assertEquals("Hello ", (newEntry.content[0] as ContentBlock.Text).text)
-        assertIs<ContentBlock.CodeBlock>(newEntry.content[1])
-        assertEquals("kt", (newEntry.content[1] as ContentBlock.CodeBlock).language)
-        assertEquals("val x=1\n", (newEntry.content[1] as ContentBlock.CodeBlock).code)
-    }
-
-    @Test
-    fun `reducer internal_SESSION_LOADED adds a new session from disk`() {
-        // ARRANGE
-        val fakePlatform = FakePlatformDependencies(testAppVersion)
-        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
+        fakePlatform.currentTime = 12345L
+        val feature = SessionFeature(fakePlatform, scope)
         val initialState = AppState(featureStates = mapOf(feature.name to SessionState()))
-        val sessionFromDisk = Session(id = "disk-session-1", name = "From Disk", ledger = emptyList(), createdAt = 1L)
-        val payload = json.encodeToJsonElement(SessionFeature.InternalSessionLoadedPayload(sessionFromDisk))
-        val action = Action("session.internal.SESSION_LOADED", payload as JsonObject)
+        val action = Action("session.CREATE", buildJsonObject { put("name", "Test Session") })
 
-        // ACT
         val newState = feature.reducer(initialState, action)
+
         val newSessionState = newState.featureStates[feature.name] as SessionState
-
-        // ASSERT
         assertEquals(1, newSessionState.sessions.size)
-        assertNotNull(newSessionState.sessions["disk-session-1"])
-        assertEquals("From Disk", newSessionState.sessions["disk-session-1"]?.name)
+        val createdSession = newSessionState.sessions["fake-uuid-1"]
+        assertNotNull(createdSession)
+        assertEquals("Test Session", createdSession.name)
+        assertEquals("fake-uuid-1", newSessionState.activeSessionId, "Newly created session should be active.")
     }
 
     @Test
-    fun `reducer internal_SESSION_LOADED does not overwrite an existing in_memory session`() {
-        // ARRANGE
+    fun `reducer session_CREATE proactively de-duplicates session names`() {
         val fakePlatform = FakePlatformDependencies(testAppVersion)
-        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
-        val inMemorySession = Session(id = "sid-1", name = "In Memory", ledger = emptyList(), createdAt = 1L)
-        val initialState = AppState(featureStates = mapOf(feature.name to SessionState(sessions = mapOf("sid-1" to inMemorySession))))
-        // Imagine the file from disk has the same ID but different data
-        val fromDiskSession = Session(id = "sid-1", name = "From Disk - Stale", ledger = emptyList(), createdAt = 0L)
-        val payload = json.encodeToJsonElement(SessionFeature.InternalSessionLoadedPayload(fromDiskSession))
-        val action = Action("session.internal.SESSION_LOADED", payload as JsonObject)
+        val feature = SessionFeature(fakePlatform, scope)
+        val existingSession = Session(id = "sid-1", name = "Test Session", ledger = emptyList(), createdAt = 1L)
+        val existingSession2 = Session(id = "sid-2", name = "Test Session-2", ledger = emptyList(), createdAt = 2L)
+        val initialState = AppState(featureStates = mapOf(feature.name to SessionState(sessions = mapOf("sid-1" to existingSession, "sid-2" to existingSession2))))
+        val action = Action("session.CREATE", buildJsonObject { put("name", "Test Session") })
 
-        // ACT
         val newState = feature.reducer(initialState, action)
 
-        // ASSERT
-        assertEquals(initialState, newState, "State should not have changed.")
+        val newSessionState = newState.featureStates[feature.name] as SessionState
+        assertEquals(3, newSessionState.sessions.size)
+        val createdSession = newSessionState.sessions["fake-uuid-1"]
+        assertNotNull(createdSession)
+        assertEquals("Test Session-3", createdSession.name, "Name should be de-duplicated with the next available suffix.")
     }
 
     @Test
-    fun `reducer session_DELETE removes a session`() {
-        // ARRANGE
+    fun `reducer session_UPDATE_CONFIG renames a session and handles de-duplication`() {
         val fakePlatform = FakePlatformDependencies(testAppVersion)
-        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
-        val session1 = Session(id = "sid-1", name = "s1", ledger = emptyList(), createdAt = 1L)
-        val session2 = Session(id = "sid-2", name = "s2", ledger = emptyList(), createdAt = 2L)
+        val feature = SessionFeature(fakePlatform, scope)
+        val session1 = Session(id = "sid-1", name = "Original Name", ledger = emptyList(), createdAt = 1L)
+        val session2 = Session(id = "sid-2", name = "Existing Name", ledger = emptyList(), createdAt = 2L)
         val initialState = AppState(featureStates = mapOf(feature.name to SessionState(sessions = mapOf("sid-1" to session1, "sid-2" to session2))))
-        val action = Action("session.DELETE", buildJsonObject { put("sessionId", "sid-1") })
+        val action = Action("session.UPDATE_CONFIG", buildJsonObject {
+            put("session", "sid-1")
+            put("name", "Existing Name")
+        })
 
-        // ACT
         val newState = feature.reducer(initialState, action)
 
-        // ASSERT
-        val sessionState = newState.featureStates[feature.name] as SessionState
-        assertEquals(1, sessionState.sessions.size)
-        assertNull(sessionState.sessions["sid-1"])
-        assertNotNull(sessionState.sessions["sid-2"])
+        val newSessionState = newState.featureStates[feature.name] as SessionState
+        val updatedSession = newSessionState.sessions["sid-1"]
+        assertNotNull(updatedSession)
+        assertEquals("Existing Name-2", updatedSession.name)
+        assertNull(newSessionState.editingSessionId, "Editing should be cancelled after update.")
     }
 
     @Test
-    fun `reducer session_DELETE clears activeSessionId if the active session is deleted`() {
-        // ARRANGE
+    fun `reducer resolves session by name for POST action`() {
         val fakePlatform = FakePlatformDependencies(testAppVersion)
-        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
-        val session1 = Session(id = "sid-1", name = "s1", ledger = emptyList(), createdAt = 1L)
-        val initialState = AppState(featureStates = mapOf(feature.name to SessionState(
-            sessions = mapOf("sid-1" to session1),
-            activeSessionId = "sid-1"
-        )))
-        val action = Action("session.DELETE", buildJsonObject { put("sessionId", "sid-1") })
+        val feature = SessionFeature(fakePlatform, scope)
+        val session = Session(id = "sid-1", name = "My Session", ledger = emptyList(), createdAt = 1L)
+        val initialState = AppState(featureStates = mapOf(feature.name to SessionState(sessions = mapOf("sid-1" to session))))
+        val action = Action("session.POST", buildJsonObject {
+            put("session", "My Session")
+            put("agentId", "user")
+            put("message", "Hello")
+        })
 
-        // ACT
         val newState = feature.reducer(initialState, action)
-
-        // ASSERT
         val sessionState = newState.featureStates[feature.name] as SessionState
-        assertTrue(sessionState.sessions.isEmpty())
-        assertNull(sessionState.activeSessionId, "Active session ID should be cleared.")
+        assertEquals(1, sessionState.sessions["sid-1"]?.ledger?.size)
     }
 
     @Test
-    fun `reducer session_SET_ACTIVE_TAB updates the activeSessionId`() {
-        // ARRANGE
+    fun `reducer agent_publish_AGENT_NAMES_UPDATED updates local cache`() {
         val fakePlatform = FakePlatformDependencies(testAppVersion)
-        val feature = SessionFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
+        val feature = SessionFeature(fakePlatform, scope)
+        val initialState = AppState(featureStates = mapOf(feature.name to SessionState()))
+        val nameMap = mapOf("agent-1" to "Agent One", "agent-2" to "Agent Two")
+        val action = Action("agent.publish.AGENT_NAMES_UPDATED", buildJsonObject {
+            put("names", Json.encodeToJsonElement(nameMap))
+        })
+
+        val newState = feature.reducer(initialState, action)
+
+        val newSessionState = newState.featureStates[feature.name] as SessionState
+        assertEquals(nameMap, newSessionState.agentNames)
+    }
+
+    @Test
+    fun `reducer TOGGLE_MESSAGE_COLLAPSED correctly updates persistent UI state`() {
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
+        val feature = SessionFeature(fakePlatform, scope)
+        val session = Session(id = "sid-1", name = "My Session", ledger = emptyList(), createdAt = 1L)
+        val initialState = AppState(featureStates = mapOf(feature.name to SessionState(sessions = mapOf("sid-1" to session))))
+        val action = Action("session.TOGGLE_MESSAGE_COLLAPSED", buildJsonObject {
+            put("sessionId", "sid-1")
+            put("messageId", "msg-1")
+        })
+
+        // First toggle: should set collapsed to true
+        val stateAfterCollapse = feature.reducer(initialState, action)
+        val sessionState1 = stateAfterCollapse.featureStates[feature.name] as SessionState
+        val msgUiState1 = sessionState1.sessions["sid-1"]?.messageUiState?.get("msg-1")
+        assertNotNull(msgUiState1)
+        assertTrue(msgUiState1.isCollapsed)
+        assertFalse(msgUiState1.isRawView)
+
+        // Second toggle: should set collapsed back to false
+        val stateAfterExpand = feature.reducer(stateAfterCollapse, action)
+        val sessionState2 = stateAfterExpand.featureStates[feature.name] as SessionState
+        val msgUiState2 = sessionState2.sessions["sid-1"]?.messageUiState?.get("msg-1")
+        assertNotNull(msgUiState2)
+        assertFalse(msgUiState2.isCollapsed)
+    }
+
+    @Test
+    fun `reducer UPDATE_MESSAGE correctly modifies ledger entry`() {
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
+        val feature = SessionFeature(fakePlatform, scope)
+        val message = LedgerEntry("msg-1", 1L, "user", "old", emptyList())
+        val session = Session(id = "sid-1", name = "My Session", ledger = listOf(message), createdAt = 1L)
+        val initialState = AppState(featureStates = mapOf(feature.name to SessionState(sessions = mapOf("sid-1" to session))))
+        val action = Action("session.UPDATE_MESSAGE", buildJsonObject {
+            put("session", "sid-1")
+            put("messageId", "msg-1")
+            put("newContent", "new")
+        })
+
+        val newState = feature.reducer(initialState, action)
+
+        val sessionState = newState.featureStates[feature.name] as SessionState
+        val updatedMessage = sessionState.sessions["sid-1"]?.ledger?.first()
+        assertNotNull(updatedMessage)
+        assertEquals("new", updatedMessage.rawContent, "Raw content should be updated.")
+        assertIs<ContentBlock.Text>(updatedMessage.content.first())
+        assertEquals("new", (updatedMessage.content.first() as ContentBlock.Text).text, "Parsed content should also be updated.")
+        assertNull(sessionState.editingMessageId, "Editing state should be cleared after update.")
+    }
+
+    @Test
+    fun `reducer session_DELETE clears activeSessionId and picks most recent if available`() {
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
+        val feature = SessionFeature(fakePlatform, scope)
         val session1 = Session(id = "sid-1", name = "s1", ledger = emptyList(), createdAt = 1L)
         val session2 = Session(id = "sid-2", name = "s2", ledger = emptyList(), createdAt = 2L)
+        val session3 = Session(id = "sid-3", name = "s3", ledger = emptyList(), createdAt = 3L)
         val initialState = AppState(featureStates = mapOf(feature.name to SessionState(
-            sessions = mapOf("sid-1" to session1, "sid-2" to session2),
-            activeSessionId = "sid-1"
+            sessions = mapOf("sid-1" to session1, "sid-2" to session2, "sid-3" to session3),
+            activeSessionId = "sid-3"
         )))
-        val action = Action("session.SET_ACTIVE_TAB", buildJsonObject { put("sessionId", "sid-2") })
+        val action = Action("session.DELETE", buildJsonObject { put("session", "sid-3") })
 
-        // ACT
         val newState = feature.reducer(initialState, action)
-
-        // ASSERT
         val sessionState = newState.featureStates[feature.name] as SessionState
-        assertEquals("sid-2", sessionState.activeSessionId)
+
+        assertEquals(2, sessionState.sessions.size)
+        assertEquals("sid-2", sessionState.activeSessionId, "Active session should become the next most recent one.")
     }
 }

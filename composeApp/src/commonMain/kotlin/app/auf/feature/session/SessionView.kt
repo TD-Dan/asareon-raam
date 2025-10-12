@@ -17,7 +17,6 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import app.auf.core.Action
 import app.auf.core.Store
-import app.auf.feature.agent.AgentState
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -26,8 +25,6 @@ import kotlinx.serialization.json.put
 fun SessionView(store: Store) {
     val appState by store.state.collectAsState()
     val sessionState = appState.featureStates["session"] as? SessionState
-    // This is the correct integration point: The top-level view can access multiple states.
-    val agentState = appState.featureStates["agent"] as? AgentState
 
     val sessions = remember(sessionState?.sessions) {
         sessionState?.sessions?.values?.sortedByDescending { it.createdAt } ?: emptyList()
@@ -75,7 +72,6 @@ fun SessionView(store: Store) {
                 store = store,
                 activeSession = activeSession,
                 sessionState = sessionState,
-                agentState = agentState, // Pass the agent state down
                 modifier = Modifier.weight(1f)
             )
             MessageInput(
@@ -148,11 +144,11 @@ private fun LedgerPane(
     store: Store,
     activeSession: Session,
     sessionState: SessionState?,
-    agentState: AgentState?, // Accept agent state
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    val agentNames = sessionState?.agentNames ?: emptyMap()
 
     LaunchedEffect(activeSession.ledger.size) {
         if (activeSession.ledger.isNotEmpty()) {
@@ -164,12 +160,11 @@ private fun LedgerPane(
 
     LazyColumn(state = listState, modifier = modifier.padding(8.dp)) {
         items(activeSession.ledger, key = { it.id }) { entry ->
-            // Perform the lookup here and pass the resulting string down.
-            val agentName = remember(entry.agentId, agentState?.agents) {
+            val agentName = remember(entry.agentId, agentNames) {
                 when {
                     entry.agentId == "user" -> "User"
                     entry.agentId.startsWith("system") -> "System"
-                    else -> agentState?.agents?.get(entry.agentId)?.name ?: entry.agentId
+                    else -> agentNames[entry.agentId] ?: entry.agentId // Fallback to ID
                 }
             }
 
@@ -177,7 +172,7 @@ private fun LedgerPane(
                 store = store,
                 session = activeSession,
                 entry = entry,
-                agentName = agentName, // Pass the simple string
+                agentName = agentName,
                 isEditingThisMessage = sessionState?.editingMessageId == entry.id,
                 editingContent = sessionState?.editingMessageContent
             )
@@ -203,7 +198,7 @@ private fun MessageInput(onSend: (String) -> Unit) {
                 modifier = Modifier
                     .weight(1f)
                     .onKeyEvent { event ->
-                        if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isCtrlPressed) {
+                        if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && (event.isCtrlPressed || event.isMetaPressed)) {
                             if (text.isNotBlank()) {
                                 onSend(text)
                                 text = ""

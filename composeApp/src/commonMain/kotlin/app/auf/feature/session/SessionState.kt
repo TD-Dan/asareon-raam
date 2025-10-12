@@ -31,7 +31,7 @@ data class LedgerEntry(
 )
 
 /**
- * NEW: Represents the persistent UI state for a single message.
+ * Represents the persistent UI state for a single message.
  * Storing this within the Session object ensures it is saved across restarts.
  */
 @Serializable
@@ -61,6 +61,9 @@ data class Session(
 data class SessionState(
     /** A map of all active sessions, keyed by their unique ID. */
     val sessions: Map<String, Session> = emptyMap(),
+
+    /** A local cache of agent IDs to their human-readable names. */
+    val agentNames: Map<String, String> = emptyMap(),
 
     /** The ID of the session currently visible in the main view. */
     val activeSessionId: String? = null,
