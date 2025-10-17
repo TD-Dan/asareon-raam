@@ -168,6 +168,21 @@
       }
     },
     {
+      "action_name":"agent.publish.AGENT_DELETED",
+      "summary":"Broadcasts that an agent has been deleted, so other features can clean up their state.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "agentId":{
+            "type":"string"
+          }
+        },
+        "required":[
+          "agentId"
+        ]
+      }
+    },
+    {
       "action_name":"agent.internal.AGENT_LOADED",
       "summary":"[INTERNAL] Dispatched after an agent's configuration has been read from its sandbox. Used to populate the feature's state.",
       "payload_schema":{
