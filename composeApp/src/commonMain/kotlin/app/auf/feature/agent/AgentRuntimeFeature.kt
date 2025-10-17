@@ -191,10 +191,23 @@ class AgentRuntimeFeature(
                 store.dispatch(this.name, Action("filesystem.SYSTEM_LIST"))
                 store.dispatch(this.name, Action("gateway.REQUEST_AVAILABLE_MODELS"))
             }
-            "agent.CREATE", "agent.UPDATE_CONFIG", "agent.TOGGLE_AUTOMATIC_MODE" -> {
+            "agent.CREATE" -> {
+                val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+                val agentToSave = agentState.agents.values.lastOrNull() ?: return
+                store.dispatch(this.name, Action("filesystem.SYSTEM_WRITE", buildJsonObject {
+                    put("subpath", "${agentToSave.id}/$AGENT_CONFIG_FILENAME")
+                    put("content", json.encodeToString(agentToSave))
+                }))
+                broadcastAgentNames(store)
+            }
+            "agent.UPDATE_CONFIG", "agent.TOGGLE_AUTOMATIC_MODE" -> {
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: agentState.agents.keys.lastOrNull() ?: return
-                val agentToSave = agentState.agents[agentId] ?: return
+                val agentToSave = agentState.agents[agentId]
+                if (agentToSave == null) {
+                    platformDependencies.log(LogLevel.WARN, name, "Action '${action.name}' ignored: Agent with ID '$agentId' not found.")
+                    return
+                }
                 store.dispatch(this.name, Action("filesystem.SYSTEM_WRITE", buildJsonObject {
                     put("subpath", "${agentToSave.id}/$AGENT_CONFIG_FILENAME")
                     put("content", json.encodeToString(agentToSave))
@@ -204,7 +217,11 @@ class AgentRuntimeFeature(
             "agent.DELETE" -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
-                val agent = agentState.agents[agentId] ?: return
+                val agent = agentState.agents[agentId]
+                if (agent == null) {
+                    platformDependencies.log(LogLevel.WARN, name, "Action 'agent.DELETE' ignored: Agent with ID '$agentId' not found.")
+                    return
+                }
 
                 val sessionToClean = agent.primarySessionId
                 val cardsToDelete = agentState.agentAvatarCardIds[agentId]
@@ -233,7 +250,12 @@ class AgentRuntimeFeature(
             }
             "agent.CANCEL_TURN" -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
-                activeTurnJobs[agentId]?.cancel()
+                val job = activeTurnJobs[agentId]
+                if (job == null) {
+                    platformDependencies.log(LogLevel.WARN, name, "Action 'agent.CANCEL_TURN' ignored: No active turn found for agent '$agentId'.")
+                    return
+                }
+                job.cancel()
                 activeTurnJobs.remove(agentId)
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val agent = agentState.agents[agentId] ?: return
@@ -261,7 +283,11 @@ class AgentRuntimeFeature(
     private fun beginCognitiveCycle(action: Action, store: Store) {
         val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
-        val agent = agentState.agents[agentId] ?: return
+        val agent = agentState.agents[agentId]
+        if (agent == null) {
+            platformDependencies.log(LogLevel.WARN, name, "Action 'agent.TRIGGER_MANUAL_TURN' ignored: Agent with ID '$agentId' not found.")
+            return
+        }
 
         if (agent.status == AgentStatus.PROCESSING || agent.status == AgentStatus.WAITING) return
         val sessionId = agent.primarySessionId ?: run {
@@ -269,7 +295,13 @@ class AgentRuntimeFeature(
         }
 
         val sessionState = store.state.value.featureStates["session"] as? SessionState ?: return
-        val session = sessionState.sessions[sessionId] ?: return
+        val session = sessionState.sessions[sessionId]
+        if (session == null) {
+            val errorMessage = "Cannot start turn: Subscribed session with ID '$sessionId' not found."
+            platformDependencies.log(LogLevel.WARN, name, "Action 'agent.TRIGGER_MANUAL_TURN' for agent '$agentId' failed: $errorMessage")
+            setAgentStatus(agentId, AgentStatus.ERROR, store, errorMessage)
+            return
+        }
         val contextMessages = session.ledger.mapNotNull { it.rawContent?.let { content -> GatewayMessage("user", content) } }
 
         setAgentStatus(agentId, AgentStatus.PROCESSING, store)

@@ -52,35 +52,51 @@ class SessionFeature(
     }
 
     override fun onAction(action: Action, store: Store) {
+        val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
         when (action.name) {
             "system.STARTING" -> store.dispatch(this.name, Action("filesystem.SYSTEM_LIST"))
             "session.CREATE" -> {
-                val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
                 // The newly created session is now active, persist it immediately.
                 sessionState.activeSessionId?.let { persistSession(it, store) }
                 broadcastSessionNames(sessionState, store)
             }
             "session.UPDATE_CONFIG" -> {
-                val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull ?: return
                 val sessionId = resolveSessionId(identifier, sessionState)
-                sessionId?.let { persistSession(it, store) }
-                broadcastSessionNames(sessionState, store)
-            }
-            "session.DELETE", "session.internal.LOADED" -> {
-                val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
-                broadcastSessionNames(sessionState, store)
-                if (action.name == "session.DELETE") {
-                    val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull ?: return
-                    val sessionIdToDelete = if (identifier.length > 20) identifier else sessionState.sessions.entries.find { it.value.name == identifier }?.key ?: identifier
-                    store.dispatch(this.name, Action("filesystem.SYSTEM_DELETE", buildJsonObject { put("subpath", "$sessionIdToDelete.json") }))
+                if (sessionId == null) {
+                    platformDependencies.log(LogLevel.WARN, name, "Action 'session.UPDATE_CONFIG' ignored: Session '$identifier' not found.")
+                    return
                 }
+                persistSession(sessionId, store)
+                // Reducer has already updated the state, so broadcast the new names.
+                val updatedSessionState = store.state.value.featureStates[name] as? SessionState ?: return
+                broadcastSessionNames(updatedSessionState, store)
+            }
+            "session.DELETE" -> {
+                val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull ?: return
+                val sessionIdToDelete = resolveSessionId(identifier, sessionState)
+                if (sessionIdToDelete == null) {
+                    platformDependencies.log(LogLevel.WARN, name, "Action 'session.DELETE' ignored: Session '$identifier' not found.")
+                    return
+                }
+                // Reducer has already updated the state, so broadcast the new names.
+                val updatedSessionState = store.state.value.featureStates[name] as? SessionState ?: return
+                broadcastSessionNames(updatedSessionState, store)
+                store.dispatch(this.name, Action("filesystem.SYSTEM_DELETE", buildJsonObject { put("subpath", "$sessionIdToDelete.json") }))
+            }
+            "session.internal.LOADED" -> {
+                val updatedSessionState = store.state.value.featureStates[name] as? SessionState ?: return
+                broadcastSessionNames(updatedSessionState, store)
             }
             "session.POST", "session.UPDATE_MESSAGE", "session.DELETE_MESSAGE",
             "session.TOGGLE_MESSAGE_COLLAPSED", "session.TOGGLE_MESSAGE_RAW_VIEW" -> {
-                val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
                 val sessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: resolveSessionIdFromGenericPayload(action.payload, sessionState)
-                sessionId?.let { persistSession(it, store) }
+                if (sessionId == null) {
+                    val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull ?: "unknown"
+                    platformDependencies.log(LogLevel.WARN, name, "Action '${action.name}' ignored: Session '$identifier' not found.")
+                    return
+                }
+                persistSession(sessionId, store)
             }
         }
     }
