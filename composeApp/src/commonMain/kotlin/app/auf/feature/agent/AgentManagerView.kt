@@ -55,10 +55,6 @@ fun AgentManagerView(store: Store) {
                     Button(onClick = {
                         store.dispatch("ui.agentManager", Action("agent.CREATE", buildJsonObject {
                             put("name", "New Agent")
-                            put("personaId", "keel-20250914T142800Z")
-                            put("modelProvider", "gemini")
-                            put("modelName", "gemini-2.5-pro")
-                            put("primarySessionId", null as String?)
                         }))
                     }) {
                         Icon(Icons.Default.Add, "Create New Agent"); Spacer(Modifier.width(8.dp)); Text("New Agent")
@@ -104,8 +100,10 @@ private fun AgentCard(
             if (isEditing) {
                 AgentEditorView(agent, agentState, store)
             } else {
-                AgentReadOnlyView(agent, agentState.sessionNames)
+                AgentReadOnlyView(agent, agentState.sessionNames, store)
             }
+
+            HorizontalDivider()
 
             Row(Modifier.fillMaxWidth(), Arrangement.End, Alignment.CenterVertically) {
                 if (!isEditing) {
@@ -122,13 +120,52 @@ private fun AgentCard(
 }
 
 @Composable
-private fun AgentReadOnlyView(agent: AgentInstance, sessionNames: Map<String, String>) {
+private fun AgentReadOnlyView(agent: AgentInstance, sessionNames: Map<String, String>, store: Store) {
     val sessionName = agent.primarySessionId?.let { sessionNames[it] } ?: "Not Subscribed"
-    SelectionContainer {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(agent.name, style = MaterialTheme.typography.titleLarge)
-            Text("Session: $sessionName", style = MaterialTheme.typography.bodyMedium)
-            Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // --- Info Section ---
+        SelectionContainer {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(agent.name, style = MaterialTheme.typography.titleLarge)
+                Text("Session: $sessionName", style = MaterialTheme.typography.bodyMedium)
+                Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
+                Text("Status: ${agent.status}", style = MaterialTheme.typography.bodyMedium)
+                if (agent.status == AgentStatus.ERROR && agent.errorMessage != null) {
+                    Text(
+                        text = agent.errorMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        }
+
+        // --- Actions Section ---
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            if (agent.status == AgentStatus.PROCESSING || agent.status == AgentStatus.WAITING) {
+                Button(
+                    onClick = {
+                        store.dispatch("ui.agentManager", Action("agent.CANCEL_TURN", buildJsonObject { put("agentId", agent.id) }))
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                ) {
+                    Icon(Icons.Default.Cancel, contentDescription = "Cancel Turn")
+                    Spacer(Modifier.width(8.dp))
+                    Text("Cancel")
+                }
+            } else {
+                Button(
+                    onClick = {
+                        store.dispatch("ui.agentManager", Action("agent.TRIGGER_MANUAL_TURN", buildJsonObject { put("agentId", agent.id) }))
+                    },
+                    enabled = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.ERROR) && agent.primarySessionId != null
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = "Trigger Turn")
+                    Spacer(Modifier.width(8.dp))
+                    Text("Trigger Turn")
+                }
+            }
         }
     }
 }
@@ -170,15 +207,33 @@ private fun AgentEditorView(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            maxItemsInEachRow = 3
+            maxItemsInEachRow = 2
         ) {
             Box(Modifier.weight(1f)) { SessionSelector(agent, agentState, store) }
             Box(Modifier.weight(1f)) { ProviderSelector(agent, agentState, store) }
             Box(Modifier.weight(1f)) { ModelSelector(agent, agentState, store) }
         }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Automatic Mode", style = MaterialTheme.typography.bodyLarge)
+            Switch(
+                checked = agent.automaticMode,
+                onCheckedChange = {
+                    store.dispatch("ui.agentManager", Action("agent.TOGGLE_AUTOMATIC_MODE", buildJsonObject {
+                        put("agentId", agent.id)
+                    }))
+                }
+            )
+        }
     }
 }
 
+// SessionSelector, ProviderSelector, and ModelSelector remain unchanged.
+// They are omitted for brevity but are part of the full file.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {

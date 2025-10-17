@@ -9,14 +9,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import app.auf.core.Action
-import app.auf.core.Store
-import app.auf.feature.session.Session
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
+/**
+ * Stateless, presentational composable for displaying an agent's status and actions.
+ * It receives all data as parameters and uses callbacks for user interactions.
+ */
 @Composable
-fun AgentAvatarCard(agent: AgentInstance, session: Session, store: Store) {
+fun AgentAvatarCard(
+    agentName: String,
+    agentStatus: AgentStatus,
+    errorMessage: String?,
+    onTrigger: () -> Unit,
+    onCancel: () -> Unit,
+    canTrigger: Boolean,
+) {
     OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -27,11 +33,11 @@ fun AgentAvatarCard(agent: AgentInstance, session: Session, store: Store) {
         ) {
             // Left side: Agent Info
             Column(modifier = Modifier.weight(1f)) {
-                Text(agent.name, style = MaterialTheme.typography.titleMedium)
-                Text("Status: ${agent.status}", style = MaterialTheme.typography.bodyMedium)
-                if (agent.status == AgentStatus.ERROR && agent.errorMessage != null) {
+                Text(agentName, style = MaterialTheme.typography.titleMedium)
+                Text("Status: $agentStatus", style = MaterialTheme.typography.bodyMedium)
+                if (agentStatus == AgentStatus.ERROR && errorMessage != null) {
                     Text(
-                        text = agent.errorMessage,
+                        text = errorMessage,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = 4.dp)
@@ -41,13 +47,10 @@ fun AgentAvatarCard(agent: AgentInstance, session: Session, store: Store) {
 
             // Right side: Action Buttons
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (agent.status == AgentStatus.PROCESSING) {
-                    // Show Cancel button when processing
+                if (agentStatus == AgentStatus.PROCESSING || agentStatus == AgentStatus.WAITING) {
+                    // Show Cancel button when busy
                     Button(
-                        onClick = {
-                            val payload = buildJsonObject { put("agentId", agent.id) }
-                            store.dispatch("ui.agentAvatar", Action("agent.CANCEL_TURN", payload))
-                        },
+                        onClick = onCancel,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                     ) {
                         Icon(Icons.Default.Cancel, contentDescription = "Cancel Turn")
@@ -57,14 +60,8 @@ fun AgentAvatarCard(agent: AgentInstance, session: Session, store: Store) {
                 } else {
                     // Show Trigger button otherwise
                     Button(
-                        onClick = {
-                            val payload = buildJsonObject {
-                                put("agentId", agent.id)
-                                put("lastMessage", session.ledger.lastOrNull()?.rawContent ?: "")
-                            }
-                            store.dispatch("ui.agentAvatar", Action("agent.TRIGGER_MANUAL_TURN", payload))
-                        },
-                        enabled = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.ERROR) && session.ledger.isNotEmpty()
+                        onClick = onTrigger,
+                        enabled = canTrigger
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = "Trigger Turn")
                         Spacer(Modifier.width(4.dp))

@@ -15,7 +15,12 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
+import app.auf.feature.agent.AgentAvatarCard
+import app.auf.feature.agent.AgentStatus
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @Composable
@@ -27,126 +32,132 @@ fun LedgerEntryCard(
     isEditingThisMessage: Boolean,
     editingContent: String?,
 ) {
-    // Get the persistent UI state for this specific message.
-    val uiState = remember(session.messageUiState, entry.id) {
-        session.messageUiState[entry.id] ?: MessageUiState()
-    }
+    val isPartialView = entry.metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
 
-    var showMenu by remember { mutableStateOf(false) }
+    if (isPartialView) {
+        // --- RENDER AGENT AVATAR CARD ---
+        val statusString = entry.metadata?.get("agentStatus")?.jsonPrimitive?.contentOrNull
+        val status = try { statusString?.let { AgentStatus.valueOf(it) } ?: AgentStatus.IDLE } catch (e: Exception) { AgentStatus.ERROR }
+        val errorMessage = if (status == AgentStatus.ERROR) {
+            entry.metadata?.get("errorMessage")?.jsonPrimitive?.contentOrNull ?: "Unknown error"
+        } else null
 
-    val cardColors = if (entry.agentId == "user") {
-        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        AgentAvatarCard(
+            agentName = agentName,
+            agentStatus = status,
+            errorMessage = errorMessage,
+            onTrigger = {
+                store.dispatch("session.ui", Action("agent.TRIGGER_MANUAL_TURN", buildJsonObject {
+                    put("agentId", entry.senderId)
+                }))
+            },
+            onCancel = {
+                store.dispatch("session.ui", Action("agent.CANCEL_TURN", buildJsonObject {
+                    put("agentId", entry.senderId)
+                }))
+            },
+            // The UI makes a best-effort guess. The feature's onAction handler is the final authority.
+            canTrigger = (status == AgentStatus.IDLE || status == AgentStatus.ERROR)
+        )
     } else {
-        CardDefaults.cardColors()
-    }
+        // --- RENDER STANDARD MESSAGE CARD ---
+        val uiState = remember(session.messageUiState, entry.id) {
+            session.messageUiState[entry.id] ?: MessageUiState()
+        }
+        var showMenu by remember { mutableStateOf(false) }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = cardColors
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            // --- HEADER ---
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Clickable area to toggle collapsed state
+        val cardColors = if (entry.senderId == "user") {
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        } else {
+            CardDefaults.cardColors()
+        }
+
+        Card(modifier = Modifier.fillMaxWidth(), colors = cardColors) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                // Header
                 Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable(
-                            enabled = !isEditingThisMessage, // Disable collapse while editing
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f).clickable(
+                            enabled = !isEditingThisMessage,
                             onClick = {
                                 store.dispatch("session.ui", Action("session.TOGGLE_MESSAGE_COLLAPSED", buildJsonObject {
-                                    put("sessionId", session.id)
-                                    put("messageId", entry.id)
+                                    put("sessionId", session.id); put("messageId", entry.id)
                                 }))
                             }
                         ),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = agentName,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                }
-
-                // Action Icons
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // View Raw Icon
-                    IconButton(
-                        onClick = {
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = agentName,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = {
                             store.dispatch("session.ui", Action("session.TOGGLE_MESSAGE_RAW_VIEW", buildJsonObject {
-                                put("sessionId", session.id)
-                                put("messageId", entry.id)
+                                put("sessionId", session.id); put("messageId", entry.id)
                             }))
-                        },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Code,
-                            contentDescription = "Toggle Raw Content",
-                            tint = if (uiState.isRawView) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Spacer(Modifier.width(4.dp))
-                    // Copy Icon
-                    IconButton(
-                        onClick = {
-                            store.dispatch("session.ui", Action("core.COPY_TO_CLIPBOARD", buildJsonObject {
-                                put("text", entry.rawContent)
-                            }))
-                        },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy Message Content",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Spacer(Modifier.width(4.dp))
-                    // Kebab Menu for destructive/rare actions
-                    Box {
-                        IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }, modifier = Modifier.size(24.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.Code,
+                                contentDescription = "Toggle Raw Content",
+                                tint = if (uiState.isRawView) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Edit") },
-                                onClick = {
-                                    store.dispatch("session.ui", Action("session.SET_EDITING_MESSAGE", buildJsonObject {
-                                        put("messageId", entry.id)
-                                    }))
-                                    showMenu = false
-                                }
+                        Spacer(Modifier.width(4.dp))
+                        IconButton(onClick = {
+                            entry.rawContent?.let {
+                                store.dispatch("session.ui", Action("core.COPY_TO_CLIPBOARD", buildJsonObject {
+                                    put("text", it)
+                                }))
+                            }
+                        }, modifier = Modifier.size(24.dp), enabled = entry.rawContent != null) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "Copy Message Content",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            DropdownMenuItem(
-                                text = { Text("Delete") },
-                                onClick = {
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        Box {
+                            IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                                if (entry.rawContent != null) {
+                                    DropdownMenuItem(text = { Text("Edit") }, onClick = {
+                                        store.dispatch("session.ui", Action("session.SET_EDITING_MESSAGE", buildJsonObject {
+                                            put("messageId", entry.id)
+                                        }))
+                                        showMenu = false
+                                    })
+                                }
+                                DropdownMenuItem(text = { Text("Delete") }, onClick = {
                                     store.dispatch("session.ui", Action("session.DELETE_MESSAGE", buildJsonObject {
-                                        put("session", session.id) // Use session ID for target
-                                        put("messageId", entry.id)
+                                        put("session", session.id); put("messageId", entry.id)
                                     }))
                                     showMenu = false
-                                }
-                            )
+                                })
+                            }
                         }
                     }
                 }
-            }
 
-            // --- CONTENT ---
-            AnimatedVisibility(visible = !uiState.isCollapsed) {
-                Column {
-                    Spacer(Modifier.height(8.dp))
-                    when {
-                        isEditingThisMessage -> MessageEditor(store, session, entry, editingContent)
-                        uiState.isRawView -> RawContentView(entry.rawContent)
-                        else -> ParsedContentView(entry.content)
+                // Content
+                AnimatedVisibility(visible = !uiState.isCollapsed) {
+                    Column {
+                        Spacer(Modifier.height(8.dp))
+                        when {
+                            isEditingThisMessage -> MessageEditor(store, session, entry, editingContent)
+                            uiState.isRawView -> RawContentView(entry.rawContent ?: "--- No Raw Content ---")
+                            else -> ParsedContentView(entry.content)
+                        }
                     }
                 }
             }
@@ -154,9 +165,11 @@ fun LedgerEntryCard(
     }
 }
 
+// MessageEditor, ParsedContentView, and RawContentView composables remain unchanged.
+// They are omitted for brevity but are part of the full file.
 @Composable
 private fun MessageEditor(store: Store, session: Session, entry: LedgerEntry, editingContent: String?) {
-    var text by remember(entry.id) { mutableStateOf(editingContent ?: entry.rawContent) }
+    var text by remember(entry.id) { mutableStateOf(editingContent ?: entry.rawContent ?: "") }
 
     Column {
         OutlinedTextField(
@@ -194,21 +207,26 @@ private fun MessageEditor(store: Store, session: Session, entry: LedgerEntry, ed
 
 @Composable
 private fun ParsedContentView(content: List<ContentBlock>) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        content.forEach { block ->
-            when (block) {
-                is ContentBlock.Text -> Text(block.text)
-                is ContentBlock.CodeBlock -> {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Text(
-                            text = block.code,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(8.dp)
-                        )
+    if (content.isEmpty()) {
+        // Handle UI-only entries gracefully
+        Text(" ", style = MaterialTheme.typography.bodySmall) // Render a space to maintain card height
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            content.forEach { block ->
+                when (block) {
+                    is ContentBlock.Text -> Text(block.text)
+                    is ContentBlock.CodeBlock -> {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Text(
+                                text = block.code,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
                     }
                 }
             }

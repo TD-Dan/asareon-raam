@@ -20,11 +20,12 @@ class SessionFeature(
 ) : Feature {
     override val name: String = "session"
 
+    // --- Private, serializable data classes for decoding action payloads safely. ---
     @Serializable private data class CreatePayload(val name: String? = null)
     @Serializable private data class UpdateConfigPayload(val session: String, val name: String)
     @Serializable private data class SessionTargetPayload(val session: String)
-    @Serializable private data class PostPayload(val session: String, val agentId: String, val message: String)
-    @Serializable private data class UpdateMessagePayload(val session: String, val messageId: String, val newContent: String)
+    @Serializable private data class PostPayload(val session: String, val senderId: String, val message: String? = null, val metadata: JsonObject? = null)
+    @Serializable private data class UpdateMessagePayload(val session: String, val messageId: String, val newContent: String, val newMetadata: JsonObject? = null)
     @Serializable private data class MessageTargetPayload(val session: String, val messageId: String)
     @Serializable private data class SetEditingSessionPayload(val sessionId: String?)
     @Serializable private data class SetEditingMessagePayload(val messageId: String?)
@@ -128,7 +129,14 @@ class SessionFeature(
                 val decoded = payload?.let { json.decodeFromJsonElement<PostPayload>(it) } ?: return state
                 val sessionId = resolveSessionId(decoded.session, currentFeatureState) ?: return state
                 val targetSession = currentFeatureState.sessions[sessionId] ?: return state
-                val newEntry = LedgerEntry(platformDependencies.generateUUID(), platformDependencies.getSystemTimeMillis(), decoded.agentId, decoded.message, blockParser.parse(decoded.message))
+                val newEntry = LedgerEntry(
+                    id = platformDependencies.generateUUID(),
+                    timestamp = platformDependencies.getSystemTimeMillis(),
+                    senderId = decoded.senderId,
+                    rawContent = decoded.message,
+                    content = decoded.message?.let { blockParser.parse(it) } ?: emptyList(),
+                    metadata = decoded.metadata
+                )
                 val updatedSession = targetSession.copy(ledger = targetSession.ledger + newEntry)
                 newFeatureState = currentFeatureState.copy(sessions = currentFeatureState.sessions + (sessionId to updatedSession))
             }
@@ -142,7 +150,13 @@ class SessionFeature(
                 val decoded = payload?.let { json.decodeFromJsonElement<UpdateMessagePayload>(it) } ?: return state
                 val sessionId = resolveSessionId(decoded.session, currentFeatureState) ?: return state
                 val targetSession = currentFeatureState.sessions[sessionId] ?: return state
-                val updatedLedger = targetSession.ledger.map { if (it.id == decoded.messageId) it.copy(rawContent = decoded.newContent, content = blockParser.parse(decoded.newContent)) else it }
+                val updatedLedger = targetSession.ledger.map {
+                    if (it.id == decoded.messageId) it.copy(
+                        rawContent = decoded.newContent,
+                        content = blockParser.parse(decoded.newContent),
+                        metadata = decoded.newMetadata ?: it.metadata // Keep old metadata if new one isn't provided
+                    ) else it
+                }
                 val updatedSession = targetSession.copy(ledger = updatedLedger)
                 newFeatureState = currentFeatureState.copy(sessions = currentFeatureState.sessions + (sessionId to updatedSession), editingMessageId = null, editingMessageContent = null)
             }

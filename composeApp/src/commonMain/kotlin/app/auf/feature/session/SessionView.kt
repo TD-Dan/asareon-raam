@@ -54,10 +54,10 @@ fun SessionView(store: Store, features: List<Feature>) {
         if (activeSession == null) {
             Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No active session. Create one to begin.") }
         } else {
-            LedgerPane(store, activeSession, sessionState, features, Modifier.weight(1f))
+            LedgerPane(store, activeSession, sessionState, Modifier.weight(1f))
             MessageInput { message ->
                 store.dispatch("session.ui", Action("session.POST", buildJsonObject {
-                    put("session", activeSession.id); put("agentId", "user"); put("message", message)
+                    put("session", activeSession.id); put("senderId", "user"); put("message", message)
                 }))
             }
         }
@@ -109,13 +109,11 @@ private fun LedgerPane(
     store: Store,
     activeSession: Session,
     sessionState: SessionState?,
-    features: List<Feature>,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val agentNames = sessionState?.agentNames ?: emptyMap()
-    val lastAgentId = activeSession.ledger.lastOrNull()?.agentId?.takeIf { it != "user" && !it.startsWith("system") }
 
     LaunchedEffect(activeSession.ledger.size) {
         if (activeSession.ledger.size > 1) {
@@ -125,26 +123,24 @@ private fun LedgerPane(
         }
     }
 
-    Column(modifier = modifier) {
-        LazyColumn(state = listState, modifier = Modifier.weight(1f).padding(8.dp)) {
-            items(activeSession.ledger, key = { it.id }) { entry ->
-                val agentName = remember(entry.agentId, agentNames) {
-                    when {
-                        entry.agentId == "user" -> "User"
-                        entry.agentId.startsWith("system") -> "System"
-                        else -> agentNames[entry.agentId] ?: entry.agentId // Fallback to ID
-                    }
-                }
-                LedgerEntryCard(store, activeSession, entry, agentName, sessionState?.editingMessageId == entry.id, sessionState?.editingMessageContent)
-                Spacer(Modifier.height(8.dp))
-            }
-        }
-        if (lastAgentId != null) {
-            Box(modifier = Modifier.padding(horizontal = 8.dp).padding(bottom = 8.dp)) {
-                features.forEach { feature ->
-                    feature.composableProvider?.PartialView(store = store, partId = lastAgentId, context = activeSession)
+    LazyColumn(state = listState, modifier = modifier.fillMaxSize().padding(8.dp)) {
+        items(activeSession.ledger, key = { it.id }) { entry ->
+            val agentName = remember(entry.senderId, agentNames) {
+                when {
+                    entry.senderId == "user" -> "User"
+                    entry.senderId.startsWith("system") -> "System"
+                    else -> agentNames[entry.senderId] ?: entry.senderId // Fallback to ID
                 }
             }
+            LedgerEntryCard(
+                store = store,
+                session = activeSession,
+                entry = entry,
+                agentName = agentName,
+                isEditingThisMessage = sessionState?.editingMessageId == entry.id,
+                editingContent = sessionState?.editingMessageContent
+            )
+            Spacer(Modifier.height(8.dp))
         }
     }
 }
