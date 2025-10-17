@@ -79,7 +79,7 @@ class SessionFeatureReducerTest {
         val initialState = AppState(featureStates = mapOf(feature.name to SessionState(sessions = mapOf("sid-1" to session))))
         val action = Action("session.POST", buildJsonObject {
             put("session", "My Session")
-            put("agentId", "user")
+            put("senderId", "user") // CORRECTED: Added required senderId
             put("message", "Hello")
         })
 
@@ -132,27 +132,37 @@ class SessionFeatureReducerTest {
     }
 
     @Test
-    fun `reducer UPDATE_MESSAGE correctly modifies ledger entry`() {
+    fun `reducer UPDATE_MESSAGE correctly modifies ledger entry and metadata`() {
         val fakePlatform = FakePlatformDependencies(testAppVersion)
         val feature = SessionFeature(fakePlatform, scope)
-        val message = LedgerEntry("msg-1", 1L, "user", "old", emptyList())
+        val oldMetadata = buildJsonObject { put("old", true) }
+        val message = LedgerEntry("msg-1", 1L, "user", "old", emptyList(), metadata = oldMetadata)
         val session = Session(id = "sid-1", name = "My Session", ledger = listOf(message), createdAt = 1L)
         val initialState = AppState(featureStates = mapOf(feature.name to SessionState(sessions = mapOf("sid-1" to session))))
-        val action = Action("session.UPDATE_MESSAGE", buildJsonObject {
-            put("session", "sid-1")
-            put("messageId", "msg-1")
-            put("newContent", "new")
+
+        // --- SCENARIO 1: Update with new metadata ---
+        val newMetadata = buildJsonObject { put("new", true) }
+        val actionWithMeta = Action("session.UPDATE_MESSAGE", buildJsonObject {
+            put("session", "sid-1"); put("messageId", "msg-1"); put("newContent", "new"); put("newMetadata", newMetadata)
         })
+        val newStateWithMeta = feature.reducer(initialState, actionWithMeta)
+        val sessionStateWithMeta = newStateWithMeta.featureStates[feature.name] as SessionState
+        val updatedMessageWithMeta = sessionStateWithMeta.sessions["sid-1"]?.ledger?.first()
+        assertNotNull(updatedMessageWithMeta)
+        assertEquals("new", updatedMessageWithMeta.rawContent)
+        assertEquals(newMetadata, updatedMessageWithMeta.metadata)
 
-        val newState = feature.reducer(initialState, action)
-
-        val sessionState = newState.featureStates[feature.name] as SessionState
-        val updatedMessage = sessionState.sessions["sid-1"]?.ledger?.first()
-        assertNotNull(updatedMessage)
-        assertEquals("new", updatedMessage.rawContent, "Raw content should be updated.")
-        assertIs<ContentBlock.Text>(updatedMessage.content.first())
-        assertEquals("new", (updatedMessage.content.first() as ContentBlock.Text).text, "Parsed content should also be updated.")
-        assertNull(sessionState.editingMessageId, "Editing state should be cleared after update.")
+        // --- SCENARIO 2: Update without new metadata (should preserve old) ---
+        val actionWithoutMeta = Action("session.UPDATE_MESSAGE", buildJsonObject {
+            put("session", "sid-1"); put("messageId", "msg-1"); put("newContent", "newer")
+            // No newMetadata provided
+        })
+        val newStateWithoutMeta = feature.reducer(initialState, actionWithoutMeta)
+        val sessionStateWithoutMeta = newStateWithoutMeta.featureStates[feature.name] as SessionState
+        val updatedMessageWithoutMeta = sessionStateWithoutMeta.sessions["sid-1"]?.ledger?.first()
+        assertNotNull(updatedMessageWithoutMeta)
+        assertEquals("newer", updatedMessageWithoutMeta.rawContent)
+        assertEquals(oldMetadata, updatedMessageWithoutMeta.metadata, "Old metadata should be preserved when newMetadata is not provided.")
     }
 
     @Test

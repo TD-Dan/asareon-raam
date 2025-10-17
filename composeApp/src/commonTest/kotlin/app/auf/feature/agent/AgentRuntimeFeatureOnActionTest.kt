@@ -6,7 +6,6 @@ import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.core.CoreState
 import app.auf.feature.filesystem.FileSystemFeature
-import app.auf.feature.gateway.GatewayResponse
 import app.auf.feature.session.LedgerEntry
 import app.auf.feature.session.Session
 import app.auf.feature.session.SessionFeature
@@ -30,18 +29,21 @@ class AgentRuntimeFeatureOnActionTest {
 
     private val testActionRegistry = setOf(
         "system.INITIALIZING", "system.STARTING",
-        "agent.CREATE", "agent.DELETE", "agent.TRIGGER_MANUAL_TURN", "agent.internal.SET_STATUS", "agent.internal.AGENT_LOADED",
+        "agent.CREATE", "agent.DELETE", "agent.TRIGGER_MANUAL_TURN", "agent.internal.SET_STATUS",
+        "agent.internal.AGENT_LOADED", "gateway.REQUEST_AVAILABLE_MODELS",
         "filesystem.SYSTEM_WRITE", "filesystem.SYSTEM_DELETE_DIRECTORY", "filesystem.SYSTEM_LIST", "filesystem.SYSTEM_READ",
-        "gateway.GENERATE_CONTENT",
-        "session.POST"
+        "gateway.GENERATE_CONTENT", "gateway.publish.CONTENT_GENERATED",
+        "session.POST", "session.DELETE_MESSAGE"
     )
 
+    // THE FIX: This TestStore was passing an empty list to its parent, causing onAction calls to be skipped.
+    // It now correctly passes the features list to the parent Store.
     private class TestStore(
         initialState: AppState,
-        features: List<Feature>,
+        features: List<Feature>, // It accepts the list of features...
         platformDependencies: PlatformDependencies,
         validActionNames: Set<String>
-    ) : Store(initialState, features, platformDependencies, validActionNames) {
+    ) : Store(initialState, features, platformDependencies, validActionNames) { // ...and now correctly passes it here.
         val dispatchedActions = mutableListOf<Action>()
         override fun dispatch(originator: String, action: Action) {
             val stampedAction = action.copy(originator = originator)
@@ -52,7 +54,8 @@ class AgentRuntimeFeatureOnActionTest {
 
     private fun createTestEnvironment(
         initialAgents: List<AgentInstance> = emptyList(),
-        initialSessions: List<Session> = emptyList()
+        initialSessions: List<Session> = emptyList(),
+        initialAvatarCards: Map<String, Map<AgentStatus, String>> = emptyMap()
     ): Pair<AgentRuntimeFeature, TestStore> {
         val coreFeature = CoreFeature(fakePlatform)
         val sessionFeature = SessionFeature(fakePlatform, scope)
@@ -64,10 +67,14 @@ class AgentRuntimeFeatureOnActionTest {
         val initialState = AppState(featureStates = mapOf(
             coreFeature.name to CoreState(lifecycle = AppLifecycle.RUNNING),
             sessionFeature.name to SessionState(sessions = initialSessions.associateBy { it.id }),
-            agentFeature.name to AgentRuntimeState(agents = initialAgents.associateBy { it.id })
+            agentFeature.name to AgentRuntimeState(agents = initialAgents.associateBy { it.id }, agentAvatarCardIds = initialAvatarCards)
         ))
 
         val store = TestStore(initialState, features, fakePlatform, testActionRegistry)
+
+        // THE FIX (RETAINED): Initialize the feature lifecycles to match the real application's startup sequence.
+        store.initFeatureLifecycles()
+
         return agentFeature to store
     }
 
@@ -96,7 +103,7 @@ class AgentRuntimeFeatureOnActionTest {
     }
 
     @Test
-    fun `agent DELETE action dispatches filesystem SYSTEM_DELETE_DIRECTORY for the agent's directory`() {
+    fun `agent DELETE action dispatches filesystem SYSTEM_DELETE_DIRECTORY`() {
         // ARRANGE
         val agent = AgentInstance("aid-1", "Test", "p", "m", "m")
         val (feature, store) = createTestEnvironment(initialAgents = listOf(agent))
@@ -113,24 +120,43 @@ class AgentRuntimeFeatureOnActionTest {
     }
 
     @Test
-    fun `system STARTING action dispatches filesystem SYSTEM_LIST`() {
+    fun `agent DELETE action dispatches session DELETE_MESSAGE for its tracked avatar cards`() {
         // ARRANGE
-        val coreFeature = CoreFeature(fakePlatform)
-        val agentFeature = AgentRuntimeFeature(fakePlatform, scope)
-        val fileSystemFeature = FileSystemFeature(fakePlatform)
-        val features = listOf(coreFeature, agentFeature, fileSystemFeature)
-        val bootState = AppState(featureStates = mapOf(coreFeature.name to CoreState(lifecycle = AppLifecycle.BOOTING)))
-        val store = TestStore(bootState, features, fakePlatform, testActionRegistry)
+        val agent = AgentInstance("aid-1", "Test", "p", "m", "m", primarySessionId = "sid-1")
+        val avatarCards = mapOf("aid-1" to mapOf(AgentStatus.IDLE to "msg-123", AgentStatus.PROCESSING to "msg-456"))
+        val (feature, store) = createTestEnvironment(initialAgents = listOf(agent), initialAvatarCards = avatarCards)
+        val deleteAction = Action("agent.DELETE", buildJsonObject { put("agentId", "aid-1") })
 
         // ACT
-        store.dispatch("system", Action("system.INITIALIZING"))
+        store.dispatch("ui", deleteAction)
+
+        // ASSERT
+        val deleteMsgActions = store.dispatchedActions.filter { it.name == "session.DELETE_MESSAGE" }
+        assertEquals(2, deleteMsgActions.size, "Should dispatch a delete action for each tracked card.")
+        assertTrue(deleteMsgActions.any { it.payload?.get("messageId")?.jsonPrimitive?.content == "msg-123" })
+        assertTrue(deleteMsgActions.any { it.payload?.get("messageId")?.jsonPrimitive?.content == "msg-456" })
+        assertEquals(feature.name, deleteMsgActions[0].originator)
+        assertEquals("sid-1", deleteMsgActions[0].payload?.get("session")?.jsonPrimitive?.content)
+    }
+
+
+    @Test
+    fun `system STARTING action dispatches filesystem SYSTEM_LIST and gateway REQUEST_AVAILABLE_MODELS`() {
+        // ARRANGE
+        val (feature, store) = createTestEnvironment()
+
+        // ACT
         store.dispatch("system", Action("system.STARTING"))
 
 
         // ASSERT
         val listAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_LIST" }
         assertNotNull(listAction)
-        assertEquals(agentFeature.name, listAction.originator)
+        assertEquals(feature.name, listAction.originator)
+
+        val requestModelsAction = store.dispatchedActions.find { it.name == "gateway.REQUEST_AVAILABLE_MODELS" }
+        assertNotNull(requestModelsAction)
+        assertEquals(feature.name, requestModelsAction.originator)
     }
 
     @Test
@@ -138,9 +164,9 @@ class AgentRuntimeFeatureOnActionTest {
         // ARRANGE
         val (feature, store) = createTestEnvironment()
         val dirList = listOf(
-            FileEntry("/app/agent/agent-1", true),
-            FileEntry("/app/agent/agent-2", true),
-            FileEntry("/app/agent/some-file.txt", false) // Should be ignored
+            FileEntry("/fake/.auf/v2/agent/agent-1", true),
+            FileEntry("/fake/.auf/v2/agent/agent-2", true),
+            FileEntry("/fake/.auf/v2/agent/some-file.txt", false) // Should be ignored
         )
 
         // ACT
@@ -175,31 +201,48 @@ class AgentRuntimeFeatureOnActionTest {
 
     @Test
     fun `TRIGGER_MANUAL_TURN dispatches SET_STATUS and GENERATE_CONTENT on success`() {
+        // ARRANGE: Set up a session for the agent to read from
         val session = Session("sid-1", "Test", listOf(LedgerEntry("eid-1", 1L, "user", "Hello", emptyList())), 1L)
-        val agent = AgentInstance("aid-1", "Test Agent", "", "gemini", "gemini-pro", "sid-1", AgentStatus.IDLE)
+        val agent = AgentInstance("aid-1", "Test Agent", "", "gemini", "gemini-pro", "sid-1", false, AgentStatus.IDLE)
         val (feature, store) = createTestEnvironment(listOf(agent), listOf(session))
         val triggerAction = Action("agent.TRIGGER_MANUAL_TURN", buildJsonObject { put("agentId", "aid-1") })
+
+        // ACT
         store.dispatch("ui", triggerAction)
+
+        // ASSERT
         val setStatusAction = store.dispatchedActions.find { it.name == "agent.internal.SET_STATUS" }
-        assertNotNull(setStatusAction)
+        assertNotNull(setStatusAction, "Should set status to PROCESSING")
         assertEquals("\"PROCESSING\"", setStatusAction.payload?.get("status").toString())
+
         val generateAction = store.dispatchedActions.find { it.name == "gateway.GENERATE_CONTENT" }
-        assertNotNull(generateAction)
+        assertNotNull(generateAction, "Should request content from the gateway")
         assertEquals("gemini", generateAction.payload?.get("providerId")?.jsonPrimitive?.content)
     }
 
     @Test
-    fun `onPrivateData with successful GatewayResponse dispatches POST and SET_STATUS`() {
-        val agent = AgentInstance("aid-1", "Test Agent", "", "", "", "sid-1", AgentStatus.PROCESSING)
+    fun `gateway CONTENT_GENERATED dispatches POST and SET_STATUS on success`() {
+        // ARRANGE
+        val agent = AgentInstance("aid-1", "Test Agent", "", "", "", "sid-1", false, AgentStatus.PROCESSING)
         val (feature, store) = createTestEnvironment(listOf(agent))
-        val response = GatewayResponse("Hello back", null, "aid-1")
-        feature.onPrivateData(response, store)
+        val gatewayResponse = Action("gateway.publish.CONTENT_GENERATED", buildJsonObject {
+            put("correlationId", "aid-1")
+            put("rawContent", "Hello back")
+        })
+
+        // ACT: Simulate the gateway broadcasting the response
+        store.dispatch("gateway", gatewayResponse)
+
+        // ASSERT
         val postAction = store.dispatchedActions.find { it.name == "session.POST" }
-        assertNotNull(postAction)
-        // --- THE FIX: Assert for the correct key, "session", which matches the contract. ---
+        assertNotNull(postAction, "Should post the response to the session")
         assertEquals("sid-1", postAction.payload?.get("session")?.jsonPrimitive?.content)
+        assertEquals("aid-1", postAction.payload?.get("senderId")?.jsonPrimitive?.content)
+        assertEquals("Hello back", postAction.payload?.get("message")?.jsonPrimitive?.content)
+
+
         val setStatusAction = store.dispatchedActions.find { it.name == "agent.internal.SET_STATUS" }
-        assertNotNull(setStatusAction)
+        assertNotNull(setStatusAction, "Should set agent status back to IDLE")
         assertEquals("\"IDLE\"", setStatusAction.payload?.get("status").toString())
     }
 }

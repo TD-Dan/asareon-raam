@@ -16,7 +16,7 @@ class FakeStore(
     platformDependencies: PlatformDependencies,
     // THE FIX: Added the required parameter to match the parent Store's constructor.
     // We provide a default for convenience in simple UI tests that don't care about the registry.
-    private val validActionNames: Set<String> = emptySet()
+    validActionNames: Set<String> = emptySet()
 ) : Store(initialState, emptyList(), platformDependencies, validActionNames) {
     val dispatchedActions = mutableListOf<Action>()
     private val _fakeState = MutableStateFlow(initialState)
