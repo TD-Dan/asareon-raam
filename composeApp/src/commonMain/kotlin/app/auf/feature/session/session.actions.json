@@ -67,6 +67,10 @@
           "message":{
             "type":"string"
           },
+          "messageId":{
+            "type":"string",
+            "description":"An optional, pre-generated ID for the message. If not provided, one will be created."
+          },
           "metadata":{
             "type":"object",
             "description":"An optional, generic metadata object."

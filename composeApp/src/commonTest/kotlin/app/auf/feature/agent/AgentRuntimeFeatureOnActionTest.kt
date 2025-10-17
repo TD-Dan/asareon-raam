@@ -187,6 +187,7 @@ class AgentRuntimeFeatureOnActionTest {
         val agent = AgentInstance("aid-1", "Test Agent", "", "gemini", "gemini-pro", "sid-1", false, AgentStatus.IDLE)
         val (feature, store) = createTestEnvironment(listOf(agent), listOf(session))
         val triggerAction = Action("agent.TRIGGER_MANUAL_TURN", buildJsonObject { put("agentId", "aid-1") })
+        fakePlatform.uuidCounter = 98 // Set a known starting point for UUID generation
 
         // ACT
         store.dispatch("ui", triggerAction)
@@ -202,6 +203,8 @@ class AgentRuntimeFeatureOnActionTest {
         assertEquals(true, postAction.payload?.get("metadata")?.jsonObject?.get("render_as_partial")?.jsonPrimitive?.boolean)
         assertEquals(true, postAction.payload?.get("metadata")?.jsonObject?.get("is_transient")?.jsonPrimitive?.boolean, "Avatar card should be transient")
         assertEquals("PROCESSING", postAction.payload?.get("metadata")?.jsonObject?.get("agentStatus")?.jsonPrimitive?.content)
+        assertEquals("fake-uuid-99", postAction.payload?.get("messageId")?.jsonPrimitive?.content, "Should include pre-generated messageId")
+
 
         val generateAction = store.dispatchedActions.find { it.name == "gateway.GENERATE_CONTENT" }
         assertNotNull(generateAction, "Should request content from the gateway")
@@ -218,7 +221,8 @@ class AgentRuntimeFeatureOnActionTest {
         })
 
         // ACT
-        store.dispatch("gateway", gatewayResponse)
+        // THE FIX: The response now comes through onPrivateData, not onAction
+        feature.onPrivateData(gatewayResponse.payload!!, store)
 
         // ASSERT
         val deleteAction = store.dispatchedActions.find { it.name == "session.DELETE_MESSAGE" }

@@ -13,8 +13,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
-import kotlin.collections.contains
-import kotlin.collections.plus
 
 class SessionFeature(
     private val platformDependencies: PlatformDependencies,
@@ -26,7 +24,7 @@ class SessionFeature(
     @Serializable private data class CreatePayload(val name: String? = null)
     @Serializable private data class UpdateConfigPayload(val session: String, val name: String)
     @Serializable private data class SessionTargetPayload(val session: String)
-    @Serializable private data class PostPayload(val session: String, val senderId: String, val message: String? = null, val metadata: JsonObject? = null)
+    @Serializable private data class PostPayload(val session: String, val senderId: String, val message: String? = null, val messageId: String? = null, val metadata: JsonObject? = null)
     @Serializable private data class UpdateMessagePayload(val session: String, val messageId: String, val newContent: String, val newMetadata: JsonObject? = null)
     @Serializable private data class MessageTargetPayload(val session: String, val messageId: String)
     @Serializable private data class SetEditingSessionPayload(val sessionId: String?)
@@ -34,7 +32,7 @@ class SessionFeature(
     @Serializable private data class ToggleMessageUiPayload(val sessionId: String, val messageId: String)
     @Serializable internal data class InternalSessionLoadedPayload(val sessions: Map<String, Session>)
     @Serializable private data class AgentNamesUpdatedPayload(val names: Map<String, String>)
-    @Serializable private data class AgentDeletedPayload(val agentId: String) // THE FIX: New payload for agent cleanup.
+    @Serializable private data class AgentDeletedPayload(val agentId: String)
 
     private val blockParser = BlockSeparatingParser()
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
@@ -62,7 +60,7 @@ class SessionFeature(
                 sessionState.activeSessionId?.let { persistSession(it, store) }
                 broadcastSessionNames(sessionState, store)
             }
-            "session.UPDATE_CONFIG" -> { // THE FIX: This action now correctly persists its changes.
+            "session.UPDATE_CONFIG" -> {
                 val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull ?: return
                 val sessionId = resolveSessionId(identifier, sessionState)
@@ -131,7 +129,7 @@ class SessionFeature(
         val payload = action.payload
         when (action.name) {
             "agent.publish.AGENT_NAMES_UPDATED" -> newFeatureState = currentFeatureState.copy(agentNames = payload?.let { json.decodeFromJsonElement<AgentNamesUpdatedPayload>(it) }?.names ?: emptyMap())
-            "agent.publish.AGENT_DELETED" -> { // THE FIX: Clean up agent name cache on deletion.
+            "agent.publish.AGENT_DELETED" -> {
                 val agentId = payload?.let { json.decodeFromJsonElement<AgentDeletedPayload>(it) }?.agentId ?: return state
                 newFeatureState = currentFeatureState.copy(agentNames = currentFeatureState.agentNames - agentId)
             }
@@ -152,7 +150,8 @@ class SessionFeature(
                 val sessionId = resolveSessionId(decoded.session, currentFeatureState) ?: return state
                 val targetSession = currentFeatureState.sessions[sessionId] ?: return state
                 val newEntry = LedgerEntry(
-                    id = platformDependencies.generateUUID(),
+                    // THE FIX: Use the provided ID if it exists, otherwise generate one.
+                    id = decoded.messageId ?: platformDependencies.generateUUID(),
                     timestamp = platformDependencies.getSystemTimeMillis(),
                     senderId = decoded.senderId,
                     rawContent = decoded.message,

@@ -292,9 +292,7 @@ class AgentRuntimeFeature(
                 store.dispatch(this.name, Action("filesystem.SYSTEM_READ", buildJsonObject { put("subpath", configPath) }))
             }
             is JsonObject -> {
-                // Differentiate between an agent config and a gateway response.
                 if (data.containsKey("correlationId")) {
-                    // This is a Gateway Response
                     val decoded = try { json.decodeFromJsonElement(GatewayResponsePayload.serializer(), data) } catch (e: Exception) {
                         platformDependencies.log(LogLevel.ERROR, name, "Failed to parse private GatewayResponsePayload: ${e.message}")
                         null
@@ -322,7 +320,6 @@ class AgentRuntimeFeature(
                         setAgentStatus(agentId, AgentStatus.IDLE, store)
                     }
                 } else if (data.containsKey("content")) {
-                    // This is an Agent Config from the FileSystemFeature
                     try {
                         val agent = json.decodeFromString<AgentInstance>(data["content"]?.jsonPrimitive?.content ?: "")
                         store.dispatch(this.name, Action("agent.internal.AGENT_LOADED", Json.encodeToJsonElement(agent) as JsonObject))
@@ -343,6 +340,8 @@ class AgentRuntimeFeature(
             put("agentId", agentId); put("status", status.name); error?.let { put("error", it) }
         }))
 
+        // THE FIX: Generate the ID here and pass it in the action payload.
+        val messageId = platformDependencies.generateUUID()
         val metadata = buildJsonObject {
             put("render_as_partial", true)
             put("is_transient", true)
@@ -353,6 +352,7 @@ class AgentRuntimeFeature(
         store.dispatch(this.name, Action("session.POST", buildJsonObject {
             put("session", sessionId)
             put("senderId", agentId)
+            put("messageId", messageId) // Pass the pre-generated ID
             put("metadata", metadata)
         }))
     }

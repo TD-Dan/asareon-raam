@@ -25,7 +25,7 @@ open class FakePlatformDependencies(
     val directories = mutableSetOf<String>()
     var clipboardContent: String? = null
     var currentTime = 1_000_000_000_000L
-    private var uuidCounter = 0
+    var uuidCounter = 0
     val capturedLogs = mutableListOf<CapturedLog>() // This property is now correctly defined.
 
     override val pathSeparator: Char = '/'
