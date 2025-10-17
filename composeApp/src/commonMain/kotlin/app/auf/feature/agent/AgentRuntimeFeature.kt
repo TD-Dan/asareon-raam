@@ -26,7 +26,7 @@ class AgentRuntimeFeature(
     override val name: String = "agent"
 
     // --- Private, serializable data classes for decoding action payloads safely. ---
-    @Serializable private data class GatewayModelsPayload(val models: Map<String, List<String>>)
+    // THE FIX: Removed the incorrect GatewayModelsPayload data class.
     @Serializable private data class SessionNamesPayload(val names: Map<String, String>)
     @Serializable private data class GatewayResponsePayload(val correlationId: String, val rawContent: String? = null, val errorMessage: String? = null)
     @Serializable private data class GatewayMessage(val role: String, val content: String)
@@ -55,15 +55,14 @@ class AgentRuntimeFeature(
             "session.POST", "session.DELETE_MESSAGE" -> handleSessionEvents(action, currentFeatureState)?.let { newFeatureState = it }
 
             "gateway.publish.AVAILABLE_MODELS_UPDATED" -> {
-                val decoded = try {
-                    payload?.let { json.decodeFromJsonElement(GatewayModelsPayload.serializer(), it) }
+                val decodedModels: Map<String, List<String>>? = try {
+                    payload?.let { json.decodeFromJsonElement(it) }
                 } catch (e: Exception) {
-                    // THE FIX: Log the error instead of failing silently.
                     platformDependencies.log(LogLevel.ERROR, name, "Failed to parse AVAILABLE_MODELS_UPDATED payload: ${e.message}. Payload was: $payload")
                     null
                 }
-                if (decoded != null) {
-                    newFeatureState = currentFeatureState.copy(availableModels = decoded.models)
+                if (decodedModels != null) {
+                    newFeatureState = currentFeatureState.copy(availableModels = decodedModels)
                 }
             }
             "session.publish.SESSION_NAMES_UPDATED" -> {
