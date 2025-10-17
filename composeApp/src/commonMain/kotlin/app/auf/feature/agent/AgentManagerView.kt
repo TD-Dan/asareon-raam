@@ -1,4 +1,3 @@
-
 package app.auf.feature.agent
 
 import androidx.compose.foundation.layout.*
@@ -280,10 +279,11 @@ private fun ProviderSelector(agent: AgentInstance, agentState: AgentRuntimeState
 
     ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
         OutlinedTextField(
-            value = agent.modelProvider,
+            value = if (availableProviders.isEmpty()) "No providers found" else agent.modelProvider,
             onValueChange = {}, readOnly = true, label = { Text("Provider") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
-            modifier = Modifier.menuAnchor().fillMaxWidth()
+            modifier = Modifier.menuAnchor().fillMaxWidth(),
+            enabled = availableProviders.isNotEmpty()
         )
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             availableProviders.forEach { providerId ->
@@ -310,7 +310,7 @@ private fun ModelSelector(agent: AgentInstance, agentState: AgentRuntimeState, s
 
     ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
         OutlinedTextField(
-            value = agent.modelName,
+            value = if (availableModels.isEmpty() && agent.modelProvider.isNotBlank()) "No models found" else agent.modelName,
             onValueChange = {}, readOnly = true, label = { Text("Model") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth(),

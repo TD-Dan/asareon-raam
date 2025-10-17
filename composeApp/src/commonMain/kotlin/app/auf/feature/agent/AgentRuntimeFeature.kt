@@ -55,8 +55,16 @@ class AgentRuntimeFeature(
             "session.POST", "session.DELETE_MESSAGE" -> handleSessionEvents(action, currentFeatureState)?.let { newFeatureState = it }
 
             "gateway.publish.AVAILABLE_MODELS_UPDATED" -> {
-                val decoded = try { payload?.let { json.decodeFromJsonElement(GatewayModelsPayload.serializer(), it) } } catch(e: Exception) { null } ?: return state
-                newFeatureState = currentFeatureState.copy(availableModels = decoded.models)
+                val decoded = try {
+                    payload?.let { json.decodeFromJsonElement(GatewayModelsPayload.serializer(), it) }
+                } catch (e: Exception) {
+                    // THE FIX: Log the error instead of failing silently.
+                    platformDependencies.log(LogLevel.ERROR, name, "Failed to parse AVAILABLE_MODELS_UPDATED payload: ${e.message}. Payload was: $payload")
+                    null
+                }
+                if (decoded != null) {
+                    newFeatureState = currentFeatureState.copy(availableModels = decoded.models)
+                }
             }
             "session.publish.SESSION_NAMES_UPDATED" -> {
                 val decoded = try { payload?.let { json.decodeFromJsonElement(SessionNamesPayload.serializer(), it) } } catch(e: Exception) { null } ?: return state
@@ -345,7 +353,7 @@ class AgentRuntimeFeature(
         // Now, manage the public ledger entry.
         val metadata = buildJsonObject {
             put("render_as_partial", true)
-            put("is_transient", true) // THE FIX: Mark all status avatar cards as transient.
+            put("is_transient", true)
             put("agentStatus", status.name)
             error?.let { put("errorMessage", it) }
         }
