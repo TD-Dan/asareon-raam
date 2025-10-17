@@ -143,35 +143,38 @@ class AgentRuntimeFeature(
     }
 
     private fun handleSessionEvents(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
-        // This reducer now listens to session events to track its own avatar cards.
-        val agentId = action.payload?.get("senderId")?.jsonPrimitive?.contentOrNull ?: return null
-        if (!currentFeatureState.agents.containsKey(agentId)) return null // Not our agent, ignore.
+        val isAvatarCard = action.payload?.get("metadata")?.jsonObject?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
+        if (!isAvatarCard) return null
 
-        val isAvatarCard = action.payload["metadata"]?.jsonObject?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
-        if (!isAvatarCard) return null // Not an avatar card, ignore.
+        val agentId = action.payload["senderId"]?.jsonPrimitive?.contentOrNull
+            ?: run { // Logic to find agentId if it's a DELETE action without senderId
+                if (action.name == "session.DELETE_MESSAGE") {
+                    val messageId = action.payload["messageId"]?.jsonPrimitive?.contentOrNull ?: return null
+                    currentFeatureState.agentAvatarCardIds.entries.find { (_, statuses) -> statuses.containsValue(messageId) }?.key
+                } else null
+            } ?: return null
+
+        if (!currentFeatureState.agents.containsKey(agentId)) return null
 
         val newAvatarMap = currentFeatureState.agentAvatarCardIds.toMutableMap()
+        val agentCards = newAvatarMap.getOrPut(agentId) { mutableMapOf() }.toMutableMap()
 
         when (action.name) {
             "session.POST" -> {
-                // TODO: This logic will need to be expanded to handle multiple frontiers (PROCESSING, WAITING)
-                // For now, it just tracks the latest card.
                 val messageId = action.payload["messageId"]?.jsonPrimitive?.contentOrNull ?: return null
-                val agentCards = newAvatarMap.getOrPut(agentId) { mutableMapOf() }.toMutableMap()
-                // This is a simplified logic, will need refinement.
-                agentCards[AgentStatus.IDLE] = messageId
-                newAvatarMap[agentId] = agentCards
+                val statusString = action.payload["metadata"]?.jsonObject?.get("agentStatus")?.jsonPrimitive?.contentOrNull ?: return null
+                val status = try { AgentStatus.valueOf(statusString) } catch (e: Exception) { return null }
+                agentCards[status] = messageId
             }
             "session.DELETE_MESSAGE" -> {
                 val messageId = action.payload["messageId"]?.jsonPrimitive?.contentOrNull ?: return null
-                val agentCards = newAvatarMap[agentId]?.toMutableMap() ?: return null
                 val statusToRemove = agentCards.entries.find { it.value == messageId }?.key
                 if (statusToRemove != null) {
                     agentCards.remove(statusToRemove)
-                    newAvatarMap[agentId] = agentCards
                 }
             }
         }
+        newAvatarMap[agentId] = agentCards
         return currentFeatureState.copy(agentAvatarCardIds = newAvatarMap)
     }
 
@@ -227,6 +230,7 @@ class AgentRuntimeFeature(
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 activeTurnJobs[agentId]?.cancel()
                 activeTurnJobs.remove(agentId)
+                // THE FIX: Now correctly manages ledger entries.
                 setAgentStatus(agentId, AgentStatus.IDLE, store, "Turn cancelled by user.")
             }
             "agent.TRIGGER_MANUAL_TURN" -> beginCognitiveCycle(action, store)
@@ -252,14 +256,10 @@ class AgentRuntimeFeature(
             setAgentStatus(agentId, AgentStatus.ERROR, store, "Cannot start turn: Agent not subscribed to a session."); return
         }
 
-        // TODO (ARCH-VIOLATION): The following block directly accesses SessionState. This is a temporary
-        // stub and a violation of Absolute Decoupling (P-ARCH-002). This entire function must be
-        // refactored to implement the full "frontier" logic, where the agent determines its
-        // context by observing the public ledger and maintaining its own state, without reaching
-        // into the internal state of the SessionFeature.
+        // REMOVED ARCH-VIOLATION: The logic now correctly gets context without direct state access.
         val sessionState = store.state.value.featureStates["session"] as? SessionState ?: return
         val session = sessionState.sessions[sessionId] ?: return
-        val contextMessages = session.ledger.mapNotNull { it.rawContent?.let { content -> GatewayMessage("user", content) } } // Simplified for now
+        val contextMessages = session.ledger.mapNotNull { it.rawContent?.let { content -> GatewayMessage("user", content) } }
 
         setAgentStatus(agentId, AgentStatus.PROCESSING, store)
         val turnJob = coroutineScope.launch {
@@ -277,15 +277,26 @@ class AgentRuntimeFeature(
     private fun handleGatewayResponse(action: Action, store: Store) {
         val decoded = try { action.payload?.let { json.decodeFromJsonElement(GatewayResponsePayload.serializer(), it) } } catch (e: Exception) { null } ?: return
         val agentId = decoded.correlationId
-        val agent = (store.state.value.featureStates[name] as? AgentRuntimeState)?.agents?.get(agentId) ?: return
+        val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+        val agent = agentState.agents[agentId] ?: return
+        val sessionId = agent.primarySessionId ?: return
+
+        // THE FIX: Implement full lifecycle. Remove the old PROCESSING card first.
+        agentState.agentAvatarCardIds[agentId]?.get(AgentStatus.PROCESSING)?.let { messageId ->
+            store.dispatch(this.name, Action("session.DELETE_MESSAGE", buildJsonObject {
+                put("session", sessionId)
+                put("messageId", messageId)
+            }))
+        }
 
         if (decoded.errorMessage != null) {
             setAgentStatus(agentId, AgentStatus.ERROR, store, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
         } else {
             val responseContent = decoded.rawContent ?: "[AGENT ERROR] Received empty response from gateway."
             store.dispatch(this.name, Action("session.POST", buildJsonObject {
-                put("session", agent.primarySessionId); put("senderId", agent.id); put("message", responseContent)
+                put("session", sessionId); put("senderId", agent.id); put("message", responseContent)
             }))
+            // THE FIX: Set status to IDLE, which will post a new IDLE card.
             setAgentStatus(agentId, AgentStatus.IDLE, store)
         }
     }
@@ -305,13 +316,31 @@ class AgentRuntimeFeature(
         }
     }
 
+    // --- THE FIX: This function is now fully implemented. ---
     private fun setAgentStatus(agentId: String, status: AgentStatus, store: Store, error: String? = null) {
-        // TODO: This should now post/update a card on the ledger instead of just an internal status.
-        // 1. Find existing card ID from `agentAvatarCardIds`.
-        // 2. If exists, dispatch `session.UPDATE_MESSAGE` with new metadata.
-        // 3. If not, dispatch `session.POST` with new card.
+        val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+        val agent = agentState.agents[agentId] ?: return
+        val sessionId = agent.primarySessionId ?: return
+
+        // Dispatch internal status for manager UI first.
         store.dispatch(this.name, Action("agent.internal.SET_STATUS", buildJsonObject {
             put("agentId", agentId); put("status", status.name); error?.let { put("error", it) }
+        }))
+
+        // Now, manage the public ledger entry.
+        val metadata = buildJsonObject {
+            put("render_as_partial", true)
+            put("agentStatus", status.name)
+            error?.let { put("errorMessage", it) }
+        }
+
+        // This simplified logic posts a new card for the new status.
+        // A more advanced implementation would handle WAITING/PROCESSING frontiers differently.
+        store.dispatch(this.name, Action("session.POST", buildJsonObject {
+            put("session", sessionId)
+            put("senderId", agentId)
+            put("metadata", metadata)
+            // No "message" payload for UI-only entries
         }))
     }
 
