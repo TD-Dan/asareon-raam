@@ -26,7 +26,6 @@ class AgentRuntimeFeature(
     override val name: String = "agent"
 
     // --- Private, serializable data classes for decoding action payloads safely. ---
-    // THE FIX: Removed the incorrect GatewayModelsPayload data class.
     @Serializable private data class SessionNamesPayload(val names: Map<String, String>)
     @Serializable private data class GatewayResponsePayload(val correlationId: String, val rawContent: String? = null, val errorMessage: String? = null)
     @Serializable private data class GatewayMessage(val role: String, val content: String)
@@ -207,7 +206,6 @@ class AgentRuntimeFeature(
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val agent = agentState.agents[agentId] ?: return
 
-                // THE FIX: Agent is now responsible for cleaning up its own ledger entries.
                 val sessionToClean = agent.primarySessionId
                 val cardsToDelete = agentState.agentAvatarCardIds[agentId]
                 if (sessionToClean != null && cardsToDelete != null) {
@@ -223,12 +221,9 @@ class AgentRuntimeFeature(
                 broadcastAgentNames(store)
             }
             "session.DELETE" -> {
-                // When a session is deleted, any agent subscribed to it must be updated on disk.
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val deletedSessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return
                 agentState.agents.values.filter { it.primarySessionId == deletedSessionId }.forEach { agentToUpdate ->
-                    // The reducer has already set primarySessionId to null in the state.
-                    // We just need to persist this change.
                     val updatedAgent = agentState.agents[agentToUpdate.id] ?: agentToUpdate
                     store.dispatch(this.name, Action("filesystem.SYSTEM_WRITE", buildJsonObject {
                         put("subpath", "${updatedAgent.id}/$AGENT_CONFIG_FILENAME")
@@ -240,7 +235,6 @@ class AgentRuntimeFeature(
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 activeTurnJobs[agentId]?.cancel()
                 activeTurnJobs.remove(agentId)
-                // THE FIX: Correctly clean up the PROCESSING card before setting status to IDLE.
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val agent = agentState.agents[agentId] ?: return
                 val sessionId = agent.primarySessionId ?: return
@@ -253,7 +247,6 @@ class AgentRuntimeFeature(
                 setAgentStatus(agentId, AgentStatus.IDLE, store, "Turn cancelled by user.")
             }
             "agent.TRIGGER_MANUAL_TURN" -> beginCognitiveCycle(action, store)
-            "gateway.publish.CONTENT_GENERATED" -> handleGatewayResponse(action, store)
         }
     }
 
@@ -266,8 +259,6 @@ class AgentRuntimeFeature(
     }
 
     private fun beginCognitiveCycle(action: Action, store: Store) {
-        // This is a placeholder for the complex frontier logic.
-        // For now, it will simply set status to PROCESSING and call the gateway.
         val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[agentId] ?: return
@@ -279,7 +270,6 @@ class AgentRuntimeFeature(
 
         val sessionState = store.state.value.featureStates["session"] as? SessionState ?: return
         val session = sessionState.sessions[sessionId] ?: return
-        // TODO: This context gathering is simplistic and needs to use the frontier logic.
         val contextMessages = session.ledger.mapNotNull { it.rawContent?.let { content -> GatewayMessage("user", content) } }
 
         setAgentStatus(agentId, AgentStatus.PROCESSING, store)
@@ -295,61 +285,64 @@ class AgentRuntimeFeature(
         turnJob.invokeOnCompletion { activeTurnJobs.remove(agentId) }
     }
 
-    private fun handleGatewayResponse(action: Action, store: Store) {
-        val decoded = try { action.payload?.let { json.decodeFromJsonElement(GatewayResponsePayload.serializer(), it) } } catch (e: Exception) { null } ?: return
-        val agentId = decoded.correlationId
-        val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
-        val agent = agentState.agents[agentId] ?: return
-        val sessionId = agent.primarySessionId ?: return
-
-        // First, clean up the 'PROCESSING' avatar card from the ledger.
-        agentState.agentAvatarCardIds[agentId]?.get(AgentStatus.PROCESSING)?.let { messageId ->
-            store.dispatch(this.name, Action("session.DELETE_MESSAGE", buildJsonObject {
-                put("session", sessionId)
-                put("messageId", messageId)
-            }))
-        }
-
-        if (decoded.errorMessage != null) {
-            setAgentStatus(agentId, AgentStatus.ERROR, store, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
-        } else {
-            val responseContent = decoded.rawContent ?: "[AGENT ERROR] Received empty response from gateway."
-            store.dispatch(this.name, Action("session.POST", buildJsonObject {
-                put("session", sessionId); put("senderId", agent.id); put("message", responseContent)
-            }))
-            // Finally, set the status back to IDLE, which will post a new IDLE card.
-            setAgentStatus(agentId, AgentStatus.IDLE, store)
-        }
-    }
-
     override fun onPrivateData(data: Any, store: Store) {
         when (data) {
             is List<*> -> data.filterIsInstance<FileEntry>().filter { it.isDirectory }.forEach { dirEntry ->
                 val configPath = "${platformDependencies.getFileName(dirEntry.path)}/$AGENT_CONFIG_FILENAME"
                 store.dispatch(this.name, Action("filesystem.SYSTEM_READ", buildJsonObject { put("subpath", configPath) }))
             }
-            is JsonObject -> try {
-                val agent = json.decodeFromString<AgentInstance>(data["content"]?.jsonPrimitive?.content ?: "")
-                store.dispatch(this.name, Action("agent.internal.AGENT_LOADED", Json.encodeToJsonElement(agent) as JsonObject))
-            } catch (e: Exception) {
-                platformDependencies.log(LogLevel.ERROR, name, "Failed to parse agent config: ${data["subpath"]}. Error: ${e.message}")
+            is JsonObject -> {
+                // Differentiate between an agent config and a gateway response.
+                if (data.containsKey("correlationId")) {
+                    // This is a Gateway Response
+                    val decoded = try { json.decodeFromJsonElement(GatewayResponsePayload.serializer(), data) } catch (e: Exception) {
+                        platformDependencies.log(LogLevel.ERROR, name, "Failed to parse private GatewayResponsePayload: ${e.message}")
+                        null
+                    } ?: return
+
+                    val agentId = decoded.correlationId
+                    val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+                    val agent = agentState.agents[agentId] ?: return
+                    val sessionId = agent.primarySessionId ?: return
+
+                    agentState.agentAvatarCardIds[agentId]?.get(AgentStatus.PROCESSING)?.let { messageId ->
+                        store.dispatch(this.name, Action("session.DELETE_MESSAGE", buildJsonObject {
+                            put("session", sessionId)
+                            put("messageId", messageId)
+                        }))
+                    }
+
+                    if (decoded.errorMessage != null) {
+                        setAgentStatus(agentId, AgentStatus.ERROR, store, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
+                    } else {
+                        val responseContent = decoded.rawContent ?: "[AGENT ERROR] Received empty response from gateway."
+                        store.dispatch(this.name, Action("session.POST", buildJsonObject {
+                            put("session", sessionId); put("senderId", agent.id); put("message", responseContent)
+                        }))
+                        setAgentStatus(agentId, AgentStatus.IDLE, store)
+                    }
+                } else if (data.containsKey("content")) {
+                    // This is an Agent Config from the FileSystemFeature
+                    try {
+                        val agent = json.decodeFromString<AgentInstance>(data["content"]?.jsonPrimitive?.content ?: "")
+                        store.dispatch(this.name, Action("agent.internal.AGENT_LOADED", Json.encodeToJsonElement(agent) as JsonObject))
+                    } catch (e: Exception) {
+                        platformDependencies.log(LogLevel.ERROR, name, "Failed to parse agent config: ${data["subpath"]}. Error: ${e.message}")
+                    }
+                }
             }
         }
     }
 
     private fun setAgentStatus(agentId: String, status: AgentStatus, store: Store, error: String? = null) {
-        // TODO: This logic is still simplified. The full frontier logic will be implemented next.
-        // It needs to remove old cards before posting new ones to avoid duplicates.
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[agentId] ?: return
         val sessionId = agent.primarySessionId ?: return
 
-        // Dispatch internal status for manager UI first.
         store.dispatch(this.name, Action("agent.internal.SET_STATUS", buildJsonObject {
             put("agentId", agentId); put("status", status.name); error?.let { put("error", it) }
         }))
 
-        // Now, manage the public ledger entry.
         val metadata = buildJsonObject {
             put("render_as_partial", true)
             put("is_transient", true)
