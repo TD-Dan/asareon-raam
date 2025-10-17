@@ -2,6 +2,7 @@ package app.auf.feature.session
 
 import app.auf.core.FeatureState
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 
 /**
  * A sealed interface representing a single block of content within a message.
@@ -17,17 +18,20 @@ sealed interface ContentBlock {
 
 /**
  * Represents a single, immutable entry in a session's ledger.
- * System messages are denoted by an `agentId` with a 'system.*' prefix.
+ * This has been updated to support both traditional messages and UI-only entries via metadata.
  */
 @Serializable
 data class LedgerEntry(
     val id: String,
     val timestamp: Long,
-    val agentId: String,
-    /** The original, unmodified string content of the message. */
-    val rawContent: String,
+    /** RENAMED: The identifier for the originator of this entry (e.g., "user", or an agent's ID). */
+    val senderId: String,
+    /** The original, unmodified string content of the message. Can be null for UI-only entries. */
+    val rawContent: String? = null,
     /** The structured, parsed representation of the rawContent. */
-    val content: List<ContentBlock>
+    val content: List<ContentBlock> = emptyList(),
+    /** NEW: A generic metadata object for UI hints or embedding components from other features. */
+    val metadata: JsonObject? = null
 )
 
 /**
