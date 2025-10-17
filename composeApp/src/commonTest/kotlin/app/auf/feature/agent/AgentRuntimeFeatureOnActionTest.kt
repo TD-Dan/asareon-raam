@@ -29,7 +29,6 @@ class AgentRuntimeFeatureOnActionTest {
     private val fakePlatform = FakePlatformDependencies(testAppVersion)
     private val json = Json { ignoreUnknownKeys = true }
 
-    // THE FIX: Added the new and previously missing actions to the registry for tests.
     private val testActionRegistry = setOf(
         "system.INITIALIZING", "system.STARTING",
         "agent.CREATE", "agent.UPDATE_CONFIG", "agent.DELETE", "agent.TRIGGER_MANUAL_TURN", "agent.CANCEL_TURN",
@@ -40,8 +39,6 @@ class AgentRuntimeFeatureOnActionTest {
         "session.POST", "session.DELETE_MESSAGE"
     )
 
-    // THE FIX: This TestStore was passing an empty list to its parent, causing onAction calls to be skipped.
-    // It now correctly passes the feature list to the parent Store.
     private class TestStore(
         initialState: AppState,
         features: List<Feature>, // It accepts the list of features...
