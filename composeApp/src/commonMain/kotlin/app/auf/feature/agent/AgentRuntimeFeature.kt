@@ -345,6 +345,7 @@ class AgentRuntimeFeature(
         // Now, manage the public ledger entry.
         val metadata = buildJsonObject {
             put("render_as_partial", true)
+            put("is_transient", true) // THE FIX: Mark all status avatar cards as transient.
             put("agentStatus", status.name)
             error?.let { put("errorMessage", it) }
         }

@@ -119,6 +119,34 @@ class SessionFeatureOnActionTest {
     }
 
     @Test
+    fun `onAction for session POST with transient entry does not persist the entry`() {
+        // ARRANGE
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
+        val initialSession = Session(id = "sid-1", name = "Initial", ledger = emptyList(), createdAt = 1L)
+        val store = createStoreWithRunningLifecycle(fakePlatform, initialSession)
+        val persistentAction = Action("session.POST", buildJsonObject {
+            put("session", "sid-1"); put("senderId", "user"); put("message", "persistent")
+        })
+        val transientAction = Action("session.POST", buildJsonObject {
+            put("session", "sid-1"); put("senderId", "agent"); put("metadata", buildJsonObject { put("is_transient", true) })
+        })
+
+        // ACT
+        store.dispatch("session.ui", persistentAction) // First action will trigger a write
+        store.dispatch("session.ui", transientAction)  // Second action will trigger another write
+
+        // ASSERT
+        val writeActions = store.dispatchedActions.filter { it.name == "filesystem.SYSTEM_WRITE" }
+        assertEquals(2, writeActions.size, "Two post actions should trigger two write actions.")
+        val finalWriteContent = writeActions.last().payload?.get("content")?.jsonPrimitive?.content
+        assertNotNull(finalWriteContent, "Final write action should have content.")
+
+        val persistedSession = json.decodeFromString<Session>(finalWriteContent)
+        assertEquals(1, persistedSession.ledger.size, "Persisted ledger should only contain one entry.")
+        assertEquals("persistent", persistedSession.ledger.first().rawContent)
+    }
+
+    @Test
     fun `onAction for session DELETE dispatches filesystem SYSTEM_DELETE and updates names`() {
         // ARRANGE
         val fakePlatform = FakePlatformDependencies(testAppVersion)

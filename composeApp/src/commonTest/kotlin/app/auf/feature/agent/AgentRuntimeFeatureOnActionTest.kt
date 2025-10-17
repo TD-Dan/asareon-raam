@@ -200,6 +200,7 @@ class AgentRuntimeFeatureOnActionTest {
         assertNotNull(postAction, "Should post new avatar card to session")
         assertEquals("aid-1", postAction.payload?.get("senderId")?.jsonPrimitive?.content)
         assertEquals(true, postAction.payload?.get("metadata")?.jsonObject?.get("render_as_partial")?.jsonPrimitive?.boolean)
+        assertEquals(true, postAction.payload?.get("metadata")?.jsonObject?.get("is_transient")?.jsonPrimitive?.boolean, "Avatar card should be transient")
         assertEquals("PROCESSING", postAction.payload?.get("metadata")?.jsonObject?.get("agentStatus")?.jsonPrimitive?.content)
 
         val generateAction = store.dispatchedActions.find { it.name == "gateway.GENERATE_CONTENT" }
@@ -230,9 +231,12 @@ class AgentRuntimeFeatureOnActionTest {
         val responsePost = postActions.find { it.payload?.containsKey("message") == true }
         assertNotNull(responsePost, "Should post the agent's text response.")
         assertEquals("Hello back", responsePost.payload?.get("message")?.jsonPrimitive?.content)
+        assertNull(responsePost.payload?.get("metadata")?.jsonObject?.get("is_transient"), "Agent text response should NOT be transient")
+
 
         val idleCardPost = postActions.find { it.payload?.containsKey("message") == false }
         assertNotNull(idleCardPost, "Should post the new IDLE avatar card.")
         assertEquals("IDLE", idleCardPost.payload?.get("metadata")?.jsonObject?.get("agentStatus")?.jsonPrimitive?.content)
+        assertEquals(true, idleCardPost.payload?.get("metadata")?.jsonObject?.get("is_transient")?.jsonPrimitive?.boolean, "New IDLE card should be transient")
     }
 }

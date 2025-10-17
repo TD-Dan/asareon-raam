@@ -13,6 +13,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
+import kotlin.collections.contains
+import kotlin.collections.plus
 
 class SessionFeature(
     private val platformDependencies: PlatformDependencies,
@@ -93,8 +95,15 @@ class SessionFeature(
     private fun persistSession(sessionId: String, store: Store) {
         val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
         val sessionToSave = sessionState.sessions[sessionId] ?: return
+
+        val persistedSession = sessionToSave.copy(
+            ledger = sessionToSave.ledger.filterNot {
+                it.metadata?.get("is_transient")?.jsonPrimitive?.booleanOrNull ?: false
+            }
+        )
+
         store.dispatch(this.name, Action("filesystem.SYSTEM_WRITE", buildJsonObject {
-            put("subpath", "${sessionToSave.id}.json"); put("content", json.encodeToString(sessionToSave))
+            put("subpath", "${persistedSession.id}.json"); put("content", json.encodeToString(persistedSession))
         }))
     }
 
