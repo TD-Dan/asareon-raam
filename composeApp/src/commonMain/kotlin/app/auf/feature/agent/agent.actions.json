@@ -1,132 +1,209 @@
 {
-  "feature_name": "agent",
-  "summary": "Hosts and manages the lifecycle of autonomous, HKG-driven AI agents.",
-  "listensFor": [
+  "feature_name":"agent",
+  "summary":"Hosts and manages the lifecycle of autonomous, HKG-driven AI agents.",
+  "listensFor":[
     {
-      "action_name": "agent.CREATE",
-      "summary": "Creates a new agent instance with the specified configuration.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "name": { "type": "string" },
-          "personaId": { "type": "string", "description": "The ID of the AI_Persona_Root holon file. (For future use)" },
-          "modelProvider": { "type": "string" },
-          "modelName": { "type": "string" },
-          "primarySessionId": { "type": ["string", "null"], "description": "The session this agent will post its responses to." }
+      "action_name":"agent.CREATE",
+      "summary":"Creates a new agent instance with the specified configuration.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "name":{
+            "type":"string"
+          },
+          "personaId":{
+            "type":"string",
+            "description":"The ID of the AI_Persona_Root holon file."
+          },
+          "modelProvider":{
+            "type":"string"
+          },
+          "modelName":{
+            "type":"string"
+          },
+          "primarySessionId":{
+            "type":[
+              "string",
+              "null"
+            ],
+            "description":"The session this agent will post its responses to."
+          },
+          "automaticMode":{
+            "type":"boolean",
+            "default":false
+          }
         },
-        "required": ["name", "personaId", "modelProvider", "modelName"]
+        "required":[
+          "name"
+        ]
       }
     },
     {
-      "action_name": "agent.UPDATE_CONFIG",
-      "summary": "Updates the configuration of an existing agent instance. All payload properties are optional.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "agentId": { "type": "string" },
-          "name": { "type": "string" },
-          "personaId": { "type": "string" },
-          "modelProvider": { "type": "string" },
-          "modelName": { "type": "string" },
-          "primarySessionId": { "type": ["string", "null"] }
+      "action_name":"agent.UPDATE_CONFIG",
+      "summary":"Updates the configuration of an existing agent instance. All payload properties are optional.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "agentId":{
+            "type":"string"
+          },
+          "name":{
+            "type":"string"
+          },
+          "personaId":{
+            "type":"string"
+          },
+          "modelProvider":{
+            "type":"string"
+          },
+          "modelName":{
+            "type":"string"
+          },
+          "primarySessionId":{
+            "type":[
+              "string",
+              "null"
+            ]
+          },
+          "automaticMode":{
+            "type":"boolean"
+          }
         },
-        "required": ["agentId"]
+        "required":[
+          "agentId"
+        ]
       }
     },
     {
-      "action_name": "agent.DELETE",
-      "summary": "Deletes an agent instance.",
-      "payload_schema": {
-        "type": "object",
-        "properties": { "agentId": { "type": "string" } },
-        "required": ["agentId"]
-      }
-    },
-    {
-      "action_name": "agent.TRIGGER_MANUAL_TURN",
-      "summary": "Manually triggers a single cognitive cycle for a specific agent.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "agentId": { "type": "string" },
-          "lastMessage": { "type": "string", "description": "The content of the last message in the session, used as context." }
+      "action_name":"agent.DELETE",
+      "summary":"Deletes an agent instance.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "agentId":{
+            "type":"string"
+          }
         },
-        "required": ["agentId", "lastMessage"]
+        "required":[
+          "agentId"
+        ]
       }
     },
     {
-      "action_name": "agent.CANCEL_TURN",
-      "summary": "Cancels an agent's currently processing turn.",
-      "payload_schema": {
-        "type": "object",
-        "properties": { "agentId": { "type": "string" } },
-        "required": ["agentId"]
+      "action_name":"agent.TOGGLE_AUTOMATIC_MODE",
+      "summary":"Toggles the automatic processing mode for a specific agent.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "agentId":{
+            "type":"string"
+          }
+        },
+        "required":[
+          "agentId"
+        ]
       }
     },
     {
-      "action_name": "agent.SET_EDITING",
-      "summary": "Sets which agent is currently being edited in the UI.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "agentId": { "type": ["string", "null"] }
+      "action_name":"agent.TRIGGER_MANUAL_TURN",
+      "summary":"Manually triggers a single cognitive cycle for a specific agent. The agent will determine its own context from the ledger.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "agentId":{
+            "type":"string"
+          }
+        },
+        "required":[
+          "agentId"
+        ]
+      }
+    },
+    {
+      "action_name":"agent.CANCEL_TURN",
+      "summary":"Cancels an agent's currently processing turn.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "agentId":{
+            "type":"string"
+          }
+        },
+        "required":[
+          "agentId"
+        ]
+      }
+    },
+    {
+      "action_name":"agent.SET_EDITING",
+      "summary":"Sets which agent is currently being edited in the UI.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "agentId":{
+            "type":[
+              "string",
+              "null"
+            ]
+          }
         }
       }
     }
   ],
-  "publishes": [
+  "publishes":[
     {
-      "action_name": "agent.publish.UPDATED",
-      "summary": "Broadcasts that the state of agents has changed.",
-      "payload_schema": {
-        "type": "object",
-        "description": "The entire AgentRuntimeState object."
-      }
-    },
-    {
-      "action_name": "agent.publish.AGENT_NAMES_UPDATED",
-      "summary": "Broadcasts the verified map of agent IDs to their names.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "names": {
-            "type": "object",
-            "description": "A map where the key is the agent ID and the value is the agent's name."
+      "action_name":"agent.publish.AGENT_NAMES_UPDATED",
+      "summary":"Broadcasts the verified map of agent IDs to their names.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "names":{
+            "type":"object",
+            "description":"A map where the key is the agent ID and the value is the agent's name."
           }
         },
-        "required": ["names"]
+        "required":[
+          "names"
+        ]
       }
     },
     {
-      "action_name": "agent.internal.AGENT_LOADED",
-      "summary": "[INTERNAL] Dispatched after an agent's configuration has been read from its sandbox. Used to populate the feature's state.",
-      "payload_schema": {
-        "type": "object",
-        "description": "A single AgentInstance object."
+      "action_name":"agent.internal.AGENT_LOADED",
+      "summary":"[INTERNAL] Dispatched after an agent's configuration has been read from its sandbox. Used to populate the feature's state.",
+      "payload_schema":{
+        "type":"object",
+        "description":"A single AgentInstance object."
       }
     },
     {
-      "action_name": "agent.internal.SET_STATUS",
-      "summary": "[INTERNAL] Updates the transient status and optional error message for an agent.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "agentId": { "type": "string" },
-          "status": { "type": "string", "enum": ["IDLE", "WAITING", "PROCESSING", "ERROR"] },
-          "error": { "type": ["string", "null"] }
+      "action_name":"agent.internal.SET_STATUS",
+      "summary":"[INTERNAL] Updates the transient status and optional error message for an agent.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "agentId":{
+            "type":"string"
+          },
+          "status":{
+            "type":"string",
+            "enum":[
+              "IDLE",
+              "WAITING",
+              "PROCESSING",
+              "ERROR"
+            ]
+          },
+          "error":{
+            "type":[
+              "string",
+              "null"
+            ]
+          }
         },
-        "required": ["agentId", "status"]
-      }
-    },
-    {
-      "action_name": "agent.internal.SET_TURN_JOB",
-      "summary": "[INTERNAL] Associates a coroutine Job with an agent's turn. Used for cancellation.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "agentId": { "type": "string" }
-        },
-        "required": ["agentId"]
+        "required":[
+          "agentId",
+          "status"
+        ]
       }
     }
   ]
