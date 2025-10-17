@@ -14,8 +14,6 @@ import kotlinx.coroutines.flow.asStateFlow
 class FakeStore(
     initialState: AppState,
     platformDependencies: PlatformDependencies,
-    // THE FIX: Added the required parameter to match the parent Store's constructor.
-    // We provide a default for convenience in simple UI tests that don't care about the registry.
     validActionNames: Set<String> = emptySet()
 ) : Store(initialState, emptyList(), platformDependencies, validActionNames) {
     val dispatchedActions = mutableListOf<Action>()

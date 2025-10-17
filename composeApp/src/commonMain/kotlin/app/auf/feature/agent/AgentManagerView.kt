@@ -1,3 +1,4 @@
+
 package app.auf.feature.agent
 
 import androidx.compose.foundation.layout.*
@@ -14,6 +15,8 @@ import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.collections.get
+import kotlin.text.get
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -129,6 +132,7 @@ private fun AgentReadOnlyView(agent: AgentInstance, sessionNames: Map<String, St
                 Text(agent.name, style = MaterialTheme.typography.titleLarge)
                 Text("Session: $sessionName", style = MaterialTheme.typography.bodyMedium)
                 Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
+                // THE FIX: Added status and error display to the read-only view.
                 Text("Status: ${agent.status}", style = MaterialTheme.typography.bodyMedium)
                 if (agent.status == AgentStatus.ERROR && agent.errorMessage != null) {
                     Text(
@@ -143,6 +147,7 @@ private fun AgentReadOnlyView(agent: AgentInstance, sessionNames: Map<String, St
 
         // --- Actions Section ---
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            // THE FIX: Added manual trigger/cancel buttons to the manager view.
             if (agent.status == AgentStatus.PROCESSING || agent.status == AgentStatus.WAITING) {
                 Button(
                     onClick = {
@@ -214,6 +219,7 @@ private fun AgentEditorView(
             Box(Modifier.weight(1f)) { ModelSelector(agent, agentState, store) }
         }
 
+        // THE FIX: Added the "Automatic Mode" toggle switch.
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -232,8 +238,6 @@ private fun AgentEditorView(
     }
 }
 
-// SessionSelector, ProviderSelector, and ModelSelector remain unchanged.
-// They are omitted for brevity but are part of the full file.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {

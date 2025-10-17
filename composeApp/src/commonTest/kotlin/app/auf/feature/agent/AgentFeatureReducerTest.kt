@@ -3,6 +3,8 @@ package app.auf.feature.agent
 import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.fakes.FakeStore
+import app.auf.util.LogLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
@@ -37,7 +39,7 @@ class AgentFeatureReducerTest {
             put("name", "Test Agent")
             put("personaId", "persona-test-123")
             put("modelProvider", "gemini")
-            put("modelName", "gemini-2.5-pro")
+            put("modelName", "gemini-pro")
             put("primarySessionId", "session-abc")
             put("automaticMode", true)
         }
@@ -54,7 +56,7 @@ class AgentFeatureReducerTest {
         assertNotNull(newAgent)
         assertEquals("Test Agent", newAgent.name)
         assertEquals("persona-test-123", newAgent.personaId)
-        assertEquals("gemini-2.5-pro", newAgent.modelName)
+        assertEquals("gemini-pro", newAgent.modelName)
         assertEquals("session-abc", newAgent.primarySessionId)
         assertEquals(true, newAgent.automaticMode)
         assertEquals(AgentStatus.IDLE, newAgent.status)
@@ -178,9 +180,11 @@ class AgentFeatureReducerTest {
         val (feature, initialState) = createFeatureAndInitialState(listOf(agent))
         val payload = buildJsonObject {
             put("senderId", "agent-1")
-            put("messageId", "msg-abc") // The ID of the new message
+            put("messageId", "msg-abc")
             put("metadata", buildJsonObject {
                 put("render_as_partial", true)
+                // THE FIX: The reducer needs the status to know which "bucket" to put the ID in.
+                put("agentStatus", "PROCESSING")
             })
         }
         val action = Action("session.POST", payload)
@@ -192,23 +196,19 @@ class AgentFeatureReducerTest {
         val agentState = newState.featureStates[feature.name] as? AgentRuntimeState
         assertNotNull(agentState)
         val trackedCards = agentState.agentAvatarCardIds["agent-1"]
-        assertNotNull(trackedCards)
-        // NOTE: This tests the current simplified logic. This will need to be updated
-        // when the multi-frontier logic is implemented.
-        assertEquals("msg-abc", trackedCards[AgentStatus.IDLE])
+        assertNotNull(trackedCards, "Avatar card tracking should be initialized for the agent.")
+        assertEquals("msg-abc", trackedCards[AgentStatus.PROCESSING], "The message ID should be tracked under the correct status.")
     }
 
     @Test
     fun `reducer for session DELETE_MESSAGE removes entry from agentAvatarCardIds`() {
         // ARRANGE
         val agent = AgentInstance("agent-1", "Test", "p", "m", "m")
-        val avatarMap = mapOf("agent-1" to mapOf(AgentStatus.IDLE to "msg-to-delete"))
+        val avatarMap = mapOf("agent-1" to mapOf(AgentStatus.IDLE to "msg-to-delete", AgentStatus.PROCESSING to "msg-safe"))
         val (feature, initialState) = createFeatureAndInitialState(listOf(agent), avatarMap)
         val payload = buildJsonObject {
             put("messageId", "msg-to-delete")
-            // This metadata is needed to identify it as an avatar card during deletion.
-            // This reflects a necessary change in the reducer logic.
-            put("senderId", "agent-1")
+            // THE FIX: Removed the senderId hack. The reducer must now find the agent on its own.
             put("metadata", buildJsonObject {
                 put("render_as_partial", true)
             })
@@ -216,10 +216,6 @@ class AgentFeatureReducerTest {
         val action = Action("session.DELETE_MESSAGE", payload)
 
         // ACT
-        // NOTE: This test will fail until the reducer's `handleSessionEvents` is fixed to
-        // correctly find the agent to update without relying on a `senderId` in the DELETE action.
-        // For now, we add a senderId to the payload to make the test pass against the flawed logic,
-        // highlighting the required fix.
         val newState = feature.reducer(initialState, action)
 
         // ASSERT
@@ -227,7 +223,9 @@ class AgentFeatureReducerTest {
         assertNotNull(agentState)
         val trackedCards = agentState.agentAvatarCardIds["agent-1"]
         assertNotNull(trackedCards)
-        assertTrue(trackedCards.isEmpty(), "The tracked card ID should have been removed.")
+        assertEquals(1, trackedCards.size, "Only one card should remain.")
+        assertFalse(trackedCards.containsKey(AgentStatus.IDLE), "The IDLE card should have been removed.")
+        assertEquals("msg-safe", trackedCards[AgentStatus.PROCESSING], "The PROCESSING card should remain.")
     }
 
     @Test
@@ -249,5 +247,29 @@ class AgentFeatureReducerTest {
 
         val stateAfterUpdate = feature.reducer(initialState, updateAction)
         assertEquals(initialState, stateAfterUpdate, "UPDATE_CONFIG should not change state for unknown agent.")
+    }
+
+    @Test
+    fun `onPrivateData with corrupted config content logs an error and does not dispatch LOADED`() {
+        // ARRANGE
+        val fakePlatform = FakePlatformDependencies(testAppVersion)
+        val feature = AgentRuntimeFeature(fakePlatform, CoroutineScope(Dispatchers.Unconfined))
+        val store = FakeStore(AppState(), fakePlatform, setOf("agent.internal.AGENT_LOADED"))
+        val corruptedJsonContent = """{"id":"bad-agent","name":"Bad Agent",}""" // Invalid trailing comma
+        val fileContentPayload = buildJsonObject {
+            put("subpath", "bad-agent-1.json")
+            put("content", corruptedJsonContent)
+        }
+
+        // ACT
+        feature.onPrivateData(fileContentPayload, store)
+
+        // ASSERT
+        val loadedAction = store.dispatchedActions.find { it.name == "agent.internal.AGENT_LOADED" }
+        assertNull(loadedAction, "AGENT_LOADED should not be dispatched for a corrupted config.")
+
+        val log = fakePlatform.capturedLogs.find { it.level == LogLevel.ERROR }
+        assertNotNull(log, "An error message should have been logged.")
+        assertTrue(log.message.contains("Failed to parse agent config"), "The log message should indicate a parsing failure.")
     }
 }

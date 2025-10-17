@@ -29,12 +29,14 @@ class AgentRuntimeFeatureOnActionTest {
     private val fakePlatform = FakePlatformDependencies(testAppVersion)
     private val json = Json { ignoreUnknownKeys = true }
 
+    // THE FIX: Added the new and previously missing actions to the registry for tests.
     private val testActionRegistry = setOf(
         "system.INITIALIZING", "system.STARTING",
-        "agent.CREATE", "agent.UPDATE_CONFIG", "agent.DELETE", "agent.TRIGGER_MANUAL_TURN",
+        "agent.CREATE", "agent.UPDATE_CONFIG", "agent.DELETE", "agent.TRIGGER_MANUAL_TURN", "agent.CANCEL_TURN",
         "agent.internal.SET_STATUS", "agent.internal.AGENT_LOADED", "gateway.REQUEST_AVAILABLE_MODELS",
         "filesystem.SYSTEM_WRITE", "filesystem.SYSTEM_DELETE_DIRECTORY", "filesystem.SYSTEM_LIST", "filesystem.SYSTEM_READ",
-        "gateway.GENERATE_CONTENT", "gateway.publish.CONTENT_GENERATED",
+        "gateway.GENERATE_CONTENT", "gateway.publish.CONTENT_GENERATED", "agent.publish.AGENT_DELETED",
+        "agent.publish.AGENT_NAMES_UPDATED",
         "session.POST", "session.DELETE_MESSAGE"
     )
 
@@ -73,10 +75,7 @@ class AgentRuntimeFeatureOnActionTest {
         ))
 
         val store = TestStore(initialState, features, fakePlatform, testActionRegistry)
-
-        // Retained Fix: Initialize the feature lifecycles to match the real application's startup sequence.
         store.initFeatureLifecycles()
-
         return agentFeature to store
     }
 
@@ -99,7 +98,7 @@ class AgentRuntimeFeatureOnActionTest {
     }
 
     @Test
-    fun `agent DELETE action dispatches filesystem SYSTEM_DELETE_DIRECTORY`() {
+    fun `agent DELETE action dispatches filesystem SYSTEM_DELETE_DIRECTORY and AGENT_DELETED`() {
         // ARRANGE
         val agent = AgentInstance("aid-1", "Test", "p", "m", "m")
         val (feature, store) = createTestEnvironment(initialAgents = listOf(agent))
@@ -110,7 +109,11 @@ class AgentRuntimeFeatureOnActionTest {
 
         // ASSERT
         val deleteSysAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_DELETE_DIRECTORY" }
-        assertNotNull(deleteSysAction)
+        assertNotNull(deleteSysAction, "SYSTEM_DELETE_DIRECTORY should be dispatched.")
+
+        val deletedPublishAction = store.dispatchedActions.find { it.name == "agent.publish.AGENT_DELETED" }
+        assertNotNull(deletedPublishAction, "AGENT_DELETED should be published.")
+        assertEquals("aid-1", deletedPublishAction.payload?.get("agentId")?.jsonPrimitive?.content)
     }
 
     @Test
@@ -127,6 +130,9 @@ class AgentRuntimeFeatureOnActionTest {
         // ASSERT
         val deleteMsgActions = store.dispatchedActions.filter { it.name == "session.DELETE_MESSAGE" }
         assertEquals(2, deleteMsgActions.size, "Should dispatch a delete action for each tracked card.")
+        val deletedIds = deleteMsgActions.map { it.payload?.get("messageId")?.jsonPrimitive?.content }.toSet()
+        assertTrue(deletedIds.contains("msg-123"))
+        assertTrue(deletedIds.contains("msg-456"))
     }
 
 
@@ -139,11 +145,11 @@ class AgentRuntimeFeatureOnActionTest {
         store.dispatch("system", Action("system.STARTING"))
 
         // ASSERT
-        val listAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_LIST" }
-        assertNotNull(listAction)
+        val listAction = store.dispatchedActions.find { it.name == "filesystem.SYSTEM_LIST" && it.originator == feature.name }
+        assertNotNull(listAction, "AgentFeature should request file list on start.")
 
         val requestModelsAction = store.dispatchedActions.find { it.name == "gateway.REQUEST_AVAILABLE_MODELS" }
-        assertNotNull(requestModelsAction)
+        assertNotNull(requestModelsAction, "AgentFeature should request available models on start.")
     }
 
     @Test
@@ -158,6 +164,8 @@ class AgentRuntimeFeatureOnActionTest {
         // ASSERT
         val readActions = store.dispatchedActions.filter { it.name == "filesystem.SYSTEM_READ" }
         assertEquals(2, readActions.size)
+        assertEquals("agent-1/agent.json", readActions[0].payload?.get("subpath")?.jsonPrimitive?.content)
+        assertEquals("agent-2/agent.json", readActions[1].payload?.get("subpath")?.jsonPrimitive?.content)
     }
 
     @Test
@@ -172,7 +180,7 @@ class AgentRuntimeFeatureOnActionTest {
 
         // ASSERT
         val loadedAction = store.dispatchedActions.find { it.name == "agent.internal.AGENT_LOADED" }
-        assertNotNull(loadedAction)
+        assertNotNull(loadedAction, "AGENT_LOADED should be dispatched now that it is in the registry.")
     }
 
     @Test

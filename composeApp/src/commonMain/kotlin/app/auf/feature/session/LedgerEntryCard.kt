@@ -35,7 +35,7 @@ fun LedgerEntryCard(
     val isPartialView = entry.metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
 
     if (isPartialView) {
-        // --- RENDER AGENT AVATAR CARD ---
+        // --- THE FIX: This is now the router for rendering Agent UI inside the session ledger ---
         val statusString = entry.metadata?.get("agentStatus")?.jsonPrimitive?.contentOrNull
         val status = try { statusString?.let { AgentStatus.valueOf(it) } ?: AgentStatus.IDLE } catch (e: Exception) { AgentStatus.ERROR }
         val errorMessage = if (status == AgentStatus.ERROR) {
@@ -165,8 +165,6 @@ fun LedgerEntryCard(
     }
 }
 
-// MessageEditor, ParsedContentView, and RawContentView composables remain unchanged.
-// They are omitted for brevity but are part of the full file.
 @Composable
 private fun MessageEditor(store: Store, session: Session, entry: LedgerEntry, editingContent: String?) {
     var text by remember(entry.id) { mutableStateOf(editingContent ?: entry.rawContent ?: "") }
