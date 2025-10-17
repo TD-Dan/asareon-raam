@@ -32,6 +32,7 @@ class SessionFeature(
     @Serializable private data class ToggleMessageUiPayload(val sessionId: String, val messageId: String)
     @Serializable internal data class InternalSessionLoadedPayload(val sessions: Map<String, Session>)
     @Serializable private data class AgentNamesUpdatedPayload(val names: Map<String, String>)
+    @Serializable private data class AgentDeletedPayload(val agentId: String) // THE FIX: New payload for agent cleanup.
 
     private val blockParser = BlockSeparatingParser()
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
@@ -55,10 +56,18 @@ class SessionFeature(
             "system.STARTING" -> store.dispatch(this.name, Action("filesystem.SYSTEM_LIST"))
             "session.CREATE" -> {
                 val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
+                // The newly created session is now active, persist it immediately.
                 sessionState.activeSessionId?.let { persistSession(it, store) }
                 broadcastSessionNames(sessionState, store)
             }
-            "session.UPDATE_CONFIG", "session.DELETE", "session.internal.LOADED" -> {
+            "session.UPDATE_CONFIG" -> { // THE FIX: This action now correctly persists its changes.
+                val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
+                val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull ?: return
+                val sessionId = resolveSessionId(identifier, sessionState)
+                sessionId?.let { persistSession(it, store) }
+                broadcastSessionNames(sessionState, store)
+            }
+            "session.DELETE", "session.internal.LOADED" -> {
                 val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
                 broadcastSessionNames(sessionState, store)
                 if (action.name == "session.DELETE") {
@@ -113,6 +122,10 @@ class SessionFeature(
         val payload = action.payload
         when (action.name) {
             "agent.publish.AGENT_NAMES_UPDATED" -> newFeatureState = currentFeatureState.copy(agentNames = payload?.let { json.decodeFromJsonElement<AgentNamesUpdatedPayload>(it) }?.names ?: emptyMap())
+            "agent.publish.AGENT_DELETED" -> { // THE FIX: Clean up agent name cache on deletion.
+                val agentId = payload?.let { json.decodeFromJsonElement<AgentDeletedPayload>(it) }?.agentId ?: return state
+                newFeatureState = currentFeatureState.copy(agentNames = currentFeatureState.agentNames - agentId)
+            }
             "session.CREATE" -> {
                 val desiredName = payload?.let { json.decodeFromJsonElement<CreatePayload>(it) }?.name?.takeIf { it.isNotBlank() } ?: "New Session"
                 val newSession = Session(platformDependencies.generateUUID(), findUniqueName(desiredName, currentFeatureState), emptyList(), platformDependencies.getSystemTimeMillis())
