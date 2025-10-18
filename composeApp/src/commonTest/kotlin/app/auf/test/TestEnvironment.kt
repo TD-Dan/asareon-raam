@@ -14,11 +14,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 
 /**
- * A test-only Store that decorates the real Store.
- * It overrides `dispatch` to record all actions that are sent to the bus,
- * *before* they are processed by the real Store's routing and security logic.
- * It then calls the parent implementation to ensure the production logic runs unmodified.
- * This is the correct, non-invasive pattern for observing the action flow in tests.
+ * A test-only Store that inherits from the real Store. In its init block, it
+ * registers a callback with the `onDispatch` test hook. This allows it to
+ * perfectly record all actions that successfully pass the real Store's guards
+ * without modifying any production logic. This is the architecturally correct
+ * pattern for observing the action flow in tests.
  */
 class RecordingStore(
     initialState: AppState,
@@ -29,10 +29,11 @@ class RecordingStore(
 
     val processedActions = mutableListOf<Action>()
 
-    override fun dispatch(originator: String, action: Action) {
-        val stampedAction = action.copy(originator = originator)
-        processedActions.add(stampedAction)
-        super.dispatch(originator, action)
+    init {
+        // Register with the test hook to receive a copy of all validated actions.
+        onDispatch = { action ->
+            processedActions.add(action)
+        }
     }
 }
 
@@ -111,7 +112,6 @@ class TestEnvironment {
         }
 
         val validActionNames = actionRegistryOverride ?: ActionRegistrySource.allActionNames
-        // THE FIX: Instantiate the RecordingStore instead of the base Store.
         val store = RecordingStore(fullyPopulatedState, allFeatures, platform, validActionNames)
         store.initFeatureLifecycles()
 

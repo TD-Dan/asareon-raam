@@ -9,7 +9,7 @@ import androidx.compose.runtime.Composable
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
 import app.auf.core.generated.ActionNames
-import app.auf.feature.session.LedgerEntry
+import app.auf.feature.session.LedgerEntry //TODO: This is a violation. The LedgerEntry must be delivered in a non session specific way f.ex. a string.
 import app.auf.util.FileEntry
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
@@ -38,7 +38,7 @@ class AgentRuntimeFeature(
 
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
-    private val AGENT_CONFIG_FILENAME = "agent.json"
+    private val agentConfigFILENAME = "agent.json"
     private val activeTurnJobs = mutableMapOf<String, Job>()
 
     // --- REDUCER (Pure State Logic) ---
@@ -59,16 +59,17 @@ class AgentRuntimeFeature(
             ActionNames.AGENT_INTERNAL_CONFIRM_DELETE -> handleDeleteAgent(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.AGENT_INTERNAL_SET_STATUS -> handleSetStatus(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> handleAgentLoaded(action, currentFeatureState)?.let { newFeatureState = it }
+            // THE FIX: The agent now listens to verified EVENTS, not commands.
             ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> handleMessagePosted(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.SESSION_PUBLISH_MESSAGE_DELETED -> handleMessageDeleted(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.SESSION_PUBLISH_SESSION_DELETED -> handleSessionDeleted(action, currentFeatureState)?.let { newFeatureState = it }
 
             ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED -> {
-                val decodedModels: Map<String, List<String>>? = try { payload?.let { json.decodeFromJsonElement(it) } } catch (e: Exception) { null }
+                val decodedModels: Map<String, List<String>>? = try { payload?.let { json.decodeFromJsonElement(it) } } catch (e: Exception) { null } //TODO: This is a silent failure point!
                 newFeatureState = currentFeatureState.copy(availableModels = decodedModels ?: emptyMap())
             }
             ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
-                val decoded = try { payload?.let { json.decodeFromJsonElement<SessionNamesPayload>(it) } } catch(e: Exception) { null } ?: return stateWithFeature
+                val decoded = try { payload?.let { json.decodeFromJsonElement<SessionNamesPayload>(it) } } catch(e: Exception) { null } ?: return stateWithFeature  //TODO: This is a silent failure point!
                 newFeatureState = currentFeatureState.copy(sessionNames = decoded.names)
             }
         }
@@ -132,7 +133,7 @@ class AgentRuntimeFeature(
         val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return null
         val agentToUpdate = currentFeatureState.agents[agentId] ?: return null
         val newStatusString = payload["status"]?.jsonPrimitive?.contentOrNull ?: return null
-        val newStatus = try { AgentStatus.valueOf(newStatusString) } catch (e: Exception) { return null }
+        val newStatus = try { AgentStatus.valueOf(newStatusString) } catch (e: Exception) { return null }  //TODO: This is a silent failure point!
         val newErrorMessage = if (newStatus == AgentStatus.ERROR) payload["error"]?.jsonPrimitive?.contentOrNull else null
         val updatedAgent = agentToUpdate.copy(status = newStatus, errorMessage = newErrorMessage)
         return currentFeatureState.copy(agents = currentFeatureState.agents + (agentId to updatedAgent))
@@ -157,7 +158,7 @@ class AgentRuntimeFeature(
         if (!currentFeatureState.agents.containsKey(agentId)) return null
 
         val statusString = payload.entry.metadata["agentStatus"]?.jsonPrimitive?.contentOrNull ?: return null
-        val status = try { AgentStatus.valueOf(statusString) } catch (e: Exception) { return null }
+        val status = try { AgentStatus.valueOf(statusString) } catch (e: Exception) { return null }  //TODO: This is a silent failure point!
 
         val newAvatarMap = currentFeatureState.agentAvatarCardIds.toMutableMap()
         val agentCards = newAvatarMap.getOrPut(agentId) { mutableMapOf() }.toMutableMap()
@@ -193,7 +194,7 @@ class AgentRuntimeFeature(
                 val latestState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val agentToSave = latestState.agents.values.lastOrNull() ?: return
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                    put("subpath", "${agentToSave.id}/$AGENT_CONFIG_FILENAME")
+                    put("subpath", "${agentToSave.id}/$agentConfigFILENAME")
                     put("content", json.encodeToString(agentToSave))
                 }))
                 broadcastAgentNames(store)
@@ -203,7 +204,7 @@ class AgentRuntimeFeature(
                 val latestState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val agentToSave = latestState.agents[agentId] ?: return
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                    put("subpath", "${agentToSave.id}/$AGENT_CONFIG_FILENAME")
+                    put("subpath", "${agentToSave.id}/$agentConfigFILENAME")
                     put("content", json.encodeToString(agentToSave))
                 }))
                 broadcastAgentNames(store)
@@ -236,7 +237,7 @@ class AgentRuntimeFeature(
                         val latestState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return@forEach
                         val agentToPersist = latestState.agents[agentToUpdate.id] ?: return@forEach
                         store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                            put("subpath", "${agentToPersist.id}/$AGENT_CONFIG_FILENAME")
+                            put("subpath", "${agentToPersist.id}/$agentConfigFILENAME")
                             put("content", json.encodeToString(agentToPersist))
                         }))
                     }
@@ -288,12 +289,12 @@ class AgentRuntimeFeature(
     override fun onPrivateData(data: Any, store: Store) {
         when (data) {
             is List<*> -> data.filterIsInstance<FileEntry>().filter { it.isDirectory }.forEach { dirEntry ->
-                val configPath = "${platformDependencies.getFileName(dirEntry.path)}/$AGENT_CONFIG_FILENAME"
+                val configPath = "${platformDependencies.getFileName(dirEntry.path)}/$agentConfigFILENAME"
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", configPath) }))
             }
             is JsonObject -> {
                 if (data.containsKey("correlationId") && data.containsKey("messages")) { // Response from SessionFeature
-                    val decoded = try { json.decodeFromJsonElement<LedgerContentResponse>(data) } catch (e:Exception) { null } ?: return
+                    val decoded = try { json.decodeFromJsonElement<LedgerContentResponse>(data) } catch (e:Exception) { null } ?: return  //TODO: This is a silent failure point!
                     val agentId = decoded.correlationId
                     val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                     val agent = agentState.agents[agentId] ?: return

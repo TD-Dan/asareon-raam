@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * A helper class to encapsulate the three-part structure of our action names.
- * e.g., "session.publish.NAMES_UPDATED"
+ * E.g., "session.publish.NAMES_UPDATED"
  */
 private data class ParsedActionName(
     val feature: String,
@@ -50,6 +50,13 @@ open class Store(
 
     private var lifecycleStarted = false
 
+    /**
+     * A test-only hook to allow a derived class (like RecordingStore) to observe
+     * actions that have successfully passed all security and lifecycle guards.
+     * In production, this is null and has no effect.
+     */
+    internal var onDispatch: ((Action) -> Unit)? = null
+
     fun initFeatureLifecycles() {
         if (!lifecycleStarted) {
             features.forEach { it.init(this) }
@@ -77,16 +84,16 @@ open class Store(
     /**
      * The single, generic entry point for all state changes and side effects.
      * This method has been hardened to support three classes of actions:
-     * - **Commands (Public):** e.g., `session.POST`. Broadcast to all features.
-     * - **Internal Events:** e.g., `session.internal.LOADED`. Routed ONLY to the owning feature.
-     * - **Published Events:** e.g., `session.publish.UPDATED`. Broadcast to all features, but can only be dispatched by the owning feature.
+     * - **Commands (Public): ** e.g., `session.POST`. Broadcast to all features.
+     * - **Internal Events: ** e.g., `session.internal.LOADED`. Routed ONLY to the owning feature.
+     * - **Published Events: ** e.g., `session.publish.UPDATED`. Broadcast to all features, but can only be dispatched by the owning feature.
      *
      * The process is a strictly ordered, synchronous call:
-     * 1.  **Stamp & Parse:** The action is stamped and its name is parsed.
-     * 2.  **Authorize & Guard:** The action is validated against the Action Registry, originator rules, and the current `AppLifecycle`.
-     * 3.  **Route & Reduce:** Based on the action type, the action is either broadcast to all reducers or routed to a single reducer to calculate the new state.
-     * 4.  **Update:** The central state is atomically updated.
-     * 5.  **Route & `onAction`:** The action is routed to the appropriate side-effect handlers.
+     * 1.  **Stamp & Parse: ** The action is stamped, and its name is parsed.
+     * 2.  **Authorize & Guard: ** The action is validated against the Action Registry, originator rules, and the current `AppLifecycle`.
+     * 3.  **Route & Reduce: ** Based on the action type, the action is either broadcast to all reducers or routed to a single reducer to calculate the new state.
+     * 4.  **Update: ** The central state is atomically updated.
+     * 5.  **Route & `onAction`:** The action is routed to the appropriate side effect handlers.
      */
     open fun dispatch(originator: String, action: Action) {
         // --- PHASE 1: STAMP & PARSE ---
@@ -95,7 +102,6 @@ open class Store(
 
         // --- PHASE 2: AUTHORIZATION & LIFECYCLE GUARDS ---
 
-        // NEW: Action Registry Guard
         if (!validActionNames.contains(stampedAction.name)) {
             platformDependencies.log(
                 level = LogLevel.ERROR,
@@ -144,6 +150,8 @@ open class Store(
             return
         }
 
+        onDispatch?.invoke(stampedAction)
+
         // --- PHASE 3, 4, 5: ROUTE, REDUCE, UPDATE, NOTIFY ---
         if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
             // Targeted dispatch for internal actions
@@ -171,6 +179,7 @@ open class Store(
             if (newState != previousState) {
                 _state.value = newState
             }
+            // PUBLIC and PUBLISH actions are broadcast to all features.
             features.forEach { feature ->
                 feature.onAction(stampedAction, this)
             }

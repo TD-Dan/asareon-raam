@@ -2,6 +2,7 @@ package app.auf.feature.session
 
 import app.auf.core.FeatureState
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -73,14 +74,22 @@ data class SessionState(
     val activeSessionId: String? = null,
 
     /** TRANSIENT UI STATE: The ID of the session whose name is being edited. */
+    @Transient
     val editingSessionId: String? = null,
 
     /** TRANSIENT UI STATE: The ID of the message being edited. */
+    @Transient
     val editingMessageId: String? = null,
 
     /** TRANSIENT UI STATE: The raw content of the message being edited. */
+    @Transient
     val editingMessageContent: String? = null,
 
     /** A transient error message for display in the UI. */
-    val error: String? = null
+    @Transient
+    val error: String? = null,
+
+    /** THE FIX: A transient field to reliably pass the ID of a deleted session from the reducer to the onAction handler. */
+    @Transient
+    val lastDeletedSessionId: String? = null
 ) : FeatureState

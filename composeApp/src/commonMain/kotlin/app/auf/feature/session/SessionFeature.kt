@@ -1,8 +1,8 @@
 package app.auf.feature.session
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ChatBubble
-import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -72,12 +72,14 @@ class SessionFeature(
                 broadcastSessionNames(updatedSessionState, store)
             }
             ActionNames.SESSION_DELETE -> {
-                val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull ?: return
-                val sessionIdToDelete = resolveSessionId(identifier, sessionState) ?: return
-                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE, buildJsonObject { put("subpath", "$sessionIdToDelete.json") }))
-                val updatedSessionState = store.state.value.featureStates[name] as? SessionState ?: return
-                broadcastSessionNames(updatedSessionState, store)
-                store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject { put("sessionId", sessionIdToDelete) }))
+                // THE FIX: Read the ID from the transient state field, which was reliably set by the reducer.
+                val sessionIdToDelete = sessionState.lastDeletedSessionId
+                if (sessionIdToDelete != null) {
+                    store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE, buildJsonObject { put("subpath", "$sessionIdToDelete.json") }))
+                    val updatedSessionState = store.state.value.featureStates[name] as? SessionState ?: return
+                    broadcastSessionNames(updatedSessionState, store)
+                    store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject { put("sessionId", sessionIdToDelete) }))
+                }
             }
             ActionNames.SESSION_INTERNAL_LOADED -> {
                 val latestState = store.state.value.featureStates[name] as? SessionState ?: return
@@ -86,6 +88,7 @@ class SessionFeature(
             ActionNames.SESSION_POST -> {
                 val sessionId = resolveSessionIdFromGenericPayload(action.payload, sessionState) ?: return
                 persistSession(sessionId, store)
+                // THE FIX: Dispatch the new MESSAGE_POSTED event after successful persistence.
                 val updatedSession = (store.state.value.featureStates[name] as? SessionState)?.sessions?.get(sessionId) ?: return
                 val postedEntry = updatedSession.ledger.last()
                 store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
@@ -206,10 +209,12 @@ class SessionFeature(
                 newFeatureState = currentFeatureState.copy(sessions = currentFeatureState.sessions + (sessionId to updatedSession))
             }
             ActionNames.SESSION_DELETE -> {
-                val sessionId = resolveSessionId(payload?.let { json.decodeFromJsonElement<SessionTargetPayload>(it) }?.session ?: "", currentFeatureState) ?: return stateWithFeature
+                val identifier = payload?.let { json.decodeFromJsonElement<SessionTargetPayload>(it) }?.session ?: ""
+                val sessionId = resolveSessionId(identifier, currentFeatureState) ?: return stateWithFeature
                 val newSessions = currentFeatureState.sessions - sessionId
                 val newActiveId = if (currentFeatureState.activeSessionId != sessionId) currentFeatureState.activeSessionId else newSessions.values.maxByOrNull { it.createdAt }?.id
-                newFeatureState = currentFeatureState.copy(sessions = newSessions, activeSessionId = newActiveId)
+                // THE FIX: Set the transient field with the ID of the session that was just deleted.
+                newFeatureState = currentFeatureState.copy(sessions = newSessions, activeSessionId = newActiveId, lastDeletedSessionId = sessionId)
             }
             ActionNames.SESSION_UPDATE_MESSAGE -> {
                 val decoded = payload?.let { json.decodeFromJsonElement<UpdateMessagePayload>(it) } ?: return stateWithFeature
@@ -254,7 +259,10 @@ class SessionFeature(
                 newFeatureState = currentFeatureState.copy(sessions = newSessions, activeSessionId = newActiveId)
             }
         }
-        return newFeatureState?.let { if (it != currentFeatureState) stateWithFeature.copy(featureStates = stateWithFeature.featureStates + (name to it)) else stateWithFeature } ?: stateWithFeature
+        return newFeatureState?.let {
+            val finalState = if (action.name != ActionNames.SESSION_DELETE) it.copy(lastDeletedSessionId = null) else it
+            if (finalState != currentFeatureState) stateWithFeature.copy(featureStates = stateWithFeature.featureStates + (name to finalState)) else stateWithFeature
+        } ?: stateWithFeature
     }
 
     override val composableProvider = object : Feature.ComposableProvider {
@@ -266,7 +274,7 @@ class SessionFeature(
         )
         @Composable override fun RibbonContent(store: Store, activeViewKey: String?) {
             IconButton(onClick = { store.dispatch("session.ui", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", VIEW_KEY_MANAGER) })) }) {
-                Icon(Icons.Default.ViewList, "Session Manager", tint = if (activeViewKey == VIEW_KEY_MANAGER) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.AutoMirrored.Filled.ViewList, "Session Manager", tint = if (activeViewKey == VIEW_KEY_MANAGER) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = { store.dispatch("session.ui", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", VIEW_KEY_MAIN) })) }) {
                 Icon(Icons.Default.ChatBubble, "Active Session", tint = if (activeViewKey == VIEW_KEY_MAIN) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
