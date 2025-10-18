@@ -24,7 +24,7 @@ enum class BasePath {
 /**
  * Defines the severity level for a log message.
  */
-enum class LogLevel { INFO, WARN, ERROR }
+enum class LogLevel { DEBUG, INFO, WARN, ERROR, FATAL }
 
 /**
  * Defines a platform-agnostic contract for ALL platform-specific functionalities.

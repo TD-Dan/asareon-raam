@@ -1,7 +1,9 @@
 package app.auf.feature.gateway
 
 import app.auf.core.*
+import app.auf.core.generated.ActionNames
 import app.auf.feature.settings.SettingsState //TODO: THIS IS A VIOLATION AND NEEDS TO BE FIXED
+import app.auf.util.LogLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
@@ -20,21 +22,21 @@ class GatewayFeature(
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
-            "system.INITIALIZING" -> {
+            ActionNames.SYSTEM_INITIALIZING -> {
                 // Each provider registers its own settings, making the system extensible.
                 providerMap.values.forEach { provider ->
                     provider.registerSettings { actionToDispatch -> store.dispatch(this.name, actionToDispatch) }
                 }
             }
 
-            "system.STARTING" -> {
+            ActionNames.SYSTEM_STARTING -> {
                 // After settings are loaded, trigger an initial model refresh for all providers.
                 providerMap.keys.forEach { providerId ->
                     refreshProviderModels(providerId, store)
                 }
             }
 
-            "settings.publish.VALUE_CHANGED" -> {
+            ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
                 // If one of our known API keys changed, trigger a model refresh for that provider.
                 if (key in providerApiKeys) {
@@ -43,13 +45,13 @@ class GatewayFeature(
                 }
             }
 
-            "gateway.REQUEST_AVAILABLE_MODELS" -> {
+            ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS -> {
                 val gatewayState = store.state.value.featureStates[name] as? GatewayState ?: return
                 val payload = Json.encodeToJsonElement(gatewayState.availableModels).jsonObject
-                store.dispatch(this.name, Action("gateway.publish.AVAILABLE_MODELS_UPDATED", payload))
+                store.dispatch(this.name, Action(ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED, payload))
             }
 
-            "gateway.GENERATE_CONTENT" -> {
+            ActionNames.GATEWAY_GENERATE_CONTENT -> {
                 handleGenerateContent(action, store)
             }
         }
@@ -72,10 +74,27 @@ class GatewayFeature(
 
         coroutineScope.launch {
             val request = GatewayRequest(modelName, contents, correlationId)
-            // Delegate the actual work to the specific provider plugin.
+
             val response = provider.generateContent(request, settingsState.values)
+
+            val responsePayload = try {
+                Json.encodeToJsonElement(response).jsonObject
+            } catch (e: Exception) {
+                store.platformDependencies.log(
+                    LogLevel.ERROR,
+                    name,
+                    "CRITICAL: Failed to serialize GatewayResponse for originator '$originator'. This is a contract violation. Error: ${e.message}"
+                )
+                val errorResponse = GatewayResponse(
+                    rawContent = null,
+                    errorMessage = "Critical: GatewayFeature failed to serialize its own response.",
+                    correlationId = correlationId
+                )
+                Json.encodeToJsonElement(errorResponse).jsonObject
+            }
+
             // Securely deliver the response directly to the original requester.
-            store.deliverPrivateData(this@GatewayFeature.name, originator, response)
+            store.deliverPrivateData(this@GatewayFeature.name, originator, responsePayload)
         }
     }
 
@@ -89,7 +108,7 @@ class GatewayFeature(
                 put("providerId", providerId)
                 put("models", Json.encodeToJsonElement(models))
             }
-            store.dispatch(this@GatewayFeature.name, Action("gateway.internal.MODELS_UPDATED", payload))
+            store.dispatch(this@GatewayFeature.name, Action(ActionNames.GATEWAY_INTERNAL_MODELS_UPDATED, payload))
         }
     }
 
@@ -97,7 +116,7 @@ class GatewayFeature(
         val currentFeatureState = state.featureStates[name] as? GatewayState ?: GatewayState()
 
         return when (action.name) {
-            "gateway.internal.MODELS_UPDATED" -> {
+            ActionNames.GATEWAY_INTERNAL_MODELS_UPDATED -> {
                 val payload = action.payload ?: return state
                 val providerId = payload["providerId"]?.jsonPrimitive?.contentOrNull ?: return state
                 val models = Json.decodeFromJsonElement<List<String>>(payload["models"] ?: return state)

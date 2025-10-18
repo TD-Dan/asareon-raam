@@ -153,7 +153,7 @@ class AgentRuntimeFeature(
         val newStatusString = payload["status"]?.jsonPrimitive?.contentOrNull ?: return null
         val newStatus = try {
             AgentStatus.valueOf(newStatusString)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, name, "Received invalid agent status string '$newStatusString' for agent '$agentId'. Action ignored.")
             return null
         }
@@ -186,7 +186,7 @@ class AgentRuntimeFeature(
         val statusString = metadata["agentStatus"]?.jsonPrimitive?.contentOrNull ?: return null
         val status = try {
             AgentStatus.valueOf(statusString)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, name, "Received posted message with invalid agent status '$statusString' for agent '$agentId'. State update ignored.")
             return null
         }
@@ -372,18 +372,24 @@ class AgentRuntimeFeature(
                         return
                     }
 
+                    val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+                    val agent = agentState.agents[agentId] ?: return
+                    val sessionId = agent.primarySessionId ?: return
+
+                    // THE DEFINITIVE FIX: Use the three-stage validation logic.
                     if (decoded.errorMessage != null) {
                         setAgentStatus(agentId, AgentStatus.ERROR, store, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
+                    } else if (decoded.rawContent == null) {
+                        platformDependencies.log(LogLevel.ERROR, name, "FATAL: Gateway response for agent '$agentId' was successfully parsed but contained no content or error.")
+                        setAgentStatus(agentId, AgentStatus.ERROR, store, "FATAL: Received an empty or malformed response from the gateway.")
                     } else {
-                        val responseContent = decoded.rawContent ?: "[AGENT ERROR] Received empty response from gateway."
-                        val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
-                        val agent = agentState.agents[agentId] ?: return
-                        val sessionId = agent.primarySessionId ?: return
+                        // True happy path
                         store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
-                            put("session", sessionId); put("senderId", agent.id); put("message", responseContent)
+                            put("session", sessionId); put("senderId", agent.id); put("message", decoded.rawContent)
                         }))
                         setAgentStatus(agentId, AgentStatus.IDLE, store)
                     }
+
                 } else if (data.containsKey("content")) { // Response from FileSystemFeature
                     try {
                         val agent = json.decodeFromString<AgentInstance>(data["content"]?.jsonPrimitive?.content ?: "")
@@ -396,6 +402,14 @@ class AgentRuntimeFeature(
                     }
                 }
             }
+            // THE FIX: Add an else branch to catch any unexpected data types and prevent silent failures.
+            else -> {
+                platformDependencies.log(
+                    level = LogLevel.FATAL,
+                    tag = name,
+                    message = "Received unexpected private data type: '${data::class.simpleName}'. This indicates a critical contract violation. Data: $data"
+                )
+            }
         }
     }
 
@@ -404,7 +418,6 @@ class AgentRuntimeFeature(
         val agent = agentState.agents[agentId] ?: return
         val sessionId = agent.primarySessionId ?: return
 
-        // THE FIX: Atomically remove all old avatar cards before creating the new one.
         val oldCardIds = agentState.agentAvatarCardIds[agentId]?.values
         oldCardIds?.forEach { messageId ->
             store.dispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
