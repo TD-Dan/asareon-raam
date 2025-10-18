@@ -1,7 +1,9 @@
 package app.auf.feature.session
 
 import app.auf.core.Action
+import app.auf.feature.core.CoreState
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.feature.core.AppLifecycle
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.test.TestEnvironment
 import app.auf.util.FileEntry
@@ -27,14 +29,19 @@ import kotlin.test.*
 class SessionFeatureCoreTest {
 
     private val scope = CoroutineScope(Dispatchers.Unconfined)
+    // THE FIX: Create a single, shared platform instance for all components in a test.
+    private val platform = FakePlatformDependencies("test")
+    private val sessionFeature = SessionFeature(platform, scope)
+    private val fileSystemFeature = FileSystemFeature(platform)
+
 
     @Test
     fun `create() adds new session, sets it active, and dispatches SYSTEM_WRITE and publish`() = runTest {
         // ARRANGE
         val harness = TestEnvironment.create()
-            .withFeature(SessionFeature(FakePlatformDependencies("test"), scope))
-            .withFeature(FileSystemFeature(FakePlatformDependencies("test")))
-            .build()
+            .withFeature(sessionFeature)
+            .withFeature(fileSystemFeature)
+            .build(platform = platform)
 
         // ACT
         harness.store.dispatch("ui", Action("session.CREATE"))
@@ -57,10 +64,10 @@ class SessionFeatureCoreTest {
         // ARRANGE
         val session = Session("sid-1", "To Delete", emptyList(), 1L)
         val harness = TestEnvironment.create()
-            .withFeature(SessionFeature(FakePlatformDependencies("test"), scope))
-            .withFeature(FileSystemFeature(FakePlatformDependencies("test")))
+            .withFeature(sessionFeature)
+            .withFeature(fileSystemFeature)
             .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
-            .build()
+            .build(platform = platform)
 
         // ACT
         harness.store.dispatch("ui", Action("session.DELETE", buildJsonObject { put("session", "sid-1") }))
@@ -85,10 +92,10 @@ class SessionFeatureCoreTest {
         // ARRANGE
         val session = Session("sid-1", "Test", emptyList(), 1L)
         val harness = TestEnvironment.create()
-            .withFeature(SessionFeature(FakePlatformDependencies("test"), scope))
-            .withFeature(FileSystemFeature(FakePlatformDependencies("test")))
+            .withFeature(sessionFeature)
+            .withFeature(fileSystemFeature)
             .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
-            .build()
+            .build(platform = platform)
         val persistentAction = Action("session.POST", buildJsonObject {
             put("session", "sid-1"); put("senderId", "user"); put("message", "persistent")
         })
@@ -114,8 +121,10 @@ class SessionFeatureCoreTest {
     fun `onSystemStarting() dispatches SYSTEM_LIST to begin loading process`() = runTest {
         // ARRANGE
         val harness = TestEnvironment.create()
-            .withFeature(SessionFeature(FakePlatformDependencies("test"), scope))
-            .build()
+            .withFeature(sessionFeature)
+            // THE FIX: Explicitly set the lifecycle state to INITIALIZING for this test.
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
+            .build(platform = platform)
 
         // ACT
         harness.store.dispatch("system", Action("system.STARTING"))
@@ -128,8 +137,7 @@ class SessionFeatureCoreTest {
     @Test
     fun `onPrivateData() with file list dispatches SYSTEM_READ for each json file`() = runTest {
         // ARRANGE
-        val sessionFeature = SessionFeature(FakePlatformDependencies("test"), scope)
-        val harness = TestEnvironment.create().withFeature(sessionFeature).build()
+        val harness = TestEnvironment.create().withFeature(sessionFeature).build(platform = platform)
         val fileList = listOf(
             FileEntry("/app/session/session-1.json", false),
             FileEntry("/app/session/session-2.json", false),
@@ -147,10 +155,9 @@ class SessionFeatureCoreTest {
     }
 
     @Test
-    fun `onPrivateData() with valid session content dispatches internal LOADED`() = runTest {
+    fun `onPrivateData() with valid session content loads session into state`() = runTest {
         // ARRANGE
-        val sessionFeature = SessionFeature(FakePlatformDependencies("test"), scope)
-        val harness = TestEnvironment.create().withFeature(sessionFeature).build()
+        val harness = TestEnvironment.create().withFeature(sessionFeature).build(platform = platform)
         val sessionJsonContent = """{"id":"loaded-1","name":"Loaded Session","ledger":[],"createdAt":1}"""
         val fileContentPayload = buildJsonObject {
             put("subpath", "loaded-1.json")
@@ -161,17 +168,17 @@ class SessionFeatureCoreTest {
         sessionFeature.onPrivateData(fileContentPayload, harness.store)
 
         // ASSERT
-        val loadedAction = harness.processedActions.find { it.name == "session.internal.LOADED" }
-        assertNotNull(loadedAction)
-        assertEquals("session", loadedAction.originator)
-        assertNotNull(loadedAction.payload?.get("sessions")?.jsonObject?.get("loaded-1"))
+        // THE FIX: Assert on the resulting state change, not the internal action dispatch.
+        val finalState = harness.store.state.value.featureStates["session"] as? SessionState
+        assertNotNull(finalState)
+        assertTrue(finalState.sessions.containsKey("loaded-1"), "Session map should contain the new session.")
+        assertEquals("Loaded Session", finalState.sessions["loaded-1"]?.name)
     }
 
     @Test
     fun `onPrivateData() with corrupted session content logs an error and does not load`() = runTest {
         // ARRANGE
-        val sessionFeature = SessionFeature(FakePlatformDependencies("test"), scope)
-        val harness = TestEnvironment.create().withFeature(sessionFeature).build()
+        val harness = TestEnvironment.create().withFeature(sessionFeature).build(platform = platform)
         val corruptedJsonContent = """{"id":"bad-1","name":"Bad Session",}""" // Invalid trailing comma
         val fileContentPayload = buildJsonObject {
             put("subpath", "bad-1.json") // Add subpath for better error logging
