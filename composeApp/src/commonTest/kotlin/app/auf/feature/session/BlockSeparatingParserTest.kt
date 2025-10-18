@@ -5,6 +5,13 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
+/**
+ * Tier 1 Component Test for SessionFeature Text and CodeBlock parsing.
+ *
+ * Mandate (P-TEST-001, T1): To test the BlockSeparatingParsers internal logic
+ *
+ */
+
 class BlockSeparatingParserTest {
 
     @Test
