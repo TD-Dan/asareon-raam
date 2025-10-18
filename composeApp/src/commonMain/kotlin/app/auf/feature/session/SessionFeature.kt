@@ -59,7 +59,6 @@ class SessionFeature(
             "system.STARTING" -> store.dispatch(this.name, Action("filesystem.SYSTEM_LIST"))
             "session.CREATE" -> {
                 val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
-                // The newly created session is now active, persist it immediately.
                 sessionState.activeSessionId?.let { persistSession(it, store) }
                 broadcastSessionNames(sessionState, store)
             }
@@ -72,7 +71,6 @@ class SessionFeature(
                     return
                 }
                 persistSession(sessionId, store)
-                // Reducer has already updated the state, so broadcast the new names.
                 val updatedSessionState = store.state.value.featureStates[name] as? SessionState ?: return
                 broadcastSessionNames(updatedSessionState, store)
             }
@@ -85,7 +83,6 @@ class SessionFeature(
 
                 val updatedSessionState = store.state.value.featureStates[name] as? SessionState ?: return
                 broadcastSessionNames(updatedSessionState, store)
-                // THE FIX: Proactively broadcast the deletion event.
                 store.dispatch(this.name, Action("session.publish.DELETED", buildJsonObject { put("sessionId", sessionIdToDelete) }))
             }
             "session.internal.LOADED" -> {
@@ -111,7 +108,6 @@ class SessionFeature(
                     platformDependencies.log(LogLevel.ERROR, name, "Ledger content requested for non-existent session '${payload.sessionId}' by '${action.originator}'.")
                     return
                 }
-                // THE FIX: Format the ledger content and deliver it privately.
                 val messages = session.ledger.mapNotNull {
                     it.rawContent?.let { content ->
                         val role = if (it.senderId == "user") "user" else "model"
@@ -215,7 +211,7 @@ class SessionFeature(
                     if (it.id == decoded.messageId) it.copy(
                         rawContent = decoded.newContent,
                         content = blockParser.parse(decoded.newContent),
-                        metadata = decoded.newMetadata ?: it.metadata // Keep old metadata if new one isn't provided
+                        metadata = decoded.newMetadata ?: it.metadata
                     ) else it
                 }
                 val updatedSession = targetSession.copy(ledger = updatedLedger)

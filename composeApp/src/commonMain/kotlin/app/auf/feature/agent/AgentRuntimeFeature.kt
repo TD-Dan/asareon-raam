@@ -46,7 +46,6 @@ class AgentRuntimeFeature(
 
         when (action.name) {
             "agent.CREATE" -> handleCreateAgent(action, currentFeatureState)?.let { newFeatureState = it }
-            // "agent.DELETE" is now a Command and does not change state directly.
             "agent.internal.CONFIRM_DELETE" -> handleDeleteAgent(action, currentFeatureState)?.let { newFeatureState = it }
             "agent.UPDATE_CONFIG" -> handleUpdateConfig(action, currentFeatureState)?.let { newFeatureState = it }
             "agent.TOGGLE_AUTOMATIC_MODE" -> handleToggleAutomaticMode(action, currentFeatureState)?.let { newFeatureState = it }
@@ -79,7 +78,6 @@ class AgentRuntimeFeature(
     private fun handleCreateAgent(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
         val payload = action.payload ?: return null
         val agentName = payload["name"]?.jsonPrimitive?.contentOrNull ?: return null
-        // Use defaults for non-required fields
         val personaId = payload["personaId"]?.jsonPrimitive?.contentOrNull ?: "keel-20250914T142800Z"
         val modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: "gemini"
         val modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: "gemini-pro"
@@ -238,12 +236,7 @@ class AgentRuntimeFeature(
                 store.dispatch(this.name, Action("filesystem.SYSTEM_DELETE_DIRECTORY", buildJsonObject { put("subpath", agentId) }))
                 store.dispatch(this.name, Action("agent.internal.CONFIRM_DELETE", buildJsonObject { put("agentId", agentId) }))
                 store.dispatch(this.name, Action("agent.publish.AGENT_DELETED", buildJsonObject { put("agentId", agentId) }))
-
-                val updatedAgentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
-                val finalNameMap = updatedAgentState.agents.mapValues { it.value.name } - agentId
-                store.dispatch(this.name, Action("agent.publish.AGENT_NAMES_UPDATED", buildJsonObject {
-                    put("names", Json.encodeToJsonElement(finalNameMap))
-                }))
+                broadcastAgentNames(store) // Broadcast updated names after deletion
             }
             "session.publish.DELETED" -> {
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
@@ -303,7 +296,6 @@ class AgentRuntimeFeature(
         }
 
         setAgentStatus(agentId, AgentStatus.PROCESSING, store)
-        // THE FIX: Dispatch a request for the ledger content instead of accessing state directly.
         store.dispatch(this.name, Action("session.REQUEST_LEDGER_CONTENT", buildJsonObject {
             put("sessionId", sessionId)
             put("correlationId", agentId)
@@ -393,7 +385,7 @@ class AgentRuntimeFeature(
         store.dispatch(this.name, Action("session.POST", buildJsonObject {
             put("session", sessionId)
             put("senderId", agentId)
-            put("messageId", messageId) // Pass the pre-generated ID
+            put("messageId", messageId)
             put("metadata", metadata)
         }))
     }
