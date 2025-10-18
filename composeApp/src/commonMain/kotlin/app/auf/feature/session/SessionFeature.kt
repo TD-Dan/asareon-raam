@@ -33,6 +33,9 @@ class SessionFeature(
     @Serializable internal data class InternalSessionLoadedPayload(val sessions: Map<String, Session>)
     @Serializable private data class AgentNamesUpdatedPayload(val names: Map<String, String>)
     @Serializable private data class AgentDeletedPayload(val agentId: String)
+    @Serializable private data class RequestLedgerPayload(val sessionId: String, val correlationId: String)
+    @Serializable private data class GatewayMessage(val role: String, val content: String)
+
 
     private val blockParser = BlockSeparatingParser()
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
@@ -75,13 +78,15 @@ class SessionFeature(
             }
             "session.DELETE" -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull ?: return
-                // THE FIX: We cannot resolve the ID from the new state. The contract is that the identifier
-                // for the side-effect must be the ID. The reducer handles name-or-ID resolution for the state change.
-                store.dispatch(this.name, Action("filesystem.SYSTEM_DELETE", buildJsonObject { put("subpath", "$identifier.json") }))
+                val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
+                val sessionIdToDelete = resolveSessionId(identifier, sessionState) ?: return
 
-                // This part is correct, it uses the new state which has had the session removed.
+                store.dispatch(this.name, Action("filesystem.SYSTEM_DELETE", buildJsonObject { put("subpath", "$sessionIdToDelete.json") }))
+
                 val updatedSessionState = store.state.value.featureStates[name] as? SessionState ?: return
                 broadcastSessionNames(updatedSessionState, store)
+                // THE FIX: Proactively broadcast the deletion event.
+                store.dispatch(this.name, Action("session.publish.DELETED", buildJsonObject { put("sessionId", sessionIdToDelete) }))
             }
             "session.internal.LOADED" -> {
                 val updatedSessionState = store.state.value.featureStates[name] as? SessionState ?: return
@@ -97,6 +102,26 @@ class SessionFeature(
                     return
                 }
                 persistSession(sessionId, store)
+            }
+            "session.REQUEST_LEDGER_CONTENT" -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<RequestLedgerPayload>(it) } ?: return
+                val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
+                val session = sessionState.sessions[payload.sessionId]
+                if (session == null) {
+                    platformDependencies.log(LogLevel.ERROR, name, "Ledger content requested for non-existent session '${payload.sessionId}' by '${action.originator}'.")
+                    return
+                }
+                // THE FIX: Format the ledger content and deliver it privately.
+                val messages = session.ledger.mapNotNull {
+                    it.rawContent?.let { content ->
+                        val role = if (it.senderId == "user") "user" else "model"
+                        GatewayMessage(role, content)
+                    }
+                }
+                store.deliverPrivateData(this.name, action.originator ?: "unknown", buildJsonObject {
+                    put("correlationId", payload.correlationId)
+                    putJsonArray("messages") { messages.forEach { add(Json.encodeToJsonElement(it)) } }
+                })
             }
         }
     }
@@ -166,7 +191,6 @@ class SessionFeature(
                 val sessionId = resolveSessionId(decoded.session, currentFeatureState) ?: return state
                 val targetSession = currentFeatureState.sessions[sessionId] ?: return state
                 val newEntry = LedgerEntry(
-                    // THE FIX: Use the provided ID if it exists, otherwise generate one.
                     id = decoded.messageId ?: platformDependencies.generateUUID(),
                     timestamp = platformDependencies.getSystemTimeMillis(),
                     senderId = decoded.senderId,

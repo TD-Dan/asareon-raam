@@ -33,7 +33,6 @@ import kotlin.test.*
 class AgentRuntimeFeatureCoreTest {
 
     private val scope = CoroutineScope(Dispatchers.Unconfined)
-    // THE FIX: Create a single, shared platform instance for all components in a test.
     private val platform = FakePlatformDependencies("test")
     private val agentFeature = AgentRuntimeFeature(platform, scope)
     private val fileSystemFeature = FileSystemFeature(platform)
@@ -70,12 +69,15 @@ class AgentRuntimeFeatureCoreTest {
     fun `delete() orchestrates cleanup and then confirms deletion`() = runTest {
         // ARRANGE
         val agent = AgentInstance("aid-1", "Test", "p", "m", "m", primarySessionId = "sid-1")
+        val session = Session("sid-1", "Test Session", emptyList(), 1L)
         val avatarCards = mapOf("aid-1" to mapOf(AgentStatus.IDLE to "msg-123", AgentStatus.PROCESSING to "msg-456"))
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(fileSystemFeature)
             .withFeature(sessionFeature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent), agentAvatarCardIds = avatarCards))
+            // THE FIX: Provide the session state that the agent is subscribed to.
+            .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
             .build(platform = platform)
         val deleteAction = Action("agent.DELETE", buildJsonObject { put("agentId", "aid-1") })
 
@@ -174,10 +176,11 @@ class AgentRuntimeFeatureCoreTest {
             .withFeature(agentFeature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent1.id to agent1, agent2.id to agent2)))
             .build(platform = platform)
-        val deleteAction = Action("session.DELETE", buildJsonObject { put("sessionId", "session-to-delete") })
+        // THE FIX: Dispatch the canonical event, not the command.
+        val deleteEvent = Action("session.publish.DELETED", buildJsonObject { put("sessionId", "session-to-delete") })
 
         // ACT
-        harness.store.dispatch("session.ui", deleteAction)
+        harness.store.dispatch("session", deleteEvent)
 
         // ASSERT (State)
         val finalAgentState = harness.store.state.value.featureStates["agent"] as? AgentRuntimeState
@@ -192,15 +195,13 @@ class AgentRuntimeFeatureCoreTest {
     }
 
     @Test
-    fun `triggerManualTurn() orchestrates full sequence of actions`() = runTest {
+    fun `triggerManualTurn() orchestrates request for ledger content`() = runTest {
         // ARRANGE
-        val session = Session("sid-1", "Test", emptyList(), 1L)
         val agent = AgentInstance("aid-1", "Test Agent", "", "gemini", "gemini-pro", "sid-1")
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(sessionFeature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
-            .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
             .build(platform = platform)
         val triggerAction = Action("agent.TRIGGER_MANUAL_TURN", buildJsonObject { put("agentId", "aid-1") })
 
@@ -210,7 +211,11 @@ class AgentRuntimeFeatureCoreTest {
         // ASSERT
         assertNotNull(harness.processedActions.find { it.name == "agent.internal.SET_STATUS" })
         assertNotNull(harness.processedActions.find { it.name == "session.POST" && (it.payload?.get("metadata")?.jsonObject?.get("is_transient")?.jsonPrimitive?.boolean == true) })
-        assertNotNull(harness.processedActions.find { it.name == "gateway.GENERATE_CONTENT" })
+        // THE FIX: Assert that the new decoupled request action was dispatched.
+        val requestAction = harness.processedActions.find { it.name == "session.REQUEST_LEDGER_CONTENT" }
+        assertNotNull(requestAction)
+        assertEquals("sid-1", requestAction.payload?.get("sessionId")?.jsonPrimitive?.content)
+        assertEquals("aid-1", requestAction.payload?.get("correlationId")?.jsonPrimitive?.content)
     }
 
     @Test

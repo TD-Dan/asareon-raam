@@ -129,6 +129,25 @@
       }
     },
     {
+      "action_name":"session.REQUEST_LEDGER_CONTENT",
+      "summary":"Requests the formatted ledger content for a specific session. Used by agents to build context for a cognitive turn.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "sessionId":{
+            "type":"string"
+          },
+          "correlationId":{
+            "type":"string"
+          }
+        },
+        "required":[
+          "sessionId",
+          "correlationId"
+        ]
+      }
+    },
+    {
       "action_name":"session.SET_ACTIVE_TAB",
       "summary":"Sets the currently visible session in the main tabbed view. Targets the session via the 'session' property (ID or name).",
       "payload_schema":{
@@ -217,6 +236,21 @@
     {
       "action_name":"session.publish.UPDATED",
       "summary":"Broadcasts that a session has been updated (e.g., a new message was posted).",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "sessionId":{
+            "type":"string"
+          }
+        },
+        "required":[
+          "sessionId"
+        ]
+      }
+    },
+    {
+      "action_name":"session.publish.DELETED",
+      "summary":"Broadcasts that a session has been deleted, so other features can clean up their state.",
       "payload_schema":{
         "type":"object",
         "properties":{

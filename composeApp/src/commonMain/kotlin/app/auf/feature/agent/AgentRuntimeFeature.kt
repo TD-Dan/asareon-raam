@@ -8,7 +8,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
-import app.auf.feature.session.SessionState
 import app.auf.util.FileEntry
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
@@ -31,6 +30,7 @@ class AgentRuntimeFeature(
     @Serializable private data class GatewayMessage(val role: String, val content: String)
     @Serializable private data class AgentIdPayload(val agentId: String)
     @Serializable private data class SessionDeletePayload(val sessionId: String)
+    @Serializable private data class LedgerContentResponse(val correlationId: String, val messages: List<GatewayMessage>)
 
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
@@ -50,7 +50,7 @@ class AgentRuntimeFeature(
             "agent.internal.CONFIRM_DELETE" -> handleDeleteAgent(action, currentFeatureState)?.let { newFeatureState = it }
             "agent.UPDATE_CONFIG" -> handleUpdateConfig(action, currentFeatureState)?.let { newFeatureState = it }
             "agent.TOGGLE_AUTOMATIC_MODE" -> handleToggleAutomaticMode(action, currentFeatureState)?.let { newFeatureState = it }
-            "session.DELETE" -> handleSessionDeleted(action, currentFeatureState)?.let { newFeatureState = it }
+            "session.publish.DELETED" -> handleSessionDeleted(action, currentFeatureState)?.let { newFeatureState = it }
             "agent.internal.SET_STATUS" -> handleSetStatus(action, currentFeatureState)?.let { newFeatureState = it }
             "agent.internal.AGENT_LOADED" -> handleAgentLoaded(action, currentFeatureState)?.let { newFeatureState = it }
             "agent.SET_EDITING" -> handleSetEditing(action, currentFeatureState)?.let { newFeatureState = it }
@@ -63,7 +63,6 @@ class AgentRuntimeFeature(
                     platformDependencies.log(LogLevel.ERROR, name, "Failed to parse AVAILABLE_MODELS_UPDATED payload: ${e.message}. Payload was: $payload")
                     null
                 }
-                // THE FIX: Provide a default value for the nullable map.
                 newFeatureState = currentFeatureState.copy(availableModels = decodedModels ?: emptyMap())
             }
             "session.publish.SESSION_NAMES_UPDATED" -> {
@@ -217,7 +216,6 @@ class AgentRuntimeFeature(
                 broadcastAgentNames(store)
             }
             "agent.DELETE" -> {
-                // THE FIX: This is a Command. Read current state, do side effects, then dispatch Event.
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agentToDelete = agentState.agents[agentId]
@@ -228,7 +226,6 @@ class AgentRuntimeFeature(
 
                 val sessionToClean = agentToDelete.primarySessionId
                 val cardsToDelete = agentState.agentAvatarCardIds[agentId]
-                // THE FIX: Use safe call on nullable map.
                 cardsToDelete?.values?.forEach { messageId ->
                     if (sessionToClean != null) {
                         store.dispatch(this.name, Action("session.DELETE_MESSAGE", buildJsonObject {
@@ -242,14 +239,13 @@ class AgentRuntimeFeature(
                 store.dispatch(this.name, Action("agent.internal.CONFIRM_DELETE", buildJsonObject { put("agentId", agentId) }))
                 store.dispatch(this.name, Action("agent.publish.AGENT_DELETED", buildJsonObject { put("agentId", agentId) }))
 
-                // Broadcast updated names after the state has changed.
                 val updatedAgentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val finalNameMap = updatedAgentState.agents.mapValues { it.value.name } - agentId
                 store.dispatch(this.name, Action("agent.publish.AGENT_NAMES_UPDATED", buildJsonObject {
                     put("names", Json.encodeToJsonElement(finalNameMap))
                 }))
             }
-            "session.DELETE" -> {
+            "session.publish.DELETED" -> {
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val deletedSessionId = action.payload?.let { json.decodeFromJsonElement<SessionDeletePayload>(it) }?.sessionId ?: return
                 agentState.agents.values.filter { it.primarySessionId == deletedSessionId }.forEach { agentToUpdate ->
@@ -306,27 +302,12 @@ class AgentRuntimeFeature(
             setAgentStatus(agentId, AgentStatus.ERROR, store, "Cannot start turn: Agent not subscribed to a session."); return
         }
 
-        val sessionState = store.state.value.featureStates["session"] as? SessionState ?: return
-        val session = sessionState.sessions[sessionId]
-        if (session == null) {
-            val errorMessage = "Cannot start turn: Subscribed session with ID '$sessionId' not found."
-            platformDependencies.log(LogLevel.WARN, name, "Action 'agent.TRIGGER_MANUAL_TURN' for agent '$agentId' failed: $errorMessage")
-            setAgentStatus(agentId, AgentStatus.ERROR, store, errorMessage)
-            return
-        }
-        val contextMessages = session.ledger.mapNotNull { it.rawContent?.let { content -> GatewayMessage("user", content) } }
-
         setAgentStatus(agentId, AgentStatus.PROCESSING, store)
-        val turnJob = coroutineScope.launch {
-            store.dispatch(this@AgentRuntimeFeature.name, Action("gateway.GENERATE_CONTENT", buildJsonObject {
-                put("providerId", agent.modelProvider)
-                put("modelName", agent.modelName)
-                put("correlationId", agent.id)
-                put("contents", Json.encodeToJsonElement(contextMessages))
-            }))
-        }
-        activeTurnJobs[agentId] = turnJob
-        turnJob.invokeOnCompletion { activeTurnJobs.remove(agentId) }
+        // THE FIX: Dispatch a request for the ledger content instead of accessing state directly.
+        store.dispatch(this.name, Action("session.REQUEST_LEDGER_CONTENT", buildJsonObject {
+            put("sessionId", sessionId)
+            put("correlationId", agentId)
+        }))
     }
 
     override fun onPrivateData(data: Any, store: Store) {
@@ -336,7 +317,24 @@ class AgentRuntimeFeature(
                 store.dispatch(this.name, Action("filesystem.SYSTEM_READ", buildJsonObject { put("subpath", configPath) }))
             }
             is JsonObject -> {
-                if (data.containsKey("correlationId")) {
+                if (data.containsKey("correlationId") && data.containsKey("messages")) { // Response from SessionFeature
+                    val decoded = try { json.decodeFromJsonElement(LedgerContentResponse.serializer(), data) } catch (e:Exception) { null } ?: return
+                    val agentId = decoded.correlationId
+                    val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+                    val agent = agentState.agents[agentId] ?: return
+
+                    val turnJob = coroutineScope.launch {
+                        store.dispatch(this@AgentRuntimeFeature.name, Action("gateway.GENERATE_CONTENT", buildJsonObject {
+                            put("providerId", agent.modelProvider)
+                            put("modelName", agent.modelName)
+                            put("correlationId", agent.id)
+                            put("contents", Json.encodeToJsonElement(decoded.messages))
+                        }))
+                    }
+                    activeTurnJobs[agentId] = turnJob
+                    turnJob.invokeOnCompletion { activeTurnJobs.remove(agentId) }
+
+                } else if (data.containsKey("correlationId")) { // Response from GatewayFeature
                     val decoded = try { json.decodeFromJsonElement(GatewayResponsePayload.serializer(), data) } catch (e: Exception) {
                         platformDependencies.log(LogLevel.ERROR, name, "Failed to parse private GatewayResponsePayload: ${e.message}")
                         null
@@ -363,7 +361,7 @@ class AgentRuntimeFeature(
                         }))
                         setAgentStatus(agentId, AgentStatus.IDLE, store)
                     }
-                } else if (data.containsKey("content")) {
+                } else if (data.containsKey("content")) { // Response from FileSystemFeature
                     try {
                         val agent = json.decodeFromString<AgentInstance>(data["content"]?.jsonPrimitive?.content ?: "")
                         store.dispatch(this.name, Action("agent.internal.AGENT_LOADED", Json.encodeToJsonElement(agent) as JsonObject))
