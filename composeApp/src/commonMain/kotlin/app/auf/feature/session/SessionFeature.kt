@@ -86,27 +86,31 @@ class SessionFeature(
             ActionNames.SESSION_POST -> {
                 val sessionId = resolveSessionIdFromGenericPayload(action.payload, sessionState) ?: return
                 persistSession(sessionId, store)
-                // THE FIX: Dispatch the new MESSAGE_POSTED event after successful persistence.
                 val updatedSession = (store.state.value.featureStates[name] as? SessionState)?.sessions?.get(sessionId) ?: return
                 val postedEntry = updatedSession.ledger.last()
                 store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
                     put("sessionId", sessionId)
                     put("entry", json.encodeToJsonElement(postedEntry))
                 }))
+                // THE FIX: Fulfill the contract by publishing the SESSION_UPDATED event.
+                store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
             ActionNames.SESSION_UPDATE_MESSAGE, ActionNames.SESSION_TOGGLE_MESSAGE_COLLAPSED, ActionNames.SESSION_TOGGLE_MESSAGE_RAW_VIEW -> {
                 val sessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: resolveSessionIdFromGenericPayload(action.payload, sessionState) ?: return
                 persistSession(sessionId, store)
+                // THE FIX: Fulfill the contract by publishing the SESSION_UPDATED event.
+                store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
             ActionNames.SESSION_DELETE_MESSAGE -> {
                 val sessionId = resolveSessionIdFromGenericPayload(action.payload, sessionState) ?: return
                 val messageId = action.payload?.get("messageId")?.jsonPrimitive?.contentOrNull ?: return
                 persistSession(sessionId, store)
-                // THE FIX: Dispatch the new MESSAGE_DELETED event after successful persistence.
                 store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
                     put("sessionId", sessionId)
                     put("messageId", messageId)
                 }))
+                // THE FIX: Fulfill the contract by publishing the SESSION_UPDATED event.
+                store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
             ActionNames.SESSION_REQUEST_LEDGER_CONTENT -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<RequestLedgerPayload>(it) } ?: return

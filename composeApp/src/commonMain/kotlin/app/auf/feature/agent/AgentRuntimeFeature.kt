@@ -310,8 +310,21 @@ class AgentRuntimeFeature(
                     turnJob.invokeOnCompletion { activeTurnJobs.remove(agentId) }
 
                 } else if (data.containsKey("correlationId")) { // Response from GatewayFeature
-                    val decoded = try { json.decodeFromJsonElement<GatewayResponsePayload>(data) } catch (e: Exception) { null } ?: return
-                    val agentId = decoded.correlationId
+                    // THE FIX: Hardened parsing to prevent silent failures and deadlocks.
+                    val agentId = data["correlationId"]?.jsonPrimitive?.contentOrNull
+                    if (agentId == null) {
+                        platformDependencies.log(LogLevel.ERROR, name, "Received gateway response with no correlationId.")
+                        return
+                    }
+
+                    val decoded = try {
+                        json.decodeFromJsonElement<GatewayResponsePayload>(data)
+                    } catch (e: Exception) {
+                        platformDependencies.log(LogLevel.ERROR, name, "FATAL: Failed to parse gateway response for agent '$agentId'. Error: ${e.message}")
+                        setAgentStatus(agentId, AgentStatus.ERROR, store, "FATAL: Could not parse gateway response.")
+                        return
+                    }
+
                     val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                     val agent = agentState.agents[agentId] ?: return
                     val sessionId = agent.primarySessionId ?: return

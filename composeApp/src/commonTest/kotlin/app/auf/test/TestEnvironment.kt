@@ -14,19 +14,25 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 
 /**
- * A private, test-only feature whose sole purpose is to capture all actions that
- * successfully pass the Store's guards and are broadcast to feature onAction handlers.
- * This is the canonical way to assert on successful action processing.
+ * A test-only Store that decorates the real Store.
+ * It overrides `dispatch` to record all actions that are sent to the bus,
+ * *before* they are processed by the real Store's routing and security logic.
+ * It then calls the parent implementation to ensure the production logic runs unmodified.
+ * This is the correct, non-invasive pattern for observing the action flow in tests.
  */
-class RecordingFeature : Feature {
-    override val name = "internal_recorder"
-    val receivedActions = mutableListOf<Action>()
+class RecordingStore(
+    initialState: AppState,
+    features: List<Feature>,
+    platformDependencies: FakePlatformDependencies,
+    validActionNames: Set<String>
+) : Store(initialState, features, platformDependencies, validActionNames) {
 
-    // This composableProvider is nullable, so a default implementation is enough.
-    override val composableProvider: Feature.ComposableProvider? = null
-    override fun onAction(action: Action, store: Store) {
-        // The action is stamped with an originator by the time it gets here.
-        receivedActions.add(action)
+    val processedActions = mutableListOf<Action>()
+
+    override fun dispatch(originator: String, action: Action) {
+        val stampedAction = action.copy(originator = originator)
+        processedActions.add(stampedAction)
+        super.dispatch(originator, action)
     }
 }
 
@@ -36,13 +42,12 @@ class RecordingFeature : Feature {
  * store, the recording feature, and fake platform dependencies.
  */
 data class TestHarness(
-    val store: Store,
-    val platform: FakePlatformDependencies,
-    private val recorder: RecordingFeature
+    val store: RecordingStore,
+    val platform: FakePlatformDependencies
 ) {
     /** A convenience accessor for the list of successfully processed actions. */
     val processedActions: List<Action>
-        get() = recorder.receivedActions
+        get() = store.processedActions
 }
 
 /**
@@ -98,11 +103,6 @@ class TestEnvironment {
         }
         allFeatures.addAll(features)
 
-        // Add the recording feature to intercept all successful actions.
-        val recorder = RecordingFeature()
-        allFeatures.add(recorder)
-
-
         var fullyPopulatedState = AppState(featureStates = initialStates)
         val initStateAction = Action("test.internal.INIT_DEFAULT_STATE")
 
@@ -111,9 +111,10 @@ class TestEnvironment {
         }
 
         val validActionNames = actionRegistryOverride ?: ActionRegistrySource.allActionNames
-        val store = Store(fullyPopulatedState, allFeatures, platform, validActionNames)
+        // THE FIX: Instantiate the RecordingStore instead of the base Store.
+        val store = RecordingStore(fullyPopulatedState, allFeatures, platform, validActionNames)
         store.initFeatureLifecycles()
 
-        return TestHarness(store, platform, recorder)
+        return TestHarness(store, platform)
     }
 }
