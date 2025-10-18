@@ -59,23 +59,24 @@ class AgentRuntimeFeature(
             ActionNames.AGENT_INTERNAL_CONFIRM_DELETE -> handleDeleteAgent(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.AGENT_INTERNAL_SET_STATUS -> handleSetStatus(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> handleAgentLoaded(action, currentFeatureState)?.let { newFeatureState = it }
-            // THE FIX: The agent now listens to verified EVENTS, not commands.
             ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> handleMessagePosted(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.SESSION_PUBLISH_MESSAGE_DELETED -> handleMessageDeleted(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.SESSION_PUBLISH_SESSION_DELETED -> handleSessionDeleted(action, currentFeatureState)?.let { newFeatureState = it }
 
             ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED -> {
-                val decodedModels: Map<String, List<String>>? = try { payload?.let { json.decodeFromJsonElement(it) } } catch (e: Exception) { null } //TODO: This is a silent failure point!
+                val decodedModels: Map<String, List<String>>? = try { payload?.let { json.decodeFromJsonElement(it) } } catch (e: Exception) { null }
                 newFeatureState = currentFeatureState.copy(availableModels = decodedModels ?: emptyMap())
             }
             ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
-                val decoded = try { payload?.let { json.decodeFromJsonElement<SessionNamesPayload>(it) } } catch(e: Exception) { null } ?: return stateWithFeature  //TODO: This is a silent failure point!
+                val decoded = try { payload?.let { json.decodeFromJsonElement<SessionNamesPayload>(it) } } catch(e: Exception) { null } ?: return stateWithFeature
                 newFeatureState = currentFeatureState.copy(sessionNames = decoded.names)
             }
         }
 
         return newFeatureState?.let {
-            stateWithFeature.copy(featureStates = stateWithFeature.featureStates + (name to it))
+            // THE FIX: Ensure the transient field is cleared for any subsequent action.
+            val finalState = if (action.name != ActionNames.SESSION_PUBLISH_SESSION_DELETED) it.copy(agentsToPersist = null) else it
+            if (finalState != currentFeatureState) stateWithFeature.copy(featureStates = stateWithFeature.featureStates + (name to finalState)) else stateWithFeature
         } ?: stateWithFeature
     }
 
@@ -124,8 +125,19 @@ class AgentRuntimeFeature(
 
     private fun handleSessionDeleted(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
         val deletedSessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return null
-        val newAgents = currentFeatureState.agents.mapValues { (_, agent) -> if (agent.primarySessionId == deletedSessionId) agent.copy(primarySessionId = null) else agent }
-        return if (newAgents != currentFeatureState.agents) currentFeatureState.copy(agents = newAgents) else null
+        // THE FIX: Identify which agents were affected before changing the state.
+        val affectedAgentIds = currentFeatureState.agents.values
+            .filter { it.primarySessionId == deletedSessionId }
+            .map { it.id }
+            .toSet()
+
+        if (affectedAgentIds.isEmpty()) return null
+
+        val newAgents = currentFeatureState.agents.mapValues { (_, agent) ->
+            if (agent.id in affectedAgentIds) agent.copy(primarySessionId = null) else agent
+        }
+        // THE FIX: Pass the list of affected agents to the onAction handler via the transient state field.
+        return currentFeatureState.copy(agents = newAgents, agentsToPersist = affectedAgentIds)
     }
 
     private fun handleSetStatus(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
@@ -230,17 +242,16 @@ class AgentRuntimeFeature(
                 broadcastAgentNames(store)
             }
             ActionNames.SESSION_PUBLISH_SESSION_DELETED -> {
-                val deletedSessionId = action.payload?.let { json.decodeFromJsonElement<SessionDeletePayload>(it) }?.sessionId ?: return
-                agentState.agents.values
-                    .filter { it.primarySessionId == deletedSessionId }
-                    .forEach { agentToUpdate ->
-                        val latestState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return@forEach
-                        val agentToPersist = latestState.agents[agentToUpdate.id] ?: return@forEach
+                // THE FIX: Read the reliable list of agents to persist from the transient state field.
+                agentState.agentsToPersist?.forEach { agentId ->
+                    val agentToPersist = agentState.agents[agentId]
+                    if (agentToPersist != null) {
                         store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                             put("subpath", "${agentToPersist.id}/$agentConfigFILENAME")
                             put("content", json.encodeToString(agentToPersist))
                         }))
                     }
+                }
             }
             ActionNames.AGENT_CANCEL_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return

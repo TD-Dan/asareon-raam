@@ -43,5 +43,9 @@ data class AgentRuntimeState(
      * This is a runtime state and is NOT persisted.
      */
     @Transient
-    val agentAvatarCardIds: Map<String, Map<AgentStatus, String>> = emptyMap()
+    val agentAvatarCardIds: Map<String, Map<AgentStatus, String>> = emptyMap(),
+
+    /** THE FIX: A transient field to reliably pass the IDs of agents who need their config persisted from the reducer to the onAction handler. */
+    @Transient
+    val agentsToPersist: Set<String>? = null
 ) : FeatureState
