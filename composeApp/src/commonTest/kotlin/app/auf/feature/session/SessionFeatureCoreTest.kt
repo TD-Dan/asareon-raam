@@ -1,6 +1,7 @@
 package app.auf.feature.session
 
 import app.auf.core.Action
+import app.auf.core.generated.ActionNames
 import app.auf.feature.core.CoreState
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
@@ -34,7 +35,7 @@ class SessionFeatureCoreTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
-        harness.store.dispatch("ui", Action("session.CREATE"))
+        harness.store.dispatch("ui", Action(ActionNames.SESSION_CREATE))
 
         val sessionState = harness.store.state.value.featureStates["session"] as? SessionState
         assertNotNull(sessionState)
@@ -43,8 +44,8 @@ class SessionFeatureCoreTest {
         assertEquals("New Session", newSession.name)
         assertEquals(newSession.id, sessionState.activeSessionId)
 
-        assertNotNull(harness.processedActions.find { it.name == "filesystem.SYSTEM_WRITE" })
-        assertNotNull(harness.processedActions.find { it.name == "session.publish.SESSION_NAMES_UPDATED" })
+        assertNotNull(harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE })
+        assertNotNull(harness.processedActions.find { it.name == ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED })
     }
 
     @Test
@@ -57,25 +58,25 @@ class SessionFeatureCoreTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
-        harness.store.dispatch("ui", Action("session.DELETE", buildJsonObject { put("session", "sid-1") }))
+        harness.store.dispatch("ui", Action(ActionNames.SESSION_DELETE, buildJsonObject { put("session", "sid-1") }))
 
         val sessionState = harness.store.state.value.featureStates["session"] as? SessionState
         assertNotNull(sessionState)
         assertTrue(sessionState.sessions.isEmpty())
 
-        val deleteAction = harness.processedActions.find { it.name == "filesystem.SYSTEM_DELETE" }
+        val deleteAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_DELETE }
         assertNotNull(deleteAction)
         assertEquals("sid-1.json", deleteAction.payload?.get("subpath")?.jsonPrimitive?.content)
 
-        val publishAction = harness.processedActions.find { it.name == "session.publish.SESSION_NAMES_UPDATED" }
+        val publishAction = harness.processedActions.find { it.name == ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED }
         assertNotNull(publishAction)
         assertEquals("{}", publishAction.payload?.get("names").toString())
 
-        assertNotNull(harness.processedActions.find { it.name == "session.publish.DELETED" })
+        assertNotNull(harness.processedActions.find { it.name == ActionNames.SESSION_PUBLISH_SESSION_DELETED })
     }
 
     @Test
-    fun `post() with transient metadata does not persist the transient entry`() = runTest {
+    fun `post() with transient metadata does not persist and publishes event`() = runTest {
         val session = Session("sid-1", "Test", emptyList(), 1L)
         val harness = TestEnvironment.create()
             .withFeature(sessionFeature)
@@ -83,23 +84,49 @@ class SessionFeatureCoreTest {
             .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
-        val persistentAction = Action("session.POST", buildJsonObject {
+        val persistentAction = Action(ActionNames.SESSION_POST, buildJsonObject {
             put("session", "sid-1"); put("senderId", "user"); put("message", "persistent")
         })
-        val transientAction = Action("session.POST", buildJsonObject {
+        val transientAction = Action(ActionNames.SESSION_POST, buildJsonObject {
             put("session", "sid-1"); put("senderId", "agent"); put("metadata", buildJsonObject { put("is_transient", true) })
         })
 
         harness.store.dispatch("ui", persistentAction)
         harness.store.dispatch("ui", transientAction)
 
-        val writeActions = harness.processedActions.filter { it.name == "filesystem.SYSTEM_WRITE" }
+        // ASSERT Persistence
+        val writeActions = harness.processedActions.filter { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
         assertEquals(2, writeActions.size)
         val finalWriteContent = writeActions.last().payload?.get("content")?.jsonPrimitive?.content
         assertNotNull(finalWriteContent)
         val persistedSession = Json.decodeFromString<Session>(finalWriteContent)
         assertEquals(1, persistedSession.ledger.size)
         assertEquals("persistent", persistedSession.ledger.first().rawContent)
+
+        // ASSERT Event Publishing
+        val publishedEvents = harness.processedActions.filter { it.name == ActionNames.SESSION_PUBLISH_MESSAGE_POSTED }
+        assertEquals(2, publishedEvents.size, "Should publish an event for every POST action, transient or not.")
+    }
+
+    @Test
+    fun `deleteMessage() publishes MESSAGE_DELETED event`() = runTest {
+        val entry = LedgerEntry("msg-1", 1L, "user", "Hello")
+        val session = Session("sid-1", "Test", listOf(entry), 1L)
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withFeature(fileSystemFeature)
+            .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        harness.store.dispatch("ui", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+            put("session", "sid-1"); put("messageId", "msg-1")
+        }))
+
+        val deletedEvent = harness.processedActions.find { it.name == ActionNames.SESSION_PUBLISH_MESSAGE_DELETED }
+        assertNotNull(deletedEvent)
+        assertEquals("sid-1", deletedEvent.payload?.get("sessionId")?.jsonPrimitive?.content)
+        assertEquals("msg-1", deletedEvent.payload?.get("messageId")?.jsonPrimitive?.content)
     }
 
     @Test
@@ -109,9 +136,9 @@ class SessionFeatureCoreTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
             .build(platform = platform)
 
-        harness.store.dispatch("system", Action("system.STARTING"))
+        harness.store.dispatch("system", Action(ActionNames.SYSTEM_STARTING))
 
-        val listAction = harness.processedActions.find { it.name == "filesystem.SYSTEM_LIST" && it.originator == "session" }
+        val listAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_LIST && it.originator == "session" }
         assertNotNull(listAction, "Should have dispatched filesystem.SYSTEM_LIST")
     }
 
@@ -120,13 +147,13 @@ class SessionFeatureCoreTest {
         val harness = TestEnvironment.create().withFeature(sessionFeature).build(platform = platform)
         val fileList = listOf(
             FileEntry("/app/session/session-1.json", false),
-            FileEntry("/app/session/session-2.json", false),
+            FileEntry("/app.auf/session/session-2.json", false),
             FileEntry("/app/session/notes.txt", false)
         )
 
         sessionFeature.onPrivateData(fileList, harness.store)
 
-        val readActions = harness.processedActions.filter { it.name == "filesystem.SYSTEM_READ" }
+        val readActions = harness.processedActions.filter { it.name == ActionNames.FILESYSTEM_SYSTEM_READ }
         assertEquals(2, readActions.size)
         assertEquals("session-1.json", readActions[0].payload?.get("subpath")?.jsonPrimitive?.content)
         assertEquals("session-2.json", readActions[1].payload?.get("subpath")?.jsonPrimitive?.content)
@@ -160,7 +187,7 @@ class SessionFeatureCoreTest {
 
         sessionFeature.onPrivateData(fileContentPayload, harness.store)
 
-        val loadedAction = harness.processedActions.find { it.name == "session.internal.LOADED" }
+        val loadedAction = harness.processedActions.find { it.name == ActionNames.SESSION_INTERNAL_LOADED }
         assertNull(loadedAction, "LOADED should not be dispatched for corrupted content.")
         val log = harness.platform.capturedLogs.find { it.level == LogLevel.ERROR }
         assertNotNull(log)

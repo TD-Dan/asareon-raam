@@ -1,6 +1,6 @@
 package app.auf.core
 
-import app.auf.core.generated.ActionRegistrySource
+import app.auf.core.generated.ActionNames
 import app.auf.feature.agent.AgentRuntimeFeature
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.filesystem.FileSystemFeature
@@ -53,6 +53,6 @@ class AppContainer(
         initialState = AppState(),
         features = features,
         platformDependencies = platformDependencies,
-        validActionNames = ActionRegistrySource.allActionNames
+        validActionNames = ActionNames.allActionNames
     )
 }

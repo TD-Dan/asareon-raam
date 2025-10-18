@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
+import app.auf.core.generated.ActionNames
 import app.auf.feature.core.CoreState
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
@@ -36,7 +37,7 @@ class AgentRuntimeFeatureCoreTest {
             .withFeature(fileSystemFeature)
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
-        val createAction = Action("agent.CREATE", buildJsonObject { put("name", "Test Agent") })
+        val createAction = Action(ActionNames.AGENT_CREATE, buildJsonObject { put("name", "Test Agent") })
 
         harness.store.dispatch("ui", createAction)
 
@@ -47,7 +48,7 @@ class AgentRuntimeFeatureCoreTest {
         assertEquals("Test Agent", newAgent.name)
         assertEquals(newAgent.id, agentState.editingAgentId)
 
-        val writeAction = harness.processedActions.find { it.name == "filesystem.SYSTEM_WRITE" }
+        val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
         assertNotNull(writeAction)
         assertEquals("agent", writeAction.originator)
         assertEquals("${newAgent.id}/agent.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
@@ -66,7 +67,7 @@ class AgentRuntimeFeatureCoreTest {
             .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
-        val deleteAction = Action("agent.DELETE", buildJsonObject { put("agentId", "aid-1") })
+        val deleteAction = Action(ActionNames.AGENT_DELETE, buildJsonObject { put("agentId", "aid-1") })
 
         harness.store.dispatch("ui", deleteAction)
 
@@ -76,10 +77,10 @@ class AgentRuntimeFeatureCoreTest {
         assertFalse(finalAgentState.agentAvatarCardIds.containsKey("aid-1"), "Avatar cards should be removed from the final state.")
 
         val dispatched = harness.processedActions
-        assertNotNull(dispatched.find { it.name == "filesystem.SYSTEM_DELETE_DIRECTORY" }, "Should delete agent directory.")
-        assertNotNull(dispatched.find { it.name == "agent.internal.CONFIRM_DELETE" }, "Should dispatch internal confirmation.")
-        assertNotNull(dispatched.find { it.name == "agent.publish.AGENT_DELETED" }, "Should publish deletion event.")
-        val deleteMsgActions = dispatched.filter { it.name == "session.DELETE_MESSAGE" }
+        assertNotNull(dispatched.find { it.name == ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY }, "Should delete agent directory.")
+        assertNotNull(dispatched.find { it.name == ActionNames.AGENT_INTERNAL_CONFIRM_DELETE }, "Should dispatch internal confirmation.")
+        assertNotNull(dispatched.find { it.name == ActionNames.AGENT_PUBLISH_AGENT_DELETED }, "Should publish deletion event.")
+        val deleteMsgActions = dispatched.filter { it.name == ActionNames.SESSION_DELETE_MESSAGE }
         assertEquals(2, deleteMsgActions.size, "Should dispatch a delete action for each tracked card.")
     }
 
@@ -90,11 +91,11 @@ class AgentRuntimeFeatureCoreTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
             .build(platform = platform)
 
-        harness.store.dispatch("system", Action("system.STARTING"))
+        harness.store.dispatch("system", Action(ActionNames.SYSTEM_STARTING))
 
-        val listAction = harness.processedActions.find { it.name == "filesystem.SYSTEM_LIST" && it.originator == "agent" }
+        val listAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_LIST && it.originator == "agent" }
         assertNotNull(listAction, "AgentFeature should request its file list on start.")
-        val modelsAction = harness.processedActions.find { it.name == "gateway.REQUEST_AVAILABLE_MODELS" }
+        val modelsAction = harness.processedActions.find { it.name == ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS }
         assertNotNull(modelsAction, "AgentFeature should request available models on start.")
     }
 
@@ -105,7 +106,7 @@ class AgentRuntimeFeatureCoreTest {
 
         agentFeature.onPrivateData(dirList, harness.store)
 
-        val readActions = harness.processedActions.filter { it.name == "filesystem.SYSTEM_READ" }
+        val readActions = harness.processedActions.filter { it.name == ActionNames.FILESYSTEM_SYSTEM_READ }
         assertEquals(2, readActions.size)
         assertEquals("agent-1/agent.json", readActions[0].payload?.get("subpath")?.jsonPrimitive?.content)
         assertEquals("agent-2/agent.json", readActions[1].payload?.get("subpath")?.jsonPrimitive?.content)
@@ -132,7 +133,7 @@ class AgentRuntimeFeatureCoreTest {
 
         agentFeature.onPrivateData(fileContentPayload, harness.store)
 
-        val loadedAction = harness.processedActions.find { it.name == "agent.internal.AGENT_LOADED" }
+        val loadedAction = harness.processedActions.find { it.name == ActionNames.AGENT_INTERNAL_AGENT_LOADED }
         assertNull(loadedAction)
         val log = harness.platform.capturedLogs.find { it.level == LogLevel.ERROR }
         assertNotNull(log)
@@ -148,7 +149,7 @@ class AgentRuntimeFeatureCoreTest {
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent1.id to agent1, agent2.id to agent2)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
-        val deleteEvent = Action("session.publish.DELETED", buildJsonObject { put("sessionId", "session-to-delete") })
+        val deleteEvent = Action(ActionNames.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject { put("sessionId", "session-to-delete") })
 
         harness.store.dispatch("session", deleteEvent)
 
@@ -157,7 +158,7 @@ class AgentRuntimeFeatureCoreTest {
         assertNull(finalAgentState.agents["agent-1"]?.primarySessionId)
         assertEquals("session-safe", finalAgentState.agents["agent-2"]?.primarySessionId)
 
-        val writeAction = harness.processedActions.find { it.name == "filesystem.SYSTEM_WRITE" }
+        val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
         assertNotNull(writeAction)
         assertEquals("agent-1/agent.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
     }
@@ -171,13 +172,13 @@ class AgentRuntimeFeatureCoreTest {
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
-        val triggerAction = Action("agent.TRIGGER_MANUAL_TURN", buildJsonObject { put("agentId", "aid-1") })
+        val triggerAction = Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", "aid-1") })
 
         harness.store.dispatch("ui", triggerAction)
 
-        assertNotNull(harness.processedActions.find { it.name == "agent.internal.SET_STATUS" })
-        assertNotNull(harness.processedActions.find { it.name == "session.POST" && (it.payload?.get("metadata")?.jsonObject?.get("is_transient")?.jsonPrimitive?.boolean == true) })
-        val requestAction = harness.processedActions.find { it.name == "session.REQUEST_LEDGER_CONTENT" }
+        assertNotNull(harness.processedActions.find { it.name == ActionNames.AGENT_INTERNAL_SET_STATUS })
+        assertNotNull(harness.processedActions.find { it.name == ActionNames.SESSION_POST && (it.payload?.get("metadata")?.jsonObject?.get("is_transient")?.jsonPrimitive?.boolean == true) })
+        val requestAction = harness.processedActions.find { it.name == ActionNames.SESSION_REQUEST_LEDGER_CONTENT }
         assertNotNull(requestAction)
         assertEquals("sid-1", requestAction.payload?.get("sessionId")?.jsonPrimitive?.content)
         assertEquals("aid-1", requestAction.payload?.get("correlationId")?.jsonPrimitive?.content)
@@ -199,10 +200,10 @@ class AgentRuntimeFeatureCoreTest {
 
         agentFeature.onPrivateData(gatewayResponsePayload, harness.store)
 
-        val deleteAction = harness.processedActions.find { it.name == "session.DELETE_MESSAGE" }
+        val deleteAction = harness.processedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
         assertNotNull(deleteAction)
         assertEquals("msg-processing-123", deleteAction.payload?.get("messageId")?.jsonPrimitive?.content)
-        val postActions = harness.processedActions.filter { it.name == "session.POST" }
+        val postActions = harness.processedActions.filter { it.name == ActionNames.SESSION_POST }
         assertEquals(2, postActions.size, "Should be 2 POST actions: the response and the new IDLE card.")
         assertNotNull(postActions.find { it.payload?.get("message")?.jsonPrimitive?.content == "Hello back" })
         assertNotNull(postActions.find { it.payload?.get("metadata")?.jsonObject?.get("agentStatus")?.jsonPrimitive?.content == "IDLE" })

@@ -1,5 +1,6 @@
 package app.auf.core
 
+import app.auf.core.generated.ActionNames
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
 import app.auf.util.LogLevel
@@ -128,10 +129,10 @@ open class Store(
         )
 
         val isActionAllowed = when (currentLifecycle) {
-            AppLifecycle.BOOTING -> stampedAction.name == "system.INITIALIZING"
+            AppLifecycle.BOOTING -> stampedAction.name == ActionNames.SYSTEM_INITIALIZING
             AppLifecycle.INITIALIZING -> true
-            AppLifecycle.RUNNING -> stampedAction.name != "system.INITIALIZING" && stampedAction.name != "system.STARTING"
-            AppLifecycle.CLOSING -> stampedAction.name == "system.CLOSING"
+            AppLifecycle.RUNNING -> stampedAction.name != ActionNames.SYSTEM_INITIALIZING && stampedAction.name != ActionNames.SYSTEM_STARTING
+            AppLifecycle.CLOSING -> stampedAction.name == ActionNames.SYSTEM_CLOSING
         }
 
         if (!isActionAllowed) {

@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
+import app.auf.core.generated.ActionNames
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -36,7 +37,7 @@ fun SessionsManagerView(store: Store) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text("Session Manager", style = MaterialTheme.typography.headlineSmall)
-            Button(onClick = { store.dispatch("session.ui", Action("session.CREATE")) }) {
+            Button(onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_CREATE)) }) {
                 Icon(Icons.Default.Add, contentDescription = "Create New Session", modifier = Modifier.padding(end = 8.dp))
                 Text("New Session")
             }
@@ -84,14 +85,14 @@ private fun SessionManagerCard(session: Session, store: Store) {
             // Edit Button
             IconButton(onClick = {
                 val payload = buildJsonObject { put("sessionId", session.id) }
-                store.dispatch("session.ui", Action("session.SET_EDITING_SESSION_NAME", payload))
+                store.dispatch("session.ui", Action(ActionNames.SESSION_SET_EDITING_SESSION_NAME, payload))
             }) {
                 Icon(Icons.Default.Edit, contentDescription = "Edit Session Name")
             }
             // Delete Button
             IconButton(onClick = {
                 val payload = buildJsonObject { put("session", session.id) }
-                store.dispatch("session.ui", Action("session.DELETE", payload))
+                store.dispatch("session.ui", Action(ActionNames.SESSION_DELETE, payload))
             }) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete Session")
             }
@@ -105,14 +106,14 @@ private fun SessionManagerCardEditor(session: Session, store: Store) {
 
     val cancelAction = {
         val payload = buildJsonObject { put("sessionId", null as String?) }
-        store.dispatch("session.ui", Action("session.SET_EDITING_SESSION_NAME", payload))
+        store.dispatch("session.ui", Action(ActionNames.SESSION_SET_EDITING_SESSION_NAME, payload))
     }
     val saveAction = {
         val payload = buildJsonObject {
             put("session", session.id)
             put("name", name)
         }
-        store.dispatch("session.ui", Action("session.UPDATE_CONFIG", payload))
+        store.dispatch("session.ui", Action(ActionNames.SESSION_UPDATE_CONFIG, payload))
     }
 
     Card(

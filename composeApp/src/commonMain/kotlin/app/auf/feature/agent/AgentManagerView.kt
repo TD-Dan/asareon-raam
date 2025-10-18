@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
+import app.auf.core.generated.ActionNames
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.collections.get
@@ -28,7 +29,7 @@ fun AgentManagerView(store: Store) {
     val editingAgentId = agentState?.editingAgentId
 
     LaunchedEffect(Unit) {
-        store.dispatch("ui.agentManager", Action("gateway.REQUEST_AVAILABLE_MODELS"))
+        store.dispatch("ui.agentManager", Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
     }
 
     agentToDelete?.let { agent ->
@@ -39,7 +40,7 @@ fun AgentManagerView(store: Store) {
             confirmButton = {
                 Button(
                     onClick = {
-                        store.dispatch("ui.agentManager", Action("agent.DELETE", buildJsonObject { put("agentId", agent.id) }))
+                        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_DELETE, buildJsonObject { put("agentId", agent.id) }))
                         agentToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -55,7 +56,7 @@ fun AgentManagerView(store: Store) {
                 title = { Text("Agent Manager") },
                 actions = {
                     Button(onClick = {
-                        store.dispatch("ui.agentManager", Action("agent.CREATE", buildJsonObject {
+                        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_CREATE, buildJsonObject {
                             put("name", "New Agent")
                         }))
                     }) {
@@ -80,7 +81,7 @@ fun AgentManagerView(store: Store) {
                         agentState = agentState,
                         store = store,
                         onDeleteRequest = { agentToDelete = it },
-                        onEditRequest = { store.dispatch("ui.agentManager", Action("agent.SET_EDITING", buildJsonObject { put("agentId", agent.id) })) }
+                        onEditRequest = { store.dispatch("ui.agentManager", Action(ActionNames.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.id) })) }
                     )
                 }
             }
@@ -150,7 +151,7 @@ private fun AgentReadOnlyView(agent: AgentInstance, sessionNames: Map<String, St
             if (agent.status == AgentStatus.PROCESSING || agent.status == AgentStatus.WAITING) {
                 Button(
                     onClick = {
-                        store.dispatch("ui.agentManager", Action("agent.CANCEL_TURN", buildJsonObject { put("agentId", agent.id) }))
+                        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agent.id) }))
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                 ) {
@@ -161,7 +162,7 @@ private fun AgentReadOnlyView(agent: AgentInstance, sessionNames: Map<String, St
             } else {
                 Button(
                     onClick = {
-                        store.dispatch("ui.agentManager", Action("agent.TRIGGER_MANUAL_TURN", buildJsonObject { put("agentId", agent.id) }))
+                        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", agent.id) }))
                     },
                     enabled = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.ERROR) && agent.primarySessionId != null
                 ) {
@@ -183,14 +184,14 @@ private fun AgentEditorView(
 ) {
     var agentNameInput by remember(agent.id) { mutableStateOf(agent.name) }
     val onSave = {
-        store.dispatch("ui.agentManager", Action("agent.UPDATE_CONFIG", buildJsonObject {
+        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
             put("agentId", agent.id)
             put("name", agentNameInput)
         }))
-        store.dispatch("ui.agentManager", Action("agent.SET_EDITING", buildJsonObject { put("agentId", null as String?) }))
+        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_SET_EDITING, buildJsonObject { put("agentId", null as String?) }))
     }
     val onCancel = {
-        store.dispatch("ui.agentManager", Action("agent.SET_EDITING", buildJsonObject { put("agentId", null as String?) }))
+        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_SET_EDITING, buildJsonObject { put("agentId", null as String?) }))
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -228,7 +229,7 @@ private fun AgentEditorView(
             Switch(
                 checked = agent.automaticMode,
                 onCheckedChange = {
-                    store.dispatch("ui.agentManager", Action("agent.TOGGLE_AUTOMATIC_MODE", buildJsonObject {
+                    store.dispatch("ui.agentManager", Action(ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject {
                         put("agentId", agent.id)
                     }))
                 }
@@ -254,14 +255,14 @@ private fun SessionSelector(agent: AgentInstance, agentState: AgentRuntimeState,
         )
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             DropdownMenuItem(text = { Text("None (Unsubscribe)") }, onClick = {
-                store.dispatch("ui.agentManager", Action("agent.UPDATE_CONFIG", buildJsonObject {
+                store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
                     put("agentId", agent.id); put("primarySessionId", null as String?)
                 }))
                 isExpanded = false
             })
             availableSessions.forEach { (sessionId, sessionName) ->
                 DropdownMenuItem(text = { Text(sessionName) }, onClick = {
-                    store.dispatch("ui.agentManager", Action("agent.UPDATE_CONFIG", buildJsonObject {
+                    store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
                         put("agentId", agent.id); put("primarySessionId", sessionId)
                     }))
                     isExpanded = false
@@ -288,7 +289,7 @@ private fun ProviderSelector(agent: AgentInstance, agentState: AgentRuntimeState
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             availableProviders.forEach { providerId ->
                 DropdownMenuItem(text = { Text(providerId) }, onClick = {
-                    store.dispatch("ui.agentManager", Action("agent.UPDATE_CONFIG", buildJsonObject {
+                    store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
                         put("agentId", agent.id)
                         put("modelProvider", providerId)
                         put("modelName", agentState.availableModels[providerId]?.firstOrNull())
@@ -319,7 +320,7 @@ private fun ModelSelector(agent: AgentInstance, agentState: AgentRuntimeState, s
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             availableModels.forEach { modelName ->
                 DropdownMenuItem(text = { Text(modelName) }, onClick = {
-                    store.dispatch("ui.agentManager", Action("agent.UPDATE_CONFIG", buildJsonObject {
+                    store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
                         put("agentId", agent.id); put("modelName", modelName)
                     }))
                     isExpanded = false

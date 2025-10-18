@@ -234,7 +234,31 @@
   ],
   "publishes":[
     {
-      "action_name":"session.publish.UPDATED",
+      "action_name":"session.publish.MESSAGE_POSTED",
+      "summary":"Broadcasts that a new message has been successfully posted to a session.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "sessionId":{ "type":"string" },
+          "entry":{ "type":"object", "description":"The full LedgerEntry object that was added." }
+        },
+        "required":[ "sessionId", "entry" ]
+      }
+    },
+    {
+      "action_name":"session.publish.MESSAGE_DELETED",
+      "summary":"Broadcasts that a message has been successfully deleted from a session.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "sessionId":{ "type":"string" },
+          "messageId":{ "type":"string" }
+        },
+        "required":[ "sessionId", "messageId" ]
+      }
+    },
+    {
+      "action_name":"session.publish.SESSION_UPDATED",
       "summary":"Broadcasts that a session has been updated (e.g., a new message was posted).",
       "payload_schema":{
         "type":"object",
@@ -249,7 +273,7 @@
       }
     },
     {
-      "action_name":"session.publish.DELETED",
+      "action_name":"session.publish.SESSION_DELETED",
       "summary":"Broadcasts that a session has been deleted, so other features can clean up their state.",
       "payload_schema":{
         "type":"object",

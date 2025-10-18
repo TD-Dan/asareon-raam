@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
+import app.auf.core.generated.ActionNames
 import app.auf.feature.agent.AgentAvatarCard
 import app.auf.feature.agent.AgentStatus
 import kotlinx.serialization.json.booleanOrNull
@@ -47,12 +48,12 @@ fun LedgerEntryCard(
             agentStatus = status,
             errorMessage = errorMessage,
             onTrigger = {
-                store.dispatch("session.ui", Action("agent.TRIGGER_MANUAL_TURN", buildJsonObject {
+                store.dispatch("session.ui", Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject {
                     put("agentId", entry.senderId)
                 }))
             },
             onCancel = {
-                store.dispatch("session.ui", Action("agent.CANCEL_TURN", buildJsonObject {
+                store.dispatch("session.ui", Action(ActionNames.AGENT_CANCEL_TURN, buildJsonObject {
                     put("agentId", entry.senderId)
                 }))
             },
@@ -84,7 +85,7 @@ fun LedgerEntryCard(
                         modifier = Modifier.weight(1f).clickable(
                             enabled = !isEditingThisMessage,
                             onClick = {
-                                store.dispatch("session.ui", Action("session.TOGGLE_MESSAGE_COLLAPSED", buildJsonObject {
+                                store.dispatch("session.ui", Action(ActionNames.SESSION_TOGGLE_MESSAGE_COLLAPSED, buildJsonObject {
                                     put("sessionId", session.id); put("messageId", entry.id)
                                 }))
                             }
@@ -100,7 +101,7 @@ fun LedgerEntryCard(
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = {
-                            store.dispatch("session.ui", Action("session.TOGGLE_MESSAGE_RAW_VIEW", buildJsonObject {
+                            store.dispatch("session.ui", Action(ActionNames.SESSION_TOGGLE_MESSAGE_RAW_VIEW, buildJsonObject {
                                 put("sessionId", session.id); put("messageId", entry.id)
                             }))
                         }, modifier = Modifier.size(24.dp)) {
@@ -113,7 +114,7 @@ fun LedgerEntryCard(
                         Spacer(Modifier.width(4.dp))
                         IconButton(onClick = {
                             entry.rawContent?.let {
-                                store.dispatch("session.ui", Action("core.COPY_TO_CLIPBOARD", buildJsonObject {
+                                store.dispatch("session.ui", Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject {
                                     put("text", it)
                                 }))
                             }
@@ -132,14 +133,14 @@ fun LedgerEntryCard(
                             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                                 if (entry.rawContent != null) {
                                     DropdownMenuItem(text = { Text("Edit") }, onClick = {
-                                        store.dispatch("session.ui", Action("session.SET_EDITING_MESSAGE", buildJsonObject {
+                                        store.dispatch("session.ui", Action(ActionNames.SESSION_SET_EDITING_MESSAGE, buildJsonObject {
                                             put("messageId", entry.id)
                                         }))
                                         showMenu = false
                                     })
                                 }
                                 DropdownMenuItem(text = { Text("Delete") }, onClick = {
-                                    store.dispatch("session.ui", Action("session.DELETE_MESSAGE", buildJsonObject {
+                                    store.dispatch("session.ui", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                                         put("session", session.id); put("messageId", entry.id)
                                     }))
                                     showMenu = false
@@ -183,7 +184,7 @@ private fun MessageEditor(store: Store, session: Session, entry: LedgerEntry, ed
             verticalAlignment = Alignment.CenterVertically
         ) {
             TextButton(onClick = {
-                store.dispatch("session.ui", Action("session.SET_EDITING_MESSAGE", buildJsonObject {
+                store.dispatch("session.ui", Action(ActionNames.SESSION_SET_EDITING_MESSAGE, buildJsonObject {
                     put("messageId", null as String?)
                 }))
             }) {
@@ -191,7 +192,7 @@ private fun MessageEditor(store: Store, session: Session, entry: LedgerEntry, ed
             }
             Spacer(Modifier.width(8.dp))
             Button(onClick = {
-                store.dispatch("session.ui", Action("session.UPDATE_MESSAGE", buildJsonObject {
+                store.dispatch("session.ui", Action(ActionNames.SESSION_UPDATE_MESSAGE, buildJsonObject {
                     put("session", session.id)
                     put("messageId", entry.id)
                     put("newContent", text)

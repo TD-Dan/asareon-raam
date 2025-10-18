@@ -8,6 +8,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
+import app.auf.core.generated.ActionNames
+import app.auf.feature.session.LedgerEntry
 import app.auf.util.FileEntry
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
@@ -31,6 +33,8 @@ class AgentRuntimeFeature(
     @Serializable private data class AgentIdPayload(val agentId: String)
     @Serializable private data class SessionDeletePayload(val sessionId: String)
     @Serializable private data class LedgerContentResponse(val correlationId: String, val messages: List<GatewayMessage>)
+    @Serializable private data class MessagePostedPayload(val sessionId: String, val entry: LedgerEntry)
+    @Serializable private data class MessageDeletedPayload(val sessionId: String, val messageId: String)
 
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
@@ -45,27 +49,23 @@ class AgentRuntimeFeature(
         val payload = action.payload
 
         when (action.name) {
-            "agent.CREATE" -> handleCreateAgent(action, currentFeatureState)?.let { newFeatureState = it }
-            "agent.internal.CONFIRM_DELETE" -> handleDeleteAgent(action, currentFeatureState)?.let { newFeatureState = it }
-            "agent.UPDATE_CONFIG" -> handleUpdateConfig(action, currentFeatureState)?.let { newFeatureState = it }
-            "agent.TOGGLE_AUTOMATIC_MODE" -> handleToggleAutomaticMode(action, currentFeatureState)?.let { newFeatureState = it }
-            "session.publish.DELETED" -> handleSessionDeleted(action, currentFeatureState)?.let { newFeatureState = it }
-            "agent.internal.SET_STATUS" -> handleSetStatus(action, currentFeatureState)?.let { newFeatureState = it }
-            "agent.internal.AGENT_LOADED" -> handleAgentLoaded(action, currentFeatureState)?.let { newFeatureState = it }
-            "agent.SET_EDITING" -> handleSetEditing(action, currentFeatureState)?.let { newFeatureState = it }
-            "session.POST", "session.DELETE_MESSAGE" -> handleSessionEvents(action, currentFeatureState)?.let { newFeatureState = it }
+            ActionNames.AGENT_CREATE -> handleCreateAgent(action, currentFeatureState)?.let { newFeatureState = it }
+            ActionNames.AGENT_UPDATE_CONFIG -> handleUpdateConfig(action, currentFeatureState)?.let { newFeatureState = it }
+            ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE -> handleToggleAutomaticMode(action, currentFeatureState)?.let { newFeatureState = it }
+            ActionNames.AGENT_SET_EDITING -> handleSetEditing(action, currentFeatureState)?.let { newFeatureState = it }
+            ActionNames.AGENT_INTERNAL_CONFIRM_DELETE -> handleDeleteAgent(action, currentFeatureState)?.let { newFeatureState = it }
+            ActionNames.AGENT_INTERNAL_SET_STATUS -> handleSetStatus(action, currentFeatureState)?.let { newFeatureState = it }
+            ActionNames.AGENT_INTERNAL_AGENT_LOADED -> handleAgentLoaded(action, currentFeatureState)?.let { newFeatureState = it }
+            ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> handleMessagePosted(action, currentFeatureState)?.let { newFeatureState = it }
+            ActionNames.SESSION_PUBLISH_MESSAGE_DELETED -> handleMessageDeleted(action, currentFeatureState)?.let { newFeatureState = it }
+            ActionNames.SESSION_PUBLISH_SESSION_DELETED -> handleSessionDeleted(action, currentFeatureState)?.let { newFeatureState = it }
 
-            "gateway.publish.AVAILABLE_MODELS_UPDATED" -> {
-                val decodedModels: Map<String, List<String>>? = try {
-                    payload?.let { json.decodeFromJsonElement(it) }
-                } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, name, "Failed to parse AVAILABLE_MODELS_UPDATED payload: ${e.message}. Payload was: $payload")
-                    null
-                }
+            ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED -> {
+                val decodedModels: Map<String, List<String>>? = try { payload?.let { json.decodeFromJsonElement(it) } } catch (e: Exception) { null }
                 newFeatureState = currentFeatureState.copy(availableModels = decodedModels ?: emptyMap())
             }
-            "session.publish.SESSION_NAMES_UPDATED" -> {
-                val decoded = try { payload?.let { json.decodeFromJsonElement(SessionNamesPayload.serializer(), it) } } catch(e: Exception) { null } ?: return state
+            ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
+                val decoded = try { payload?.let { json.decodeFromJsonElement<SessionNamesPayload>(it) } } catch(e: Exception) { null } ?: return state
                 newFeatureState = currentFeatureState.copy(sessionNames = decoded.names)
             }
         }
@@ -145,138 +145,121 @@ class AgentRuntimeFeature(
         return currentFeatureState.copy(editingAgentId = if (agentId == currentFeatureState.editingAgentId) null else agentId)
     }
 
-    private fun handleSessionEvents(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
-        val isAvatarCard = action.payload?.get("metadata")?.jsonObject?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
+    private fun handleMessagePosted(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
+        val payload = action.payload?.let { json.decodeFromJsonElement<MessagePostedPayload>(it) } ?: return null
+        val isAvatarCard = payload.entry.metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
         if (!isAvatarCard) return null
 
-        val agentId = action.payload["senderId"]?.jsonPrimitive?.contentOrNull
-            ?: run {
-                if (action.name == "session.DELETE_MESSAGE") {
-                    val messageId = action.payload["messageId"]?.jsonPrimitive?.contentOrNull ?: return null
-                    currentFeatureState.agentAvatarCardIds.entries.find { (_, statuses) -> statuses.containsValue(messageId) }?.key
-                } else null
-            } ?: return null
-
+        val agentId = payload.entry.senderId
         if (!currentFeatureState.agents.containsKey(agentId)) return null
+
+        val statusString = payload.entry.metadata["agentStatus"]?.jsonPrimitive?.contentOrNull ?: return null
+        val status = try { AgentStatus.valueOf(statusString) } catch (e: Exception) { return null }
 
         val newAvatarMap = currentFeatureState.agentAvatarCardIds.toMutableMap()
         val agentCards = newAvatarMap.getOrPut(agentId) { mutableMapOf() }.toMutableMap()
+        agentCards[status] = payload.entry.id
+        newAvatarMap[agentId] = agentCards
+        return currentFeatureState.copy(agentAvatarCardIds = newAvatarMap)
+    }
 
-        when (action.name) {
-            "session.POST" -> {
-                val messageId = action.payload["messageId"]?.jsonPrimitive?.contentOrNull ?: return null
-                val statusString = action.payload["metadata"]?.jsonObject?.get("agentStatus")?.jsonPrimitive?.contentOrNull ?: return null
-                val status = try { AgentStatus.valueOf(statusString) } catch (e: Exception) { return null }
-                agentCards[status] = messageId
-            }
-            "session.DELETE_MESSAGE" -> {
-                val messageId = action.payload["messageId"]?.jsonPrimitive?.contentOrNull ?: return null
-                val statusToRemove = agentCards.entries.find { it.value == messageId }?.key
-                if (statusToRemove != null) {
-                    agentCards.remove(statusToRemove)
-                }
-            }
+    private fun handleMessageDeleted(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
+        val payload = action.payload?.let { json.decodeFromJsonElement<MessageDeletedPayload>(it) } ?: return null
+        val agentId = currentFeatureState.agentAvatarCardIds.entries.find { (_, statuses) -> statuses.containsValue(payload.messageId) }?.key ?: return null
+
+        val newAvatarMap = currentFeatureState.agentAvatarCardIds.toMutableMap()
+        val agentCards = newAvatarMap.getOrPut(agentId) { mutableMapOf() }.toMutableMap()
+        val statusToRemove = agentCards.entries.find { it.value == payload.messageId }?.key
+        if (statusToRemove != null) {
+            agentCards.remove(statusToRemove)
         }
         newAvatarMap[agentId] = agentCards
         return currentFeatureState.copy(agentAvatarCardIds = newAvatarMap)
     }
 
-
     // --- ON_ACTION (Side Effect Orchestration) ---
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
-            "system.STARTING" -> {
-                store.dispatch(this.name, Action("filesystem.SYSTEM_LIST"))
-                store.dispatch(this.name, Action("gateway.REQUEST_AVAILABLE_MODELS"))
+            ActionNames.SYSTEM_STARTING -> {
+                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
+                store.dispatch(this.name, Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
             }
-            "agent.CREATE" -> {
+            ActionNames.AGENT_CREATE -> {
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val agentToSave = agentState.agents.values.lastOrNull() ?: return
-                store.dispatch(this.name, Action("filesystem.SYSTEM_WRITE", buildJsonObject {
+                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                     put("subpath", "${agentToSave.id}/$AGENT_CONFIG_FILENAME")
                     put("content", json.encodeToString(agentToSave))
                 }))
                 broadcastAgentNames(store)
             }
-            "agent.UPDATE_CONFIG", "agent.TOGGLE_AUTOMATIC_MODE" -> {
+            ActionNames.AGENT_UPDATE_CONFIG, ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE -> {
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: agentState.agents.keys.lastOrNull() ?: return
-                val agentToSave = agentState.agents[agentId]
-                if (agentToSave == null) {
-                    platformDependencies.log(LogLevel.WARN, name, "Action '${action.name}' ignored: Agent with ID '$agentId' not found.")
-                    return
-                }
-                store.dispatch(this.name, Action("filesystem.SYSTEM_WRITE", buildJsonObject {
+                val agentToSave = agentState.agents[agentId] ?: return
+                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                     put("subpath", "${agentToSave.id}/$AGENT_CONFIG_FILENAME")
                     put("content", json.encodeToString(agentToSave))
                 }))
                 broadcastAgentNames(store)
             }
-            "agent.DELETE" -> {
+            ActionNames.AGENT_DELETE -> {
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
-                val agentToDelete = agentState.agents[agentId]
-                if (agentToDelete == null) {
-                    platformDependencies.log(LogLevel.WARN, name, "Action 'agent.DELETE' ignored: Agent with ID '$agentId' not found.")
-                    return
-                }
+                val agentToDelete = agentState.agents[agentId] ?: return
 
                 val sessionToClean = agentToDelete.primarySessionId
                 val cardsToDelete = agentState.agentAvatarCardIds[agentId]
                 cardsToDelete?.values?.forEach { messageId ->
                     if (sessionToClean != null) {
-                        store.dispatch(this.name, Action("session.DELETE_MESSAGE", buildJsonObject {
+                        store.dispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                             put("session", sessionToClean)
                             put("messageId", messageId)
                         }))
                     }
                 }
 
-                store.dispatch(this.name, Action("filesystem.SYSTEM_DELETE_DIRECTORY", buildJsonObject { put("subpath", agentId) }))
-                store.dispatch(this.name, Action("agent.internal.CONFIRM_DELETE", buildJsonObject { put("agentId", agentId) }))
-                store.dispatch(this.name, Action("agent.publish.AGENT_DELETED", buildJsonObject { put("agentId", agentId) }))
-                broadcastAgentNames(store) // Broadcast updated names after deletion
+                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject { put("subpath", agentId) }))
+                store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_CONFIRM_DELETE, buildJsonObject { put("agentId", agentId) }))
+                store.dispatch(this.name, Action(ActionNames.AGENT_PUBLISH_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
+                broadcastAgentNames(store)
             }
-            "session.publish.DELETED" -> {
+            ActionNames.SESSION_PUBLISH_SESSION_DELETED -> {
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val deletedSessionId = action.payload?.let { json.decodeFromJsonElement<SessionDeletePayload>(it) }?.sessionId ?: return
                 agentState.agents.values.filter { it.primarySessionId == deletedSessionId }.forEach { agentToUpdate ->
                     val updatedAgent = agentState.agents[agentToUpdate.id] ?: agentToUpdate
-                    store.dispatch(this.name, Action("filesystem.SYSTEM_WRITE", buildJsonObject {
+                    store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                         put("subpath", "${updatedAgent.id}/$AGENT_CONFIG_FILENAME")
                         put("content", json.encodeToString(updatedAgent))
                     }))
                 }
             }
-            "agent.CANCEL_TURN" -> {
+            ActionNames.AGENT_CANCEL_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
-                val job = activeTurnJobs[agentId]
-                if (job == null) {
-                    platformDependencies.log(LogLevel.WARN, name, "Action 'agent.CANCEL_TURN' ignored: No active turn found for agent '$agentId'.")
-                    return
-                }
+                val job = activeTurnJobs[agentId] ?: return
                 job.cancel()
                 activeTurnJobs.remove(agentId)
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val agent = agentState.agents[agentId] ?: return
                 val sessionId = agent.primarySessionId ?: return
                 agentState.agentAvatarCardIds[agentId]?.get(AgentStatus.PROCESSING)?.let { messageId ->
-                    store.dispatch(this.name, Action("session.DELETE_MESSAGE", buildJsonObject {
+                    store.dispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                         put("session", sessionId)
                         put("messageId", messageId)
                     }))
                 }
                 setAgentStatus(agentId, AgentStatus.IDLE, store, "Turn cancelled by user.")
             }
-            "agent.TRIGGER_MANUAL_TURN" -> beginCognitiveCycle(action, store)
+            ActionNames.AGENT_TRIGGER_MANUAL_TURN -> beginCognitiveCycle(action, store)
         }
     }
 
     private fun broadcastAgentNames(store: Store) {
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val nameMap = agentState.agents.mapValues { it.value.name }
-        store.dispatch(this.name, Action("agent.publish.AGENT_NAMES_UPDATED", buildJsonObject {
+        store.dispatch(this.name, Action(ActionNames.AGENT_PUBLISH_AGENT_NAMES_UPDATED, buildJsonObject {
             put("names", Json.encodeToJsonElement(nameMap))
         }))
     }
@@ -284,11 +267,7 @@ class AgentRuntimeFeature(
     private fun beginCognitiveCycle(action: Action, store: Store) {
         val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
-        val agent = agentState.agents[agentId]
-        if (agent == null) {
-            platformDependencies.log(LogLevel.WARN, name, "Action 'agent.TRIGGER_MANUAL_TURN' ignored: Agent with ID '$agentId' not found.")
-            return
-        }
+        val agent = agentState.agents[agentId] ?: return
 
         if (agent.status == AgentStatus.PROCESSING || agent.status == AgentStatus.WAITING) return
         val sessionId = agent.primarySessionId ?: run {
@@ -296,7 +275,7 @@ class AgentRuntimeFeature(
         }
 
         setAgentStatus(agentId, AgentStatus.PROCESSING, store)
-        store.dispatch(this.name, Action("session.REQUEST_LEDGER_CONTENT", buildJsonObject {
+        store.dispatch(this.name, Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject {
             put("sessionId", sessionId)
             put("correlationId", agentId)
         }))
@@ -306,17 +285,17 @@ class AgentRuntimeFeature(
         when (data) {
             is List<*> -> data.filterIsInstance<FileEntry>().filter { it.isDirectory }.forEach { dirEntry ->
                 val configPath = "${platformDependencies.getFileName(dirEntry.path)}/$AGENT_CONFIG_FILENAME"
-                store.dispatch(this.name, Action("filesystem.SYSTEM_READ", buildJsonObject { put("subpath", configPath) }))
+                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", configPath) }))
             }
             is JsonObject -> {
                 if (data.containsKey("correlationId") && data.containsKey("messages")) { // Response from SessionFeature
-                    val decoded = try { json.decodeFromJsonElement(LedgerContentResponse.serializer(), data) } catch (e:Exception) { null } ?: return
+                    val decoded = try { json.decodeFromJsonElement<LedgerContentResponse>(data) } catch (e:Exception) { null } ?: return
                     val agentId = decoded.correlationId
                     val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                     val agent = agentState.agents[agentId] ?: return
 
                     val turnJob = coroutineScope.launch {
-                        store.dispatch(this@AgentRuntimeFeature.name, Action("gateway.GENERATE_CONTENT", buildJsonObject {
+                        store.dispatch(this@AgentRuntimeFeature.name, Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
                             put("providerId", agent.modelProvider)
                             put("modelName", agent.modelName)
                             put("correlationId", agent.id)
@@ -327,18 +306,14 @@ class AgentRuntimeFeature(
                     turnJob.invokeOnCompletion { activeTurnJobs.remove(agentId) }
 
                 } else if (data.containsKey("correlationId")) { // Response from GatewayFeature
-                    val decoded = try { json.decodeFromJsonElement(GatewayResponsePayload.serializer(), data) } catch (e: Exception) {
-                        platformDependencies.log(LogLevel.ERROR, name, "Failed to parse private GatewayResponsePayload: ${e.message}")
-                        null
-                    } ?: return
-
+                    val decoded = try { json.decodeFromJsonElement<GatewayResponsePayload>(data) } catch (e: Exception) { null } ?: return
                     val agentId = decoded.correlationId
                     val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                     val agent = agentState.agents[agentId] ?: return
                     val sessionId = agent.primarySessionId ?: return
 
                     agentState.agentAvatarCardIds[agentId]?.get(AgentStatus.PROCESSING)?.let { messageId ->
-                        store.dispatch(this.name, Action("session.DELETE_MESSAGE", buildJsonObject {
+                        store.dispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                             put("session", sessionId)
                             put("messageId", messageId)
                         }))
@@ -348,7 +323,7 @@ class AgentRuntimeFeature(
                         setAgentStatus(agentId, AgentStatus.ERROR, store, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
                     } else {
                         val responseContent = decoded.rawContent ?: "[AGENT ERROR] Received empty response from gateway."
-                        store.dispatch(this.name, Action("session.POST", buildJsonObject {
+                        store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
                             put("session", sessionId); put("senderId", agent.id); put("message", responseContent)
                         }))
                         setAgentStatus(agentId, AgentStatus.IDLE, store)
@@ -356,7 +331,7 @@ class AgentRuntimeFeature(
                 } else if (data.containsKey("content")) { // Response from FileSystemFeature
                     try {
                         val agent = json.decodeFromString<AgentInstance>(data["content"]?.jsonPrimitive?.content ?: "")
-                        store.dispatch(this.name, Action("agent.internal.AGENT_LOADED", Json.encodeToJsonElement(agent) as JsonObject))
+                        store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, Json.encodeToJsonElement(agent) as JsonObject))
                     } catch (e: Exception) {
                         platformDependencies.log(LogLevel.ERROR, name, "Failed to parse agent config: ${data["subpath"]}. Error: ${e.message}")
                     }
@@ -370,7 +345,7 @@ class AgentRuntimeFeature(
         val agent = agentState.agents[agentId] ?: return
         val sessionId = agent.primarySessionId ?: return
 
-        store.dispatch(this.name, Action("agent.internal.SET_STATUS", buildJsonObject {
+        store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
             put("agentId", agentId); put("status", status.name); error?.let { put("error", it) }
         }))
 
@@ -382,7 +357,7 @@ class AgentRuntimeFeature(
             error?.let { put("errorMessage", it) }
         }
 
-        store.dispatch(this.name, Action("session.POST", buildJsonObject {
+        store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
             put("session", sessionId)
             put("senderId", agentId)
             put("messageId", messageId)
@@ -398,7 +373,7 @@ class AgentRuntimeFeature(
         override fun RibbonContent(store: Store, activeViewKey: String?) {
             val viewKey = "feature.agent.manager"
             val isActive = activeViewKey == viewKey
-            IconButton(onClick = { store.dispatch("ui.ribbon", Action("core.SET_ACTIVE_VIEW", buildJsonObject { put("key", viewKey) })) }) {
+            IconButton(onClick = { store.dispatch("ui.ribbon", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKey) })) }) {
                 Icon(Icons.Default.Bolt, "Agent Manager", tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

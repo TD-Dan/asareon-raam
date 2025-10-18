@@ -1,4 +1,3 @@
-
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
         import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
         import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
@@ -25,13 +24,13 @@ plugins {
 }
 
 tasks.register("generateActionRegistry") {
-    description = "Generates a Kotlin source file containing all valid action names from *.actions.json manifests."
+    description = "Generates a Kotlin source file containing compile-time constants for all valid action names from *.actions.json manifests."
     group = "auf"
 
     // --- Configuration ---
-    // Corrected input directory to scan all feature folders.
     val inputDir = file("src/commonMain/kotlin/app/auf")
-    val outputFile = file("$buildDir/generated/kotlin/app/auf/core/generated/ActionRegistrySource.kt")
+    // MODIFIED: The output file is now ActionNames.kt to reflect its new purpose.
+    val outputFile = file("$buildDir/generated/kotlin/app/auf/core/generated/ActionNames.kt")
 
     // --- Gradle Inputs/Outputs for build caching and up-to-date checks ---
     inputs.dir(inputDir)
@@ -64,24 +63,43 @@ tasks.register("generateActionRegistry") {
 
         val sortedActionNames = actionNames.sorted()
 
+        // NEW: Generate the const val declarations.
+        val constants = sortedActionNames.joinToString("\n") { actionName ->
+            val constName = actionName.replace('.', '_').replace('-', '_').toUpperCase()
+            "    const val $constName = \"$actionName\""
+        }
+
+        // NEW: Generate the allActionNames set by referencing the new constants for type safety.
+        val setEntries = sortedActionNames.joinToString(",\n") { actionName ->
+            val constName = actionName.replace('.', '_').replace('-', '_').toUpperCase()
+            "        $constName"
+        }
+
         val fileContent = """
             package app.auf.core.generated
 
             /**
              * THIS IS A GENERATED FILE. DO NOT EDIT.
-             * Contains a compile-time set of all valid action names,
+             * Contains compile-time constants for all valid action names,
              * generated from the *.actions.json manifests during the build process.
              */
-            internal object ActionRegistrySource {
+            object ActionNames {
+            $constants
+
+                /**
+                 * A set of all valid action names for runtime validation in the Store.
+                 * This is constructed from the compile-time constants above.
+                 */
                 val allActionNames: Set<String> = setOf(
-                    ${sortedActionNames.joinToString(separator = ",\n                    ") { "\"$it\"" }}
+            $setEntries
                 )
             }
         """.trimIndent()
 
         outputFile.parentFile.mkdirs()
         outputFile.writeText(fileContent)
-        println("Generated ActionRegistrySource.kt with ${actionNames.size} actions.")
+        // MODIFIED: Updated log message.
+        println("Generated ActionNames.kt with ${actionNames.size} actions.")
     }
 }
 
