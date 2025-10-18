@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
+import app.auf.core.generated.ActionNames
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -46,7 +47,7 @@ fun SessionView(store: Store, features: List<Feature>) {
             } else {
                 Spacer(modifier = Modifier.weight(1f))
             }
-            IconButton(onClick = { store.dispatch("session.ui", Action("session.CREATE")) }) {
+            IconButton(onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_CREATE)) }) {
                 Icon(Icons.Default.Add, "New Session")
             }
         }
@@ -56,7 +57,7 @@ fun SessionView(store: Store, features: List<Feature>) {
         } else {
             LedgerPane(store, activeSession, sessionState, Modifier.weight(1f))
             MessageInput { message ->
-                store.dispatch("session.ui", Action("session.POST", buildJsonObject {
+                store.dispatch("session.ui", Action(ActionNames.SESSION_POST, buildJsonObject {
                     put("session", activeSession.id); put("senderId", "user"); put("message", message)
                 }))
             }
@@ -75,13 +76,13 @@ private fun SessionTab(store: Store, session: Session, isSelected: Boolean, isEd
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
                         Key.Enter -> {
-                            store.dispatch("session.ui", Action("session.UPDATE_CONFIG", buildJsonObject {
+                            store.dispatch("session.ui", Action(ActionNames.SESSION_UPDATE_CONFIG, buildJsonObject {
                                 put("session", session.id); put("name", text)
                             }))
                             return@onKeyEvent true
                         }
                         Key.Escape -> {
-                            store.dispatch("session.ui", Action("session.SET_EDITING_SESSION_NAME", buildJsonObject {
+                            store.dispatch("session.ui", Action(ActionNames.SESSION_SET_EDITING_SESSION_NAME, buildJsonObject {
                                 put("sessionId", null as String?)
                             }))
                             return@onKeyEvent true
@@ -95,10 +96,10 @@ private fun SessionTab(store: Store, session: Session, isSelected: Boolean, isEd
     } else {
         Tab(
             selected = isSelected,
-            onClick = { store.dispatch("session.ui", Action("session.SET_ACTIVE_TAB", buildJsonObject { put("session", session.id) })) },
+            onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.id) })) },
             modifier = Modifier.combinedClickable(
-                onClick = { store.dispatch("session.ui", Action("session.SET_ACTIVE_TAB", buildJsonObject { put("session", session.id) })) },
-                onDoubleClick = { store.dispatch("session.ui", Action("session.SET_EDITING_SESSION_NAME", buildJsonObject { put("sessionId", session.id) })) }
+                onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.id) })) },
+                onDoubleClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_SET_EDITING_SESSION_NAME, buildJsonObject { put("sessionId", session.id) })) }
             )
         ) { Text(session.name, maxLines = 1, modifier = Modifier.padding(vertical = 12.dp)) }
     }
