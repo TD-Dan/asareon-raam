@@ -56,12 +56,10 @@ class SessionFeature(
     }
 
     override fun onAction(action: Action, store: Store) {
-        // THE FIX: The guard clause is removed. The reducer now guarantees state exists.
         val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
         when (action.name) {
             ActionNames.SYSTEM_STARTING -> store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
             ActionNames.SESSION_CREATE -> {
-                // THE FIX: Get the LATEST state after the reducer has run to find the new session ID.
                 val latestState = store.state.value.featureStates[name] as? SessionState ?: return
                 latestState.activeSessionId?.let { persistSession(it, store) }
                 broadcastSessionNames(latestState, store)
@@ -70,7 +68,6 @@ class SessionFeature(
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull ?: return
                 val sessionId = resolveSessionId(identifier, sessionState) ?: return
                 persistSession(sessionId, store)
-                // THE FIX: Get the LATEST state after the reducer has run to broadcast corrected names.
                 val updatedSessionState = store.state.value.featureStates[name] as? SessionState ?: return
                 broadcastSessionNames(updatedSessionState, store)
             }
@@ -78,19 +75,18 @@ class SessionFeature(
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull ?: return
                 val sessionIdToDelete = resolveSessionId(identifier, sessionState) ?: return
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE, buildJsonObject { put("subpath", "$sessionIdToDelete.json") }))
-                // THE FIX: Get the LATEST state after the reducer has run to broadcast corrected names.
                 val updatedSessionState = store.state.value.featureStates[name] as? SessionState ?: return
                 broadcastSessionNames(updatedSessionState, store)
                 store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject { put("sessionId", sessionIdToDelete) }))
             }
             ActionNames.SESSION_INTERNAL_LOADED -> {
-                // THE FIX: Get the LATEST state after the reducer has run.
                 val latestState = store.state.value.featureStates[name] as? SessionState ?: return
                 broadcastSessionNames(latestState, store)
             }
             ActionNames.SESSION_POST -> {
                 val sessionId = resolveSessionIdFromGenericPayload(action.payload, sessionState) ?: return
                 persistSession(sessionId, store)
+                // THE FIX: Dispatch the new MESSAGE_POSTED event after successful persistence.
                 val updatedSession = (store.state.value.featureStates[name] as? SessionState)?.sessions?.get(sessionId) ?: return
                 val postedEntry = updatedSession.ledger.last()
                 store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
@@ -106,6 +102,7 @@ class SessionFeature(
                 val sessionId = resolveSessionIdFromGenericPayload(action.payload, sessionState) ?: return
                 val messageId = action.payload?.get("messageId")?.jsonPrimitive?.contentOrNull ?: return
                 persistSession(sessionId, store)
+                // THE FIX: Dispatch the new MESSAGE_DELETED event after successful persistence.
                 store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
                     put("sessionId", sessionId)
                     put("messageId", messageId)
@@ -165,7 +162,6 @@ class SessionFeature(
     }
 
     override fun reducer(state: AppState, action: Action): AppState {
-        // THE FIX: This new structure guarantees the default state is always initialized.
         val (stateWithFeature, currentFeatureState) = state.featureStates[name]
             ?.let { state to (it as SessionState) }
             ?: (state.copy(featureStates = state.featureStates + (name to SessionState())) to SessionState())
@@ -175,7 +171,7 @@ class SessionFeature(
         when (action.name) {
             ActionNames.AGENT_PUBLISH_AGENT_NAMES_UPDATED -> newFeatureState = currentFeatureState.copy(agentNames = payload?.let { json.decodeFromJsonElement<AgentNamesUpdatedPayload>(it) }?.names ?: emptyMap())
             ActionNames.AGENT_PUBLISH_AGENT_DELETED -> {
-                val agentId = payload?.let { json.decodeFromJsonElement<AgentDeletedPayload>(it) }?.agentId ?: return state
+                val agentId = payload?.let { json.decodeFromJsonElement<AgentDeletedPayload>(it) }?.agentId ?: return stateWithFeature
                 newFeatureState = currentFeatureState.copy(agentNames = currentFeatureState.agentNames - agentId)
             }
             ActionNames.SESSION_CREATE -> {
@@ -184,16 +180,16 @@ class SessionFeature(
                 newFeatureState = currentFeatureState.copy(sessions = currentFeatureState.sessions + (newSession.id to newSession), activeSessionId = newSession.id)
             }
             ActionNames.SESSION_UPDATE_CONFIG -> {
-                val decoded = payload?.let { json.decodeFromJsonElement<UpdateConfigPayload>(it) } ?: return state
-                val sessionId = resolveSessionId(decoded.session, currentFeatureState) ?: return state
-                val session = currentFeatureState.sessions[sessionId] ?: return state
+                val decoded = payload?.let { json.decodeFromJsonElement<UpdateConfigPayload>(it) } ?: return stateWithFeature
+                val sessionId = resolveSessionId(decoded.session, currentFeatureState) ?: return stateWithFeature
+                val session = currentFeatureState.sessions[sessionId] ?: return stateWithFeature
                 val updatedSession = session.copy(name = findUniqueName(decoded.name, currentFeatureState))
                 newFeatureState = currentFeatureState.copy(sessions = currentFeatureState.sessions + (sessionId to updatedSession), editingSessionId = null)
             }
             ActionNames.SESSION_POST -> {
-                val decoded = payload?.let { json.decodeFromJsonElement<PostPayload>(it) } ?: return state
-                val sessionId = resolveSessionId(decoded.session, currentFeatureState) ?: return state
-                val targetSession = currentFeatureState.sessions[sessionId] ?: return state
+                val decoded = payload?.let { json.decodeFromJsonElement<PostPayload>(it) } ?: return stateWithFeature
+                val sessionId = resolveSessionId(decoded.session, currentFeatureState) ?: return stateWithFeature
+                val targetSession = currentFeatureState.sessions[sessionId] ?: return stateWithFeature
                 val newEntry = LedgerEntry(
                     id = decoded.messageId ?: platformDependencies.generateUUID(),
                     timestamp = platformDependencies.getSystemTimeMillis(),
@@ -206,15 +202,15 @@ class SessionFeature(
                 newFeatureState = currentFeatureState.copy(sessions = currentFeatureState.sessions + (sessionId to updatedSession))
             }
             ActionNames.SESSION_DELETE -> {
-                val sessionId = resolveSessionId(payload?.let { json.decodeFromJsonElement<SessionTargetPayload>(it) }?.session ?: "", currentFeatureState) ?: return state
+                val sessionId = resolveSessionId(payload?.let { json.decodeFromJsonElement<SessionTargetPayload>(it) }?.session ?: "", currentFeatureState) ?: return stateWithFeature
                 val newSessions = currentFeatureState.sessions - sessionId
                 val newActiveId = if (currentFeatureState.activeSessionId != sessionId) currentFeatureState.activeSessionId else newSessions.values.maxByOrNull { it.createdAt }?.id
                 newFeatureState = currentFeatureState.copy(sessions = newSessions, activeSessionId = newActiveId)
             }
             ActionNames.SESSION_UPDATE_MESSAGE -> {
-                val decoded = payload?.let { json.decodeFromJsonElement<UpdateMessagePayload>(it) } ?: return state
-                val sessionId = resolveSessionId(decoded.session, currentFeatureState) ?: return state
-                val targetSession = currentFeatureState.sessions[sessionId] ?: return state
+                val decoded = payload?.let { json.decodeFromJsonElement<UpdateMessagePayload>(it) } ?: return stateWithFeature
+                val sessionId = resolveSessionId(decoded.session, currentFeatureState) ?: return stateWithFeature
+                val targetSession = currentFeatureState.sessions[sessionId] ?: return stateWithFeature
                 val updatedLedger = targetSession.ledger.map {
                     if (it.id == decoded.messageId) it.copy(
                         rawContent = decoded.newContent,
@@ -226,9 +222,9 @@ class SessionFeature(
                 newFeatureState = currentFeatureState.copy(sessions = currentFeatureState.sessions + (sessionId to updatedSession), editingMessageId = null, editingMessageContent = null)
             }
             ActionNames.SESSION_DELETE_MESSAGE -> {
-                val decoded = payload?.let { json.decodeFromJsonElement<MessageTargetPayload>(it) } ?: return state
-                val sessionId = resolveSessionId(decoded.session, currentFeatureState) ?: return state
-                val targetSession = currentFeatureState.sessions[sessionId] ?: return state
+                val decoded = payload?.let { json.decodeFromJsonElement<MessageTargetPayload>(it) } ?: return stateWithFeature
+                val sessionId = resolveSessionId(decoded.session, currentFeatureState) ?: return stateWithFeature
+                val targetSession = currentFeatureState.sessions[sessionId] ?: return stateWithFeature
                 val updatedSession = targetSession.copy(ledger = targetSession.ledger.filterNot { it.id == decoded.messageId })
                 newFeatureState = currentFeatureState.copy(sessions = currentFeatureState.sessions + (sessionId to updatedSession))
             }
@@ -240,10 +236,10 @@ class SessionFeature(
                 else currentFeatureState.copy(editingMessageId = messageId, editingMessageContent = currentFeatureState.sessions.values.flatMap { it.ledger }.find { it.id == messageId }?.rawContent)
             }
             ActionNames.SESSION_TOGGLE_MESSAGE_COLLAPSED, ActionNames.SESSION_TOGGLE_MESSAGE_RAW_VIEW -> {
-                val decoded = payload?.let { json.decodeFromJsonElement<ToggleMessageUiPayload>(it) } ?: return state
-                val targetSession = currentFeatureState.sessions[decoded.sessionId] ?: return state
+                val decoded = payload?.let { json.decodeFromJsonElement<ToggleMessageUiPayload>(it) } ?: return stateWithFeature
+                val targetSession = currentFeatureState.sessions[decoded.sessionId] ?: return stateWithFeature
                 val uiState = targetSession.messageUiState[decoded.messageId] ?: MessageUiState()
-                val newUiState = if (action.name.contains("COLLAPSED")) uiState.copy(isCollapsed = !uiState.isCollapsed) else uiState.copy(isRawView = !uiState.isRawView)
+                val newUiState = if (action.name == ActionNames.SESSION_TOGGLE_MESSAGE_COLLAPSED) uiState.copy(isCollapsed = !uiState.isCollapsed) else uiState.copy(isRawView = !uiState.isRawView)
                 val updatedSession = targetSession.copy(messageUiState = targetSession.messageUiState + (decoded.messageId to newUiState))
                 newFeatureState = currentFeatureState.copy(sessions = currentFeatureState.sessions + (decoded.sessionId to updatedSession))
             }

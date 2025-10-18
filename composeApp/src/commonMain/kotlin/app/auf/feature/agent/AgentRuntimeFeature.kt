@@ -44,7 +44,6 @@ class AgentRuntimeFeature(
     // --- REDUCER (Pure State Logic) ---
 
     override fun reducer(state: AppState, action: Action): AppState {
-        // THE FIX: This new structure guarantees the default state is always initialized.
         val (stateWithFeature, currentFeatureState) = state.featureStates[name]
             ?.let { state to (it as AgentRuntimeState) }
             ?: (state.copy(featureStates = state.featureStates + (name to AgentRuntimeState())) to AgentRuntimeState())
@@ -184,7 +183,6 @@ class AgentRuntimeFeature(
     // --- ON_ACTION (Side Effect Orchestration) ---
 
     override fun onAction(action: Action, store: Store) {
-        // THE FIX: The guard clause is removed. The reducer now guarantees state exists.
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         when (action.name) {
             ActionNames.SYSTEM_STARTING -> {
@@ -202,7 +200,6 @@ class AgentRuntimeFeature(
             }
             ActionNames.AGENT_UPDATE_CONFIG, ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: agentState.agents.keys.lastOrNull() ?: return
-                // THE FIX: Use the LATEST state after the reducer has run to get the correct agent data to save.
                 val latestState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val agentToSave = latestState.agents[agentId] ?: return
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
@@ -232,12 +229,10 @@ class AgentRuntimeFeature(
                 broadcastAgentNames(store)
             }
             ActionNames.SESSION_PUBLISH_SESSION_DELETED -> {
-                // THE FIX: This logic is corrected to be simpler and operate on the state *before* the change.
                 val deletedSessionId = action.payload?.let { json.decodeFromJsonElement<SessionDeletePayload>(it) }?.sessionId ?: return
                 agentState.agents.values
                     .filter { it.primarySessionId == deletedSessionId }
                     .forEach { agentToUpdate ->
-                        // The reducer has already set primarySessionId to null in the state. We just need to persist it.
                         val latestState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return@forEach
                         val agentToPersist = latestState.agents[agentToUpdate.id] ?: return@forEach
                         store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
