@@ -56,17 +56,21 @@ class SessionFeature(
     }
 
     override fun onAction(action: Action, store: Store) {
+        // THE FIX: The guard clause is removed. The reducer now guarantees state exists.
         val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
         when (action.name) {
             ActionNames.SYSTEM_STARTING -> store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
             ActionNames.SESSION_CREATE -> {
-                sessionState.activeSessionId?.let { persistSession(it, store) }
-                broadcastSessionNames(sessionState, store)
+                // THE FIX: Get the LATEST state after the reducer has run to find the new session ID.
+                val latestState = store.state.value.featureStates[name] as? SessionState ?: return
+                latestState.activeSessionId?.let { persistSession(it, store) }
+                broadcastSessionNames(latestState, store)
             }
             ActionNames.SESSION_UPDATE_CONFIG -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull ?: return
                 val sessionId = resolveSessionId(identifier, sessionState) ?: return
                 persistSession(sessionId, store)
+                // THE FIX: Get the LATEST state after the reducer has run to broadcast corrected names.
                 val updatedSessionState = store.state.value.featureStates[name] as? SessionState ?: return
                 broadcastSessionNames(updatedSessionState, store)
             }
@@ -74,12 +78,15 @@ class SessionFeature(
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull ?: return
                 val sessionIdToDelete = resolveSessionId(identifier, sessionState) ?: return
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE, buildJsonObject { put("subpath", "$sessionIdToDelete.json") }))
+                // THE FIX: Get the LATEST state after the reducer has run to broadcast corrected names.
                 val updatedSessionState = store.state.value.featureStates[name] as? SessionState ?: return
                 broadcastSessionNames(updatedSessionState, store)
                 store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject { put("sessionId", sessionIdToDelete) }))
             }
             ActionNames.SESSION_INTERNAL_LOADED -> {
-                broadcastSessionNames(sessionState, store)
+                // THE FIX: Get the LATEST state after the reducer has run.
+                val latestState = store.state.value.featureStates[name] as? SessionState ?: return
+                broadcastSessionNames(latestState, store)
             }
             ActionNames.SESSION_POST -> {
                 val sessionId = resolveSessionIdFromGenericPayload(action.payload, sessionState) ?: return
@@ -158,7 +165,11 @@ class SessionFeature(
     }
 
     override fun reducer(state: AppState, action: Action): AppState {
-        val currentFeatureState = state.featureStates[name] as? SessionState ?: SessionState()
+        // THE FIX: This new structure guarantees the default state is always initialized.
+        val (stateWithFeature, currentFeatureState) = state.featureStates[name]
+            ?.let { state to (it as SessionState) }
+            ?: (state.copy(featureStates = state.featureStates + (name to SessionState())) to SessionState())
+
         var newFeatureState: SessionState? = null
         val payload = action.payload
         when (action.name) {
@@ -243,7 +254,7 @@ class SessionFeature(
                 newFeatureState = currentFeatureState.copy(sessions = newSessions, activeSessionId = newActiveId)
             }
         }
-        return newFeatureState?.let { if (it != currentFeatureState) state.copy(featureStates = state.featureStates + (name to it)) else state } ?: state
+        return newFeatureState?.let { if (it != currentFeatureState) stateWithFeature.copy(featureStates = stateWithFeature.featureStates + (name to it)) else stateWithFeature } ?: stateWithFeature
     }
 
     override val composableProvider = object : Feature.ComposableProvider {
