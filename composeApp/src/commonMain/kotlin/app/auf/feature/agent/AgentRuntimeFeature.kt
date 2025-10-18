@@ -30,6 +30,8 @@ class AgentRuntimeFeature(
     @Serializable private data class GatewayResponsePayload(val correlationId: String, val rawContent: String? = null, val errorMessage: String? = null)
     @Serializable private data class GatewayMessage(val role: String, val content: String)
     @Serializable private data class AgentIdPayload(val agentId: String)
+    @Serializable private data class SessionDeletePayload(val sessionId: String)
+
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val AGENT_CONFIG_FILENAME = "agent.json"
@@ -44,7 +46,8 @@ class AgentRuntimeFeature(
 
         when (action.name) {
             "agent.CREATE" -> handleCreateAgent(action, currentFeatureState)?.let { newFeatureState = it }
-            "agent.DELETE" -> handleDeleteAgent(action, currentFeatureState)?.let { newFeatureState = it }
+            // "agent.DELETE" is now a Command and does not change state directly.
+            "agent.internal.CONFIRM_DELETE" -> handleDeleteAgent(action, currentFeatureState)?.let { newFeatureState = it }
             "agent.UPDATE_CONFIG" -> handleUpdateConfig(action, currentFeatureState)?.let { newFeatureState = it }
             "agent.TOGGLE_AUTOMATIC_MODE" -> handleToggleAutomaticMode(action, currentFeatureState)?.let { newFeatureState = it }
             "session.DELETE" -> handleSessionDeleted(action, currentFeatureState)?.let { newFeatureState = it }
@@ -60,9 +63,8 @@ class AgentRuntimeFeature(
                     platformDependencies.log(LogLevel.ERROR, name, "Failed to parse AVAILABLE_MODELS_UPDATED payload: ${e.message}. Payload was: $payload")
                     null
                 }
-                if (decodedModels != null) {
-                    newFeatureState = currentFeatureState.copy(availableModels = decodedModels)
-                }
+                // THE FIX: Provide a default value for the nullable map.
+                newFeatureState = currentFeatureState.copy(availableModels = decodedModels ?: emptyMap())
             }
             "session.publish.SESSION_NAMES_UPDATED" -> {
                 val decoded = try { payload?.let { json.decodeFromJsonElement(SessionNamesPayload.serializer(), it) } } catch(e: Exception) { null } ?: return state
@@ -215,31 +217,41 @@ class AgentRuntimeFeature(
                 broadcastAgentNames(store)
             }
             "agent.DELETE" -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                // THE FIX: This is a Command. Read current state, do side effects, then dispatch Event.
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
-                val agent = agentState.agents[agentId]
-                if (agent == null) {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentToDelete = agentState.agents[agentId]
+                if (agentToDelete == null) {
                     platformDependencies.log(LogLevel.WARN, name, "Action 'agent.DELETE' ignored: Agent with ID '$agentId' not found.")
                     return
                 }
 
-                val sessionToClean = agent.primarySessionId
+                val sessionToClean = agentToDelete.primarySessionId
                 val cardsToDelete = agentState.agentAvatarCardIds[agentId]
-                if (sessionToClean != null && cardsToDelete != null) {
-                    cardsToDelete.values.forEach { messageId ->
+                // THE FIX: Use safe call on nullable map.
+                cardsToDelete?.values?.forEach { messageId ->
+                    if (sessionToClean != null) {
                         store.dispatch(this.name, Action("session.DELETE_MESSAGE", buildJsonObject {
                             put("session", sessionToClean)
                             put("messageId", messageId)
                         }))
                     }
                 }
+
                 store.dispatch(this.name, Action("filesystem.SYSTEM_DELETE_DIRECTORY", buildJsonObject { put("subpath", agentId) }))
+                store.dispatch(this.name, Action("agent.internal.CONFIRM_DELETE", buildJsonObject { put("agentId", agentId) }))
                 store.dispatch(this.name, Action("agent.publish.AGENT_DELETED", buildJsonObject { put("agentId", agentId) }))
-                broadcastAgentNames(store)
+
+                // Broadcast updated names after the state has changed.
+                val updatedAgentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+                val finalNameMap = updatedAgentState.agents.mapValues { it.value.name } - agentId
+                store.dispatch(this.name, Action("agent.publish.AGENT_NAMES_UPDATED", buildJsonObject {
+                    put("names", Json.encodeToJsonElement(finalNameMap))
+                }))
             }
             "session.DELETE" -> {
                 val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
-                val deletedSessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return
+                val deletedSessionId = action.payload?.let { json.decodeFromJsonElement<SessionDeletePayload>(it) }?.sessionId ?: return
                 agentState.agents.values.filter { it.primarySessionId == deletedSessionId }.forEach { agentToUpdate ->
                     val updatedAgent = agentState.agents[agentToUpdate.id] ?: agentToUpdate
                     store.dispatch(this.name, Action("filesystem.SYSTEM_WRITE", buildJsonObject {
@@ -372,7 +384,6 @@ class AgentRuntimeFeature(
             put("agentId", agentId); put("status", status.name); error?.let { put("error", it) }
         }))
 
-        // THE FIX: Generate the ID here and pass it in the action payload.
         val messageId = platformDependencies.generateUUID()
         val metadata = buildJsonObject {
             put("render_as_partial", true)

@@ -8,34 +8,14 @@
       "payload_schema":{
         "type":"object",
         "properties":{
-          "name":{
-            "type":"string"
-          },
-          "personaId":{
-            "type":"string",
-            "description":"The ID of the AI_Persona_Root holon file."
-          },
-          "modelProvider":{
-            "type":"string"
-          },
-          "modelName":{
-            "type":"string"
-          },
-          "primarySessionId":{
-            "type":[
-              "string",
-              "null"
-            ],
-            "description":"The session this agent will post its responses to."
-          },
-          "automaticMode":{
-            "type":"boolean",
-            "default":false
-          }
+          "name":{ "type":"string" },
+          "personaId":{ "type":"string", "description":"The ID of the AI_Persona_Root holon file." },
+          "modelProvider":{ "type":"string" },
+          "modelName":{ "type":"string" },
+          "primarySessionId":{ "type":[ "string", "null" ], "description":"The session this agent will post its responses to." },
+          "automaticMode":{ "type":"boolean", "default":false }
         },
-        "required":[
-          "name"
-        ]
+        "required":[ "name" ]
       }
     },
     {
@@ -44,34 +24,15 @@
       "payload_schema":{
         "type":"object",
         "properties":{
-          "agentId":{
-            "type":"string"
-          },
-          "name":{
-            "type":"string"
-          },
-          "personaId":{
-            "type":"string"
-          },
-          "modelProvider":{
-            "type":"string"
-          },
-          "modelName":{
-            "type":"string"
-          },
-          "primarySessionId":{
-            "type":[
-              "string",
-              "null"
-            ]
-          },
-          "automaticMode":{
-            "type":"boolean"
-          }
+          "agentId":{ "type":"string" },
+          "name":{ "type":"string" },
+          "personaId":{ "type":"string" },
+          "modelProvider":{ "type":"string" },
+          "modelName":{ "type":"string" },
+          "primarySessionId":{ "type":[ "string", "null" ] },
+          "automaticMode":{ "type":"boolean" }
         },
-        "required":[
-          "agentId"
-        ]
+        "required":[ "agentId" ]
       }
     },
     {
@@ -79,14 +40,8 @@
       "summary":"Deletes an agent instance.",
       "payload_schema":{
         "type":"object",
-        "properties":{
-          "agentId":{
-            "type":"string"
-          }
-        },
-        "required":[
-          "agentId"
-        ]
+        "properties":{ "agentId":{ "type":"string" } },
+        "required":[ "agentId" ]
       }
     },
     {
@@ -94,14 +49,8 @@
       "summary":"Toggles the automatic processing mode for a specific agent.",
       "payload_schema":{
         "type":"object",
-        "properties":{
-          "agentId":{
-            "type":"string"
-          }
-        },
-        "required":[
-          "agentId"
-        ]
+        "properties":{ "agentId":{ "type":"string" } },
+        "required":[ "agentId" ]
       }
     },
     {
@@ -109,14 +58,8 @@
       "summary":"Manually triggers a single cognitive cycle for a specific agent. The agent will determine its own context from the ledger.",
       "payload_schema":{
         "type":"object",
-        "properties":{
-          "agentId":{
-            "type":"string"
-          }
-        },
-        "required":[
-          "agentId"
-        ]
+        "properties":{ "agentId":{ "type":"string" } },
+        "required":[ "agentId" ]
       }
     },
     {
@@ -124,14 +67,8 @@
       "summary":"Cancels an agent's currently processing turn.",
       "payload_schema":{
         "type":"object",
-        "properties":{
-          "agentId":{
-            "type":"string"
-          }
-        },
-        "required":[
-          "agentId"
-        ]
+        "properties":{ "agentId":{ "type":"string" } },
+        "required":[ "agentId" ]
       }
     },
     {
@@ -139,14 +76,7 @@
       "summary":"Sets which agent is currently being edited in the UI.",
       "payload_schema":{
         "type":"object",
-        "properties":{
-          "agentId":{
-            "type":[
-              "string",
-              "null"
-            ]
-          }
-        }
+        "properties":{ "agentId":{ "type":[ "string", "null" ] } }
       }
     }
   ],
@@ -154,41 +84,22 @@
     {
       "action_name":"agent.publish.AGENT_NAMES_UPDATED",
       "summary":"Broadcasts the verified map of agent IDs to their names.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "names":{
-            "type":"object",
-            "description":"A map where the key is the agent ID and the value is the agent's name."
-          }
-        },
-        "required":[
-          "names"
-        ]
-      }
+      "payload_schema":{ "type":"object", "properties":{ "names":{ "type":"object", "description":"A map where the key is the agent ID and the value is the agent's name." } }, "required":[ "names" ] }
     },
     {
       "action_name":"agent.publish.AGENT_DELETED",
       "summary":"Broadcasts that an agent has been deleted, so other features can clean up their state.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "agentId":{
-            "type":"string"
-          }
-        },
-        "required":[
-          "agentId"
-        ]
-      }
+      "payload_schema":{ "type":"object", "properties":{ "agentId":{ "type":"string" } }, "required":[ "agentId" ] }
     },
     {
       "action_name":"agent.internal.AGENT_LOADED",
       "summary":"[INTERNAL] Dispatched after an agent's configuration has been read from its sandbox. Used to populate the feature's state.",
-      "payload_schema":{
-        "type":"object",
-        "description":"A single AgentInstance object."
-      }
+      "payload_schema":{ "type":"object", "description":"A single AgentInstance object." }
+    },
+    {
+      "action_name":"agent.internal.CONFIRM_DELETE",
+      "summary":"[INTERNAL] Dispatched after cleanup side effects are complete to commit the deletion to the state.",
+      "payload_schema":{ "type":"object", "properties":{ "agentId":{ "type":"string" } }, "required":[ "agentId" ] }
     },
     {
       "action_name":"agent.internal.SET_STATUS",
@@ -196,29 +107,11 @@
       "payload_schema":{
         "type":"object",
         "properties":{
-          "agentId":{
-            "type":"string"
-          },
-          "status":{
-            "type":"string",
-            "enum":[
-              "IDLE",
-              "WAITING",
-              "PROCESSING",
-              "ERROR"
-            ]
-          },
-          "error":{
-            "type":[
-              "string",
-              "null"
-            ]
-          }
+          "agentId":{ "type":"string" },
+          "status":{ "type":"string", "enum":[ "IDLE", "WAITING", "PROCESSING", "ERROR" ] },
+          "error":{ "type":[ "string", "null" ] }
         },
-        "required":[
-          "agentId",
-          "status"
-        ]
+        "required":[ "agentId", "status" ]
       }
     }
   ]

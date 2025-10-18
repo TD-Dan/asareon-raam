@@ -1,7 +1,9 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
+import app.auf.feature.core.CoreState
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.feature.core.AppLifecycle
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.feature.session.Session
 import app.auf.feature.session.SessionFeature
@@ -31,14 +33,19 @@ import kotlin.test.*
 class AgentRuntimeFeatureCoreTest {
 
     private val scope = CoroutineScope(Dispatchers.Unconfined)
+    // THE FIX: Create a single, shared platform instance for all components in a test.
+    private val platform = FakePlatformDependencies("test")
+    private val agentFeature = AgentRuntimeFeature(platform, scope)
+    private val fileSystemFeature = FileSystemFeature(platform)
+    private val sessionFeature = SessionFeature(platform, scope)
 
     @Test
     fun `create() adds new agent to state and dispatches SYSTEM_WRITE`() = runTest {
         // ARRANGE
         val harness = TestEnvironment.create()
-            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), scope))
-            .withFeature(FileSystemFeature(FakePlatformDependencies("test")))
-            .build()
+            .withFeature(agentFeature)
+            .withFeature(fileSystemFeature)
+            .build(platform = platform)
         val createAction = Action("agent.CREATE", buildJsonObject { put("name", "Test Agent") })
 
         // ACT
@@ -60,16 +67,16 @@ class AgentRuntimeFeatureCoreTest {
     }
 
     @Test
-    fun `delete() removes agent, dispatches DELETE_DIRECTORY, publishes AGENT_DELETED, and cleans up avatar cards`() = runTest {
+    fun `delete() orchestrates cleanup and then confirms deletion`() = runTest {
         // ARRANGE
         val agent = AgentInstance("aid-1", "Test", "p", "m", "m", primarySessionId = "sid-1")
         val avatarCards = mapOf("aid-1" to mapOf(AgentStatus.IDLE to "msg-123", AgentStatus.PROCESSING to "msg-456"))
         val harness = TestEnvironment.create()
-            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), scope))
-            .withFeature(FileSystemFeature(FakePlatformDependencies("test")))
-            .withFeature(SessionFeature(FakePlatformDependencies("test"), scope))
+            .withFeature(agentFeature)
+            .withFeature(fileSystemFeature)
+            .withFeature(sessionFeature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent), agentAvatarCardIds = avatarCards))
-            .build()
+            .build(platform = platform)
         val deleteAction = Action("agent.DELETE", buildJsonObject { put("agentId", "aid-1") })
 
         // ACT
@@ -78,13 +85,15 @@ class AgentRuntimeFeatureCoreTest {
         // ASSERT (State)
         val finalAgentState = harness.store.state.value.featureStates["agent"] as? AgentRuntimeState
         assertNotNull(finalAgentState)
-        assertTrue(finalAgentState.agents.isEmpty())
-        assertFalse(finalAgentState.agentAvatarCardIds.containsKey("aid-1"))
+        assertTrue(finalAgentState.agents.isEmpty(), "Agent should be removed from the final state.")
+        assertFalse(finalAgentState.agentAvatarCardIds.containsKey("aid-1"), "Avatar cards should be removed from the final state.")
 
-        // ASSERT (Side Effects)
-        assertNotNull(harness.processedActions.find { it.name == "filesystem.SYSTEM_DELETE_DIRECTORY" })
-        assertNotNull(harness.processedActions.find { it.name == "agent.publish.AGENT_DELETED" })
-        val deleteMsgActions = harness.processedActions.filter { it.name == "session.DELETE_MESSAGE" }
+        // ASSERT (Side Effects - using the new Command/Event pattern)
+        val dispatched = harness.processedActions
+        assertNotNull(dispatched.find { it.name == "filesystem.SYSTEM_DELETE_DIRECTORY" }, "Should delete agent directory.")
+        assertNotNull(dispatched.find { it.name == "agent.internal.CONFIRM_DELETE" }, "Should dispatch internal confirmation.")
+        assertNotNull(dispatched.find { it.name == "agent.publish.AGENT_DELETED" }, "Should publish deletion event.")
+        val deleteMsgActions = dispatched.filter { it.name == "session.DELETE_MESSAGE" }
         assertEquals(2, deleteMsgActions.size, "Should dispatch a delete action for each tracked card.")
     }
 
@@ -92,8 +101,9 @@ class AgentRuntimeFeatureCoreTest {
     fun `onSystemStarting() dispatches requests to load agents and models`() = runTest {
         // ARRANGE
         val harness = TestEnvironment.create()
-            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), scope))
-            .build()
+            .withFeature(agentFeature)
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
+            .build(platform = platform)
 
         // ACT
         harness.store.dispatch("system", Action("system.STARTING"))
@@ -108,8 +118,7 @@ class AgentRuntimeFeatureCoreTest {
     @Test
     fun `onPrivateData() with directory list dispatches SYSTEM_READ for each agent config`() = runTest {
         // ARRANGE
-        val agentFeature = AgentRuntimeFeature(FakePlatformDependencies("test"), scope)
-        val harness = TestEnvironment.create().withFeature(agentFeature).build()
+        val harness = TestEnvironment.create().withFeature(agentFeature).build(platform = platform)
         val dirList = listOf(FileEntry("/fake/path/agent-1", true), FileEntry("/fake/path/agent-2", true))
 
         // ACT
@@ -123,10 +132,25 @@ class AgentRuntimeFeatureCoreTest {
     }
 
     @Test
+    fun `onPrivateData() with valid agent config loads agent into state`() = runTest {
+        // ARRANGE
+        val harness = TestEnvironment.create().withFeature(agentFeature).build(platform = platform)
+        val validJsonContent = """{"id":"agent-good","name":"Good Agent","personaId":"","modelProvider":"","modelName":""}"""
+        val fileContentPayload = buildJsonObject { put("content", validJsonContent); put("subpath", "agent-good/agent.json") }
+
+        // ACT
+        agentFeature.onPrivateData(fileContentPayload, harness.store)
+
+        // ASSERT (State)
+        val finalState = harness.store.state.value.featureStates["agent"] as? AgentRuntimeState
+        assertNotNull(finalState)
+        assertTrue(finalState.agents.containsKey("agent-good"))
+    }
+
+    @Test
     fun `onPrivateData() with corrupted agent config logs error and does not load`() = runTest {
         // ARRANGE
-        val agentFeature = AgentRuntimeFeature(FakePlatformDependencies("test"), scope)
-        val harness = TestEnvironment.create().withFeature(agentFeature).build()
+        val harness = TestEnvironment.create().withFeature(agentFeature).build(platform = platform)
         val corruptedJsonContent = """{"id":"bad-agent","name":"Bad Agent",}"""
         val fileContentPayload = buildJsonObject { put("content", corruptedJsonContent); put("subpath", "bad-agent/agent.json") }
 
@@ -147,9 +171,9 @@ class AgentRuntimeFeatureCoreTest {
         val agent1 = AgentInstance("agent-1", "A1", "p", "m", "m", primarySessionId = "session-to-delete")
         val agent2 = AgentInstance("agent-2", "A2", "p", "m", "m", primarySessionId = "session-safe")
         val harness = TestEnvironment.create()
-            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), scope))
+            .withFeature(agentFeature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent1.id to agent1, agent2.id to agent2)))
-            .build()
+            .build(platform = platform)
         val deleteAction = Action("session.DELETE", buildJsonObject { put("sessionId", "session-to-delete") })
 
         // ACT
@@ -173,11 +197,11 @@ class AgentRuntimeFeatureCoreTest {
         val session = Session("sid-1", "Test", emptyList(), 1L)
         val agent = AgentInstance("aid-1", "Test Agent", "", "gemini", "gemini-pro", "sid-1")
         val harness = TestEnvironment.create()
-            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), scope))
-            .withFeature(SessionFeature(FakePlatformDependencies("test"), scope))
+            .withFeature(agentFeature)
+            .withFeature(sessionFeature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
             .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
-            .build()
+            .build(platform = platform)
         val triggerAction = Action("agent.TRIGGER_MANUAL_TURN", buildJsonObject { put("agentId", "aid-1") })
 
         // ACT
@@ -194,12 +218,11 @@ class AgentRuntimeFeatureCoreTest {
         // ARRANGE
         val agent = AgentInstance("aid-1", "Test", "", "", "", "sid-1", false, AgentStatus.PROCESSING)
         val avatarCards = mapOf("aid-1" to mapOf(AgentStatus.PROCESSING to "msg-processing-123"))
-        val agentFeature = AgentRuntimeFeature(FakePlatformDependencies("test"), scope)
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
-            .withFeature(SessionFeature(FakePlatformDependencies("test"), scope))
+            .withFeature(sessionFeature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent), agentAvatarCardIds = avatarCards))
-            .build()
+            .build(platform = platform)
         val gatewayResponsePayload = buildJsonObject {
             put("correlationId", "aid-1"); put("rawContent", "Hello back")
         }
