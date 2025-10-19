@@ -6,7 +6,6 @@ import app.auf.feature.core.CoreFeature
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.util.BasePath
 import app.auf.util.PlatformDependencies
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -16,25 +15,22 @@ import kotlin.io.path.createTempDirectory
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
-@OptIn(ExperimentalCoroutinesApi::class)
-class SettingsFeatureIntegrationTest {
+/**
+ * Tier 5 Platform Test for SettingsFeature.
+ *
+ * Mandate (P-TEST-001, T5): To test the full, end-to-end workflow of a feature using
+ * its actual platform-specific dependencies (in this case, the real file system).
+ */
+class SettingsFeatureT5PlatformTest {
 
     private val testAppVersion = "2.0.0-test"
 
-    private val testActionRegistry = setOf( //TODO: just use the test environment real action names here?
-        ActionNames.SYSTEM_PUBLISH_INITIALIZING, ActionNames.SYSTEM_PUBLISH_STARTING,
-        ActionNames.SETTINGS_ADD, ActionNames.SETTINGS_UPDATE, ActionNames.SETTINGS_PUBLISH_LOADED, ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED,
-        ActionNames.FILESYSTEM_SYSTEM_READ, ActionNames.FILESYSTEM_SYSTEM_WRITE, ActionNames.FILESYSTEM_NAVIGATE,
-        ActionNames.FILESYSTEM_OPEN_APP_SUBFOLDER, ActionNames.FILESYSTEM_LOAD_CHILDREN, ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED
-    )
-
+    // A custom PlatformDependencies that uses a temporary directory on the real file system.
     private class JvmTestPlatformDependencies(appVersion: String) : PlatformDependencies(appVersion) {
         val tempDir: File = createTempDirectory("auf-integration-test-").toFile()
         override val pathSeparator: Char = File.separatorChar
 
-        init {
-            tempDir.deleteOnExit()
-        }
+        init { tempDir.deleteOnExit() }
 
         override fun getBasePathFor(type: BasePath): String {
             return when (type) {
@@ -48,18 +44,14 @@ class SettingsFeatureIntegrationTest {
     fun `settings UPDATE action correctly persists and reloads settings via FileSystemFeature`() = runTest {
         val platform = JvmTestPlatformDependencies(testAppVersion)
         val addTestAction = Action(ActionNames.SETTINGS_ADD, buildJsonObject {
-            put("key", "test.key")
-            put("type", "STRING")
-            put("label", "Test Key")
-            put("description", "A key for testing.")
-            put("section", "General")
-            put("defaultValue", "default")
+            put("key", "test.key"); put("type", "STRING"); put("label", "Test Key")
+            put("description", "A key for testing."); put("section", "General"); put("defaultValue", "default")
         })
 
         // --- SCOPE 1: Save the setting ---
         run {
             val features = listOf(CoreFeature(platform), SettingsFeature(platform), FileSystemFeature(platform))
-            val store = Store(AppState(), features, platform, testActionRegistry)
+            val store = Store(AppState(), features, platform, ActionNames.allActionNames)
             features.forEach { it.init(store) }
 
             store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
@@ -67,8 +59,7 @@ class SettingsFeatureIntegrationTest {
             store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
 
             val updateAction = Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
-                put("key", "test.key")
-                put("value", "live_value")
+                put("key", "test.key"); put("value", "live_value")
             })
             store.dispatch("settings.ui", updateAction)
         }
@@ -76,7 +67,7 @@ class SettingsFeatureIntegrationTest {
         // --- SCOPE 2: Re-initialize and reload the setting ---
         run {
             val features = listOf(CoreFeature(platform), SettingsFeature(platform), FileSystemFeature(platform))
-            val store = Store(AppState(), features, platform, testActionRegistry)
+            val store = Store(AppState(), features, platform, ActionNames.allActionNames)
             features.forEach { it.init(store) }
 
             store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))

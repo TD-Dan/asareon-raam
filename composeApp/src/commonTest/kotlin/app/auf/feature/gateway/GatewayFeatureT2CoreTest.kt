@@ -14,7 +14,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
 import kotlin.test.*
 
-class GatewayFeatureTest {
+class GatewayFeatureT2CoreTest {
 
     private val testAppVersion = "2.0.0-test"
     private val json = Json { ignoreUnknownKeys = true }
