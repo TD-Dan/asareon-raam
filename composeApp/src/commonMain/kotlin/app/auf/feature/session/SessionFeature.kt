@@ -66,7 +66,7 @@ class SessionFeature(
     override fun onAction(action: Action, store: Store) {
         val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
         when (action.name) {
-            ActionNames.SYSTEM_STARTING -> store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
+            ActionNames.SYSTEM_PUBLISH_STARTING -> store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
             ActionNames.SESSION_CREATE -> {
                 val latestState = store.state.value.featureStates[name] as? SessionState ?: return
                 latestState.activeSessionId?.let { persistSession(it, store) }

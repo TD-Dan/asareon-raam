@@ -5,6 +5,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import app.auf.core.*
+import app.auf.core.generated.ActionNames
 import app.auf.feature.core.CoreState
 
 @Composable
@@ -19,7 +20,7 @@ fun App(store: Store, features: List<Feature>) {
     coreState?.toastMessage?.let { message ->
         LaunchedEffect(message) {
             snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
-            store.dispatch("system.ui", Action("core.CLEAR_TOAST"))
+            store.dispatch("system.ui", Action(ActionNames.CORE_CLEAR_TOAST))
         }
     }
 

@@ -215,7 +215,7 @@ class AgentRuntimeFeature(
     override fun onAction(action: Action, store: Store) {
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         when (action.name) {
-            ActionNames.SYSTEM_STARTING -> {
+            ActionNames.SYSTEM_PUBLISH_STARTING -> {
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
                 store.dispatch(this.name, Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
             }

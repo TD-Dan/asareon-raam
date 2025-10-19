@@ -45,7 +45,7 @@ class FileSystemFeature(
     override fun onAction(action: Action, store: Store) {
         val originator = action.originator ?: return
         when (action.name) {
-            ActionNames.SYSTEM_INITIALIZING -> {
+            ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
                 store.dispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyWhitelist); put("type", "STRING_SET"); put("label", "Whitelisted Paths")
                     put("description", "Whitelisted directory paths that the app is allowed to edit.")
@@ -57,7 +57,7 @@ class FileSystemFeature(
                     put("section", "FileSystem"); put("defaultValue", "")
                 }))
             }
-            ActionNames.SYSTEM_STARTING -> {
+            ActionNames.SYSTEM_PUBLISH_STARTING -> {
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", platformDependencies.getUserHomePath()) }))
             }
             ActionNames.FILESYSTEM_NAVIGATE -> {

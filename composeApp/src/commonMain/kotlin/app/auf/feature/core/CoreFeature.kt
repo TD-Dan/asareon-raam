@@ -7,6 +7,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import app.auf.core.*
+import app.auf.core.generated.ActionNames
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
@@ -49,39 +50,39 @@ class CoreFeature(
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
-            "system.INITIALIZING" -> {
-                store.dispatch(this.name, Action("settings.ADD", buildJsonObject {
+            ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
+                store.dispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyWidth); put("type", "NUMERIC_LONG"); put("label", "Window Width")
                     put("description", "The width of the application window in pixels.")
                     put("section", "Appearance"); put("defaultValue", "1200")
                 }))
-                store.dispatch(this.name, Action("settings.ADD", buildJsonObject {
+                store.dispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyHeight); put("type", "NUMERIC_LONG"); put("label", "Window Height")
                     put("description", "The height of the application window in pixels.")
                     put("section", "Appearance"); put("defaultValue", "800")
                 }))
             }
-            "core.UPDATE_WINDOW_SIZE" -> {
+            ActionNames.CORE_UPDATE_WINDOW_SIZE -> {
                 val coreState = store.state.value.featureStates[name] as? CoreState
                 coreState?.let {
-                    store.dispatch(this.name, Action("settings.UPDATE", buildJsonObject {
+                    store.dispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
                         put("key", settingKeyWidth); put("value", it.windowWidth.toString())
                     }))
-                    store.dispatch(this.name, Action("settings.UPDATE", buildJsonObject {
+                    store.dispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
                         put("key", settingKeyHeight); put("value", it.windowHeight.toString())
                     }))
                 }
             }
-            "core.OPEN_LOGS_FOLDER" -> {
-                store.dispatch(this.name, Action("filesystem.OPEN_APP_SUBFOLDER", buildJsonObject {
+            ActionNames.CORE_OPEN_LOGS_FOLDER -> {
+                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_OPEN_APP_SUBFOLDER, buildJsonObject {
                     put("folder", "logs")
                 }))
             }
-            "core.COPY_TO_CLIPBOARD" -> {
+            ActionNames.CORE_COPY_TO_CLIPBOARD -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<CopyToClipboardPayload>(it) }
                 payload?.let {
                     platformDependencies.copyToClipboard(it.text)
-                    store.dispatch(this.name, Action("core.SHOW_TOAST", buildJsonObject { put("message", "Copied to clipboard.") }))
+                    store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Copied to clipboard.") }))
                 }
             }
         }
@@ -92,30 +93,30 @@ class CoreFeature(
         var newCoreState = coreState
 
         when (action.name) {
-            "system.INITIALIZING" -> newCoreState = coreState.copy(lifecycle = AppLifecycle.INITIALIZING)
-            "system.STARTING" -> newCoreState = coreState.copy(lifecycle = AppLifecycle.RUNNING)
-            "system.CLOSING" -> newCoreState = coreState.copy(lifecycle = AppLifecycle.CLOSING)
-            "core.SET_ACTIVE_VIEW" -> {
+            ActionNames.SYSTEM_PUBLISH_INITIALIZING -> newCoreState = coreState.copy(lifecycle = AppLifecycle.INITIALIZING)
+            ActionNames.SYSTEM_PUBLISH_STARTING -> newCoreState = coreState.copy(lifecycle = AppLifecycle.RUNNING)
+            ActionNames.SYSTEM_PUBLISH_CLOSING -> newCoreState = coreState.copy(lifecycle = AppLifecycle.CLOSING)
+            ActionNames.CORE_SET_ACTIVE_VIEW -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<SetActiveViewPayload>(it) }
                 newCoreState = payload?.let { coreState.copy(activeViewKey = it.key) } ?: coreState
             }
-            "core.SHOW_DEFAULT_VIEW" -> newCoreState = coreState.copy(activeViewKey = coreState.defaultViewKey)
-            "core.UPDATE_WINDOW_SIZE" -> {
+            ActionNames.CORE_SHOW_DEFAULT_VIEW -> newCoreState = coreState.copy(activeViewKey = coreState.defaultViewKey)
+            ActionNames.CORE_UPDATE_WINDOW_SIZE -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<UpdateWindowSizePayload>(it) }
                 newCoreState = payload?.let { coreState.copy(windowWidth = it.width, windowHeight = it.height) } ?: coreState
             }
-            "core.SHOW_TOAST" -> {
+            ActionNames.CORE_SHOW_TOAST -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<ShowToastPayload>(it) }
                 newCoreState = payload?.let { coreState.copy(toastMessage = it.message) } ?: coreState
             }
-            "core.CLEAR_TOAST" -> newCoreState = coreState.copy(toastMessage = null)
-            "settings.publish.LOADED" -> {
+            ActionNames.CORE_CLEAR_TOAST -> newCoreState = coreState.copy(toastMessage = null)
+            ActionNames.SETTINGS_PUBLISH_LOADED -> {
                 val loadedValues = action.payload
                 val width = loadedValues?.get(settingKeyWidth)?.jsonPrimitive?.content?.toIntOrNull()
                 val height = loadedValues?.get(settingKeyHeight)?.jsonPrimitive?.content?.toIntOrNull()
                 newCoreState = coreState.copy(windowWidth = width ?: coreState.windowWidth, windowHeight = height ?: coreState.windowHeight)
             }
-            "settings.publish.VALUE_CHANGED" -> {
+            ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED -> {
                 val payload = action.payload ?: return state
                 val key = payload["key"]?.jsonPrimitive?.content
                 val value = payload["value"]?.jsonPrimitive?.content
@@ -138,7 +139,7 @@ class CoreFeature(
             DropdownMenuItem(
                 text = { Text("About") },
                 onClick = {
-                    store.dispatch("core.ui", Action("core.SET_ACTIVE_VIEW", buildJsonObject { put("key", "feature.core.about") }))
+                    store.dispatch("core.ui", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.core.about") }))
                     onDismiss()
                 },
                 leadingIcon = { Icon(Icons.Default.Info, "About Application") }

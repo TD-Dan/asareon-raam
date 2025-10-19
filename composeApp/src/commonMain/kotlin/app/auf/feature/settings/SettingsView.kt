@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.*
+import app.auf.core.generated.ActionNames
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -43,7 +44,7 @@ fun SettingsView(
             }
             Spacer(Modifier.width(16.dp))
             Text("Application Settings", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            IconButton(onClick = { store.dispatch("settings.ui", Action("settings.OPEN_FOLDER")) }) {
+            IconButton(onClick = { store.dispatch("settings.ui", Action(ActionNames.SETTINGS_OPEN_FOLDER)) }) {
                 Icon(Icons.Default.FolderOpen, contentDescription = "Open Settings Folder")
             }
         }
@@ -79,8 +80,8 @@ fun SettingsView(
                             }
                             // Dispatch the correct action based on the setting type
                             val actionName = when (definitionJson["type"]?.jsonPrimitive?.content) {
-                                "BOOLEAN" -> "settings.UPDATE" // Booleans update instantly
-                                else -> "settings.INPUT_CHANGED" // Text fields are debounced
+                                "BOOLEAN" -> ActionNames.SETTINGS_UPDATE // Booleans update instantly
+                                else -> ActionNames.SETTINGS_UI_INTERNAL_INPUT_CHANGED // Text fields are debounced
                             }
                             store.dispatch("settings.ui", Action(actionName, payload))
                         }

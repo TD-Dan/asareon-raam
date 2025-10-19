@@ -146,10 +146,10 @@ open class Store(
         )
 
         val isActionAllowed = when (currentLifecycle) {
-            AppLifecycle.BOOTING -> stampedAction.name == ActionNames.SYSTEM_INITIALIZING
+            AppLifecycle.BOOTING -> stampedAction.name == ActionNames.SYSTEM_PUBLISH_INITIALIZING
             AppLifecycle.INITIALIZING -> true
-            AppLifecycle.RUNNING -> stampedAction.name != ActionNames.SYSTEM_INITIALIZING && stampedAction.name != ActionNames.SYSTEM_STARTING
-            AppLifecycle.CLOSING -> stampedAction.name == ActionNames.SYSTEM_CLOSING
+            AppLifecycle.RUNNING -> stampedAction.name != ActionNames.SYSTEM_PUBLISH_INITIALIZING && stampedAction.name != ActionNames.SYSTEM_PUBLISH_STARTING
+            AppLifecycle.CLOSING -> stampedAction.name == ActionNames.SYSTEM_PUBLISH_CLOSING
         }
 
         if (!isActionAllowed) {

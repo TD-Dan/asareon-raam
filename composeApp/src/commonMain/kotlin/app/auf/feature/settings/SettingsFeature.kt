@@ -53,8 +53,8 @@ class SettingsFeature(
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
-            ActionNames.SYSTEM_INITIALIZING -> store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", settingsFileName) }))
-            ActionNames.SETTINGS_INTERNAL_INPUT_CHANGED -> {
+            ActionNames.SYSTEM_PUBLISH_INITIALIZING -> store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", settingsFileName) }))
+            ActionNames.SETTINGS_UI_INTERNAL_INPUT_CHANGED -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
                 val value = action.payload.get("value")?.jsonPrimitive?.content ?: return
                 debounceJobs[key]?.cancel()
@@ -97,7 +97,7 @@ class SettingsFeature(
                 val finalValues = allDefaults + loadedValues
                 newFeatureState = currentFeatureState.copy(values = finalValues, inputValues = finalValues)
             }
-            ActionNames.SETTINGS_INTERNAL_INPUT_CHANGED -> {
+            ActionNames.SETTINGS_UI_INTERNAL_INPUT_CHANGED -> {
                 val key = payload?.get("key")?.jsonPrimitive?.content ?: return state
                 val value = payload["value"]?.jsonPrimitive?.content ?: return state
                 newFeatureState = currentFeatureState.copy(inputValues = currentFeatureState.inputValues + (key to value))

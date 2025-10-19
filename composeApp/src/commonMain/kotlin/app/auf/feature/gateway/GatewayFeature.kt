@@ -24,14 +24,14 @@ class GatewayFeature(
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
-            ActionNames.SYSTEM_INITIALIZING -> {
+            ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
                 // Each provider registers its own settings, making the system extensible.
                 providerMap.values.forEach { provider ->
                     provider.registerSettings { actionToDispatch -> store.dispatch(this.name, actionToDispatch) }
                 }
             }
 
-            ActionNames.SYSTEM_STARTING -> {
+            ActionNames.SYSTEM_PUBLISH_STARTING -> {
                 // After settings are loaded, trigger an initial model refresh for all providers.
                 providerMap.keys.forEach { providerId ->
                     refreshProviderModels(providerId, store)

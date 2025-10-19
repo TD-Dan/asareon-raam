@@ -19,7 +19,7 @@
       }
     },
     {
-      "action_name": "settings.internal.INPUT_CHANGED",
+      "action_name": "settings.ui.internal.INPUT_CHANGED",
       "summary": "[INTERNAL] Signals that the user has typed into a setting's input field. Triggers debounced persistence.",
       "payload_schema": {
         "type": "object",
