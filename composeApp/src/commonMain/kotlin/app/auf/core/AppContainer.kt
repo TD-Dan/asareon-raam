@@ -11,7 +11,9 @@ import app.auf.feature.settings.SettingsFeature
 import app.auf.feature.session.SessionFeature
 //import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.util.PlatformDependencies
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * ## Mandate
@@ -21,17 +23,37 @@ import kotlinx.coroutines.CoroutineScope
  */
 class AppContainer(
     platformDependencies: PlatformDependencies,
-    coroutineScope: CoroutineScope
+    appCoroutineScope: CoroutineScope // Renamed for clarity
 ) {
-    // Features are responsible for creating their own internal dependencies.
-    // The container is only responsible for instantiating the features themselves.
+    // <<<<<<<<<<<< START: REVISED LOGIC FOR ASYNC EXCEPTION HANDLING
+    // Use lateinit to resolve the circular dependency: the handler needs the store, and the store is created here.
+    lateinit var store: Store
+
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        // This handler will catch any uncaught exception from any coroutine launched
+        // by a feature that uses the provided scope.
+        // We delegate to the Store's centralized handler to log the error and show a toast.
+        if (::store.isInitialized) {
+            store.handleFeatureException(throwable as Exception, "async-operation", "unknown-feature")
+        } else {
+            // Fallback if the store itself failed to initialize
+            platformDependencies.log(
+                app.auf.util.LogLevel.FATAL,
+                "AppContainer",
+                "FATAL: Uncaught exception before Store was initialized: ${throwable.stackTraceToString()}"
+            )
+        }
+    }
+
+    // Create a new scope that combines the SupervisorJob, the main dispatcher, and our exception handler.
+    private val resilientCoroutineScope = CoroutineScope(appCoroutineScope.coroutineContext + SupervisorJob() + exceptionHandler)
+    // <<<<<<<<<<<< END: REVISED LOGIC
+
     val features: List<Feature> = run {
-        // Instantiate the GatewayFeature with its concrete providers.
         val gatewayFeature = GatewayFeature(
             platformDependencies,
-            coroutineScope,
+            resilientCoroutineScope, // Pass the new, resilient scope to features
             providers = listOf(
-                // CORRECTED: Inject PlatformDependencies into each provider.
                 GeminiProvider(platformDependencies),
                 OpenAIProvider(platformDependencies)
             )
@@ -42,18 +64,21 @@ class AppContainer(
             CoreFeature(platformDependencies),
             SettingsFeature(platformDependencies),
             FileSystemFeature(platformDependencies),
-            SessionFeature(platformDependencies, coroutineScope),
+            SessionFeature(platformDependencies, resilientCoroutineScope), // Pass the new scope
             gatewayFeature,
-            AgentRuntimeFeature(platformDependencies, coroutineScope)
-            //KnowledgeGraphFeature(platformDependencies, coroutineScope)
+            AgentRuntimeFeature(platformDependencies, resilientCoroutineScope) // Pass the new scope
+            //KnowledgeGraphFeature(platformDependencies, resilientCoroutineScope)
         ))
         allFeatures
     }
 
-    val store: Store = Store(
-        initialState = AppState(),
-        features = features,
-        platformDependencies = platformDependencies,
-        validActionNames = ActionNames.allActionNames
-    )
+    init {
+        // Now that all features are instantiated, create the store and assign it.
+        store = Store(
+            initialState = AppState(),
+            features = features,
+            platformDependencies = platformDependencies,
+            validActionNames = ActionNames.allActionNames
+        )
+    }
 }

@@ -211,7 +211,7 @@ open class Store(
         }
     }
 
-    private fun handleFeatureException(e: Exception, location: String, featureName: String) {
+    fun handleFeatureException(e: Exception, location: String, featureName: String) {
         val uniqueErrorId = platformDependencies.generateUUID().take(8)
         val logMessage = "FATAL EXCEPTION in $location for feature '$featureName' (ref: $uniqueErrorId): \n${e.stackTraceToString()}"
         val toastMessage = "An internal error occurred in '$featureName'. (Ref: $uniqueErrorId)"
