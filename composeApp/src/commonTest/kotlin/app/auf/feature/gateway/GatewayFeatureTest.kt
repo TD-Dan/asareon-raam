@@ -1,6 +1,7 @@
 package app.auf.feature.gateway
 
 import app.auf.core.*
+import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreFeature
@@ -18,14 +19,14 @@ class GatewayFeatureTest {
     private val testAppVersion = "2.0.0-test"
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val testActionRegistry = setOf(
-        "system.INITIALIZING", "system.STARTING",
-        "settings.ADD",
-        "settings.publish.VALUE_CHANGED",
-        "settings.UPDATE", // Needed for the reducer to handle the change
-        "gateway.REQUEST_AVAILABLE_MODELS", "gateway.publish.AVAILABLE_MODELS_UPDATED",
-        "gateway.GENERATE_CONTENT",
-        "gateway.internal.MODELS_UPDATED"
+    private val testActionRegistry = setOf( //TODO: this should just use the test environment real action maes instead?
+        ActionNames.SYSTEM_PUBLISH_INITIALIZING, ActionNames.SYSTEM_PUBLISH_STARTING,
+        ActionNames.SETTINGS_ADD,
+        ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED,
+        ActionNames.SETTINGS_UPDATE,
+        ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS, ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED,
+        ActionNames.GATEWAY_GENERATE_CONTENT,
+        ActionNames.GATEWAY_INTERNAL_MODELS_UPDATED
     )
 
     private data class CapturedPrivateData(val originator: String, val recipient: String, val envelope: PrivateDataEnvelope)
@@ -63,7 +64,7 @@ class GatewayFeatureTest {
 
         override fun registerSettings(dispatch: (Action) -> Unit) {
             registerSettingsCallCount++
-            dispatch(Action("settings.ADD", buildJsonObject {
+            dispatch(Action(ActionNames.SETTINGS_ADD, buildJsonObject {
                 put("key", apiKeySettingKey)
                 put("type", "STRING")
                 put("label", "$id Key")
@@ -128,7 +129,7 @@ class GatewayFeatureTest {
             settingsFeature.name to SettingsState()
         ))
         val bootingStore = TestStore(bootingState, listOf(gatewayFeature, coreFeature, settingsFeature), FakePlatformDependencies(testAppVersion), testActionRegistry)
-        bootingStore.dispatch("system.test", Action("system.INITIALIZING"))
+        bootingStore.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
 
         assertEquals(1, fakeProvider1.registerSettingsCallCount)
         assertEquals(1, fakeProvider2.registerSettingsCallCount)
@@ -143,8 +144,8 @@ class GatewayFeatureTest {
         ))
         testStore = TestStore(bootingState, listOf(gatewayFeature, coreFeature, settingsFeature), FakePlatformDependencies(testAppVersion), testActionRegistry)
 
-        testStore.dispatch("system.test", Action("system.INITIALIZING"))
-        testStore.dispatch("system.test", Action("system.STARTING"))
+        testStore.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
+        testStore.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
         testScheduler.runCurrent()
 
         assertEquals(1, fakeProvider1.listAvailableModelsCallCount, "Provider 1 should be refreshed.")
@@ -166,26 +167,21 @@ class GatewayFeatureTest {
             coreFeature.name to CoreState(lifecycle = AppLifecycle.BOOTING)
         ))
         testStore = TestStore(bootingState, listOf(gatewayFeature, coreFeature, settingsFeature), FakePlatformDependencies(testAppVersion), testActionRegistry)
-        testStore.dispatch("system.test", Action("system.INITIALIZING"))
-        testStore.dispatch("system.test", Action("system.STARTING"))
-        testScheduler.runCurrent() // Run startup coroutines, which calls listAvailableModels once for each.
+        testStore.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
+        testStore.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
+        testScheduler.runCurrent()
 
-        // Now that the system is properly initialized, dispatch the change action
-        val valueChangedAction = Action("settings.publish.VALUE_CHANGED", buildJsonObject {
+        val valueChangedAction = Action(ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED, buildJsonObject {
             put("key", "gateway.provider-2.apiKey")
             put("value", "new-key")
         })
 
-        // Also dispatch an UPDATE action so the reducer updates the state.
-        val updateAction = Action("settings.UPDATE", valueChangedAction.payload)
+        val updateAction = Action(ActionNames.SETTINGS_UPDATE, valueChangedAction.payload)
         testStore.dispatch("settings.feature", updateAction)
         testStore.dispatch("settings.feature", valueChangedAction)
-        testScheduler.runCurrent() // Run the refresh coroutine triggered by the change.
+        testScheduler.runCurrent()
 
-        // --- THE FIX: Assert for the correct call counts based on the full lifecycle. ---
-        // Provider 1 was only called once at startup.
         assertEquals(1, fakeProvider1.listAvailableModelsCallCount)
-        // Provider 2 was called once at startup, and once again for the settings change.
         assertEquals(2, fakeProvider2.listAvailableModelsCallCount)
     }
 
@@ -197,15 +193,15 @@ class GatewayFeatureTest {
             coreFeature.name to CoreState(lifecycle = AppLifecycle.BOOTING)
         ))
         testStore = TestStore(bootingState, listOf(gatewayFeature, coreFeature, settingsFeature), FakePlatformDependencies(testAppVersion), testActionRegistry)
-        testStore.dispatch("system.test", Action("system.INITIALIZING"))
-        testStore.dispatch("system.test", Action("system.STARTING"))
+        testStore.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
+        testStore.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
         testScheduler.runCurrent()
 
         testStore.dispatchedActions.clear()
-        testStore.dispatch("agent.test", Action("gateway.REQUEST_AVAILABLE_MODELS"))
+        testStore.dispatch("agent.test", Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
 
         val broadcastAction = testStore.dispatchedActions.last()
-        assertEquals("gateway.publish.AVAILABLE_MODELS_UPDATED", broadcastAction.name)
+        assertEquals(ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED, broadcastAction.name)
         val payload = broadcastAction.payload!!
         assertEquals(2, payload.size, "Payload should contain model lists for two providers.")
     }
@@ -218,7 +214,7 @@ class GatewayFeatureTest {
         val messages = listOf(GatewayMessage("user", "Test prompt"))
         val contentsPayload = json.encodeToJsonElement(messages)
 
-        val action = Action("gateway.GENERATE_CONTENT", buildJsonObject {
+        val action = Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
             put("providerId", "provider-2")
             put("modelName", "gpt-x")
             put("correlationId", correlationId)
@@ -234,7 +230,7 @@ class GatewayFeatureTest {
         val privateData = testStore.capturedPrivateData
         assertNotNull(privateData)
         assertEquals(originatorId, privateData.recipient)
-        assertEquals("gateway.response", privateData.envelope.type)
+        assertEquals("gateway.response.v1", privateData.envelope.type)
         assertEquals(correlationId, privateData.envelope.payload["correlationId"]?.jsonPrimitive?.content)
     }
 }

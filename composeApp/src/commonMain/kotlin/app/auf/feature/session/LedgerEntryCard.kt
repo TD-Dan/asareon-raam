@@ -16,8 +16,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
-import app.auf.feature.agent.AgentAvatarCard
-import app.auf.feature.agent.AgentStatus
+import app.auf.feature.agent.AgentAvatarCard //TODO: This is a boundary violation
+import app.auf.feature.agent.AgentStatus //TODO: This is a boundary violation
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -36,14 +36,13 @@ fun LedgerEntryCard(
     val isPartialView = entry.metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
 
     if (isPartialView) {
-        // --- THE FIX: This is now the router for rendering Agent UI inside the session ledger ---
         val statusString = entry.metadata?.get("agentStatus")?.jsonPrimitive?.contentOrNull
-        val status = try { statusString?.let { AgentStatus.valueOf(it) } ?: AgentStatus.IDLE } catch (e: Exception) { AgentStatus.ERROR }
-        val errorMessage = if (status == AgentStatus.ERROR) {
+        val status = try { statusString?.let { AgentStatus.valueOf(it) } ?: AgentStatus.IDLE } catch (e: Exception) { AgentStatus.ERROR } //TODO: This is a boundary violation
+        val errorMessage = if (status == AgentStatus.ERROR) { //TODO: This is a boundary violation
             entry.metadata?.get("errorMessage")?.jsonPrimitive?.contentOrNull ?: "Unknown error"
         } else null
 
-        AgentAvatarCard(
+        AgentAvatarCard( //TODO: This is a boundary violation
             agentName = agentName,
             agentStatus = status,
             errorMessage = errorMessage,
@@ -58,7 +57,7 @@ fun LedgerEntryCard(
                 }))
             },
             // The UI makes a best-effort guess. The feature's onAction handler is the final authority.
-            canTrigger = (status == AgentStatus.IDLE || status == AgentStatus.ERROR)
+            canTrigger = (status == AgentStatus.IDLE || status == AgentStatus.ERROR) //TODO: This is a boundary violation
         )
     } else {
         // --- RENDER STANDARD MESSAGE CARD ---

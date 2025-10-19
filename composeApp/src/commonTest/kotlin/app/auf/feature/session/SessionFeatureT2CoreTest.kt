@@ -1,6 +1,7 @@
 package app.auf.feature.session
 
 import app.auf.core.Action
+import app.auf.core.PrivateDataEnvelope
 import app.auf.core.generated.ActionNames
 import app.auf.feature.core.CoreState
 import app.auf.fakes.FakePlatformDependencies
@@ -14,12 +15,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.*
 
-class SessionFeatureCoreTest {
+/**
+ * Tier 2 Unit Tests for SessionFeature.
+ * These tests focus on features interaction with the Core
+ */
+class SessionFeatureT2CoreTest {
 
     private val scope = CoroutineScope(Dispatchers.Unconfined)
     private val platform = FakePlatformDependencies("test")
@@ -94,7 +99,6 @@ class SessionFeatureCoreTest {
         harness.store.dispatch("ui", persistentAction)
         harness.store.dispatch("ui", transientAction)
 
-        // ASSERT Persistence
         val writeActions = harness.processedActions.filter { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
         assertEquals(2, writeActions.size)
         val finalWriteContent = writeActions.last().payload?.get("content")?.jsonPrimitive?.content
@@ -103,7 +107,6 @@ class SessionFeatureCoreTest {
         assertEquals(1, persistedSession.ledger.size)
         assertEquals("persistent", persistedSession.ledger.first().rawContent)
 
-        // ASSERT Event Publishing
         val publishedEvents = harness.processedActions.filter { it.name == ActionNames.SESSION_PUBLISH_MESSAGE_POSTED }
         assertEquals(2, publishedEvents.size, "Should publish an event for every POST action, transient or not.")
     }
@@ -136,7 +139,7 @@ class SessionFeatureCoreTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
             .build(platform = platform)
 
-        harness.store.dispatch("system", Action(ActionNames.SYSTEM_STARTING))
+        harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
 
         val listAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_LIST && it.originator == "session" }
         assertNotNull(listAction, "Should have dispatched filesystem.SYSTEM_LIST")
@@ -150,8 +153,12 @@ class SessionFeatureCoreTest {
             FileEntry("/app.auf/session/session-2.json", false),
             FileEntry("/app/session/notes.txt", false)
         )
+        // THE FIX: Provide explicit type parameter to encodeToJsonElement for the list.
+        val payload = buildJsonObject { put("listing", Json.encodeToJsonElement<List<FileEntry>>(fileList)) }
+        val envelope = PrivateDataEnvelope("filesystem.response.list", payload)
 
-        sessionFeature.onPrivateData(fileList, harness.store)
+
+        sessionFeature.onPrivateData(envelope, harness.store)
 
         val readActions = harness.processedActions.filter { it.name == ActionNames.FILESYSTEM_SYSTEM_READ }
         assertEquals(2, readActions.size)
@@ -163,12 +170,14 @@ class SessionFeatureCoreTest {
     fun `onPrivateData() with valid session content loads session into state`() = runTest {
         val harness = TestEnvironment.create().withFeature(sessionFeature).build(platform = platform)
         val sessionJsonContent = """{"id":"loaded-1","name":"Loaded Session","ledger":[],"createdAt":1}"""
-        val fileContentPayload = buildJsonObject {
+        val payload = buildJsonObject {
             put("subpath", "loaded-1.json")
             put("content", sessionJsonContent)
         }
+        val envelope = PrivateDataEnvelope("filesystem.response.read", payload)
 
-        sessionFeature.onPrivateData(fileContentPayload, harness.store)
+
+        sessionFeature.onPrivateData(envelope, harness.store)
 
         val finalState = harness.store.state.value.featureStates["session"] as? SessionState
         assertNotNull(finalState)
@@ -180,12 +189,14 @@ class SessionFeatureCoreTest {
     fun `onPrivateData() with corrupted session content logs an error and does not load`() = runTest {
         val harness = TestEnvironment.create().withFeature(sessionFeature).build(platform = platform)
         val corruptedJsonContent = """{"id":"bad-1","name":"Bad Session",}"""
-        val fileContentPayload = buildJsonObject {
+        val payload = buildJsonObject {
             put("subpath", "bad-1.json")
             put("content", corruptedJsonContent)
         }
+        val envelope = PrivateDataEnvelope("filesystem.response.read", payload)
 
-        sessionFeature.onPrivateData(fileContentPayload, harness.store)
+
+        sessionFeature.onPrivateData(envelope, harness.store)
 
         val loadedAction = harness.processedActions.find { it.name == ActionNames.SESSION_INTERNAL_LOADED }
         assertNull(loadedAction, "LOADED should not be dispatched for corrupted content.")

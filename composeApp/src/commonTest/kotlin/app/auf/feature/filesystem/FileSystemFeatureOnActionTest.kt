@@ -1,9 +1,7 @@
 package app.auf.feature.filesystem
 
-import app.auf.core.Action
-import app.auf.core.AppState
-import app.auf.core.Feature
-import app.auf.core.Store
+import app.auf.core.*
+import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreFeature
@@ -28,15 +26,15 @@ class FileSystemFeatureOnActionTest {
     private val feature = FileSystemFeature(platform)
     private val coreFeature = CoreFeature(platform)
 
-    // THE FIX: Define a minimal set of valid actions required for this specific test class.
     private val testActionRegistry = setOf(
-        "filesystem.EXPAND_ALL", "filesystem.LOAD_CHILDREN",
-        "filesystem.TOGGLE_ITEM_SELECTED", "filesystem.internal.DIRECTORY_LOADED",
-        "filesystem.ADD_WHITELIST_PATH", "settings.UPDATE",
-        "filesystem.SYSTEM_WRITE", "filesystem.SYSTEM_READ", "filesystem.SYSTEM_DELETE_DIRECTORY"
+        ActionNames.FILESYSTEM_EXPAND_ALL, ActionNames.FILESYSTEM_LOAD_CHILDREN,
+        ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED, ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED,
+        ActionNames.FILESYSTEM_ADD_WHITELIST_PATH, ActionNames.SETTINGS_UPDATE,
+        ActionNames.FILESYSTEM_SYSTEM_WRITE, ActionNames.FILESYSTEM_SYSTEM_READ, ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY
     )
 
-    /** A high-fidelity store that includes the CoreFeature to manage lifecycle state. */
+    private data class CapturedPrivateData(val originator: String, val recipient: String, val envelope: PrivateDataEnvelope)
+
     private class TestStore(
         initialState: AppState,
         private val features: List<Feature>,
@@ -44,21 +42,19 @@ class FileSystemFeatureOnActionTest {
         validActionNames: Set<String>
     ) : Store(initialState, features, platformDependencies, validActionNames) {
         val dispatchedActions = mutableListOf<Action>()
-        var capturedPrivateData: Any? = null
+        var capturedPrivateData: CapturedPrivateData? = null
         override fun dispatch(originator: String, action: Action) {
             val stampedAction = action.copy(originator = originator)
             dispatchedActions.add(stampedAction)
-            super.dispatch(originator, action) // Pass stamped action to super
+            super.dispatch(originator, action)
         }
 
-        // Override to capture data for assertion
-        override fun deliverPrivateData(originator: String, recipient: String, data: Any) {
-            capturedPrivateData = data
-            super.deliverPrivateData(originator, recipient, data)
+        override fun deliverPrivateData(originator: String, recipient: String, envelope: PrivateDataEnvelope) {
+            capturedPrivateData = CapturedPrivateData(originator, recipient, envelope)
+            super.deliverPrivateData(originator, recipient, envelope)
         }
     }
 
-    /** Helper to create a store that is already in the RUNNING state. */
     private fun createRunningStore(fsState: FileSystemState = FileSystemState()): TestStore {
         val initialState = AppState(
             featureStates = mapOf(
@@ -71,50 +67,43 @@ class FileSystemFeatureOnActionTest {
 
     @Test
     fun `onAction EXPAND_ALL dispatches LOAD_CHILDREN for unloaded directories`() {
-        // Arrange
         val state = FileSystemState(rootItems = listOf(
             FileSystemItem("/a", "a", true, isExpanded = false, children = listOf(
-                FileSystemItem("/a/b", "b", true, isExpanded = false, children = null) // Unloaded
+                FileSystemItem("/a/b", "b", true, isExpanded = false, children = null)
             ))
         ))
         val store = createRunningStore(state)
-        val action = Action("filesystem.EXPAND_ALL", buildJsonObject { put("path", JsonPrimitive("/a")) })
+        val action = Action(ActionNames.FILESYSTEM_EXPAND_ALL, buildJsonObject { put("path", JsonPrimitive("/a")) })
 
-        // Act
         feature.onAction(action.copy(originator = feature.name), store)
 
-        // Assert
-        val dispatchedAction = store.dispatchedActions.find { it.name == "filesystem.LOAD_CHILDREN" }
+        val dispatchedAction = store.dispatchedActions.find { it.name == ActionNames.FILESYSTEM_LOAD_CHILDREN }
         assertNotNull(dispatchedAction, "LOAD_CHILDREN should have been dispatched.")
         assertEquals("/a/b", dispatchedAction.payload?.get("path")?.jsonPrimitive?.content)
     }
 
     @Test
     fun `onAction TOGGLE_ITEM_SELECTED recursive dispatches LOAD_CHILDREN for unloaded directories`() {
-        // Arrange
         val state = FileSystemState(rootItems = listOf(
-            FileSystemItem("/a", "a", true, isSelected = false, children = null) // Unloaded
+            FileSystemItem("/a", "a", true, isSelected = false, children = null)
         ))
         val store = createRunningStore(state)
-        val action = Action("filesystem.TOGGLE_ITEM_SELECTED", buildJsonObject {
+        val action = Action(ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED, buildJsonObject {
             put("path", JsonPrimitive("/a"))
             put("recursive", JsonPrimitive(true))
         })
 
-        // Act
         feature.onAction(action.copy(originator = feature.name), store)
 
-        // Assert
-        val dispatchedAction = store.dispatchedActions.find { it.name == "filesystem.LOAD_CHILDREN" }
+        val dispatchedAction = store.dispatchedActions.find { it.name == ActionNames.FILESYSTEM_LOAD_CHILDREN }
         assertNotNull(dispatchedAction, "LOAD_CHILDREN should have been dispatched.")
         assertEquals("/a", dispatchedAction.payload?.get("path")?.jsonPrimitive?.content)
     }
 
     @Test
     fun `onAction DIRECTORY_LOADED propagates selection to new children if parent is selected`() {
-        // Arrange
         val state = FileSystemState(rootItems = listOf(
-            FileSystemItem("/a", "a", true, isSelected = true) // Parent is selected
+            FileSystemItem("/a", "a", true, isSelected = true)
         ))
         val store = createRunningStore(state)
         val payload = buildJsonObject {
@@ -126,13 +115,11 @@ class FileSystemFeatureOnActionTest {
                 })
             }
         }
-        val action = Action("filesystem.internal.DIRECTORY_LOADED", payload)
+        val action = Action(ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED, payload)
 
-        // Act
         feature.onAction(action.copy(originator = feature.name), store)
 
-        // Assert
-        val dispatchedAction = store.dispatchedActions.find { it.name == "filesystem.TOGGLE_ITEM_SELECTED" }
+        val dispatchedAction = store.dispatchedActions.find { it.name == ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED }
         assertNotNull(dispatchedAction, "TOGGLE_ITEM_SELECTED should have been dispatched for the new child.")
         assertEquals("/a/file.txt", dispatchedAction.payload?.get("path")?.jsonPrimitive?.content)
     }
@@ -141,11 +128,11 @@ class FileSystemFeatureOnActionTest {
     fun `onAction ADD_WHITELIST_PATH dispatches settings UPDATE`() {
         val state = FileSystemState(whitelistedPaths = setOf("path1"))
         val store = createRunningStore(state)
-        val action = Action("filesystem.ADD_WHITELIST_PATH", buildJsonObject { put("path", JsonPrimitive("path2")) })
+        val action = Action(ActionNames.FILESYSTEM_ADD_WHITELIST_PATH, buildJsonObject { put("path", JsonPrimitive("path2")) })
 
         feature.onAction(action.copy(originator = feature.name), store)
 
-        val dispatched = store.dispatchedActions.find { it.name == "settings.UPDATE" }
+        val dispatched = store.dispatchedActions.find { it.name == ActionNames.SETTINGS_UPDATE }
         assertNotNull(dispatched)
         assertEquals("filesystem.whitelistedPaths", dispatched.payload?.get("key")?.jsonPrimitive?.content)
         val value = dispatched.payload?.get("value")?.jsonPrimitive?.content ?: ""
@@ -155,20 +142,17 @@ class FileSystemFeatureOnActionTest {
 
     @Test
     fun `SYSTEM_WRITE with encrypt flag writes encrypted content`() {
-        // Arrange
         val store = createRunningStore()
         val originalContent = "secret-api-key"
         val originator = "settings"
-        val action = Action("filesystem.SYSTEM_WRITE", buildJsonObject {
+        val action = Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
             put("subpath", "test.json")
             put("content", originalContent)
-            put("encrypt", true) // The critical flag
+            put("encrypt", true)
         })
 
-        // Act
         feature.onAction(action.copy(originator = originator), store)
 
-        // Assert
         val sandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator/test.json"
         val writtenContent = platform.readFileContent(sandboxPath)
 
@@ -179,7 +163,6 @@ class FileSystemFeatureOnActionTest {
 
     @Test
     fun `SYSTEM_READ on encrypted file delivers decrypted content`() {
-        // Arrange
         val store = createRunningStore()
         val originalContent = "secret-api-key"
         val originator = "settings"
@@ -189,23 +172,22 @@ class FileSystemFeatureOnActionTest {
         val encryptedContent = CryptoManager().encrypt(originalContent)
         platform.writeFileContent(sandboxPath, encryptedContent)
 
-        val action = Action("filesystem.SYSTEM_READ", buildJsonObject {
+        val action = Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
             put("subpath", subpath)
         })
 
-        // Act
         feature.onAction(action.copy(originator = originator), store)
 
-        // Assert
-        val privateData = store.capturedPrivateData as? JsonObject
+        val privateData = store.capturedPrivateData
         assertNotNull(privateData, "Private data should have been delivered.")
-        assertEquals(subpath, privateData["subpath"]?.jsonPrimitive?.content)
-        assertEquals(originalContent, privateData["content"]?.jsonPrimitive?.content, "Delivered content should be the decrypted original.")
+        assertEquals("filesystem.response.read.v1", privateData.envelope.type)
+        val payload = privateData.envelope.payload
+        assertEquals(subpath, payload["subpath"]?.jsonPrimitive?.content)
+        assertEquals(originalContent, payload["content"]?.jsonPrimitive?.content, "Delivered content should be the decrypted original.")
     }
 
     @Test
     fun `SYSTEM_DELETE_DIRECTORY recursively deletes a directory and its contents`() {
-        // Arrange
         val store = createRunningStore()
         val originator = "agent"
         val dirSubpath = "agent-to-delete"
@@ -219,14 +201,12 @@ class FileSystemFeatureOnActionTest {
         assertTrue(platform.fileExists(fullDirPath), "Precondition: Directory should exist.")
         assertTrue(platform.fileExists(fullFilePath), "Precondition: File inside directory should exist.")
 
-        val action = Action("filesystem.SYSTEM_DELETE_DIRECTORY", buildJsonObject {
+        val action = Action(ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
             put("subpath", dirSubpath)
         })
 
-        // Act
         feature.onAction(action.copy(originator = originator), store)
 
-        // Assert
         assertFalse(platform.fileExists(fullDirPath), "Directory should have been deleted.")
         assertFalse(platform.fileExists(fullFilePath), "File inside directory should have been deleted.")
     }

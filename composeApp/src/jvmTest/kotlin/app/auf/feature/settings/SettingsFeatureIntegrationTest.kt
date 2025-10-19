@@ -1,6 +1,7 @@
 package app.auf.feature.settings
 
 import app.auf.core.*
+import app.auf.core.generated.ActionNames
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.util.BasePath
@@ -20,17 +21,11 @@ class SettingsFeatureIntegrationTest {
 
     private val testAppVersion = "2.0.0-test"
 
-    // THE FIX: The action registry for an integration test must be comprehensive.
-    // It needs to include all actions that are dispatched by all features involved
-    // during the test's execution.
-    private val testActionRegistry = setOf(
-        // Lifecycle
-        "system.INITIALIZING", "system.STARTING",
-        // Settings Feature's own actions
-        "settings.ADD", "settings.UPDATE", "settings.publish.LOADED", "settings.publish.VALUE_CHANGED",
-        // FileSystem Feature's actions (used by SettingsFeature)
-        "filesystem.SYSTEM_READ", "filesystem.SYSTEM_WRITE", "filesystem.NAVIGATE",
-        "filesystem.OPEN_APP_SUBFOLDER", "filesystem.LOAD_CHILDREN", "filesystem.internal.DIRECTORY_LOADED"
+    private val testActionRegistry = setOf( //TODO: just use the test environment real action names here?
+        ActionNames.SYSTEM_PUBLISH_INITIALIZING, ActionNames.SYSTEM_PUBLISH_STARTING,
+        ActionNames.SETTINGS_ADD, ActionNames.SETTINGS_UPDATE, ActionNames.SETTINGS_PUBLISH_LOADED, ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED,
+        ActionNames.FILESYSTEM_SYSTEM_READ, ActionNames.FILESYSTEM_SYSTEM_WRITE, ActionNames.FILESYSTEM_NAVIGATE,
+        ActionNames.FILESYSTEM_OPEN_APP_SUBFOLDER, ActionNames.FILESYSTEM_LOAD_CHILDREN, ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED
     )
 
     private class JvmTestPlatformDependencies(appVersion: String) : PlatformDependencies(appVersion) {
@@ -52,7 +47,7 @@ class SettingsFeatureIntegrationTest {
     @Test
     fun `settings UPDATE action correctly persists and reloads settings via FileSystemFeature`() = runTest {
         val platform = JvmTestPlatformDependencies(testAppVersion)
-        val addTestAction = Action("settings.ADD", buildJsonObject {
+        val addTestAction = Action(ActionNames.SETTINGS_ADD, buildJsonObject {
             put("key", "test.key")
             put("type", "STRING")
             put("label", "Test Key")
@@ -63,18 +58,15 @@ class SettingsFeatureIntegrationTest {
 
         // --- SCOPE 1: Save the setting ---
         run {
-            // Instantiate all features required for the integration test.
             val features = listOf(CoreFeature(platform), SettingsFeature(platform), FileSystemFeature(platform))
             val store = Store(AppState(), features, platform, testActionRegistry)
             features.forEach { it.init(store) }
 
-            // Run the application startup sequence.
-            store.dispatch("system.test", Action("system.INITIALIZING"))
-            store.dispatch("test.setup", addTestAction) // Add our test setting definition
-            store.dispatch("system.test", Action("system.STARTING"))
+            store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
+            store.dispatch("test.setup", addTestAction)
+            store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
 
-            // Dispatch the action to update the setting's value.
-            val updateAction = Action("settings.UPDATE", buildJsonObject {
+            val updateAction = Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
                 put("key", "test.key")
                 put("value", "live_value")
             })
@@ -83,18 +75,14 @@ class SettingsFeatureIntegrationTest {
 
         // --- SCOPE 2: Re-initialize and reload the setting ---
         run {
-            // Create a fresh set of features and a new store to simulate an app restart.
             val features = listOf(CoreFeature(platform), SettingsFeature(platform), FileSystemFeature(platform))
             val store = Store(AppState(), features, platform, testActionRegistry)
             features.forEach { it.init(store) }
 
-            // Run the startup sequence again. This will trigger the SettingsFeature to
-            // dispatch a `filesystem.SYSTEM_READ` action.
-            store.dispatch("system.test", Action("system.INITIALIZING"))
-            store.dispatch("test.setup", addTestAction) // Re-add the definition
-            store.dispatch("system.test", Action("system.STARTING"))
+            store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
+            store.dispatch("test.setup", addTestAction)
+            store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
 
-            // Get the final state after the settings have been loaded from disk.
             val finalState = store.state.value.featureStates["settings"] as? SettingsState
             assertNotNull(finalState, "SettingsState should not be null after reloading.")
             assertEquals("live_value", finalState.values["test.key"], "The reloaded value should match the persisted value.")

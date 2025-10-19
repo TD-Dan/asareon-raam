@@ -1,5 +1,6 @@
 package app.auf.core
 
+import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreFeature
@@ -8,29 +9,36 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 
-// A simple, self-contained feature for testing state changes within this test file.
-private data class TestState(val value: Int = 0) : FeatureState
-private class TestFeature : Feature {
-    override val name = "TestFeature"
-    override fun reducer(state: AppState, action: Action): AppState {
-        if (action.name == "test.INCREMENT") {
-            val testState = state.featureStates[name] as? TestState ?: TestState()
-            val newTestState = testState.copy(value = testState.value + 1)
-            return state.copy(featureStates = state.featureStates + (name to newTestState))
-        }
-        return state
-    }
-}
+/**
+ * Tier 1 Unit Tests for the Store component.
+ *
+ * Mandate (P-TEST-001, T1): To test the Store's internal logic, particularly its
+ * security and lifecycle guards, in complete isolation.
+ */
+class StoreT1GuardTest {
 
-class StoreTest {
+    // A simple, self-contained feature for testing state changes within this test file.
+    private data class TestState(val value: Int = 0) : FeatureState
+    private class TestFeature : Feature {
+        override val name = "TestFeature"
+        override val composableProvider: Feature.ComposableProvider? = null
+        override fun reducer(state: AppState, action: Action): AppState {
+            if (action.name == "test.INCREMENT") {
+                val testState = state.featureStates[name] as? TestState ?: TestState()
+                val newTestState = testState.copy(value = testState.value + 1)
+                return state.copy(featureStates = state.featureStates + (name to newTestState))
+            }
+            return state
+        }
+    }
 
     private val platform = FakePlatformDependencies("v2-test")
 
-    // THE FIX: Define a minimal set of valid actions required for this specific test class.
+    // A minimal, custom action registry for testing the store's guards.
     private val testActionRegistry = setOf(
-        "system.INITIALIZING",
-        "system.STARTING",
-        "system.CLOSING",
+        ActionNames.SYSTEM_PUBLISH_INITIALIZING,
+        ActionNames.SYSTEM_PUBLISH_STARTING,
+        ActionNames.SYSTEM_PUBLISH_CLOSING,
         "test.INCREMENT"
     )
 
@@ -42,50 +50,39 @@ class StoreTest {
                 "TestFeature" to TestState()
             )
         )
-        // THE FIX: Pass the action registry to the Store constructor.
         return Store(initialState, features, platform, testActionRegistry)
     }
 
     @Test
     fun `store guard blocks unknown actions`() {
-        // ARRANGE
         val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING))
         val initialState = store.state.value
 
-        // ACT: Dispatch an action that is NOT in our testActionRegistry
         store.dispatch("test.feature", Action("test.UNKNOWN_ACTION"))
         val finalState = store.state.value
 
-        // ASSERT
         assertEquals(initialState, finalState, "State should not have changed for an unknown action.")
     }
 
-
     @Test
     fun `store guard blocks normal actions when BOOTING`() {
-        // Arrange
         val store = createStore(CoreState(lifecycle = AppLifecycle.BOOTING))
         val initialState = store.state.value
 
-        // Act
         store.dispatch("test.feature", Action("test.INCREMENT"))
         val finalState = store.state.value
 
-        // Assert
         assertEquals(initialState, finalState, "State should not have changed.")
     }
 
     @Test
-    fun `store guard allows app_INITIALIZING when BOOTING`() {
-        // Arrange
+    fun `store guard allows SYSTEM_PUBLISH_INITIALIZING when BOOTING`() {
         val store = createStore(CoreState(lifecycle = AppLifecycle.BOOTING))
         val initialState = store.state.value
 
-        // Act
-        store.dispatch("system.main", Action("system.INITIALIZING"))
+        store.dispatch("system.main", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
         val finalState = store.state.value
 
-        // Assert
         assertNotEquals(initialState, finalState, "State should have changed.")
         val finalCoreState = finalState.featureStates["core"] as CoreState
         assertEquals(AppLifecycle.INITIALIZING, finalCoreState.lifecycle)
@@ -93,45 +90,36 @@ class StoreTest {
 
     @Test
     fun `store guard allows all actions when INITIALIZING`() {
-        // Arrange
         val store = createStore(CoreState(lifecycle = AppLifecycle.INITIALIZING))
         val initialTestState = store.state.value.featureStates["TestFeature"] as TestState
 
-        // Act
         store.dispatch("test.feature", Action("test.INCREMENT"))
         val finalTestState = store.state.value.featureStates["TestFeature"] as TestState
 
-        // Assert
         assertNotEquals(initialTestState, finalTestState, "State should have changed.")
         assertEquals(1, finalTestState.value)
     }
 
     @Test
     fun `store guard blocks startup actions when RUNNING`() {
-        // Arrange
         val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING))
         val initialState = store.state.value
 
-        // Act & Assert for system.INITIALIZING
-        store.dispatch("system.main", Action("system.INITIALIZING"))
-        assertEquals(initialState, store.state.value, "State should not change for system.INITIALIZING in RUNNING state.")
+        store.dispatch("system.main", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
+        assertEquals(initialState, store.state.value, "State should not change for INITIALIZING in RUNNING state.")
 
-        // Act & Assert for system.STARTING
-        store.dispatch("system.main", Action("system.STARTING"))
-        assertEquals(initialState, store.state.value, "State should not change for system.STARTING in RUNNING state.")
+        store.dispatch("system.main", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
+        assertEquals(initialState, store.state.value, "State should not change for STARTING in RUNNING state.")
     }
 
     @Test
     fun `store guard allows normal actions when RUNNING`() {
-        // Arrange
         val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING))
         val initialTestState = store.state.value.featureStates["TestFeature"] as TestState
 
-        // Act
         store.dispatch("test.feature", Action("test.INCREMENT"))
         val finalTestState = store.state.value.featureStates["TestFeature"] as TestState
 
-        // Assert
         assertNotEquals(initialTestState, finalTestState, "State should have changed.")
         assertEquals(1, finalTestState.value)
     }

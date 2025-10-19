@@ -3,6 +3,7 @@ package app.auf.feature.settings
 import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.Feature
+import app.auf.core.PrivateDataEnvelope
 import app.auf.core.Store
 import app.auf.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.JsonObject
@@ -54,8 +55,9 @@ class SettingsFeatureTest {
             super.dispatch(originator, action)
         }
 
-        public override fun deliverPrivateData(originator: String, recipient: String, data: Any) {
-            super.deliverPrivateData(originator, recipient, data)
+        override fun deliverPrivateData(originator: String, recipient: String, envelope: PrivateDataEnvelope) {
+            // Forward to the real feature's onPrivateData for testing purposes
+            features.find { it.name == recipient }?.onPrivateData(envelope, this)
         }
     }
 
@@ -113,12 +115,15 @@ class SettingsFeatureTest {
         val platform = FakePlatformDependencies(testAppVersion)
         val feature = SettingsFeature(platform)
         val store = TestStore(AppState(), listOf(feature), platform, testActionRegistry)
-        val privateData = buildJsonObject {
+        val privateDataPayload = buildJsonObject {
             put("subpath", "settings.json")
             put("content", """{ "file.key": "file.value" }""")
         }
 
-        store.deliverPrivateData("filesystem", feature.name, privateData)
+        // THE FIX: Wrap the payload in the correct envelope.
+        val envelope = PrivateDataEnvelope("filesystem.response.read", privateDataPayload)
+        store.deliverPrivateData("filesystem", feature.name, envelope)
+
 
         assertEquals(1, store.dispatchedActions.size)
         val dispatched = store.dispatchedActions.first()

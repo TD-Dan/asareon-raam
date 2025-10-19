@@ -5,7 +5,7 @@ import app.auf.core.AppState
 import app.auf.core.Feature
 import app.auf.core.FeatureState
 import app.auf.core.Store
-import app.auf.core.generated.ActionRegistrySource
+import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreFeature
@@ -111,7 +111,7 @@ class TestEnvironment {
             fullyPopulatedState = feature.reducer(fullyPopulatedState, initStateAction)
         }
 
-        val validActionNames = actionRegistryOverride ?: ActionRegistrySource.allActionNames
+        val validActionNames = actionRegistryOverride ?: ActionNames.allActionNames
         val store = RecordingStore(fullyPopulatedState, allFeatures, platform, validActionNames)
         store.initFeatureLifecycles()
 

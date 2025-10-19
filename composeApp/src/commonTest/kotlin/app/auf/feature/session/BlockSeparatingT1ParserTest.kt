@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
  *
  */
 
-class BlockSeparatingParserTest {
+class BlockSeparatingT1ParserTest {
 
     @Test
     fun `should correctly parse single-line tool call`() {

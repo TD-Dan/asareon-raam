@@ -1,11 +1,13 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
+import app.auf.core.PrivateDataEnvelope
 import app.auf.core.generated.ActionNames
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
+import app.auf.test.TestHarness
 import app.auf.util.LogLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,13 +20,13 @@ import kotlin.test.*
 
 /**
  * Tier 1 Unit Tests for AgentRuntimeFeature.
- * These tests focus on the reducer's state integrity and the side-effect logic of public methods
+ * These tests focus on the reducer's state integrity and the side effect logic of public methods
  * in complete isolation, using a high-fidelity test harness.
  */
-class AgentRuntimeFeatureReducerTest {
+class AgentRuntimeFeatureT1ReducerTest {
 
     private val scope = CoroutineScope(Dispatchers.Unconfined)
-    private lateinit var harness: app.auf.test.TestHarness
+    private lateinit var harness: TestHarness
     private lateinit var feature: AgentRuntimeFeature
     private lateinit var platform: FakePlatformDependencies
 
@@ -102,11 +104,14 @@ class AgentRuntimeFeatureReducerTest {
             put("messages", "this-should-be-an-array-not-a-string")
         }
 
-        feature.onPrivateData(corruptedPayload, harness.store)
+        // THE FIX: Wrap the payload in the correct envelope.
+        val envelope = PrivateDataEnvelope("session.response.ledger", corruptedPayload)
+        feature.onPrivateData(envelope, harness.store)
+
 
         val log = platform.capturedLogs.find { it.level == LogLevel.ERROR }
         assertNotNull(log, "A fatal error should be logged.")
-        assertTrue(log.message.contains("FATAL: Failed to parse session ledger for agent 'agent-1'"))
+        assertTrue(log.message.contains("FATAL: Failed to parse session ledger."))
 
         val setStatusAction = harness.processedActions.find { it.name == ActionNames.AGENT_INTERNAL_SET_STATUS }
         assertNotNull(setStatusAction, "Should have dispatched an action to set the status.")

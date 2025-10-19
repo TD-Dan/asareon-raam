@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
+import app.auf.core.PrivateDataEnvelope
 import app.auf.core.generated.ActionNames
 import app.auf.feature.core.CoreState
 import app.auf.fakes.FakePlatformDependencies
@@ -15,14 +16,14 @@ import app.auf.util.LogLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.boolean
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
+import kotlinx.serialization.json.*
 import kotlin.test.*
 
-class AgentRuntimeFeatureCoreTest {
+/**
+ * Tier 2 Unit Tests for AgentRuntimeFeature.
+ * These tests focus on features interaction with the Core
+ */
+class AgentRuntimeFeatureT2CoreTest {
 
     private val scope = CoroutineScope(Dispatchers.Unconfined)
     private val platform = FakePlatformDependencies("test")
@@ -91,7 +92,7 @@ class AgentRuntimeFeatureCoreTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
             .build(platform = platform)
 
-        harness.store.dispatch("system", Action(ActionNames.SYSTEM_STARTING))
+        harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
 
         val listAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_LIST && it.originator == "agent" }
         assertNotNull(listAction, "AgentFeature should request its file list on start.")
@@ -104,7 +105,11 @@ class AgentRuntimeFeatureCoreTest {
         val harness = TestEnvironment.create().withFeature(agentFeature).build(platform = platform)
         val dirList = listOf(FileEntry("/fake/path/agent-1", true), FileEntry("/fake/path/agent-2", true))
 
-        agentFeature.onPrivateData(dirList, harness.store)
+        // THE FIX: Wrap the payload in the correct envelope.
+        val payload = buildJsonObject { put("listing", Json.encodeToJsonElement(dirList)) }
+        val envelope = PrivateDataEnvelope("filesystem.response.list", payload)
+        agentFeature.onPrivateData(envelope, harness.store)
+
 
         val readActions = harness.processedActions.filter { it.name == ActionNames.FILESYSTEM_SYSTEM_READ }
         assertEquals(2, readActions.size)
@@ -118,7 +123,10 @@ class AgentRuntimeFeatureCoreTest {
         val validJsonContent = """{"id":"agent-good","name":"Good Agent","personaId":"","modelProvider":"","modelName":""}"""
         val fileContentPayload = buildJsonObject { put("content", validJsonContent); put("subpath", "agent-good/agent.json") }
 
-        agentFeature.onPrivateData(fileContentPayload, harness.store)
+        // THE FIX: Wrap the payload in the correct envelope.
+        val envelope = PrivateDataEnvelope("filesystem.response.read", fileContentPayload)
+        agentFeature.onPrivateData(envelope, harness.store)
+
 
         val finalState = harness.store.state.value.featureStates["agent"] as? AgentRuntimeState
         assertNotNull(finalState)
@@ -131,7 +139,10 @@ class AgentRuntimeFeatureCoreTest {
         val corruptedJsonContent = """{"id":"bad-agent","name":"Bad Agent",}"""
         val fileContentPayload = buildJsonObject { put("content", corruptedJsonContent); put("subpath", "bad-agent/agent.json") }
 
-        agentFeature.onPrivateData(fileContentPayload, harness.store)
+        // THE FIX: Wrap the payload in the correct envelope.
+        val envelope = PrivateDataEnvelope("filesystem.response.read", fileContentPayload)
+        agentFeature.onPrivateData(envelope, harness.store)
+
 
         val loadedAction = harness.processedActions.find { it.name == ActionNames.AGENT_INTERNAL_AGENT_LOADED }
         assertNull(loadedAction)
@@ -198,7 +209,10 @@ class AgentRuntimeFeatureCoreTest {
             put("correlationId", "aid-1"); put("rawContent", "Hello back")
         }
 
-        agentFeature.onPrivateData(gatewayResponsePayload, harness.store)
+        // THE FIX: Wrap the payload in the correct envelope.
+        val envelope = PrivateDataEnvelope("gateway.response", gatewayResponsePayload)
+        agentFeature.onPrivateData(envelope, harness.store)
+
 
         val deleteAction = harness.processedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
         assertNotNull(deleteAction)
