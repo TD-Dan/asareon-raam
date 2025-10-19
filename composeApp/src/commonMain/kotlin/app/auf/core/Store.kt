@@ -7,6 +7,7 @@ import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.json.JsonObject
 
 /**
  * A helper class to encapsulate the three-part structure of our action names.
@@ -41,7 +42,7 @@ private fun parseActionName(name: String): ParsedActionName {
 open class Store(
     initialState: AppState,
     private val features: List<Feature>,
-    val platformDependencies: PlatformDependencies,
+    private val platformDependencies: PlatformDependencies,
     private val validActionNames: Set<String>
 ) {
 
@@ -69,22 +70,22 @@ open class Store(
      * public action bus. This is a privileged operation. The act of delivery is logged
      * for audibility, but the payload content is NOT.
      */
-    open fun deliverPrivateData(originator: String, recipient: String, data: Any) {
+    open fun deliverPrivateData(originator: String, recipient: String, envelope: PrivateDataEnvelope) {
         // Log the event for audit purposes, WITHOUT logging the sensitive data.
         platformDependencies.log(
             level = LogLevel.INFO,
             tag = "Store",
-            message = "Delivering private data from '$originator' to '$recipient'."
+            message = "Delivering private data of type '${envelope.type}' from '$originator' to '$recipient'."
         )
         // Find the specific feature instance and call the private method.
-        features.find { it.name == recipient }?.onPrivateData(data, this)
+        features.find { it.name == recipient }?.onPrivateData(envelope, this)
     }
 
 
     /**
      * The single, generic entry point for all state changes and side effects.
      * This method has been hardened to support three classes of actions:
-     * - **Commands (Public): ** e.g., `session.POST`. Broadcast to all features.
+     * - **Commands (Public): ** e.g., `session.POST`. Broadcast to all features. This is an intent, and its result is not guaranteed.
      * - **Internal Events: ** e.g., `session.internal.LOADED`. Routed ONLY to the owning feature.
      * - **Published Events: ** e.g., `session.publish.UPDATED`. Broadcast to all features, but can only be dispatched by the owning feature.
      *
@@ -101,6 +102,15 @@ open class Store(
         val parsedName = parseActionName(stampedAction.name)
 
         // --- PHASE 2: AUTHORIZATION & LIFECYCLE GUARDS ---
+
+        if (stampedAction.payload != null && stampedAction.payload !is JsonObject) {
+            platformDependencies.log(
+                level = LogLevel.FATAL,
+                tag = "Store",
+                message = "CONTRACT VIOLATION: Action '${stampedAction.name}' dispatched with a non-Object payload of type '${stampedAction.payload::class.simpleName}'. Action rejected."
+            )
+            return
+        }
 
         if (!validActionNames.contains(stampedAction.name)) {
             platformDependencies.log(

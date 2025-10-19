@@ -9,12 +9,10 @@ import androidx.compose.runtime.Composable
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
 import app.auf.core.generated.ActionNames
-import app.auf.util.FileEntry
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
@@ -29,7 +27,6 @@ class AgentRuntimeFeature(
     @Serializable private data class SessionNamesPayload(val names: Map<String, String>)
     @Serializable private data class GatewayResponsePayload(val correlationId: String, val rawContent: String? = null, val errorMessage: String? = null)
     @Serializable private data class GatewayMessage(val role: String, val content: String)
-    @Serializable private data class LedgerContentResponse(val correlationId: String, val messages: List<GatewayMessage>)
     @Serializable private data class MessagePostedPayload(val sessionId: String, val entry: JsonObject)
     @Serializable private data class MessageDeletedPayload(val sessionId: String, val messageId: String)
 
@@ -324,94 +321,54 @@ class AgentRuntimeFeature(
         }))
     }
 
-    override fun onPrivateData(data: Any, store: Store) {
-        when (data) {
-            is List<*> -> data.filterIsInstance<FileEntry>().filter { it.isDirectory }.forEach { dirEntry ->
-                val configPath = "${platformDependencies.getFileName(dirEntry.path)}/$agentConfigFILENAME"
-                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", configPath) }))
-            }
-            is JsonObject -> {
-                if (data.containsKey("correlationId") && data.containsKey("messages")) { // Response from SessionFeature
-                    val agentId = data["correlationId"]?.jsonPrimitive?.contentOrNull
-                    if (agentId == null) {
-                        platformDependencies.log(LogLevel.ERROR, name, "Received session ledger with no correlationId.")
-                        return
-                    }
-                    try {
-                        val decoded = json.decodeFromJsonElement<LedgerContentResponse>(data)
-                        val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
-                        val agent = agentState.agents[agentId] ?: return
-
-                        val turnJob = coroutineScope.launch {
-                            store.dispatch(this@AgentRuntimeFeature.name, Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
-                                put("providerId", agent.modelProvider)
-                                put("modelName", agent.modelName)
-                                put("correlationId", agent.id)
-                                put("contents", Json.encodeToJsonElement(decoded.messages))
-                            }))
-                        }
-                        activeTurnJobs[agentId] = turnJob
-                        turnJob.invokeOnCompletion { activeTurnJobs.remove(agentId) }
-                    } catch (e: Exception) {
-                        platformDependencies.log(LogLevel.ERROR, name, "FATAL: Failed to parse session ledger for agent '$agentId'. Error: ${e.message}")
-                        setAgentStatus(agentId, AgentStatus.ERROR, store, "FATAL: Could not parse session ledger.")
-                    }
-
-                } else if (data.containsKey("correlationId")) { // Response from GatewayFeature
-                    val agentId = data["correlationId"]?.jsonPrimitive?.contentOrNull
-                    if (agentId == null) {
-                        platformDependencies.log(LogLevel.ERROR, name, "Received gateway response with no correlationId.")
-                        return
-                    }
-
-                    val decoded = try {
-                        json.decodeFromJsonElement<GatewayResponsePayload>(data)
-                    } catch (e: Exception) {
-                        platformDependencies.log(LogLevel.ERROR, name, "FATAL: Failed to parse gateway response for agent '$agentId'. Error: ${e.message}")
-                        setAgentStatus(agentId, AgentStatus.ERROR, store, "FATAL: Could not parse gateway response.")
-                        return
-                    }
-
-                    val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
-                    val agent = agentState.agents[agentId] ?: return
-                    val sessionId = agent.primarySessionId ?: return
-
-                    // THE DEFINITIVE FIX: Use the three-stage validation logic.
-                    if (decoded.errorMessage != null) {
-                        setAgentStatus(agentId, AgentStatus.ERROR, store, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
-                    } else if (decoded.rawContent == null) {
-                        platformDependencies.log(LogLevel.ERROR, name, "FATAL: Gateway response for agent '$agentId' was successfully parsed but contained no content or error.")
-                        setAgentStatus(agentId, AgentStatus.ERROR, store, "FATAL: Received an empty or malformed response from the gateway.")
-                    } else {
-                        // True happy path
-                        store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
-                            put("session", sessionId); put("senderId", agent.id); put("message", decoded.rawContent)
-                        }))
-                        setAgentStatus(agentId, AgentStatus.IDLE, store)
-                    }
-
-                } else if (data.containsKey("content")) { // Response from FileSystemFeature
-                    try {
-                        val agent = json.decodeFromString<AgentInstance>(data["content"]?.jsonPrimitive?.content ?: "")
-                        store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, Json.encodeToJsonElement(agent) as JsonObject))
-                        if (agent.primarySessionId != null) {
-                            setAgentStatus(agent.id, AgentStatus.IDLE, store)
-                        }
-                    } catch (e: Exception) {
-                        platformDependencies.log(LogLevel.ERROR, name, "Failed to parse agent config: ${data["subpath"]}. Error: ${e.message}")
-                    }
-                }
-            }
-            // THE FIX: Add an else branch to catch any unexpected data types and prevent silent failures.
+    override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
+        when (envelope.type) {
+            "gateway.response.v1" -> handleGatewayResponse(envelope.payload, store)
+            // NOTE: The Session and FileSystem features would also be updated to send envelopes.
+            // When they are, their handlers will be added here.
+            // e.g., "session.response.ledger.v1" -> handleSessionLedgerResponse(envelope.payload, store)
             else -> {
                 platformDependencies.log(
-                    level = LogLevel.FATAL,
-                    tag = name,
-                    message = "Received unexpected private data type: '${data::class.simpleName}'. This indicates a critical contract violation. Data: $data"
+                    LogLevel.WARN,
+                    name,
+                    "Received private data envelope with unknown type: '${envelope.type}'. Ignoring."
                 )
             }
         }
     }
+
+    private fun handleGatewayResponse(payload: JsonObject, store: Store) {
+        val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
+        if (agentId == null) {
+            platformDependencies.log(LogLevel.ERROR, name, "Received gateway response with no correlationId.")
+            return
+        }
+
+        val decoded = try {
+            json.decodeFromJsonElement<GatewayResponsePayload>(payload)
+        } catch (e: Exception) {
+            platformDependencies.log(LogLevel.ERROR, name, "FATAL: Failed to parse gateway response for agent '$agentId'. Error: ${e.message}")
+            setAgentStatus(agentId, AgentStatus.ERROR, store, "FATAL: Could not parse gateway response.")
+            return
+        }
+
+        val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+        val agent = agentState.agents[agentId] ?: return
+        val sessionId = agent.primarySessionId ?: return
+
+        if (decoded.errorMessage != null) {
+            setAgentStatus(agentId, AgentStatus.ERROR, store, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
+        } else if (decoded.rawContent == null) {
+            platformDependencies.log(LogLevel.ERROR, name, "FATAL: Gateway response for agent '$agentId' was successfully parsed but contained no content or error.")
+            setAgentStatus(agentId, AgentStatus.ERROR, store, "FATAL: Received an empty or malformed response from the gateway.")
+        } else {
+            store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
+                put("session", sessionId); put("senderId", agent.id); put("message", decoded.rawContent)
+            }))
+            setAgentStatus(agentId, AgentStatus.IDLE, store)
+        }
+    }
+
 
     private fun setAgentStatus(agentId: String, status: AgentStatus, store: Store, error: String? = null) {
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return

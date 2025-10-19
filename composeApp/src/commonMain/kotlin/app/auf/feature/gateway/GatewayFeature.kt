@@ -4,11 +4,13 @@ import app.auf.core.*
 import app.auf.core.generated.ActionNames
 import app.auf.feature.settings.SettingsState //TODO: THIS IS A VIOLATION AND NEEDS TO BE FIXED
 import app.auf.util.LogLevel
+import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
 
 class GatewayFeature(
+    private val platformDependencies: PlatformDependencies,
     private val coroutineScope: CoroutineScope,
     // All available providers are injected here at the composition root (e.g., in AppContainer).
     providers: List<AgentGatewayProvider>
@@ -74,27 +76,31 @@ class GatewayFeature(
 
         coroutineScope.launch {
             val request = GatewayRequest(modelName, contents, correlationId)
-
+            // Delegate the actual work to the specific provider plugin.
             val response = provider.generateContent(request, settingsState.values)
 
             val responsePayload = try {
                 Json.encodeToJsonElement(response).jsonObject
             } catch (e: Exception) {
-                store.platformDependencies.log(
-                    LogLevel.ERROR,
+                platformDependencies.log(
+                    LogLevel.FATAL,
                     name,
                     "CRITICAL: Failed to serialize GatewayResponse for originator '$originator'. This is a contract violation. Error: ${e.message}"
                 )
                 val errorResponse = GatewayResponse(
                     rawContent = null,
-                    errorMessage = "Critical: GatewayFeature failed to serialize its own response.",
+                    errorMessage = "FATAL: GatewayFeature failed to serialize its own response.",
                     correlationId = correlationId
                 )
                 Json.encodeToJsonElement(errorResponse).jsonObject
             }
 
             // Securely deliver the response directly to the original requester.
-            store.deliverPrivateData(this@GatewayFeature.name, originator, responsePayload)
+            val envelope = PrivateDataEnvelope(
+                type = "gateway.response.v1",
+                payload = responsePayload
+            )
+            store.deliverPrivateData(this@GatewayFeature.name, originator, envelope)
         }
     }
 

@@ -8,14 +8,11 @@ import app.auf.feature.core.CoreState
 import app.auf.feature.settings.SettingsFeature
 import app.auf.feature.settings.SettingsState
 import app.auf.util.PlatformDependencies
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
 import kotlin.test.*
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class GatewayFeatureTest {
 
     private val testAppVersion = "2.0.0-test"
@@ -31,7 +28,7 @@ class GatewayFeatureTest {
         "gateway.internal.MODELS_UPDATED"
     )
 
-    private data class CapturedPrivateData(val originator: String, val recipient: String, val data: Any)
+    private data class CapturedPrivateData(val originator: String, val recipient: String, val envelope: PrivateDataEnvelope)
 
     private class TestStore(
         initialState: AppState,
@@ -48,9 +45,9 @@ class GatewayFeatureTest {
             super.dispatch(originator, action)
         }
 
-        override fun deliverPrivateData(originator: String, recipient: String, data: Any) {
-            capturedPrivateData = CapturedPrivateData(originator, recipient, data)
-            super.deliverPrivateData(originator, recipient, data)
+        override fun deliverPrivateData(originator: String, recipient: String, envelope: PrivateDataEnvelope) {
+            capturedPrivateData = CapturedPrivateData(originator, recipient, envelope)
+            super.deliverPrivateData(originator, recipient, envelope)
         }
     }
 
@@ -104,7 +101,7 @@ class GatewayFeatureTest {
         val fakePlatform = FakePlatformDependencies(testAppVersion)
         fakeProvider1 = FakeAgentGatewayProvider("provider-1")
         fakeProvider2 = FakeAgentGatewayProvider("provider-2", modelsToReturn = listOf("gpt-x"))
-        gatewayFeature = GatewayFeature(testScope, listOf(fakeProvider1, fakeProvider2))
+        gatewayFeature = GatewayFeature(fakePlatform, testScope, listOf(fakeProvider1, fakeProvider2))
         coreFeature = CoreFeature(fakePlatform)
         settingsFeature = SettingsFeature(fakePlatform)
 
@@ -171,7 +168,7 @@ class GatewayFeatureTest {
         testStore = TestStore(bootingState, listOf(gatewayFeature, coreFeature, settingsFeature), FakePlatformDependencies(testAppVersion), testActionRegistry)
         testStore.dispatch("system.test", Action("system.INITIALIZING"))
         testStore.dispatch("system.test", Action("system.STARTING"))
-        testScheduler.runCurrent() // Run startup coroutines which calls listAvailableModels once for each.
+        testScheduler.runCurrent() // Run startup coroutines, which calls listAvailableModels once for each.
 
         // Now that the system is properly initialized, dispatch the change action
         val valueChangedAction = Action("settings.publish.VALUE_CHANGED", buildJsonObject {
@@ -237,5 +234,7 @@ class GatewayFeatureTest {
         val privateData = testStore.capturedPrivateData
         assertNotNull(privateData)
         assertEquals(originatorId, privateData.recipient)
+        assertEquals("gateway.response.v1", privateData.envelope.type)
+        assertEquals(correlationId, privateData.envelope.payload["correlationId"]?.jsonPrimitive?.content)
     }
 }

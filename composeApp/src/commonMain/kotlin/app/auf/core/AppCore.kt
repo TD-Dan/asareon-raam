@@ -1,6 +1,7 @@
 package app.auf.core
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 // --- VERSION ---
@@ -49,3 +50,16 @@ data class Action(val name: String, val payload: JsonObject? = null, val origina
                 ">"
     }
 }
+
+/**
+ * The canonical contract for all data passed through the private channel.
+ * This envelope ensures that all private communication is explicitly typed and
+ * carries a serializable payload, eliminating the unsafe 'Any' type.
+ */
+@Serializable
+data class PrivateDataEnvelope(
+    /** A unique string identifying the payload's schema (e.g., "gateway.response.v1"). */
+    val type: String,
+    /** The serializable data payload. */
+    val payload: JsonObject
+)

@@ -28,6 +28,7 @@ class AppContainer(
     val features: List<Feature> = run {
         // Instantiate the GatewayFeature with its concrete providers.
         val gatewayFeature = GatewayFeature(
+            platformDependencies,
             coroutineScope,
             providers = listOf(
                 // CORRECTED: Inject PlatformDependencies into each provider.

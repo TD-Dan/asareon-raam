@@ -11,7 +11,7 @@ interface Feature {
     val name: String
     fun reducer(state: AppState, action: Action): AppState = state
     fun onAction(action: Action, store: Store) {}
-    fun onPrivateData(data: Any, store: Store) {}
+    fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {}
     fun init(store: Store) {}
 
     val composableProvider: ComposableProvider?
