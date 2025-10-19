@@ -4,6 +4,7 @@ import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.Feature
 import app.auf.core.FeatureState
+import app.auf.core.PrivateDataEnvelope
 import app.auf.core.Store
 import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
@@ -28,12 +29,18 @@ class RecordingStore(
 ) : Store(initialState, features, platformDependencies, validActionNames) {
 
     val processedActions = mutableListOf<Action>()
+    val deliveredPrivateData = mutableListOf<TestHarness.CapturedPrivateData>()
 
     init {
         // Register with the test hook to receive a copy of all validated actions.
         onDispatch = { action ->
             processedActions.add(action)
         }
+    }
+
+    override fun deliverPrivateData(originator: String, recipient: String, envelope: PrivateDataEnvelope) {
+        deliveredPrivateData.add(TestHarness.CapturedPrivateData(originator, recipient, envelope))
+        super.deliverPrivateData(originator, recipient, envelope)
     }
 }
 
@@ -46,9 +53,16 @@ data class TestHarness(
     val store: RecordingStore,
     val platform: FakePlatformDependencies
 ) {
+    /** A data class to hold captured private data for test assertions. */
+    data class CapturedPrivateData(val originator: String, val recipient: String, val envelope: PrivateDataEnvelope)
+
     /** A convenience accessor for the list of successfully processed actions. */
     val processedActions: List<Action>
         get() = store.processedActions
+
+    /** A convenience accessor for the list of delivered private data envelopes. */
+    val deliveredPrivateData: List<CapturedPrivateData>
+        get() = store.deliveredPrivateData
 }
 
 /**
