@@ -9,6 +9,8 @@ import app.auf.util.abbreviate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * A helper class to encapsulate the three-part structure of our action names.
@@ -72,30 +74,27 @@ open class Store(
      * for audibility, but the payload content is NOT.
      */
     open fun deliverPrivateData(originator: String, recipient: String, envelope: PrivateDataEnvelope) {
-        // Log the event for audit purposes, WITHOUT logging the sensitive data.
         platformDependencies.log(
             level = LogLevel.INFO,
             tag = "Store",
             message = "Delivering private data of type '${envelope.type}' from '$originator' to '$recipient' with payload '${abbreviate(envelope.payload, 100)}'"
         )
-        // Find the specific feature instance and call the private method.
-        features.find { it.name == recipient }?.onPrivateData(envelope, this)
+        val recipientFeature = features.find { it.name == recipient }
+        if (recipientFeature == null) {
+            platformDependencies.log(LogLevel.ERROR, "Store", "deliverPrivateData failed: recipient feature '$recipient' not found.")
+            return
+        }
+
+        try {
+            recipientFeature.onPrivateData(envelope, this)
+        } catch (e: Exception) {
+            handleFeatureException(e, "onPrivateData", recipientFeature.name)
+        }
     }
 
 
     /**
      * The single, generic entry point for all state changes and side effects.
-     * This method has been hardened to support three classes of actions:
-     * - **Commands (Public): ** e.g., `session.POST`. Broadcast to all features. This is an intent, and its result is not guaranteed.
-     * - **Internal Events: ** e.g., `session.internal.LOADED`. Routed ONLY to the owning feature.
-     * - **Published Events: ** e.g., `session.publish.UPDATED`. Broadcast to all features, but can only be dispatched by the owning feature.
-     *
-     * The process is a strictly ordered, synchronous call:
-     * 1.  **Stamp & Parse: ** The action is stamped, and its name is parsed.
-     * 2.  **Authorize & Guard: ** The action is validated against the Action Registry, originator rules, and the current `AppLifecycle`.
-     * 3.  **Route & Reduce: ** Based on the action type, the action is either broadcast to all reducers or routed to a single reducer to calculate the new state.
-     * 4.  **Update: ** The central state is atomically updated.
-     * 5.  **Route & `onAction`:** The action is routed to the appropriate side effect handlers.
      */
     open fun dispatch(originator: String, action: Action) {
         // --- PHASE 1: STAMP & PARSE ---
@@ -104,14 +103,15 @@ open class Store(
 
         // --- PHASE 2: AUTHORIZATION & LIFECYCLE GUARDS ---
 
-        if (stampedAction.payload != null && stampedAction.payload !is JsonObject) {
+        // TODO: This guard makes no longer sense as the payload is now alway null or jsonObject. We can replace this guard with a smarter one once we have checks for action properties
+        /*if (stampedAction.payload != null && stampedAction.payload !is JsonObject) {
             platformDependencies.log(
                 level = LogLevel.FATAL,
                 tag = "Store",
                 message = "CONTRACT VIOLATION: Action '${stampedAction.name}' dispatched with a non-Object payload of type '${stampedAction.payload::class.simpleName}'. Action rejected."
             )
             return
-        }
+        }*/
 
         if (!validActionNames.contains(stampedAction.name)) {
             platformDependencies.log(
@@ -163,36 +163,73 @@ open class Store(
 
         onDispatch?.invoke(stampedAction)
 
-        // --- PHASE 3, 4, 5: ROUTE, REDUCE, UPDATE, NOTIFY ---
-        if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
-            // Targeted dispatch for internal actions
-            val targetFeature = features.find { it.name == parsedName.feature }
-            if (targetFeature != null) {
-                val previousState = _state.value
-                val newState = targetFeature.reducer(previousState, stampedAction)
-                if (newState != previousState) {
-                    _state.value = newState
+        // --- PHASE 3, 4, 5: ROUTE, REDUCE, UPDATE, NOTIFY (WITH EXCEPTION HANDLING) ---
+        val previousState = _state.value
+        var newState = previousState
+
+        try {
+            if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
+                // Targeted dispatch for internal actions
+                val targetFeature = features.find { it.name == parsedName.feature }
+                if (targetFeature != null) {
+                    newState = targetFeature.reducer(previousState, stampedAction)
+                } else {
+                    platformDependencies.log(
+                        level = LogLevel.ERROR,
+                        tag = "Store",
+                        message = "Internal action '${stampedAction.name}' dispatched, but target feature '${parsedName.feature}' not found."
+                    )
                 }
-                targetFeature.onAction(stampedAction, this)
             } else {
-                platformDependencies.log(
-                    level = LogLevel.ERROR,
-                    tag = "Store",
-                    message = "Internal action '${stampedAction.name}' dispatched, but target feature '${parsedName.feature}' not found."
-                )
+                // Broadcast dispatch for all other action types
+                newState = features.fold(previousState) { currentState, feature ->
+                    feature.reducer(currentState, stampedAction)
+                }
             }
-        } else {
-            // Broadcast dispatch for all other action types
-            val previousState = _state.value
-            val newState = features.fold(previousState) { currentState, feature ->
-                feature.reducer(currentState, stampedAction)
-            }
+
             if (newState != previousState) {
                 _state.value = newState
             }
-            // PUBLIC and PUBLISH actions are broadcast to all features.
-            features.forEach { feature ->
-                feature.onAction(stampedAction, this)
+        } catch (e: Exception) {
+            handleFeatureException(e, "reducer", "broadcast")
+            // Abort state mutation if reducer fails.
+            return
+        }
+
+        // --- Side Effects (onAction) ---
+        try {
+            if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
+                val targetFeature = features.find { it.name == parsedName.feature }
+                targetFeature?.onAction(stampedAction, this)
+            } else {
+                features.forEach { feature ->
+                    feature.onAction(stampedAction, this)
+                }
+            }
+        } catch (e: Exception) {
+            handleFeatureException(e, "onAction", "broadcast")
+        }
+    }
+
+    private fun handleFeatureException(e: Exception, location: String, featureName: String) {
+        val uniqueErrorId = platformDependencies.generateUUID().take(8)
+        val logMessage = "FATAL EXCEPTION in $location for feature '$featureName' (ref: $uniqueErrorId): \n${e.stackTraceToString()}"
+        val toastMessage = "An internal error occurred in '$featureName'. (Ref: $uniqueErrorId)"
+
+        // 1. Log the full error for developers/auditors.
+        platformDependencies.log(LogLevel.FATAL, "Store.ExceptionHandler", logMessage)
+
+        // 2. Dispatch a safe, universal action to inform the user without crashing.
+        val toastAction = Action(
+            name = ActionNames.CORE_SHOW_TOAST,
+            payload = buildJsonObject { put("message", toastMessage) }
+        )
+        // This dispatch is a simple state update and is considered safe.
+        val coreFeature = features.find { it.name == "core" }
+        if (coreFeature != null) {
+            val newStateWithToast = coreFeature.reducer(_state.value, toastAction)
+            if (newStateWithToast != _state.value) {
+                _state.value = newStateWithToast
             }
         }
     }

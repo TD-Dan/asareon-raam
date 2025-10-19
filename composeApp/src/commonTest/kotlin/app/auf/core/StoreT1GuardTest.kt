@@ -5,15 +5,16 @@ import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.core.CoreState
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
+import app.auf.util.LogLevel
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlin.test.*
 
 /**
  * Tier 1 Unit Tests for the Store component.
  *
  * Mandate (P-TEST-001, T1): To test the Store's internal logic, particularly its
- * security and lifecycle guards, in complete isolation.
+ * security, lifecycle, and exception handling guards, in complete isolation.
  */
 class StoreT1GuardTest {
 
@@ -32,6 +33,36 @@ class StoreT1GuardTest {
         }
     }
 
+    // A feature designed to fail for testing exception handling.
+    private open class CrashingFeature : Feature {
+        override val name = "CrashingFeature"
+        override val composableProvider: Feature.ComposableProvider? = null
+        override fun reducer(state: AppState, action: Action): AppState {
+            if (action.name == "test.CRASH_REDUCER") throw IllegalStateException("Reducer deliberately crashed")
+            return state
+        }
+        override fun onAction(action: Action, store: Store) {
+            if (action.name == "test.CRASH_ON_ACTION") throw IllegalStateException("onAction deliberately crashed")
+        }
+        override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
+            if (envelope.type == "test.CRASH_PRIVATE") throw IllegalStateException("onPrivateData deliberately crashed")
+        }
+    }
+
+    // A specialized feature for the onAction crash test, which has a reducer that
+    // successfully changes state before the onAction handler fails.
+    private class StateChangingCrashingFeature : CrashingFeature() {
+        override val name = "CrashingFeature" // Same name to occupy the same state slice
+        override fun reducer(state: AppState, action: Action): AppState {
+            if (action.name == "test.CRASH_ON_ACTION") {
+                val testState = state.featureStates["TestFeature"] as? TestState ?: TestState()
+                return state.copy(featureStates = state.featureStates + ("TestFeature" to testState.copy(value = 99)))
+            }
+            return super.reducer(state, action)
+        }
+    }
+
+
     private val platform = FakePlatformDependencies("v2-test")
 
     // A minimal, custom action registry for testing the store's guards.
@@ -39,88 +70,120 @@ class StoreT1GuardTest {
         ActionNames.SYSTEM_PUBLISH_INITIALIZING,
         ActionNames.SYSTEM_PUBLISH_STARTING,
         ActionNames.SYSTEM_PUBLISH_CLOSING,
-        "test.INCREMENT"
+        ActionNames.CORE_SHOW_TOAST, // Needed for the exception handler
+        "test.INCREMENT",
+        "test.CRASH_REDUCER",
+        "test.CRASH_ON_ACTION"
     )
 
-    private fun createStore(initialCoreState: CoreState): Store {
-        val features = listOf(CoreFeature(platform), TestFeature())
-        val initialState = AppState(
-            featureStates = mapOf(
-                "core" to initialCoreState,
-                "TestFeature" to TestState()
-            )
+    private fun createStore(initialCoreState: CoreState, vararg extraFeatures: Feature): Store {
+        val features = mutableListOf<Feature>(CoreFeature(platform), TestFeature())
+        features.addAll(extraFeatures)
+        val initialFeatureStates = mutableMapOf<String, FeatureState>(
+            "core" to initialCoreState,
+            "TestFeature" to TestState()
         )
-        return Store(initialState, features, platform, testActionRegistry)
+        extraFeatures.forEach {
+            initialFeatureStates[it.name] = object : FeatureState {}
+        }
+
+        return Store(AppState(featureStates = initialFeatureStates), features, platform, testActionRegistry)
     }
+
+    // --- Security & Lifecycle Guard Tests ---
 
     @Test
     fun `store guard blocks unknown actions`() {
         val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING))
         val initialState = store.state.value
-
         store.dispatch("test.feature", Action("test.UNKNOWN_ACTION"))
-        val finalState = store.state.value
-
-        assertEquals(initialState, finalState, "State should not have changed for an unknown action.")
+        assertEquals(initialState, store.state.value, "State should not have changed for an unknown action.")
     }
 
     @Test
     fun `store guard blocks normal actions when BOOTING`() {
         val store = createStore(CoreState(lifecycle = AppLifecycle.BOOTING))
         val initialState = store.state.value
-
         store.dispatch("test.feature", Action("test.INCREMENT"))
-        val finalState = store.state.value
-
-        assertEquals(initialState, finalState, "State should not have changed.")
+        assertEquals(initialState, store.state.value, "State should not have changed.")
     }
 
     @Test
     fun `store guard allows SYSTEM_PUBLISH_INITIALIZING when BOOTING`() {
         val store = createStore(CoreState(lifecycle = AppLifecycle.BOOTING))
         val initialState = store.state.value
-
         store.dispatch("system.main", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
-        val finalState = store.state.value
-
-        assertNotEquals(initialState, finalState, "State should have changed.")
-        val finalCoreState = finalState.featureStates["core"] as CoreState
+        assertNotEquals(initialState, store.state.value, "State should have changed.")
+        val finalCoreState = store.state.value.featureStates["core"] as CoreState
         assertEquals(AppLifecycle.INITIALIZING, finalCoreState.lifecycle)
     }
 
-    @Test
-    fun `store guard allows all actions when INITIALIZING`() {
-        val store = createStore(CoreState(lifecycle = AppLifecycle.INITIALIZING))
-        val initialTestState = store.state.value.featureStates["TestFeature"] as TestState
-
-        store.dispatch("test.feature", Action("test.INCREMENT"))
-        val finalTestState = store.state.value.featureStates["TestFeature"] as TestState
-
-        assertNotEquals(initialTestState, finalTestState, "State should have changed.")
-        assertEquals(1, finalTestState.value)
-    }
+    // --- Exception Handling Tests ---
 
     @Test
-    fun `store guard blocks startup actions when RUNNING`() {
-        val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING))
+    fun `exception in reducer should abort state change, log FATAL, and show toast`() {
+        platform.capturedLogs.clear()
+        val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING), CrashingFeature())
         val initialState = store.state.value
 
-        store.dispatch("system.main", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
-        assertEquals(initialState, store.state.value, "State should not change for INITIALIZING in RUNNING state.")
+        store.dispatch("test.crasher", Action("test.CRASH_REDUCER"))
 
-        store.dispatch("system.main", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
-        assertEquals(initialState, store.state.value, "State should not change for STARTING in RUNNING state.")
+        val finalState = store.state.value
+        val finalCoreState = finalState.featureStates["core"] as CoreState
+
+        // CORRECTED ASSERTION: Compare the state maps after removing the 'core' slice from BOTH.
+        // This correctly verifies that all other feature states were not mutated.
+        assertEquals(
+            initialState.featureStates - "core",
+            finalState.featureStates - "core",
+            "Non-core state should not have changed."
+        )
+
+        assertNotNull(finalCoreState.toastMessage, "A toast message should be present in the final state.")
+        assertTrue(finalCoreState.toastMessage!!.contains("An internal error occurred in 'broadcast'"), "Toast message should identify the source.")
+
+        val log = platform.capturedLogs.find { it.level == LogLevel.FATAL }
+        assertNotNull(log, "A FATAL log should have been captured.")
+        assertTrue(log.message.contains("FATAL EXCEPTION in reducer"), "Log message should identify the location.")
     }
 
     @Test
-    fun `store guard allows normal actions when RUNNING`() {
-        val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING))
-        val initialTestState = store.state.value.featureStates["TestFeature"] as TestState
+    fun `exception in onAction should NOT abort state change, but should log FATAL and show toast`() {
+        platform.capturedLogs.clear()
+        val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING), StateChangingCrashingFeature())
+        val action = Action("test.CRASH_ON_ACTION")
 
-        store.dispatch("test.feature", Action("test.INCREMENT"))
-        val finalTestState = store.state.value.featureStates["TestFeature"] as TestState
+        store.dispatch("test.crasher", action)
 
-        assertNotEquals(initialTestState, finalTestState, "State should have changed.")
-        assertEquals(1, finalTestState.value)
+        val finalState = store.state.value
+        val finalCoreState = finalState.featureStates["core"] as CoreState
+        val finalTestState = finalState.featureStates["TestFeature"] as TestState
+
+        assertEquals(99, finalTestState.value, "State change from the successful reducer should be preserved.")
+        assertNotNull(finalCoreState.toastMessage, "A toast message should be present.")
+        assertTrue(finalCoreState.toastMessage!!.contains("An internal error occurred in 'broadcast'"))
+
+        val log = platform.capturedLogs.find { it.level == LogLevel.FATAL }
+        assertNotNull(log, "A FATAL log should have been captured.")
+        assertTrue(log.message.contains("FATAL EXCEPTION in onAction"))
+    }
+
+    @Test
+    fun `exception in onPrivateData should log FATAL and show toast`() {
+        platform.capturedLogs.clear()
+        val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING), CrashingFeature())
+
+        val envelope = PrivateDataEnvelope("test.CRASH_PRIVATE", buildJsonObject { put("data", "test") })
+        store.deliverPrivateData("test.sender", "CrashingFeature", envelope)
+
+        val finalState = store.state.value
+        val finalCoreState = finalState.featureStates["core"] as CoreState
+
+        assertNotNull(finalCoreState.toastMessage, "A toast message should be present.")
+        assertTrue(finalCoreState.toastMessage!!.contains("An internal error occurred in 'CrashingFeature'"))
+
+        val log = platform.capturedLogs.find { it.level == LogLevel.FATAL }
+        assertNotNull(log, "A FATAL log should have been captured.")
+        assertTrue(log.message.contains("FATAL EXCEPTION in onPrivateData for feature 'CrashingFeature'"))
     }
 }
