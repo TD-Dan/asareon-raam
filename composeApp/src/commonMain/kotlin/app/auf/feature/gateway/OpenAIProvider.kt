@@ -14,6 +14,7 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
@@ -42,22 +43,37 @@ class OpenAIProvider(
     private val API_HOST = "api.openai.com"
 
     private val json = Json { ignoreUnknownKeys = true }
-    private var client: HttpClient // CORRECTED: Changed from val to var
+    private val client = HttpClient {
+        install(ContentNegotiation) { json(json) }
+        install(HttpTimeout) { requestTimeoutMillis = 60_000 }
+    }
 
-    init {
-        client = HttpClient {
-            install(ContentNegotiation) { json(json) }
-            install(HttpTimeout) { requestTimeoutMillis = 60_000 }
+    // --- Logic extracted for testability ---
+
+    /** Builds the provider-specific JSON payload from a universal request. */
+    internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
+        return buildJsonObject {
+            put("model", request.modelName)
+            put("messages", json.encodeToJsonElement(request.contents))
         }
     }
 
-    /** Test-only constructor for injecting a mocked HttpClient. */
-    internal constructor(
-        platformDependencies: PlatformDependencies,
-        httpClient: HttpClient
-    ) : this(platformDependencies) {
-        client = httpClient
+    /** Parses a raw JSON response body into a universal GatewayResponse. */
+    internal fun parseResponse(responseBody: String, correlationId: String): GatewayResponse {
+        val response = json.decodeFromString<OpenAIChatResponse>(responseBody)
+
+        response.error?.let {
+            return GatewayResponse(null, "API Error: ${it.message}", correlationId)
+        }
+
+        val rawText = response.choices?.firstOrNull()?.message?.content
+            ?: "No content received, but no error was reported."
+
+        return GatewayResponse(rawText, null, correlationId)
     }
+
+
+    // --- Public Interface Implementation ---
 
     override fun registerSettings(dispatch: (Action) -> Unit) {
         val payload = buildJsonObject {
@@ -84,28 +100,17 @@ class OpenAIProvider(
             return GatewayResponse(null, "OpenAI API Key is not configured.", request.correlationId)
         }
 
-        // The GatewayMessage data class serializes directly to the format OpenAI expects.
-        val apiRequest = buildJsonObject {
-            put("model", request.modelName)
-            put("messages", json.encodeToJsonElement(request.contents))
-        }
-
         return try {
+            val apiRequest = buildRequestPayload(request)
             val apiUrl = "https://$API_HOST/v1/chat/completions"
-            val response: OpenAIChatResponse = client.post(apiUrl) {
+
+            val responseBody: String = client.post(apiUrl) {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
                 contentType(ContentType.Application.Json)
                 setBody(apiRequest)
             }.body()
 
-            response.error?.let {
-                return GatewayResponse(null, "API Error: ${it.message}", request.correlationId)
-            }
-
-            val rawText = response.choices?.firstOrNull()?.message?.content
-                ?: "No content received, but no error was reported."
-
-            GatewayResponse(rawText, null, request.correlationId)
+            parseResponse(responseBody, request.correlationId)
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, id, "Content generation failed: ${e.message}")
             val userMessage = mapExceptionToUserMessage(e)

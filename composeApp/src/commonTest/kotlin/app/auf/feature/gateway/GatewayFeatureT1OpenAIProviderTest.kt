@@ -2,70 +2,77 @@ package app.auf.feature.gateway
 
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.gateway.openai.OpenAIProvider
-import io.ktor.client.*
-import io.ktor.client.engine.mock.*
-import io.ktor.http.*
-import io.ktor.utils.io.*
-import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlin.test.*
 
 /**
  * Tier 1 Unit Test for OpenAIProvider.
  *
- * Mandate (P-TEST-001, T1): To test the provider's logic for translating a universal
- * GatewayRequest into a provider-specific API call, using a MockEngine to intercept
- * the network request.
+ * Mandate (P-TEST-001, T1): To test the provider's pure data transformation logic
+ * without any network dependencies.
  */
 class GatewayFeatureT1OpenAIProviderTest {
-
     private val platform = FakePlatformDependencies("test")
-
-    private fun createProvider(mockResponse: String, statusCode: HttpStatusCode = HttpStatusCode.OK): OpenAIProvider {
-        val mockEngine = MockEngine { request ->
-            // Capture the request body for assertion
-            val requestBody = request.body.toByteArray().decodeToString()
-            assertEquals(
-                """{"model":"gpt-4o","messages":[{"role":"user","content":"Hello"},{"role":"assistant","content":"Hi there"}]}""",
-                requestBody
-            )
-
-            respond(
-                content = ByteReadChannel(mockResponse),
-                status = statusCode,
-                headers = headersOf(HttpHeaders.ContentType, "application/json")
-            )
-        }
-        val client = HttpClient(mockEngine)
-        return OpenAIProvider(platform, client)
-    }
+    private val provider = OpenAIProvider(platform)
 
     @Test
-    fun `generateContent correctly transforms universal request to OpenAI format and parses response`() = runTest {
-        val mockApiResponse = """{ "choices": [{ "message": { "role": "assistant", "content": "OpenAI Response" } }] }"""
-        val provider = createProvider(mockApiResponse)
+    fun `buildRequestPayload correctly transforms universal request to OpenAI format`() {
+        // ARRANGE
         val request = GatewayRequest(
             modelName = "gpt-4o",
-            // Note: OpenAI uses "assistant", not "model"
             contents = listOf(GatewayMessage("user", "Hello"), GatewayMessage("assistant", "Hi there")),
             correlationId = "corr-123"
         )
+        val expected = buildJsonObject {
+            put("model", "gpt-4o")
+            put("messages", buildJsonArray {
+                add(buildJsonObject {
+                    put("role", "user")
+                    put("content", "Hello")
+                })
+                add(buildJsonObject {
+                    put("role", "assistant")
+                    put("content", "Hi there")
+                })
+            })
+        }
 
-        val response = provider.generateContent(request, mapOf("gateway.openai.apiKey" to "fake-key"))
+        // ACT
+        val actual = provider.buildRequestPayload(request)
 
-        assertEquals("OpenAI Response", response.rawContent)
-        assertNull(response.errorMessage)
-        assertEquals("corr-123", response.correlationId)
+        // ASSERT
+        assertEquals(expected, actual)
     }
 
     @Test
-    fun `generateContent handles API errors correctly`() = runTest {
-        val mockErrorResponse = """{ "error": { "message": "You exceeded your current quota" } }"""
-        val provider = createProvider(mockErrorResponse)
-        val request = GatewayRequest("gpt-4o", listOf(GatewayMessage("user", "Hello")), "corr-456")
+    fun `parseResponse correctly handles a successful API response`() {
+        // ARRANGE
+        val responseBody = """{ "choices": [{ "message": { "role": "assistant", "content": "OpenAI Response" } }] }"""
+        val correlationId = "corr-123"
 
-        val response = provider.generateContent(request, mapOf("gateway.openai.apiKey" to "fake-key"))
+        // ACT
+        val response = provider.parseResponse(responseBody, correlationId)
 
+        // ASSERT
+        assertEquals("OpenAI Response", response.rawContent)
+        assertNull(response.errorMessage)
+        assertEquals(correlationId, response.correlationId)
+    }
+
+    @Test
+    fun `parseResponse correctly handles an API error response`() {
+        // ARRANGE
+        val responseBody = """{ "error": { "message": "You exceeded your current quota" } }"""
+        val correlationId = "corr-456"
+
+        // ACT
+        val response = provider.parseResponse(responseBody, correlationId)
+
+        // ASSERT
         assertNull(response.rawContent)
         assertEquals("API Error: You exceeded your current quota", response.errorMessage)
+        assertEquals(correlationId, response.correlationId)
     }
 }

@@ -14,6 +14,7 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -54,22 +55,44 @@ class GeminiProvider(
     private val API_HOST = "generativelanguage.googleapis.com"
 
     private val json = Json { ignoreUnknownKeys = true }
-    private var client: HttpClient // CORRECTED: Changed from val to var
+    private val client = HttpClient {
+        install(ContentNegotiation) { json(json) }
+        install(HttpTimeout) { requestTimeoutMillis = 60_000 }
+    }
 
-    init {
-        client = HttpClient {
-            install(ContentNegotiation) { json(json) }
-            install(HttpTimeout) { requestTimeoutMillis = 60_000 }
+    // --- Logic extracted for testability ---
+
+    /** Builds the provider-specific JSON payload from a universal request. */
+    internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
+        val apiContents = buildJsonArray {
+            request.contents.forEach { message ->
+                add(buildJsonObject {
+                    put("role", message.role)
+                    put("parts", buildJsonArray {
+                        add(buildJsonObject { put("text", message.content) })
+                    })
+                })
+            }
         }
+        return buildJsonObject { put("contents", apiContents) }
     }
 
-    /** Test-only constructor for injecting a mocked HttpClient. */
-    internal constructor(
-        platformDependencies: PlatformDependencies,
-        httpClient: HttpClient
-    ) : this(platformDependencies) {
-        client = httpClient
+    /** Parses a raw JSON response body into a universal GatewayResponse. */
+    internal fun parseResponse(responseBody: String, correlationId: String): GatewayResponse {
+        val response = json.decodeFromString<GenerateContentResponse>(responseBody)
+
+        response.error?.let {
+            return GatewayResponse(null, "API Error: ${it.message}", correlationId)
+        }
+
+        val rawText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+            ?: response.promptFeedback?.blockReason?.let { "Blocked: $it" }
+            ?: "No content received, but no error was reported."
+
+        return GatewayResponse(rawText, null, correlationId)
     }
+
+    // --- Public Interface Implementation ---
 
     override fun registerSettings(dispatch: (Action) -> Unit) {
         val payload = buildJsonObject {
@@ -107,36 +130,17 @@ class GeminiProvider(
             return GatewayResponse(null, "Gemini API Key is not configured.", request.correlationId)
         }
 
-        val apiContents = buildJsonArray {
-            request.contents.forEach { message ->
-                add(buildJsonObject {
-                    put("role", message.role)
-                    put("parts", buildJsonArray {
-                        add(buildJsonObject { put("text", message.content) })
-                    })
-                })
-            }
-        }
-        val apiRequest = buildJsonObject { put("contents", apiContents) }
-
-
         return try {
+            val apiRequest = buildRequestPayload(request)
             val apiUrl = "https://$API_HOST/v1beta/models/${request.modelName}:generateContent"
-            val response: GenerateContentResponse = client.post(apiUrl) {
+
+            val responseBody: String = client.post(apiUrl) {
                 parameter("key", apiKey)
                 contentType(ContentType.Application.Json)
                 setBody(apiRequest)
             }.body()
 
-            response.error?.let {
-                return GatewayResponse(null, "API Error: ${it.message}", request.correlationId)
-            }
-
-            val rawText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                ?: response.promptFeedback?.blockReason?.let { "Blocked: $it" }
-                ?: "No content received, but no error was reported."
-
-            GatewayResponse(rawText, null, request.correlationId)
+            parseResponse(responseBody, request.correlationId)
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, id, "Content generation failed: ${e.message}")
             val userMessage = mapExceptionToUserMessage(e)

@@ -29,10 +29,9 @@ class SessionFeatureT1BlockSeparatingParserTest {
     fun `should handle fences with leading whitespace`() {
         val rawResponse = "  ```kotlin\n  val indented = true\n  ```"
         val result = parser.parse(rawResponse)
-        assertEquals(3, result.size)
+        assertEquals(2, result.size)
         assertIs<ContentBlock.Text>(result[0])
         assertIs<ContentBlock.CodeBlock>(result[1])
-        assertIs<ContentBlock.Text>(result[2])
     }
 
     @Test

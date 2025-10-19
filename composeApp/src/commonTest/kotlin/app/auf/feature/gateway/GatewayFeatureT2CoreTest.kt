@@ -6,6 +6,7 @@ import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.settings.SettingsFeature
 import app.auf.feature.settings.SettingsState
 import app.auf.test.TestEnvironment
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -94,6 +95,7 @@ class GatewayFeatureT2CoreTest {
         assertEquals(1, fakeProvider2.registerSettingsCallCount)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `on STARTING refreshes models for all providers with API keys`() = testScope.runTest {
         val harness = createHarness(this, mapOf(
@@ -111,6 +113,7 @@ class GatewayFeatureT2CoreTest {
         assertEquals(listOf("gpt-x"), finalState.availableModels["provider-2"])
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `on settings VALUE_CHANGED refreshes models for the correct provider`() = testScope.runTest {
         val harness = createHarness(this, mapOf(
@@ -130,6 +133,7 @@ class GatewayFeatureT2CoreTest {
         assertEquals(2, fakeProvider2.listAvailableModelsCallCount, "Provider 2 should be refreshed.")
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `on GENERATE_CONTENT routes to correct provider and delivers response privately`() = testScope.runTest {
         val harness = createHarness(this, mapOf("gateway.provider-2.apiKey" to "k2"))
