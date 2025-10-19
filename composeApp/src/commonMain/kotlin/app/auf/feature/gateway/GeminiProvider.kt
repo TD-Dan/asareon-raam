@@ -1,6 +1,7 @@
 package app.auf.feature.gateway.gemini
 
 import app.auf.core.Action
+import app.auf.core.generated.ActionNames
 import app.auf.feature.gateway.*
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
@@ -53,9 +54,21 @@ class GeminiProvider(
     private val API_HOST = "generativelanguage.googleapis.com"
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val client = HttpClient {
-        install(ContentNegotiation) { json(json) }
-        install(HttpTimeout) { requestTimeoutMillis = 60_000 }
+    private var client: HttpClient // CORRECTED: Changed from val to var
+
+    init {
+        client = HttpClient {
+            install(ContentNegotiation) { json(json) }
+            install(HttpTimeout) { requestTimeoutMillis = 60_000 }
+        }
+    }
+
+    /** Test-only constructor for injecting a mocked HttpClient. */
+    internal constructor(
+        platformDependencies: PlatformDependencies,
+        httpClient: HttpClient
+    ) : this(platformDependencies) {
+        client = httpClient
     }
 
     override fun registerSettings(dispatch: (Action) -> Unit) {
@@ -67,7 +80,7 @@ class GeminiProvider(
             put("section", "API Keys")
             put("defaultValue", "")
         }
-        dispatch(Action("settings.ADD", payload))
+        dispatch(Action(ActionNames.SETTINGS_ADD, payload))
     }
 
     override suspend fun listAvailableModels(settings: Map<String, String>): List<String> {
@@ -94,7 +107,6 @@ class GeminiProvider(
             return GatewayResponse(null, "Gemini API Key is not configured.", request.correlationId)
         }
 
-        // CORRECTED: Transform the universal message list into the Gemini-specific JSON structure.
         val apiContents = buildJsonArray {
             request.contents.forEach { message ->
                 add(buildJsonObject {

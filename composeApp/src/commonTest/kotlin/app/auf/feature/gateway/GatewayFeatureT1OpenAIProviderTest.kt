@@ -2,14 +2,12 @@ package app.auf.feature.gateway
 
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.gateway.openai.OpenAIProvider
+import io.ktor.client.*
 import io.ktor.client.engine.mock.*
 import io.ktor.http.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
+import kotlin.test.*
 
 /**
  * Tier 1 Unit Test for OpenAIProvider.
@@ -37,7 +35,8 @@ class GatewayFeatureT1OpenAIProviderTest {
                 headers = headersOf(HttpHeaders.ContentType, "application/json")
             )
         }
-        return OpenAIProvider(platform, mockEngine)
+        val client = HttpClient(mockEngine)
+        return OpenAIProvider(platform, client)
     }
 
     @Test
@@ -55,6 +54,7 @@ class GatewayFeatureT1OpenAIProviderTest {
 
         assertEquals("OpenAI Response", response.rawContent)
         assertNull(response.errorMessage)
+        assertEquals("corr-123", response.correlationId)
     }
 
     @Test

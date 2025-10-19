@@ -1,6 +1,7 @@
 package app.auf.feature.gateway.openai
 
 import app.auf.core.Action
+import app.auf.core.generated.ActionNames
 import app.auf.feature.gateway.*
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
@@ -14,8 +15,8 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.put
 
 // --- Data Contracts specific to the OpenAI API ---
 @Serializable
@@ -41,9 +42,21 @@ class OpenAIProvider(
     private val API_HOST = "api.openai.com"
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val client = HttpClient {
-        install(ContentNegotiation) { json(json) }
-        install(HttpTimeout) { requestTimeoutMillis = 60_000 }
+    private var client: HttpClient // CORRECTED: Changed from val to var
+
+    init {
+        client = HttpClient {
+            install(ContentNegotiation) { json(json) }
+            install(HttpTimeout) { requestTimeoutMillis = 60_000 }
+        }
+    }
+
+    /** Test-only constructor for injecting a mocked HttpClient. */
+    internal constructor(
+        platformDependencies: PlatformDependencies,
+        httpClient: HttpClient
+    ) : this(platformDependencies) {
+        client = httpClient
     }
 
     override fun registerSettings(dispatch: (Action) -> Unit) {
@@ -55,7 +68,7 @@ class OpenAIProvider(
             put("section", "API Keys")
             put("defaultValue", "")
         }
-        dispatch(Action("settings.ADD", payload))
+        dispatch(Action(ActionNames.SETTINGS_ADD, payload))
     }
 
     override suspend fun listAvailableModels(settings: Map<String, String>): List<String> {
@@ -71,7 +84,6 @@ class OpenAIProvider(
             return GatewayResponse(null, "OpenAI API Key is not configured.", request.correlationId)
         }
 
-        // CORRECTED: Transform the universal message list into the OpenAI-specific JSON structure.
         // The GatewayMessage data class serializes directly to the format OpenAI expects.
         val apiRequest = buildJsonObject {
             put("model", request.modelName)
