@@ -7,6 +7,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import app.auf.core.*
+import app.auf.core.generated.ActionNames
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,40 +35,44 @@ class SettingsFeature(
     private val debounceJobs = mutableMapOf<String, Job>()
     private val settingsFileName = "settings.json"
 
-    override fun onPrivateData(data: Any, store: Store) {
-        val payload = data as? JsonObject ?: return
-        if (payload["subpath"]?.jsonPrimitive?.content == settingsFileName) {
-            val loadedValues = payload["content"]?.jsonPrimitive?.contentOrNull?.let {
-                try { Json.decodeFromString<Map<String, String>>(it) } catch (e: Exception) { emptyMap() }
-            } ?: emptyMap()
-            store.dispatch(this.name, Action("settings.publish.LOADED", buildJsonObject {
-                loadedValues.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
-            }))
+    override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
+        when (envelope.type) {
+            "filesystem.response.read" -> {
+                val payload = envelope.payload
+                if (payload["subpath"]?.jsonPrimitive?.content == settingsFileName) {
+                    val loadedValues = payload["content"]?.jsonPrimitive?.contentOrNull?.let {
+                        try { Json.decodeFromString<Map<String, String>>(it) } catch (e: Exception) { emptyMap() }
+                    } ?: emptyMap()
+                    store.dispatch(this.name, Action(ActionNames.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+                        loadedValues.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
+                    }))
+                }
+            }
         }
     }
 
     override fun onAction(action: Action, store: Store) {
         when (action.name) {
-            "system.INITIALIZING" -> store.dispatch(this.name, Action("filesystem.SYSTEM_READ", buildJsonObject { put("subpath", settingsFileName) }))
-            "settings.INPUT_CHANGED" -> {
+            ActionNames.SYSTEM_INITIALIZING -> store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", settingsFileName) }))
+            ActionNames.SETTINGS_INTERNAL_INPUT_CHANGED -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
                 val value = action.payload.get("value")?.jsonPrimitive?.content ?: return
                 debounceJobs[key]?.cancel()
                 debounceJobs[key] = featureScope.launch {
                     delay(750L)
-                    store.dispatch(name, Action("settings.UPDATE", buildJsonObject { put("key", key); put("value", value) }))
+                    store.dispatch(name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", key); put("value", value) }))
                 }
             }
-            "settings.UPDATE" -> {
+            ActionNames.SETTINGS_UPDATE -> {
                 val latestSettingsState = store.state.value.featureStates[name] as? SettingsState ?: return
-                store.dispatch(this.name, Action("filesystem.SYSTEM_WRITE", buildJsonObject {
+                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                     put("subpath", settingsFileName)
                     put("content", Json.encodeToString(latestSettingsState.values))
                     put("encrypt", true)
                 }))
-                action.payload?.let { store.dispatch(this.name, Action("settings.publish.VALUE_CHANGED", it)) }
+                action.payload?.let { store.dispatch(this.name, Action(ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED, it)) }
             }
-            "settings.OPEN_FOLDER" -> store.dispatch(this.name, Action("filesystem.OPEN_SYSTEM_FOLDER"))
+            ActionNames.SETTINGS_OPEN_FOLDER -> store.dispatch(this.name, Action(ActionNames.FILESYSTEM_OPEN_SYSTEM_FOLDER))
         }
     }
 
@@ -76,7 +81,7 @@ class SettingsFeature(
         var newFeatureState: SettingsState? = null
         val payload = action.payload
         when (action.name) {
-            "settings.ADD" -> {
+            ActionNames.SETTINGS_ADD -> {
                 val key = payload?.get("key")?.jsonPrimitive?.content ?: return state
                 val defaultValue = payload["defaultValue"]?.jsonPrimitive?.content ?: return state
                 if (currentFeatureState.definitions.none { it["key"]?.jsonPrimitive?.content == key }) {
@@ -84,7 +89,7 @@ class SettingsFeature(
                     newFeatureState = currentFeatureState.copy(definitions = currentFeatureState.definitions + payload, values = newValues)
                 }
             }
-            "settings.publish.LOADED" -> {
+            ActionNames.SETTINGS_PUBLISH_LOADED -> {
                 val loadedValues = payload?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap()
                 val allDefaults = currentFeatureState.definitions.associate {
                     it["key"]!!.jsonPrimitive.content to it["defaultValue"]!!.jsonPrimitive.content
@@ -92,12 +97,12 @@ class SettingsFeature(
                 val finalValues = allDefaults + loadedValues
                 newFeatureState = currentFeatureState.copy(values = finalValues, inputValues = finalValues)
             }
-            "settings.INPUT_CHANGED" -> {
+            ActionNames.SETTINGS_INTERNAL_INPUT_CHANGED -> {
                 val key = payload?.get("key")?.jsonPrimitive?.content ?: return state
                 val value = payload["value"]?.jsonPrimitive?.content ?: return state
                 newFeatureState = currentFeatureState.copy(inputValues = currentFeatureState.inputValues + (key to value))
             }
-            "settings.UPDATE" -> {
+            ActionNames.SETTINGS_UPDATE -> {
                 val key = payload?.get("key")?.jsonPrimitive?.content ?: return state
                 val value = payload["value"]?.jsonPrimitive?.content ?: return state
                 newFeatureState = currentFeatureState.copy(
@@ -113,12 +118,12 @@ class SettingsFeature(
         private val viewKey = "feature.settings.main"
         override val stageViews: Map<String, @Composable (Store, List<Feature>) -> Unit> = mapOf(
             viewKey to { store, _ ->
-                SettingsView(store = store, onClose = { store.dispatch("settings.ui", Action("core.SHOW_DEFAULT_VIEW")) })
+                SettingsView(store = store, onClose = { store.dispatch("settings.ui", Action(ActionNames.CORE_SHOW_DEFAULT_VIEW)) })
             }
         )
         @Composable override fun RibbonContent(store: Store, activeViewKey: String?) {
             val isActive = activeViewKey == viewKey
-            IconButton(onClick = { store.dispatch("settings.ui", Action("core.SET_ACTIVE_VIEW", buildJsonObject { put("key", viewKey) })) }) {
+            IconButton(onClick = { store.dispatch("settings.ui", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKey) })) }) {
                 Icon(Icons.Default.Settings, "Settings", tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

@@ -71,13 +71,13 @@ class GatewayFeature(
             json.decodeFromJsonElement<List<GatewayMessage>>(it)
         } ?: return
 
-        val provider = providerMap[providerId] ?: return // Silently ignore unknown providers
-        val settingsState = store.state.value.featureStates["settings"] as? SettingsState ?: return
+        val provider = providerMap[providerId] ?: return // Silently ignore unknown providers //TODO: Cant be silently ignoring stuff. atleast a warining needs to be raised here
+        val settingsState = store.state.value.featureStates["settings"] as? SettingsState ?: return //TODO: this is a violation
 
         coroutineScope.launch {
             val request = GatewayRequest(modelName, contents, correlationId)
             // Delegate the actual work to the specific provider plugin.
-            val response = provider.generateContent(request, settingsState.values)
+            val response = provider.generateContent(request, settingsState.values) //TODO: this is a violation
 
             val responsePayload = try {
                 Json.encodeToJsonElement(response).jsonObject
@@ -97,7 +97,7 @@ class GatewayFeature(
 
             // Securely deliver the response directly to the original requester.
             val envelope = PrivateDataEnvelope(
-                type = "gateway.response.v1",
+                type = "gateway.response",
                 payload = responsePayload
             )
             store.deliverPrivateData(this@GatewayFeature.name, originator, envelope)
@@ -106,10 +106,10 @@ class GatewayFeature(
 
     private fun refreshProviderModels(providerId: String, store: Store) {
         val provider = providerMap[providerId] ?: return
-        val settingsState = store.state.value.featureStates["settings"] as? SettingsState ?: return
+        val settingsState = store.state.value.featureStates["settings"] as? SettingsState ?: return //TODO: this is a violation
 
         coroutineScope.launch {
-            val models = provider.listAvailableModels(settingsState.values)
+            val models = provider.listAvailableModels(settingsState.values) //TODO: this is a violation
             val payload = buildJsonObject {
                 put("providerId", providerId)
                 put("models", Json.encodeToJsonElement(models))

@@ -27,7 +27,7 @@
     },
     {
       "action_name": "filesystem.SYSTEM_LIST",
-      "summary": "[INTERNAL-SANDBOXED] Requests a listing of files in the originator's private sandbox.",
+      "summary": "[PRIVATE-CHANNEL] Requests a listing of files in the originator's private sandbox. Request is delivered via private channel with 'filesystem.response.list' as type",
       "payload_schema": null
     },
     {

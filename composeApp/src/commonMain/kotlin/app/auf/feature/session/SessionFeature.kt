@@ -41,16 +41,24 @@ class SessionFeature(
     private val blockParser = BlockSeparatingParser()
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
 
-    override fun onPrivateData(data: Any, store: Store) {
-        when (data) {
-            is List<*> -> data.filterIsInstance<FileEntry>().filter { it.path.endsWith(".json") }.forEach {
-                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", platformDependencies.getFileName(it.path)) }))
+    override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
+        // THIS LOGIC IS NOW INCORRECT AND WILL BE FIXED IN PHASE 3.
+        // It is temporarily updated to satisfy the compiler.
+        val data = envelope.payload
+        when (envelope.type) {
+            "filesystem.response.list" -> {
+                val fileList = data["listing"]?.jsonArray?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
+                fileList.filter { it.path.endsWith(".json") }.forEach {
+                    store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", platformDependencies.getFileName(it.path)) }))
+                }
             }
-            is JsonObject -> try {
-                val session = json.decodeFromString<Session>(data["content"]?.jsonPrimitive?.content ?: "")
-                store.dispatch(this.name, Action(ActionNames.SESSION_INTERNAL_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.id to session))) as JsonObject))
-            } catch (e: Exception) {
-                platformDependencies.log(LogLevel.ERROR, name, "Failed to parse session file: ${data["subpath"]}. Error: ${e.message}")
+            "filesystem.response.read" -> {
+                try {
+                    val session = json.decodeFromString<Session>(data["content"]?.jsonPrimitive?.content ?: "")
+                    store.dispatch(this.name, Action(ActionNames.SESSION_INTERNAL_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.id to session))) as JsonObject))
+                } catch (e: Exception) {
+                    platformDependencies.log(LogLevel.ERROR, name, "Failed to parse session file: ${data["subpath"]}. Error: ${e.message}")
+                }
             }
         }
     }
@@ -72,7 +80,6 @@ class SessionFeature(
                 broadcastSessionNames(updatedSessionState, store)
             }
             ActionNames.SESSION_DELETE -> {
-                // THE FIX: Read the ID from the transient state field, which was reliably set by the reducer.
                 val sessionIdToDelete = sessionState.lastDeletedSessionId
                 if (sessionIdToDelete != null) {
                     store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE, buildJsonObject { put("subpath", "$sessionIdToDelete.json") }))
@@ -88,20 +95,17 @@ class SessionFeature(
             ActionNames.SESSION_POST -> {
                 val sessionId = resolveSessionIdFromGenericPayload(action.payload, sessionState) ?: return
                 persistSession(sessionId, store)
-                // THE FIX: Dispatch the new MESSAGE_POSTED event after successful persistence.
                 val updatedSession = (store.state.value.featureStates[name] as? SessionState)?.sessions?.get(sessionId) ?: return
                 val postedEntry = updatedSession.ledger.last()
                 store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
                     put("sessionId", sessionId)
                     put("entry", json.encodeToJsonElement(postedEntry))
                 }))
-                // THE FIX: Fulfill the contract by publishing the SESSION_UPDATED event.
                 store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
             ActionNames.SESSION_UPDATE_MESSAGE, ActionNames.SESSION_TOGGLE_MESSAGE_COLLAPSED, ActionNames.SESSION_TOGGLE_MESSAGE_RAW_VIEW -> {
                 val sessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: resolveSessionIdFromGenericPayload(action.payload, sessionState) ?: return
                 persistSession(sessionId, store)
-                // THE FIX: Fulfill the contract by publishing the SESSION_UPDATED event.
                 store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
             ActionNames.SESSION_DELETE_MESSAGE -> {
@@ -112,7 +116,6 @@ class SessionFeature(
                     put("sessionId", sessionId)
                     put("messageId", messageId)
                 }))
-                // THE FIX: Fulfill the contract by publishing the SESSION_UPDATED event.
                 store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
             ActionNames.SESSION_REQUEST_LEDGER_CONTENT -> {
@@ -124,10 +127,12 @@ class SessionFeature(
                         GatewayMessage(role, content)
                     }
                 }
-                store.deliverPrivateData(this.name, action.originator ?: "unknown", buildJsonObject {
+                val responsePayload = buildJsonObject {
                     put("correlationId", payload.correlationId)
                     putJsonArray("messages") { messages.forEach { add(Json.encodeToJsonElement(it)) } }
-                })
+                }
+                val envelope = PrivateDataEnvelope("session.response.ledger", responsePayload)
+                store.deliverPrivateData(this.name, action.originator ?: "unknown", envelope)
             }
         }
     }
@@ -213,7 +218,6 @@ class SessionFeature(
                 val sessionId = resolveSessionId(identifier, currentFeatureState) ?: return stateWithFeature
                 val newSessions = currentFeatureState.sessions - sessionId
                 val newActiveId = if (currentFeatureState.activeSessionId != sessionId) currentFeatureState.activeSessionId else newSessions.values.maxByOrNull { it.createdAt }?.id
-                // THE FIX: Set the transient field with the ID of the session that was just deleted.
                 newFeatureState = currentFeatureState.copy(sessions = newSessions, activeSessionId = newActiveId, lastDeletedSessionId = sessionId)
             }
             ActionNames.SESSION_UPDATE_MESSAGE -> {

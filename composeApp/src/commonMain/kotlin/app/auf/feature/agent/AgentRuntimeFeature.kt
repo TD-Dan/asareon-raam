@@ -9,8 +9,7 @@ import androidx.compose.runtime.Composable
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
 import app.auf.core.generated.ActionNames
-import app.auf.util.LogLevel
-import app.auf.util.PlatformDependencies
+import app.auf.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.serialization.Serializable
@@ -26,6 +25,7 @@ class AgentRuntimeFeature(
     // --- Private, serializable data classes for decoding action payloads safely. ---
     @Serializable private data class SessionNamesPayload(val names: Map<String, String>)
     @Serializable private data class GatewayResponsePayload(val correlationId: String, val rawContent: String? = null, val errorMessage: String? = null)
+    @Serializable private data class LedgerResponsePayload(val correlationId: String, val messages: List<GatewayMessage>)
     @Serializable private data class GatewayMessage(val role: String, val content: String)
     @Serializable private data class MessagePostedPayload(val sessionId: String, val entry: JsonObject)
     @Serializable private data class MessageDeletedPayload(val sessionId: String, val messageId: String)
@@ -323,10 +323,10 @@ class AgentRuntimeFeature(
 
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
         when (envelope.type) {
-            "gateway.response.v1" -> handleGatewayResponse(envelope.payload, store)
-            // NOTE: The Session and FileSystem features would also be updated to send envelopes.
-            // When they are, their handlers will be added here.
-            // e.g., "session.response.ledger.v1" -> handleSessionLedgerResponse(envelope.payload, store)
+            "gateway.response" -> handleGatewayResponse(envelope.payload, store)
+            "session.response.ledger" -> handleSessionLedgerResponse(envelope.payload, store)
+            "filesystem.response.list" -> handleFileSystemListResponse(envelope.payload, store)
+            "filesystem.response.read" -> handleFileSystemReadResponse(envelope.payload, store)
             else -> {
                 platformDependencies.log(
                     LogLevel.WARN,
@@ -334,6 +334,50 @@ class AgentRuntimeFeature(
                     "Received private data envelope with unknown type: '${envelope.type}'. Ignoring."
                 )
             }
+        }
+    }
+
+    private fun handleSessionLedgerResponse(payload: JsonObject, store: Store) {
+        val decoded = try {
+            json.decodeFromJsonElement<LedgerResponsePayload>(payload)
+        } catch (e: Exception) {
+            platformDependencies.log(LogLevel.ERROR, name, "FATAL: Failed to parse session ledger. Error: ${e.message}")
+            val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
+            if (agentId != null) {
+                setAgentStatus(agentId, AgentStatus.ERROR, store, "FATAL: Could not parse session ledger.")
+            }
+            return
+        }
+
+        val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+        val agent = agentState.agents[decoded.correlationId] ?: return
+
+        store.dispatch(this.name, Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
+            put("providerId", agent.modelProvider)
+            put("modelName", agent.modelName)
+            put("correlationId", agent.id)
+            put("contents", json.encodeToJsonElement(decoded.messages))
+        }))
+    }
+
+    private fun handleFileSystemListResponse(payload: JsonObject, store: Store) {
+        val fileList = payload["listing"]?.jsonArray?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
+        fileList.forEach { entry ->
+            if (entry.isDirectory) {
+                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+                    put("subpath", "${platformDependencies.getFileName(entry.path)}/$agentConfigFILENAME")
+                }))
+            }
+        }
+    }
+
+    private fun handleFileSystemReadResponse(payload: JsonObject, store: Store) {
+        val content = payload["content"]?.jsonPrimitive?.contentOrNull ?: return
+        try {
+            val agent = json.decodeFromString<AgentInstance>(content)
+            store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
+        } catch (e: Exception) {
+            platformDependencies.log(LogLevel.ERROR, name, "Failed to parse agent config from file: ${payload["subpath"]}. Error: ${e.message}")
         }
     }
 

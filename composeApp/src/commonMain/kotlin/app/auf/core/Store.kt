@@ -5,6 +5,7 @@ import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
+import app.auf.util.abbreviate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.JsonObject
@@ -75,7 +76,7 @@ open class Store(
         platformDependencies.log(
             level = LogLevel.INFO,
             tag = "Store",
-            message = "Delivering private data of type '${envelope.type}' from '$originator' to '$recipient'."
+            message = "Delivering private data of type '${envelope.type}' from '$originator' to '$recipient' with payload '${abbreviate(envelope.payload, 100)}'"
         )
         // Find the specific feature instance and call the private method.
         features.find { it.name == recipient }?.onPrivateData(envelope, this)

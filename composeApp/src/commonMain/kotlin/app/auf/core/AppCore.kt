@@ -58,7 +58,7 @@ data class Action(val name: String, val payload: JsonObject? = null, val origina
  */
 @Serializable
 data class PrivateDataEnvelope(
-    /** A unique string identifying the payload's schema (e.g., "gateway.response.v1"). */
+    /** A unique string identifying the payload's schema (e.g., "gateway.response"). */
     val type: String,
     /** The serializable data payload. */
     val payload: JsonObject

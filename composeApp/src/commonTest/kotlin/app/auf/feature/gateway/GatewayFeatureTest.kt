@@ -234,7 +234,7 @@ class GatewayFeatureTest {
         val privateData = testStore.capturedPrivateData
         assertNotNull(privateData)
         assertEquals(originatorId, privateData.recipient)
-        assertEquals("gateway.response.v1", privateData.envelope.type)
+        assertEquals("gateway.response", privateData.envelope.type)
         assertEquals(correlationId, privateData.envelope.payload["correlationId"]?.jsonPrimitive?.content)
     }
 }

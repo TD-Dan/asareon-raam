@@ -59,7 +59,7 @@ class AgentRuntimeFeatureWorkflowTest {
         }
         // NOTE: This part of the test would also need to be updated once SessionFeature adopts the envelope.
         // For now, we are testing the Gateway->Agent interaction.
-        feature.onPrivateData(PrivateDataEnvelope("session.response.ledger.v1", ledgerResponse), harness.store)
+        feature.onPrivateData(PrivateDataEnvelope("session.response.ledger", ledgerResponse), harness.store)
 
 
         // Assert that the feature requested generation from the gateway
@@ -71,7 +71,7 @@ class AgentRuntimeFeatureWorkflowTest {
             put("correlationId", agent.id)
             put("rawContent", "This is the successful response.")
         }
-        val envelope = PrivateDataEnvelope("gateway.response.v1", gatewaySuccessPayload)
+        val envelope = PrivateDataEnvelope("gateway.response", gatewaySuccessPayload)
         feature.onPrivateData(envelope, harness.store)
 
         // --- FINAL ASSERTION: The agent should be IDLE ---
@@ -91,7 +91,7 @@ class AgentRuntimeFeatureWorkflowTest {
             put("correlationId", agent.id)
             put("errorMessage", "API key invalid.")
         }
-        val envelope = PrivateDataEnvelope("gateway.response.v1", gatewayErrorPayload)
+        val envelope = PrivateDataEnvelope("gateway.response", gatewayErrorPayload)
         feature.onPrivateData(envelope, harness.store)
 
         // --- FINAL ASSERTION: The agent should be in ERROR state ---
@@ -112,7 +112,7 @@ class AgentRuntimeFeatureWorkflowTest {
             put("unexpected_key", "some_value")
         }
 
-        val envelope = PrivateDataEnvelope("gateway.response.v1", gatewayMismatchedPayload)
+        val envelope = PrivateDataEnvelope("gateway.response", gatewayMismatchedPayload)
         feature.onPrivateData(envelope, harness.store)
 
         // --- FINAL ASSERTION: The agent should be in ERROR state and a FATAL error logged ---
