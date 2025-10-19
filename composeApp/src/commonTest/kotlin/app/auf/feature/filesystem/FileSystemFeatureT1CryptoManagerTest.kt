@@ -9,7 +9,7 @@ import kotlin.test.assertNotEquals
  *
  * Mandate (P-TEST-001, T1): To test the component's internal logic in complete isolation.
  */
-class CryptoManagerT1UnitTest {
+class FileSystemFeatureT1CryptoManagerTest {
 
     private val cryptoManager = CryptoManager()
 

@@ -13,16 +13,14 @@ import app.auf.util.LogLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
+import kotlinx.serialization.json.*
 import kotlin.test.*
 
 /**
- * Tier 2 Unit Tests for SessionFeature.
- * These tests focus on features interaction with the Core
+ * Tier 2 Core Tests for SessionFeature.
+ *
+ * Mandate (P-TEST-001, T2): To test the feature's reducer and onAction handlers working
+ * together within a realistic TestEnvironment that includes the real Store.
  */
 class SessionFeatureT2CoreTest {
 
@@ -30,7 +28,6 @@ class SessionFeatureT2CoreTest {
     private val platform = FakePlatformDependencies("test")
     private val sessionFeature = SessionFeature(platform, scope)
     private val fileSystemFeature = FileSystemFeature(platform)
-
 
     @Test
     fun `create() adds new session, sets it active, and dispatches SYSTEM_WRITE and publish`() = runTest {
@@ -153,10 +150,8 @@ class SessionFeatureT2CoreTest {
             FileEntry("/app.auf/session/session-2.json", false),
             FileEntry("/app/session/notes.txt", false)
         )
-        // THE FIX: Provide explicit type parameter to encodeToJsonElement for the list.
         val payload = buildJsonObject { put("listing", Json.encodeToJsonElement<List<FileEntry>>(fileList)) }
         val envelope = PrivateDataEnvelope("filesystem.response.list", payload)
-
 
         sessionFeature.onPrivateData(envelope, harness.store)
 
@@ -176,7 +171,6 @@ class SessionFeatureT2CoreTest {
         }
         val envelope = PrivateDataEnvelope("filesystem.response.read", payload)
 
-
         sessionFeature.onPrivateData(envelope, harness.store)
 
         val finalState = harness.store.state.value.featureStates["session"] as? SessionState
@@ -194,7 +188,6 @@ class SessionFeatureT2CoreTest {
             put("content", corruptedJsonContent)
         }
         val envelope = PrivateDataEnvelope("filesystem.response.read", payload)
-
 
         sessionFeature.onPrivateData(envelope, harness.store)
 

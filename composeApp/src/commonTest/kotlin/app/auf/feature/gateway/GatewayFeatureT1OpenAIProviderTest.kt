@@ -18,7 +18,7 @@ import kotlin.test.assertNull
  * GatewayRequest into a provider-specific API call, using a MockEngine to intercept
  * the network request.
  */
-class OpenAIProviderT1UnitTest {
+class GatewayFeatureT1OpenAIProviderTest {
 
     private val platform = FakePlatformDependencies("test")
 

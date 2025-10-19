@@ -20,7 +20,7 @@ import kotlin.test.assertNotNull
  * Mandate (P-TEST-001, T1): To test the UI component's rendering and action dispatching
  * in isolation, using a FakeStore to intercept dispatched actions.
  */
-class FileSystemViewT1ComponentTest {
+class FileSystemFeatureT1ViewComponentTest {
 
     @get:Rule
     val composeTestRule = createComposeRule()

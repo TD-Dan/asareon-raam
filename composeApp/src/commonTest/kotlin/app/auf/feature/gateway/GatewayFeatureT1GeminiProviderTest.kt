@@ -20,7 +20,7 @@ import kotlin.test.*
  * Mandate (P-TEST-001, T2): To test the feature's reducer and onAction handlers working
  * together within a realistic TestEnvironment, interacting with fake providers.
  */
-class GatewayFeatureT2CoreTest {
+class GatewayFeatureT1GeminiProviderTest {
 
     private val json = Json { ignoreUnknownKeys = true }
 
