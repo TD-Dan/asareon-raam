@@ -22,6 +22,7 @@ data class GatewayRequest(
  * A generic, provider-agnostic response from a content generation call.
  * This is the data model delivered back to the caller via the private channel.
  */
+@Serializable // THE FIX: Added missing Serializable annotation.
 data class GatewayResponse(
     val rawContent: String?,
     val errorMessage: String?,

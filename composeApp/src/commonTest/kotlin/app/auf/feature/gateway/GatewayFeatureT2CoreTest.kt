@@ -4,7 +4,6 @@ import app.auf.core.Action
 import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.settings.SettingsFeature
-import app.auf.feature.settings.SettingsState
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -71,8 +70,7 @@ class GatewayFeatureT2CoreTest {
     }
 
     private fun createHarness(
-        testScope: TestScope,
-        settingsValues: Map<String, String> = emptyMap()
+        testScope: TestScope
     ): app.auf.test.TestHarness {
         val settingsFeature = SettingsFeature(FakePlatformDependencies("test"))
         val gatewayFeature = GatewayFeature(
@@ -83,7 +81,6 @@ class GatewayFeatureT2CoreTest {
         return TestEnvironment.create()
             .withFeature(gatewayFeature)
             .withFeature(settingsFeature)
-            .withInitialState("settings", SettingsState(values = settingsValues))
             .build(scope = testScope)
     }
 
@@ -98,10 +95,13 @@ class GatewayFeatureT2CoreTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `on STARTING refreshes models for all providers with API keys`() = testScope.runTest {
-        val harness = createHarness(this, mapOf(
-            "gateway.provider-1.apiKey" to "k1",
-            "gateway.provider-2.apiKey" to "k2"
-        ))
+        val harness = createHarness(this)
+        // THE FIX: Simulate settings being loaded, which is the event that populates the Gateway's API key state.
+        harness.store.dispatch("settings", Action(ActionNames.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+            put("gateway.provider-1.apiKey", "k1")
+            put("gateway.provider-2.apiKey", "k2")
+        }))
+
         harness.store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
         runCurrent()
 
@@ -116,18 +116,21 @@ class GatewayFeatureT2CoreTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `on settings VALUE_CHANGED refreshes models for the correct provider`() = testScope.runTest {
-        val harness = createHarness(this, mapOf(
-            "gateway.provider-1.apiKey" to "k1",
-            "gateway.provider-2.apiKey" to "k2"
-        ))
+        val harness = createHarness(this)
+        // THE FIX: Simulate initial settings load and model refresh cycle.
+        harness.store.dispatch("settings", Action(ActionNames.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+            put("gateway.provider-1.apiKey", "k1")
+            put("gateway.provider-2.apiKey", "k2")
+        }))
         harness.store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
-        runCurrent()
+        runCurrent() // Run the initial refresh
 
+        // THE FIX: Dispatch the VALUE_CHANGED event, which is the correct public contract.
         val valueChangedAction = Action(ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED, buildJsonObject {
             put("key", "gateway.provider-2.apiKey"); put("value", "new-key")
         })
         harness.store.dispatch("settings", valueChangedAction)
-        runCurrent()
+        runCurrent() // Run the new refresh
 
         assertEquals(1, fakeProvider1.listAvailableModelsCallCount, "Provider 1 should not be refreshed.")
         assertEquals(2, fakeProvider2.listAvailableModelsCallCount, "Provider 2 should be refreshed.")
@@ -136,7 +139,11 @@ class GatewayFeatureT2CoreTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `on GENERATE_CONTENT routes to correct provider and delivers response privately`() = testScope.runTest {
-        val harness = createHarness(this, mapOf("gateway.provider-2.apiKey" to "k2"))
+        val harness = createHarness(this)
+        // THE FIX: Hydrate the gateway with the necessary API key via the correct event.
+        harness.store.dispatch("settings", Action(ActionNames.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+            put("gateway.provider-2.apiKey", "k2")
+        }))
         val originatorId = "agent-feature-1"
         val correlationId = "test-turn-123"
         val action = Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {

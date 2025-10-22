@@ -22,5 +22,17 @@ data class GatewayState(
      *   "openai": ["gpt-4o", "gpt-4-turbo"]
      * }
      */
-    val availableModels: Map<String, List<String>> = emptyMap()
+    val availableModels: Map<String, List<String>> = emptyMap(),
+
+    /**
+     * THE FIX: A map to store the API keys this feature needs, populated by listening
+     * to events from the SettingsFeature. This enforces Absolute Decoupling.
+     *
+     * Example:
+     * {
+     *   "gateway.gemini.apiKey": "...",
+     *   "gateway.openai.apiKey": "..."
+     * }
+     */
+    val apiKeys: Map<String, String> = emptyMap()
 ) : FeatureState

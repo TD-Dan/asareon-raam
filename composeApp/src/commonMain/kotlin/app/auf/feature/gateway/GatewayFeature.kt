@@ -2,7 +2,6 @@ package app.auf.feature.gateway
 
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
-import app.auf.feature.settings.SettingsState //TODO: THIS IS A VIOLATION AND NEEDS TO BE FIXED
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
@@ -71,13 +70,20 @@ class GatewayFeature(
             json.decodeFromJsonElement<List<GatewayMessage>>(it)
         } ?: return
 
-        val provider = providerMap[providerId] ?: return // Silently ignore unknown providers //TODO: Cant be silently ignoring stuff. atleast a warining needs to be raised here
-        val settingsState = store.state.value.featureStates["settings"] as? SettingsState ?: return //TODO: this is a violation
+        val provider = providerMap[providerId]
+        if (provider == null) {
+            // THE FIX: Log a warning instead of silently failing.
+            platformDependencies.log(LogLevel.WARN, name, "GENERATE_CONTENT request for unknown provider '$providerId'. Ignoring.")
+            return
+        }
+
+        // THE FIX: Fetch the current state from the store inside the coroutine to get the latest API keys.
+        val gatewayState = store.state.value.featureStates[name] as? GatewayState ?: return
 
         coroutineScope.launch {
             val request = GatewayRequest(modelName, contents, correlationId)
             // Delegate the actual work to the specific provider plugin.
-            val response = provider.generateContent(request, settingsState.values) //TODO: this is a violation
+            val response = provider.generateContent(request, gatewayState.apiKeys)
 
             val responsePayload = try {
                 Json.encodeToJsonElement(response).jsonObject
@@ -97,7 +103,7 @@ class GatewayFeature(
 
             // Securely deliver the response directly to the original requester.
             val envelope = PrivateDataEnvelope(
-                type = ActionNames.Envelopes.GATEWAY_RESPONSE, // THE FIX
+                type = ActionNames.Envelopes.GATEWAY_RESPONSE,
                 payload = responsePayload
             )
             store.deliverPrivateData(this@GatewayFeature.name, originator, envelope)
@@ -106,10 +112,11 @@ class GatewayFeature(
 
     private fun refreshProviderModels(providerId: String, store: Store) {
         val provider = providerMap[providerId] ?: return
-        val settingsState = store.state.value.featureStates["settings"] as? SettingsState ?: return //TODO: this is a violation
+        // THE FIX: Fetch the current state from the store inside the coroutine.
+        val gatewayState = store.state.value.featureStates[name] as? GatewayState ?: return
 
         coroutineScope.launch {
-            val models = provider.listAvailableModels(settingsState.values) //TODO: this is a violation
+            val models = provider.listAvailableModels(gatewayState.apiKeys)
             val payload = buildJsonObject {
                 put("providerId", providerId)
                 put("models", Json.encodeToJsonElement(models))
@@ -120,19 +127,34 @@ class GatewayFeature(
 
     override fun reducer(state: AppState, action: Action): AppState {
         val currentFeatureState = state.featureStates[name] as? GatewayState ?: GatewayState()
+        var newFeatureState: GatewayState? = null
 
-        return when (action.name) {
+        when (action.name) {
             ActionNames.GATEWAY_INTERNAL_MODELS_UPDATED -> {
                 val payload = action.payload ?: return state
                 val providerId = payload["providerId"]?.jsonPrimitive?.contentOrNull ?: return state
                 val models = Json.decodeFromJsonElement<List<String>>(payload["models"] ?: return state)
-
                 val newModels = currentFeatureState.availableModels + (providerId to models)
-                val newFeatureState = currentFeatureState.copy(availableModels = newModels)
-
-                state.copy(featureStates = state.featureStates + (name to newFeatureState))
+                newFeatureState = currentFeatureState.copy(availableModels = newModels)
             }
-            else -> state
+            // THE FIX: Listen for settings events to update internal API key state.
+            ActionNames.SETTINGS_PUBLISH_LOADED -> {
+                val loadedValues = action.payload?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap()
+                val relevantKeys = loadedValues.filterKeys { it in providerApiKeys }
+                if (relevantKeys.isNotEmpty()) {
+                    newFeatureState = currentFeatureState.copy(apiKeys = currentFeatureState.apiKeys + relevantKeys)
+                }
+            }
+            ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED -> {
+                val key = action.payload?.get("key")?.jsonPrimitive?.contentOrNull ?: return state
+                val value = action.payload["value"]?.jsonPrimitive?.contentOrNull ?: return state
+                if (key in providerApiKeys) {
+                    newFeatureState = currentFeatureState.copy(apiKeys = currentFeatureState.apiKeys + (key to value))
+                }
+            }
         }
+        return newFeatureState?.let {
+            if (it != currentFeatureState) state.copy(featureStates = state.featureStates + (name to it)) else state
+        } ?: state
     }
 }

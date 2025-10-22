@@ -85,6 +85,10 @@ open class Store(
             return
         }
 
+        // TODO: check that the envelope has a valid action name defined in the ActionNames.kt file
+
+        // TODO: evolve the *.actions.json files to be real json schemas and verify the payload conforms to the defined schema
+
         try {
             recipientFeature.onPrivateData(envelope, this)
         } catch (e: Exception) {
