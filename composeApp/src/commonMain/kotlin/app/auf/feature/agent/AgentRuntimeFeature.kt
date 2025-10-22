@@ -401,12 +401,16 @@ class AgentRuntimeFeature(
         val sessionId = agent.primarySessionId ?: return
 
         if (decoded.errorMessage != null) {
-            // THE FIX: Added durable logging for gateway errors.
             platformDependencies.log(LogLevel.WARN, name, "Gateway reported an error for agent '$agentId': ${decoded.errorMessage}")
             setAgentStatus(agentId, AgentStatus.ERROR, store, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
-        } else if (decoded.rawContent == null) {
-            platformDependencies.log(LogLevel.ERROR, name, "FATAL: Gateway response for agent '$agentId' was successfully parsed but contained no content or error.")
-            setAgentStatus(agentId, AgentStatus.ERROR, store, "FATAL: Received an empty or malformed response from the gateway.")
+        } else if (decoded.rawContent.isNullOrBlank()) {
+            // THE FIX: Handle successful but empty responses by posting a system message to the user.
+            store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
+                put("session", sessionId)
+                put("senderId", agent.id)
+                put("message", "*Turn complete. No further action required.*")
+            }))
+            setAgentStatus(agentId, AgentStatus.IDLE, store)
         } else {
             store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
                 put("session", sessionId); put("senderId", agent.id); put("message", decoded.rawContent)
@@ -464,7 +468,6 @@ class AgentRuntimeFeature(
 
         @Composable
         override fun PartialView(store: Store, partId: String, context: Any?) {
-            // THE FIX: Implemented PartialView to correctly display the AgentAvatarCard.
             if (partId != "agent.avatar") return
             val agentId = context as? String ?: return
             val state = store.state.value.featureStates[name] as? AgentRuntimeState ?: return

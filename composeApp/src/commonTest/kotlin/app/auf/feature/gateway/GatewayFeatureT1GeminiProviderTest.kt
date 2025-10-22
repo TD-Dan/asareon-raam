@@ -94,6 +94,26 @@ class GatewayFeatureT1GeminiProviderTest {
     }
 
     @Test
+    fun `parseResponse correctly handles a successful but empty STOP response`() {
+        // ARRANGE
+        // This is the ground-truth JSON from the user's log.
+        val responseBody = """
+        {
+          "candidates": [ { "content": { "role": "model" }, "finishReason": "STOP", "index": 0 } ]
+        }
+        """.trimIndent()
+        val correlationId = "corr-stop-123"
+
+        // ACT
+        val response = provider.parseResponse(responseBody, correlationId)
+
+        // ASSERT
+        assertEquals("", response.rawContent, "Content should be an empty string for a STOP response.")
+        assertNull(response.errorMessage, "Error message should be null for a successful STOP.")
+        assertTrue(platform.capturedLogs.none { it.level == LogLevel.ERROR }, "No error should be logged.")
+    }
+
+    @Test
     fun `parseResponse correctly handles an unrecognised response format`() {
         // ARRANGE
         val responseBody = """{ "some_new_field": "some_value" }"""

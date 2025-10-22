@@ -27,9 +27,12 @@ private data class GenerateContentResponse(
     val error: ApiError? = null
 )
 @Serializable
-private data class Candidate(val content: Content? = null) // THE FIX: Made content nullable
+private data class Candidate(
+    val content: Content? = null,
+    val finishReason: String? = null // THE FIX: Added finishReason to handle empty successes.
+)
 @Serializable
-private data class Content(val parts: List<Part>? = null) // THE FIX: Made parts nullable
+private data class Content(val parts: List<Part>? = null)
 @Serializable
 private data class Part(val text: String)
 @Serializable
@@ -97,10 +100,16 @@ class GeminiProvider(
             return GatewayResponse(null, "Blocked by provider: $it", correlationId)
         }
 
-        // Path 4 (Future-Proofing): Unrecognized response format
+        // THE FIX: Path 4: Successful but empty response (e.g., model stops itself).
+        val finishReason = response.candidates?.firstOrNull()?.finishReason
+        if (finishReason == "STOP") {
+            return GatewayResponse("", null, correlationId) // Return success with empty content.
+        }
+
+        // Path 5 (Future-Proofing): Unrecognized response format
         platformDependencies.log(
             LogLevel.ERROR,
-            "gemini",
+            id,
             "Unrecognised response format from Gemini API. Full response: $responseBody"
         )
         return GatewayResponse(null, "Unrecognised response format from Gemini API.", correlationId)
@@ -133,7 +142,7 @@ class GeminiProvider(
                 .map { it.name.replace("models/", "") }
                 .sorted()
         } catch (e: Exception) {
-            platformDependencies.log(LogLevel.ERROR, "gemini", "Failed to fetch Gemini models: ${e.message}")
+            platformDependencies.log(LogLevel.WARN, id, "Failed to fetch Gemini models: ${e.message}")
             emptyList()
         }
     }
@@ -156,7 +165,7 @@ class GeminiProvider(
 
             parseResponse(responseBody, request.correlationId)
         } catch (e: Exception) {
-            platformDependencies.log(LogLevel.ERROR, "gemini", "Content generation failed: ${e.stackTraceToString()}")
+            platformDependencies.log(LogLevel.ERROR, id, "Content generation failed: ${e.stackTraceToString()}")
             val userMessage = mapExceptionToUserMessage(e)
             GatewayResponse(null, userMessage, request.correlationId)
         }
