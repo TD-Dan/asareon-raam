@@ -311,5 +311,29 @@
         "description":"A map of session IDs to Session objects."
       }
     }
+  ],
+  "private_envelopes": [
+    {
+      "type_name": "session.response.ledger",
+      "summary": "The response envelope containing the formatted ledger content for an agent's cognitive cycle.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": { "type": "string" },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": { "type": "string" },
+                "content": { "type": "string" }
+              },
+              "required": ["role", "content"]
+            }
+          }
+        },
+        "required": ["correlationId", "messages"]
+      }
+    }
   ]
 }

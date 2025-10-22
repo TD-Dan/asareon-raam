@@ -73,5 +73,20 @@
         "required": ["providerId", "models"]
       }
     }
+  ],
+  "private_envelopes": [
+    {
+      "type_name": "gateway.response",
+      "summary": "The standard response envelope from the GatewayFeature, containing either generated content or an error.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "rawContent": { "type": ["string", "null"] },
+          "errorMessage": { "type": ["string", "null"] },
+          "correlationId": { "type": "string" }
+        },
+        "required": ["correlationId"]
+      }
+    }
   ]
 }

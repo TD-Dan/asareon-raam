@@ -1,18 +1,18 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-        import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
-        import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
-        import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-        import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig
-        import kotlinx.serialization.json.*
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig
+import kotlinx.serialization.json.*
 
-        buildscript {
-            repositories {
-                mavenCentral()
-            }
-            dependencies {
-                classpath("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-            }
-        }
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    }
+}
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -24,12 +24,11 @@ plugins {
 }
 
 tasks.register("generateActionRegistry") {
-    description = "Generates a Kotlin source file containing compile-time constants for all valid action names from *.actions.json manifests."
+    description = "Generates a Kotlin source file with compile-time constants for all public action names and private envelope types from *.actions.json manifests."
     group = "auf"
 
     // --- Configuration ---
     val inputDir = file("src/commonMain/kotlin/app/auf")
-    // MODIFIED: The output file is now ActionNames.kt to reflect its new purpose.
     val outputFile = file("$buildDir/generated/kotlin/app/auf/core/generated/ActionNames.kt")
 
     // --- Gradle Inputs/Outputs for build caching and up-to-date checks ---
@@ -40,6 +39,7 @@ tasks.register("generateActionRegistry") {
     doLast {
         val json = Json { ignoreUnknownKeys = true }
         val actionNames = mutableSetOf<String>()
+        val envelopeTypes = mutableSetOf<String>()
 
         inputDir.walkTopDown().forEach { file ->
             if (file.isFile && file.name.endsWith(".actions.json")) {
@@ -47,6 +47,7 @@ tasks.register("generateActionRegistry") {
                     val content = file.readText()
                     val manifest = json.parseToJsonElement(content).jsonObject
 
+                    // Parse public actions
                     (manifest["listensFor"] as? JsonArray)?.forEach {
                         val actionName = (it as? JsonObject)?.get("action_name")?.jsonPrimitive?.content
                         if (actionName != null) actionNames.add(actionName)
@@ -55,6 +56,12 @@ tasks.register("generateActionRegistry") {
                         val actionName = (it as? JsonObject)?.get("action_name")?.jsonPrimitive?.content
                         if (actionName != null) actionNames.add(actionName)
                     }
+
+                    // Parse private envelope types
+                    (manifest["private_envelopes"] as? JsonArray)?.forEach {
+                        val typeName = (it as? JsonObject)?.get("type_name")?.jsonPrimitive?.content
+                        if (typeName != null) envelopeTypes.add(typeName)
+                    }
                 } catch (e: Exception) {
                     throw GradleException("Failed to parse action manifest: ${file.path}. Error: ${e.message}", e)
                 }
@@ -62,16 +69,20 @@ tasks.register("generateActionRegistry") {
         }
 
         val sortedActionNames = actionNames.sorted()
+        val sortedEnvelopeTypes = envelopeTypes.sorted()
 
-        // NEW: Generate the const val declarations.
-        val constants = sortedActionNames.joinToString("\n") { actionName ->
-            val constName = actionName.replace('.', '_').replace('-', '_').toUpperCase()
+        val actionConstants = sortedActionNames.joinToString("\n") { actionName ->
+            val constName = actionName.replace('.', '_').replace('-', '_').uppercase()
             "    const val $constName = \"$actionName\""
         }
 
-        // NEW: Generate the allActionNames set by referencing the new constants for type safety.
+        val envelopeConstants = sortedEnvelopeTypes.joinToString("\n") { typeName ->
+            val constName = typeName.replace('.', '_').replace('-', '_').uppercase()
+            "        const val $constName = \"$typeName\""
+        }
+
         val setEntries = sortedActionNames.joinToString(",\n") { actionName ->
-            val constName = actionName.replace('.', '_').replace('-', '_').toUpperCase()
+            val constName = actionName.replace('.', '_').replace('-', '_').uppercase()
             "        $constName"
         }
 
@@ -80,14 +91,21 @@ tasks.register("generateActionRegistry") {
 
             /**
              * THIS IS A GENERATED FILE. DO NOT EDIT.
-             * Contains compile-time constants for all valid action names,
+             * Contains compile-time constants for all communication contracts,
              * generated from the *.actions.json manifests during the build process.
              */
             object ActionNames {
-            $constants
+            $actionConstants
 
                 /**
-                 * A set of all valid action names for runtime validation in the Store.
+                 * Contains compile-time constants for all valid private data envelope types.
+                 */
+                object Envelopes {
+            $envelopeConstants
+                }
+
+                /**
+                 * A set of all valid public action names for runtime validation in the Store.
                  * This is constructed from the compile-time constants above.
                  */
                 val allActionNames: Set<String> = setOf(
@@ -98,8 +116,7 @@ tasks.register("generateActionRegistry") {
 
         outputFile.parentFile.mkdirs()
         outputFile.writeText(fileContent)
-        // MODIFIED: Updated log message.
-        println("Generated ActionNames.kt with ${actionNames.size} actions.")
+        println("Generated ActionNames.kt with ${actionNames.size} actions and ${envelopeTypes.size} envelope types.")
     }
 }
 
