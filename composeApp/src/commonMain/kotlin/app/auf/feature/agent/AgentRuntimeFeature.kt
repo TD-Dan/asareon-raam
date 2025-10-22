@@ -388,7 +388,6 @@ class AgentRuntimeFeature(
             return
         }
 
-        // THE FIX: Add a pre-validation guard to enforce the gateway's data contract.
         if ("rawContent" !in payload && "errorMessage" !in payload) {
             platformDependencies.log(
                 LogLevel.ERROR,
@@ -412,7 +411,7 @@ class AgentRuntimeFeature(
         val sessionId = agent.primarySessionId ?: return
 
         if (decoded.errorMessage != null) {
-            platformDependencies.log(LogLevel.WARN, name, "Gateway reported an error for agent '$agentId': ${decoded.errorMessage}")
+            platformDependencies.log(LogLevel.ERROR, name, "Gateway reported an error for agent '$agentId': ${decoded.errorMessage}")
             setAgentStatus(agentId, AgentStatus.ERROR, store, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
         } else if (decoded.rawContent.isNullOrBlank()) {
             store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {

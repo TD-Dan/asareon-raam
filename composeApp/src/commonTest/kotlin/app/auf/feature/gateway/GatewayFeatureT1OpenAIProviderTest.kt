@@ -19,11 +19,11 @@ class GatewayFeatureT1OpenAIProviderTest {
     private val provider = OpenAIProvider(platform)
 
     @Test
-    fun `buildRequestPayload correctly transforms universal request to OpenAI format`() {
+    fun `buildRequestPayload correctly transforms universal 'model' role to OpenAI 'assistant' role`() {
         // ARRANGE
         val request = GatewayRequest(
             modelName = "gpt-4o",
-            contents = listOf(GatewayMessage("user", "Hello"), GatewayMessage("assistant", "Hi there")),
+            contents = listOf(GatewayMessage("user", "Hello"), GatewayMessage("model", "Hi there")),
             correlationId = "corr-123"
         )
         val expected = buildJsonObject {

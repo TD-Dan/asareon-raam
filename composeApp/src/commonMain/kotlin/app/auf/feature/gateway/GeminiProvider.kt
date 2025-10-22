@@ -60,7 +60,7 @@ class GeminiProvider(
     private val json = Json { ignoreUnknownKeys = true }
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
-        install(HttpTimeout) { requestTimeoutMillis = 60_000 }
+        install(HttpTimeout) { requestTimeoutMillis = 240_000 }
     }
 
     // --- Logic extracted for testability ---

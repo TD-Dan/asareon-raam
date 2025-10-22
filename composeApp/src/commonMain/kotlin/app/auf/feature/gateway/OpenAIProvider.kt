@@ -13,11 +13,7 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.put
+import kotlinx.serialization.json.*
 
 // --- Data Contracts specific to the OpenAI API ---
 @Serializable
@@ -32,6 +28,13 @@ private data class OpenAIMessage(val role: String, val content: String?)
 @Serializable
 private data class ApiError(val message: String)
 
+// THE FIX: Add data classes for the /v1/models endpoint
+@Serializable
+private data class ListModelsResponse(val data: List<ModelInfo> = emptyList())
+@Serializable
+private data class ModelInfo(val id: String)
+
+
 /**
  * A concrete implementation of the AgentGatewayProvider for the OpenAI API.
  */
@@ -45,16 +48,24 @@ class OpenAIProvider(
     private val json = Json { ignoreUnknownKeys = true }
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
-        install(HttpTimeout) { requestTimeoutMillis = 60_000 }
+        install(HttpTimeout) { requestTimeoutMillis = 240_000 }
     }
 
     // --- Logic extracted for testability ---
 
     /** Builds the provider-specific JSON payload from a universal request. */
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
+        val openAiMessages = buildJsonArray {
+            request.contents.forEach { message ->
+                add(buildJsonObject {
+                    put("role", if (message.role == "model") "assistant" else message.role)
+                    put("content", message.content)
+                })
+            }
+        }
         return buildJsonObject {
             put("model", request.modelName)
-            put("messages", json.encodeToJsonElement(request.contents))
+            put("messages", openAiMessages)
         }
     }
 
@@ -76,7 +87,7 @@ class OpenAIProvider(
         // Path 3 (Future-Proofing): Unrecognized response format
         platformDependencies.log(
             LogLevel.ERROR,
-            "openai",
+            id,
             "Unrecognised response format from OpenAI API. Full response: $responseBody"
         )
         return GatewayResponse(null, "Unrecognised response format from OpenAI API.", correlationId)
@@ -100,8 +111,20 @@ class OpenAIProvider(
     override suspend fun listAvailableModels(settings: Map<String, String>): List<String> {
         val apiKey = settings[apiKeySettingKey].orEmpty()
         if (apiKey.isBlank()) return emptyList()
-        // For now, we return a hardcoded list to demonstrate the pattern.
-        return listOf("gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo")
+
+        // THE FIX: Replace hardcoded list with a real API call.
+        return try {
+            val response: ListModelsResponse = client.get("https://$API_HOST/v1/models") {
+                header(HttpHeaders.Authorization, "Bearer $apiKey")
+            }.body()
+            response.data
+                .map { it.id }
+                .filter { it.startsWith("gpt-") } // Filter for common chat models to keep the list clean
+                .sorted()
+        } catch (e: Exception) {
+            platformDependencies.log(LogLevel.WARN, id, "Failed to fetch OpenAI models: ${e.message}")
+            emptyList()
+        }
     }
 
     override suspend fun generateContent(request: GatewayRequest, settings: Map<String, String>): GatewayResponse {
@@ -122,7 +145,7 @@ class OpenAIProvider(
 
             parseResponse(responseBody, request.correlationId)
         } catch (e: Exception) {
-            platformDependencies.log(LogLevel.ERROR, "openai", "Content generation failed: ${e.stackTraceToString()}")
+            platformDependencies.log(LogLevel.ERROR, id, "Content generation failed: ${e.stackTraceToString()}")
             val userMessage = mapExceptionToUserMessage(e)
             GatewayResponse(null, userMessage, request.correlationId)
         }
