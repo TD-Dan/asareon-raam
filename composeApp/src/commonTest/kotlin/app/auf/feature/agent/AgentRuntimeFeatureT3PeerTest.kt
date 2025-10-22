@@ -96,10 +96,10 @@ class AgentRuntimeFeatureT3PeerTest {
         val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
         assertEquals(AgentStatus.ERROR, finalState.agents[agent.id]?.status, "Agent should be in ERROR state after a corrupted gateway response.")
 
-        assertEquals("FATAL: Received an empty or malformed response from the gateway.", finalState.agents[agent.id]?.errorMessage)
+        assertEquals("FATAL: Corrupted response from gateway.", finalState.agents[agent.id]?.errorMessage)
 
         val log = platform.capturedLogs.find { it.level == LogLevel.ERROR }
         assertNotNull(log, "A fatal error should have been logged.")
-        assertTrue(log.message.contains("FATAL: Gateway response for agent 'agent-1' was successfully parsed but contained no content or error."))
+        assertTrue(log.message.contains("FATAL: Received corrupted gateway response payload"))
     }
 }

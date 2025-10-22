@@ -388,6 +388,17 @@ class AgentRuntimeFeature(
             return
         }
 
+        // THE FIX: Add a pre-validation guard to enforce the gateway's data contract.
+        if ("rawContent" !in payload && "errorMessage" !in payload) {
+            platformDependencies.log(
+                LogLevel.ERROR,
+                name,
+                "FATAL: Received corrupted gateway response payload for agent '$agentId'. Missing 'rawContent' and 'errorMessage' keys. Payload: $payload"
+            )
+            setAgentStatus(agentId, AgentStatus.ERROR, store, "FATAL: Corrupted response from gateway.")
+            return
+        }
+
         val decoded = try {
             json.decodeFromJsonElement<GatewayResponsePayload>(payload)
         } catch (e: Exception) {
@@ -404,7 +415,6 @@ class AgentRuntimeFeature(
             platformDependencies.log(LogLevel.WARN, name, "Gateway reported an error for agent '$agentId': ${decoded.errorMessage}")
             setAgentStatus(agentId, AgentStatus.ERROR, store, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
         } else if (decoded.rawContent.isNullOrBlank()) {
-            // THE FIX: Handle successful but empty responses by posting a system message to the user.
             store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
                 put("session", sessionId)
                 put("senderId", agent.id)
