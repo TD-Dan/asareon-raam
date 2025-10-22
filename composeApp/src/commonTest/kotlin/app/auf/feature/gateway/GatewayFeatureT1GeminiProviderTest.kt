@@ -1,7 +1,9 @@
 package app.auf.feature.gateway
 
+import app.auf.fakes.CapturedLog
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.gateway.gemini.GeminiProvider
+import app.auf.util.LogLevel
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -74,5 +76,37 @@ class GatewayFeatureT1GeminiProviderTest {
         assertNull(response.rawContent)
         assertEquals("API Error: API key not valid", response.errorMessage)
         assertEquals(correlationId, response.correlationId)
+    }
+
+    @Test
+    fun `parseResponse correctly handles a blocked prompt response`() {
+        // ARRANGE
+        val responseBody = """{ "candidates": [{}], "promptFeedback": { "blockReason": "SAFETY" } }"""
+        val correlationId = "corr-789"
+
+        // ACT
+        val response = provider.parseResponse(responseBody, correlationId)
+
+        // ASSERT
+        assertNull(response.rawContent)
+        assertEquals("Blocked by provider: SAFETY", response.errorMessage)
+        assertEquals(correlationId, response.correlationId)
+    }
+
+    @Test
+    fun `parseResponse correctly handles an unrecognised response format`() {
+        // ARRANGE
+        val responseBody = """{ "some_new_field": "some_value" }"""
+        val correlationId = "corr-abc"
+
+        // ACT
+        val response = provider.parseResponse(responseBody, correlationId)
+
+        // ASSERT
+        assertNull(response.rawContent)
+        assertEquals("Unrecognised response format from Gemini API.", response.errorMessage)
+        val log = platform.capturedLogs.find { it.level == LogLevel.ERROR && it.tag == "gemini" }
+        assertNotNull(log, "An error should be logged for the unrecognized response.")
+        assertTrue(log.message.contains(responseBody))
     }
 }

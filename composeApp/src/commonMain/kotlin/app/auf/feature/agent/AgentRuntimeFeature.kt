@@ -323,8 +323,8 @@ class AgentRuntimeFeature(
 
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
         when (envelope.type) {
-            ActionNames.Envelopes.GATEWAY_RESPONSE -> handleGatewayResponse(envelope.payload, store) // THE FIX
-            ActionNames.Envelopes.SESSION_RESPONSE_LEDGER -> handleSessionLedgerResponse(envelope.payload, store) // THE FIX
+            ActionNames.Envelopes.GATEWAY_RESPONSE -> handleGatewayResponse(envelope.payload, store)
+            ActionNames.Envelopes.SESSION_RESPONSE_LEDGER -> handleSessionLedgerResponse(envelope.payload, store)
             "filesystem.response.list" -> handleFileSystemListResponse(envelope.payload, store)
             "filesystem.response.read" -> handleFileSystemReadResponse(envelope.payload, store)
             else -> {
@@ -401,6 +401,8 @@ class AgentRuntimeFeature(
         val sessionId = agent.primarySessionId ?: return
 
         if (decoded.errorMessage != null) {
+            // THE FIX: Added durable logging for gateway errors.
+            platformDependencies.log(LogLevel.WARN, name, "Gateway reported an error for agent '$agentId': ${decoded.errorMessage}")
             setAgentStatus(agentId, AgentStatus.ERROR, store, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
         } else if (decoded.rawContent == null) {
             platformDependencies.log(LogLevel.ERROR, name, "FATAL: Gateway response for agent '$agentId' was successfully parsed but contained no content or error.")
@@ -458,6 +460,34 @@ class AgentRuntimeFeature(
             IconButton(onClick = { store.dispatch("ui.ribbon", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKey) })) }) {
                 Icon(Icons.Default.Bolt, "Agent Manager", tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
+
+        @Composable
+        override fun PartialView(store: Store, partId: String, context: Any?) {
+            // THE FIX: Implemented PartialView to correctly display the AgentAvatarCard.
+            if (partId != "agent.avatar") return
+            val agentId = context as? String ?: return
+            val state = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+            val agent = state.agents[agentId] ?: return
+
+            AgentAvatarCard(
+                agentName = agent.name,
+                agentStatus = agent.status,
+                errorMessage = agent.errorMessage,
+                onTrigger = {
+                    store.dispatch(
+                        "ui.avatar.$agentId",
+                        Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", agent.id) })
+                    )
+                },
+                onCancel = {
+                    store.dispatch(
+                        "ui.avatar.$agentId",
+                        Action(ActionNames.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agent.id) })
+                    )
+                },
+                canTrigger = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.ERROR) && agent.primarySessionId != null
+            )
         }
     }
 }

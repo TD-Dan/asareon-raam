@@ -62,14 +62,24 @@ class OpenAIProvider(
     internal fun parseResponse(responseBody: String, correlationId: String): GatewayResponse {
         val response = json.decodeFromString<OpenAIChatResponse>(responseBody)
 
+        // Path 1: Hard API Error
         response.error?.let {
             return GatewayResponse(null, "API Error: ${it.message}", correlationId)
         }
 
+        // Path 2: Successful Content Generation
         val rawText = response.choices?.firstOrNull()?.message?.content
-            ?: "No content received, but no error was reported."
+        if (rawText != null) {
+            return GatewayResponse(rawText, null, correlationId)
+        }
 
-        return GatewayResponse(rawText, null, correlationId)
+        // Path 3 (Future-Proofing): Unrecognized response format
+        platformDependencies.log(
+            LogLevel.ERROR,
+            "openai",
+            "Unrecognised response format from OpenAI API. Full response: $responseBody"
+        )
+        return GatewayResponse(null, "Unrecognised response format from OpenAI API.", correlationId)
     }
 
 
@@ -112,7 +122,7 @@ class OpenAIProvider(
 
             parseResponse(responseBody, request.correlationId)
         } catch (e: Exception) {
-            platformDependencies.log(LogLevel.ERROR, id, "Content generation failed: ${e.message}")
+            platformDependencies.log(LogLevel.ERROR, "openai", "Content generation failed: ${e.stackTraceToString()}")
             val userMessage = mapExceptionToUserMessage(e)
             GatewayResponse(null, userMessage, request.correlationId)
         }

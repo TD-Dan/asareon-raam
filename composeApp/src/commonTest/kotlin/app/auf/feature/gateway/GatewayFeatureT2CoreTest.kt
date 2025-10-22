@@ -3,7 +3,10 @@ package app.auf.feature.gateway
 import app.auf.core.Action
 import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.feature.core.AppLifecycle
+import app.auf.feature.core.CoreState
 import app.auf.feature.settings.SettingsFeature
+import app.auf.feature.settings.SettingsState
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -70,7 +73,8 @@ class GatewayFeatureT2CoreTest {
     }
 
     private fun createHarness(
-        testScope: TestScope
+        testScope: TestScope,
+        initialLifecycle: AppLifecycle = AppLifecycle.RUNNING
     ): app.auf.test.TestHarness {
         val settingsFeature = SettingsFeature(FakePlatformDependencies("test"))
         val gatewayFeature = GatewayFeature(
@@ -81,13 +85,14 @@ class GatewayFeatureT2CoreTest {
         return TestEnvironment.create()
             .withFeature(gatewayFeature)
             .withFeature(settingsFeature)
+            .withInitialState("core", CoreState(lifecycle = initialLifecycle))
             .build(scope = testScope)
     }
 
     @Test
     fun `on INITIALIZING registers settings for all providers`() = testScope.runTest {
-        val harness = createHarness(this)
-        harness.store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
+        val harness = createHarness(this, initialLifecycle = AppLifecycle.BOOTING)
+        harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
         assertEquals(1, fakeProvider1.registerSettingsCallCount)
         assertEquals(1, fakeProvider2.registerSettingsCallCount)
     }
@@ -95,14 +100,13 @@ class GatewayFeatureT2CoreTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `on STARTING refreshes models for all providers with API keys`() = testScope.runTest {
-        val harness = createHarness(this)
-        // THE FIX: Simulate settings being loaded, which is the event that populates the Gateway's API key state.
+        val harness = createHarness(this, initialLifecycle = AppLifecycle.INITIALIZING)
         harness.store.dispatch("settings", Action(ActionNames.SETTINGS_PUBLISH_LOADED, buildJsonObject {
             put("gateway.provider-1.apiKey", "k1")
             put("gateway.provider-2.apiKey", "k2")
         }))
 
-        harness.store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
+        harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
         runCurrent()
 
         assertEquals(1, fakeProvider1.listAvailableModelsCallCount)
@@ -116,21 +120,19 @@ class GatewayFeatureT2CoreTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `on settings VALUE_CHANGED refreshes models for the correct provider`() = testScope.runTest {
-        val harness = createHarness(this)
-        // THE FIX: Simulate initial settings load and model refresh cycle.
+        val harness = createHarness(this, initialLifecycle = AppLifecycle.INITIALIZING)
         harness.store.dispatch("settings", Action(ActionNames.SETTINGS_PUBLISH_LOADED, buildJsonObject {
             put("gateway.provider-1.apiKey", "k1")
             put("gateway.provider-2.apiKey", "k2")
         }))
-        harness.store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
-        runCurrent() // Run the initial refresh
+        harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
+        runCurrent()
 
-        // THE FIX: Dispatch the VALUE_CHANGED event, which is the correct public contract.
         val valueChangedAction = Action(ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED, buildJsonObject {
             put("key", "gateway.provider-2.apiKey"); put("value", "new-key")
         })
         harness.store.dispatch("settings", valueChangedAction)
-        runCurrent() // Run the new refresh
+        runCurrent()
 
         assertEquals(1, fakeProvider1.listAvailableModelsCallCount, "Provider 1 should not be refreshed.")
         assertEquals(2, fakeProvider2.listAvailableModelsCallCount, "Provider 2 should be refreshed.")
@@ -140,7 +142,6 @@ class GatewayFeatureT2CoreTest {
     @Test
     fun `on GENERATE_CONTENT routes to correct provider and delivers response privately`() = testScope.runTest {
         val harness = createHarness(this)
-        // THE FIX: Hydrate the gateway with the necessary API key via the correct event.
         harness.store.dispatch("settings", Action(ActionNames.SETTINGS_PUBLISH_LOADED, buildJsonObject {
             put("gateway.provider-2.apiKey", "k2")
         }))

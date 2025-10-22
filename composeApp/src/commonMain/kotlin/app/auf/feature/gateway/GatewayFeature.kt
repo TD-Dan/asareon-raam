@@ -65,15 +65,13 @@ class GatewayFeature(
         val modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: return
         val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
 
-        // CORRECTED: Decode the payload into our type-safe, universal list of messages.
         val contents = payload["contents"]?.jsonArray?.let {
             json.decodeFromJsonElement<List<GatewayMessage>>(it)
         } ?: return
 
         val provider = providerMap[providerId]
         if (provider == null) {
-            // THE FIX: Log a warning instead of silently failing.
-            platformDependencies.log(LogLevel.WARN, name, "GENERATE_CONTENT request for unknown provider '$providerId'. Ignoring.")
+            platformDependencies.log(LogLevel.ERROR, name, "GENERATE_CONTENT request for unknown provider '$providerId'. Ignoring.")
             return
         }
 

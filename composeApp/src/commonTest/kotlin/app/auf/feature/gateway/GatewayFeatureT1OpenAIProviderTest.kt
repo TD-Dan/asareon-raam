@@ -2,6 +2,7 @@ package app.auf.feature.gateway
 
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.gateway.openai.OpenAIProvider
+import app.auf.util.LogLevel
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -74,5 +75,22 @@ class GatewayFeatureT1OpenAIProviderTest {
         assertNull(response.rawContent)
         assertEquals("API Error: You exceeded your current quota", response.errorMessage)
         assertEquals(correlationId, response.correlationId)
+    }
+
+    @Test
+    fun `parseResponse correctly handles an unrecognised response format`() {
+        // ARRANGE
+        val responseBody = """{ "some_new_field": "some_value" }"""
+        val correlationId = "corr-abc"
+
+        // ACT
+        val response = provider.parseResponse(responseBody, correlationId)
+
+        // ASSERT
+        assertNull(response.rawContent)
+        assertEquals("Unrecognised response format from OpenAI API.", response.errorMessage)
+        val log = platform.capturedLogs.find { it.level == LogLevel.ERROR && it.tag == "openai" }
+        assertNotNull(log, "An error should be logged for the unrecognized response.")
+        assertTrue(log.message.contains(responseBody))
     }
 }
