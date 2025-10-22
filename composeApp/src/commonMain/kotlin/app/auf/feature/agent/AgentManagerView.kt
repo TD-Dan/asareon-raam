@@ -107,15 +107,14 @@ private fun AgentCard(
             }
 
             HorizontalDivider()
-
-            Row(Modifier.fillMaxWidth(), Arrangement.End, Alignment.CenterVertically) {
-                if (!isEditing) {
+            if (!isEditing) {
+                Row(Modifier.fillMaxWidth(), Arrangement.End, Alignment.CenterVertically) {
                     IconButton(onClick = onEditRequest) {
                         Icon(Icons.Default.Edit, "Edit Agent")
                     }
-                }
-                IconButton(onClick = { onDeleteRequest(agent) }) {
-                    Icon(Icons.Default.Delete, "Delete Agent")
+                    IconButton(onClick = { onDeleteRequest(agent) }) {
+                        Icon(Icons.Default.Delete, "Delete Agent")
+                    }
                 }
             }
         }
@@ -202,10 +201,6 @@ private fun AgentEditorView(
                 label = { Text("Agent Name") },
                 modifier = Modifier.weight(1f)
             )
-            Row {
-                IconButton(onClick = onCancel) { Icon(Icons.Default.Cancel, "Cancel Edit") }
-                IconButton(onClick = onSave, enabled = agentNameInput.isNotBlank()) { Icon(Icons.Default.Save, "Save Name") }
-            }
         }
 
         FlowRow(
@@ -219,7 +214,6 @@ private fun AgentEditorView(
             Box(Modifier.weight(1f)) { ModelSelector(agent, agentState, store) }
         }
 
-        // THE FIX: Added the "Automatic Mode" toggle switch.
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -234,6 +228,14 @@ private fun AgentEditorView(
                     }))
                 }
             )
+        }
+        Row (
+            Modifier.fillMaxWidth(),
+            Arrangement.End,
+            Alignment.CenterVertically
+        ){
+            IconButton(onClick = onCancel) { Icon(Icons.Default.Cancel, "Cancel Edit") }
+            IconButton(onClick = onSave, enabled = agentNameInput.isNotBlank()) { Icon(Icons.Default.Save, "Save Name") }
         }
     }
 }
