@@ -105,9 +105,8 @@ class AgentRuntimeFeatureT2CoreTest {
         val harness = TestEnvironment.create().withFeature(agentFeature).build(platform = platform)
         val dirList = listOf(FileEntry("/fake/path/agent-1", true), FileEntry("/fake/path/agent-2", true))
 
-        // THE FIX: Wrap the payload in the correct envelope.
         val payload = buildJsonObject { put("listing", Json.encodeToJsonElement(dirList)) }
-        val envelope = PrivateDataEnvelope("filesystem.response.list", payload)
+        val envelope = PrivateDataEnvelope("filesystem.response.list", payload) // No change needed here, testing a different contract
         agentFeature.onPrivateData(envelope, harness.store)
 
 
@@ -123,8 +122,7 @@ class AgentRuntimeFeatureT2CoreTest {
         val validJsonContent = """{"id":"agent-good","name":"Good Agent","personaId":"","modelProvider":"","modelName":""}"""
         val fileContentPayload = buildJsonObject { put("content", validJsonContent); put("subpath", "agent-good/agent.json") }
 
-        // THE FIX: Wrap the payload in the correct envelope.
-        val envelope = PrivateDataEnvelope("filesystem.response.read", fileContentPayload)
+        val envelope = PrivateDataEnvelope("filesystem.response.read", fileContentPayload) // No change needed
         agentFeature.onPrivateData(envelope, harness.store)
 
 
@@ -139,8 +137,7 @@ class AgentRuntimeFeatureT2CoreTest {
         val corruptedJsonContent = """{"id":"bad-agent","name":"Bad Agent",}"""
         val fileContentPayload = buildJsonObject { put("content", corruptedJsonContent); put("subpath", "bad-agent/agent.json") }
 
-        // THE FIX: Wrap the payload in the correct envelope.
-        val envelope = PrivateDataEnvelope("filesystem.response.read", fileContentPayload)
+        val envelope = PrivateDataEnvelope("filesystem.response.read", fileContentPayload) // No change needed
         agentFeature.onPrivateData(envelope, harness.store)
 
 
@@ -209,8 +206,7 @@ class AgentRuntimeFeatureT2CoreTest {
             put("correlationId", "aid-1"); put("rawContent", "Hello back")
         }
 
-        // THE FIX: Wrap the payload in the correct envelope.
-        val envelope = PrivateDataEnvelope("gateway.response", gatewayResponsePayload)
+        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewayResponsePayload) // THE FIX
         agentFeature.onPrivateData(envelope, harness.store)
 
 

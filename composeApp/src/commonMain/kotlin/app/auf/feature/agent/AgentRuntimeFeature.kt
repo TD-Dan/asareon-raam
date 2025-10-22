@@ -323,8 +323,8 @@ class AgentRuntimeFeature(
 
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
         when (envelope.type) {
-            "gateway.response" -> handleGatewayResponse(envelope.payload, store)
-            "session.response.ledger" -> handleSessionLedgerResponse(envelope.payload, store)
+            ActionNames.Envelopes.GATEWAY_RESPONSE -> handleGatewayResponse(envelope.payload, store) // THE FIX
+            ActionNames.Envelopes.SESSION_RESPONSE_LEDGER -> handleSessionLedgerResponse(envelope.payload, store) // THE FIX
             "filesystem.response.list" -> handleFileSystemListResponse(envelope.payload, store)
             "filesystem.response.read" -> handleFileSystemReadResponse(envelope.payload, store)
             else -> {

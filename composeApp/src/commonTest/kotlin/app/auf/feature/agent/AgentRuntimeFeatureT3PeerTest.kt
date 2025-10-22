@@ -48,7 +48,7 @@ class AgentRuntimeFeatureT3PeerTest {
             put("correlationId", agent.id)
             put("messages", buildJsonArray { })
         }
-        val ledgerEnvelope = PrivateDataEnvelope("session.response.ledger.v1", ledgerResponsePayload)
+        val ledgerEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, ledgerResponsePayload) // THE FIX
         feature.onPrivateData(ledgerEnvelope, harness.store)
 
         val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
@@ -58,7 +58,7 @@ class AgentRuntimeFeatureT3PeerTest {
             put("correlationId", agent.id)
             put("rawContent", "This is the successful response.")
         }
-        val gatewayEnvelope = PrivateDataEnvelope("gateway.response.v1", gatewaySuccessPayload)
+        val gatewayEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewaySuccessPayload) // THE FIX
         feature.onPrivateData(gatewayEnvelope, harness.store)
 
         val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
@@ -68,12 +68,12 @@ class AgentRuntimeFeatureT3PeerTest {
     @Test
     fun `full cognitive cycle transitions agent to ERROR on gateway failure`() = runTest {
         harness.store.dispatch("ui", Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", agent.id) }))
-
+        // NOTE: We skip the ledger response step as we are testing the gateway response directly.
         val gatewayErrorPayload = buildJsonObject {
             put("correlationId", agent.id)
             put("errorMessage", "API key invalid.")
         }
-        val envelope = PrivateDataEnvelope("gateway.response.v1", gatewayErrorPayload)
+        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewayErrorPayload) // THE FIX
         feature.onPrivateData(envelope, harness.store)
 
         val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
@@ -84,13 +84,13 @@ class AgentRuntimeFeatureT3PeerTest {
     @Test
     fun `full cognitive cycle transitions agent to ERROR on corrupted gateway response`() = runTest {
         harness.store.dispatch("ui", Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", agent.id) }))
-
+        // NOTE: We skip the ledger response step as we are testing the gateway response directly.
         val gatewayMismatchedPayload = buildJsonObject {
             put("correlationId", agent.id)
             put("unexpected_key", "some_value")
         }
 
-        val envelope = PrivateDataEnvelope("gateway.response.v1", gatewayMismatchedPayload)
+        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewayMismatchedPayload) // THE FIX
         feature.onPrivateData(envelope, harness.store)
 
         val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState

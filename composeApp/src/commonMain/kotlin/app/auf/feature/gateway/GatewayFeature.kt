@@ -97,7 +97,7 @@ class GatewayFeature(
 
             // Securely deliver the response directly to the original requester.
             val envelope = PrivateDataEnvelope(
-                type = "gateway.response",
+                type = ActionNames.Envelopes.GATEWAY_RESPONSE, // THE FIX
                 payload = responsePayload
             )
             store.deliverPrivateData(this@GatewayFeature.name, originator, envelope)

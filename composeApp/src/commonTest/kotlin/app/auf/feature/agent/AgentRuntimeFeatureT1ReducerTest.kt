@@ -104,8 +104,7 @@ class AgentRuntimeFeatureT1ReducerTest {
             put("messages", "this-should-be-an-array-not-a-string")
         }
 
-        // THE FIX: Wrap the payload in the correct envelope.
-        val envelope = PrivateDataEnvelope("session.response.ledger", corruptedPayload)
+        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, corruptedPayload) // THE FIX
         feature.onPrivateData(envelope, harness.store)
 
 

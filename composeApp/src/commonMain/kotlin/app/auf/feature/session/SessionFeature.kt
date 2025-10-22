@@ -131,7 +131,7 @@ class SessionFeature(
                     put("correlationId", payload.correlationId)
                     putJsonArray("messages") { messages.forEach { add(Json.encodeToJsonElement(it)) } }
                 }
-                val envelope = PrivateDataEnvelope("session.response.ledger", responsePayload)
+                val envelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, responsePayload) // THE FIX
                 store.deliverPrivateData(this.name, action.originator ?: "unknown", envelope)
             }
         }
