@@ -16,12 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
-import app.auf.feature.agent.AgentAvatarCard //TODO: This is a boundary violation
-import app.auf.feature.agent.AgentStatus //TODO: This is a boundary violation
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @Composable
@@ -33,131 +28,103 @@ fun LedgerEntryCard(
     isEditingThisMessage: Boolean,
     editingContent: String?,
 ) {
-    val isPartialView = entry.metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
+    // --- RENDER STANDARD MESSAGE CARD ---
+    val uiState = remember(session.messageUiState, entry.id) {
+        session.messageUiState[entry.id] ?: MessageUiState()
+    }
+    var showMenu by remember { mutableStateOf(false) }
 
-    if (isPartialView) {
-        val statusString = entry.metadata?.get("agentStatus")?.jsonPrimitive?.contentOrNull
-        val status = try { statusString?.let { AgentStatus.valueOf(it) } ?: AgentStatus.IDLE } catch (e: Exception) { AgentStatus.ERROR } //TODO: This is a boundary violation
-        val errorMessage = if (status == AgentStatus.ERROR) { //TODO: This is a boundary violation
-            entry.metadata?.get("errorMessage")?.jsonPrimitive?.contentOrNull ?: "Unknown error"
-        } else null
-
-        AgentAvatarCard( //TODO: This is a boundary violation
-            agentName = agentName,
-            agentStatus = status,
-            errorMessage = errorMessage,
-            onTrigger = {
-                store.dispatch("session.ui", Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject {
-                    put("agentId", entry.senderId)
-                }))
-            },
-            onCancel = {
-                store.dispatch("session.ui", Action(ActionNames.AGENT_CANCEL_TURN, buildJsonObject {
-                    put("agentId", entry.senderId)
-                }))
-            },
-            // The UI makes a best-effort guess. The feature's onAction handler is the final authority.
-            canTrigger = (status == AgentStatus.IDLE || status == AgentStatus.ERROR) //TODO: This is a boundary violation
-        )
+    val cardColors = if (entry.senderId == "user") {
+        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     } else {
-        // --- RENDER STANDARD MESSAGE CARD ---
-        val uiState = remember(session.messageUiState, entry.id) {
-            session.messageUiState[entry.id] ?: MessageUiState()
-        }
-        var showMenu by remember { mutableStateOf(false) }
+        CardDefaults.cardColors()
+    }
 
-        val cardColors = if (entry.senderId == "user") {
-            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-        } else {
-            CardDefaults.cardColors()
-        }
-
-        Card(modifier = Modifier.fillMaxWidth(), colors = cardColors) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                // Header
+    Card(modifier = Modifier.fillMaxWidth(), colors = cardColors) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        modifier = Modifier.weight(1f).clickable(
-                            enabled = !isEditingThisMessage,
-                            onClick = {
-                                store.dispatch("session.ui", Action(ActionNames.SESSION_TOGGLE_MESSAGE_COLLAPSED, buildJsonObject {
-                                    put("sessionId", session.id); put("messageId", entry.id)
-                                }))
-                            }
-                        ),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = agentName,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = {
-                            store.dispatch("session.ui", Action(ActionNames.SESSION_TOGGLE_MESSAGE_RAW_VIEW, buildJsonObject {
+                    modifier = Modifier.weight(1f).clickable(
+                        enabled = !isEditingThisMessage,
+                        onClick = {
+                            store.dispatch("session.ui", Action(ActionNames.SESSION_TOGGLE_MESSAGE_COLLAPSED, buildJsonObject {
                                 put("sessionId", session.id); put("messageId", entry.id)
                             }))
-                        }, modifier = Modifier.size(24.dp)) {
-                            Icon(
-                                imageVector = Icons.Default.Code,
-                                contentDescription = "Toggle Raw Content",
-                                tint = if (uiState.isRawView) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
-                        Spacer(Modifier.width(4.dp))
-                        IconButton(onClick = {
-                            entry.rawContent?.let {
-                                store.dispatch("session.ui", Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject {
-                                    put("text", it)
-                                }))
-                            }
-                        }, modifier = Modifier.size(24.dp), enabled = entry.rawContent != null) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = "Copy Message Content",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                    ),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = agentName,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = {
+                        store.dispatch("session.ui", Action(ActionNames.SESSION_TOGGLE_MESSAGE_RAW_VIEW, buildJsonObject {
+                            put("sessionId", session.id); put("messageId", entry.id)
+                        }))
+                    }, modifier = Modifier.size(24.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Code,
+                            contentDescription = "Toggle Raw Content",
+                            tint = if (uiState.isRawView) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    IconButton(onClick = {
+                        entry.rawContent?.let {
+                            store.dispatch("session.ui", Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject {
+                                put("text", it)
+                            }))
                         }
-                        Spacer(Modifier.width(4.dp))
-                        Box {
-                            IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                                if (entry.rawContent != null) {
-                                    DropdownMenuItem(text = { Text("Edit") }, onClick = {
-                                        store.dispatch("session.ui", Action(ActionNames.SESSION_SET_EDITING_MESSAGE, buildJsonObject {
-                                            put("messageId", entry.id)
-                                        }))
-                                        showMenu = false
-                                    })
-                                }
-                                DropdownMenuItem(text = { Text("Delete") }, onClick = {
-                                    store.dispatch("session.ui", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
-                                        put("session", session.id); put("messageId", entry.id)
+                    }, modifier = Modifier.size(24.dp), enabled = entry.rawContent != null) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy Message Content",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    Box {
+                        IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                            if (entry.rawContent != null) {
+                                DropdownMenuItem(text = { Text("Edit") }, onClick = {
+                                    store.dispatch("session.ui", Action(ActionNames.SESSION_SET_EDITING_MESSAGE, buildJsonObject {
+                                        put("messageId", entry.id)
                                     }))
                                     showMenu = false
                                 })
                             }
+                            DropdownMenuItem(text = { Text("Delete") }, onClick = {
+                                store.dispatch("session.ui", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+                                    put("session", session.id); put("messageId", entry.id)
+                                }))
+                                showMenu = false
+                            })
                         }
                     }
                 }
+            }
 
-                // Content
-                AnimatedVisibility(visible = !uiState.isCollapsed) {
-                    Column {
-                        Spacer(Modifier.height(8.dp))
-                        when {
-                            isEditingThisMessage -> MessageEditor(store, session, entry, editingContent)
-                            uiState.isRawView -> RawContentView(entry.rawContent ?: "--- No Raw Content ---")
-                            else -> ParsedContentView(entry.content, entry.rawContent)
-                        }
+            // Content
+            AnimatedVisibility(visible = !uiState.isCollapsed) {
+                Column {
+                    Spacer(Modifier.height(8.dp))
+                    when {
+                        isEditingThisMessage -> MessageEditor(store, session, entry, editingContent)
+                        uiState.isRawView -> RawContentView(entry.rawContent ?: "--- No Raw Content ---")
+                        else -> ParsedContentView(entry.content, entry.rawContent)
                     }
                 }
             }

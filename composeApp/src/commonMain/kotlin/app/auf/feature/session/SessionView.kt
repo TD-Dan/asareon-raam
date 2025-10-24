@@ -18,7 +18,9 @@ import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @Composable
@@ -55,7 +57,7 @@ fun SessionView(store: Store, features: List<Feature>) {
         if (activeSession == null) {
             Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No active session. Create one to begin.") }
         } else {
-            LedgerPane(store, activeSession, sessionState, Modifier.weight(1f))
+            LedgerPane(store, activeSession, sessionState, features, Modifier.weight(1f))
             MessageInput { message ->
                 store.dispatch("session.ui", Action(ActionNames.SESSION_POST, buildJsonObject {
                     put("session", activeSession.id); put("senderId", "user"); put("message", message)
@@ -110,11 +112,15 @@ private fun LedgerPane(
     store: Store,
     activeSession: Session,
     sessionState: SessionState?,
+    features: List<Feature>,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val agentNames = sessionState?.agentNames ?: emptyMap()
+
+    // THE FIX: The AgentRuntimeFeature is found once here for efficiency.
+    val agentFeature = remember(features) { features.find { it.name == "agent" } }
 
     LaunchedEffect(activeSession.ledger.size) {
         if (activeSession.ledger.size > 1) {
@@ -126,21 +132,30 @@ private fun LedgerPane(
 
     LazyColumn(state = listState, modifier = modifier.fillMaxSize().padding(8.dp)) {
         items(activeSession.ledger, key = { it.id }) { entry ->
-            val agentName = remember(entry.senderId, agentNames) {
-                when {
-                    entry.senderId == "user" -> "User"
-                    entry.senderId.startsWith("system") -> "System"
-                    else -> agentNames[entry.senderId] ?: entry.senderId // Fallback to ID
+            val isPartialView = entry.metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
+
+            // THE FIX: Implement the Embedded Partial View Pattern (P-UI-001)
+            if (isPartialView && agentFeature != null) {
+                // If it's a partial view, delegate rendering to the AgentRuntimeFeature
+                agentFeature.composableProvider?.PartialView(store, "agent.avatar", entry.senderId)
+            } else {
+                // Otherwise, render the standard, now-cleansed LedgerEntryCard
+                val agentName = remember(entry.senderId, agentNames) {
+                    when {
+                        entry.senderId == "user" -> "User"
+                        entry.senderId.startsWith("system") -> "System"
+                        else -> agentNames[entry.senderId] ?: entry.senderId // Fallback to ID
+                    }
                 }
+                LedgerEntryCard(
+                    store = store,
+                    session = activeSession,
+                    entry = entry,
+                    agentName = agentName,
+                    isEditingThisMessage = sessionState?.editingMessageId == entry.id,
+                    editingContent = sessionState?.editingMessageContent
+                )
             }
-            LedgerEntryCard(
-                store = store,
-                session = activeSession,
-                entry = entry,
-                agentName = agentName,
-                isEditingThisMessage = sessionState?.editingMessageId == entry.id,
-                editingContent = sessionState?.editingMessageContent
-            )
             Spacer(Modifier.height(8.dp))
         }
     }
