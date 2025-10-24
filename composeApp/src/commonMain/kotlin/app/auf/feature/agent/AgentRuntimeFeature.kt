@@ -16,6 +16,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
+// TODO: should this file be divided into two to make responsibilities more clear?
+
 class AgentRuntimeFeature(
     private val platformDependencies: PlatformDependencies,
     private val coroutineScope: CoroutineScope
@@ -204,8 +206,7 @@ class AgentRuntimeFeature(
     private fun handleTriggerTurn(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
         val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return null
         val agent = currentFeatureState.agents[agentId] ?: return null
-        // THE FIX: Allow triggering from WAITING state. Only block if already PROCESSING.
-        if (agent.status == AgentStatus.PROCESSING) return null // Guard against re-triggering
+        if (agent.status == AgentStatus.PROCESSING) return null
 
         // Atomically copy the awareness frontier to the commitment frontier.
         val updatedAgent = agent.copy(processingFrontierMessageId = agent.lastSeenMessageId)
@@ -237,27 +238,31 @@ class AgentRuntimeFeature(
                 }))
                 broadcastAgentNames(store)
             }
-            ActionNames.AGENT_UPDATE_CONFIG, ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: agentState.agents.keys.lastOrNull() ?: return
+            ActionNames.AGENT_UPDATE_CONFIG -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val oldAgent = agentState.agents[agentId]
                 val latestState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val newAgent = latestState.agents[agentId] ?: return
 
+                // Persist the change
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                     put("subpath", "${newAgent.id}/$agentConfigFILENAME")
                     put("content", json.encodeToString(newAgent))
                 }))
                 broadcastAgentNames(store)
 
+                // Orchestrate the "move" of the avatar card if the session changed.
                 if (oldAgent != null && oldAgent.primarySessionId != newAgent.primarySessionId) {
-                    oldAgent.primarySessionId?.let {
+                    // 1. Delete card from old session (if any)
+                    oldAgent.primarySessionId?.let { oldSessionId ->
                         agentState.agentAvatarCardIds[agentId]?.let { messageId ->
                             store.dispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
-                                put("session", oldAgent.primarySessionId)
+                                put("session", oldSessionId)
                                 put("messageId", messageId)
                             }))
                         }
                     }
+                    // 2. Create a new card in the new session (if any)
                     newAgent.primarySessionId?.let {
                         setAgentStatus(agentId, AgentStatus.IDLE, store)
                     }
@@ -300,11 +305,19 @@ class AgentRuntimeFeature(
                 setAgentStatus(agentId, AgentStatus.IDLE, store, "Turn cancelled by user.")
             }
             ActionNames.AGENT_TRIGGER_MANUAL_TURN -> beginCognitiveCycle(action, store)
+
             ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<MessagePostedPayload>(it) } ?: return
+                val payload = action.payload?.let { json.decodeFromJsonElement<MessagePostedPayload>(it) } ?: return //TODO: potential for silent failure???
                 val latestState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+
+                // GUARD: Do not react to any avatar card postings.
+                val isAvatarCard = payload.entry["metadata"]?.jsonObject?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
+                if (isAvatarCard) return
+
                 latestState.agents.values.forEach { agent ->
                     if (agent.primarySessionId == payload.sessionId && agent.id != payload.entry["senderId"]?.jsonPrimitive?.contentOrNull) {
+                        // TODO: something fishy going on here. the lastSeenMessageId should be always updated regardless of agent state
+                        // TODO: the setAgentStatus function should be replaced with updateAgentLastSeenMessage(payload)
                         if (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING) {
                             setAgentStatus(agent.id, AgentStatus.WAITING, store)
                         }
@@ -443,6 +456,7 @@ class AgentRuntimeFeature(
     }
 
 
+    // TODO: replace this function with a updateLastSeenMessage function and setAvatarCard function
     private fun setAgentStatus(agentId: String, status: AgentStatus, store: Store, error: String? = null) {
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[agentId] ?: return
@@ -451,7 +465,7 @@ class AgentRuntimeFeature(
         // 1. Atomically delete the old card, if one exists.
         agentState.agentAvatarCardIds[agentId]?.let { oldMessageId ->
             store.dispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
-                put("session", sessionId)
+                put("session", sessionId) // TODO: This is wrong. it uses current sessionId when it should use the sessionId of the old avatar card. This might need to be stored with the avatar card?
                 put("messageId", oldMessageId)
             }))
         }
@@ -523,7 +537,6 @@ class AgentRuntimeFeature(
                         Action(ActionNames.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agent.id) })
                     )
                 },
-                // THE FIX: Update the canTrigger logic to include the WAITING state.
                 canTrigger = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING || agent.status == AgentStatus.ERROR) && agent.primarySessionId != null
             )
         }
