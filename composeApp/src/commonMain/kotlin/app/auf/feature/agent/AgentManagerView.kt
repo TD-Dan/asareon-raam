@@ -131,7 +131,6 @@ private fun AgentReadOnlyView(agent: AgentInstance, sessionNames: Map<String, St
                 Text(agent.name, style = MaterialTheme.typography.titleLarge)
                 Text("Session: $sessionName", style = MaterialTheme.typography.bodyMedium)
                 Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
-                // THE FIX: Added status and error display to the read-only view.
                 Text("Status: ${agent.status}", style = MaterialTheme.typography.bodyMedium)
                 if (agent.status == AgentStatus.ERROR && agent.errorMessage != null) {
                     Text(
@@ -146,8 +145,8 @@ private fun AgentReadOnlyView(agent: AgentInstance, sessionNames: Map<String, St
 
         // --- Actions Section ---
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-            // THE FIX: Added manual trigger/cancel buttons to the manager view.
-            if (agent.status == AgentStatus.PROCESSING || agent.status == AgentStatus.WAITING) {
+            // THE FIX: Show Cancel button ONLY when processing.
+            if (agent.status == AgentStatus.PROCESSING) {
                 Button(
                     onClick = {
                         store.dispatch("ui.agentManager", Action(ActionNames.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agent.id) }))
@@ -163,7 +162,8 @@ private fun AgentReadOnlyView(agent: AgentInstance, sessionNames: Map<String, St
                     onClick = {
                         store.dispatch("ui.agentManager", Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", agent.id) }))
                     },
-                    enabled = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.ERROR) && agent.primarySessionId != null
+                    // THE FIX: Allow triggering from WAITING state as well.
+                    enabled = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING || agent.status == AgentStatus.ERROR) && agent.primarySessionId != null
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = "Trigger Turn")
                     Spacer(Modifier.width(8.dp))

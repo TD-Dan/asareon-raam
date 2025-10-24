@@ -56,7 +56,6 @@ class AgentRuntimeFeature(
             ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> handleMessagePosted(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.SESSION_PUBLISH_MESSAGE_DELETED -> handleMessageDeleted(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.SESSION_PUBLISH_SESSION_DELETED -> handleSessionDeleted(action, currentFeatureState)?.let { newFeatureState = it }
-            // ADDED: Reducer for triggering a turn, which locks in the commitment frontier.
             ActionNames.AGENT_TRIGGER_MANUAL_TURN -> handleTriggerTurn(action, currentFeatureState)?.let { newFeatureState = it }
 
             ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED -> {
@@ -202,11 +201,11 @@ class AgentRuntimeFeature(
         return currentFeatureState.copy(agentAvatarCardIds = currentFeatureState.agentAvatarCardIds - agentId)
     }
 
-    // ADDED: Reducer to lock in the commitment frontier.
     private fun handleTriggerTurn(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
         val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return null
         val agent = currentFeatureState.agents[agentId] ?: return null
-        if (agent.status == AgentStatus.PROCESSING || agent.status == AgentStatus.WAITING) return null // Guard against re-triggering
+        // THE FIX: Allow triggering from WAITING state. Only block if already PROCESSING.
+        if (agent.status == AgentStatus.PROCESSING) return null // Guard against re-triggering
 
         // Atomically copy the awareness frontier to the commitment frontier.
         val updatedAgent = agent.copy(processingFrontierMessageId = agent.lastSeenMessageId)
@@ -300,9 +299,7 @@ class AgentRuntimeFeature(
                 activeTurnJobs.remove(agentId)
                 setAgentStatus(agentId, AgentStatus.IDLE, store, "Turn cancelled by user.")
             }
-            // MODIFIED: This is now just the side-effect trigger, not the state updater.
             ActionNames.AGENT_TRIGGER_MANUAL_TURN -> beginCognitiveCycle(action, store)
-            // ADDED: The reactive trigger for the WAITING state.
             ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<MessagePostedPayload>(it) } ?: return
                 val latestState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
@@ -434,7 +431,6 @@ class AgentRuntimeFeature(
             platformDependencies.log(LogLevel.ERROR, name, "Gateway reported an error for agent '$agentId': ${decoded.errorMessage}")
             setAgentStatus(agentId, AgentStatus.ERROR, store, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
         } else {
-            // MODIFIED: Post the response first (at the end), then post the new IDLE card (also at the end).
             if (!decoded.rawContent.isNullOrBlank()) {
                 store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
                     put("session", sessionId)
@@ -446,7 +442,7 @@ class AgentRuntimeFeature(
         }
     }
 
-    // MODIFIED: Complete refactor of setAgentStatus to be the atomic orchestrator.
+
     private fun setAgentStatus(agentId: String, status: AgentStatus, store: Store, error: String? = null) {
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[agentId] ?: return
@@ -527,7 +523,8 @@ class AgentRuntimeFeature(
                         Action(ActionNames.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agent.id) })
                     )
                 },
-                canTrigger = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.ERROR) && agent.primarySessionId != null
+                // THE FIX: Update the canTrigger logic to include the WAITING state.
+                canTrigger = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING || agent.status == AgentStatus.ERROR) && agent.primarySessionId != null
             )
         }
     }

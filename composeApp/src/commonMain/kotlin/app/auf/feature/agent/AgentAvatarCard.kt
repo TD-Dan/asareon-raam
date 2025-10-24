@@ -1,4 +1,3 @@
-
 package app.auf.feature.agent
 
 import androidx.compose.foundation.layout.*
@@ -48,7 +47,8 @@ fun AgentAvatarCard(
 
             // Right side: Action Buttons
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (agentStatus == AgentStatus.PROCESSING || agentStatus == AgentStatus.WAITING) {
+                // THE FIX: Show Cancel button ONLY when processing.
+                if (agentStatus == AgentStatus.PROCESSING) {
                     // Show Cancel button when busy
                     Button(
                         onClick = onCancel,
