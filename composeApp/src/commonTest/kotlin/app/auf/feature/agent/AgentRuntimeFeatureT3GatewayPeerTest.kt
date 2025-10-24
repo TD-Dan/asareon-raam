@@ -16,7 +16,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.*
 
-class AgentRuntimeFeatureT3PeerTest {
+class AgentRuntimeFeatureT3GatewayPeerTest {
 
     private val scope = CoroutineScope(Dispatchers.Unconfined)
     private lateinit var harness: app.auf.test.TestHarness
