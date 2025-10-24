@@ -219,6 +219,16 @@ class AgentRuntimeFeature(
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
                 store.dispatch(this.name, Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
             }
+            // THE FIX: Add a handler for AGENT_INTERNAL_AGENT_LOADED to orchestrate startup side effects.
+            ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
+                val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
+                // Post the initial avatar card if the agent is subscribed to a session.
+                if (agent.primarySessionId != null) {
+                    setAgentStatus(agent.id, AgentStatus.IDLE, store)
+                }
+                // Broadcast the updated name map to all features.
+                broadcastAgentNames(store)
+            }
             ActionNames.AGENT_CREATE -> {
                 val latestState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
                 val agentToSave = latestState.agents.values.lastOrNull() ?: return
