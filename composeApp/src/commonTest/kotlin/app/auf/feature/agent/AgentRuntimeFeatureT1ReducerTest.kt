@@ -43,6 +43,24 @@ class AgentRuntimeFeatureT1ReducerTest {
     // --- Reducer Integrity Tests ---
 
     @Test
+    fun `reducer on AGENT_TRIGGER_MANUAL_TURN should lock in the commitment frontier`() = runTest {
+        val agent = AgentInstance("agent-1", "Test", "", "", "", lastSeenMessageId = "msg-aware-frontier")
+        val initialState = harness.store.state.value.copy(
+            featureStates = harness.store.state.value.featureStates +
+                    ("agent" to AgentRuntimeState(agents = mapOf(agent.id to agent)))
+        )
+        val triggerAction = Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", agent.id) })
+
+        val newState = feature.reducer(initialState, triggerAction)
+        val newAgentState = newState.featureStates["agent"] as? AgentRuntimeState
+        val updatedAgent = newAgentState?.agents?.get("agent-1")
+
+        assertNotNull(updatedAgent)
+        assertEquals("msg-aware-frontier", updatedAgent.processingFrontierMessageId, "The commitment frontier should be set from the awareness frontier.")
+    }
+
+
+    @Test
     fun `reducer should log error and not change state on invalid status string in SET_STATUS`() = runTest {
         val agent = AgentInstance("agent-1", "Test", "", "", "")
         val initialState = harness.store.state.value.copy(
@@ -63,31 +81,30 @@ class AgentRuntimeFeatureT1ReducerTest {
     }
 
     @Test
-    fun `reducer should log error and not change state on invalid status in MESSAGE_POSTED`() = runTest {
-        val agent = AgentInstance("agent-1", "Test", "", "", "")
+    fun `reducer on MESSAGE_POSTED with avatar card should update avatar card ID map`() = runTest {
+        val agent = AgentInstance("agent-1", "Test", "", "", "", primarySessionId = "session-1")
         val initialState = harness.store.state.value.copy(
             featureStates = harness.store.state.value.featureStates +
                     ("agent" to AgentRuntimeState(agents = mapOf(agent.id to agent)))
         )
-        val invalidPayload = buildJsonObject {
+        val validPayload = buildJsonObject {
             put("sessionId", "session-1")
             put("entry", buildJsonObject {
                 put("senderId", "agent-1")
-                put("id", "msg-1")
+                put("id", "msg-new-card-1")
                 put("metadata", buildJsonObject {
                     put("render_as_partial", true)
-                    put("agentStatus", "proccessing") // Deliberate typo
+                    put("agentStatus", "IDLE")
                 })
             })
         }
-        val invalidAction = Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, invalidPayload)
+        val validAction = Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, validPayload)
 
-        val newState = feature.reducer(initialState, invalidAction)
+        val newState = feature.reducer(initialState, validAction)
+        val newAgentState = newState.featureStates["agent"] as? AgentRuntimeState
 
-        assertEquals(initialState, newState, "State should not be modified on a parsing failure.")
-        val log = platform.capturedLogs.find { it.level == LogLevel.ERROR }
-        assertNotNull(log, "An error should be logged for the invalid status.")
-        assertTrue(log.message.contains("Received posted message with invalid agent status 'proccessing'"))
+        assertNotNull(newAgentState)
+        assertEquals("msg-new-card-1", newAgentState.agentAvatarCardIds["agent-1"])
     }
 
     // --- Deadlock & Side-Effect Tests ---
@@ -104,7 +121,7 @@ class AgentRuntimeFeatureT1ReducerTest {
             put("messages", "this-should-be-an-array-not-a-string")
         }
 
-        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, corruptedPayload) // THE FIX
+        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, corruptedPayload)
         feature.onPrivateData(envelope, harness.store)
 
 
@@ -120,16 +137,17 @@ class AgentRuntimeFeatureT1ReducerTest {
         assertNotNull(postAction, "Should have dispatched a POST to create the new ERROR avatar card.")
     }
 
+    // CORRECTED TEST
     @Test
-    fun `beginCognitiveCycle should atomically delete old cards before creating a new one`() = runTest {
+    fun `beginCognitiveCycle should atomically delete old card before creating a new one`() = runTest {
         val agent = AgentInstance("agent-1", "Test", "", "", "", primarySessionId = "session-1")
-        val initialAvatarCards = mapOf("agent-1" to mapOf(AgentStatus.IDLE to "msg-idle-123"))
+        val initialAvatarCards = mapOf("agent-1" to "msg-idle-123")
         harness = TestEnvironment.create()
             .withFeature(feature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent), agentAvatarCardIds = initialAvatarCards))
             .build(platform = platform)
 
-        // ACT: Trigger a state change from IDLE to PROCESSING
+        // ACT: Trigger a state change from IDLE to PROCESSING via the public action
         val triggerAction = Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", "agent-1") })
         harness.store.dispatch("ui", triggerAction)
 

@@ -59,7 +59,7 @@ class AgentRuntimeFeatureT2CoreTest {
     fun `delete() orchestrates cleanup and then confirms deletion`() = runTest {
         val agent = AgentInstance("aid-1", "Test", "p", "m", "m", primarySessionId = "sid-1")
         val session = Session("sid-1", "Test Session", emptyList(), 1L)
-        val avatarCards = mapOf("aid-1" to mapOf(AgentStatus.IDLE to "msg-123", AgentStatus.PROCESSING to "msg-456"))
+        val avatarCards = mapOf("aid-1" to "msg-123")
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(fileSystemFeature)
@@ -75,14 +75,14 @@ class AgentRuntimeFeatureT2CoreTest {
         val finalAgentState = harness.store.state.value.featureStates["agent"] as? AgentRuntimeState
         assertNotNull(finalAgentState)
         assertTrue(finalAgentState.agents.isEmpty(), "Agent should be removed from the final state.")
-        assertFalse(finalAgentState.agentAvatarCardIds.containsKey("aid-1"), "Avatar cards should be removed from the final state.")
+        assertFalse(finalAgentState.agentAvatarCardIds.containsKey("aid-1"), "Avatar card should be removed from the final state.")
 
         val dispatched = harness.processedActions
         assertNotNull(dispatched.find { it.name == ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY }, "Should delete agent directory.")
         assertNotNull(dispatched.find { it.name == ActionNames.AGENT_INTERNAL_CONFIRM_DELETE }, "Should dispatch internal confirmation.")
         assertNotNull(dispatched.find { it.name == ActionNames.AGENT_PUBLISH_AGENT_DELETED }, "Should publish deletion event.")
         val deleteMsgActions = dispatched.filter { it.name == ActionNames.SESSION_DELETE_MESSAGE }
-        assertEquals(2, deleteMsgActions.size, "Should dispatch a delete action for each tracked card.")
+        assertEquals(1, deleteMsgActions.size, "Should dispatch a delete action for the tracked card.")
     }
 
     @Test
@@ -106,7 +106,7 @@ class AgentRuntimeFeatureT2CoreTest {
         val dirList = listOf(FileEntry("/fake/path/agent-1", true), FileEntry("/fake/path/agent-2", true))
 
         val payload = buildJsonObject { put("listing", Json.encodeToJsonElement(dirList)) }
-        val envelope = PrivateDataEnvelope("filesystem.response.list", payload) // No change needed here, testing a different contract
+        val envelope = PrivateDataEnvelope("filesystem.response.list", payload)
         agentFeature.onPrivateData(envelope, harness.store)
 
 
@@ -122,7 +122,7 @@ class AgentRuntimeFeatureT2CoreTest {
         val validJsonContent = """{"id":"agent-good","name":"Good Agent","personaId":"","modelProvider":"","modelName":""}"""
         val fileContentPayload = buildJsonObject { put("content", validJsonContent); put("subpath", "agent-good/agent.json") }
 
-        val envelope = PrivateDataEnvelope("filesystem.response.read", fileContentPayload) // No change needed
+        val envelope = PrivateDataEnvelope("filesystem.response.read", fileContentPayload)
         agentFeature.onPrivateData(envelope, harness.store)
 
 
@@ -137,7 +137,7 @@ class AgentRuntimeFeatureT2CoreTest {
         val corruptedJsonContent = """{"id":"bad-agent","name":"Bad Agent",}"""
         val fileContentPayload = buildJsonObject { put("content", corruptedJsonContent); put("subpath", "bad-agent/agent.json") }
 
-        val envelope = PrivateDataEnvelope("filesystem.response.read", fileContentPayload) // No change needed
+        val envelope = PrivateDataEnvelope("filesystem.response.read", fileContentPayload)
         agentFeature.onPrivateData(envelope, harness.store)
 
 
@@ -172,7 +172,7 @@ class AgentRuntimeFeatureT2CoreTest {
     }
 
     @Test
-    fun `triggerManualTurn() orchestrates request for ledger content`() = runTest {
+    fun `triggerManualTurn() orchestrates setting status and requesting ledger content`() = runTest {
         val agent = AgentInstance("aid-1", "Test Agent", "", "gemini", "gemini-pro", "sid-1")
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
@@ -193,9 +193,9 @@ class AgentRuntimeFeatureT2CoreTest {
     }
 
     @Test
-    fun `onContentGenerated() with success orchestrates the full response sequence`() = runTest {
+    fun `onContentGenerated() with success posts response first then posts new IDLE card`() = runTest {
         val agent = AgentInstance("aid-1", "Test", "", "", "", "sid-1", false, AgentStatus.PROCESSING)
-        val avatarCards = mapOf("aid-1" to mapOf(AgentStatus.PROCESSING to "msg-processing-123"))
+        val avatarCards = mapOf("aid-1" to "msg-processing-123")
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(sessionFeature)
@@ -206,16 +206,21 @@ class AgentRuntimeFeatureT2CoreTest {
             put("correlationId", "aid-1"); put("rawContent", "Hello back")
         }
 
-        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewayResponsePayload) // THE FIX
+        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewayResponsePayload)
         agentFeature.onPrivateData(envelope, harness.store)
-
 
         val deleteAction = harness.processedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
         assertNotNull(deleteAction)
         assertEquals("msg-processing-123", deleteAction.payload?.get("messageId")?.jsonPrimitive?.content)
+
         val postActions = harness.processedActions.filter { it.name == ActionNames.SESSION_POST }
         assertEquals(2, postActions.size, "Should be 2 POST actions: the response and the new IDLE card.")
-        assertNotNull(postActions.find { it.payload?.get("message")?.jsonPrimitive?.content == "Hello back" })
-        assertNotNull(postActions.find { it.payload?.get("metadata")?.jsonObject?.get("agentStatus")?.jsonPrimitive?.content == "IDLE" })
+        val responsePost = postActions.find { it.payload?.get("message")?.jsonPrimitive?.content == "Hello back" }
+        val idleCardPost = postActions.find { it.payload?.get("metadata")?.jsonObject?.get("agentStatus")?.jsonPrimitive?.content == "IDLE" }
+        assertNotNull(responsePost)
+        assertNotNull(idleCardPost)
+
+        // Assert the correct sequence: content first, then the new status card.
+        assertTrue(harness.processedActions.indexOf(responsePost) < harness.processedActions.indexOf(idleCardPost))
     }
 }

@@ -74,6 +74,10 @@
           "metadata":{
             "type":"object",
             "description":"An optional, generic metadata object."
+          },
+          "afterMessageId": {
+            "type": ["string", "null"],
+            "description": "If provided, the new entry will be inserted directly after this message ID. If the ID is not found, it will be appended to the end."
           }
         },
         "required":[

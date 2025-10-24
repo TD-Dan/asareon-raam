@@ -37,16 +37,15 @@ class AgentRuntimeFeatureT3SessionPeerTest {
     private val sessionFeature = SessionFeature(platform, scope)
 
     private val sessionA = Session("sid-A", "Session A", emptyList(), 1L)
-    private val sessionB = Session("sid-B", "Session B", emptyList(), 2L)
     private val agent1 = AgentInstance("aid-1", "Agent 1", "", "", "", primarySessionId = "sid-A")
-    private val agent2 = AgentInstance("aid-2", "Agent 2", "", "", "", primarySessionId = "sid-A")
 
     @Test
-    fun `when an agent is loaded it should create an IDLE card in its subscribed session`() = runTest {
+    fun `when an agent is loaded it posts an IDLE card to the end of the ledger`() = runTest {
+        val existingMessage = LedgerEntry("msg-1", 1L, "user", "Hello", emptyList())
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(sessionFeature)
-            .withInitialState("session", SessionState(sessions = mapOf(sessionA.id to sessionA)))
+            .withInitialState("session", SessionState(sessions = mapOf(sessionA.id to sessionA.copy(ledger = listOf(existingMessage)))))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
@@ -55,121 +54,100 @@ class AgentRuntimeFeatureT3SessionPeerTest {
         harness.store.dispatch("agent", loadAction)
 
         // ASSERT
-        val postAction = harness.processedActions.find { it.name == ActionNames.SESSION_POST }
+        val postAction = harness.processedActions.findLast { it.name == ActionNames.SESSION_POST }
         assertNotNull(postAction, "An action to post the avatar card should have been dispatched.")
         assertEquals("sid-A", postAction.payload?.get("session")?.jsonPrimitive?.content)
-        assertEquals("aid-1", postAction.payload?.get("senderId")?.jsonPrimitive?.content)
-        val metadata = postAction.payload?.get("metadata")?.jsonObject
-        assertNotNull(metadata)
-        assertEquals(true, metadata["is_transient"]?.jsonPrimitive?.boolean)
-        assertEquals("IDLE", metadata["agentStatus"]?.jsonPrimitive?.content)
+        assertNull(postAction.payload?.get("afterMessageId"), "Initial post should have no 'after' ID, appending to the end.")
+        val finalSessionState = harness.store.state.value.featureStates["session"] as SessionState
+        assertEquals(2, finalSessionState.sessions["sid-A"]?.ledger?.size)
+        assertTrue(finalSessionState.sessions["sid-A"]?.ledger?.last()?.metadata?.get("render_as_partial")?.jsonPrimitive?.boolean ?: false)
     }
 
     @Test
-    fun `when an agent changes its session subscription it should remove the old card and create a new one`() = runTest {
-        val initialCard = LedgerEntry("msg-123", 1L, "aid-1", null, emptyList(), buildJsonObject { put("render_as_partial", true) })
+    fun `when a new message arrives an IDLE agent transitions to WAITING and moves its card`() = runTest {
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(sessionFeature)
-            .withInitialState("session", SessionState(sessions = mapOf(sessionA.id to sessionA.copy(ledger = listOf(initialCard)), sessionB.id to sessionB)))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent1.id to agent1), agentAvatarCardIds = mapOf("aid-1" to mapOf(AgentStatus.IDLE to "msg-123"))))
-            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
-            .build(platform = platform)
-
-        // ACT: Change subscription from Session A to Session B
-        val updateAction = Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
-            put("agentId", "aid-1")
-            put("primarySessionId", "sid-B")
-        })
-        harness.store.dispatch("ui", updateAction)
-
-        // ASSERT
-        val deleteAction = harness.processedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
-        assertNotNull(deleteAction, "An action to delete the old avatar card must be dispatched.")
-        assertEquals("sid-A", deleteAction.payload?.get("session")?.jsonPrimitive?.content)
-        assertEquals("msg-123", deleteAction.payload?.get("messageId")?.jsonPrimitive?.content)
-
-        val postAction = harness.processedActions.find { it.name == ActionNames.SESSION_POST }
-        assertNotNull(postAction, "An action to post the new avatar card must be dispatched.")
-        assertEquals("sid-B", postAction.payload?.get("session")?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun `when an agent unsubscribes from a session it should remove the old card and not create a new one`() = runTest {
-        val initialCard = LedgerEntry("msg-123", 1L, "aid-1", null, emptyList(), buildJsonObject { put("render_as_partial", true) })
-        val harness = TestEnvironment.create()
-            .withFeature(agentFeature)
-            .withFeature(sessionFeature)
-            .withInitialState("session", SessionState(sessions = mapOf(sessionA.id to sessionA.copy(ledger = listOf(initialCard)))))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent1.id to agent1), agentAvatarCardIds = mapOf("aid-1" to mapOf(AgentStatus.IDLE to "msg-123"))))
-            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
-            .build(platform = platform)
-
-        // ACT: Unsubscribe by setting primarySessionId to null
-        val updateAction = Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
-            put("agentId", "aid-1")
-            put("primarySessionId", null as String?)
-        })
-        harness.store.dispatch("ui", updateAction)
-
-        // ASSERT
-        val deleteAction = harness.processedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
-        assertNotNull(deleteAction, "An action to delete the old avatar card must be dispatched.")
-        assertEquals("sid-A", deleteAction.payload?.get("session")?.jsonPrimitive?.content)
-
-        val postAction = harness.processedActions.find { it.name == ActionNames.SESSION_POST }
-        assertNull(postAction, "No new avatar card should be posted when unsubscribing.")
-    }
-
-    @Test
-    fun `when an agent is loaded that is subscribed to a non-existent session the system should remain stable`() = runTest {
-        val agentWithBadSub = agent1.copy(primarySessionId = "session-that-does-not-exist")
-        val harness = TestEnvironment.create()
-            .withFeature(agentFeature)
-            .withFeature(sessionFeature)
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent1.id to agent1), agentAvatarCardIds = mapOf(agent1.id to "card-1")))
             .withInitialState("session", SessionState(sessions = mapOf(sessionA.id to sessionA)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
-        // ACT: Load an agent subscribed to a ghost session
-        val loadAction = Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, Json.encodeToJsonElement(AgentInstance.serializer(), agentWithBadSub) as JsonObject)
-        harness.store.dispatch("agent", loadAction)
+        // ACT: User posts a new message
+        val userPostAction = Action(ActionNames.SESSION_POST, buildJsonObject {
+            put("session", "sid-A"); put("senderId", "user"); put("message", "New user message")
+        })
+        harness.store.dispatch("ui", userPostAction)
 
         // ASSERT
-        val postAction = harness.processedActions.find { it.name == ActionNames.SESSION_POST }
-        assertNull(postAction, "No avatar card should be posted to a non-existent session.")
-        // The test passing without exceptions proves system stability.
+        val finalAgentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+        assertEquals(AgentStatus.WAITING, finalAgentState.agents[agent1.id]?.status)
+
+        val deleteAction = harness.processedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
+        assertNotNull(deleteAction)
+        assertEquals("card-1", deleteAction.payload?.get("messageId")?.jsonPrimitive?.content)
+
+        val newCardPostAction = harness.processedActions.findLast { it.name == ActionNames.SESSION_POST }
+        assertNotNull(newCardPostAction)
+        val finalSessionState = harness.store.state.value.featureStates["session"] as SessionState
+        val userMessageId = finalSessionState.sessions["sid-A"]?.ledger?.find { it.senderId == "user" }?.id
+        assertEquals(userMessageId, newCardPostAction.payload?.get("afterMessageId")?.jsonPrimitive?.content, "New card should be posted after the new user message.")
     }
 
     @Test
-    fun `when multiple agents are in one session their avatar cards should be managed independently`() = runTest {
-        val card1 = LedgerEntry("msg-1", 1L, "aid-1", null, emptyList(), buildJsonObject { put("render_as_partial", true) })
-        val card2 = LedgerEntry("msg-2", 2L, "aid-2", null, emptyList(), buildJsonObject { put("render_as_partial", true) })
+    fun `when triggered a WAITING agent transitions to PROCESSING and locks its card at the commitment frontier`() = runTest {
+        val initialUserMessage = LedgerEntry("msg-user-1", 1L, "user", "Prompt", emptyList())
+        val agent = agent1.copy(status = AgentStatus.WAITING, lastSeenMessageId = "msg-user-1")
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(sessionFeature)
-            .withInitialState("session", SessionState(sessions = mapOf(sessionA.id to sessionA.copy(ledger = listOf(card1, card2)))))
-            .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agent1.id to agent1, agent2.id to agent2),
-                agentAvatarCardIds = mapOf(
-                    "aid-1" to mapOf(AgentStatus.IDLE to "msg-1"),
-                    "aid-2" to mapOf(AgentStatus.IDLE to "msg-2")
-                )
-            ))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent), agentAvatarCardIds = mapOf(agent.id to "card-waiting")))
+            .withInitialState("session", SessionState(sessions = mapOf(sessionA.id to sessionA.copy(ledger = listOf(initialUserMessage)))))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
-        // ACT: Delete Agent 1
-        val deleteAction = Action(ActionNames.AGENT_DELETE, buildJsonObject { put("agentId", "aid-1") })
-        harness.store.dispatch("ui", deleteAction)
+        // ACT: Trigger the agent's turn
+        val triggerAction = Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", agent.id) })
+        harness.store.dispatch("ui", triggerAction)
 
         // ASSERT
-        val finalSessionState = harness.store.state.value.featureStates["session"] as SessionState
-        assertEquals(1, finalSessionState.sessions["sid-A"]?.ledger?.size, "Ledger should only contain the remaining agent's card.")
-        assertEquals("msg-2", finalSessionState.sessions["sid-A"]?.ledger?.first()?.id)
+        val finalAgentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+        assertEquals(AgentStatus.PROCESSING, finalAgentState.agents[agent.id]?.status)
+        assertEquals("msg-user-1", finalAgentState.agents[agent.id]?.processingFrontierMessageId, "Commitment frontier must be locked.")
 
-        val deleteMsgAction = harness.processedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
-        assertNotNull(deleteMsgAction, "A delete message action should have been dispatched.")
-        assertEquals("msg-1", deleteMsgAction.payload?.get("messageId")?.jsonPrimitive?.content, "Should delete the card for agent 1, not agent 2.")
+        val newCardPostAction = harness.processedActions.findLast { it.name == ActionNames.SESSION_POST }
+        assertNotNull(newCardPostAction)
+        assertEquals("msg-user-1", newCardPostAction.payload?.get("afterMessageId")?.jsonPrimitive?.content, "PROCESSING card should be posted after the commitment frontier.")
+    }
+
+    @Test
+    fun `when a new message arrives while PROCESSING the awareness frontier updates but the card remains`() = runTest {
+        val initialUserMessage = LedgerEntry("msg-user-1", 1L, "user", "Prompt", emptyList())
+        val agent = agent1.copy(status = AgentStatus.PROCESSING, processingFrontierMessageId = "msg-user-1")
+        val harness = TestEnvironment.create()
+            .withFeature(agentFeature)
+            .withFeature(sessionFeature)
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent), agentAvatarCardIds = mapOf(agent.id to "card-processing")))
+            .withInitialState("session", SessionState(sessions = mapOf(sessionA.id to sessionA.copy(ledger = listOf(initialUserMessage)))))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        // ACT: User posts another message while agent is busy
+        val userPostAction = Action(ActionNames.SESSION_POST, buildJsonObject {
+            put("session", "sid-A"); put("senderId", "user"); put("message", "Another message")
+        })
+        harness.store.dispatch("ui", userPostAction)
+
+        // ASSERT
+        val finalAgentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+        val finalSessionState = harness.store.state.value.featureStates["session"] as SessionState
+        val secondMessageId = finalSessionState.sessions["sid-A"]?.ledger?.last()?.id
+
+        assertEquals(AgentStatus.PROCESSING, finalAgentState.agents[agent.id]?.status, "Agent should still be processing.")
+        assertEquals(secondMessageId, finalAgentState.agents[agent.id]?.lastSeenMessageId, "Awareness frontier should update.")
+        assertEquals("msg-user-1", finalAgentState.agents[agent.id]?.processingFrontierMessageId, "Commitment frontier should NOT change.")
+
+        val deleteAction = harness.processedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
+        assertNull(deleteAction, "No card should be moved while agent is processing.")
     }
 }

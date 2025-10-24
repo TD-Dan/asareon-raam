@@ -30,7 +30,7 @@ class SessionFeatureT2CoreTest {
     private val fileSystemFeature = FileSystemFeature(platform)
 
     @Test
-    fun `create() adds new session, sets it active, and dispatches SYSTEM_WRITE and publish`() = runTest {
+    fun `when a session is created it should be added to the state, set active, and persisted`() = runTest {
         val harness = TestEnvironment.create()
             .withFeature(sessionFeature)
             .withFeature(fileSystemFeature)
@@ -51,7 +51,7 @@ class SessionFeatureT2CoreTest {
     }
 
     @Test
-    fun `delete() removes session, dispatches SYSTEM_DELETE, and publishes updated names`() = runTest {
+    fun `when a session is deleted it should be removed from state and its file should be deleted`() = runTest {
         val session = Session("sid-1", "To Delete", emptyList(), 1L)
         val harness = TestEnvironment.create()
             .withFeature(sessionFeature)
@@ -78,7 +78,7 @@ class SessionFeatureT2CoreTest {
     }
 
     @Test
-    fun `post() with transient metadata does not persist and publishes event`() = runTest {
+    fun `when a transient message is posted it should not be included in the persisted file`() = runTest {
         val session = Session("sid-1", "Test", emptyList(), 1L)
         val harness = TestEnvironment.create()
             .withFeature(sessionFeature)
@@ -109,7 +109,90 @@ class SessionFeatureT2CoreTest {
     }
 
     @Test
-    fun `deleteMessage() publishes MESSAGE_DELETED event`() = runTest {
+    fun `when posting with a valid afterMessageId it should insert the message at the correct position`() = runTest {
+        val entry1 = LedgerEntry("msg-1", 1L, "user", "First")
+        val entry2 = LedgerEntry("msg-2", 2L, "user", "Third")
+        val session = Session("sid-1", "Test", listOf(entry1, entry2), 1L)
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withFeature(fileSystemFeature)
+            .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        val insertAction = Action(ActionNames.SESSION_POST, buildJsonObject {
+            put("session", "sid-1")
+            put("senderId", "agent")
+            put("message", "Second")
+            put("messageId", "msg-inserted")
+            put("afterMessageId", "msg-1")
+        })
+        harness.store.dispatch("agent", insertAction)
+
+        val finalState = harness.store.state.value.featureStates["session"] as SessionState
+        val finalLedger = finalState.sessions["sid-1"]?.ledger
+        assertNotNull(finalLedger)
+        assertEquals(3, finalLedger.size)
+        assertEquals("msg-1", finalLedger[0].id)
+        assertEquals("msg-inserted", finalLedger[1].id)
+        assertEquals("msg-2", finalLedger[2].id)
+    }
+
+    @Test
+    fun `when posting with a non-existent afterMessageId it should append the message to the end`() = runTest {
+        val entry1 = LedgerEntry("msg-1", 1L, "user", "First")
+        val session = Session("sid-1", "Test", listOf(entry1), 1L)
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withFeature(fileSystemFeature)
+            .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        val appendAction = Action(ActionNames.SESSION_POST, buildJsonObject {
+            put("session", "sid-1")
+            put("senderId", "agent")
+            put("message", "Appended")
+            put("messageId", "msg-appended")
+            put("afterMessageId", "msg-id-that-does-not-exist")
+        })
+        harness.store.dispatch("agent", appendAction)
+
+        val finalState = harness.store.state.value.featureStates["session"] as SessionState
+        val finalLedger = finalState.sessions["sid-1"]?.ledger
+        assertNotNull(finalLedger)
+        assertEquals(2, finalLedger.size)
+        assertEquals("msg-appended", finalLedger.last().id)
+    }
+
+    @Test
+    fun `when posting without an afterMessageId it should append the message to the end`() = runTest {
+        val entry1 = LedgerEntry("msg-1", 1L, "user", "First")
+        val session = Session("sid-1", "Test", listOf(entry1), 1L)
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withFeature(fileSystemFeature)
+            .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        val appendAction = Action(ActionNames.SESSION_POST, buildJsonObject {
+            put("session", "sid-1")
+            put("senderId", "agent")
+            put("message", "Appended")
+            put("messageId", "msg-appended")
+        })
+        harness.store.dispatch("agent", appendAction)
+
+        val finalState = harness.store.state.value.featureStates["session"] as SessionState
+        val finalLedger = finalState.sessions["sid-1"]?.ledger
+        assertNotNull(finalLedger)
+        assertEquals(2, finalLedger.size)
+        assertEquals("msg-appended", finalLedger.last().id)
+    }
+
+    @Test
+    fun `when a message is deleted it should publish a MESSAGE_DELETED event`() = runTest {
         val entry = LedgerEntry("msg-1", 1L, "user", "Hello")
         val session = Session("sid-1", "Test", listOf(entry), 1L)
         val harness = TestEnvironment.create()
@@ -130,7 +213,7 @@ class SessionFeatureT2CoreTest {
     }
 
     @Test
-    fun `onSystemStarting() dispatches SYSTEM_LIST to begin loading process`() = runTest {
+    fun `when the system starts it should dispatch SYSTEM_LIST to begin loading process`() = runTest {
         val harness = TestEnvironment.create()
             .withFeature(sessionFeature)
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
@@ -143,7 +226,7 @@ class SessionFeatureT2CoreTest {
     }
 
     @Test
-    fun `onPrivateData() with file list dispatches SYSTEM_READ for each json file`() = runTest {
+    fun `when it receives a file list it should dispatch SYSTEM_READ for each json file`() = runTest {
         val harness = TestEnvironment.create().withFeature(sessionFeature).build(platform = platform)
         val fileList = listOf(
             FileEntry("/app/session/session-1.json", false),
@@ -162,7 +245,7 @@ class SessionFeatureT2CoreTest {
     }
 
     @Test
-    fun `onPrivateData() with valid session content loads session into state`() = runTest {
+    fun `when it receives valid session content it should load the session into state`() = runTest {
         val harness = TestEnvironment.create().withFeature(sessionFeature).build(platform = platform)
         val sessionJsonContent = """{"id":"loaded-1","name":"Loaded Session","ledger":[],"createdAt":1}"""
         val payload = buildJsonObject {
@@ -180,7 +263,7 @@ class SessionFeatureT2CoreTest {
     }
 
     @Test
-    fun `onPrivateData() with corrupted session content logs an error and does not load`() = runTest {
+    fun `when it receives corrupted session content it should log an error and not load`() = runTest {
         val harness = TestEnvironment.create().withFeature(sessionFeature).build(platform = platform)
         val corruptedJsonContent = """{"id":"bad-1","name":"Bad Session",}"""
         val payload = buildJsonObject {

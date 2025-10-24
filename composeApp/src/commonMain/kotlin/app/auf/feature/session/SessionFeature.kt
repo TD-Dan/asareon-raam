@@ -25,7 +25,7 @@ class SessionFeature(
     @Serializable private data class CreatePayload(val name: String? = null)
     @Serializable private data class UpdateConfigPayload(val session: String, val name: String)
     @Serializable private data class SessionTargetPayload(val session: String)
-    @Serializable private data class PostPayload(val session: String, val senderId: String, val message: String? = null, val messageId: String? = null, val metadata: JsonObject? = null)
+    @Serializable private data class PostPayload(val session: String, val senderId: String, val message: String? = null, val messageId: String? = null, val metadata: JsonObject? = null, val afterMessageId: String? = null)
     @Serializable private data class UpdateMessagePayload(val session: String, val messageId: String, val newContent: String, val newMetadata: JsonObject? = null)
     @Serializable private data class MessageTargetPayload(val session: String, val messageId: String)
     @Serializable private data class SetEditingSessionPayload(val sessionId: String?)
@@ -210,7 +210,20 @@ class SessionFeature(
                     content = decoded.message?.let { blockParser.parse(it) } ?: emptyList(),
                     metadata = decoded.metadata
                 )
-                val updatedSession = targetSession.copy(ledger = targetSession.ledger + newEntry)
+
+                // THE FIX: Implement positional insertion logic
+                val updatedLedger = if (decoded.afterMessageId != null) {
+                    val insertionIndex = targetSession.ledger.indexOfFirst { it.id == decoded.afterMessageId }
+                    if (insertionIndex != -1) {
+                        targetSession.ledger.toMutableList().apply { add(insertionIndex + 1, newEntry) }
+                    } else {
+                        targetSession.ledger + newEntry // Fallback to appending if ID not found
+                    }
+                } else {
+                    targetSession.ledger + newEntry // Default append behavior
+                }
+
+                val updatedSession = targetSession.copy(ledger = updatedLedger)
                 newFeatureState = currentFeatureState.copy(sessions = currentFeatureState.sessions + (sessionId to updatedSession))
             }
             ActionNames.SESSION_DELETE -> {

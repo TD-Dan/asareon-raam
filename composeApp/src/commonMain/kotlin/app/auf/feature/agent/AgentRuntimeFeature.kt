@@ -56,6 +56,8 @@ class AgentRuntimeFeature(
             ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> handleMessagePosted(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.SESSION_PUBLISH_MESSAGE_DELETED -> handleMessageDeleted(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.SESSION_PUBLISH_SESSION_DELETED -> handleSessionDeleted(action, currentFeatureState)?.let { newFeatureState = it }
+            // ADDED: Reducer for triggering a turn, which locks in the commitment frontier.
+            ActionNames.AGENT_TRIGGER_MANUAL_TURN -> handleTriggerTurn(action, currentFeatureState)?.let { newFeatureState = it }
 
             ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED -> {
                 val decodedModels: Map<String, List<String>>? = try {
@@ -172,42 +174,43 @@ class AgentRuntimeFeature(
     private fun handleMessagePosted(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
         val payload = action.payload?.let { json.decodeFromJsonElement<MessagePostedPayload>(it) } ?: return null
         val entry = payload.entry
-        val metadata = entry["metadata"]?.jsonObject ?: return null
-
-        val isAvatarCard = metadata["render_as_partial"]?.jsonPrimitive?.booleanOrNull ?: false
-        if (!isAvatarCard) return null
-
-        val agentId = entry["senderId"]?.jsonPrimitive?.contentOrNull ?: return null
-        if (!currentFeatureState.agents.containsKey(agentId)) return null
-
-        val statusString = metadata["agentStatus"]?.jsonPrimitive?.contentOrNull ?: return null
-        val status = try {
-            AgentStatus.valueOf(statusString)
-        } catch (e: Exception) {
-            platformDependencies.log(LogLevel.ERROR, name, "Received posted message with invalid agent status '$statusString' for agent '$agentId'. State update ignored.")
-            return null
-        }
         val messageId = entry["id"]?.jsonPrimitive?.contentOrNull ?: return null
 
-        val newAvatarMap = currentFeatureState.agentAvatarCardIds.toMutableMap()
-        val agentCards = newAvatarMap.getOrPut(agentId) { mutableMapOf() }.toMutableMap()
-        agentCards[status] = messageId
-        newAvatarMap[agentId] = agentCards
-        return currentFeatureState.copy(agentAvatarCardIds = newAvatarMap)
+        // Unconditionally update the awareness frontier for all subscribed agents.
+        val affectedAgents = currentFeatureState.agents.mapValues { (_, agent) ->
+            if (agent.primarySessionId == payload.sessionId) agent.copy(lastSeenMessageId = messageId) else agent
+        }
+
+        // Check if the message was an avatar card being posted, and if so, record its ID.
+        val metadata = entry["metadata"]?.jsonObject
+        val isAvatarCard = metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
+        if (isAvatarCard) {
+            val agentId = entry["senderId"]?.jsonPrimitive?.contentOrNull
+            if (agentId != null && currentFeatureState.agents.containsKey(agentId)) {
+                return currentFeatureState.copy(
+                    agents = affectedAgents,
+                    agentAvatarCardIds = currentFeatureState.agentAvatarCardIds + (agentId to messageId)
+                )
+            }
+        }
+        return currentFeatureState.copy(agents = affectedAgents)
     }
 
     private fun handleMessageDeleted(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
         val payload = action.payload?.let { json.decodeFromJsonElement<MessageDeletedPayload>(it) } ?: return null
-        val agentId = currentFeatureState.agentAvatarCardIds.entries.find { (_, statuses) -> statuses.containsValue(payload.messageId) }?.key ?: return null
+        val agentId = currentFeatureState.agentAvatarCardIds.entries.find { it.value == payload.messageId }?.key ?: return null
+        return currentFeatureState.copy(agentAvatarCardIds = currentFeatureState.agentAvatarCardIds - agentId)
+    }
 
-        val newAvatarMap = currentFeatureState.agentAvatarCardIds.toMutableMap()
-        val agentCards = newAvatarMap.getOrPut(agentId) { mutableMapOf() }.toMutableMap()
-        val statusToRemove = agentCards.entries.find { it.value == payload.messageId }?.key
-        if (statusToRemove != null) {
-            agentCards.remove(statusToRemove)
-        }
-        newAvatarMap[agentId] = agentCards
-        return currentFeatureState.copy(agentAvatarCardIds = newAvatarMap)
+    // ADDED: Reducer to lock in the commitment frontier.
+    private fun handleTriggerTurn(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
+        val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return null
+        val agent = currentFeatureState.agents[agentId] ?: return null
+        if (agent.status == AgentStatus.PROCESSING || agent.status == AgentStatus.WAITING) return null // Guard against re-triggering
+
+        // Atomically copy the awareness frontier to the commitment frontier.
+        val updatedAgent = agent.copy(processingFrontierMessageId = agent.lastSeenMessageId)
+        return currentFeatureState.copy(agents = currentFeatureState.agents + (agentId to updatedAgent))
     }
 
     // --- ON_ACTION (Side Effect Orchestration) ---
@@ -219,14 +222,11 @@ class AgentRuntimeFeature(
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
                 store.dispatch(this.name, Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
             }
-            // THE FIX: Add a handler for AGENT_INTERNAL_AGENT_LOADED to orchestrate startup side effects.
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
-                // Post the initial avatar card if the agent is subscribed to a session.
                 if (agent.primarySessionId != null) {
                     setAgentStatus(agent.id, AgentStatus.IDLE, store)
                 }
-                // Broadcast the updated name map to all features.
                 broadcastAgentNames(store)
             }
             ActionNames.AGENT_CREATE -> {
@@ -251,10 +251,10 @@ class AgentRuntimeFeature(
                 broadcastAgentNames(store)
 
                 if (oldAgent != null && oldAgent.primarySessionId != newAgent.primarySessionId) {
-                    oldAgent.primarySessionId?.let { oldSessionId ->
-                        agentState.agentAvatarCardIds[agentId]?.values?.forEach { messageId ->
+                    oldAgent.primarySessionId?.let {
+                        agentState.agentAvatarCardIds[agentId]?.let { messageId ->
                             store.dispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
-                                put("session", oldSessionId)
+                                put("session", oldAgent.primarySessionId)
                                 put("messageId", messageId)
                             }))
                         }
@@ -268,12 +268,10 @@ class AgentRuntimeFeature(
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agentToDelete = agentState.agents[agentId] ?: return
 
-                val sessionToClean = agentToDelete.primarySessionId
-                val cardsToDelete = agentState.agentAvatarCardIds[agentId]
-                cardsToDelete?.values?.forEach { messageId ->
-                    if (sessionToClean != null) {
+                agentState.agentAvatarCardIds[agentId]?.let { messageId ->
+                    agentToDelete.primarySessionId?.let { sessionId ->
                         store.dispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
-                            put("session", sessionToClean)
+                            put("session", sessionId)
                             put("messageId", messageId)
                         }))
                     }
@@ -302,7 +300,20 @@ class AgentRuntimeFeature(
                 activeTurnJobs.remove(agentId)
                 setAgentStatus(agentId, AgentStatus.IDLE, store, "Turn cancelled by user.")
             }
+            // MODIFIED: This is now just the side-effect trigger, not the state updater.
             ActionNames.AGENT_TRIGGER_MANUAL_TURN -> beginCognitiveCycle(action, store)
+            // ADDED: The reactive trigger for the WAITING state.
+            ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<MessagePostedPayload>(it) } ?: return
+                val latestState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+                latestState.agents.values.forEach { agent ->
+                    if (agent.primarySessionId == payload.sessionId && agent.id != payload.entry["senderId"]?.jsonPrimitive?.contentOrNull) {
+                        if (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING) {
+                            setAgentStatus(agent.id, AgentStatus.WAITING, store)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -319,7 +330,6 @@ class AgentRuntimeFeature(
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[agentId] ?: return
 
-        if (agent.status == AgentStatus.PROCESSING || agent.status == AgentStatus.WAITING) return
         val sessionId = agent.primarySessionId ?: run {
             setAgentStatus(agentId, AgentStatus.ERROR, store, "Cannot start turn: Agent not subscribed to a session."); return
         }
@@ -423,39 +433,47 @@ class AgentRuntimeFeature(
         if (decoded.errorMessage != null) {
             platformDependencies.log(LogLevel.ERROR, name, "Gateway reported an error for agent '$agentId': ${decoded.errorMessage}")
             setAgentStatus(agentId, AgentStatus.ERROR, store, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
-        } else if (decoded.rawContent.isNullOrBlank()) {
-            store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
-                put("session", sessionId)
-                put("senderId", agent.id)
-                put("message", "*Turn complete. No further action required.*")
-            }))
-            setAgentStatus(agentId, AgentStatus.IDLE, store)
         } else {
-            store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
-                put("session", sessionId); put("senderId", agent.id); put("message", decoded.rawContent)
-            }))
+            // MODIFIED: Post the response first (at the end), then post the new IDLE card (also at the end).
+            if (!decoded.rawContent.isNullOrBlank()) {
+                store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
+                    put("session", sessionId)
+                    put("senderId", agent.id)
+                    put("message", decoded.rawContent)
+                }))
+            }
             setAgentStatus(agentId, AgentStatus.IDLE, store)
         }
     }
 
-
+    // MODIFIED: Complete refactor of setAgentStatus to be the atomic orchestrator.
     private fun setAgentStatus(agentId: String, status: AgentStatus, store: Store, error: String? = null) {
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[agentId] ?: return
         val sessionId = agent.primarySessionId ?: return
 
-        val oldCardIds = agentState.agentAvatarCardIds[agentId]?.values
-        oldCardIds?.forEach { messageId ->
+        // 1. Atomically delete the old card, if one exists.
+        agentState.agentAvatarCardIds[agentId]?.let { oldMessageId ->
             store.dispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                 put("session", sessionId)
-                put("messageId", messageId)
+                put("messageId", oldMessageId)
             }))
         }
 
+        // 2. Dispatch the internal action to update the agent's state.
         store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
             put("agentId", agentId); put("status", status.name); error?.let { put("error", it) }
         }))
 
+        // 3. Determine the correct positional frontier.
+        val latestAgentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+        val latestAgent = latestAgentState.agents[agentId] ?: return
+        val afterMessageId = when (status) {
+            AgentStatus.PROCESSING -> latestAgent.processingFrontierMessageId
+            else -> latestAgent.lastSeenMessageId
+        }
+
+        // 4. Post the new card with the correct metadata and position.
         val messageId = platformDependencies.generateUUID()
         val metadata = buildJsonObject {
             put("render_as_partial", true)
@@ -469,6 +487,7 @@ class AgentRuntimeFeature(
             put("senderId", agentId)
             put("messageId", messageId)
             put("metadata", metadata)
+            afterMessageId?.let { put("afterMessageId", it) }
         }))
     }
 

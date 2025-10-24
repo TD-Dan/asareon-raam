@@ -21,7 +21,15 @@ data class AgentInstance(
     val status: AgentStatus = AgentStatus.IDLE,
 
     @Transient
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+
+    // ADDED: The "Awareness Frontier". Tracks the ID of the last message seen in the subscribed session.
+    @Transient
+    val lastSeenMessageId: String? = null,
+
+    // ADDED: The "Commitment Frontier". A snapshot of the awareness frontier when a cognitive cycle begins.
+    @Transient
+    val processingFrontierMessageId: String? = null
 )
 
 @Serializable
@@ -34,18 +42,17 @@ data class AgentRuntimeState(
     val editingAgentId: String? = null,
 
     /**
-     * A transient map tracking the message ID of each agent's active avatar cards.
-     * This enables tracking multiple "frontiers" (e.g., PROCESSING, WAITING).
+     * MODIFIED: A simplified, transient map tracking the single message ID of each agent's active avatar card.
      *
-     * Structure: Map<agentId, Map<AgentStatus, messageId>>
-     * Example: { "agent-1": { "PROCESSING": "msg-abc", "WAITING": "msg-xyz" } }
+     * Structure: Map<agentId, messageId>
+     * Example: { "agent-1": "msg-abc" }
      *
      * This is a runtime state and is NOT persisted.
      */
     @Transient
-    val agentAvatarCardIds: Map<String, Map<AgentStatus, String>> = emptyMap(),
+    val agentAvatarCardIds: Map<String, String> = emptyMap(),
 
-    /** THE FIX: A transient field to reliably pass the IDs of agents who need their config persisted from the reducer to the onAction handler. */
+    /** A transient field to reliably pass the IDs of agents who need their config persisted from the reducer to the onAction handler. */
     @Transient
     val agentsToPersist: Set<String>? = null
 ) : FeatureState
