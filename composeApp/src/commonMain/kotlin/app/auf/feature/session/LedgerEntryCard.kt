@@ -156,7 +156,7 @@ fun LedgerEntryCard(
                         when {
                             isEditingThisMessage -> MessageEditor(store, session, entry, editingContent)
                             uiState.isRawView -> RawContentView(entry.rawContent ?: "--- No Raw Content ---")
-                            else -> ParsedContentView(entry.content)
+                            else -> ParsedContentView(entry.content, entry.rawContent)
                         }
                     }
                 }
@@ -204,10 +204,15 @@ private fun MessageEditor(store: Store, session: Session, entry: LedgerEntry, ed
 }
 
 @Composable
-private fun ParsedContentView(content: List<ContentBlock>) {
+private fun ParsedContentView(content: List<ContentBlock>, rawContent: String?) {
     if (content.isEmpty()) {
-        // Handle UI-only entries gracefully
-        Text(" ", style = MaterialTheme.typography.bodySmall) // Render a space to maintain card height
+        if (!rawContent.isNullOrBlank()) {
+            // THE FIX: Fall back to rendering the raw content if parsing produced no blocks.
+            RawContentView(rawContent)
+        } else {
+            // Handle UI-only entries gracefully
+            Text(" ", style = MaterialTheme.typography.bodySmall) // Render a space to maintain card height
+        }
     } else {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             content.forEach { block ->
