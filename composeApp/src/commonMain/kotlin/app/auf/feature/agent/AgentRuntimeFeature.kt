@@ -6,6 +6,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
 import app.auf.core.generated.ActionNames
@@ -471,7 +473,8 @@ class AgentRuntimeFeature(
         override fun PartialView(store: Store, partId: String, context: Any?) {
             if (partId != "agent.avatar") return
             val agentId = context as? String ?: return
-            val state = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+            val appState by store.state.collectAsState()
+            val state = appState.featureStates[name] as? AgentRuntimeState ?: return
             val agent = state.agents[agentId] ?: return
             AgentAvatarCard(agent = agent, store = store, platformDependencies = platformDependencies)
         }
