@@ -50,6 +50,7 @@ class AgentRuntimeFeatureT3SessionPeerTest {
             .build(platform = platform)
 
         // ACT: Simulate the agent being loaded from disk
+        // FIX: Provide the explicit serializer to the encodeToJsonElement function.
         val loadAction = Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, Json.encodeToJsonElement(AgentInstance.serializer(), agent1) as JsonObject)
         harness.store.dispatch("agent", loadAction)
 
@@ -65,10 +66,12 @@ class AgentRuntimeFeatureT3SessionPeerTest {
 
     @Test
     fun `when a new message arrives an IDLE agent transitions to WAITING and moves its card`() = runTest {
+        // FIX: Instantiate AgentRuntimeState with the correct Map<String, AvatarCardInfo> type.
+        val initialAvatarCards = mapOf(agent1.id to AgentRuntimeState.AvatarCardInfo("card-1", "sid-A"))
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(sessionFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent1.id to agent1), agentAvatarCardIds = mapOf(agent1.id to "card-1")))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent1.id to agent1), agentAvatarCardIds = initialAvatarCards))
             .withInitialState("session", SessionState(sessions = mapOf(sessionA.id to sessionA)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
@@ -98,10 +101,12 @@ class AgentRuntimeFeatureT3SessionPeerTest {
     fun `when triggered a WAITING agent transitions to PROCESSING and locks its card at the commitment frontier`() = runTest {
         val initialUserMessage = LedgerEntry("msg-user-1", 1L, "user", "Prompt", emptyList())
         val agent = agent1.copy(status = AgentStatus.WAITING, lastSeenMessageId = "msg-user-1")
+        // FIX: Instantiate AgentRuntimeState with the correct Map<String, AvatarCardInfo> type.
+        val initialAvatarCards = mapOf(agent.id to AgentRuntimeState.AvatarCardInfo("card-waiting", "sid-A"))
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(sessionFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent), agentAvatarCardIds = mapOf(agent.id to "card-waiting")))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent), agentAvatarCardIds = initialAvatarCards))
             .withInitialState("session", SessionState(sessions = mapOf(sessionA.id to sessionA.copy(ledger = listOf(initialUserMessage)))))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
@@ -124,10 +129,12 @@ class AgentRuntimeFeatureT3SessionPeerTest {
     fun `when a new message arrives while PROCESSING the awareness frontier updates but the card remains`() = runTest {
         val initialUserMessage = LedgerEntry("msg-user-1", 1L, "user", "Prompt", emptyList())
         val agent = agent1.copy(status = AgentStatus.PROCESSING, processingFrontierMessageId = "msg-user-1")
+        // FIX: Instantiate AgentRuntimeState with the correct Map<String, AvatarCardInfo> type.
+        val initialAvatarCards = mapOf(agent.id to AgentRuntimeState.AvatarCardInfo("card-processing", "sid-A"))
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(sessionFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent), agentAvatarCardIds = mapOf(agent.id to "card-processing")))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent), agentAvatarCardIds = initialAvatarCards))
             .withInitialState("session", SessionState(sessions = mapOf(sessionA.id to sessionA.copy(ledger = listOf(initialUserMessage)))))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)

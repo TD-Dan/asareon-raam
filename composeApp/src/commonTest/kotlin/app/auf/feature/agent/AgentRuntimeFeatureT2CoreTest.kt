@@ -59,7 +59,8 @@ class AgentRuntimeFeatureT2CoreTest {
     fun `delete() orchestrates cleanup and then confirms deletion`() = runTest {
         val agent = AgentInstance("aid-1", "Test", "p", "m", "m", primarySessionId = "sid-1")
         val session = Session("sid-1", "Test Session", emptyList(), 1L)
-        val avatarCards = mapOf("aid-1" to "msg-123")
+        // FIX: Instantiate AgentRuntimeState with the correct Map<String, AvatarCardInfo> type.
+        val avatarCards = mapOf("aid-1" to AgentRuntimeState.AvatarCardInfo("msg-123", "sid-1"))
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(fileSystemFeature)
@@ -119,7 +120,8 @@ class AgentRuntimeFeatureT2CoreTest {
     @Test
     fun `onPrivateData() with valid agent config loads agent into state`() = runTest {
         val harness = TestEnvironment.create().withFeature(agentFeature).build(platform = platform)
-        val validJsonContent = """{"id":"agent-good","name":"Good Agent","personaId":"","modelProvider":"","modelName":""}"""
+        // FIX: Provide all required fields for AgentInstance, even if empty.
+        val validJsonContent = """{"id":"agent-good","name":"Good Agent","personaId":"","modelProvider":"","modelName":"","automaticMode":false,"autoWaitTimeSeconds":5,"autoMaxWaitTimeSeconds":30}"""
         val fileContentPayload = buildJsonObject { put("content", validJsonContent); put("subpath", "agent-good/agent.json") }
 
         val envelope = PrivateDataEnvelope("filesystem.response.read", fileContentPayload)
@@ -194,8 +196,10 @@ class AgentRuntimeFeatureT2CoreTest {
 
     @Test
     fun `onContentGenerated() with success posts response first then posts new IDLE card`() = runTest {
-        val agent = AgentInstance("aid-1", "Test", "", "", "", "sid-1", false, AgentStatus.PROCESSING)
-        val avatarCards = mapOf("aid-1" to "msg-processing-123")
+        // FIX: Use named arguments for AgentInstance constructor to match new signature.
+        val agent = AgentInstance("aid-1", "Test", "", "", "", "sid-1", automaticMode = false, status = AgentStatus.PROCESSING)
+        // FIX: Instantiate AgentRuntimeState with the correct Map<String, AvatarCardInfo> type.
+        val avatarCards = mapOf("aid-1" to AgentRuntimeState.AvatarCardInfo("msg-processing-123", "sid-1"))
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(sessionFeature)
