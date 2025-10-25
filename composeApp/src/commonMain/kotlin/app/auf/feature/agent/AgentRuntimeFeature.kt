@@ -249,9 +249,12 @@ class AgentRuntimeFeature(
                 }))
                 broadcastAgentNames(store)
 
+                // TODO: Problem lies here, the oldAgent is actually the new agent and the move never happens. We need a general way of accessing previous state? store should provide record previous state for anyone that is interested in comparisons?
+                platformDependencies.log(LogLevel.DEBUG, "agent.onAction.AGENT_UPDATE_CONFIG", "OldAgent session: ${oldAgent?.primarySessionId}, new agent session: ${newAgent?.primarySessionId}")
                 // Orchestrate the "move" of the avatar card if the session changed.
                 if (oldAgent != null && oldAgent.primarySessionId != newAgent.primarySessionId) {
-                    // REFACTOR: This now correctly delegates to the robust avatar card handler.
+                    // TODO: this newer gets called
+                    platformDependencies.log(LogLevel.DEBUG, "agent.onAction.AGENT_UPDATE_CONFIG", "Moving card to new session.")
                     updateAgentAvatarCard(agentId, newAgent.status, null, store)
                 }
             }
