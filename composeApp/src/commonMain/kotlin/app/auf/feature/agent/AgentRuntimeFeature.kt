@@ -30,10 +30,6 @@ class AgentRuntimeFeature(
     @Serializable private data class MessagePostedPayload(val sessionId: String, val entry: JsonObject)
     @Serializable private data class MessageDeletedPayload(val sessionId: String, val messageId: String)
 
-    // REFACTOR: New internal data class for posting avatar cards
-    private data class PostAvatarCardPayload(val agentId: String, val status: AgentStatus, val error: String? = null)
-
-
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val agentConfigFILENAME = "agent.json"
     private val activeTurnJobs = mutableMapOf<String, Job>()
@@ -179,15 +175,13 @@ class AgentRuntimeFeature(
         val messageId = entry["id"]?.jsonPrimitive?.contentOrNull ?: return null
         val sessionId = payload.sessionId
 
-        // REFACTOR: Unconditionally update the awareness frontier for all subscribed agents.
+        // Unconditionally update the awareness frontier for all subscribed agents.
         val affectedAgents = currentFeatureState.agents.mapValues { (_, agent) ->
             if (agent.primarySessionId == sessionId) agent.copy(lastSeenMessageId = messageId) else agent
         }
 
         // Check if the message was an avatar card being posted, and if so, record its ID.
-        val metadata = entry["metadata"]?.jsonObject
-        val isAvatarCard = metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
-        if (isAvatarCard) {
+        if (isAvatarCard(payload)) {
             val agentId = entry["senderId"]?.jsonPrimitive?.contentOrNull
             if (agentId != null && currentFeatureState.agents.containsKey(agentId)) {
                 val newCardInfo = AgentRuntimeState.AvatarCardInfo(messageId = messageId, sessionId = sessionId)
@@ -229,7 +223,7 @@ class AgentRuntimeFeature(
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
                 if (agent.primarySessionId != null) {
-                    updateAgentAvatarCard(PostAvatarCardPayload(agent.id, AgentStatus.IDLE), store)
+                    updateAgentAvatarCard(agent.id, AgentStatus.IDLE, null, store)
                 }
                 broadcastAgentNames(store)
             }
@@ -258,7 +252,7 @@ class AgentRuntimeFeature(
                 // Orchestrate the "move" of the avatar card if the session changed.
                 if (oldAgent != null && oldAgent.primarySessionId != newAgent.primarySessionId) {
                     // REFACTOR: This now correctly delegates to the robust avatar card handler.
-                    updateAgentAvatarCard(PostAvatarCardPayload(agentId, newAgent.status), store)
+                    updateAgentAvatarCard(agentId, newAgent.status, null, store)
                 }
             }
             ActionNames.AGENT_DELETE -> {
@@ -293,7 +287,7 @@ class AgentRuntimeFeature(
                 // TODO: At what point does this call the actual API to cancel the actual Gateway request?
                 job.cancel()
                 activeTurnJobs.remove(agentId)
-                updateAgentAvatarCard(PostAvatarCardPayload(agentId, AgentStatus.IDLE, "Turn cancelled by user."), store)
+                updateAgentAvatarCard(agentId, AgentStatus.IDLE, "Turn cancelled by user.", store)
             }
             ActionNames.AGENT_TRIGGER_MANUAL_TURN -> beginCognitiveCycle(action, store)
 
@@ -302,15 +296,14 @@ class AgentRuntimeFeature(
                 val latestState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
 
                 // GUARD: Do not react to our own avatar card postings.
-                val isAvatarCard = payload.entry["metadata"]?.jsonObject?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
-                if (isAvatarCard) return
+                if (isAvatarCard(payload)) return
 
                 latestState.agents.values.forEach { agent ->
                     if (agent.primarySessionId == payload.sessionId && agent.id != payload.entry["senderId"]?.jsonPrimitive?.contentOrNull) {
                         // REFACTOR: Now correctly separates concerns.
-                        // The reducer has already updated lastSeenMessageId. Here we just handle the UI side-effect.
+                        // The reducer has already updated lastSeenMessageId. Here we just handle the UI side effect.
                         if (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING) {
-                            updateAgentAvatarCard(PostAvatarCardPayload(agent.id, AgentStatus.WAITING), store)
+                            updateAgentAvatarCard(agent.id, AgentStatus.WAITING, null, store)
                         }
                     }
                 }
@@ -334,10 +327,10 @@ class AgentRuntimeFeature(
         //TODO: This should have a guard to protect against re firing an already PROCESSING agent -> log warning and return early
 
         val sessionId = agent.primarySessionId ?: run {
-            updateAgentAvatarCard(PostAvatarCardPayload(agentId, AgentStatus.ERROR, "Cannot start turn: Agent not subscribed to a session."), store)
+            updateAgentAvatarCard(agentId, AgentStatus.ERROR, "Cannot start turn: Agent not subscribed to a session.", store)
             return
         }
-        updateAgentAvatarCard(PostAvatarCardPayload(agentId, AgentStatus.PROCESSING), store)
+        updateAgentAvatarCard(agentId, AgentStatus.PROCESSING, null, store)
 
         store.dispatch(this.name, Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject {
             put("sessionId", sessionId)
@@ -360,7 +353,7 @@ class AgentRuntimeFeature(
             platformDependencies.log(LogLevel.ERROR, name, "FATAL: Failed to parse session ledger. Error: ${e.message}")
             val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
             if (agentId != null) {
-                updateAgentAvatarCard(PostAvatarCardPayload(agentId, AgentStatus.ERROR, "FATAL: Could not parse session ledger."), store)
+                updateAgentAvatarCard(agentId, AgentStatus.ERROR, "FATAL: Could not parse session ledger.", store)
             }
             return
         }
@@ -398,12 +391,12 @@ class AgentRuntimeFeature(
         if (agentId == null) { platformDependencies.log(LogLevel.ERROR, name, "Received gateway response with no correlationId."); return }
         if ("rawContent" !in payload && "errorMessage" !in payload) {
             platformDependencies.log(LogLevel.ERROR, name, "FATAL: Received corrupted gateway response payload for agent '$agentId'. Missing 'rawContent' and 'errorMessage' keys. Payload: $payload")
-            updateAgentAvatarCard(PostAvatarCardPayload(agentId, AgentStatus.ERROR, "FATAL: Corrupted response from gateway."), store)
+            updateAgentAvatarCard(agentId, AgentStatus.ERROR, "FATAL: Corrupted response from gateway.", store)
             return
         }
         val decoded = try { json.decodeFromJsonElement<GatewayResponsePayload>(payload) } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, name, "FATAL: Failed to parse gateway response for agent '$agentId'. Error: ${e.message}")
-            updateAgentAvatarCard(PostAvatarCardPayload(agentId, AgentStatus.ERROR, "FATAL: Could not parse gateway response."), store)
+            updateAgentAvatarCard(agentId, AgentStatus.ERROR, "FATAL: Could not parse gateway response.", store)
             return
         }
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
@@ -412,23 +405,28 @@ class AgentRuntimeFeature(
 
         if (decoded.errorMessage != null) {
             platformDependencies.log(LogLevel.ERROR, name, "Gateway reported an error for agent '$agentId': ${decoded.errorMessage}")
-            updateAgentAvatarCard(PostAvatarCardPayload(agentId, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}"), store)
+            updateAgentAvatarCard(agentId, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}", store)
         } else {
             if (!decoded.rawContent.isNullOrBlank()) {
                 store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
                     put("session", sessionId); put("senderId", agent.id); put("message", decoded.rawContent)
                 }))
             }
-            updateAgentAvatarCard(PostAvatarCardPayload(agentId, AgentStatus.IDLE), store)
+            updateAgentAvatarCard(agentId, AgentStatus.IDLE, null, store)
         }
+    }
+
+    // Helper to check if a message is an Avatar Card
+    private fun isAvatarCard(payload : MessagePostedPayload) : Boolean {
+        val metadata = payload.entry["metadata"]?.jsonObject
+        return metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
     }
 
     /**
      * REFACTORED: The new, single point of truth for managing an agent's avatar card.
      * This function orchestrates the atomic delete-then-post operation required to "move" a card.
      */
-    private fun updateAgentAvatarCard(payload: PostAvatarCardPayload, store: Store) {
-        val (agentId, status, error) = payload
+    private fun updateAgentAvatarCard(agentId: String, status: AgentStatus, error: String? = null, store: Store) {
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[agentId] ?: return
         val newSessionId = agent.primarySessionId

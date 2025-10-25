@@ -59,4 +59,4 @@ data class AgentRuntimeState(
      */
     @Serializable
     data class AvatarCardInfo(val messageId: String, val sessionId: String)
-}§
+}
