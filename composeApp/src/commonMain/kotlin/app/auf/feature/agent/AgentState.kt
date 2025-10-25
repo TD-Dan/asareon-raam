@@ -23,11 +23,11 @@ data class AgentInstance(
     @Transient
     val errorMessage: String? = null,
 
-    // ADDED: The "Awareness Frontier". Tracks the ID of the last message seen in the subscribed session.
+    // The "Awareness Frontier". Tracks the ID of the last message seen in the subscribed session.
     @Transient
     val lastSeenMessageId: String? = null,
 
-    // ADDED: The "Commitment Frontier". A snapshot of the awareness frontier when a cognitive cycle begins.
+    // The "Commitment Frontier". A snapshot of the awareness frontier when a cognitive cycle begins.
     @Transient
     val processingFrontierMessageId: String? = null
 )
@@ -42,17 +42,21 @@ data class AgentRuntimeState(
     val editingAgentId: String? = null,
 
     /**
-     * MODIFIED: A simplified, transient map tracking the single message ID of each agent's active avatar card.
+     * REFACTORED: A transient map tracking the message ID and session ID of each agent's active avatar card.
+     * This solves the bug where the feature would try to delete a card from the wrong session.
      *
-     * Structure: Map<agentId, messageId>
-     * Example: { "agent-1": "msg-abc" }
-     *
-     * This is a runtime state and is NOT persisted.
+     * Structure: Map<agentId, AvatarCardInfo>
      */
     @Transient
-    val agentAvatarCardIds: Map<String, String> = emptyMap(),
+    val agentAvatarCardIds: Map<String, AvatarCardInfo> = emptyMap(),
 
     /** A transient field to reliably pass the IDs of agents who need their config persisted from the reducer to the onAction handler. */
     @Transient
     val agentsToPersist: Set<String>? = null
-) : FeatureState
+) : FeatureState {
+    /**
+     * REFACTORED: A new data class to hold all necessary information about an avatar card's location.
+     */
+    @Serializable
+    data class AvatarCardInfo(val messageId: String, val sessionId: String)
+}§
