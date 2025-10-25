@@ -101,8 +101,10 @@ class GeminiProvider(
             return GatewayResponse(null, "Blocked by provider: $it", correlationId)
         }
 
-        val finishReason = response.candidates?.firstOrNull()?.finishReason
-        if (finishReason == "STOP") {
+        // REFACTOR: Path 4: Successful but empty response (e.g., STOP reason or no candidates provided).
+        // If there's no error, no block, and no content, it's a valid empty turn.
+        if (response.candidates.isNullOrEmpty()) {
+            platformDependencies.log(LogLevel.INFO, id, "Received a valid, empty response from Gemini for correlationId '$correlationId'. Treating as a completed turn.")
             return GatewayResponse("", null, correlationId)
         }
 
@@ -165,9 +167,8 @@ class GeminiProvider(
 
             parseResponse(responseBody, request.correlationId)
         } catch (e: CancellationException) {
-            // REFACTOR: Catch CancellationException specifically to prevent it from being treated as a runtime error.
             platformDependencies.log(LogLevel.INFO, id, "Gemini request with correlationId '${request.correlationId}' was cancelled.")
-            throw e // Re-throw to allow the coroutine to terminate gracefully.
+            throw e
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, id, "Content generation failed: ${e.stackTraceToString()}")
             val userMessage = mapExceptionToUserMessage(e)
