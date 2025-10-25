@@ -206,6 +206,9 @@ class AgentRuntimeFeature(
             waitingSinceTimestamp = if (clearTimers) null else agentToUpdate.waitingSinceTimestamp,
             lastMessageReceivedTimestamp = if (clearTimers) null else agentToUpdate.lastMessageReceivedTimestamp,
             processingSinceTimestamp = if (isStartingProcessing) platformDependencies.getSystemTimeMillis() else if (isStoppingProcessing) null else agentToUpdate.processingSinceTimestamp,
+            // FIX: When an agent stops processing, its commitment frontier must be cleared.
+            // It will be re-established from the awareness frontier when the next turn begins.
+            processingFrontierMessageId = if (isStoppingProcessing) null else agentToUpdate.processingFrontierMessageId,
             processingStep = if (isStoppingProcessing) null else agentToUpdate.processingStep
         )
         return currentFeatureState.copy(agents = currentFeatureState.agents + (agentId to updatedAgent))
@@ -241,8 +244,10 @@ class AgentRuntimeFeature(
                     lastSeenMessageId = messageId, lastMessageReceivedTimestamp = currentTime,
                     waitingSinceTimestamp = agent.waitingSinceTimestamp ?: currentTime
                 )
-            } else if (agent.id == senderId) {
-                if (isAvatarCard(payload)) agent else agent.copy(processingFrontierMessageId = messageId)
+                // FIX: An agent's own text response should update its own awareness frontier (lastSeenMessageId).
+                // The commitment frontier (processingFrontierMessageId) is ONLY set when a turn begins.
+            } else if (agent.id == senderId && !isAvatarCard(payload)) {
+                agent.copy(lastSeenMessageId = messageId)
             } else {
                 agent
             }
@@ -339,14 +344,12 @@ class AgentRuntimeFeature(
                     updateAgentAvatarCard(agentId, AgentStatus.ERROR, "Cannot start turn: Agent not subscribed to a session.", store)
                     return
                 }
-                // FIX: Only update the processing step for a preview. For a direct turn, update the full card.
-                if (agent.turnMode == TurnMode.PREVIEW) {
-                    store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
-                        put("agentId", agentId); put("step", "Requesting Ledger")
-                    }))
-                } else {
+                if (agent.turnMode == TurnMode.DIRECT) {
                     updateAgentAvatarCard(agentId, AgentStatus.PROCESSING, null, store)
                 }
+                store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+                    put("agentId", agentId); put("step", "Requesting Ledger")
+                }))
                 store.dispatch(this.name, Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject {
                     put("sessionId", sessionId); put("correlationId", agentId)
                 }))
@@ -356,7 +359,6 @@ class AgentRuntimeFeature(
                 val agent = agentState.agents[agentId] ?: return
                 val previewData = agent.stagedPreviewData ?: return
 
-                // FIX: This is now the single point of truth for starting a PREVIEWED turn.
                 updateAgentAvatarCard(agentId, AgentStatus.PROCESSING, null, store)
 
                 store.dispatch(this.name, Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
@@ -371,7 +373,6 @@ class AgentRuntimeFeature(
             ActionNames.AGENT_DISCARD_PREVIEW -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[agentId]
-                // FIX: When discarding, if the agent wasn't actually processing, clear its processing step.
                 if (agent?.status != AgentStatus.PROCESSING) {
                     store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
                         put("agentId", agentId); put("step", JsonNull)

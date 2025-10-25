@@ -17,6 +17,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -50,23 +51,24 @@ class AgentRuntimeFeatureT3SessionPeerTest {
             .build(platform = platform)
 
         // ACT: Simulate the agent being loaded from disk
-        // FIX: Provide the explicit serializer to the encodeToJsonElement function.
-        val loadAction = Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, Json.encodeToJsonElement(AgentInstance.serializer(), agent1) as JsonObject)
+        val loadAction = Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, Json.encodeToJsonElement(agent1) as JsonObject)
         harness.store.dispatch("agent", loadAction)
 
-        // ASSERT
+        // ASSERT: Verify actions
         val postAction = harness.processedActions.findLast { it.name == ActionNames.SESSION_POST }
         assertNotNull(postAction, "An action to post the avatar card should have been dispatched.")
         assertEquals("sid-A", postAction.payload?.get("session")?.jsonPrimitive?.content)
         assertNull(postAction.payload?.get("afterMessageId"), "Initial post should have no 'after' ID, appending to the end.")
+
+        // REFACTOR: Close the Assertion Gap. Verify the final state of the SessionFeature.
         val finalSessionState = harness.store.state.value.featureStates["session"] as SessionState
-        assertEquals(2, finalSessionState.sessions["sid-A"]?.ledger?.size)
-        assertTrue(finalSessionState.sessions["sid-A"]?.ledger?.last()?.metadata?.get("render_as_partial")?.jsonPrimitive?.boolean ?: false)
+        val finalLedger = finalSessionState.sessions["sid-A"]!!.ledger
+        assertEquals(2, finalLedger.size, "Ledger should contain the original message and the new avatar card.")
+        assertTrue(finalLedger.last().metadata?.get("render_as_partial")?.jsonPrimitive?.boolean ?: false, "The last item should be an avatar card.")
     }
 
     @Test
     fun `when a new message arrives an IDLE agent transitions to WAITING and moves its card`() = runTest {
-        // FIX: Instantiate AgentRuntimeState with the correct Map<String, AvatarCardInfo> type.
         val initialAvatarCards = mapOf(agent1.id to AgentRuntimeState.AvatarCardInfo("card-1", "sid-A"))
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
@@ -82,26 +84,31 @@ class AgentRuntimeFeatureT3SessionPeerTest {
         })
         harness.store.dispatch("ui", userPostAction)
 
-        // ASSERT
+        // ASSERT (Agent State)
         val finalAgentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
         assertEquals(AgentStatus.WAITING, finalAgentState.agents[agent1.id]?.status)
 
+        // ASSERT (Actions)
         val deleteAction = harness.processedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
         assertNotNull(deleteAction)
         assertEquals("card-1", deleteAction.payload?.get("messageId")?.jsonPrimitive?.content)
 
-        val newCardPostAction = harness.processedActions.findLast { it.name == ActionNames.SESSION_POST }
-        assertNotNull(newCardPostAction)
+        // REFACTOR: Close the Assertion Gap. Verify the final state of the SessionFeature.
         val finalSessionState = harness.store.state.value.featureStates["session"] as SessionState
-        val userMessageId = finalSessionState.sessions["sid-A"]?.ledger?.find { it.senderId == "user" }?.id
-        assertEquals(userMessageId, newCardPostAction.payload?.get("afterMessageId")?.jsonPrimitive?.content, "New card should be posted after the new user message.")
+        val finalLedger = finalSessionState.sessions["sid-A"]!!.ledger
+        val userMessageId = finalLedger.find { it.senderId == "user" }?.id
+        val newCard = finalLedger.last()
+
+        assertEquals(2, finalLedger.size, "Ledger should contain the user message and one avatar card.")
+        assertEquals(1, finalLedger.count { it.metadata?.get("render_as_partial")?.jsonPrimitive?.boolean == true }, "There should be exactly one avatar card.")
+        assertEquals(userMessageId, finalAgentState.agents[agent1.id]?.lastSeenMessageId, "Agent's awareness frontier should be the user message.")
+        assertEquals("WAITING", newCard.metadata?.get("agentStatus")?.jsonPrimitive?.content)
     }
 
     @Test
     fun `when triggered a WAITING agent transitions to PROCESSING and locks its card at the commitment frontier`() = runTest {
         val initialUserMessage = LedgerEntry("msg-user-1", 1L, "user", "Prompt", emptyList())
         val agent = agent1.copy(status = AgentStatus.WAITING, lastSeenMessageId = "msg-user-1")
-        // FIX: Instantiate AgentRuntimeState with the correct Map<String, AvatarCardInfo> type.
         val initialAvatarCards = mapOf(agent.id to AgentRuntimeState.AvatarCardInfo("card-waiting", "sid-A"))
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
@@ -115,21 +122,26 @@ class AgentRuntimeFeatureT3SessionPeerTest {
         val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) })
         harness.store.dispatch("ui", triggerAction)
 
-        // ASSERT
+        // ASSERT (Agent State)
         val finalAgentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
         assertEquals(AgentStatus.PROCESSING, finalAgentState.agents[agent.id]?.status)
         assertEquals("msg-user-1", finalAgentState.agents[agent.id]?.processingFrontierMessageId, "Commitment frontier must be locked.")
 
-        val newCardPostAction = harness.processedActions.findLast { it.name == ActionNames.SESSION_POST }
-        assertNotNull(newCardPostAction)
-        assertEquals("msg-user-1", newCardPostAction.payload?.get("afterMessageId")?.jsonPrimitive?.content, "PROCESSING card should be posted after the commitment frontier.")
+        // REFACTOR: Close the Assertion Gap. Verify the final state of the SessionFeature.
+        val finalSessionState = harness.store.state.value.featureStates["session"] as SessionState
+        val finalLedger = finalSessionState.sessions["sid-A"]!!.ledger
+        val newCard = finalLedger.last()
+
+        assertEquals(2, finalLedger.size, "Ledger should contain the user message and one PROCESSING avatar card.")
+        assertEquals(1, finalLedger.count { it.metadata?.get("render_as_partial")?.jsonPrimitive?.boolean == true }, "There should be exactly one avatar card.")
+        assertEquals(initialUserMessage.id, newCard.metadata?.get("afterMessageId_DEBUG"), "PROCESSING card should be positioned after the commitment frontier.")
+        assertEquals("PROCESSING", newCard.metadata?.get("agentStatus")?.jsonPrimitive?.content)
     }
 
     @Test
     fun `when a new message arrives while PROCESSING the awareness frontier updates but the card remains`() = runTest {
         val initialUserMessage = LedgerEntry("msg-user-1", 1L, "user", "Prompt", emptyList())
         val agent = agent1.copy(status = AgentStatus.PROCESSING, processingFrontierMessageId = "msg-user-1")
-        // FIX: Instantiate AgentRuntimeState with the correct Map<String, AvatarCardInfo> type.
         val initialAvatarCards = mapOf(agent.id to AgentRuntimeState.AvatarCardInfo("card-processing", "sid-A"))
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
@@ -145,16 +157,19 @@ class AgentRuntimeFeatureT3SessionPeerTest {
         })
         harness.store.dispatch("ui", userPostAction)
 
-        // ASSERT
+        // ASSERT (Agent State)
         val finalAgentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
         val finalSessionState = harness.store.state.value.featureStates["session"] as SessionState
-        val secondMessageId = finalSessionState.sessions["sid-A"]?.ledger?.last()?.id
+        val secondMessageId = finalSessionState.sessions["sid-A"]?.ledger?.last { it.senderId == "user" }?.id
 
         assertEquals(AgentStatus.PROCESSING, finalAgentState.agents[agent.id]?.status, "Agent should still be processing.")
         assertEquals(secondMessageId, finalAgentState.agents[agent.id]?.lastSeenMessageId, "Awareness frontier should update.")
         assertEquals("msg-user-1", finalAgentState.agents[agent.id]?.processingFrontierMessageId, "Commitment frontier should NOT change.")
 
-        val deleteAction = harness.processedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
-        assertNull(deleteAction, "No card should be moved while agent is processing.")
+        // REFACTOR: Close the Assertion Gap. Verify the final state of the SessionFeature.
+        val finalLedger = finalSessionState.sessions["sid-A"]!!.ledger
+        assertEquals(3, finalLedger.size, "Ledger should contain both user messages and the original processing card.")
+        assertEquals(1, finalLedger.count { it.metadata?.get("render_as_partial")?.jsonPrimitive?.boolean == true }, "There should still be only one avatar card.")
+        assertEquals("card-processing", finalLedger.find { it.id == "card-processing" }?.id, "The original card should not have been moved or deleted.")
     }
 }
