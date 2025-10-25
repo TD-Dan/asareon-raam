@@ -21,6 +21,15 @@
       }
     },
     {
+      "action_name": "agent.CLONE",
+      "summary": "Creates a new agent instance by cloning an existing one.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "agentId": { "type": "string" } },
+        "required": [ "agentId" ]
+      }
+    },
+    {
       "action_name":"agent.UPDATE_CONFIG",
       "summary":"Updates the configuration of an existing agent instance. All payload properties are optional.",
       "payload_schema":{
@@ -67,17 +76,42 @@
       }
     },
     {
-      "action_name":"agent.TRIGGER_MANUAL_TURN",
-      "summary":"Manually triggers a single cognitive cycle for a specific agent. The agent will determine its own context from the ledger.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{ "agentId":{ "type":"string" } },
-        "required":[ "agentId" ]
+      "action_name": "agent.INITIATE_TURN",
+      "summary": "A unified action to start an agent's turn, either directly or by first entering a preview mode.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string" },
+          "preview": {
+            "type": "boolean",
+            "default": false,
+            "description": "If true, the turn context will be staged for user review before execution."
+          }
+        },
+        "required": [ "agentId" ]
+      }
+    },
+    {
+      "action_name": "agent.EXECUTE_PREVIEWED_TURN",
+      "summary": "Executes the turn that was previously staged for preview.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "agentId": { "type": "string" } },
+        "required": [ "agentId" ]
+      }
+    },
+    {
+      "action_name": "agent.DISCARD_PREVIEW",
+      "summary": "Discards a turn that was staged for preview and navigates back.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "agentId": { "type": "string" } },
+        "required": [ "agentId" ]
       }
     },
     {
       "action_name":"agent.CANCEL_TURN",
-      "summary":"Cancels an agent's currently processing turn.",
+      "summary":"Cancels an agent's currently in-flight, processing turn.",
       "payload_schema":{
         "type":"object",
         "properties":{ "agentId":{ "type":"string" } },
@@ -113,6 +147,19 @@
       "action_name": "agent.internal.CHECK_AUTOMATIC_TRIGGERS",
       "summary": "[INTERNAL] Dispatched by a timer to check if any automatic agents should start their cognitive cycle.",
       "payload_schema": null
+    },
+    {
+      "action_name": "agent.internal.SET_PREVIEW_DATA",
+      "summary": "[INTERNAL] Saves the complete preview data (agnostic and raw) received from the Gateway.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string" },
+          "agnosticRequest": { "type": "object" },
+          "rawRequestJson": { "type": "string" }
+        },
+        "required": [ "agentId", "agnosticRequest", "rawRequestJson" ]
+      }
     },
     {
       "action_name":"agent.internal.CONFIRM_DELETE",
