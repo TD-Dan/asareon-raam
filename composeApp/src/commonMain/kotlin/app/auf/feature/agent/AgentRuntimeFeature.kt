@@ -12,6 +12,8 @@ import app.auf.core.generated.ActionNames
 import app.auf.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
@@ -33,6 +35,18 @@ class AgentRuntimeFeature(
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val agentConfigFILENAME = "agent.json"
     private val activeTurnJobs = mutableMapOf<String, Job>()
+
+    // --- LIFECYCLE ---
+
+    override fun init(store: Store) {
+        // Start the ticker coroutine to check for automatic triggers.
+        coroutineScope.launch {
+            while (true) {
+                delay(1000) // Check every second
+                store.dispatch(name, Action(ActionNames.AGENT_INTERNAL_CHECK_AUTOMATIC_TRIGGERS))
+            }
+        }
+    }
 
     // --- REDUCER (Pure State Logic) ---
 
@@ -336,6 +350,25 @@ class AgentRuntimeFeature(
                     if (agent.primarySessionId == payload.sessionId && agent.id != payload.entry["senderId"]?.jsonPrimitive?.content) {
                         if (agent.status == AgentStatus.IDLE) {
                             updateAgentAvatarCard(agent.id, AgentStatus.WAITING, null, store)
+                        }
+                    }
+                }
+            }
+            ActionNames.AGENT_INTERNAL_CHECK_AUTOMATIC_TRIGGERS -> {
+                val currentTime = platformDependencies.getSystemTimeMillis()
+                agentState.agents.values.forEach { agent ->
+                    if (agent.automaticMode && agent.status == AgentStatus.WAITING && agent.waitingSinceTimestamp != null && agent.lastMessageReceivedTimestamp != null) {
+                        val waitedFor = (currentTime - agent.lastMessageReceivedTimestamp) / 1000
+                        val totalWait = (currentTime - agent.waitingSinceTimestamp) / 1000
+
+                        val debounceTrigger = waitedFor >= agent.autoWaitTimeSeconds
+                        val timeoutTrigger = totalWait >= agent.autoMaxWaitTimeSeconds
+
+                        if (debounceTrigger || timeoutTrigger) {
+                            platformDependencies.log(LogLevel.DEBUG, name, "Agent '${agent.name}' automatically triggered. Reason: ${if (debounceTrigger) "debounce" else "timeout"}")
+                            store.dispatch(this.name, Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject {
+                                put("agentId", agent.id)
+                            }))
                         }
                     }
                 }
