@@ -13,7 +13,9 @@
           "modelProvider":{ "type":"string" },
           "modelName":{ "type":"string" },
           "primarySessionId":{ "type":[ "string", "null" ], "description":"The session this agent will post its responses to." },
-          "automaticMode":{ "type":"boolean", "default":false }
+          "automaticMode":{ "type":"boolean", "default":false },
+          "autoWaitTimeSeconds": { "type": "integer" },
+          "autoMaxWaitTimeSeconds": { "type": "integer" }
         },
         "required":[ "name" ]
       }
@@ -30,7 +32,9 @@
           "modelProvider":{ "type":"string" },
           "modelName":{ "type":"string" },
           "primarySessionId":{ "type":[ "string", "null" ] },
-          "automaticMode":{ "type":"boolean" }
+          "automaticMode":{ "type":"boolean" },
+          "autoWaitTimeSeconds": { "type": "integer" },
+          "autoMaxWaitTimeSeconds": { "type": "integer" }
         },
         "required":[ "agentId" ]
       }
@@ -95,6 +99,11 @@
       "action_name":"agent.internal.AGENT_LOADED",
       "summary":"[INTERNAL] Dispatched after an agent's configuration has been read from its sandbox. Used to populate the feature's state.",
       "payload_schema":{ "type":"object", "description":"A single AgentInstance object." }
+    },
+    {
+      "action_name": "agent.internal.CHECK_AUTOMATIC_TRIGGERS",
+      "summary": "[INTERNAL] Dispatched by a timer to check if any automatic agents should start their cognitive cycle.",
+      "payload_schema": null
     },
     {
       "action_name":"agent.internal.CONFIRM_DELETE",

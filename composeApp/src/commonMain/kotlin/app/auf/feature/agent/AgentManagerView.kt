@@ -181,11 +181,22 @@ private fun AgentEditorView(
     agentState: AgentRuntimeState,
     store: Store
 ) {
+    // REFACTOR: Use remember(agent.id) to reset local state when the user switches to editing a different agent.
     var agentNameInput by remember(agent.id) { mutableStateOf(agent.name) }
+    var autoWaitTimeInput by remember(agent.id) { mutableStateOf(agent.autoWaitTimeSeconds.toString()) }
+    var autoMaxWaitTimeInput by remember(agent.id) { mutableStateOf(agent.autoMaxWaitTimeSeconds.toString()) }
+
     val onSave = {
         store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
             put("agentId", agent.id)
             put("name", agentNameInput)
+            // Only include timer values if they are valid integers.
+            autoWaitTimeInput.toIntOrNull()?.let {
+                put("autoWaitTimeSeconds", it)
+            }
+            autoMaxWaitTimeInput.toIntOrNull()?.let {
+                put("autoMaxWaitTimeSeconds", it)
+            }
         }))
         store.dispatch("ui.agentManager", Action(ActionNames.AGENT_SET_EDITING, buildJsonObject { put("agentId", null as String?) }))
     }
@@ -228,6 +239,24 @@ private fun AgentEditorView(
                     }))
                 }
             )
+        }
+
+        // New section for automatic mode settings
+        if (agent.automaticMode) {
+            Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = autoWaitTimeInput,
+                    onValueChange = { autoWaitTimeInput = it.filter { c -> c.isDigit() } },
+                    label = { Text("Auto Wait (s)") },
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = autoMaxWaitTimeInput,
+                    onValueChange = { autoMaxWaitTimeInput = it.filter { c -> c.isDigit() } },
+                    label = { Text("Max Wait (s)") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
         Row (
             Modifier.fillMaxWidth(),

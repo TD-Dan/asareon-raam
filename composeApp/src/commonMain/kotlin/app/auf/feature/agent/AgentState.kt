@@ -16,6 +16,10 @@ data class AgentInstance(
     val modelName: String,
     val primarySessionId: String? = null,
     val automaticMode: Boolean = false,
+    // The time in seconds to wait for user input to stop before triggering a turn.
+    val autoWaitTimeSeconds: Int = 5,
+    // The maximum time in seconds an agent can be in the WAITING state before being forced to trigger.
+    val autoMaxWaitTimeSeconds: Int = 30,
 
     @Transient
     val status: AgentStatus = AgentStatus.IDLE,
@@ -29,7 +33,15 @@ data class AgentInstance(
 
     // The "Commitment Frontier". A snapshot of the awareness frontier when a cognitive cycle begins.
     @Transient
-    val processingFrontierMessageId: String? = null
+    val processingFrontierMessageId: String? = null,
+
+    // The system timestamp (milliseconds) when the agent first entered the WAITING state.
+    @Transient
+    val waitingSinceTimestamp: Long? = null,
+
+    // The system timestamp (milliseconds) of the last message that the agent observed.
+    @Transient
+    val lastMessageReceivedTimestamp: Long? = null,
 )
 
 @Serializable
@@ -41,12 +53,6 @@ data class AgentRuntimeState(
     @Transient
     val editingAgentId: String? = null,
 
-    /**
-     * REFACTORED: A transient map tracking the message ID and session ID of each agent's active avatar card.
-     * This solves the bug where the feature would try to delete a card from the wrong session.
-     *
-     * Structure: Map<agentId, AvatarCardInfo>
-     */
     @Transient
     val agentAvatarCardIds: Map<String, AvatarCardInfo> = emptyMap(),
 
@@ -54,9 +60,6 @@ data class AgentRuntimeState(
     @Transient
     val agentsToPersist: Set<String>? = null
 ) : FeatureState {
-    /**
-     * REFACTORED: A new data class to hold all necessary information about an avatar card's location.
-     */
     @Serializable
     data class AvatarCardInfo(val messageId: String, val sessionId: String)
 }

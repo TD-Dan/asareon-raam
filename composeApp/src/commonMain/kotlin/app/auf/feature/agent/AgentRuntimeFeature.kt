@@ -93,8 +93,16 @@ class AgentRuntimeFeature(
         val modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: "gemini-pro"
         val primarySessionId = payload["primarySessionId"]?.jsonPrimitive?.contentOrNull
         val automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: false
+        val autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: 5
+        val autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: 30
         val newAgentId = platformDependencies.generateUUID()
-        val newAgent = AgentInstance(id = newAgentId, name = agentName, personaId = personaId, modelProvider = modelProvider, modelName = modelName, primarySessionId = primarySessionId, automaticMode = automaticMode)
+        val newAgent = AgentInstance(
+            id = newAgentId, name = agentName, personaId = personaId,
+            modelProvider = modelProvider, modelName = modelName, primarySessionId = primarySessionId,
+            automaticMode = automaticMode,
+            autoWaitTimeSeconds = autoWaitTimeSeconds,
+            autoMaxWaitTimeSeconds = autoMaxWaitTimeSeconds
+        )
         return currentFeatureState.copy(agents = currentFeatureState.agents + (newAgentId to newAgent), editingAgentId = newAgentId)
     }
 
@@ -116,7 +124,9 @@ class AgentRuntimeFeature(
             modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelProvider,
             modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelName,
             primarySessionId = if ("primarySessionId" in payload) payload["primarySessionId"]?.jsonPrimitive?.contentOrNull else agentToUpdate.primarySessionId,
-            automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: agentToUpdate.automaticMode
+            automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: agentToUpdate.automaticMode,
+            autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoWaitTimeSeconds,
+            autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoMaxWaitTimeSeconds
         )
         return currentFeatureState.copy(agents = currentFeatureState.agents + (agentId to updatedAgent))
     }
@@ -155,7 +165,16 @@ class AgentRuntimeFeature(
             return null
         }
         val newErrorMessage = if (newStatus == AgentStatus.ERROR) payload["error"]?.jsonPrimitive?.contentOrNull else null
-        val updatedAgent = agentToUpdate.copy(status = newStatus, errorMessage = newErrorMessage)
+
+        // When transitioning out of WAITING, clear the timers.
+        val clearTimers = agentToUpdate.status == AgentStatus.WAITING && newStatus != AgentStatus.WAITING
+        val updatedAgent = agentToUpdate.copy(
+            status = newStatus,
+            errorMessage = newErrorMessage,
+            waitingSinceTimestamp = if (clearTimers) null else agentToUpdate.waitingSinceTimestamp,
+            lastMessageReceivedTimestamp = if (clearTimers) null else agentToUpdate.lastMessageReceivedTimestamp
+        )
+
         return currentFeatureState.copy(agents = currentFeatureState.agents + (agentId to updatedAgent))
     }
 
@@ -174,10 +193,24 @@ class AgentRuntimeFeature(
         val entry = payload.entry
         val messageId = entry["id"]?.jsonPrimitive?.contentOrNull ?: return null
         val sessionId = payload.sessionId
+        val senderId = entry["senderId"]?.jsonPrimitive?.contentOrNull
+        val currentTime = platformDependencies.getSystemTimeMillis()
 
-        // Unconditionally update the awareness frontier for all subscribed agents.
+        // Unconditionally update the awareness frontier for all subscribed agents that are not the sender.
         val affectedAgents = currentFeatureState.agents.mapValues { (_, agent) ->
-            if (agent.primarySessionId == sessionId) agent.copy(lastSeenMessageId = messageId) else agent
+            if (agent.primarySessionId == sessionId && agent.id != senderId) {
+                agent.copy(
+                    lastSeenMessageId = messageId,
+                    lastMessageReceivedTimestamp = currentTime,
+                    // If the agent was IDLE, this is the moment it starts waiting.
+                    waitingSinceTimestamp = agent.waitingSinceTimestamp ?: currentTime
+                )
+            } else if (agent.id == senderId) {
+                // The agent's own message becomes its new commitment frontier.
+                agent.copy(processingFrontierMessageId = messageId)
+            } else {
+                agent
+            }
         }
 
         // Check if the message was an avatar card being posted, and if so, record its ID.
@@ -300,8 +333,8 @@ class AgentRuntimeFeature(
                 if (isAvatarCard(payload)) return
 
                 latestState.agents.values.forEach { agent ->
-                    if (agent.primarySessionId == payload.sessionId && agent.id != payload.entry["senderId"]?.jsonPrimitive?.contentOrNull) {
-                        if (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING) {
+                    if (agent.primarySessionId == payload.sessionId && agent.id != payload.entry["senderId"]?.jsonPrimitive?.content) {
+                        if (agent.status == AgentStatus.IDLE) {
                             updateAgentAvatarCard(agent.id, AgentStatus.WAITING, null, store)
                         }
                     }
