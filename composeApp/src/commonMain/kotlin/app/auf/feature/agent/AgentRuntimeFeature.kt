@@ -153,7 +153,13 @@ class AgentRuntimeFeature(
         val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return null
         val agentToUpdate = currentFeatureState.agents[agentId] ?: return null
         val newStatusString = payload["status"]?.jsonPrimitive?.contentOrNull ?: return null
-        val newStatus = try { AgentStatus.valueOf(newStatusString) } catch (e: Exception) { return null }
+        val newStatus = try {
+            AgentStatus.valueOf(newStatusString)
+        } catch (e: Exception) {
+            // FIX 1: Restore the log call.
+            platformDependencies.log(LogLevel.ERROR, name, "Received invalid agent status string '$newStatusString' for agent '$agentId'. Action ignored.")
+            return null
+        }
         val newErrorMessage = if (newStatus == AgentStatus.ERROR) payload["error"]?.jsonPrimitive?.contentOrNull else null
         val clearTimers = agentToUpdate.status == AgentStatus.WAITING && newStatus != AgentStatus.WAITING
         val isStartingProcessing = newStatus == AgentStatus.PROCESSING && agentToUpdate.status != AgentStatus.PROCESSING
@@ -375,7 +381,18 @@ class AgentRuntimeFeature(
     }
 
     private fun handleSessionLedgerResponse(payload: JsonObject, store: Store) {
-        val decoded = try { json.decodeFromJsonElement<LedgerResponsePayload>(payload) } catch (e: Exception) { return }
+        val decoded = try {
+            json.decodeFromJsonElement<LedgerResponsePayload>(payload)
+        } catch (e: Exception) {
+            // FIX 2: Restore the error handling logic.
+            val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
+            val errorMessage = "FATAL: Failed to parse session ledger."
+            platformDependencies.log(LogLevel.ERROR, name, "$errorMessage for agent '$agentId'. Error: ${e.message}")
+            if (agentId != null) {
+                updateAgentAvatarCard(agentId, AgentStatus.ERROR, errorMessage, store)
+            }
+            return
+        }
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[decoded.correlationId] ?: return
         store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
@@ -409,7 +426,24 @@ class AgentRuntimeFeature(
     }
 
     private fun handleGatewayResponse(payload: JsonObject, store: Store) {
-        val decoded = try { json.decodeFromJsonElement<GatewayResponsePayload>(payload) } catch (e: Exception) { return }
+        val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
+        // FIX 3: Restore the payload integrity guard.
+        if (agentId == null || ("rawContent" !in payload && "errorMessage" !in payload)) {
+            platformDependencies.log(LogLevel.ERROR, name, "FATAL: Received corrupted gateway response payload for agent '$agentId'. Missing 'rawContent' and 'errorMessage' keys. Payload: $payload")
+            if (agentId != null) {
+                updateAgentAvatarCard(agentId, AgentStatus.ERROR, "FATAL: Corrupted response from gateway.", store)
+            }
+            return
+        }
+
+        val decoded = try {
+            json.decodeFromJsonElement<GatewayResponsePayload>(payload)
+        } catch (e: Exception) {
+            platformDependencies.log(LogLevel.ERROR, name, "FATAL: Failed to parse gateway response for agent '$agentId'. Error: ${e.message}")
+            updateAgentAvatarCard(agentId, AgentStatus.ERROR, "FATAL: Could not parse gateway response.", store)
+            return
+        }
+
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[decoded.correlationId] ?: return
         val sessionId = agent.primarySessionId ?: return

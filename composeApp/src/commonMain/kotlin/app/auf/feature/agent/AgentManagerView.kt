@@ -130,14 +130,13 @@ private fun AgentReadOnlyView(
 ) {
     val sessionName = agent.primarySessionId?.let { agentState.sessionNames[it] } ?: "Not Subscribed"
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        AgentControlCard(agent, store, platformDependencies)
         SelectionContainer {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                // Name is now displayed in AgentControlCard, so it's removed from here to avoid duplication.
                 Text("Session: $sessionName", style = MaterialTheme.typography.bodyMedium)
                 Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
             }
         }
-        AgentControlCard(agent, store, platformDependencies)
     }
 }
 

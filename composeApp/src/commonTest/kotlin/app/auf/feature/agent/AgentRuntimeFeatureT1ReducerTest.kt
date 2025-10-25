@@ -77,7 +77,7 @@ class AgentRuntimeFeatureT1ReducerTest {
         assertEquals(initialState, newState, "State should not be modified on a parsing failure.")
         val log = platform.capturedLogs.find { it.level == LogLevel.ERROR }
         assertNotNull(log, "An error should be logged for the invalid status.")
-        assertTrue(log.message.contains("Received invalid agent status string 'processing' for agent 'agent-1'"))
+        assertTrue(log.message.contains("Received invalid agent status string 'proccessing' for agent 'agent-1'"))
     }
 
     @Test
