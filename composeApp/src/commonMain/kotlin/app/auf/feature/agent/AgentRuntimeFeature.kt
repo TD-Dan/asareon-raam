@@ -225,8 +225,13 @@ class AgentRuntimeFeature(
                     waitingSinceTimestamp = agent.waitingSinceTimestamp ?: currentTime
                 )
             } else if (agent.id == senderId) {
-                // The agent's own message becomes its new commitment frontier.
-                agent.copy(processingFrontierMessageId = messageId)
+                // FIX: The agent's own message becomes its new commitment frontier,
+                // BUT ONLY if it's a real response, not a transient avatar card.
+                if (isAvatarCard(payload)) {
+                    agent // Do not advance frontier for status cards
+                } else {
+                    agent.copy(processingFrontierMessageId = messageId)
+                }
             } else {
                 agent
             }
@@ -425,9 +430,11 @@ class AgentRuntimeFeature(
     private fun handleSessionLedgerResponse(payload: JsonObject, store: Store) {
         val decoded = try { json.decodeFromJsonElement<LedgerResponsePayload>(payload) } catch (e: Exception) {
             val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
-            platformDependencies.log(LogLevel.ERROR, name, "FATAL: Failed to parse session ledger for agent '$agentId'. Error: ${e.message}")
+            // FIX: Unify error message for logging and for user-facing state.
+            val errorMessage = "FATAL: Failed to parse session ledger."
+            platformDependencies.log(LogLevel.ERROR, name, "$errorMessage for agent '$agentId'. Error: ${e.message}")
             if (agentId != null) {
-                updateAgentAvatarCard(agentId, AgentStatus.ERROR, "FATAL: Could not parse session ledger.", store)
+                updateAgentAvatarCard(agentId, AgentStatus.ERROR, errorMessage, store)
             }
             return
         }

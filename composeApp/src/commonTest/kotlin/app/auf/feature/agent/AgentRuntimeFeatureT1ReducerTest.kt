@@ -44,7 +44,6 @@ class AgentRuntimeFeatureT1ReducerTest {
 
     @Test
     fun `reducer on AGENT_TRIGGER_MANUAL_TURN should lock in the commitment frontier`() = runTest {
-        // FIX: Use named arguments for AgentInstance for clarity and robustness.
         val agent = AgentInstance("agent-1", "Test", "", "", "", lastSeenMessageId = "msg-aware-frontier")
         val initialState = harness.store.state.value.copy(
             featureStates = harness.store.state.value.featureStates +
@@ -105,7 +104,6 @@ class AgentRuntimeFeatureT1ReducerTest {
         val newAgentState = newState.featureStates["agent"] as? AgentRuntimeState
 
         assertNotNull(newAgentState)
-        // FIX: Assert against the 'messageId' property of the AvatarCardInfo object.
         assertEquals("msg-new-card-1", newAgentState.agentAvatarCardIds["agent-1"]?.messageId)
     }
 
@@ -129,11 +127,15 @@ class AgentRuntimeFeatureT1ReducerTest {
 
         val log = platform.capturedLogs.find { it.level == LogLevel.ERROR }
         assertNotNull(log, "A fatal error should be logged.")
-        assertTrue(log.message.contains("FATAL: Failed to parse session ledger."))
+
+        // FIX: Update assertion to be more robust and check the unified error message.
+        val expectedError = "FATAL: Failed to parse session ledger."
+        assertTrue(log.message.contains(expectedError), "Log message should contain the unified error string.")
 
         val setStatusAction = harness.processedActions.find { it.name == ActionNames.AGENT_INTERNAL_SET_STATUS }
         assertNotNull(setStatusAction, "Should have dispatched an action to set the status.")
         assertEquals("ERROR", setStatusAction.payload?.get("status")?.jsonPrimitive?.content)
+        assertEquals(expectedError, setStatusAction.payload?.get("error")?.jsonPrimitive?.content)
 
         val postAction = harness.processedActions.find { it.name == ActionNames.SESSION_POST }
         assertNotNull(postAction, "Should have dispatched a POST to create the new ERROR avatar card.")
@@ -143,7 +145,6 @@ class AgentRuntimeFeatureT1ReducerTest {
     @Test
     fun `beginCognitiveCycle should atomically delete old card before creating a new one`() = runTest {
         val agent = AgentInstance("agent-1", "Test", "", "", "", primarySessionId = "session-1")
-        // FIX: Instantiate AgentRuntimeState with the correct Map<String, AvatarCardInfo> type.
         val initialAvatarCards = mapOf("agent-1" to AgentRuntimeState.AvatarCardInfo("msg-idle-123", "session-1"))
         harness = TestEnvironment.create()
             .withFeature(feature)
