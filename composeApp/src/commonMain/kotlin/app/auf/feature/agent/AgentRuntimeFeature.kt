@@ -43,7 +43,12 @@ class AgentRuntimeFeature(
         coroutineScope.launch {
             while (true) {
                 delay(1000) // Check every second
-                store.dispatch(name, Action(ActionNames.AGENT_INTERNAL_CHECK_AUTOMATIC_TRIGGERS))
+                // Only dispatch the check action if there's an automatic agent that could possibly be triggered.
+                // This prevents constant log spam when all agents are idle.
+                val currentState = store.state.value.featureStates[name] as? AgentRuntimeState
+                if (currentState?.agents?.values?.any { it.status == AgentStatus.WAITING && it.automaticMode } == true) {
+                    store.dispatch(name, Action(ActionNames.AGENT_INTERNAL_CHECK_AUTOMATIC_TRIGGERS))
+                }
             }
         }
     }
