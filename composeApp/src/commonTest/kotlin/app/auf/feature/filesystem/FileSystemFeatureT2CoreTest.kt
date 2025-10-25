@@ -5,8 +5,11 @@ import app.auf.fakes.FakePlatformDependencies
 import app.auf.core.generated.ActionNames
 import app.auf.test.TestEnvironment
 import app.auf.util.BasePath
+import app.auf.util.FileEntry
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.Test
@@ -57,12 +60,12 @@ class FileSystemFeatureT2CoreTest {
             .withFeature(feature)
             .withInitialState(feature.name, initialState)
             .build(platform = platform)
+        // FIX: The `children` payload must be a correctly serialized JSON array of FileEntry objects.
         val payload = buildJsonObject {
             put("parentPath", "/a")
-            put("children", buildJsonObject {
-                put("path", "/a/file.txt")
-                put("isDirectory", false)
-            })
+            put("children", Json.encodeToJsonElement(listOf(
+                FileEntry("/a/file.txt", false)
+            )))
         }
         val action = Action(ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED, payload)
 

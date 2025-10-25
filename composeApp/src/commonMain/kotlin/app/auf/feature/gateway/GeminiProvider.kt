@@ -101,14 +101,14 @@ class GeminiProvider(
             return GatewayResponse(null, "Blocked by provider: $it", correlationId)
         }
 
-        // REFACTOR: Path 4: Successful but empty response (e.g., STOP reason or no candidates provided).
-        // If there's no error, no block, and no content, it's a valid empty turn.
-        if (response.candidates.isNullOrEmpty()) {
-            platformDependencies.log(LogLevel.INFO, id, "Received a valid, empty response from Gemini for correlationId '$correlationId'. Treating as a completed turn.")
+        // FIX: Path 4: If the API returned a valid response structure (candidates array is present),
+        // but there's no content, no error, and no block. This is a valid empty turn (e.g. finishReason: "STOP").
+        if (response.candidates != null) {
+            platformDependencies.log(LogLevel.INFO, id, "Received a valid response with no text content from Gemini for correlationId '$correlationId'. Treating as a completed empty turn.")
             return GatewayResponse("", null, correlationId)
         }
 
-        // Path 5 (Future-Proofing): Unrecognized response format
+        // Path 5 (Fallback): Unrecognized response format
         platformDependencies.log(
             LogLevel.ERROR,
             id,
