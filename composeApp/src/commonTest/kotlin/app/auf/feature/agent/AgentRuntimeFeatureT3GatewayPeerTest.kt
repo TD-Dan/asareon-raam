@@ -38,7 +38,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
 
     @Test
     fun `full cognitive cycle completes and sets agent to IDLE on success`() = runTest {
-        val triggerAction = Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", agent.id) })
+        val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) })
         harness.store.dispatch("ui", triggerAction)
 
         val stateAfterTrigger = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
@@ -67,7 +67,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
 
     @Test
     fun `full cognitive cycle transitions agent to ERROR on gateway failure`() = runTest {
-        harness.store.dispatch("ui", Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", agent.id) }))
+        harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) }))
         // NOTE: We skip the ledger response step as we are testing the gateway response directly.
         val gatewayErrorPayload = buildJsonObject {
             put("correlationId", agent.id)
@@ -83,7 +83,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
 
     @Test
     fun `full cognitive cycle transitions agent to ERROR on corrupted gateway response`() = runTest {
-        harness.store.dispatch("ui", Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", agent.id) }))
+        harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) }))
         // NOTE: We skip the ledger response step as we are testing the gateway response directly.
         val gatewayMismatchedPayload = buildJsonObject {
             put("correlationId", agent.id)

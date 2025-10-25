@@ -112,7 +112,7 @@ class AgentRuntimeFeatureT3SessionPeerTest {
             .build(platform = platform)
 
         // ACT: Trigger the agent's turn
-        val triggerAction = Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", agent.id) })
+        val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) })
         harness.store.dispatch("ui", triggerAction)
 
         // ASSERT

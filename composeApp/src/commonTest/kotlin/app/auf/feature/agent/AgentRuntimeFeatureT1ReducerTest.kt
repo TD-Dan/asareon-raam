@@ -49,7 +49,7 @@ class AgentRuntimeFeatureT1ReducerTest {
             featureStates = harness.store.state.value.featureStates +
                     ("agent" to AgentRuntimeState(agents = mapOf(agent.id to agent)))
         )
-        val triggerAction = Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", agent.id) })
+        val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) })
 
         val newState = feature.reducer(initialState, triggerAction)
         val newAgentState = newState.featureStates["agent"] as? AgentRuntimeState
@@ -152,7 +152,7 @@ class AgentRuntimeFeatureT1ReducerTest {
             .build(platform = platform)
 
         // ACT: Trigger a state change from IDLE to PROCESSING via the public action
-        val triggerAction = Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", "agent-1") })
+        val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", "agent-1") })
         harness.store.dispatch("ui", triggerAction)
 
         // ASSERT

@@ -71,13 +71,13 @@ class AgentRuntimeFeatureT3AutomaticPeerTest {
 
         val stateAfterPost = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
         assertEquals(AgentStatus.WAITING, stateAfterPost.agents[agent.id]?.status)
-        assertNull(harness.processedActions.find { it.name == ActionNames.AGENT_TRIGGER_MANUAL_TURN })
+        assertNull(harness.processedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN })
 
         // ACT: Advance time just past the debounce period
         advanceTimeAndRun(5001)
 
         // ASSERT
-        val triggerAction = harness.processedActions.findLast { it.name == ActionNames.AGENT_TRIGGER_MANUAL_TURN }
+        val triggerAction = harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }
         assertNotNull(triggerAction, "Agent should have triggered its turn after the debounce period.")
         assertEquals(agent.id, triggerAction.payload?.get("agentId")?.jsonPrimitive?.content)
     }
@@ -95,7 +95,7 @@ class AgentRuntimeFeatureT3AutomaticPeerTest {
 
         // ACT 2: Advance time, but not enough to trigger.
         advanceTimeAndRun(3000)
-        assertNull(harness.processedActions.find { it.name == ActionNames.AGENT_TRIGGER_MANUAL_TURN }, "Agent should not have triggered yet.")
+        assertNull(harness.processedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent should not have triggered yet.")
 
         // ACT 3: A second message arrives, resetting the timer.
         harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
@@ -105,13 +105,13 @@ class AgentRuntimeFeatureT3AutomaticPeerTest {
 
         // ACT 4: Advance time again. If timer didn't reset, it would have triggered by now.
         advanceTimeAndRun(3000)
-        assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_TRIGGER_MANUAL_TURN }, "Agent should not have triggered as timer should have reset.")
+        assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent should not have triggered as timer should have reset.")
 
         // ACT 5: Advance past the reset timer's deadline.
         advanceTimeAndRun(2001)
 
         // ASSERT
-        assertNotNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_TRIGGER_MANUAL_TURN }, "Agent should have triggered after the second message's debounce period.")
+        assertNotNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent should have triggered after the second message's debounce period.")
     }
 
     @Test
@@ -129,18 +129,18 @@ class AgentRuntimeFeatureT3AutomaticPeerTest {
         advanceTimeAndRun(8000) // T=8s
         harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject { put("session", "sid-A"); put("senderId", "user"); put("message", "Message 2") }))
         runCurrent()
-        assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_TRIGGER_MANUAL_TURN }, "Should not trigger at T=8s.")
+        assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Should not trigger at T=8s.")
 
         advanceTimeAndRun(8000) // T=16s
         harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject { put("session", "sid-A"); put("senderId", "user"); put("message", "Message 3") }))
         runCurrent()
-        assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_TRIGGER_MANUAL_TURN }, "Should not trigger at T=16s.")
+        assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Should not trigger at T=16s.")
 
         // ACT 3: Advance past the 20s max-wait time.
         advanceTimeAndRun(5000) // T=21s
 
         // ASSERT
-        assertNotNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_TRIGGER_MANUAL_TURN }, "Agent must trigger after max wait time is exceeded.")
+        assertNotNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent must trigger after max wait time is exceeded.")
     }
 
     @Test
@@ -160,6 +160,6 @@ class AgentRuntimeFeatureT3AutomaticPeerTest {
         advanceTimeAndRun(5000)
 
         // ASSERT
-        assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_TRIGGER_MANUAL_TURN }, "Manual agent should never trigger automatically.")
+        assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Manual agent should never trigger automatically.")
     }
 }

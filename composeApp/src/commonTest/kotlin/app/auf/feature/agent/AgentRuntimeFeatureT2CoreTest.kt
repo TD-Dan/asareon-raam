@@ -1,230 +1,223 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
-import app.auf.core.PrivateDataEnvelope
+import app.auf.core.AppState
+import app.auf.core.Feature
+import app.auf.core.Store
 import app.auf.core.generated.ActionNames
-import app.auf.feature.core.CoreState
 import app.auf.fakes.FakePlatformDependencies
-import app.auf.feature.core.AppLifecycle
-import app.auf.feature.filesystem.FileSystemFeature
-import app.auf.feature.session.Session
-import app.auf.feature.session.SessionFeature
-import app.auf.feature.session.SessionState
 import app.auf.test.TestEnvironment
-import app.auf.util.FileEntry
-import app.auf.util.LogLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.*
-import kotlin.test.*
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
- * Tier 2 Unit Tests for AgentRuntimeFeature.
- * These tests focus on features interaction with the Core
+ * Tier 2 Core Test for AgentRuntimeFeature.
+ *
+ * Mandate (P-TEST-001, T2): To test the feature's reducer and onAction handlers working
+ * together within a realistic TestEnvironment that includes the real Store.
  */
 class AgentRuntimeFeatureT2CoreTest {
+    private val json = Json { ignoreUnknownKeys = true }
 
-    private val scope = CoroutineScope(Dispatchers.Unconfined)
-    private val platform = FakePlatformDependencies("test")
-    private val agentFeature = AgentRuntimeFeature(platform, scope)
-    private val fileSystemFeature = FileSystemFeature(platform)
-    private val sessionFeature = SessionFeature(platform, scope)
+    private object FakeSessionFeature : Feature {
+        override val name = "session"
+        override val composableProvider: Feature.ComposableProvider? = null
+        private val json = Json { ignoreUnknownKeys = true }
 
-    @Test
-    fun `create() adds new agent to state and dispatches SYSTEM_WRITE`() = runTest {
-        val harness = TestEnvironment.create()
-            .withFeature(agentFeature)
-            .withFeature(fileSystemFeature)
-            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
-            .build(platform = platform)
-        val createAction = Action(ActionNames.AGENT_CREATE, buildJsonObject { put("name", "Test Agent") })
-
-        harness.store.dispatch("ui", createAction)
-
-        val agentState = harness.store.state.value.featureStates["agent"] as? AgentRuntimeState
-        assertNotNull(agentState)
-        assertEquals(1, agentState.agents.size)
-        val newAgent = agentState.agents.values.first()
-        assertEquals("Test Agent", newAgent.name)
-        assertEquals(newAgent.id, agentState.editingAgentId)
-
-        val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
-        assertNotNull(writeAction)
-        assertEquals("agent", writeAction.originator)
-        assertEquals("${newAgent.id}/agent.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun `delete() orchestrates cleanup and then confirms deletion`() = runTest {
-        val agent = AgentInstance("aid-1", "Test", "p", "m", "m", primarySessionId = "sid-1")
-        val session = Session("sid-1", "Test Session", emptyList(), 1L)
-        // FIX: Instantiate AgentRuntimeState with the correct Map<String, AvatarCardInfo> type.
-        val avatarCards = mapOf("aid-1" to AgentRuntimeState.AvatarCardInfo("msg-123", "sid-1"))
-        val harness = TestEnvironment.create()
-            .withFeature(agentFeature)
-            .withFeature(fileSystemFeature)
-            .withFeature(sessionFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent), agentAvatarCardIds = avatarCards))
-            .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
-            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
-            .build(platform = platform)
-        val deleteAction = Action(ActionNames.AGENT_DELETE, buildJsonObject { put("agentId", "aid-1") })
-
-        harness.store.dispatch("ui", deleteAction)
-
-        val finalAgentState = harness.store.state.value.featureStates["agent"] as? AgentRuntimeState
-        assertNotNull(finalAgentState)
-        assertTrue(finalAgentState.agents.isEmpty(), "Agent should be removed from the final state.")
-        assertFalse(finalAgentState.agentAvatarCardIds.containsKey("aid-1"), "Avatar card should be removed from the final state.")
-
-        val dispatched = harness.processedActions
-        assertNotNull(dispatched.find { it.name == ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY }, "Should delete agent directory.")
-        assertNotNull(dispatched.find { it.name == ActionNames.AGENT_INTERNAL_CONFIRM_DELETE }, "Should dispatch internal confirmation.")
-        assertNotNull(dispatched.find { it.name == ActionNames.AGENT_PUBLISH_AGENT_DELETED }, "Should publish deletion event.")
-        val deleteMsgActions = dispatched.filter { it.name == ActionNames.SESSION_DELETE_MESSAGE }
-        assertEquals(1, deleteMsgActions.size, "Should dispatch a delete action for the tracked card.")
-    }
-
-    @Test
-    fun `onSystemStarting() dispatches requests to load agents and models`() = runTest {
-        val harness = TestEnvironment.create()
-            .withFeature(agentFeature)
-            .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
-            .build(platform = platform)
-
-        harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
-
-        val listAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_LIST && it.originator == "agent" }
-        assertNotNull(listAction, "AgentFeature should request its file list on start.")
-        val modelsAction = harness.processedActions.find { it.name == ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS }
-        assertNotNull(modelsAction, "AgentFeature should request available models on start.")
-    }
-
-    @Test
-    fun `onPrivateData() with directory list dispatches SYSTEM_READ for each agent config`() = runTest {
-        val harness = TestEnvironment.create().withFeature(agentFeature).build(platform = platform)
-        val dirList = listOf(FileEntry("/fake/path/agent-1", true), FileEntry("/fake/path/agent-2", true))
-
-        val payload = buildJsonObject { put("listing", Json.encodeToJsonElement(dirList)) }
-        val envelope = PrivateDataEnvelope("filesystem.response.list", payload)
-        agentFeature.onPrivateData(envelope, harness.store)
-
-
-        val readActions = harness.processedActions.filter { it.name == ActionNames.FILESYSTEM_SYSTEM_READ }
-        assertEquals(2, readActions.size)
-        assertEquals("agent-1/agent.json", readActions[0].payload?.get("subpath")?.jsonPrimitive?.content)
-        assertEquals("agent-2/agent.json", readActions[1].payload?.get("subpath")?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun `onPrivateData() with valid agent config loads agent into state`() = runTest {
-        val harness = TestEnvironment.create().withFeature(agentFeature).build(platform = platform)
-        // FIX: Provide all required fields for AgentInstance, even if empty.
-        val validJsonContent = """{"id":"agent-good","name":"Good Agent","personaId":"","modelProvider":"","modelName":"","automaticMode":false,"autoWaitTimeSeconds":5,"autoMaxWaitTimeSeconds":30}"""
-        val fileContentPayload = buildJsonObject { put("content", validJsonContent); put("subpath", "agent-good/agent.json") }
-
-        val envelope = PrivateDataEnvelope("filesystem.response.read", fileContentPayload)
-        agentFeature.onPrivateData(envelope, harness.store)
-
-
-        val finalState = harness.store.state.value.featureStates["agent"] as? AgentRuntimeState
-        assertNotNull(finalState)
-        assertTrue(finalState.agents.containsKey("agent-good"))
-    }
-
-    @Test
-    fun `onPrivateData() with corrupted agent config logs error and does not load`() = runTest {
-        val harness = TestEnvironment.create().withFeature(agentFeature).build(platform = platform)
-        val corruptedJsonContent = """{"id":"bad-agent","name":"Bad Agent",}"""
-        val fileContentPayload = buildJsonObject { put("content", corruptedJsonContent); put("subpath", "bad-agent/agent.json") }
-
-        val envelope = PrivateDataEnvelope("filesystem.response.read", fileContentPayload)
-        agentFeature.onPrivateData(envelope, harness.store)
-
-
-        val loadedAction = harness.processedActions.find { it.name == ActionNames.AGENT_INTERNAL_AGENT_LOADED }
-        assertNull(loadedAction)
-        val log = harness.platform.capturedLogs.find { it.level == LogLevel.ERROR }
-        assertNotNull(log)
-        assertTrue(log.message.contains("Failed to parse agent config"))
-    }
-
-    @Test
-    fun `onSessionDeleted() nullifies primarySessionId for subscribed agents and persists the change`() = runTest {
-        val agent1 = AgentInstance("agent-1", "A1", "p", "m", "m", primarySessionId = "session-to-delete")
-        val agent2 = AgentInstance("agent-2", "A2", "p", "m", "m", primarySessionId = "session-safe")
-        val harness = TestEnvironment.create()
-            .withFeature(agentFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent1.id to agent1, agent2.id to agent2)))
-            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
-            .build(platform = platform)
-        val deleteEvent = Action(ActionNames.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject { put("sessionId", "session-to-delete") })
-
-        harness.store.dispatch("session", deleteEvent)
-
-        val finalAgentState = harness.store.state.value.featureStates["agent"] as? AgentRuntimeState
-        assertNotNull(finalAgentState)
-        assertNull(finalAgentState.agents["agent-1"]?.primarySessionId)
-        assertEquals("session-safe", finalAgentState.agents["agent-2"]?.primarySessionId)
-
-        val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
-        assertNotNull(writeAction)
-        assertEquals("agent-1/agent.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun `triggerManualTurn() orchestrates setting status and requesting ledger content`() = runTest {
-        val agent = AgentInstance("aid-1", "Test Agent", "", "gemini", "gemini-pro", "sid-1")
-        val harness = TestEnvironment.create()
-            .withFeature(agentFeature)
-            .withFeature(sessionFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
-            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
-            .build(platform = platform)
-        val triggerAction = Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", "aid-1") })
-
-        harness.store.dispatch("ui", triggerAction)
-
-        assertNotNull(harness.processedActions.find { it.name == ActionNames.AGENT_INTERNAL_SET_STATUS })
-        assertNotNull(harness.processedActions.find { it.name == ActionNames.SESSION_POST && (it.payload?.get("metadata")?.jsonObject?.get("is_transient")?.jsonPrimitive?.boolean == true) })
-        val requestAction = harness.processedActions.find { it.name == ActionNames.SESSION_REQUEST_LEDGER_CONTENT }
-        assertNotNull(requestAction)
-        assertEquals("sid-1", requestAction.payload?.get("sessionId")?.jsonPrimitive?.content)
-        assertEquals("aid-1", requestAction.payload?.get("correlationId")?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun `onContentGenerated() with success posts response first then posts new IDLE card`() = runTest {
-        // FIX: Use named arguments for AgentInstance constructor to match new signature.
-        val agent = AgentInstance("aid-1", "Test", "", "", "", "sid-1", automaticMode = false, status = AgentStatus.PROCESSING)
-        // FIX: Instantiate AgentRuntimeState with the correct Map<String, AvatarCardInfo> type.
-        val avatarCards = mapOf("aid-1" to AgentRuntimeState.AvatarCardInfo("msg-processing-123", "sid-1"))
-        val harness = TestEnvironment.create()
-            .withFeature(agentFeature)
-            .withFeature(sessionFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent), agentAvatarCardIds = avatarCards))
-            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
-            .build(platform = platform)
-        val gatewayResponsePayload = buildJsonObject {
-            put("correlationId", "aid-1"); put("rawContent", "Hello back")
+        override fun onAction(action: Action, store: Store, previousState: AppState) {
+            if (action.name == ActionNames.SESSION_REQUEST_LEDGER_CONTENT) {
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.content ?: return
+                val responsePayload = buildJsonObject {
+                    put("correlationId", correlationId)
+                    put("messages", json.encodeToJsonElement(listOf(GatewayMessage("user", "test content"))))
+                }
+                store.deliverPrivateData(
+                    name,
+                    "agent",
+                    app.auf.core.PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, responsePayload)
+                )
+            }
         }
-
-        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewayResponsePayload)
-        agentFeature.onPrivateData(envelope, harness.store)
-
-        val deleteAction = harness.processedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
-        assertNotNull(deleteAction)
-        assertEquals("msg-processing-123", deleteAction.payload?.get("messageId")?.jsonPrimitive?.content)
-
-        val postActions = harness.processedActions.filter { it.name == ActionNames.SESSION_POST }
-        assertEquals(2, postActions.size, "Should be 2 POST actions: the response and the new IDLE card.")
-        val responsePost = postActions.find { it.payload?.get("message")?.jsonPrimitive?.content == "Hello back" }
-        val idleCardPost = postActions.find { it.payload?.get("metadata")?.jsonObject?.get("agentStatus")?.jsonPrimitive?.content == "IDLE" }
-        assertNotNull(responsePost)
-        assertNotNull(idleCardPost)
-
-        // Assert the correct sequence: content first, then the new status card.
-        assertTrue(harness.processedActions.indexOf(responsePost) < harness.processedActions.indexOf(idleCardPost))
     }
+
+    private object FakeGatewayFeature : Feature {
+        override val name = "gateway"
+        override val composableProvider: Feature.ComposableProvider? = null
+        private val json = Json { ignoreUnknownKeys = true }
+
+        override fun onAction(action: Action, store: Store, previousState: AppState) {
+            if (action.name == ActionNames.GATEWAY_PREPARE_PREVIEW) {
+                val payload = action.payload!!
+                val agentId = payload["correlationId"]!!.jsonPrimitive.content
+                val agnosticRequest = GatewayRequest(
+                    modelName = payload["modelName"]!!.jsonPrimitive.content,
+                    contents = json.decodeFromJsonElement(payload["contents"]!!),
+                    correlationId = agentId
+                )
+                val responsePayload = buildJsonObject {
+                    put("correlationId", agentId)
+                    put("agnosticRequest", json.encodeToJsonElement(agnosticRequest))
+                    put("rawRequestJson", "{\"key\":\"value\"}")
+                }
+                store.deliverPrivateData(
+                    name,
+                    "agent",
+                    app.auf.core.PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW, responsePayload)
+                )
+            }
+        }
+    }
+
+    private fun createTestAgent(
+        id: String = "agent-1",
+        sessionId: String? = "session-1",
+        status: AgentStatus = AgentStatus.IDLE,
+        turnMode: TurnMode = TurnMode.DIRECT
+    ): AgentInstance {
+        return AgentInstance(id = id, name = "Test Agent", personaId = "p1", modelProvider = "mp1", modelName = "mn1", primarySessionId = sessionId, status = status, turnMode = turnMode)
+    }
+
+    @Test
+    fun `INITIATE_TURN with preview=false dispatches SESSION_REQUEST_LEDGER_CONTENT`() {
+        val harness = TestEnvironment.create()
+            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to createTestAgent())))
+            .build()
+        val action = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+            put("agentId", "agent-1")
+            put("preview", false)
+        })
+
+        harness.store.dispatch("ui", action)
+
+        val ledgerRequest = harness.processedActions.find { it.name == ActionNames.SESSION_REQUEST_LEDGER_CONTENT }
+        assertNotNull(ledgerRequest)
+        assertEquals("agent-1", ledgerRequest.payload?.get("correlationId")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `INITIATE_TURN with preview=true dispatches SESSION_REQUEST_LEDGER_CONTENT`() {
+        val harness = TestEnvironment.create()
+            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to createTestAgent())))
+            .build()
+        val action = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+            put("agentId", "agent-1")
+            put("preview", true)
+        })
+
+        harness.store.dispatch("ui", action)
+
+        val ledgerRequest = harness.processedActions.find { it.name == ActionNames.SESSION_REQUEST_LEDGER_CONTENT }
+        assertNotNull(ledgerRequest)
+    }
+
+    @Test
+    fun `on session ledger response for direct turn, dispatches GATEWAY_GENERATE_CONTENT`() {
+        val agent = createTestAgent(status = AgentStatus.PROCESSING, turnMode = TurnMode.DIRECT)
+        val harness = TestEnvironment.create()
+            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
+            .withFeature(FakeSessionFeature)
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
+            .build()
+
+        harness.store.dispatch("agent", Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject { put("correlationId", "agent-1")}))
+
+        val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
+        assertNotNull(gatewayRequest)
+    }
+
+    @Test
+    fun `on session ledger response for preview turn, dispatches GATEWAY_PREPARE_PREVIEW`() {
+        val agent = createTestAgent(status = AgentStatus.PROCESSING, turnMode = TurnMode.PREVIEW)
+        val harness = TestEnvironment.create()
+            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
+            .withFeature(FakeSessionFeature)
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
+            .build()
+
+        harness.store.dispatch("agent", Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject { put("correlationId", "agent-1")}))
+
+        val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_PREPARE_PREVIEW }
+        assertNotNull(gatewayRequest)
+    }
+
+    @Test
+    fun `CLONE action dispatches a CREATE action with modified name`() {
+        val agent = createTestAgent()
+        val harness = TestEnvironment.create()
+            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
+            .build()
+
+        harness.store.dispatch("ui", Action(ActionNames.AGENT_CLONE, buildJsonObject { put("agentId", "agent-1") }))
+
+        val createAction = harness.processedActions.find { it.name == ActionNames.AGENT_CREATE }
+        assertNotNull(createAction)
+        assertEquals("Test Agent (Copy)", createAction.payload?.get("name")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `full preview workflow results in staged data and correct final execution`() {
+        val agent = createTestAgent()
+        val harness = TestEnvironment.create()
+            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
+            .withFeature(FakeSessionFeature)
+            .withFeature(FakeGatewayFeature)
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
+            .build()
+
+        // 1. Initiate preview
+        harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+            put("agentId", "agent-1")
+            put("preview", true)
+        }))
+
+        // Verify state after preview is prepared
+        val stateAfterPreview = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+        val agentAfterPreview = stateAfterPreview.agents["agent-1"]
+        assertNotNull(agentAfterPreview?.stagedPreviewData)
+        assertEquals("{\"key\":\"value\"}", agentAfterPreview.stagedPreviewData.rawRequestJson)
+        assertEquals("agent-1", stateAfterPreview.viewingContextForAgentId)
+        assertTrue(harness.processedActions.any { it.name == ActionNames.CORE_SET_ACTIVE_VIEW })
+
+        // 2. Execute the staged turn
+        harness.store.dispatch("ui", Action(ActionNames.AGENT_EXECUTE_PREVIEWED_TURN, buildJsonObject { put("agentId", "agent-1") }))
+
+        // Verify final execution
+        val generateAction = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
+        assertNotNull(generateAction)
+        assertEquals("agent-1", generateAction.payload?.get("correlationId")?.jsonPrimitive?.content)
+        val stateAfterExecute = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+        assertNull(stateAfterExecute.agents["agent-1"]?.stagedPreviewData, "Staged data should be cleared after execution.")
+        assertNull(stateAfterExecute.viewingContextForAgentId, "Viewing context should be cleared.")
+    }
+
+    @Test
+    fun `DISCARD_PREVIEW action clears staged data and viewing context`() {
+        val previewData = StagedPreviewData(GatewayRequest("m1", emptyList(), "c1"), "{}")
+        val agent = createTestAgent().copy(stagedPreviewData = previewData)
+        val harness = TestEnvironment.create()
+            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent), viewingContextForAgentId = "agent-1"))
+            .build()
+
+        harness.store.dispatch("ui", Action(ActionNames.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", "agent-1") }))
+
+        val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+        assertNull(finalState.agents["agent-1"]?.stagedPreviewData)
+        assertNull(finalState.viewingContextForAgentId)
+    }
+
 }

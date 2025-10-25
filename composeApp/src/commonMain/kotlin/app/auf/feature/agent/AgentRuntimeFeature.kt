@@ -103,7 +103,7 @@ class AgentRuntimeFeature(
     private fun handleDiscardPreview(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
         val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return null
         val agent = currentFeatureState.agents[agentId] ?: return null
-        val updatedAgent = agent.copy(stagedPreviewData = null, status = AgentStatus.IDLE)
+        val updatedAgent = agent.copy(stagedPreviewData = null, processingStep = null)
         return currentFeatureState.copy(
             agents = currentFeatureState.agents + (agentId to updatedAgent),
             viewingContextForAgentId = null
@@ -339,10 +339,14 @@ class AgentRuntimeFeature(
                     updateAgentAvatarCard(agentId, AgentStatus.ERROR, "Cannot start turn: Agent not subscribed to a session.", store)
                     return
                 }
-                updateAgentAvatarCard(agentId, AgentStatus.PROCESSING, null, store)
-                store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
-                    put("agentId", agentId); put("step", "Requesting Ledger")
-                }))
+                // FIX: Only update the processing step for a preview. For a direct turn, update the full card.
+                if (agent.turnMode == TurnMode.PREVIEW) {
+                    store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+                        put("agentId", agentId); put("step", "Requesting Ledger")
+                    }))
+                } else {
+                    updateAgentAvatarCard(agentId, AgentStatus.PROCESSING, null, store)
+                }
                 store.dispatch(this.name, Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject {
                     put("sessionId", sessionId); put("correlationId", agentId)
                 }))
@@ -351,17 +355,28 @@ class AgentRuntimeFeature(
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[agentId] ?: return
                 val previewData = agent.stagedPreviewData ?: return
+
+                // FIX: This is now the single point of truth for starting a PREVIEWED turn.
+                updateAgentAvatarCard(agentId, AgentStatus.PROCESSING, null, store)
+
                 store.dispatch(this.name, Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
                     put("providerId", agent.modelProvider)
                     put("modelName", previewData.agnosticRequest.modelName)
                     put("correlationId", previewData.agnosticRequest.correlationId)
                     put("contents", json.encodeToJsonElement(previewData.agnosticRequest.contents))
                 }))
-                // Clear the preview data and navigate back in the reducer for DISCARD_PREVIEW
                 store.dispatch(this.name, Action(ActionNames.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId) }))
                 store.dispatch("ui.agent", Action(ActionNames.CORE_SHOW_DEFAULT_VIEW))
             }
             ActionNames.AGENT_DISCARD_PREVIEW -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agent = agentState.agents[agentId]
+                // FIX: When discarding, if the agent wasn't actually processing, clear its processing step.
+                if (agent?.status != AgentStatus.PROCESSING) {
+                    store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+                        put("agentId", agentId); put("step", JsonNull)
+                    }))
+                }
                 store.dispatch("ui.agent", Action(ActionNames.CORE_SHOW_DEFAULT_VIEW))
             }
             ActionNames.AGENT_CANCEL_TURN -> {
@@ -470,11 +485,12 @@ class AgentRuntimeFeature(
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[decoded.correlationId] ?: return
 
-        store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
-            put("agentId", agent.id); put("step", "Generating Content")
-        }))
-
         val requestActionName = if (agent.turnMode == TurnMode.PREVIEW) ActionNames.GATEWAY_PREPARE_PREVIEW else ActionNames.GATEWAY_GENERATE_CONTENT
+        val step = if (agent.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"
+
+        store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+            put("agentId", agent.id); put("step", step)
+        }))
 
         store.dispatch(this.name, Action(requestActionName, buildJsonObject {
             put("providerId", agent.modelProvider); put("modelName", agent.modelName); put("correlationId", agent.id)
