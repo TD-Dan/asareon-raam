@@ -31,6 +31,17 @@
       "action_name": "gateway.REQUEST_AVAILABLE_MODELS",
       "summary": "Requests that the GatewayFeature broadcast the current list of available models.",
       "payload_schema": null
+    },
+    {
+      "action_name": "gateway.CANCEL_REQUEST",
+      "summary": "Cancels an in-flight content generation request identified by its correlation ID.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": { "type": "string" }
+        },
+        "required": [ "correlationId" ]
+      }
     }
   ],
   "publishes": [

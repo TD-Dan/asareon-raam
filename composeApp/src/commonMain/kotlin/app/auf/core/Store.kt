@@ -204,10 +204,10 @@ open class Store(
         try {
             if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
                 val targetFeature = features.find { it.name == parsedName.feature }
-                targetFeature?.onAction(stampedAction, this)
+                targetFeature?.onAction(stampedAction, this, previousState)
             } else {
                 features.forEach { feature ->
-                    feature.onAction(stampedAction, this)
+                    feature.onAction(stampedAction, this, previousState)
                 }
             }
         } catch (e: Exception) {

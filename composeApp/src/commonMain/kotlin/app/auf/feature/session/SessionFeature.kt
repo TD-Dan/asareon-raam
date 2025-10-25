@@ -63,7 +63,7 @@ class SessionFeature(
         }
     }
 
-    override fun onAction(action: Action, store: Store) {
+    override fun onAction(action: Action, store: Store, previousState: AppState) {
         val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_STARTING -> store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))

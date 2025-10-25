@@ -14,6 +14,7 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
+import kotlin.coroutines.cancellation.CancellationException
 
 // --- Data Contracts specific to the OpenAI API ---
 @Serializable
@@ -28,7 +29,6 @@ private data class OpenAIMessage(val role: String, val content: String?)
 @Serializable
 private data class ApiError(val message: String)
 
-// THE FIX: Add data classes for the /v1/models endpoint
 @Serializable
 private data class ListModelsResponse(val data: List<ModelInfo> = emptyList())
 @Serializable
@@ -112,7 +112,6 @@ class OpenAIProvider(
         val apiKey = settings[apiKeySettingKey].orEmpty()
         if (apiKey.isBlank()) return emptyList()
 
-        // THE FIX: Replace hardcoded list with a real API call.
         return try {
             val response: ListModelsResponse = client.get("https://$API_HOST/v1/models") {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
@@ -144,6 +143,10 @@ class OpenAIProvider(
             }.body()
 
             parseResponse(responseBody, request.correlationId)
+        } catch (e: CancellationException) {
+            // REFACTOR: Catch CancellationException specifically to prevent it from being treated as a runtime error.
+            platformDependencies.log(LogLevel.INFO, id, "OpenAI request with correlationId '${request.correlationId}' was cancelled.")
+            throw e // Re-throw to allow the coroutine to terminate gracefully.
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, id, "Content generation failed: ${e.stackTraceToString()}")
             val userMessage = mapExceptionToUserMessage(e)

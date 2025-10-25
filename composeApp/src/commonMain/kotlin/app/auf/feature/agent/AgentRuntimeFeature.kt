@@ -196,7 +196,6 @@ class AgentRuntimeFeature(
 
     private fun handleMessageDeleted(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
         val payload = action.payload?.let { json.decodeFromJsonElement<MessageDeletedPayload>(it) } ?: return null
-        // REFACTOR: Now correctly find the agent ID based on the message ID regardless of session.
         val agentId = currentFeatureState.agentAvatarCardIds.entries.find { it.value.messageId == payload.messageId }?.key ?: return null
         return currentFeatureState.copy(agentAvatarCardIds = currentFeatureState.agentAvatarCardIds - agentId)
     }
@@ -213,7 +212,7 @@ class AgentRuntimeFeature(
 
     // --- ON_ACTION (Side Effect Orchestration) ---
 
-    override fun onAction(action: Action, store: Store) {
+    override fun onAction(action: Action, store: Store, previousState: AppState) {
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
@@ -238,9 +237,10 @@ class AgentRuntimeFeature(
             }
             ActionNames.AGENT_UPDATE_CONFIG -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
-                val oldAgent = agentState.agents[agentId]
-                val latestState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
-                val newAgent = latestState.agents[agentId] ?: return
+                // REFACTOR: Correctly use previousState to get the true old agent state.
+                val oldAgentState = previousState.featureStates[name] as? AgentRuntimeState
+                val oldAgent = oldAgentState?.agents?.get(agentId)
+                val newAgent = agentState.agents[agentId] ?: return
 
                 // Persist the change
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
@@ -249,18 +249,14 @@ class AgentRuntimeFeature(
                 }))
                 broadcastAgentNames(store)
 
-                // TODO: Problem lies here, the oldAgent is actually the new agent and the move never happens. We need a general way of accessing previous state? store should provide record previous state for anyone that is interested in comparisons?
-                platformDependencies.log(LogLevel.DEBUG, "agent.onAction.AGENT_UPDATE_CONFIG", "OldAgent session: ${oldAgent?.primarySessionId}, new agent session: ${newAgent?.primarySessionId}")
                 // Orchestrate the "move" of the avatar card if the session changed.
                 if (oldAgent != null && oldAgent.primarySessionId != newAgent.primarySessionId) {
-                    // TODO: this newer gets called
-                    platformDependencies.log(LogLevel.DEBUG, "agent.onAction.AGENT_UPDATE_CONFIG", "Moving card to new session.")
+                    platformDependencies.log(LogLevel.DEBUG, "agent.onAction.AGENT_UPDATE_CONFIG", "Moving card from session '${oldAgent.primarySessionId}' to '${newAgent.primarySessionId}'.")
                     updateAgentAvatarCard(agentId, newAgent.status, null, store)
                 }
             }
             ActionNames.AGENT_DELETE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
-                // REFACTOR: Correctly get old card info to delete from the correct session.
                 agentState.agentAvatarCardIds[agentId]?.let { cardInfo ->
                     store.dispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                         put("session", cardInfo.sessionId)
@@ -286,9 +282,12 @@ class AgentRuntimeFeature(
             }
             ActionNames.AGENT_CANCEL_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
-                val job = activeTurnJobs[agentId] ?: return
-                // TODO: At what point does this call the actual API to cancel the actual Gateway request?
-                job.cancel()
+                // REFACTOR: Dispatch cancellation to the Gateway in addition to local cancellation.
+                store.dispatch(this.name, Action(ActionNames.GATEWAY_CANCEL_REQUEST, buildJsonObject {
+                    put("correlationId", agentId)
+                }))
+                // Local job management remains for UI responsiveness
+                activeTurnJobs[agentId]?.cancel()
                 activeTurnJobs.remove(agentId)
                 updateAgentAvatarCard(agentId, AgentStatus.IDLE, "Turn cancelled by user.", store)
             }
@@ -298,13 +297,10 @@ class AgentRuntimeFeature(
                 val payload = action.payload?.let { json.decodeFromJsonElement<MessagePostedPayload>(it) } ?: return
                 val latestState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
 
-                // GUARD: Do not react to our own avatar card postings.
                 if (isAvatarCard(payload)) return
 
                 latestState.agents.values.forEach { agent ->
                     if (agent.primarySessionId == payload.sessionId && agent.id != payload.entry["senderId"]?.jsonPrimitive?.contentOrNull) {
-                        // REFACTOR: Now correctly separates concerns.
-                        // The reducer has already updated lastSeenMessageId. Here we just handle the UI side effect.
                         if (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING) {
                             updateAgentAvatarCard(agent.id, AgentStatus.WAITING, null, store)
                         }
@@ -327,7 +323,11 @@ class AgentRuntimeFeature(
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[agentId] ?: return
 
-        //TODO: This should have a guard to protect against re firing an already PROCESSING agent -> log warning and return early
+        // REFACTOR: Add guard to prevent re-firing a processing agent.
+        if (agent.status == AgentStatus.PROCESSING) {
+            platformDependencies.log(LogLevel.WARN, name, "Agent '$agentId' is already PROCESSING. Ignoring duplicate TRIGGER_MANUAL_TURN request.")
+            return
+        }
 
         val sessionId = agent.primarySessionId ?: run {
             updateAgentAvatarCard(agentId, AgentStatus.ERROR, "Cannot start turn: Agent not subscribed to a session.", store)
@@ -353,8 +353,8 @@ class AgentRuntimeFeature(
 
     private fun handleSessionLedgerResponse(payload: JsonObject, store: Store) {
         val decoded = try { json.decodeFromJsonElement<LedgerResponsePayload>(payload) } catch (e: Exception) {
-            platformDependencies.log(LogLevel.ERROR, name, "FATAL: Failed to parse session ledger. Error: ${e.message}")
             val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
+            platformDependencies.log(LogLevel.ERROR, name, "FATAL: Failed to parse session ledger for agent '$agentId'. Error: ${e.message}")
             if (agentId != null) {
                 updateAgentAvatarCard(agentId, AgentStatus.ERROR, "FATAL: Could not parse session ledger.", store)
             }
@@ -410,11 +410,10 @@ class AgentRuntimeFeature(
             platformDependencies.log(LogLevel.ERROR, name, "Gateway reported an error for agent '$agentId': ${decoded.errorMessage}")
             updateAgentAvatarCard(agentId, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}", store)
         } else {
-            if (!decoded.rawContent.isNullOrBlank()) {
-                store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
-                    put("session", sessionId); put("senderId", agent.id); put("message", decoded.rawContent)
-                }))
-            }
+            // REFACTOR: Remove guard. Post message even if rawContent is null or blank (e.g., a "STOP" reason).
+            store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
+                put("session", sessionId); put("senderId", agent.id); put("message", decoded.rawContent ?: "")
+            }))
             updateAgentAvatarCard(agentId, AgentStatus.IDLE, null, store)
         }
     }
@@ -425,16 +424,11 @@ class AgentRuntimeFeature(
         return metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
     }
 
-    /**
-     * REFACTORED: The new, single point of truth for managing an agent's avatar card.
-     * This function orchestrates the atomic delete-then-post operation required to "move" a card.
-     */
     private fun updateAgentAvatarCard(agentId: String, status: AgentStatus, error: String? = null, store: Store) {
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[agentId] ?: return
         val newSessionId = agent.primarySessionId
 
-        // 1. Atomically delete the old card, using the now-tracked old session ID.
         agentState.agentAvatarCardIds[agentId]?.let { oldCardInfo ->
             store.dispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                 put("session", oldCardInfo.sessionId)
@@ -442,15 +436,12 @@ class AgentRuntimeFeature(
             }))
         }
 
-        // 2. Dispatch the internal action to update the agent's logical state.
         store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
             put("agentId", agentId); put("status", status.name); error?.let { put("error", it) }
         }))
 
-        // 3. If the agent is now unsubscribed, we're done. Otherwise, post the new card.
         if (newSessionId == null) return
 
-        // 4. Determine the correct positional frontier from the latest state.
         val latestAgentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val latestAgent = latestAgentState.agents[agentId] ?: return
         val afterMessageId = when (status) {
@@ -458,7 +449,6 @@ class AgentRuntimeFeature(
             else -> latestAgent.lastSeenMessageId
         }
 
-        // 5. Post the new card with the correct metadata and position.
         val messageId = platformDependencies.generateUUID()
         val metadata = buildJsonObject {
             put("render_as_partial", true); put("is_transient", true); put("agentStatus", status.name)
@@ -472,7 +462,7 @@ class AgentRuntimeFeature(
 
     override val composableProvider: ComposableProvider = object : ComposableProvider {
         override val stageViews: Map<String, @Composable (Store, List<Feature>) -> Unit> =
-            mapOf("feature.agent.manager" to { store, _ -> AgentManagerView(store) })
+            mapOf("feature.agent.manager" to { store, _, -> AgentManagerView(store) })
         @Composable
         override fun RibbonContent(store: Store, activeViewKey: String?) {
             val viewKey = "feature.agent.manager"

@@ -5,6 +5,7 @@ import app.auf.core.generated.ActionNames
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
 
@@ -21,7 +22,10 @@ class GatewayFeature(
     private val providerApiKeys = providers.map { "gateway.${it.id}.apiKey" }.toSet()
     private val json = Json { ignoreUnknownKeys = true }
 
-    override fun onAction(action: Action, store: Store) {
+    // REFACTOR: A map to track active generation jobs for cancellation.
+    private val activeRequests = mutableMapOf<String, Job>()
+
+    override fun onAction(action: Action, store: Store, previousState: AppState) {
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
                 // Each provider registers its own settings, making the system extensible.
@@ -55,6 +59,22 @@ class GatewayFeature(
             ActionNames.GATEWAY_GENERATE_CONTENT -> {
                 handleGenerateContent(action, store)
             }
+
+            ActionNames.GATEWAY_CANCEL_REQUEST -> {
+                handleCancelRequest(action)
+            }
+        }
+    }
+
+    private fun handleCancelRequest(action: Action) {
+        val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull ?: return
+        val job = activeRequests[correlationId]
+        if (job != null) {
+            platformDependencies.log(LogLevel.INFO, name, "Cancelling gateway request with correlationId: $correlationId")
+            job.cancel()
+            activeRequests.remove(correlationId) // Proactive removal, though invokeOnCompletion also handles it.
+        } else {
+            platformDependencies.log(LogLevel.WARN, name, "Received CANCEL_REQUEST for unknown or completed correlationId: $correlationId")
         }
     }
 
@@ -75,12 +95,11 @@ class GatewayFeature(
             return
         }
 
-        // THE FIX: Fetch the current state from the store inside the coroutine to get the latest API keys.
         val gatewayState = store.state.value.featureStates[name] as? GatewayState ?: return
 
-        coroutineScope.launch {
+        // REFACTOR: The coroutine job is now tracked for cancellation.
+        val job = coroutineScope.launch {
             val request = GatewayRequest(modelName, contents, correlationId)
-            // Delegate the actual work to the specific provider plugin.
             val response = provider.generateContent(request, gatewayState.apiKeys)
 
             val responsePayload = try {
@@ -99,18 +118,18 @@ class GatewayFeature(
                 Json.encodeToJsonElement(errorResponse).jsonObject
             }
 
-            // Securely deliver the response directly to the original requester.
             val envelope = PrivateDataEnvelope(
                 type = ActionNames.Envelopes.GATEWAY_RESPONSE,
                 payload = responsePayload
             )
             store.deliverPrivateData(this@GatewayFeature.name, originator, envelope)
         }
+        activeRequests[correlationId] = job
+        job.invokeOnCompletion { activeRequests.remove(correlationId) }
     }
 
     private fun refreshProviderModels(providerId: String, store: Store) {
         val provider = providerMap[providerId] ?: return
-        // THE FIX: Fetch the current state from the store inside the coroutine.
         val gatewayState = store.state.value.featureStates[name] as? GatewayState ?: return
 
         coroutineScope.launch {
@@ -135,7 +154,6 @@ class GatewayFeature(
                 val newModels = currentFeatureState.availableModels + (providerId to models)
                 newFeatureState = currentFeatureState.copy(availableModels = newModels)
             }
-            // THE FIX: Listen for settings events to update internal API key state.
             ActionNames.SETTINGS_PUBLISH_LOADED -> {
                 val loadedValues = action.payload?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap()
                 val relevantKeys = loadedValues.filterKeys { it in providerApiKeys }

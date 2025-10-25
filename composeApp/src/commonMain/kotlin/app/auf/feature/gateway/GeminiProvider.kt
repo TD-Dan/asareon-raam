@@ -18,6 +18,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.coroutines.cancellation.CancellationException
 
 // --- Data Contracts specific to the Gemini API ---
 @Serializable
@@ -29,7 +30,7 @@ private data class GenerateContentResponse(
 @Serializable
 private data class Candidate(
     val content: Content? = null,
-    val finishReason: String? = null // THE FIX: Added finishReason to handle empty successes.
+    val finishReason: String? = null
 )
 @Serializable
 private data class Content(val parts: List<Part>? = null)
@@ -100,10 +101,9 @@ class GeminiProvider(
             return GatewayResponse(null, "Blocked by provider: $it", correlationId)
         }
 
-        // THE FIX: Path 4: Successful but empty response (e.g., model stops itself).
         val finishReason = response.candidates?.firstOrNull()?.finishReason
         if (finishReason == "STOP") {
-            return GatewayResponse("", null, correlationId) // Return success with empty content.
+            return GatewayResponse("", null, correlationId)
         }
 
         // Path 5 (Future-Proofing): Unrecognized response format
@@ -164,6 +164,10 @@ class GeminiProvider(
             }.body()
 
             parseResponse(responseBody, request.correlationId)
+        } catch (e: CancellationException) {
+            // REFACTOR: Catch CancellationException specifically to prevent it from being treated as a runtime error.
+            platformDependencies.log(LogLevel.INFO, id, "Gemini request with correlationId '${request.correlationId}' was cancelled.")
+            throw e // Re-throw to allow the coroutine to terminate gracefully.
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, id, "Content generation failed: ${e.stackTraceToString()}")
             val userMessage = mapExceptionToUserMessage(e)

@@ -48,7 +48,7 @@ class CoreFeature(
     private val settingKeyWidth = "core.window.width"
     private val settingKeyHeight = "core.window.height"
 
-    override fun onAction(action: Action, store: Store) {
+    override fun onAction(action: Action, store: Store, previousState: AppState) {
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
                 store.dispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {

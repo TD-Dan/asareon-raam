@@ -42,7 +42,7 @@ class FileSystemFeature(
         return "$appZoneRoot${platformDependencies.pathSeparator}$safeOriginator"
     }
 
-    override fun onAction(action: Action, store: Store) {
+    override fun onAction(action: Action, store: Store, previousState: AppState) {
         val originator = action.originator ?: return
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {

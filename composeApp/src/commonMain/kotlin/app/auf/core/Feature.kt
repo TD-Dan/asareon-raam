@@ -10,7 +10,9 @@ import androidx.compose.runtime.Composable
 interface Feature {
     val name: String
     fun reducer(state: AppState, action: Action): AppState = state
-    fun onAction(action: Action, store: Store) {}
+
+    fun onAction(action: Action, store: Store, previousState: AppState) {}
+
     fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {}
     fun init(store: Store) {}
 

@@ -51,7 +51,7 @@ class SettingsFeature(
         }
     }
 
-    override fun onAction(action: Action, store: Store) {
+    override fun onAction(action: Action, store: Store, previousState: AppState) {
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", settingsFileName) }))
             ActionNames.SETTINGS_UI_INTERNAL_INPUT_CHANGED -> {
