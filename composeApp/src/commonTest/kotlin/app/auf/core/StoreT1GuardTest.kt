@@ -41,7 +41,7 @@ class StoreT1GuardTest {
             if (action.name == "test.CRASH_REDUCER") throw IllegalStateException("Reducer deliberately crashed")
             return state
         }
-        override fun onAction(action: Action, store: Store) {
+        override fun onAction(action: Action, store: Store, previousState: AppState) {
             if (action.name == "test.CRASH_ON_ACTION") throw IllegalStateException("onAction deliberately crashed")
         }
         override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
