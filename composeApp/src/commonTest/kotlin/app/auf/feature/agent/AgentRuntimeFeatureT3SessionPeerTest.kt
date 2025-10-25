@@ -134,20 +134,29 @@ class AgentRuntimeFeatureT3SessionPeerTest {
 
         assertEquals(2, finalLedger.size, "Ledger should contain the user message and one PROCESSING avatar card.")
         assertEquals(1, finalLedger.count { it.metadata?.get("render_as_partial")?.jsonPrimitive?.boolean == true }, "There should be exactly one avatar card.")
-        assertEquals(initialUserMessage.id, newCard.metadata?.get("afterMessageId_DEBUG"), "PROCESSING card should be positioned after the commitment frontier.")
+
+        // THE FIX: Assert on the card's actual position in the ledger, not a debug field.
+        val userMessageIndex = finalLedger.indexOf(initialUserMessage)
+        val newCardIndex = finalLedger.indexOf(newCard)
+        assertEquals(userMessageIndex + 1, newCardIndex, "PROCESSING card should be positioned directly after the commitment frontier message.")
         assertEquals("PROCESSING", newCard.metadata?.get("agentStatus")?.jsonPrimitive?.content)
     }
 
     @Test
     fun `when a new message arrives while PROCESSING the awareness frontier updates but the card remains`() = runTest {
         val initialUserMessage = LedgerEntry("msg-user-1", 1L, "user", "Prompt", emptyList())
+        // THE FIX: The test setup must be internally consistent. The initial Session ledger must contain the card
+        // that the AgentRuntimeState believes exists.
+        val processingCard = LedgerEntry("card-processing", 2L, agent1.id, "", emptyList(), metadata = buildJsonObject { put("render_as_partial", true) })
+
         val agent = agent1.copy(status = AgentStatus.PROCESSING, processingFrontierMessageId = "msg-user-1")
         val initialAvatarCards = mapOf(agent.id to AgentRuntimeState.AvatarCardInfo("card-processing", "sid-A"))
+
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(sessionFeature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent), agentAvatarCardIds = initialAvatarCards))
-            .withInitialState("session", SessionState(sessions = mapOf(sessionA.id to sessionA.copy(ledger = listOf(initialUserMessage)))))
+            .withInitialState("session", SessionState(sessions = mapOf(sessionA.id to sessionA.copy(ledger = listOf(initialUserMessage, processingCard)))))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
@@ -170,6 +179,6 @@ class AgentRuntimeFeatureT3SessionPeerTest {
         val finalLedger = finalSessionState.sessions["sid-A"]!!.ledger
         assertEquals(3, finalLedger.size, "Ledger should contain both user messages and the original processing card.")
         assertEquals(1, finalLedger.count { it.metadata?.get("render_as_partial")?.jsonPrimitive?.boolean == true }, "There should still be only one avatar card.")
-        assertEquals("card-processing", finalLedger.find { it.id == "card-processing" }?.id, "The original card should not have been moved or deleted.")
+        assertNotNull(finalLedger.find { it.id == "card-processing" }, "The original card should not have been moved or deleted.")
     }
 }
