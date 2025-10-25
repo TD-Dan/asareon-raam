@@ -241,11 +241,16 @@ class AgentRuntimeFeature(
                 }
                 broadcastAgentNames(store)
             }
-            ActionNames.AGENT_CREATE, ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE, ActionNames.AGENT_TOGGLE_ACTIVE -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull
-                val agentToSave = if (agentId != null) agentState.agents[agentId] else agentState.agents.values.lastOrNull()
-                agentToSave?.let { saveAgentConfig(it, store) }
-                if (action.name == ActionNames.AGENT_CREATE) broadcastAgentNames(store)
+            ActionNames.AGENT_CREATE -> {
+                val agentToSave = agentState.agents.values.lastOrNull() ?: return
+                saveAgentConfig(agentToSave, store)
+                broadcastAgentNames(store)
+            }
+            ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE, ActionNames.AGENT_TOGGLE_ACTIVE -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agent = agentState.agents[agentId] ?: return
+                saveAgentConfig(agent, store)
+                touchAgentAvatarCard(agent, store)
             }
             ActionNames.AGENT_UPDATE_CONFIG -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
@@ -318,6 +323,18 @@ class AgentRuntimeFeature(
             put("subpath", "${agent.id}/$agentConfigFILENAME")
             put("content", json.encodeToString(agent))
         }))
+    }
+
+    private fun touchAgentAvatarCard(agent: AgentInstance, store: Store) {
+        val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+        val cardInfo = agentState.agentAvatarCardIds[agent.id] ?: return
+        store.dispatch(this.name, Action(
+            name = ActionNames.SESSION_UPDATE_MESSAGE,
+            payload = buildJsonObject {
+                put("session", cardInfo.sessionId)
+                put("messageId", cardInfo.messageId)
+            }
+        ))
     }
 
     private fun broadcastAgentNames(store: Store) {

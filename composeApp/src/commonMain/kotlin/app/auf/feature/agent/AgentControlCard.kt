@@ -2,9 +2,11 @@ package app.auf.feature.agent
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,7 +34,7 @@ fun AgentControlCard(
             while (true) {
                 val elapsed = platformDependencies.getSystemTimeMillis() - agent.processingSinceTimestamp
                 processingTime = elapsed.milliseconds.toComponents { minutes, seconds, _ ->
-                    "%02d:%02d".format(minutes, seconds)
+                    "${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
                 }
                 delay(1000)
             }
@@ -73,26 +75,44 @@ fun AgentControlCard(
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TooltipArea(tooltip = { PlainTooltip { Text("Active") } }) {
-                Switch(
-                    checked = agent.isAgentActive,
-                    onCheckedChange = {
+            val activeSwitchTooltipState = remember { TooltipState() }
+            TooltipBox(
+                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                tooltip = { PlainTooltip { Text("Toggle Active State") } },
+                state = activeSwitchTooltipState
+            ) {
+                IconButton(
+                    onClick = {
                         store.dispatch("ui.controls", Action(ActionNames.AGENT_TOGGLE_ACTIVE, buildJsonObject { put("agentId", agent.id) }))
-                    },
-                    modifier = Modifier.size(24.dp)
-                )
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PowerSettingsNew,
+                        contentDescription = "Toggle Active State",
+                        tint = if (agent.isAgentActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    )
+                }
             }
-            Spacer(Modifier.width(8.dp))
-            TooltipArea(tooltip = { PlainTooltip { Text("Automatic Mode") } }) {
-                Switch(
-                    checked = agent.automaticMode,
-                    onCheckedChange = {
+
+            val autoModeSwitchTooltipState = remember { TooltipState() }
+            TooltipBox(
+                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                tooltip = { PlainTooltip { Text("Toggle Automatic Mode") } },
+                state = autoModeSwitchTooltipState
+            ) {
+                IconButton(
+                    onClick = {
                         store.dispatch("ui.controls", Action(ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject { put("agentId", agent.id) }))
-                    },
-                    modifier = Modifier.size(24.dp)
-                )
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Autorenew,
+                        contentDescription = "Toggle Automatic Mode",
+                        tint = if (agent.automaticMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    )
+                }
             }
-            Spacer(Modifier.width(8.dp))
+
             if (agent.status == AgentStatus.PROCESSING) {
                 Button(
                     onClick = { store.dispatch("ui.controls", Action(ActionNames.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agent.id) })) },

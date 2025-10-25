@@ -26,7 +26,8 @@ class SessionFeature(
     @Serializable private data class UpdateConfigPayload(val session: String, val name: String)
     @Serializable private data class SessionTargetPayload(val session: String)
     @Serializable private data class PostPayload(val session: String, val senderId: String, val message: String? = null, val messageId: String? = null, val metadata: JsonObject? = null, val afterMessageId: String? = null)
-    @Serializable private data class UpdateMessagePayload(val session: String, val messageId: String, val newContent: String, val newMetadata: JsonObject? = null)
+    // FIX: Make newContent nullable to match the contract and support "touch" actions.
+    @Serializable private data class UpdateMessagePayload(val session: String, val messageId: String, val newContent: String? = null, val newMetadata: JsonObject? = null)
     @Serializable private data class MessageTargetPayload(val session: String, val messageId: String)
     @Serializable private data class SetEditingSessionPayload(val sessionId: String?)
     @Serializable private data class SetEditingMessagePayload(val messageId: String?)
@@ -42,8 +43,6 @@ class SessionFeature(
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
 
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
-        // THIS LOGIC IS NOW INCORRECT AND WILL BE FIXED IN PHASE 3.
-        // It is temporarily updated to satisfy the compiler.
         val data = envelope.payload
         when (envelope.type) {
             "filesystem.response.list" -> {
@@ -131,7 +130,7 @@ class SessionFeature(
                     put("correlationId", payload.correlationId)
                     putJsonArray("messages") { messages.forEach { add(Json.encodeToJsonElement(it)) } }
                 }
-                val envelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, responsePayload) // THE FIX
+                val envelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, responsePayload)
                 store.deliverPrivateData(this.name, action.originator ?: "unknown", envelope)
             }
         }
@@ -210,19 +209,16 @@ class SessionFeature(
                     content = decoded.message?.let { blockParser.parse(it) } ?: emptyList(),
                     metadata = decoded.metadata
                 )
-
-                // THE FIX: Implement positional insertion logic
                 val updatedLedger = if (decoded.afterMessageId != null) {
                     val insertionIndex = targetSession.ledger.indexOfFirst { it.id == decoded.afterMessageId }
                     if (insertionIndex != -1) {
                         targetSession.ledger.toMutableList().apply { add(insertionIndex + 1, newEntry) }
                     } else {
-                        targetSession.ledger + newEntry // Fallback to appending if ID not found
+                        targetSession.ledger + newEntry
                     }
                 } else {
-                    targetSession.ledger + newEntry // Default append behavior
+                    targetSession.ledger + newEntry
                 }
-
                 val updatedSession = targetSession.copy(ledger = updatedLedger)
                 newFeatureState = currentFeatureState.copy(sessions = currentFeatureState.sessions + (sessionId to updatedSession))
             }
@@ -238,11 +234,16 @@ class SessionFeature(
                 val sessionId = resolveSessionId(decoded.session, currentFeatureState) ?: return stateWithFeature
                 val targetSession = currentFeatureState.sessions[sessionId] ?: return stateWithFeature
                 val updatedLedger = targetSession.ledger.map {
-                    if (it.id == decoded.messageId) it.copy(
-                        rawContent = decoded.newContent,
-                        content = blockParser.parse(decoded.newContent),
-                        metadata = decoded.newMetadata ?: it.metadata
-                    ) else it
+                    if (it.id == decoded.messageId) {
+                        // FIX: Harden the reducer logic to handle optional fields.
+                        val updatedRawContent = decoded.newContent ?: it.rawContent
+                        val updatedMetadata = decoded.newMetadata ?: it.metadata
+                        it.copy(
+                            rawContent = updatedRawContent,
+                            content = updatedRawContent?.let { c -> blockParser.parse(c) } ?: emptyList(),
+                            metadata = updatedMetadata
+                        )
+                    } else it
                 }
                 val updatedSession = targetSession.copy(ledger = updatedLedger)
                 newFeatureState = currentFeatureState.copy(sessions = currentFeatureState.sessions + (sessionId to updatedSession), editingMessageId = null, editingMessageContent = null)
