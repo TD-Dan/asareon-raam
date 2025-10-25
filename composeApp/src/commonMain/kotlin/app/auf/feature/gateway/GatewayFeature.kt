@@ -22,7 +22,6 @@ class GatewayFeature(
     private val providerApiKeys = providers.map { "gateway.${it.id}.apiKey" }.toSet()
     private val json = Json { ignoreUnknownKeys = true }
 
-    // REFACTOR: A map to track active generation jobs for cancellation.
     private val activeRequests = mutableMapOf<String, Job>()
 
     override fun onAction(action: Action, store: Store, previousState: AppState) {
@@ -97,7 +96,6 @@ class GatewayFeature(
 
         val gatewayState = store.state.value.featureStates[name] as? GatewayState ?: return
 
-        // REFACTOR: The coroutine job is now tracked for cancellation.
         val job = coroutineScope.launch {
             val request = GatewayRequest(modelName, contents, correlationId)
             val response = provider.generateContent(request, gatewayState.apiKeys)

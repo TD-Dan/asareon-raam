@@ -384,7 +384,6 @@ class AgentRuntimeFeature(
         val decoded = try {
             json.decodeFromJsonElement<LedgerResponsePayload>(payload)
         } catch (e: Exception) {
-            // FIX 2: Restore the error handling logic.
             val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
             val errorMessage = "FATAL: Failed to parse session ledger."
             platformDependencies.log(LogLevel.ERROR, name, "$errorMessage for agent '$agentId'. Error: ${e.message}")
