@@ -58,6 +58,15 @@
       }
     },
     {
+      "action_name": "agent.TOGGLE_ACTIVE",
+      "summary": "Toggles the master active/paused state for a specific agent.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "agentId": { "type": "string" } },
+        "required": [ "agentId" ]
+      }
+    },
+    {
       "action_name":"agent.TRIGGER_MANUAL_TURN",
       "summary":"Manually triggers a single cognitive cycle for a specific agent. The agent will determine its own context from the ledger.",
       "payload_schema":{
@@ -121,6 +130,18 @@
           "error":{ "type":[ "string", "null" ] }
         },
         "required":[ "agentId", "status" ]
+      }
+    },
+    {
+      "action_name": "agent.internal.SET_PROCESSING_STEP",
+      "summary": "[INTERNAL] Updates the human-readable description of the agent's current processing activity.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string" },
+          "step": { "type": [ "string", "null" ] }
+        },
+        "required": [ "agentId" ]
       }
     }
   ]

@@ -15,12 +15,10 @@ import app.auf.core.*
 import app.auf.core.generated.ActionNames
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlin.collections.get
-import kotlin.text.get
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AgentManagerView(store: Store) {
+fun AgentManagerView(store: Store, platformDependencies: app.auf.util.PlatformDependencies) {
     val appState by store.state.collectAsState()
     val agentState = remember(appState.featureStates) {
         appState.featureStates["agent"] as? AgentRuntimeState
@@ -81,7 +79,8 @@ fun AgentManagerView(store: Store) {
                         agentState = agentState,
                         store = store,
                         onDeleteRequest = { agentToDelete = it },
-                        onEditRequest = { store.dispatch("ui.agentManager", Action(ActionNames.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.id) })) }
+                        onEditRequest = { store.dispatch("ui.agentManager", Action(ActionNames.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.id) })) },
+                        platformDependencies = platformDependencies
                     )
                 }
             }
@@ -96,14 +95,15 @@ private fun AgentCard(
     agentState: AgentRuntimeState,
     store: Store,
     onDeleteRequest: (AgentInstance) -> Unit,
-    onEditRequest: () -> Unit
+    onEditRequest: () -> Unit,
+    platformDependencies: app.auf.util.PlatformDependencies
 ) {
     Card(Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
         Column(Modifier.padding(16.dp), Arrangement.spacedBy(12.dp)) {
             if (isEditing) {
                 AgentEditorView(agent, agentState, store)
             } else {
-                AgentReadOnlyView(agent, agentState.sessionNames, store)
+                AgentReadOnlyView(agent, agentState, store, platformDependencies)
             }
 
             HorizontalDivider()
@@ -122,55 +122,22 @@ private fun AgentCard(
 }
 
 @Composable
-private fun AgentReadOnlyView(agent: AgentInstance, sessionNames: Map<String, String>, store: Store) {
-    val sessionName = agent.primarySessionId?.let { sessionNames[it] } ?: "Not Subscribed"
+private fun AgentReadOnlyView(
+    agent: AgentInstance,
+    agentState: AgentRuntimeState,
+    store: Store,
+    platformDependencies: app.auf.util.PlatformDependencies
+) {
+    val sessionName = agent.primarySessionId?.let { agentState.sessionNames[it] } ?: "Not Subscribed"
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        // --- Info Section ---
         SelectionContainer {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(agent.name, style = MaterialTheme.typography.titleLarge)
+                // Name is now displayed in AgentControlCard, so it's removed from here to avoid duplication.
                 Text("Session: $sessionName", style = MaterialTheme.typography.bodyMedium)
                 Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
-                Text("Status: ${agent.status}", style = MaterialTheme.typography.bodyMedium)
-                if (agent.status == AgentStatus.ERROR && agent.errorMessage != null) {
-                    Text(
-                        text = agent.errorMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
             }
         }
-
-        // --- Actions Section ---
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-            // THE FIX: Show Cancel button ONLY when processing.
-            if (agent.status == AgentStatus.PROCESSING) {
-                Button(
-                    onClick = {
-                        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agent.id) }))
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                ) {
-                    Icon(Icons.Default.Cancel, contentDescription = "Cancel Turn")
-                    Spacer(Modifier.width(8.dp))
-                    Text("Cancel")
-                }
-            } else {
-                Button(
-                    onClick = {
-                        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", agent.id) }))
-                    },
-                    // THE FIX: Allow triggering from WAITING state as well.
-                    enabled = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING || agent.status == AgentStatus.ERROR) && agent.primarySessionId != null
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Trigger Turn")
-                    Spacer(Modifier.width(8.dp))
-                    Text("Trigger Turn")
-                }
-            }
-        }
+        AgentControlCard(agent, store, platformDependencies)
     }
 }
 
@@ -181,7 +148,6 @@ private fun AgentEditorView(
     agentState: AgentRuntimeState,
     store: Store
 ) {
-    // REFACTOR: Use remember(agent.id) to reset local state when the user switches to editing a different agent.
     var agentNameInput by remember(agent.id) { mutableStateOf(agent.name) }
     var autoWaitTimeInput by remember(agent.id) { mutableStateOf(agent.autoWaitTimeSeconds.toString()) }
     var autoMaxWaitTimeInput by remember(agent.id) { mutableStateOf(agent.autoMaxWaitTimeSeconds.toString()) }
@@ -190,13 +156,8 @@ private fun AgentEditorView(
         store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
             put("agentId", agent.id)
             put("name", agentNameInput)
-            // Only include timer values if they are valid integers.
-            autoWaitTimeInput.toIntOrNull()?.let {
-                put("autoWaitTimeSeconds", it)
-            }
-            autoMaxWaitTimeInput.toIntOrNull()?.let {
-                put("autoMaxWaitTimeSeconds", it)
-            }
+            autoWaitTimeInput.toIntOrNull()?.let { put("autoWaitTimeSeconds", it) }
+            autoMaxWaitTimeInput.toIntOrNull()?.let { put("autoMaxWaitTimeSeconds", it) }
         }))
         store.dispatch("ui.agentManager", Action(ActionNames.AGENT_SET_EDITING, buildJsonObject { put("agentId", null as String?) }))
     }
@@ -241,7 +202,6 @@ private fun AgentEditorView(
             )
         }
 
-        // New section for automatic mode settings
         if (agent.automaticMode) {
             Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(

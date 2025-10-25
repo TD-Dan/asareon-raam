@@ -15,33 +15,29 @@ data class AgentInstance(
     val modelProvider: String,
     val modelName: String,
     val primarySessionId: String? = null,
+    // Configuration
     val automaticMode: Boolean = false,
-    // The time in seconds to wait for user input to stop before triggering a turn.
     val autoWaitTimeSeconds: Int = 5,
-    // The maximum time in seconds an agent can be in the WAITING state before being forced to trigger.
     val autoMaxWaitTimeSeconds: Int = 30,
+    val isAgentActive: Boolean = true,
 
+    // Transient State
     @Transient
     val status: AgentStatus = AgentStatus.IDLE,
-
     @Transient
     val errorMessage: String? = null,
-
-    // The "Awareness Frontier". Tracks the ID of the last message seen in the subscribed session.
     @Transient
     val lastSeenMessageId: String? = null,
-
-    // The "Commitment Frontier". A snapshot of the awareness frontier when a cognitive cycle begins.
     @Transient
     val processingFrontierMessageId: String? = null,
-
-    // The system timestamp (milliseconds) when the agent first entered the WAITING state.
     @Transient
     val waitingSinceTimestamp: Long? = null,
-
-    // The system timestamp (milliseconds) of the last message that the agent observed.
     @Transient
     val lastMessageReceivedTimestamp: Long? = null,
+    @Transient
+    val processingSinceTimestamp: Long? = null,
+    @Transient
+    val processingStep: String? = null,
 )
 
 @Serializable
