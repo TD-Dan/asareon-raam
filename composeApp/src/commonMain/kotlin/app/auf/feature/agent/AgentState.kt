@@ -8,6 +8,25 @@ import kotlinx.serialization.Transient
 enum class AgentStatus { IDLE, WAITING, PROCESSING, ERROR }
 
 @Serializable
+enum class TurnMode { DIRECT, PREVIEW }
+
+
+@Serializable
+data class GatewayMessage(val role: String, val content: String)
+@Serializable
+data class GatewayRequest(
+    val modelName: String,
+    val contents: List<GatewayMessage>,
+    val correlationId: String
+)
+
+@Serializable
+data class StagedPreviewData(
+    val agnosticRequest: GatewayRequest,
+    val rawRequestJson: String
+)
+
+@Serializable
 data class AgentInstance(
     val id: String,
     val name: String,
@@ -38,6 +57,10 @@ data class AgentInstance(
     val processingSinceTimestamp: Long? = null,
     @Transient
     val processingStep: String? = null,
+    @Transient
+    val turnMode: TurnMode = TurnMode.DIRECT,
+    @Transient
+    val stagedPreviewData: StagedPreviewData? = null
 )
 
 @Serializable
@@ -54,7 +77,12 @@ data class AgentRuntimeState(
 
     /** A transient field to reliably pass the IDs of agents who need their config persisted from the reducer to the onAction handler. */
     @Transient
-    val agentsToPersist: Set<String>? = null
+    val agentsToPersist: Set<String>? = null,
+
+    /** A transient field to indicate which agent's context is being viewed in the preview screen. */
+    @Transient
+    val viewingContextForAgentId: String? = null
+
 ) : FeatureState {
     @Serializable
     data class AvatarCardInfo(val messageId: String, val sessionId: String)

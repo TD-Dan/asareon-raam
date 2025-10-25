@@ -29,9 +29,11 @@ class AgentRuntimeFeature(
     @Serializable private data class SessionNamesPayload(val names: Map<String, String>)
     @Serializable private data class GatewayResponsePayload(val correlationId: String, val rawContent: String? = null, val errorMessage: String? = null)
     @Serializable private data class LedgerResponsePayload(val correlationId: String, val messages: List<GatewayMessage>)
-    @Serializable private data class GatewayMessage(val role: String, val content: String)
     @Serializable private data class MessagePostedPayload(val sessionId: String, val entry: JsonObject)
     @Serializable private data class MessageDeletedPayload(val sessionId: String, val messageId: String)
+    @Serializable private data class InitiateTurnPayload(val agentId: String, val preview: Boolean = false)
+    @Serializable private data class SetPreviewDataPayload(val agentId: String, val agnosticRequest: GatewayRequest, val rawRequestJson: String)
+    @Serializable private data class GatewayPreviewResponsePayload(val correlationId: String, val agnosticRequest: GatewayRequest, val rawRequestJson: String)
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val agentConfigFILENAME = "agent.json"
@@ -65,10 +67,12 @@ class AgentRuntimeFeature(
             ActionNames.AGENT_INTERNAL_SET_STATUS -> handleSetStatus(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP -> handleSetProcessingStep(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> handleAgentLoaded(action, currentFeatureState)?.let { newFeatureState = it }
+            ActionNames.AGENT_INITIATE_TURN -> handleInitiateTurn(action, currentFeatureState)?.let { newFeatureState = it }
+            ActionNames.AGENT_DISCARD_PREVIEW -> handleDiscardPreview(action, currentFeatureState)?.let { newFeatureState = it }
+            ActionNames.AGENT_INTERNAL_SET_PREVIEW_DATA -> handleSetPreviewData(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> handleMessagePosted(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.SESSION_PUBLISH_MESSAGE_DELETED -> handleMessageDeleted(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.SESSION_PUBLISH_SESSION_DELETED -> handleSessionDeleted(action, currentFeatureState)?.let { newFeatureState = it }
-            ActionNames.AGENT_TRIGGER_MANUAL_TURN -> handleTriggerTurn(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED -> {
                 val decodedModels: Map<String, List<String>>? = try { action.payload?.let { json.decodeFromJsonElement(it) } } catch (e: Exception) { null }
                 newFeatureState = currentFeatureState.copy(availableModels = decodedModels ?: emptyMap())
@@ -84,6 +88,39 @@ class AgentRuntimeFeature(
             if (finalState != currentFeatureState) stateWithFeature.copy(featureStates = stateWithFeature.featureStates + (name to finalState)) else stateWithFeature
         } ?: stateWithFeature
     }
+
+    private fun handleInitiateTurn(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
+        val payload = action.payload?.let { json.decodeFromJsonElement<InitiateTurnPayload>(it) } ?: return null
+        val agent = currentFeatureState.agents[payload.agentId] ?: return null
+        if (agent.status == AgentStatus.PROCESSING) return null
+        val updatedAgent = agent.copy(
+            processingFrontierMessageId = agent.lastSeenMessageId,
+            turnMode = if (payload.preview) TurnMode.PREVIEW else TurnMode.DIRECT
+        )
+        return currentFeatureState.copy(agents = currentFeatureState.agents + (agent.id to updatedAgent))
+    }
+
+    private fun handleDiscardPreview(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
+        val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return null
+        val agent = currentFeatureState.agents[agentId] ?: return null
+        val updatedAgent = agent.copy(stagedPreviewData = null, status = AgentStatus.IDLE)
+        return currentFeatureState.copy(
+            agents = currentFeatureState.agents + (agentId to updatedAgent),
+            viewingContextForAgentId = null
+        )
+    }
+
+    private fun handleSetPreviewData(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
+        val payload = action.payload?.let { json.decodeFromJsonElement<SetPreviewDataPayload>(it) } ?: return null
+        val agent = currentFeatureState.agents[payload.agentId] ?: return null
+        val previewData = StagedPreviewData(payload.agnosticRequest, payload.rawRequestJson)
+        val updatedAgent = agent.copy(stagedPreviewData = previewData)
+        return currentFeatureState.copy(
+            agents = currentFeatureState.agents + (agent.id to updatedAgent),
+            viewingContextForAgentId = agent.id
+        )
+    }
+
 
     private fun handleCreateAgent(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
         val payload = action.payload ?: return null
@@ -156,7 +193,6 @@ class AgentRuntimeFeature(
         val newStatus = try {
             AgentStatus.valueOf(newStatusString)
         } catch (e: Exception) {
-            // FIX 1: Restore the log call.
             platformDependencies.log(LogLevel.ERROR, name, "Received invalid agent status string '$newStatusString' for agent '$agentId'. Action ignored.")
             return null
         }
@@ -227,14 +263,6 @@ class AgentRuntimeFeature(
         return currentFeatureState.copy(agentAvatarCardIds = currentFeatureState.agentAvatarCardIds - agentId)
     }
 
-    private fun handleTriggerTurn(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState? {
-        val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return null
-        val agent = currentFeatureState.agents[agentId] ?: return null
-        if (agent.status == AgentStatus.PROCESSING) return null
-        val updatedAgent = agent.copy(processingFrontierMessageId = agent.lastSeenMessageId)
-        return currentFeatureState.copy(agents = currentFeatureState.agents + (agentId to updatedAgent))
-    }
-
     override fun onAction(action: Action, store: Store, previousState: AppState) {
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         when (action.name) {
@@ -253,6 +281,21 @@ class AgentRuntimeFeature(
                 val agentToSave = agentState.agents.values.lastOrNull() ?: return
                 saveAgentConfig(agentToSave, store)
                 broadcastAgentNames(store)
+            }
+            ActionNames.AGENT_CLONE -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentToClone = agentState.agents[agentId] ?: return
+                val createPayload = buildJsonObject {
+                    put("name", "${agentToClone.name} (Copy)")
+                    put("personaId", agentToClone.personaId)
+                    put("modelProvider", agentToClone.modelProvider)
+                    put("modelName", agentToClone.modelName)
+                    agentToClone.primarySessionId?.let { put("primarySessionId", it) }
+                    put("automaticMode", agentToClone.automaticMode)
+                    put("autoWaitTimeSeconds", agentToClone.autoWaitTimeSeconds)
+                    put("autoMaxWaitTimeSeconds", agentToClone.autoMaxWaitTimeSeconds)
+                }
+                store.dispatch(this.name, Action(ActionNames.AGENT_CREATE, createPayload))
             }
             ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE, ActionNames.AGENT_TOGGLE_ACTIVE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
@@ -288,6 +331,39 @@ class AgentRuntimeFeature(
                     agentState.agents[agentId]?.let { saveAgentConfig(it, store) }
                 }
             }
+            ActionNames.AGENT_INITIATE_TURN -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agent = agentState.agents[agentId] ?: return
+                if (agent.status == AgentStatus.PROCESSING || !agent.isAgentActive) return
+                val sessionId = agent.primarySessionId ?: run {
+                    updateAgentAvatarCard(agentId, AgentStatus.ERROR, "Cannot start turn: Agent not subscribed to a session.", store)
+                    return
+                }
+                updateAgentAvatarCard(agentId, AgentStatus.PROCESSING, null, store)
+                store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+                    put("agentId", agentId); put("step", "Requesting Ledger")
+                }))
+                store.dispatch(this.name, Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject {
+                    put("sessionId", sessionId); put("correlationId", agentId)
+                }))
+            }
+            ActionNames.AGENT_EXECUTE_PREVIEWED_TURN -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agent = agentState.agents[agentId] ?: return
+                val previewData = agent.stagedPreviewData ?: return
+                store.dispatch(this.name, Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
+                    put("providerId", agent.modelProvider)
+                    put("modelName", previewData.agnosticRequest.modelName)
+                    put("correlationId", previewData.agnosticRequest.correlationId)
+                    put("contents", json.encodeToJsonElement(previewData.agnosticRequest.contents))
+                }))
+                // Clear the preview data and navigate back in the reducer for DISCARD_PREVIEW
+                store.dispatch(this.name, Action(ActionNames.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId) }))
+                store.dispatch("ui.agent", Action(ActionNames.CORE_SHOW_DEFAULT_VIEW))
+            }
+            ActionNames.AGENT_DISCARD_PREVIEW -> {
+                store.dispatch("ui.agent", Action(ActionNames.CORE_SHOW_DEFAULT_VIEW))
+            }
             ActionNames.AGENT_CANCEL_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 store.dispatch(this.name, Action(ActionNames.GATEWAY_CANCEL_REQUEST, buildJsonObject {
@@ -297,7 +373,6 @@ class AgentRuntimeFeature(
                 activeTurnJobs.remove(agentId)
                 updateAgentAvatarCard(agentId, AgentStatus.IDLE, "Turn cancelled by user.", store)
             }
-            ActionNames.AGENT_TRIGGER_MANUAL_TURN -> beginCognitiveCycle(action, store)
             ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<MessagePostedPayload>(it) } ?: return
                 if (isAvatarCard(payload)) return
@@ -318,7 +393,10 @@ class AgentRuntimeFeature(
                         val debounceTrigger = waitedFor >= agent.autoWaitTimeSeconds
                         val timeoutTrigger = totalWait >= agent.autoMaxWaitTimeSeconds
                         if (debounceTrigger || timeoutTrigger) {
-                            store.dispatch(this.name, Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", agent.id) }))
+                            store.dispatch(this.name, Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+                                put("agentId", agent.id)
+                                put("preview", false)
+                            }))
                         }
                     }
                 }
@@ -353,31 +431,28 @@ class AgentRuntimeFeature(
         }))
     }
 
-    private fun beginCognitiveCycle(action: Action, store: Store) {
-        val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
-        val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
-        val agent = agentState.agents[agentId] ?: return
-        if (agent.status == AgentStatus.PROCESSING || !agent.isAgentActive) return
-        val sessionId = agent.primarySessionId ?: run {
-            updateAgentAvatarCard(agentId, AgentStatus.ERROR, "Cannot start turn: Agent not subscribed to a session.", store)
-            return
-        }
-        updateAgentAvatarCard(agentId, AgentStatus.PROCESSING, null, store)
-        store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
-            put("agentId", agentId); put("step", "Requesting Ledger")
-        }))
-        store.dispatch(this.name, Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject {
-            put("sessionId", sessionId); put("correlationId", agentId)
-        }))
-    }
-
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
         when (envelope.type) {
             ActionNames.Envelopes.GATEWAY_RESPONSE -> handleGatewayResponse(envelope.payload, store)
+            ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW -> handleGatewayPreviewResponse(envelope.payload, store)
             ActionNames.Envelopes.SESSION_RESPONSE_LEDGER -> handleSessionLedgerResponse(envelope.payload, store)
             "filesystem.response.list" -> handleFileSystemListResponse(envelope.payload, store)
             "filesystem.response.read" -> handleFileSystemReadResponse(envelope.payload, store)
         }
+    }
+
+    private fun handleGatewayPreviewResponse(payload: JsonObject, store: Store) {
+        val decoded = try { json.decodeFromJsonElement<GatewayPreviewResponsePayload>(payload) } catch (e: Exception) { return }
+        val agent = (store.state.value.featureStates[name] as? AgentRuntimeState)?.agents?.get(decoded.correlationId) ?: return
+
+        store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PREVIEW_DATA, buildJsonObject {
+            put("agentId", agent.id)
+            put("agnosticRequest", json.encodeToJsonElement(decoded.agnosticRequest))
+            put("rawRequestJson", decoded.rawRequestJson)
+        }))
+        store.dispatch("ui.agent", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject {
+            put("key", "feature.agent.context_viewer")
+        }))
     }
 
     private fun handleSessionLedgerResponse(payload: JsonObject, store: Store) {
@@ -394,10 +469,14 @@ class AgentRuntimeFeature(
         }
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[decoded.correlationId] ?: return
+
         store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
             put("agentId", agent.id); put("step", "Generating Content")
         }))
-        store.dispatch(this.name, Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
+
+        val requestActionName = if (agent.turnMode == TurnMode.PREVIEW) ActionNames.GATEWAY_PREPARE_PREVIEW else ActionNames.GATEWAY_GENERATE_CONTENT
+
+        store.dispatch(this.name, Action(requestActionName, buildJsonObject {
             put("providerId", agent.modelProvider); put("modelName", agent.modelName); put("correlationId", agent.id)
             put("contents", json.encodeToJsonElement(decoded.messages))
         }))
@@ -426,7 +505,6 @@ class AgentRuntimeFeature(
 
     private fun handleGatewayResponse(payload: JsonObject, store: Store) {
         val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
-        // FIX 3: Restore the payload integrity guard.
         if (agentId == null || ("rawContent" !in payload && "errorMessage" !in payload)) {
             platformDependencies.log(LogLevel.ERROR, name, "FATAL: Received corrupted gateway response payload for agent '$agentId'. Missing 'rawContent' and 'errorMessage' keys. Payload: $payload")
             if (agentId != null) {
@@ -493,7 +571,10 @@ class AgentRuntimeFeature(
 
     override val composableProvider: ComposableProvider = object : ComposableProvider {
         override val stageViews: Map<String, @Composable (Store, List<Feature>) -> Unit> =
-            mapOf("feature.agent.manager" to { store, _, -> AgentManagerView(store, platformDependencies) })
+            mapOf(
+                "feature.agent.manager" to { store, _, -> AgentManagerView(store, platformDependencies) },
+                "feature.agent.context_viewer" to { store, _ -> AgentContextView(store) }
+            )
         @Composable
         override fun RibbonContent(store: Store, activeViewKey: String?) {
             val viewKey = "feature.agent.manager"

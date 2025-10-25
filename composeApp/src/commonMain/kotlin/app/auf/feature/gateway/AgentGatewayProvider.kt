@@ -3,15 +3,12 @@ package app.auf.feature.gateway
 import app.auf.core.Action
 import kotlinx.serialization.Serializable
 
-/**
- * A new, universal, provider-agnostic data class for a single message in a conversation.
- */
+
+// --- Internal Data Contracts for Gateway Feature ---
+// These are defined here, privately, to deserialize the JSON payload received from clients.
 @Serializable
 data class GatewayMessage(val role: String, val content: String)
-
-/**
- * The generic request for content generation, now using a type-safe list of universal messages.
- */
+@Serializable
 data class GatewayRequest(
     val modelName: String,
     val contents: List<GatewayMessage>,
@@ -22,7 +19,7 @@ data class GatewayRequest(
  * A generic, provider-agnostic response from a content generation call.
  * This is the data model delivered back to the caller via the private channel.
  */
-@Serializable // THE FIX: Added missing Serializable annotation.
+@Serializable
 data class GatewayResponse(
     val rawContent: String?,
     val errorMessage: String?,

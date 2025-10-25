@@ -5,8 +5,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +31,7 @@ fun AgentControlCard(
     platformDependencies: app.auf.util.PlatformDependencies
 ) {
     var processingTime by remember { mutableStateOf("00:00") }
+    var menuExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(agent.status, agent.processingSinceTimestamp) {
         if (agent.status == AgentStatus.PROCESSING && agent.processingSinceTimestamp != null) {
@@ -40,6 +44,8 @@ fun AgentControlCard(
             }
         }
     }
+
+    val canInitiateTurn = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING || agent.status == AgentStatus.ERROR) && agent.primarySessionId != null && agent.isAgentActive
 
     val statusText = when (agent.status) {
         AgentStatus.PROCESSING -> {
@@ -75,6 +81,38 @@ fun AgentControlCard(
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Edit Agent") },
+                        onClick = {
+                            store.dispatch("ui.controls", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.manager") }))
+                            store.dispatch("ui.controls", Action(ActionNames.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.id) }))
+                            menuExpanded = false
+                        },
+                        leadingIcon = { Icon(Icons.Default.Edit, null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Preview Turn") },
+                        onClick = {
+                            store.dispatch("ui.controls", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+                                put("agentId", agent.id)
+                                put("preview", true)
+                            }))
+                            menuExpanded = false
+                        },
+                        leadingIcon = { Icon(Icons.Default.Visibility, null) },
+                        enabled = canInitiateTurn
+                    )
+                }
+            }
+
             val activeSwitchTooltipState = remember { TooltipState() }
             TooltipBox(
                 positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
@@ -122,8 +160,11 @@ fun AgentControlCard(
                 }
             } else {
                 Button(
-                    onClick = { store.dispatch("ui.controls", Action(ActionNames.AGENT_TRIGGER_MANUAL_TURN, buildJsonObject { put("agentId", agent.id) })) },
-                    enabled = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING || agent.status == AgentStatus.ERROR) && agent.primarySessionId != null && agent.isAgentActive
+                    onClick = { store.dispatch("ui.controls", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+                        put("agentId", agent.id)
+                        put("preview", false) // Direct execution
+                    })) },
+                    enabled = canInitiateTurn
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = "Trigger Turn")
                 }

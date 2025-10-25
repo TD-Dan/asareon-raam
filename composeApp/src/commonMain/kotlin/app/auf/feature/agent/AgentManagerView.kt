@@ -112,6 +112,9 @@ private fun AgentCard(
                     IconButton(onClick = onEditRequest) {
                         Icon(Icons.Default.Edit, "Edit Agent")
                     }
+                    IconButton(onClick = { store.dispatch("ui.agentManager", Action(ActionNames.AGENT_CLONE, buildJsonObject { put("agentId", agent.id) })) }) {
+                        Icon(Icons.Default.ContentCopy, "Clone Agent")
+                    }
                     IconButton(onClick = { onDeleteRequest(agent) }) {
                         Icon(Icons.Default.Delete, "Delete Agent")
                     }
@@ -200,19 +203,22 @@ private fun AgentEditorView(
                 }
             )
         }
-        Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = autoWaitTimeInput,
-                onValueChange = { autoWaitTimeInput = it.filter { c -> c.isDigit() } },
-                label = { Text("Auto Wait (s)") },
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedTextField(
-                value = autoMaxWaitTimeInput,
-                onValueChange = { autoMaxWaitTimeInput = it.filter { c -> c.isDigit() } },
-                label = { Text("Max Wait (s)") },
-                modifier = Modifier.weight(1f)
-            )
+
+        if (agent.automaticMode) {
+            Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = autoWaitTimeInput,
+                    onValueChange = { autoWaitTimeInput = it.filter { c -> c.isDigit() } },
+                    label = { Text("Auto Wait (s)") },
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = autoMaxWaitTimeInput,
+                    onValueChange = { autoMaxWaitTimeInput = it.filter { c -> c.isDigit() } },
+                    label = { Text("Max Wait (s)") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
         Row (
             Modifier.fillMaxWidth(),
