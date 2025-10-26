@@ -140,14 +140,16 @@ class AgentRuntimeFeatureT2CoreTest {
 
     @Test
     fun `on session ledger response for direct turn, dispatches GATEWAY_GENERATE_CONTENT`() {
-        val agent = createTestAgent(status = AgentStatus.PROCESSING, turnMode = TurnMode.DIRECT)
+        val agent = createTestAgent(status = AgentStatus.IDLE, turnMode = TurnMode.DIRECT)
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
             .withFeature(FakeSessionFeature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .build()
 
-        harness.store.dispatch("agent", Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject { put("sessionId", "session-1"); put("correlationId", "agent-1")}))
+        // THE FIX: Dispatch the public action that starts the turn, which correctly sets the status.
+        // Do not call onPrivateData directly.
+        harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", "agent-1"); put("preview", false) }))
 
         val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
         assertNotNull(gatewayRequest)
@@ -155,14 +157,15 @@ class AgentRuntimeFeatureT2CoreTest {
 
     @Test
     fun `on session ledger response for preview turn, dispatches GATEWAY_PREPARE_PREVIEW`() {
-        val agent = createTestAgent(status = AgentStatus.PROCESSING, turnMode = TurnMode.PREVIEW)
+        val agent = createTestAgent(status = AgentStatus.IDLE, turnMode = TurnMode.PREVIEW)
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
             .withFeature(FakeSessionFeature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .build()
 
-        harness.store.dispatch("agent", Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject { put("sessionId", "session-1"); put("correlationId", "agent-1")}))
+        // THE FIX: Dispatch the public action that starts the turn.
+        harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", "agent-1"); put("preview", true) }))
 
         val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_PREPARE_PREVIEW }
         assertNotNull(gatewayRequest)
@@ -180,14 +183,14 @@ class AgentRuntimeFeatureT2CoreTest {
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .build()
 
-        // ARRANGE 2: THE FIX - Manually broadcast the identities to populate the agent's cache.
+        // ARRANGE 2: Manually broadcast the identities to populate the agent's cache.
         val identitiesBroadcast = Action(ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
             put("identities", Json.encodeToJsonElement(listOf(user)))
             put("activeId", "user-id-1")
         })
         harness.store.dispatch("core", identitiesBroadcast)
 
-        // ACT: THE FIX - Trigger the turn using the correct, public entry point.
+        // ACT: Trigger the turn using the correct, public entry point.
         val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
             put("agentId", "agent-1")
             put("preview", false)
