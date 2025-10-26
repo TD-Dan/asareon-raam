@@ -374,6 +374,7 @@ class AgentRuntimeFeature(
                     put("modelName", previewData.agnosticRequest.modelName)
                     put("correlationId", previewData.agnosticRequest.correlationId)
                     put("contents", json.encodeToJsonElement(previewData.agnosticRequest.contents))
+                    previewData.agnosticRequest.systemPrompt?.let { put("systemPrompt", it) } // Pass the system prompt
                 }))
                 store.dispatch(this.name, Action(ActionNames.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId) }))
                 store.dispatch("ui.agent", Action(ActionNames.CORE_SHOW_DEFAULT_VIEW))
@@ -519,6 +520,27 @@ class AgentRuntimeFeature(
             }
         }
 
+        // NEW: Construct the system prompt
+        val sessionName = agentState.sessionNames[agent.primarySessionId] ?: "Unknown Session"
+        val systemPrompt = """
+            --- SYSTEM BOOTSTRAP DIRECTIVES ---
+            // You are an autonomous agent operating within the multi user and multi agent AUF App.
+            // The following directives and context are provided for this turn.
+
+            **OPERATIONAL DIRECTIVES:**
+            *   **IDENTITY:** You are agent "${abbreviate(agent.name, 64)}" (ID: ${agent.id}).
+            *   **FORMATTING:** Your response MUST be your direct reply only. DO NOT include prefixes (names, IDs, timestamps). The application handles all formatting.
+            *   **DISCIPLINE:** You MUST NOT speak for or impersonate any other participant. Generate content only from your own perspective as "${abbreviate(agent.name, 64)}".
+
+            **SITUATIONAL AWARENESS:**
+            *   Platform: AUF App ${Version.APP_VERSION}
+            *   Host LLM: ${agent.modelProvider}
+            *   Host Model: ${agent.modelName}
+            *   Session: '${abbreviate(sessionName, 64)}'
+            *   Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())}
+
+            --- CONVERSATIONAL HISTORY BEGINS ---
+        """.trimIndent()
 
         val requestActionName = if (agent.turnMode == TurnMode.PREVIEW) ActionNames.GATEWAY_PREPARE_PREVIEW else ActionNames.GATEWAY_GENERATE_CONTENT
         val step = if (agent.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"
@@ -530,6 +552,7 @@ class AgentRuntimeFeature(
         store.dispatch(this.name, Action(requestActionName, buildJsonObject {
             put("providerId", agent.modelProvider); put("modelName", agent.modelName); put("correlationId", agent.id)
             put("contents", json.encodeToJsonElement(enrichedMessages))
+            put("systemPrompt", systemPrompt) // Pass the new system prompt
         }))
     }
 

@@ -14,7 +14,7 @@ class GatewayFeature(
     private val platformDependencies: PlatformDependencies,
     private val coroutineScope: CoroutineScope,
     // All available providers are injected here at the composition root (e.g., in AppContainer).
-    providers: List<AgentGatewayProvider>
+    providers: List<UniversalGatewayProvider>
 ) : Feature {
     override val name: String = "gateway"
 

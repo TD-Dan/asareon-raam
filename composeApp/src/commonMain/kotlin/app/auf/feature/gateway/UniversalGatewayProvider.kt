@@ -10,15 +10,19 @@ import kotlinx.serialization.Serializable
 data class GatewayMessage(
     val role: String,
     val content: String,
+    // Enriched with sender identity
     val senderId: String,
     val senderName: String,
+    // Enriched with timestamp
     val timestamp: Long
 )
 @Serializable
 data class GatewayRequest(
     val modelName: String,
     val contents: List<GatewayMessage>,
-    val correlationId: String
+    val correlationId: String,
+    // NEW: The system prompt for behavioral control.
+    val systemPrompt: String? = null
 )
 
 /**
@@ -36,7 +40,7 @@ data class GatewayResponse(
  * The universal contract for any class that provides access to a generative AI service.
  * Each implementation is responsible for its own API-specific logic and data models.
  */
-interface AgentGatewayProvider {
+interface UniversalGatewayProvider {
     /** A unique, machine-readable ID for this provider (e.g., "gemini", "openai"). */
     val id: String
 

@@ -13,11 +13,7 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import kotlinx.serialization.json.*
 import kotlin.coroutines.cancellation.CancellationException
 
 // --- Data Contracts specific to the Gemini API ---
@@ -33,7 +29,7 @@ private data class Candidate(
     val finishReason: String? = null
 )
 @Serializable
-private data class Content(val parts: List<Part>? = null)
+private data class Content(val parts: List<Part>? = null, val role: String? = null) // Gemini can return a role in its content block
 @Serializable
 private data class Part(val text: String)
 @Serializable
@@ -53,7 +49,7 @@ private data class ModelInfo(
  */
 class GeminiProvider(
     private val platformDependencies: PlatformDependencies
-) : AgentGatewayProvider {
+) : UniversalGatewayProvider {
     override val id: String = "gemini"
     private val apiKeySettingKey = "gateway.gemini.apiKey"
     private val API_HOST = "generativelanguage.googleapis.com"
@@ -70,7 +66,7 @@ class GeminiProvider(
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         val apiContents = buildJsonArray {
             request.contents.forEach { message ->
-                // FIX: Use the high-clarity, timestamp-aware format.
+                // Use the high-clarity, timestamp-aware format.
                 val formattedTimestamp = platformDependencies.formatIsoTimestamp(message.timestamp)
                 val enrichedContent = "${message.senderName} (${message.senderId}) @ ${formattedTimestamp}: ${message.content}"
                 add(buildJsonObject {
@@ -81,7 +77,19 @@ class GeminiProvider(
                 })
             }
         }
-        return buildJsonObject { put("contents", apiContents) }
+        return buildJsonObject {
+            put("contents", apiContents)
+            // NEW: Add the system prompt if it exists.
+            request.systemPrompt?.let {
+                putJsonObject("system_instruction") {
+                    putJsonObject("content") {
+                        put("parts", buildJsonArray {
+                            add(buildJsonObject { put("text", it) })
+                        })
+                    }
+                }
+            }
+        }
     }
 
     /** Parses a raw JSON response body into a universal GatewayResponse. */

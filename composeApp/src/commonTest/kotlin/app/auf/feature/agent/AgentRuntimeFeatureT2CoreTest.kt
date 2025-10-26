@@ -77,7 +77,8 @@ class AgentRuntimeFeatureT2CoreTest {
                 val agnosticRequest = GatewayRequest(
                     modelName = payload["modelName"]!!.jsonPrimitive.content,
                     contents = json.decodeFromJsonElement(payload["contents"]!!),
-                    correlationId = agentId
+                    correlationId = agentId,
+                    systemPrompt = payload["systemPrompt"]?.jsonPrimitive?.content
                 )
                 val responsePayload = buildJsonObject {
                     put("correlationId", agentId)
@@ -174,7 +175,7 @@ class AgentRuntimeFeatureT2CoreTest {
         val user = Identity("user-id-1", "User Alpha")
         val agent = createTestAgent(id = "agent-1", name = "Test Agent")
         val harness = TestEnvironment.create()
-            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
+            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("2.0.0-test"), CoroutineScope(Dispatchers.Unconfined)))
             .withFeature(FakeSessionFeature)
             .withInitialState("core", CoreState(userIdentities = listOf(user), activeUserId = "user-id-1"))
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
@@ -223,6 +224,11 @@ class AgentRuntimeFeatureT2CoreTest {
         assertEquals("Test Agent", agentMessage.senderName)
         assertEquals("Agent response", agentMessage.content)
         assertEquals(2000L, agentMessage.timestamp)
+
+        val systemPrompt = gatewayRequest.payload?.get("systemPrompt")?.jsonPrimitive?.content
+        assertNotNull(systemPrompt)
+        assertTrue(systemPrompt.contains("You are agent \"Test Agent\""))
+        assertTrue(systemPrompt.contains("Platform: AUF App 2.0.0-test"))
     }
 
     @Test

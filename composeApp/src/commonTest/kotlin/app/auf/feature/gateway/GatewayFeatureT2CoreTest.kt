@@ -6,7 +6,6 @@ import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
 import app.auf.feature.settings.SettingsFeature
-import app.auf.feature.settings.SettingsState
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -29,10 +28,10 @@ import kotlin.test.*
 class GatewayFeatureT2CoreTest {
 
     // A test-only fake provider for use within this test class.
-    private class FakeAgentGatewayProvider(
+    private class FakeUniversalGatewayProvider(
         override val id: String,
         private val modelsToReturn: List<String> = listOf("model-1", "model-2")
-    ) : AgentGatewayProvider {
+    ) : UniversalGatewayProvider {
         var registerSettingsCallCount = 0
         var listAvailableModelsCallCount = 0
         var generateContentCallCount = 0
@@ -61,15 +60,15 @@ class GatewayFeatureT2CoreTest {
         }
     }
 
-    private lateinit var fakeProvider1: FakeAgentGatewayProvider
-    private lateinit var fakeProvider2: FakeAgentGatewayProvider
+    private lateinit var fakeProvider1: FakeUniversalGatewayProvider
+    private lateinit var fakeProvider2: FakeUniversalGatewayProvider
     private lateinit var testScope: TestScope
 
     @BeforeTest
     fun setup() {
         testScope = TestScope()
-        fakeProvider1 = FakeAgentGatewayProvider("provider-1")
-        fakeProvider2 = FakeAgentGatewayProvider("provider-2", modelsToReturn = listOf("gpt-x"))
+        fakeProvider1 = FakeUniversalGatewayProvider("provider-1")
+        fakeProvider2 = FakeUniversalGatewayProvider("provider-2", modelsToReturn = listOf("gpt-x"))
     }
 
     private fun createHarness(

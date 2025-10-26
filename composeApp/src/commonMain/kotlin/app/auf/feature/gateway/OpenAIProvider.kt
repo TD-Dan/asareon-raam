@@ -40,7 +40,7 @@ private data class ModelInfo(val id: String)
  */
 class OpenAIProvider(
     private val platformDependencies: PlatformDependencies
-) : AgentGatewayProvider {
+) : UniversalGatewayProvider {
     override val id: String = "openai"
     private val apiKeySettingKey = "gateway.openai.apiKey"
     private val API_HOST = "api.openai.com"
@@ -56,8 +56,15 @@ class OpenAIProvider(
     /** Builds the provider-specific JSON payload from a universal request. */
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         val openAiMessages = buildJsonArray {
+            // NEW: Add the system prompt if it exists.
+            request.systemPrompt?.let {
+                add(buildJsonObject {
+                    put("role", "system")
+                    put("content", it)
+                })
+            }
             request.contents.forEach { message ->
-                // FIX: Use the high-clarity, timestamp-aware format for both content and name.
+                // Use the high-clarity, timestamp-aware format for both content and name.
                 val formattedTimestamp = platformDependencies.formatIsoTimestamp(message.timestamp)
                 val enrichedContent = "${message.senderName} (${message.senderId}) @ ${formattedTimestamp}: ${message.content}"
                 val sanitizedName = "${message.senderName}_${message.senderId}".replace(Regex("[^a-zA-Z0-9_-]"), "_").take(64)
