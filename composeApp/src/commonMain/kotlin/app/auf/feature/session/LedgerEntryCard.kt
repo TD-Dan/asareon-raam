@@ -16,9 +16,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
+import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LedgerEntryCard(
     store: Store,
@@ -28,6 +30,7 @@ fun LedgerEntryCard(
     isCurrentUserMessage: Boolean, // THE FIX: New boolean flag
     isEditingThisMessage: Boolean,
     editingContent: String?,
+    platformDependencies: PlatformDependencies // ADDITION: For timestamp formatting
 ) {
     val uiState = remember(session.messageUiState, entry.id) {
         session.messageUiState[entry.id] ?: MessageUiState()
@@ -59,7 +62,8 @@ fun LedgerEntryCard(
                             }))
                         }
                     ),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
                         text = senderName,
@@ -67,32 +71,50 @@ fun LedgerEntryCard(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.secondary
                     )
+                    // ADDITION: Display the formatted timestamp
+                    Text(
+                        text = platformDependencies.formatDisplayTimestamp(entry.timestamp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = {
-                        store.dispatch("session.ui", Action(ActionNames.SESSION_TOGGLE_MESSAGE_RAW_VIEW, buildJsonObject {
-                            put("sessionId", session.id); put("messageId", entry.id)
-                        }))
-                    }, modifier = Modifier.size(24.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.Code,
-                            contentDescription = "Toggle Raw Content",
-                            tint = if (uiState.isRawView) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    TooltipBox(
+                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                        tooltip = { PlainTooltip { Text("Toggle Raw Content") } },
+                        state = remember { TooltipState() }
+                    ) {
+                        IconButton(onClick = {
+                            store.dispatch("session.ui", Action(ActionNames.SESSION_TOGGLE_MESSAGE_RAW_VIEW, buildJsonObject {
+                                put("sessionId", session.id); put("messageId", entry.id)
+                            }))
+                        }, modifier = Modifier.size(24.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.Code,
+                                contentDescription = "Toggle Raw Content",
+                                tint = if (uiState.isRawView) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                     Spacer(Modifier.width(4.dp))
-                    IconButton(onClick = {
-                        entry.rawContent?.let {
-                            store.dispatch("session.ui", Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject {
-                                put("text", it)
-                            }))
+                    TooltipBox(
+                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                        tooltip = { PlainTooltip { Text("Copy Message Content") } },
+                        state = remember { TooltipState() }
+                    ) {
+                        IconButton(onClick = {
+                            entry.rawContent?.let {
+                                store.dispatch("session.ui", Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject {
+                                    put("text", it)
+                                }))
+                            }
+                        }, modifier = Modifier.size(24.dp), enabled = entry.rawContent != null) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "Copy Message Content",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                    }, modifier = Modifier.size(24.dp), enabled = entry.rawContent != null) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy Message Content",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                     Spacer(Modifier.width(4.dp))
                     Box {

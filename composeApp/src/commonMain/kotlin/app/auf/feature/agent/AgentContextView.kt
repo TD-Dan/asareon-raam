@@ -1,5 +1,6 @@
 package app.auf.feature.agent
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,11 +10,13 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.Action
 import app.auf.core.Store
@@ -81,56 +84,116 @@ fun AgentContextView(store: Store) {
             }
 
             when (selectedTab) {
-                0 -> LogicalContextPane(agent.stagedPreviewData)
-                1 -> RawJsonPane(agent.stagedPreviewData)
+                0 -> LogicalContextPane(agent.stagedPreviewData, store)
+                1 -> RawJsonPane(agent.stagedPreviewData, store)
             }
         }
     }
 }
 
 @Composable
-private fun LogicalContextPane(previewData: StagedPreviewData) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        items(previewData.agnosticRequest.contents) { message ->
-            OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Text(
-                        text = "ROLE: ${message.role.uppercase()}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
-                    SelectionContainer {
-                        Text(text = message.content, style = MaterialTheme.typography.bodyMedium)
+private fun LogicalContextPane(previewData: StagedPreviewData, store: Store) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // FIX: Display the system prompt if it exists.
+            previewData.agnosticRequest.systemPrompt?.let { systemPrompt ->
+                item {
+                    OutlinedCard(modifier = Modifier.fillMaxWidth(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary)) {
+                        Column(Modifier.padding(12.dp)) {
+                            Text(
+                                text = "SYSTEM PROMPT",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.tertiary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Divider(modifier = Modifier.padding(vertical = 8.dp))
+                            SelectionContainer {
+                                Text(text = systemPrompt, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
+                }
+            }
+
+            items(previewData.agnosticRequest.contents) { message ->
+                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(
+                            text = "ROLE: ${message.role.uppercase()}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                        SelectionContainer {
+                            Text(text = message.content, style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                 }
             }
         }
+        HorizontalDivider()
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.End
+        ) {
+            Button(onClick = {
+                val fullText = buildString {
+                    previewData.agnosticRequest.systemPrompt?.let {
+                        append("--- SYSTEM PROMPT ---\n")
+                        append(it)
+                        append("\n\n")
+                    }
+                    previewData.agnosticRequest.contents.forEach { message ->
+                        append("--- ROLE: ${message.role.uppercase()} ---\n")
+                        append(message.content)
+                        append("\n\n")
+                    }
+                }
+                store.dispatch("ui.contextView", Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", fullText.trim()) }))
+            }) {
+                Icon(Icons.Default.ContentCopy, contentDescription = "Copy All", modifier = Modifier.padding(end = 8.dp))
+                Text("Copy All")
+            }
+        }
     }
 }
 
 @Composable
-private fun RawJsonPane(previewData: StagedPreviewData) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.medium)
-            .padding(1.dp) // for border effect
-    ) {
-        SelectionContainer {
-            Text(
-                text = previewData.rawRequestJson,
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(12.dp)
-                    .verticalScroll(rememberScrollState())
-            )
+private fun RawJsonPane(previewData: StagedPreviewData, store: Store) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .padding(16.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.medium)
+                .padding(1.dp) // for border effect
+        ) {
+            SelectionContainer {
+                Text(
+                    text = previewData.rawRequestJson,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(12.dp)
+                        .verticalScroll(rememberScrollState())
+                )
+            }
+        }
+        HorizontalDivider()
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.End
+        ) {
+            Button(onClick = {
+                store.dispatch("ui.contextView", Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", previewData.rawRequestJson) }))
+            }) {
+                Icon(Icons.Default.ContentCopy, contentDescription = "Copy All", modifier = Modifier.padding(end = 8.dp))
+                Text("Copy All")
+            }
         }
     }
 }

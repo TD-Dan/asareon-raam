@@ -295,7 +295,8 @@ class SessionFeature(
         private val VIEW_KEY_MAIN = "feature.session.main"
         private val VIEW_KEY_MANAGER = "feature.session.manager"
         override val stageViews: Map<String, @Composable (Store, List<Feature>) -> Unit> = mapOf(
-            VIEW_KEY_MAIN to { store, features -> SessionView(store, features) },
+            // FIX: Pass platformDependencies to the SessionView composable.
+            VIEW_KEY_MAIN to { store, features -> SessionView(store, features, platformDependencies) },
             VIEW_KEY_MANAGER to { store, _ -> SessionsManagerView(store) }
         )
         @Composable override fun RibbonContent(store: Store, activeViewKey: String?) {

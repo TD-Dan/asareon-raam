@@ -9,6 +9,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
 import app.auf.feature.core.CoreState
+import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -25,7 +28,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @Composable
-fun SessionView(store: Store, features: List<Feature>) {
+fun SessionView(store: Store, features: List<Feature>, platformDependencies: PlatformDependencies) {
     val appState by store.state.collectAsState()
     val sessionState = appState.featureStates["session"] as? SessionState
     val coreState = appState.featureStates["core"] as? CoreState
@@ -59,8 +62,9 @@ fun SessionView(store: Store, features: List<Feature>) {
         if (activeSession == null) {
             Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No active session. Create one to begin.") }
         } else {
-            LedgerPane(store, activeSession, sessionState, coreState, features, Modifier.weight(1f))
-            MessageInput { message ->
+            LedgerPane(store, activeSession, sessionState, coreState, features, platformDependencies, Modifier.weight(1f))
+            // FIX: Pass the store to MessageInput
+            MessageInput(store, activeSession, platformDependencies) { message ->
                 val activeUserId = coreState?.activeUserId ?: "user"
                 store.dispatch("session.ui", Action(ActionNames.SESSION_POST, buildJsonObject {
                     put("session", activeSession.id); put("senderId", activeUserId); put("message", message)
@@ -117,6 +121,7 @@ private fun LedgerPane(
     sessionState: SessionState?,
     coreState: CoreState?,
     features: List<Feature>,
+    platformDependencies: PlatformDependencies,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -153,7 +158,8 @@ private fun LedgerPane(
                     senderName = senderName,
                     isCurrentUserMessage = isCurrentUserMessage, // THE FIX: Pass the boolean flag
                     isEditingThisMessage = sessionState?.editingMessageId == entry.id,
-                    editingContent = sessionState?.editingMessageContent
+                    editingContent = sessionState?.editingMessageContent,
+                    platformDependencies = platformDependencies
                 )
             }
             Spacer(Modifier.height(8.dp))
@@ -162,10 +168,35 @@ private fun LedgerPane(
 }
 
 @Composable
-private fun MessageInput(onSend: (String) -> Unit) {
+private fun MessageInput(store: Store, activeSession: Session, platformDependencies: PlatformDependencies, onSend: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
+    var menuExpanded by remember { mutableStateOf(false) }
+
     Surface(modifier = Modifier.fillMaxWidth(), shadowElevation = 8.dp) {
         Row(Modifier.padding(8.dp), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, "More options")
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Copy Transcript") },
+                        onClick = {
+                            val transcript = activeSession.ledger.joinToString("\n\n") { entry ->
+                                val timestamp = platformDependencies.formatIsoTimestamp(entry.timestamp)
+                                "$timestamp | ${entry.senderId}:\n${entry.rawContent}"
+                            }
+                            // FIX: Dispatch directly to the store
+                            store.dispatch("ui.session.input", Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", transcript) }))
+                            menuExpanded = false
+                        },
+                        leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
+                    )
+                }
+            }
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
