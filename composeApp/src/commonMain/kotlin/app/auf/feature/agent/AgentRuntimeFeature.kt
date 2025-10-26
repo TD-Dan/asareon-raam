@@ -40,6 +40,8 @@ class AgentRuntimeFeature(
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val agentConfigFILENAME = "agent.json"
     private val activeTurnJobs = mutableMapOf<String, Job>()
+    // ADDITION: Regex to detect and strip redundant headers from LLM output.
+    private val redundantHeaderRegex = Regex("""^.+? \([0-9a-f-]{36}\) @ \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z:\s*""")
 
     override fun init(store: Store) {
         coroutineScope.launch {
@@ -601,8 +603,22 @@ class AgentRuntimeFeature(
         if (decoded.errorMessage != null) {
             updateAgentAvatarCard(agent.id, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}", store)
         } else {
+            // ADDITION: Sanitize the raw content before posting.
+            var contentToPost = decoded.rawContent ?: ""
+            val match = redundantHeaderRegex.find(contentToPost)
+            if (match != null) {
+                // If the header is found, strip it and post a sentinel warning.
+                contentToPost = contentToPost.substring(match.range.last + 1).trimStart()
+                val warningMessage = """SYSTEM SENTINEL (llm-output-sanitizer): Warning for [${agent.name}]: Please do not include the standard system "name (id) @timestamp:" part in your output. This is added automatically by the application."""
+                store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
+                    put("session", sessionId)
+                    put("senderId", "system")
+                    put("message", warningMessage)
+                }))
+            }
+
             store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
-                put("session", sessionId); put("senderId", agent.id); put("message", decoded.rawContent ?: "")
+                put("session", sessionId); put("senderId", agent.id); put("message", contentToPost)
             }))
             updateAgentAvatarCard(agent.id, AgentStatus.IDLE, null, store)
         }

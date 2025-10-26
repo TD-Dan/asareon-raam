@@ -68,7 +68,8 @@ data class SessionState(
     val sessions: Map<String, Session> = emptyMap(),
 
     /** A unified local cache of all identity IDs (user and agent) to their display names. */
-    val identityNames: Map<String, String> = emptyMap(),
+    // ADDITION: Initialize with a default "system" identity for sentinel messages.
+    val identityNames: Map<String, String> = mapOf("system" to "SYSTEM SENTINEL"),
 
     /** The ID of the session currently visible in the main view. */
     val activeSessionId: String? = null,
