@@ -25,6 +25,7 @@ class SessionFeatureT1SessionViewTest {
     val composeTestRule = createComposeRule()
 
     private lateinit var fakeStore: FakeStore
+    private val platform = FakePlatformDependencies("test") // FIX: Instantiate platform dependencies
     private val session1 = Session("sid-1", "Session One", emptyList(), 1L)
     private val session2 = Session("sid-2", "Session Two", emptyList(), 2L)
 
@@ -36,14 +37,14 @@ class SessionFeatureT1SessionViewTest {
             ActionNames.SESSION_SET_ACTIVE_TAB,
             ActionNames.SESSION_POST
         )
-        fakeStore = FakeStore(AppState(), FakePlatformDependencies("test"), validActions)
+        fakeStore = FakeStore(AppState(), platform, validActions) // FIX: Use the platform dependency
     }
 
     private fun setViewState(state: SessionState) {
         fakeStore.setState(AppState(featureStates = mapOf("session" to state)))
         composeTestRule.setContent {
             AppTheme {
-                SessionView(store = fakeStore, features = emptyList())
+                SessionView(store = fakeStore, features = emptyList(), platformDependencies = platform) // FIX: Pass the required parameter
             }
         }
     }

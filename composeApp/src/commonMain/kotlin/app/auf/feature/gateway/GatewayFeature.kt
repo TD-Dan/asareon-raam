@@ -90,6 +90,8 @@ class GatewayFeature(
         val providerId = payload["providerId"]?.jsonPrimitive?.contentOrNull ?: return
         val modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: return
         val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
+        // FIX: Extract the system prompt from the payload.
+        val systemPrompt = payload["systemPrompt"]?.jsonPrimitive?.contentOrNull
 
         val contents = payload["contents"]?.jsonArray?.let {
             json.decodeFromJsonElement<List<GatewayMessage>>(it)
@@ -105,7 +107,8 @@ class GatewayFeature(
 
         // REFACTOR: The coroutine job is now tracked for cancellation.
         val job = coroutineScope.launch {
-            val request = GatewayRequest(modelName, contents, correlationId)
+            // FIX: Pass the system prompt to the GatewayRequest constructor.
+            val request = GatewayRequest(modelName, contents, correlationId, systemPrompt)
             val response = provider.generateContent(request, gatewayState.apiKeys)
 
             val responsePayload = try {
@@ -140,6 +143,8 @@ class GatewayFeature(
         val providerId = payload["providerId"]?.jsonPrimitive?.contentOrNull ?: return
         val modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: return
         val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
+        // FIX: Extract the system prompt from the payload.
+        val systemPrompt = payload["systemPrompt"]?.jsonPrimitive?.contentOrNull
         val contents = payload["contents"]?.jsonArray?.let { json.decodeFromJsonElement<List<GatewayMessage>>(it) } ?: return
 
         val provider = providerMap[providerId]
@@ -148,7 +153,8 @@ class GatewayFeature(
             return
         }
 
-        val agnosticRequest = GatewayRequest(modelName, contents, correlationId)
+        // FIX: Pass the system prompt to the GatewayRequest constructor.
+        val agnosticRequest = GatewayRequest(modelName, contents, correlationId, systemPrompt)
 
         // Find the specific provider implementation to call its build payload method.
         // This is a controlled, safe downcast because we know the map contains our specific provider classes.

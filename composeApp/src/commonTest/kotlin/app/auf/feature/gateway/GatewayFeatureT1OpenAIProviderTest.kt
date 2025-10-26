@@ -52,6 +52,35 @@ class GatewayFeatureT1OpenAIProviderTest {
         assertEquals(expected, actual)
     }
 
+    // TEST: New test for system prompt inclusion.
+    @Test
+    fun `buildRequestPayload includes system prompt when provided`() {
+        val request = GatewayRequest(
+            modelName = "gpt-4o",
+            contents = listOf(GatewayMessage("user", "Hello", "user-1", "User", 1000L)),
+            correlationId = "corr-123",
+            systemPrompt = "You are a pirate."
+        )
+        val expected = buildJsonObject {
+            put("model", "gpt-4o")
+            put("messages", buildJsonArray {
+                add(buildJsonObject {
+                    put("role", "system")
+                    put("content", "You are a pirate.")
+                })
+                add(buildJsonObject {
+                    put("role", "user")
+                    put("content", "User (user-1) @ ISO_TIMESTAMP_1000: Hello")
+                    put("name", "User_user-1")
+                })
+            })
+        }
+
+        val actual = provider.buildRequestPayload(request)
+
+        assertEquals(expected, actual)
+    }
+
     @Test
     fun `parseResponse correctly handles a successful API response`() {
         // ARRANGE

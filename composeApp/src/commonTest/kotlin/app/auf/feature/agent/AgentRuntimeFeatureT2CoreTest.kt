@@ -4,9 +4,11 @@ import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.Feature
 import app.auf.core.Identity
+import app.auf.core.PrivateDataEnvelope
 import app.auf.core.Store
 import app.auf.core.generated.ActionNames
 import app.auf.feature.core.CoreState
+import app.auf.feature.session.SessionFeature
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
@@ -102,6 +104,37 @@ class AgentRuntimeFeatureT2CoreTest {
         turnMode: TurnMode = TurnMode.DIRECT
     ): AgentInstance {
         return AgentInstance(id = id, name = name, personaId = "p1", modelProvider = "mp1", modelName = "mn1", primarySessionId = sessionId, status = status, turnMode = turnMode)
+    }
+
+    // TEST: New test for sentinel logic.
+    @Test
+    fun `sentinel sanitizes timestamp echo out of ai response`() {
+        val agent = createTestAgent(status = AgentStatus.PROCESSING)
+        val harness = TestEnvironment.create()
+            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
+            .withFeature(SessionFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined))) // Need real session feature to post to
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
+            .build()
+        val gatewayResponsePayload = buildJsonObject {
+            put("correlationId", "agent-1")
+            put("rawContent", "Test Agent (agent-1) @ 2025-10-27T12:34:56Z: This is the actual response.")
+        }
+        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewayResponsePayload)
+
+        // ACT
+        (harness.store.features.find { it.name == "agent" } as AgentRuntimeFeature).onPrivateData(envelope, harness.store)
+
+        // ASSERT
+        val sentinelAction = harness.processedActions.find { it.name == ActionNames.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.content == "system" }
+        assertNotNull(sentinelAction, "A sentinel warning should have been posted.")
+        assertTrue(sentinelAction.payload?.get("message")?.jsonPrimitive?.content?.contains("Warning for [Test Agent]") == true)
+
+        val agentResponseAction = harness.processedActions.find { it.name == ActionNames.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.content == "agent-1" }
+        assertNotNull(agentResponseAction, "The agent's own response should have been posted.")
+        assertEquals("This is the actual response.", agentResponseAction.payload?.get("message")?.jsonPrimitive?.content)
+
+        val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+        assertEquals(AgentStatus.IDLE, finalState.agents["agent-1"]?.status)
     }
 
     @Test

@@ -14,7 +14,9 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.*
@@ -164,5 +166,42 @@ class GatewayFeatureT2CoreTest {
         assertEquals(originatorId, privateData.recipient)
         assertEquals("gateway.response", privateData.envelope.type)
         assertEquals(correlationId, privateData.envelope.payload["correlationId"]?.jsonPrimitive?.content)
+    }
+
+    // TEST: New test for preview data integrity.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `PREPARE_PREVIEW includes system prompt in the final rawRequestJson`() = testScope.runTest {
+        val harness = createHarness(this)
+        val originatorId = "agent-feature-1"
+        val correlationId = "test-preview-456"
+        val message = GatewayMessage("user", "Preview Test", "user-1", "User", 1L)
+        val systemPrompt = "You are a test assistant."
+
+        val action = Action(ActionNames.GATEWAY_PREPARE_PREVIEW, buildJsonObject {
+            put("providerId", "provider-1"); put("modelName", "model-1")
+            put("correlationId", correlationId); put("systemPrompt", systemPrompt)
+            put("contents", buildJsonArray { add(Json.encodeToJsonElement(message)) })
+        })
+
+        // ACT
+        harness.store.dispatch(originatorId, action)
+        runCurrent()
+
+        // ASSERT
+        val privateData = harness.deliveredPrivateData.firstOrNull()
+        assertNotNull(privateData, "Private data for preview should have been delivered.")
+        assertEquals("gateway.response.preview", privateData.envelope.type)
+
+        val previewPayload = privateData.envelope.payload
+        val agnosticRequest = Json.decodeFromJsonElement<GatewayRequest>(previewPayload["agnosticRequest"]!!)
+        val rawJson = previewPayload["rawRequestJson"]?.jsonPrimitive?.content
+
+        assertEquals(systemPrompt, agnosticRequest.systemPrompt)
+        assertNotNull(rawJson, "rawRequestJson should exist.")
+        // This assertion is provider-specific, but proves the data flowed through.
+        // We'll use the Gemini format for this test.
+        assertTrue(rawJson.contains("system_instruction"), "The raw JSON should contain the provider-specific system prompt key.")
+        assertTrue(rawJson.contains(systemPrompt), "The raw JSON should contain the system prompt content.")
     }
 }

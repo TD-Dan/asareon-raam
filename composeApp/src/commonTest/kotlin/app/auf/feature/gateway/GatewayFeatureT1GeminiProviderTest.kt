@@ -8,6 +8,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import kotlin.test.*
 
 /**
@@ -49,6 +50,36 @@ class GatewayFeatureT1GeminiProviderTest {
         val actual = provider.buildRequestPayload(request)
 
         // ASSERT
+        assertEquals(expected, actual)
+    }
+
+    // TEST: New test for system prompt inclusion.
+    @Test
+    fun `buildRequestPayload includes system prompt when provided`() {
+        val request = GatewayRequest(
+            modelName = "gemini-pro",
+            contents = listOf(GatewayMessage("user", "Hello", "user-1", "User", 1000L)),
+            correlationId = "corr-123",
+            systemPrompt = "You are a helpful assistant."
+        )
+        val expected = buildJsonObject {
+            put("contents", buildJsonArray {
+                add(buildJsonObject {
+                    put("role", "user")
+                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", "User (user-1) @ ISO_TIMESTAMP_1000: Hello") }) })
+                })
+            })
+            putJsonObject("system_instruction") {
+                putJsonObject("content") {
+                    put("parts", buildJsonArray {
+                        add(buildJsonObject { put("text", "You are a helpful assistant.") })
+                    })
+                }
+            }
+        }
+
+        val actual = provider.buildRequestPayload(request)
+
         assertEquals(expected, actual)
     }
 

@@ -1,3 +1,4 @@
+
 package app.auf.feature.session
 
 import androidx.compose.ui.test.*
@@ -28,6 +29,7 @@ class SessionFeatureT1LedgerEntryCardTest {
     val composeTestRule = createComposeRule()
 
     private lateinit var fakeStore: FakeStore
+    private val platform = FakePlatformDependencies("test") // FIX: Instantiate platform dependencies for the test
     private val session = Session("sid-1", "Test", emptyList(), 1L)
     private val userEntry = LedgerEntry("msg-1", 1L, "user", "Hello World")
 
@@ -38,7 +40,7 @@ class SessionFeatureT1LedgerEntryCardTest {
             ActionNames.SESSION_SET_EDITING_MESSAGE,
             ActionNames.CORE_COPY_TO_CLIPBOARD
         )
-        fakeStore = FakeStore(AppState(), FakePlatformDependencies("test"), validActions)
+        fakeStore = FakeStore(AppState(), platform, validActions) // FIX: Use the platform dependency
     }
 
     private fun setViewState(entry: LedgerEntry, isEditing: Boolean = false, editingContent: String? = null) {
@@ -59,7 +61,8 @@ class SessionFeatureT1LedgerEntryCardTest {
                     senderName = "User", // Pass the universal sender name
                     isCurrentUserMessage = true, // Pass the new boolean flag
                     isEditingThisMessage = isEditing,
-                    editingContent = editingContent
+                    editingContent = editingContent,
+                    platformDependencies = platform // FIX: Pass the required parameter
                 )
             }
         }
