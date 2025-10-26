@@ -16,6 +16,20 @@
       }
     },
     {
+      "action_name": "session.CLONE",
+      "summary": "Creates a new session by cloning an existing one, including its entire ledger.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The ID of the session to clone."
+          }
+        },
+        "required": [ "session" ]
+      }
+    },
+    {
       "action_name":"session.UPDATE_CONFIG",
       "summary":"Updates the configuration of an existing session. Targets the session via the 'session' property (ID or name).",
       "payload_schema":{

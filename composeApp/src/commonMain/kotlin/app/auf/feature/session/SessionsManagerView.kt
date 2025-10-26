@@ -5,11 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -88,6 +84,12 @@ private fun SessionManagerCard(session: Session, store: Store) {
                 store.dispatch("session.ui", Action(ActionNames.SESSION_SET_EDITING_SESSION_NAME, payload))
             }) {
                 Icon(Icons.Default.Edit, contentDescription = "Edit Session Name")
+            }
+            // ADDITION: Clone Button
+            IconButton(onClick = {
+                store.dispatch("session.ui", Action(ActionNames.SESSION_CLONE, buildJsonObject { put("session", session.id) }))
+            }) {
+                Icon(Icons.Default.ContentCopy, contentDescription = "Clone Session")
             }
             // Delete Button
             IconButton(onClick = {

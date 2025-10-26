@@ -23,6 +23,7 @@ class SessionFeature(
 
     // --- Private, serializable data classes for decoding action payloads safely. ---
     @Serializable private data class CreatePayload(val name: String? = null)
+    @Serializable private data class ClonePayload(val session: String) // ADDITION
     @Serializable private data class UpdateConfigPayload(val session: String, val name: String)
     @Serializable private data class SessionTargetPayload(val session: String)
     @Serializable private data class PostPayload(val session: String, val senderId: String, val message: String? = null, val messageId: String? = null, val metadata: JsonObject? = null, val afterMessageId: String? = null)
@@ -65,7 +66,7 @@ class SessionFeature(
         val sessionState = store.state.value.featureStates[name] as? SessionState ?: return
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_STARTING -> store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
-            ActionNames.SESSION_CREATE -> {
+            ActionNames.SESSION_CREATE, ActionNames.SESSION_CLONE -> { // ADDITION: Handle CLONE side effects
                 val latestState = store.state.value.featureStates[name] as? SessionState ?: return
                 latestState.activeSessionId?.let { persistSession(it, store) }
                 broadcastSessionNames(latestState, store)
@@ -198,6 +199,20 @@ class SessionFeature(
                 val desiredName = payload?.let { json.decodeFromJsonElement<CreatePayload>(it) }?.name?.takeIf { it.isNotBlank() } ?: "New Session"
                 val newSession = Session(platformDependencies.generateUUID(), findUniqueName(desiredName, currentFeatureState), emptyList(), platformDependencies.getSystemTimeMillis())
                 newFeatureState = currentFeatureState.copy(sessions = currentFeatureState.sessions + (newSession.id to newSession), activeSessionId = newSession.id)
+            }
+            ActionNames.SESSION_CLONE -> {
+                val decoded = payload?.let { json.decodeFromJsonElement<ClonePayload>(it) } ?: return stateWithFeature
+                val sessionToClone = currentFeatureState.sessions[decoded.session] ?: return stateWithFeature
+                val newName = findUniqueName("${sessionToClone.name} (Copy)", currentFeatureState)
+                val newSession = sessionToClone.copy(
+                    id = platformDependencies.generateUUID(),
+                    name = newName,
+                    createdAt = platformDependencies.getSystemTimeMillis()
+                )
+                newFeatureState = currentFeatureState.copy(
+                    sessions = currentFeatureState.sessions + (newSession.id to newSession),
+                    activeSessionId = newSession.id
+                )
             }
             ActionNames.SESSION_UPDATE_CONFIG -> {
                 val decoded = payload?.let { json.decodeFromJsonElement<UpdateConfigPayload>(it) } ?: return stateWithFeature

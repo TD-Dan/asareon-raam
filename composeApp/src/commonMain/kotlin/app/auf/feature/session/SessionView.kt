@@ -187,7 +187,8 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                         onClick = {
                             val transcript = activeSession.ledger.joinToString("\n\n") { entry ->
                                 val timestamp = platformDependencies.formatIsoTimestamp(entry.timestamp)
-                                "$timestamp | ${entry.senderId}:\n${entry.rawContent}"
+                                val senderName = (store.state.value.featureStates["session"] as? SessionState)?.identityNames?.get(entry.senderId) ?: entry.senderId
+                                "$senderName @ $timestamp:\n${entry.rawContent}"
                             }
                             // FIX: Dispatch directly to the store
                             store.dispatch("ui.session.input", Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", transcript) }))
