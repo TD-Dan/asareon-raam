@@ -1,6 +1,6 @@
 {
   "feature_name": "core",
-  "summary": "Handles core, application-level state and UI logic like navigation and toast messages.",
+  "summary": "Handles core, application-level state and UI logic like navigation, toasts, and user identity management.",
   "listensFor": [
     {
       "action_name": "core.SET_ACTIVE_VIEW",
@@ -55,7 +55,76 @@
         "properties": { "text": { "type": "string" } },
         "required": ["text"]
       }
+    },
+    {
+      "action_name": "core.ADD_USER_IDENTITY",
+      "summary": "Adds a new user identity to the application.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" }
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "action_name": "core.REMOVE_USER_IDENTITY",
+      "summary": "Removes an existing user identity.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "action_name": "core.SET_ACTIVE_USER_IDENTITY",
+      "summary": "Sets the specified user identity as the active one for the application.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }
+        },
+        "required": ["id"]
+      }
     }
   ],
-  "publishes": []
+  "publishes": [
+    {
+      "action_name": "core.publish.IDENTITIES_UPDATED",
+      "summary": "Broadcasts the complete state of user identities after any change.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "identities": {
+            "type": "array",
+            "description": "The full list of Identity objects.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "activeId": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["identities"]
+      }
+    },
+    {
+      "action_name": "core.internal.IDENTITIES_LOADED",
+      "summary": "[INTERNAL] Dispatched after user identities have been loaded from disk.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "identities": {
+            "type": "array",
+            "items": { "type": "object" }
+          },
+          "activeId": { "type": ["string", "null"] }
+        },
+        "required": ["identities"]
+      }
+    }
+  ]
 }

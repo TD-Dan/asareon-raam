@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.FeatureState
+import app.auf.core.Identity
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
@@ -12,7 +13,14 @@ enum class TurnMode { DIRECT, PREVIEW }
 
 
 @Serializable
-data class GatewayMessage(val role: String, val content: String)
+data class GatewayMessage(
+    val role: String,
+    val content: String,
+    // NEW: Enriched with sender identity
+    val senderId: String,
+    val senderName: String
+)
+
 @Serializable
 data class GatewayRequest(
     val modelName: String,
@@ -68,6 +76,10 @@ data class AgentRuntimeState(
     val agents: Map<String, AgentInstance> = emptyMap(),
     val sessionNames: Map<String, String> = emptyMap(),
     val availableModels: Map<String, List<String>> = emptyMap(),
+
+    // NEW: Cache for the active user identity from CoreFeature
+    @Transient
+    val activeUserIdentity: Identity? = null,
 
     @Transient
     val editingAgentId: String? = null,

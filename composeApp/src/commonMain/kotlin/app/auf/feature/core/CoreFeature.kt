@@ -10,6 +10,7 @@ import app.auf.core.*
 import app.auf.core.generated.ActionNames
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
 /**
@@ -31,7 +32,10 @@ data class CoreState(
     val lifecycle: AppLifecycle = AppLifecycle.BOOTING,
     // Add window dimensions to the state with sensible defaults.
     val windowWidth: Int = 1200,
-    val windowHeight: Int = 800
+    val windowHeight: Int = 800,
+    // NEW: User Identity Management State
+    val userIdentities: List<Identity> = emptyList(),
+    val activeUserId: String? = null
 ) : FeatureState
 
 class CoreFeature(
@@ -40,13 +44,41 @@ class CoreFeature(
     override val name: String = "core"
     override val composableProvider: Feature.ComposableProvider = CoreComposableProvider()
 
+    // --- Private, serializable data classes for decoding action payloads safely. ---
     @Serializable private data class SetActiveViewPayload(val key: String)
     @Serializable private data class ShowToastPayload(val message: String)
     @Serializable private data class CopyToClipboardPayload(val text: String)
     @Serializable private data class UpdateWindowSizePayload(val width: Int, val height: Int)
+    @Serializable private data class AddUserIdentityPayload(val name: String)
+    @Serializable private data class IdentityIdPayload(val id: String)
+    @Serializable private data class IdentitiesLoadedPayload(val identities: List<Identity>, val activeId: String? = null)
 
     private val settingKeyWidth = "core.window.width"
     private val settingKeyHeight = "core.window.height"
+    private val identitiesFileName = "identities.json"
+
+    override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
+        when (envelope.type) {
+            "filesystem.response.read" -> {
+                if (envelope.payload["subpath"]?.jsonPrimitive?.content == identitiesFileName) {
+                    val content = envelope.payload["content"]?.jsonPrimitive?.contentOrNull
+                    if (content != null) {
+                        try {
+                            val loaded = Json.decodeFromString<IdentitiesLoadedPayload>(content)
+                            store.dispatch(this.name, Action(ActionNames.CORE_INTERNAL_IDENTITIES_LOADED, Json.encodeToJsonElement(loaded) as JsonObject))
+                        } catch (e: Exception) {
+                            platformDependencies.log(app.auf.util.LogLevel.ERROR, name, "Failed to parse identities.json: ${e.message}")
+                        }
+                    } else {
+                        // If the file is empty or doesn't exist, bootstrap the default user
+                        store.dispatch(this.name, Action(ActionNames.CORE_INTERNAL_IDENTITIES_LOADED, buildJsonObject {
+                            put("identities", buildJsonArray { })
+                        }))
+                    }
+                }
+            }
+        }
+    }
 
     override fun onAction(action: Action, store: Store, previousState: AppState) {
         when (action.name) {
@@ -61,6 +93,9 @@ class CoreFeature(
                     put("description", "The height of the application window in pixels.")
                     put("section", "Appearance"); put("defaultValue", "800")
                 }))
+            }
+            ActionNames.SYSTEM_PUBLISH_STARTING -> {
+                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", identitiesFileName)}))
             }
             ActionNames.CORE_UPDATE_WINDOW_SIZE -> {
                 val coreState = store.state.value.featureStates[name] as? CoreState
@@ -85,7 +120,31 @@ class CoreFeature(
                     store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Copied to clipboard.") }))
                 }
             }
+            // NEW: Identity Persistence and Broadcast Logic
+            ActionNames.CORE_ADD_USER_IDENTITY,
+            ActionNames.CORE_REMOVE_USER_IDENTITY,
+            ActionNames.CORE_SET_ACTIVE_USER_IDENTITY,
+            ActionNames.CORE_INTERNAL_IDENTITIES_LOADED -> {
+                val latestState = store.state.value.featureStates[name] as? CoreState ?: return
+                persistAndBroadcastIdentities(latestState, store)
+            }
         }
+    }
+
+    private fun persistAndBroadcastIdentities(state: CoreState, store: Store) {
+        // 1. Persist to disk
+        val persistencePayload = IdentitiesLoadedPayload(state.userIdentities, state.activeUserId)
+        store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+            put("subpath", identitiesFileName)
+            put("content", Json.encodeToString(persistencePayload))
+            put("encrypt", true)
+        }))
+
+        // 2. Broadcast to other features
+        store.dispatch(this.name, Action(ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
+            put("identities", Json.encodeToJsonElement(state.userIdentities))
+            state.activeUserId?.let { put("activeId", it) }
+        }))
     }
 
     override fun reducer(state: AppState, action: Action): AppState {
@@ -123,6 +182,41 @@ class CoreFeature(
                 when (key) {
                     settingKeyWidth -> value?.toIntOrNull()?.let { if (it != coreState.windowWidth) newCoreState = coreState.copy(windowWidth = it) }
                     settingKeyHeight -> value?.toIntOrNull()?.let { if (it != coreState.windowHeight) newCoreState = coreState.copy(windowHeight = it) }
+                }
+            }
+            // NEW: Identity Reducer Logic
+            ActionNames.CORE_INTERNAL_IDENTITIES_LOADED -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<IdentitiesLoadedPayload>(it) } ?: return state
+                // On first load, ensure an active user exists or create a default one.
+                if (payload.identities.isEmpty()) {
+                    val defaultUser = Identity(platformDependencies.generateUUID(), "User")
+                    newCoreState = coreState.copy(
+                        userIdentities = listOf(defaultUser),
+                        activeUserId = defaultUser.id
+                    )
+                } else {
+                    val activeId = if (payload.activeId in payload.identities.map { it.id }) payload.activeId else payload.identities.first().id
+                    newCoreState = coreState.copy(
+                        userIdentities = payload.identities,
+                        activeUserId = activeId
+                    )
+                }
+            }
+            ActionNames.CORE_ADD_USER_IDENTITY -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<AddUserIdentityPayload>(it) } ?: return state
+                val newUser = Identity(platformDependencies.generateUUID(), payload.name)
+                newCoreState = coreState.copy(userIdentities = coreState.userIdentities + newUser)
+            }
+            ActionNames.CORE_REMOVE_USER_IDENTITY -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return state
+                val updatedIdentities = coreState.userIdentities.filterNot { it.id == payload.id }
+                val updatedActiveId = if (coreState.activeUserId == payload.id) updatedIdentities.firstOrNull()?.id else coreState.activeUserId
+                newCoreState = coreState.copy(userIdentities = updatedIdentities, activeUserId = updatedActiveId)
+            }
+            ActionNames.CORE_SET_ACTIVE_USER_IDENTITY -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return state
+                if (coreState.userIdentities.any { it.id == payload.id }) {
+                    newCoreState = coreState.copy(activeUserId = payload.id)
                 }
             }
         }
