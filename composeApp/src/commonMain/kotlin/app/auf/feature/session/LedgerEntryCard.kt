@@ -24,21 +24,23 @@ fun LedgerEntryCard(
     store: Store,
     session: Session,
     entry: LedgerEntry,
-    agentName: String,
+    senderName: String,
+    isCurrentUserMessage: Boolean, // THE FIX: New boolean flag
     isEditingThisMessage: Boolean,
     editingContent: String?,
 ) {
-    // --- RENDER STANDARD MESSAGE CARD ---
     val uiState = remember(session.messageUiState, entry.id) {
         session.messageUiState[entry.id] ?: MessageUiState()
     }
     var showMenu by remember { mutableStateOf(false) }
 
-    val cardColors = if (entry.senderId == "user") {
+    // THE FIX: Simplified and robust coloring logic
+    val cardColors = if (isCurrentUserMessage) {
         CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     } else {
         CardDefaults.cardColors()
     }
+
 
     Card(modifier = Modifier.fillMaxWidth(), colors = cardColors) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -60,7 +62,7 @@ fun LedgerEntryCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = agentName,
+                        text = senderName,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.secondary
@@ -174,11 +176,9 @@ private fun MessageEditor(store: Store, session: Session, entry: LedgerEntry, ed
 private fun ParsedContentView(content: List<ContentBlock>, rawContent: String?) {
     if (content.isEmpty()) {
         if (!rawContent.isNullOrBlank()) {
-            // THE FIX: Fall back to rendering the raw content if parsing produced no blocks.
             RawContentView(rawContent)
         } else {
-            // Handle UI-only entries gracefully
-            Text(" ", style = MaterialTheme.typography.bodySmall) // Render a space to maintain card height
+            Text(" ", style = MaterialTheme.typography.bodySmall)
         }
     } else {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

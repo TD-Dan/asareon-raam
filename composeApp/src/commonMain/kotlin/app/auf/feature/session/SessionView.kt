@@ -17,6 +17,7 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
+import app.auf.feature.core.CoreState
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -27,6 +28,7 @@ import kotlinx.serialization.json.put
 fun SessionView(store: Store, features: List<Feature>) {
     val appState by store.state.collectAsState()
     val sessionState = appState.featureStates["session"] as? SessionState
+    val coreState = appState.featureStates["core"] as? CoreState
 
     val sessions = remember(sessionState?.sessions) {
         sessionState?.sessions?.values?.sortedByDescending { it.createdAt } ?: emptyList()
@@ -57,10 +59,11 @@ fun SessionView(store: Store, features: List<Feature>) {
         if (activeSession == null) {
             Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No active session. Create one to begin.") }
         } else {
-            LedgerPane(store, activeSession, sessionState, features, Modifier.weight(1f))
+            LedgerPane(store, activeSession, sessionState, coreState, features, Modifier.weight(1f))
             MessageInput { message ->
+                val activeUserId = coreState?.activeUserId ?: "user"
                 store.dispatch("session.ui", Action(ActionNames.SESSION_POST, buildJsonObject {
-                    put("session", activeSession.id); put("senderId", "user"); put("message", message)
+                    put("session", activeSession.id); put("senderId", activeUserId); put("message", message)
                 }))
             }
         }
@@ -112,14 +115,15 @@ private fun LedgerPane(
     store: Store,
     activeSession: Session,
     sessionState: SessionState?,
+    coreState: CoreState?,
     features: List<Feature>,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-    val agentNames = sessionState?.agentNames ?: emptyMap()
+    val identityNames = sessionState?.identityNames ?: emptyMap()
+    val activeUserId = coreState?.activeUserId // THE FIX: Get the active user ID from CoreState
 
-    // THE FIX: The AgentRuntimeFeature is found once here for efficiency.
     val agentFeature = remember(features) { features.find { it.name == "agent" } }
 
     LaunchedEffect(activeSession.ledger.size) {
@@ -134,24 +138,20 @@ private fun LedgerPane(
         items(activeSession.ledger, key = { it.id }) { entry ->
             val isPartialView = entry.metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
 
-            // THE FIX: Implement the Embedded Partial View Pattern (P-UI-001)
             if (isPartialView && agentFeature != null) {
-                // If it's a partial view, delegate rendering to the AgentRuntimeFeature
                 agentFeature.composableProvider?.PartialView(store, "agent.avatar", entry.senderId)
             } else {
-                // Otherwise, render the standard, now-cleansed LedgerEntryCard
-                val agentName = remember(entry.senderId, agentNames) {
-                    when {
-                        entry.senderId == "user" -> "User"
-                        entry.senderId.startsWith("system") -> "System"
-                        else -> agentNames[entry.senderId] ?: entry.senderId // Fallback to ID
-                    }
+                val senderName = remember(entry.senderId, identityNames) {
+                    identityNames[entry.senderId] ?: entry.senderId
                 }
+                // THE FIX: Determine if this entry is from the current user
+                val isCurrentUserMessage = entry.senderId == activeUserId
                 LedgerEntryCard(
                     store = store,
                     session = activeSession,
                     entry = entry,
-                    agentName = agentName,
+                    senderName = senderName,
+                    isCurrentUserMessage = isCurrentUserMessage, // THE FIX: Pass the boolean flag
                     isEditingThisMessage = sessionState?.editingMessageId == entry.id,
                     editingContent = sessionState?.editingMessageContent
                 )

@@ -2,8 +2,11 @@ package app.auf.feature.core
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import app.auf.core.*
@@ -70,7 +73,6 @@ class CoreFeature(
                             platformDependencies.log(app.auf.util.LogLevel.ERROR, name, "Failed to parse identities.json: ${e.message}")
                         }
                     } else {
-                        // If the file is empty or doesn't exist, bootstrap the default user
                         store.dispatch(this.name, Action(ActionNames.CORE_INTERNAL_IDENTITIES_LOADED, buildJsonObject {
                             put("identities", buildJsonArray { })
                         }))
@@ -120,7 +122,6 @@ class CoreFeature(
                     store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Copied to clipboard.") }))
                 }
             }
-            // NEW: Identity Persistence and Broadcast Logic
             ActionNames.CORE_ADD_USER_IDENTITY,
             ActionNames.CORE_REMOVE_USER_IDENTITY,
             ActionNames.CORE_SET_ACTIVE_USER_IDENTITY,
@@ -132,7 +133,6 @@ class CoreFeature(
     }
 
     private fun persistAndBroadcastIdentities(state: CoreState, store: Store) {
-        // 1. Persist to disk
         val persistencePayload = IdentitiesLoadedPayload(state.userIdentities, state.activeUserId)
         store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
             put("subpath", identitiesFileName)
@@ -140,7 +140,6 @@ class CoreFeature(
             put("encrypt", true)
         }))
 
-        // 2. Broadcast to other features
         store.dispatch(this.name, Action(ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
             put("identities", Json.encodeToJsonElement(state.userIdentities))
             state.activeUserId?.let { put("activeId", it) }
@@ -184,10 +183,8 @@ class CoreFeature(
                     settingKeyHeight -> value?.toIntOrNull()?.let { if (it != coreState.windowHeight) newCoreState = coreState.copy(windowHeight = it) }
                 }
             }
-            // NEW: Identity Reducer Logic
             ActionNames.CORE_INTERNAL_IDENTITIES_LOADED -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<IdentitiesLoadedPayload>(it) } ?: return state
-                // On first load, ensure an active user exists or create a default one.
                 if (payload.identities.isEmpty()) {
                     val defaultUser = Identity(platformDependencies.generateUUID(), "User")
                     newCoreState = coreState.copy(
@@ -224,16 +221,28 @@ class CoreFeature(
     }
 
     inner class CoreComposableProvider : Feature.ComposableProvider {
+        private val viewKeyAbout = "feature.core.about"
+        private val viewKeyIdentities = "feature.core.identities"
+
         override val stageViews: Map<String, @Composable (Store, List<Feature>) -> Unit> = mapOf(
-            "feature.core.about" to { store, _ -> AboutView(store) }
+            viewKeyAbout to { store, _ -> AboutView(store) },
+            viewKeyIdentities to { store, _ -> IdentityManagerView(store) }
         )
+
+        @Composable
+        override fun RibbonContent(store: Store, activeViewKey: String?) {
+            // NEW: Add a ribbon button for the Identity Manager
+            IconButton(onClick = { store.dispatch("core.ui", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKeyIdentities) })) }) {
+                Icon(Icons.Default.Person, "Identity Manager", tint = if (activeViewKey == viewKeyIdentities) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
 
         @Composable
         override fun MenuContent(store: Store, onDismiss: () -> Unit) {
             DropdownMenuItem(
                 text = { Text("About") },
                 onClick = {
-                    store.dispatch("core.ui", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.core.about") }))
+                    store.dispatch("core.ui", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKeyAbout) }))
                     onDismiss()
                 },
                 leadingIcon = { Icon(Icons.Default.Info, "About Application") }
