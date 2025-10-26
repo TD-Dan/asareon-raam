@@ -7,9 +7,9 @@ import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.feature.gateway.GatewayFeature
 import app.auf.feature.gateway.gemini.GeminiProvider
 import app.auf.feature.gateway.openai.OpenAIProvider
+import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.feature.settings.SettingsFeature
 import app.auf.feature.session.SessionFeature
-//import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -23,10 +23,8 @@ import kotlinx.coroutines.SupervisorJob
  */
 class AppContainer(
     platformDependencies: PlatformDependencies,
-    appCoroutineScope: CoroutineScope // Renamed for clarity
+    appCoroutineScope: CoroutineScope
 ) {
-    // <<<<<<<<<<<< START: REVISED LOGIC FOR ASYNC EXCEPTION HANDLING
-    // Use lateinit to resolve the circular dependency: the handler needs the store, and the store is created here.
     lateinit var store: Store
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
@@ -47,7 +45,6 @@ class AppContainer(
 
     // Create a new scope that combines the SupervisorJob, the main dispatcher, and our exception handler.
     private val resilientCoroutineScope = CoroutineScope(appCoroutineScope.coroutineContext + SupervisorJob() + exceptionHandler)
-    // <<<<<<<<<<<< END: REVISED LOGIC
 
     val features: List<Feature> = run {
         val gatewayFeature = GatewayFeature(
@@ -64,16 +61,15 @@ class AppContainer(
             CoreFeature(platformDependencies),
             SettingsFeature(platformDependencies),
             FileSystemFeature(platformDependencies),
-            SessionFeature(platformDependencies, resilientCoroutineScope), // Pass the new scope
+            SessionFeature(platformDependencies, resilientCoroutineScope),
             gatewayFeature,
-            AgentRuntimeFeature(platformDependencies, resilientCoroutineScope) // Pass the new scope
-            //KnowledgeGraphFeature(platformDependencies, resilientCoroutineScope)
+            AgentRuntimeFeature(platformDependencies, resilientCoroutineScope),
+            KnowledgeGraphFeature(platformDependencies, resilientCoroutineScope)
         ))
         allFeatures
     }
 
     init {
-        // Now that all features are instantiated, create the store and assign it.
         store = Store(
             initialState = AppState(),
             features = features,

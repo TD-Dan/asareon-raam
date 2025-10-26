@@ -9,7 +9,7 @@
         "type":"object",
         "properties":{
           "name":{ "type":"string" },
-          "personaId":{ "type":"string", "description":"The ID of the AI_Persona_Root holon file." },
+          "knowledgeGraphId":{ "type":[ "string", "null" ] },
           "modelProvider":{ "type":"string" },
           "modelName":{ "type":"string" },
           "primarySessionId":{ "type":[ "string", "null" ], "description":"The session this agent will post its responses to." },
@@ -37,7 +37,7 @@
         "properties":{
           "agentId":{ "type":"string" },
           "name":{ "type":"string" },
-          "personaId":{ "type":"string" },
+          "knowledgeGraphId":{ "type":[ "string", "null" ] },
           "modelProvider":{ "type":"string" },
           "modelName":{ "type":"string" },
           "primarySessionId":{ "type":[ "string", "null" ] },
@@ -147,6 +147,18 @@
       "action_name": "agent.internal.CHECK_AUTOMATIC_TRIGGERS",
       "summary": "[INTERNAL] Dispatched by a timer to check if any automatic agents should start their cognitive cycle.",
       "payload_schema": null
+    },
+    {
+      "action_name": "agent.internal.STAGE_TURN_CONTEXT",
+      "summary": "[INTERNAL] Caches the ledger messages while the HKG context is being fetched.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string" },
+          "messages": { "type": "array", "items": { "type": "object" } }
+        },
+        "required": ["agentId", "messages"]
+      }
     },
     {
       "action_name": "agent.internal.SET_PREVIEW_DATA",

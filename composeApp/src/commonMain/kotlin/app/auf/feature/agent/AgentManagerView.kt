@@ -132,11 +132,13 @@ private fun AgentReadOnlyView(
     platformDependencies: app.auf.util.PlatformDependencies
 ) {
     val sessionName = agent.primarySessionId?.let { agentState.sessionNames[it] } ?: "Not Subscribed"
+    val hkgName = agent.knowledgeGraphId?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG" // NEW
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         AgentControlCard(agent, store, platformDependencies)
         SelectionContainer {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Session: $sessionName", style = MaterialTheme.typography.bodyMedium)
+                Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium) // NEW
                 Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
             }
         }
@@ -184,6 +186,7 @@ private fun AgentEditorView(
             maxItemsInEachRow = 2
         ) {
             Box(Modifier.weight(1f)) { SessionSelector(agent, agentState, store) }
+            Box(Modifier.weight(1f)) { KnowledgeGraphSelector(agent, agentState, store) } // NEW
             Box(Modifier.weight(1f)) { ProviderSelector(agent, agentState, store) }
             Box(Modifier.weight(1f)) { ModelSelector(agent, agentState, store) }
         }
@@ -204,21 +207,19 @@ private fun AgentEditorView(
             )
         }
 
-        if (agent.automaticMode) {
-            Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = autoWaitTimeInput,
-                    onValueChange = { autoWaitTimeInput = it.filter { c -> c.isDigit() } },
-                    label = { Text("Auto Wait (s)") },
-                    modifier = Modifier.weight(1f)
-                )
-                OutlinedTextField(
-                    value = autoMaxWaitTimeInput,
-                    onValueChange = { autoMaxWaitTimeInput = it.filter { c -> c.isDigit() } },
-                    label = { Text("Max Wait (s)") },
-                    modifier = Modifier.weight(1f)
-                )
-            }
+        Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = autoWaitTimeInput,
+                onValueChange = { autoWaitTimeInput = it.filter { c -> c.isDigit() } },
+                label = { Text("Auto Wait (s)") },
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedTextField(
+                value = autoMaxWaitTimeInput,
+                onValueChange = { autoMaxWaitTimeInput = it.filter { c -> c.isDigit() } },
+                label = { Text("Max Wait (s)") },
+                modifier = Modifier.weight(1f)
+            )
         }
         Row (
             Modifier.fillMaxWidth(),
@@ -264,6 +265,41 @@ private fun SessionSelector(agent: AgentInstance, agentState: AgentRuntimeState,
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun KnowledgeGraphSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
+    val availableGraphs = remember(agentState.knowledgeGraphNames) {
+        agentState.knowledgeGraphNames.entries.toList()
+    }
+    var isExpanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
+        OutlinedTextField(
+            value = agentState.knowledgeGraphNames[agent.knowledgeGraphId] ?: "None",
+            onValueChange = {}, readOnly = true, label = { Text("Knowledge Graph") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth()
+        )
+        ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
+            DropdownMenuItem(text = { Text("None") }, onClick = {
+                store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
+                    put("agentId", agent.id); put("knowledgeGraphId", null as String?)
+                }))
+                isExpanded = false
+            })
+            availableGraphs.forEach { (graphId, graphName) ->
+                DropdownMenuItem(text = { Text(graphName) }, onClick = {
+                    store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
+                        put("agentId", agent.id); put("knowledgeGraphId", graphId)
+                    }))
+                    isExpanded = false
+                })
+            }
+        }
+    }
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

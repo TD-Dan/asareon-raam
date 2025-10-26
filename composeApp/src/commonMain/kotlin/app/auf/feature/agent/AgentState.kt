@@ -42,7 +42,7 @@ data class StagedPreviewData(
 data class AgentInstance(
     val id: String,
     val name: String,
-    val personaId: String,
+    val knowledgeGraphId: String? = null, // REPLACED personaId
     val modelProvider: String,
     val modelName: String,
     val primarySessionId: String? = null,
@@ -72,7 +72,9 @@ data class AgentInstance(
     @Transient
     val turnMode: TurnMode = TurnMode.DIRECT,
     @Transient
-    val stagedPreviewData: StagedPreviewData? = null
+    val stagedPreviewData: StagedPreviewData? = null,
+    @Transient
+    val stagedTurnContext: List<GatewayMessage>? = null // NEW: For multi-step turn assembly
 )
 
 @Serializable
@@ -80,6 +82,7 @@ data class AgentRuntimeState(
     val agents: Map<String, AgentInstance> = emptyMap(),
     val sessionNames: Map<String, String> = emptyMap(),
     val availableModels: Map<String, List<String>> = emptyMap(),
+    val knowledgeGraphNames: Map<String, String> = emptyMap(), // NEW
 
     // Cache the full list of user identities, not just the active one.
     @Transient

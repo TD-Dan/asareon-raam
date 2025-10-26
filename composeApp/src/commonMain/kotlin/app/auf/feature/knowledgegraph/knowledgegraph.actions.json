@@ -1,0 +1,53 @@
+{
+  "feature_name": "knowledgegraph",
+  "summary": "The master source of truth for creating, managing, and serving Holon Knowledge Graphs (HKGs).",
+  "listensFor": [
+    {
+      "action_name": "knowledgegraph.SELECT_GRAPH_SCOPE",
+      "summary": "Sets the active HKG to be displayed in the UI.",
+      "payload_schema": { "type": "object", "properties": { "graphId": { "type": ["string", "null"] } } }
+    },
+    {
+      "action_name": "knowledgegraph.SELECT_HOLON",
+      "summary": "Selects a specific holon for detailed viewing in the UI.",
+      "payload_schema": { "type": "object", "properties": { "holonId": { "type": ["string", "null"] } } }
+    },
+    {
+      "action_name": "knowledgegraph.CREATE_GRAPH",
+      "summary": "Creates a new, empty Holon Knowledge Graph.",
+      "payload_schema": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] }
+    },
+    {
+      "action_name": "knowledgegraph.DELETE_GRAPH",
+      "summary": "Deletes an entire Holon Knowledge Graph and all its holons.",
+      "payload_schema": { "type": "object", "properties": { "graphId": { "type": "string" } }, "required": ["graphId"] }
+    },
+    {
+      "action_name": "knowledgegraph.UPDATE_HOLON",
+      "summary": "Creates or updates a holon within a specific HKG.",
+      "payload_schema": { "type": "object", "properties": { "graphId": { "type": "string" }, "holonId": { "type": "string" }, "content": { "type": "string" } }, "required": ["graphId", "holonId", "content"] }
+    },
+    {
+      "action_name": "knowledgegraph.DELETE_HOLON",
+      "summary": "Deletes a holon from a specific HKG.",
+      "payload_schema": { "type": "object", "properties": { "graphId": { "type": "string" }, "holonId": { "type": "string" } }, "required": ["graphId", "holonId"] }
+    }
+  ],
+  "publishes": [
+    {
+      "action_name": "knowledgegraph.publish.GRAPH_NAMES_UPDATED",
+      "summary": "Broadcasts the map of all available HKG IDs to their names.",
+      "payload_schema": { "type": "object", "properties": { "names": { "type": "object" } }, "required": ["names"] }
+    },
+    {
+      "action_name": "knowledgegraph.internal.GRAPH_LOADED",
+      "summary": "[INTERNAL] Dispatched when an HKG's manifest is loaded.",
+      "payload_schema": { "type": "object" }
+    },
+    {
+      "action_name": "knowledgegraph.internal.HOLON_LOADED",
+      "summary": "[INTERNAL] Dispatched when a single holon's content is loaded.",
+      "payload_schema": { "type": "object" }
+    }
+  ]
+}
