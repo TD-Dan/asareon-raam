@@ -28,12 +28,15 @@ class AgentRuntimeFeature(
 
     @Serializable private data class SessionNamesPayload(val names: Map<String, String>)
     @Serializable private data class GatewayResponsePayload(val correlationId: String, val rawContent: String? = null, val errorMessage: String? = null)
-    @Serializable private data class LedgerResponsePayload(val correlationId: String, val messages: List<GatewayMessage>)
+    @Serializable private data class LedgerResponsePayload(val correlationId: String, val messages: List<JsonObject>) // Generic JsonObject for now
     @Serializable private data class MessagePostedPayload(val sessionId: String, val entry: JsonObject)
     @Serializable private data class MessageDeletedPayload(val sessionId: String, val messageId: String)
     @Serializable private data class InitiateTurnPayload(val agentId: String, val preview: Boolean = false)
     @Serializable private data class SetPreviewDataPayload(val agentId: String, val agnosticRequest: GatewayRequest, val rawRequestJson: String)
     @Serializable private data class GatewayPreviewResponsePayload(val correlationId: String, val agnosticRequest: GatewayRequest, val rawRequestJson: String)
+    // NEW: Payload for identity broadcasts from CoreFeature
+    @Serializable private data class IdentitiesUpdatedPayload(val identities: List<Identity>, val activeId: String?)
+
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val agentConfigFILENAME = "agent.json"
@@ -80,6 +83,14 @@ class AgentRuntimeFeature(
             ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
                 val decoded = try { action.payload?.let { json.decodeFromJsonElement<SessionNamesPayload>(it) } } catch(e: Exception) { null }
                 if (decoded != null) { newFeatureState = currentFeatureState.copy(sessionNames = decoded.names) }
+            }
+            // NEW: Listen for user identity updates
+            ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<IdentitiesUpdatedPayload>(it) }
+                if (payload != null) {
+                    val activeIdentity = payload.identities.find { it.id == payload.activeId }
+                    newFeatureState = currentFeatureState.copy(activeUserIdentity = activeIdentity)
+                }
             }
         }
 
@@ -206,8 +217,6 @@ class AgentRuntimeFeature(
             waitingSinceTimestamp = if (clearTimers) null else agentToUpdate.waitingSinceTimestamp,
             lastMessageReceivedTimestamp = if (clearTimers) null else agentToUpdate.lastMessageReceivedTimestamp,
             processingSinceTimestamp = if (isStartingProcessing) platformDependencies.getSystemTimeMillis() else if (isStoppingProcessing) null else agentToUpdate.processingSinceTimestamp,
-            // FIX: When an agent stops processing, its commitment frontier must be cleared.
-            // It will be re-established from the awareness frontier when the next turn begins.
             processingFrontierMessageId = if (isStoppingProcessing) null else agentToUpdate.processingFrontierMessageId,
             processingStep = if (isStoppingProcessing) null else agentToUpdate.processingStep
         )
@@ -244,8 +253,6 @@ class AgentRuntimeFeature(
                     lastSeenMessageId = messageId, lastMessageReceivedTimestamp = currentTime,
                     waitingSinceTimestamp = agent.waitingSinceTimestamp ?: currentTime
                 )
-                // FIX: An agent's own text response should update its own awareness frontier (lastSeenMessageId).
-                // The commitment frontier (processingFrontierMessageId) is ONLY set when a turn begins.
             } else if (agent.id == senderId && !isAvatarCard(payload)) {
                 agent.copy(lastSeenMessageId = messageId)
             } else {
@@ -486,6 +493,22 @@ class AgentRuntimeFeature(
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[decoded.correlationId] ?: return
 
+        // THIS IS THE CORE OF THE NEW LOGIC
+        val enrichedMessages = decoded.messages.mapNotNull { entry ->
+            val senderId = entry["senderId"]?.jsonPrimitive?.content
+            val rawContent = entry["rawContent"]?.jsonPrimitive?.content
+            if (senderId == null || rawContent == null) return@mapNotNull null
+
+            val (senderName, role) = when {
+                agentState.agents.containsKey(senderId) -> agentState.agents[senderId]!!.name to "model"
+                agentState.activeUserIdentity?.id == senderId -> agentState.activeUserIdentity!!.name to "user"
+                else -> "Unknown" to "user" // Fallback
+            }
+
+            GatewayMessage(role, rawContent, senderId, senderName)
+        }
+
+
         val requestActionName = if (agent.turnMode == TurnMode.PREVIEW) ActionNames.GATEWAY_PREPARE_PREVIEW else ActionNames.GATEWAY_GENERATE_CONTENT
         val step = if (agent.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"
 
@@ -495,7 +518,7 @@ class AgentRuntimeFeature(
 
         store.dispatch(this.name, Action(requestActionName, buildJsonObject {
             put("providerId", agent.modelProvider); put("modelName", agent.modelName); put("correlationId", agent.id)
-            put("contents", json.encodeToJsonElement(decoded.messages))
+            put("contents", json.encodeToJsonElement(enrichedMessages))
         }))
     }
 

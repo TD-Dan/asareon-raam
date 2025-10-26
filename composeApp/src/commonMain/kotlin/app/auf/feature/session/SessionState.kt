@@ -67,8 +67,8 @@ data class SessionState(
     /** A map of all active sessions, keyed by their unique ID. */
     val sessions: Map<String, Session> = emptyMap(),
 
-    /** A local cache of agent IDs to their human-readable names. */
-    val agentNames: Map<String, String> = emptyMap(),
+    /** A unified local cache of all identity IDs (user and agent) to their display names. */
+    val identityNames: Map<String, String> = emptyMap(),
 
     /** The ID of the session currently visible in the main view. */
     val activeSessionId: String? = null,

@@ -26,17 +26,16 @@ class SessionFeature(
     @Serializable private data class UpdateConfigPayload(val session: String, val name: String)
     @Serializable private data class SessionTargetPayload(val session: String)
     @Serializable private data class PostPayload(val session: String, val senderId: String, val message: String? = null, val messageId: String? = null, val metadata: JsonObject? = null, val afterMessageId: String? = null)
-    // FIX: Make newContent nullable to match the contract and support "touch" actions.
     @Serializable private data class UpdateMessagePayload(val session: String, val messageId: String, val newContent: String? = null, val newMetadata: JsonObject? = null)
     @Serializable private data class MessageTargetPayload(val session: String, val messageId: String)
     @Serializable private data class SetEditingSessionPayload(val sessionId: String?)
     @Serializable private data class SetEditingMessagePayload(val messageId: String?)
     @Serializable private data class ToggleMessageUiPayload(val sessionId: String, val messageId: String)
     @Serializable internal data class InternalSessionLoadedPayload(val sessions: Map<String, Session>)
-    @Serializable private data class AgentNamesUpdatedPayload(val names: Map<String, String>)
+    @Serializable private data class IdentityNamesUpdatedPayload(val names: Map<String, String>)
     @Serializable private data class AgentDeletedPayload(val agentId: String)
     @Serializable private data class RequestLedgerPayload(val sessionId: String, val correlationId: String)
-    @Serializable private data class GatewayMessage(val role: String, val content: String)
+    @Serializable private data class GatewayMessage(val role: String, val content: String, val senderId: String, val senderName: String)
 
 
     private val blockParser = BlockSeparatingParser()
@@ -120,15 +119,13 @@ class SessionFeature(
             ActionNames.SESSION_REQUEST_LEDGER_CONTENT -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<RequestLedgerPayload>(it) } ?: return
                 val session = sessionState.sessions[payload.sessionId] ?: return
-                val messages = session.ledger.mapNotNull {
-                    it.rawContent?.let { content ->
-                        val role = if (it.senderId == "user") "user" else "model"
-                        GatewayMessage(role, content)
-                    }
-                }
+                // The SessionFeature is now dumber. It just passes the raw ledger entries.
+                // The AgentRuntimeFeature is responsible for enriching this data.
+                val messages = session.ledger.map { json.encodeToJsonElement(it) }
+
                 val responsePayload = buildJsonObject {
                     put("correlationId", payload.correlationId)
-                    putJsonArray("messages") { messages.forEach { add(Json.encodeToJsonElement(it)) } }
+                    putJsonArray("messages") { messages.forEach { add(it) } }
                 }
                 val envelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, responsePayload)
                 store.deliverPrivateData(this.name, action.originator ?: "unknown", envelope)
@@ -180,10 +177,22 @@ class SessionFeature(
         var newFeatureState: SessionState? = null
         val payload = action.payload
         when (action.name) {
-            ActionNames.AGENT_PUBLISH_AGENT_NAMES_UPDATED -> newFeatureState = currentFeatureState.copy(agentNames = payload?.let { json.decodeFromJsonElement<AgentNamesUpdatedPayload>(it) }?.names ?: emptyMap())
+            // REFACTOR: The reducer now handles two separate identity broadcasts and merges them.
+            ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED -> {
+                val identities = payload?.get("identities")?.jsonArray?.map { json.decodeFromJsonElement<Identity>(it) } ?: return stateWithFeature
+                val userNames = identities.associate { it.id to it.name }
+                val agentNames = currentFeatureState.identityNames.filterKeys { it !in userNames.keys }
+                newFeatureState = currentFeatureState.copy(identityNames = agentNames + userNames)
+            }
+            ActionNames.AGENT_PUBLISH_AGENT_NAMES_UPDATED -> {
+                val agentNames = payload?.let { json.decodeFromJsonElement<IdentityNamesUpdatedPayload>(it) }?.names ?: emptyMap()
+                // Ensure we don't overwrite user names if there's an ID collision (unlikely but safe).
+                val userNames = currentFeatureState.identityNames.filterKeys { it !in agentNames.keys }
+                newFeatureState = currentFeatureState.copy(identityNames = userNames + agentNames)
+            }
             ActionNames.AGENT_PUBLISH_AGENT_DELETED -> {
                 val agentId = payload?.let { json.decodeFromJsonElement<AgentDeletedPayload>(it) }?.agentId ?: return stateWithFeature
-                newFeatureState = currentFeatureState.copy(agentNames = currentFeatureState.agentNames - agentId)
+                newFeatureState = currentFeatureState.copy(identityNames = currentFeatureState.identityNames - agentId)
             }
             ActionNames.SESSION_CREATE -> {
                 val desiredName = payload?.let { json.decodeFromJsonElement<CreatePayload>(it) }?.name?.takeIf { it.isNotBlank() } ?: "New Session"
@@ -235,7 +244,6 @@ class SessionFeature(
                 val targetSession = currentFeatureState.sessions[sessionId] ?: return stateWithFeature
                 val updatedLedger = targetSession.ledger.map {
                     if (it.id == decoded.messageId) {
-                        // FIX: Harden the reducer logic to handle optional fields.
                         val updatedRawContent = decoded.newContent ?: it.rawContent
                         val updatedMetadata = decoded.newMetadata ?: it.metadata
                         it.copy(
