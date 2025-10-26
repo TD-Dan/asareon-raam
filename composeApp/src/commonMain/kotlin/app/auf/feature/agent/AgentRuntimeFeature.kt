@@ -54,6 +54,7 @@ class AgentRuntimeFeature(
     }
 
     override fun reducer(state: AppState, action: Action): AppState {
+        platformDependencies.log(LogLevel.DEBUG, name, "REDUCER << $action")
         val (stateWithFeature, currentFeatureState) = state.featureStates[name]
             ?.let { state to (it as AgentRuntimeState) }
             ?: (state.copy(featureStates = state.featureStates + (name to AgentRuntimeState())) to AgentRuntimeState())
@@ -86,7 +87,6 @@ class AgentRuntimeFeature(
             ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<IdentitiesUpdatedPayload>(it) }
                 if (payload != null) {
-                    // FIX: Cache the entire list of user identities.
                     newFeatureState = currentFeatureState.copy(userIdentities = payload.identities)
                 }
             }
@@ -94,6 +94,7 @@ class AgentRuntimeFeature(
 
         return newFeatureState?.let {
             val finalState = if (action.name != ActionNames.SESSION_PUBLISH_SESSION_DELETED) it.copy(agentsToPersist = null) else it
+            platformDependencies.log(LogLevel.DEBUG, name, "REDUCER >> State changed: ${finalState != currentFeatureState}")
             if (finalState != currentFeatureState) stateWithFeature.copy(featureStates = stateWithFeature.featureStates + (name to finalState)) else stateWithFeature
         } ?: stateWithFeature
     }
@@ -275,6 +276,7 @@ class AgentRuntimeFeature(
     }
 
     override fun onAction(action: Action, store: Store, previousState: AppState) {
+        platformDependencies.log(LogLevel.DEBUG, name, "ON_ACTION << $action")
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
@@ -454,6 +456,7 @@ class AgentRuntimeFeature(
     }
 
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
+        platformDependencies.log(LogLevel.DEBUG, name, "ON_PRIVATE_DATA << ${envelope.type} from ${envelope.payload["correlationId"]?.jsonPrimitive?.contentOrNull}")
         when (envelope.type) {
             ActionNames.Envelopes.GATEWAY_RESPONSE -> handleGatewayResponse(envelope.payload, store)
             ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW -> handleGatewayPreviewResponse(envelope.payload, store)
@@ -492,18 +495,21 @@ class AgentRuntimeFeature(
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[decoded.correlationId] ?: return
 
-        // FIX: Remove dependency on LedgerEntry and use a robust, decoupled identity lookup.
+        // FIX: Implement corrected, robust, and decoupled context assembly logic.
         val enrichedMessages = decoded.messages.mapNotNull { element ->
             try {
                 val entryJson = element.jsonObject
                 val senderId = entryJson["senderId"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
                 val rawContent = entryJson["rawContent"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
 
+                val actingAgentId = agent.id
                 val user = agentState.userIdentities.find { it.id == senderId }
+
                 val (senderName, role) = when {
-                    agentState.agents.containsKey(senderId) -> agentState.agents[senderId]!!.name to "model"
-                    user != null -> user.name to "user"
-                    else -> "Unknown" to "user" // Truly unknown
+                    senderId == actingAgentId -> agent.name to "model" // This is me, the acting agent.
+                    agentState.agents.containsKey(senderId) -> agentState.agents[senderId]!!.name to "user" // This is another agent, treated as a user.
+                    user != null -> user.name to "user" // This is a known human user.
+                    else -> "Unknown" to "user" // This is an unknown participant, default to user.
                 }
 
                 GatewayMessage(role, rawContent, senderId, senderName)
@@ -512,6 +518,7 @@ class AgentRuntimeFeature(
                 null
             }
         }
+
 
         val requestActionName = if (agent.turnMode == TurnMode.PREVIEW) ActionNames.GATEWAY_PREPARE_PREVIEW else ActionNames.GATEWAY_GENERATE_CONTENT
         val step = if (agent.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"
