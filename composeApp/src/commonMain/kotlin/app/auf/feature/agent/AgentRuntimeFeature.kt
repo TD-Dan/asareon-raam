@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
 import app.auf.core.generated.ActionNames
+import app.auf.feature.session.LedgerEntry
 import app.auf.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -28,13 +29,12 @@ class AgentRuntimeFeature(
 
     @Serializable private data class SessionNamesPayload(val names: Map<String, String>)
     @Serializable private data class GatewayResponsePayload(val correlationId: String, val rawContent: String? = null, val errorMessage: String? = null)
-    @Serializable private data class LedgerResponsePayload(val correlationId: String, val messages: List<JsonObject>) // Generic JsonObject for now
+    @Serializable private data class LedgerResponsePayload(val correlationId: String, val messages: List<JsonObject>) // Generic JsonObject representing LedgerEntry
     @Serializable private data class MessagePostedPayload(val sessionId: String, val entry: JsonObject)
     @Serializable private data class MessageDeletedPayload(val sessionId: String, val messageId: String)
     @Serializable private data class InitiateTurnPayload(val agentId: String, val preview: Boolean = false)
     @Serializable private data class SetPreviewDataPayload(val agentId: String, val agnosticRequest: GatewayRequest, val rawRequestJson: String)
     @Serializable private data class GatewayPreviewResponsePayload(val correlationId: String, val agnosticRequest: GatewayRequest, val rawRequestJson: String)
-    // NEW: Payload for identity broadcasts from CoreFeature
     @Serializable private data class IdentitiesUpdatedPayload(val identities: List<Identity>, val activeId: String?)
 
 
@@ -84,7 +84,6 @@ class AgentRuntimeFeature(
                 val decoded = try { action.payload?.let { json.decodeFromJsonElement<SessionNamesPayload>(it) } } catch(e: Exception) { null }
                 if (decoded != null) { newFeatureState = currentFeatureState.copy(sessionNames = decoded.names) }
             }
-            // NEW: Listen for user identity updates
             ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<IdentitiesUpdatedPayload>(it) }
                 if (payload != null) {
@@ -494,18 +493,23 @@ class AgentRuntimeFeature(
         val agent = agentState.agents[decoded.correlationId] ?: return
 
         // THIS IS THE CORE OF THE NEW LOGIC
-        val enrichedMessages = decoded.messages.mapNotNull { entry ->
-            val senderId = entry["senderId"]?.jsonPrimitive?.content
-            val rawContent = entry["rawContent"]?.jsonPrimitive?.content
-            if (senderId == null || rawContent == null) return@mapNotNull null
+        val enrichedMessages = decoded.messages.mapNotNull { entryJson ->
+            try {
+                val entry = json.decodeFromJsonElement<LedgerEntry>(entryJson)
+                val senderId = entry.senderId
+                val rawContent = entry.rawContent ?: return@mapNotNull null
 
-            val (senderName, role) = when {
-                agentState.agents.containsKey(senderId) -> agentState.agents[senderId]!!.name to "model"
-                agentState.activeUserIdentity?.id == senderId -> agentState.activeUserIdentity!!.name to "user"
-                else -> "Unknown" to "user" // Fallback
+                val (senderName, role) = when {
+                    agentState.agents.containsKey(senderId) -> agentState.agents[senderId]!!.name to "model"
+                    agentState.activeUserIdentity?.id == senderId -> agentState.activeUserIdentity!!.name to "user"
+                    else -> "Unknown" to "user" // Fallback for case where user is not the active one
+                }
+
+                GatewayMessage(role, rawContent, senderId, senderName)
+            } catch (e: Exception) {
+                platformDependencies.log(LogLevel.WARN, name, "Skipping corrupted ledger entry during context assembly: ${e.message}")
+                null
             }
-
-            GatewayMessage(role, rawContent, senderId, senderName)
         }
 
 

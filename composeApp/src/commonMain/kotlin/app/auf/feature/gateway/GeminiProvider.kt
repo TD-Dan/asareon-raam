@@ -70,10 +70,12 @@ class GeminiProvider(
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         val apiContents = buildJsonArray {
             request.contents.forEach { message ->
+                // Gemini does not have a 'name' field, so we prepend it to the content.
+                val enrichedContent = "${message.senderName}: ${message.content}"
                 add(buildJsonObject {
                     put("role", message.role)
                     put("parts", buildJsonArray {
-                        add(buildJsonObject { put("text", message.content) })
+                        add(buildJsonObject { put("text", enrichedContent) })
                     })
                 })
             }

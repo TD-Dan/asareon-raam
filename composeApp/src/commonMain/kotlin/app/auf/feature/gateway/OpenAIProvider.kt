@@ -25,7 +25,7 @@ private data class OpenAIChatResponse(
 @Serializable
 private data class Choice(val message: OpenAIMessage)
 @Serializable
-private data class OpenAIMessage(val role: String, val content: String?)
+private data class OpenAIMessage(val role: String, val content: String?, val name: String? = null)
 @Serializable
 private data class ApiError(val message: String)
 
@@ -57,9 +57,12 @@ class OpenAIProvider(
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         val openAiMessages = buildJsonArray {
             request.contents.forEach { message ->
+                // OpenAI has a native 'name' field. We create a sanitized token for it.
+                val sanitizedName = "${message.senderName}_${message.senderId}".replace(Regex("[^a-zA-Z0-9_-]"), "_").take(64)
                 add(buildJsonObject {
                     put("role", if (message.role == "model") "assistant" else message.role)
                     put("content", message.content)
+                    put("name", sanitizedName)
                 })
             }
         }

@@ -7,7 +7,13 @@ import kotlinx.serialization.Serializable
 // --- Internal Data Contracts for Gateway Feature ---
 // These are defined here, privately, to deserialize the JSON payload received from clients.
 @Serializable
-data class GatewayMessage(val role: String, val content: String)
+data class GatewayMessage(
+    val role: String,
+    val content: String,
+    // NEW: Enriched with sender identity
+    val senderId: String,
+    val senderName: String
+)
 @Serializable
 data class GatewayRequest(
     val modelName: String,
