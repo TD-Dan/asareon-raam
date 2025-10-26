@@ -120,7 +120,7 @@
         "properties":{
           "session":{
             "type":"string",
-            "description":"The ID or name of the target session."
+            "description":"The ID or name of the session to delete."
           },
           "messageId":{
             "type":"string"
@@ -330,9 +330,11 @@
               "type": "object",
               "properties": {
                 "role": { "type": "string" },
-                "content": { "type": "string" }
+                "content": { "type": "string" },
+                "senderId": { "type": "string" },
+                "senderName": { "type": "string" }
               },
-              "required": ["role", "content"]
+              "required": ["role", "content", "senderId", "senderName"]
             }
           }
         },
