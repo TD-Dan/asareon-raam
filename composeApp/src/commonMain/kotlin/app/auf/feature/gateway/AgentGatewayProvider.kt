@@ -10,9 +10,9 @@ import kotlinx.serialization.Serializable
 data class GatewayMessage(
     val role: String,
     val content: String,
-    // NEW: Enriched with sender identity
     val senderId: String,
-    val senderName: String
+    val senderName: String,
+    val timestamp: Long
 )
 @Serializable
 data class GatewayRequest(

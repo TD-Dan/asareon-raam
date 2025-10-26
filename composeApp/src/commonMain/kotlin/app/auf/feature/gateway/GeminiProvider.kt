@@ -70,8 +70,9 @@ class GeminiProvider(
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         val apiContents = buildJsonArray {
             request.contents.forEach { message ->
-                // FIX: Enrich the content with both name and ID for full context parity.
-                val enrichedContent = "[${message.senderName} | ID: ${message.senderId}]: ${message.content}"
+                // FIX: Use the high-clarity, timestamp-aware format.
+                val formattedTimestamp = platformDependencies.formatIsoTimestamp(message.timestamp)
+                val enrichedContent = "${message.senderName} (${message.senderId}) @ ${formattedTimestamp}: ${message.content}"
                 add(buildJsonObject {
                     put("role", message.role)
                     put("parts", buildJsonArray {
@@ -103,8 +104,6 @@ class GeminiProvider(
             return GatewayResponse(null, "Blocked by provider: $it", correlationId)
         }
 
-        // FIX: Path 4: If the API returned a valid response structure (candidates array is present),
-        // but there's no content, no error, and no block. This is a valid empty turn (e.g. finishReason: "STOP").
         if (response.candidates != null) {
             platformDependencies.log(LogLevel.INFO, id, "Received a valid response with no text content from Gemini for correlationId '$correlationId'. Treating as a completed empty turn.")
             return GatewayResponse("", null, correlationId)

@@ -44,11 +44,11 @@ class AgentRuntimeFeatureT2CoreTest {
                 // Simulate a ledger with one user message and one agent message
                 val ledgerMessages = listOf(
                     buildJsonObject {
-                        put("id", "msg-1"); put("timestamp", 1L); put("senderId", "user-id-1")
+                        put("id", "msg-1"); put("timestamp", 1000L); put("senderId", "user-id-1")
                         put("rawContent", "User message"); put("content", buildJsonArray { })
                     },
                     buildJsonObject {
-                        put("id", "msg-2"); put("timestamp", 2L); put("senderId", "agent-1")
+                        put("id", "msg-2"); put("timestamp", 2000L); put("senderId", "agent-1")
                         put("rawContent", "Agent response"); put("content", buildJsonArray { })
                     }
                 )
@@ -147,8 +147,6 @@ class AgentRuntimeFeatureT2CoreTest {
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .build()
 
-        // THE FIX: Dispatch the public action that starts the turn, which correctly sets the status.
-        // Do not call onPrivateData directly.
         harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", "agent-1"); put("preview", false) }))
 
         val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
@@ -164,7 +162,6 @@ class AgentRuntimeFeatureT2CoreTest {
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .build()
 
-        // THE FIX: Dispatch the public action that starts the turn.
         harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", "agent-1"); put("preview", true) }))
 
         val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_PREPARE_PREVIEW }
@@ -200,6 +197,14 @@ class AgentRuntimeFeatureT2CoreTest {
 
         // ASSERT
         val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
+
+        // FIX: Add instrumentation output to diagnose the failure.
+        if (gatewayRequest == null) {
+            println("--- DEBUG LOGS FOR FAILING TEST ---")
+            harness.platform.capturedLogs.forEach { println(it) }
+            println("--- END DEBUG LOGS ---")
+        }
+
         assertNotNull(gatewayRequest, "Gateway request should have been dispatched.")
         val contents = gatewayRequest.payload?.get("contents")?.let { json.decodeFromJsonElement<List<GatewayMessage>>(it) }
         assertNotNull(contents)
@@ -210,12 +215,14 @@ class AgentRuntimeFeatureT2CoreTest {
         assertEquals("user-id-1", userMessage.senderId)
         assertEquals("User Alpha", userMessage.senderName)
         assertEquals("User message", userMessage.content)
+        assertEquals(1000L, userMessage.timestamp)
 
         val agentMessage = contents[1]
         assertEquals("model", agentMessage.role)
         assertEquals("agent-1", agentMessage.senderId)
         assertEquals("Test Agent", agentMessage.senderName)
         assertEquals("Agent response", agentMessage.content)
+        assertEquals(2000L, agentMessage.timestamp)
     }
 
     @Test

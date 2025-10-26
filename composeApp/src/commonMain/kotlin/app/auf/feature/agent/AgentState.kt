@@ -16,9 +16,9 @@ enum class TurnMode { DIRECT, PREVIEW }
 data class GatewayMessage(
     val role: String,
     val content: String,
-    // NEW: Enriched with sender identity
     val senderId: String,
-    val senderName: String
+    val senderName: String,
+    val timestamp: Long
 )
 
 @Serializable
@@ -77,7 +77,6 @@ data class AgentRuntimeState(
     val sessionNames: Map<String, String> = emptyMap(),
     val availableModels: Map<String, List<String>> = emptyMap(),
 
-    // FIX: Cache the full list of user identities, not just the active one.
     @Transient
     val userIdentities: List<Identity> = emptyList(),
 

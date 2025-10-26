@@ -495,12 +495,12 @@ class AgentRuntimeFeature(
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[decoded.correlationId] ?: return
 
-        // FIX: Implement corrected, robust, and decoupled context assembly logic.
         val enrichedMessages = decoded.messages.mapNotNull { element ->
             try {
                 val entryJson = element.jsonObject
                 val senderId = entryJson["senderId"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
                 val rawContent = entryJson["rawContent"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val timestamp = entryJson["timestamp"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
 
                 val actingAgentId = agent.id
                 val user = agentState.userIdentities.find { it.id == senderId }
@@ -512,7 +512,7 @@ class AgentRuntimeFeature(
                     else -> "Unknown" to "user" // This is an unknown participant, default to user.
                 }
 
-                GatewayMessage(role, rawContent, senderId, senderName)
+                GatewayMessage(role, rawContent, senderId, senderName, timestamp)
             } catch (e: Exception) {
                 platformDependencies.log(LogLevel.WARN, name, "Skipping corrupted ledger entry during context assembly: ${e.message}")
                 null

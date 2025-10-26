@@ -21,28 +21,26 @@ class GatewayFeatureT1GeminiProviderTest {
     private val platform = FakePlatformDependencies("test")
     private val provider = GeminiProvider(platform)
 
-    // THE FIX: This test is now hardened to check the new enrichment logic.
     @Test
     fun `buildRequestPayload correctly transforms universal request to Gemini format`() {
         // ARRANGE
         val request = GatewayRequest(
             modelName = "gemini-pro",
             contents = listOf(
-                GatewayMessage("user", "Hello", "user-1", "User"),
-                GatewayMessage("model", "Hi there", "agent-1", "Assistant")
+                GatewayMessage("user", "Hello", "user-1", "User", 1000L),
+                GatewayMessage("model", "Hi there", "agent-1", "Assistant", 2000L)
             ),
             correlationId = "corr-123"
         )
-        // Gemini prepends the name to the content.
         val expected = buildJsonObject {
             put("contents", buildJsonArray {
                 add(buildJsonObject {
                     put("role", "user")
-                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", "User: Hello") }) })
+                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", "User (user-1) @ ISO_TIMESTAMP_1000: Hello") }) })
                 })
                 add(buildJsonObject {
                     put("role", "model")
-                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", "Assistant: Hi there") }) })
+                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", "Assistant (agent-1) @ ISO_TIMESTAMP_2000: Hi there") }) })
                 })
             })
         }
@@ -102,7 +100,6 @@ class GatewayFeatureT1GeminiProviderTest {
     @Test
     fun `parseResponse correctly handles a successful but empty STOP response`() {
         // ARRANGE
-        // This is the ground-truth JSON from the user's log.
         val responseBody = """
         {
           "candidates": [ { "content": { "role": "model" }, "finishReason": "STOP", "index": 0 } ]

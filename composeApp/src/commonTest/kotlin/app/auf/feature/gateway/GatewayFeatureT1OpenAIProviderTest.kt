@@ -18,30 +18,28 @@ class GatewayFeatureT1OpenAIProviderTest {
     private val platform = FakePlatformDependencies("test")
     private val provider = OpenAIProvider(platform)
 
-    // THE FIX: This test is now hardened to check the new enrichment logic.
     @Test
     fun `buildRequestPayload correctly transforms universal request to OpenAI format`() {
         // ARRANGE
         val request = GatewayRequest(
             modelName = "gpt-4o",
             contents = listOf(
-                GatewayMessage("user", "Hello", "user-1", "User"),
-                GatewayMessage("model", "Hi there", "agent-1", "Assistant")
+                GatewayMessage("user", "Hello", "user-1", "User", 1000L),
+                GatewayMessage("model", "Hi there", "agent-1", "Assistant", 2000L)
             ),
             correlationId = "corr-123"
         )
-        // OpenAI uses the 'assistant' role and a 'name' field.
         val expected = buildJsonObject {
             put("model", "gpt-4o")
             put("messages", buildJsonArray {
                 add(buildJsonObject {
                     put("role", "user")
-                    put("content", "Hello")
+                    put("content", "User (user-1) @ ISO_TIMESTAMP_1000: Hello")
                     put("name", "User_user-1")
                 })
                 add(buildJsonObject {
                     put("role", "assistant")
-                    put("content", "Hi there")
+                    put("content", "Assistant (agent-1) @ ISO_TIMESTAMP_2000: Hi there")
                     put("name", "Assistant_agent-1")
                 })
             })

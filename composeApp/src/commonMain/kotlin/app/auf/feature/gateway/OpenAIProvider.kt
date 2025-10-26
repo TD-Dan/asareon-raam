@@ -57,11 +57,13 @@ class OpenAIProvider(
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         val openAiMessages = buildJsonArray {
             request.contents.forEach { message ->
-                // FIX: Enrich the 'name' field with both name and ID, then sanitize for API compliance.
+                // FIX: Use the high-clarity, timestamp-aware format for both content and name.
+                val formattedTimestamp = platformDependencies.formatIsoTimestamp(message.timestamp)
+                val enrichedContent = "${message.senderName} (${message.senderId}) @ ${formattedTimestamp}: ${message.content}"
                 val sanitizedName = "${message.senderName}_${message.senderId}".replace(Regex("[^a-zA-Z0-9_-]"), "_").take(64)
                 add(buildJsonObject {
                     put("role", if (message.role == "model") "assistant" else message.role)
-                    put("content", message.content)
+                    put("content", enrichedContent)
                     put("name", sanitizedName)
                 })
             }
@@ -147,9 +149,8 @@ class OpenAIProvider(
 
             parseResponse(responseBody, request.correlationId)
         } catch (e: CancellationException) {
-            // REFACTOR: Catch CancellationException specifically to prevent it from being treated as a runtime error.
             platformDependencies.log(LogLevel.INFO, id, "OpenAI request with correlationId '${request.correlationId}' was cancelled.")
-            throw e // Re-throw to allow the coroutine to terminate gracefully.
+            throw e
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, id, "Content generation failed: ${e.stackTraceToString()}")
             val userMessage = mapExceptionToUserMessage(e)
