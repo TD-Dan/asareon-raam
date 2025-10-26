@@ -7,9 +7,10 @@ import app.auf.core.Identity
 import app.auf.core.PrivateDataEnvelope
 import app.auf.core.Store
 import app.auf.core.generated.ActionNames
+import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
-import app.auf.feature.session.SessionFeature
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.feature.session.SessionFeature
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -210,7 +211,8 @@ class AgentRuntimeFeatureT2CoreTest {
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("2.0.0-test"), CoroutineScope(Dispatchers.Unconfined)))
             .withFeature(FakeSessionFeature)
-            .withInitialState("core", CoreState(userIdentities = listOf(user), activeUserId = "user-id-1"))
+            // THE FIX: Explicitly set the lifecycle to RUNNING when overriding the initial CoreState.
+            .withInitialState("core", CoreState(userIdentities = listOf(user), activeUserId = "user-id-1", lifecycle = AppLifecycle.RUNNING))
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .build()
 

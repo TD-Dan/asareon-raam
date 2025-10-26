@@ -79,14 +79,13 @@ class GeminiProvider(
         }
         return buildJsonObject {
             put("contents", apiContents)
-            // NEW: Add the system prompt if it exists.
+            // FIX: Correct the structure for system_instruction.
+            // The "parts" array must be a direct child of "system_instruction".
             request.systemPrompt?.let {
                 putJsonObject("system_instruction") {
-                    putJsonObject("content") {
-                        put("parts", buildJsonArray {
-                            add(buildJsonObject { put("text", it) })
-                        })
-                    }
+                    put("parts", buildJsonArray {
+                        add(buildJsonObject { put("text", it) })
+                    })
                 }
             }
         }
