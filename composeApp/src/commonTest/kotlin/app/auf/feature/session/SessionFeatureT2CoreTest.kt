@@ -1,6 +1,7 @@
 package app.auf.feature.session
 
 import app.auf.core.Action
+import app.auf.core.Identity
 import app.auf.core.PrivateDataEnvelope
 import app.auf.core.generated.ActionNames
 import app.auf.feature.core.CoreState
@@ -75,6 +76,39 @@ class SessionFeatureT2CoreTest {
         assertEquals("{}", publishAction.payload?.get("names").toString())
 
         assertNotNull(harness.processedActions.find { it.name == ActionNames.SESSION_PUBLISH_SESSION_DELETED })
+    }
+
+    // NEW TEST: Verifies the merging of identity broadcasts.
+    @Test
+    fun `reducer correctly merges user and agent identity broadcasts`() = runTest {
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .build(platform = platform)
+
+        // ACT 1: Broadcast user identities from CoreFeature
+        val userIdentities = listOf(Identity("user-1", "User Alpha"))
+        val coreBroadcast = Action(ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
+            put("identities", Json.encodeToJsonElement(userIdentities))
+        })
+        harness.store.dispatch("core", coreBroadcast)
+
+        // ASSERT 1
+        val stateAfterCore = harness.store.state.value.featureStates["session"] as SessionState
+        assertEquals(1, stateAfterCore.identityNames.size)
+        assertEquals("User Alpha", stateAfterCore.identityNames["user-1"])
+
+        // ACT 2: Broadcast agent identities from AgentRuntimeFeature
+        val agentNames = mapOf("agent-1" to "Agent Beta")
+        val agentBroadcast = Action(ActionNames.AGENT_PUBLISH_AGENT_NAMES_UPDATED, buildJsonObject {
+            put("names", Json.encodeToJsonElement(agentNames))
+        })
+        harness.store.dispatch("agent", agentBroadcast)
+
+        // ASSERT 2
+        val finalState = harness.store.state.value.featureStates["session"] as SessionState
+        assertEquals(2, finalState.identityNames.size, "Should contain both user and agent identities.")
+        assertEquals("User Alpha", finalState.identityNames["user-1"])
+        assertEquals("Agent Beta", finalState.identityNames["agent-1"])
     }
 
     @Test

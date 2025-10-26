@@ -4,6 +4,7 @@ import app.auf.fakes.CapturedLog
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.gateway.gemini.GeminiProvider
 import app.auf.util.LogLevel
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -20,23 +21,28 @@ class GatewayFeatureT1GeminiProviderTest {
     private val platform = FakePlatformDependencies("test")
     private val provider = GeminiProvider(platform)
 
+    // THE FIX: This test is now hardened to check the new enrichment logic.
     @Test
     fun `buildRequestPayload correctly transforms universal request to Gemini format`() {
         // ARRANGE
         val request = GatewayRequest(
             modelName = "gemini-pro",
-            contents = listOf(GatewayMessage("user", "Hello"), GatewayMessage("model", "Hi there")),
+            contents = listOf(
+                GatewayMessage("user", "Hello", "user-1", "User"),
+                GatewayMessage("model", "Hi there", "agent-1", "Assistant")
+            ),
             correlationId = "corr-123"
         )
+        // Gemini prepends the name to the content.
         val expected = buildJsonObject {
             put("contents", buildJsonArray {
                 add(buildJsonObject {
                     put("role", "user")
-                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", "Hello") }) })
+                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", "User: Hello") }) })
                 })
                 add(buildJsonObject {
                     put("role", "model")
-                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", "Hi there") }) })
+                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", "Assistant: Hi there") }) })
                 })
             })
         }

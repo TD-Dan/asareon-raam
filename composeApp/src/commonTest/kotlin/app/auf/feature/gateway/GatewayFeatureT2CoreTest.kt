@@ -147,10 +147,12 @@ class GatewayFeatureT2CoreTest {
         }))
         val originatorId = "agent-feature-1"
         val correlationId = "test-turn-123"
+        // THE FIX: Provide the required senderId and senderName fields.
+        val message = GatewayMessage("user", "Test", "user-1", "User")
         val action = Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
             put("providerId", "provider-2"); put("modelName", "gpt-x")
             put("correlationId", correlationId)
-            put("contents", buildJsonArray { add(Json.encodeToJsonElement(GatewayMessage("user", "Test"))) })
+            put("contents", buildJsonArray { add(Json.encodeToJsonElement(message)) })
         })
 
         harness.store.dispatch(originatorId, action)

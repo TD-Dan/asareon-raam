@@ -3,13 +3,16 @@ package app.auf.feature.agent
 import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.Feature
+import app.auf.core.Identity
 import app.auf.core.Store
 import app.auf.core.generated.ActionNames
+import app.auf.feature.core.CoreState
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
@@ -38,9 +41,20 @@ class AgentRuntimeFeatureT2CoreTest {
         override fun onAction(action: Action, store: Store, previousState: AppState) {
             if (action.name == ActionNames.SESSION_REQUEST_LEDGER_CONTENT) {
                 val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.content ?: return
+                // Simulate a ledger with one user message and one agent message
+                val ledgerMessages = listOf(
+                    buildJsonObject {
+                        put("id", "msg-1"); put("timestamp", 1L); put("senderId", "user-id-1")
+                        put("rawContent", "User message"); put("content", buildJsonArray { })
+                    },
+                    buildJsonObject {
+                        put("id", "msg-2"); put("timestamp", 2L); put("senderId", "agent-1")
+                        put("rawContent", "Agent response"); put("content", buildJsonArray { })
+                    }
+                )
                 val responsePayload = buildJsonObject {
                     put("correlationId", correlationId)
-                    put("messages", json.encodeToJsonElement(listOf(GatewayMessage("user", "test content"))))
+                    put("messages", Json.encodeToJsonElement(ledgerMessages))
                 }
                 store.deliverPrivateData(
                     name,
@@ -81,11 +95,12 @@ class AgentRuntimeFeatureT2CoreTest {
 
     private fun createTestAgent(
         id: String = "agent-1",
+        name: String = "Test Agent",
         sessionId: String? = "session-1",
         status: AgentStatus = AgentStatus.IDLE,
         turnMode: TurnMode = TurnMode.DIRECT
     ): AgentInstance {
-        return AgentInstance(id = id, name = "Test Agent", personaId = "p1", modelProvider = "mp1", modelName = "mn1", primarySessionId = sessionId, status = status, turnMode = turnMode)
+        return AgentInstance(id = id, name = name, personaId = "p1", modelProvider = "mp1", modelName = "mn1", primarySessionId = sessionId, status = status, turnMode = turnMode)
     }
 
     @Test
@@ -132,7 +147,7 @@ class AgentRuntimeFeatureT2CoreTest {
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .build()
 
-        harness.store.dispatch("agent", Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject { put("correlationId", "agent-1")}))
+        harness.store.dispatch("agent", Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject { put("sessionId", "session-1"); put("correlationId", "agent-1")}))
 
         val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
         assertNotNull(gatewayRequest)
@@ -147,10 +162,57 @@ class AgentRuntimeFeatureT2CoreTest {
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .build()
 
-        harness.store.dispatch("agent", Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject { put("correlationId", "agent-1")}))
+        harness.store.dispatch("agent", Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject { put("sessionId", "session-1"); put("correlationId", "agent-1")}))
 
         val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_PREPARE_PREVIEW }
         assertNotNull(gatewayRequest)
+    }
+
+    @Test
+    fun `assembles enriched context with correct identities from various sources`() {
+        // ARRANGE
+        val user = Identity("user-id-1", "User Alpha")
+        val agent = createTestAgent(id = "agent-1", name = "Test Agent")
+        val harness = TestEnvironment.create()
+            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
+            .withFeature(FakeSessionFeature)
+            .withInitialState("core", CoreState(userIdentities = listOf(user), activeUserId = "user-id-1"))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
+            .build()
+
+        // ARRANGE 2: THE FIX - Manually broadcast the identities to populate the agent's cache.
+        val identitiesBroadcast = Action(ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
+            put("identities", Json.encodeToJsonElement(listOf(user)))
+            put("activeId", "user-id-1")
+        })
+        harness.store.dispatch("core", identitiesBroadcast)
+
+        // ACT: THE FIX - Trigger the turn using the correct, public entry point.
+        val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+            put("agentId", "agent-1")
+            put("preview", false)
+        })
+        harness.store.dispatch("ui", triggerAction)
+
+
+        // ASSERT
+        val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
+        assertNotNull(gatewayRequest, "Gateway request should have been dispatched.")
+        val contents = gatewayRequest.payload?.get("contents")?.let { json.decodeFromJsonElement<List<GatewayMessage>>(it) }
+        assertNotNull(contents)
+        assertEquals(2, contents.size)
+
+        val userMessage = contents[0]
+        assertEquals("user", userMessage.role)
+        assertEquals("user-id-1", userMessage.senderId)
+        assertEquals("User Alpha", userMessage.senderName)
+        assertEquals("User message", userMessage.content)
+
+        val agentMessage = contents[1]
+        assertEquals("model", agentMessage.role)
+        assertEquals("agent-1", agentMessage.senderId)
+        assertEquals("Test Agent", agentMessage.senderName)
+        assertEquals("Agent response", agentMessage.content)
     }
 
     @Test

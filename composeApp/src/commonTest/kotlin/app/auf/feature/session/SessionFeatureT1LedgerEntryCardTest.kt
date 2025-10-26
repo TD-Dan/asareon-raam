@@ -51,11 +51,13 @@ class SessionFeatureT1LedgerEntryCardTest {
 
         composeTestRule.setContent {
             AppTheme {
+                // THE FIX: Align the component call with the new, refactored signature.
                 LedgerEntryCard(
                     store = fakeStore,
                     session = session,
                     entry = entry,
-                    agentName = "User",
+                    senderName = "User", // Pass the universal sender name
+                    isCurrentUserMessage = true, // Pass the new boolean flag
                     isEditingThisMessage = isEditing,
                     editingContent = editingContent
                 )
