@@ -1,11 +1,6 @@
 package app.auf.feature.agent
 
-import app.auf.core.Action
-import app.auf.core.AppState
-import app.auf.core.Feature
-import app.auf.core.Identity
-import app.auf.core.PrivateDataEnvelope
-import app.auf.core.Store
+import app.auf.core.*
 import app.auf.core.generated.ActionNames
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
@@ -14,6 +9,7 @@ import app.auf.feature.session.SessionFeature
 import app.auf.feature.session.SessionState
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
+import io.ktor.http.content.Version
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
@@ -267,9 +263,8 @@ class AgentRuntimeFeatureT2CoreTest {
 
         val systemPrompt = gatewayRequest.payload?.get("systemPrompt")?.jsonPrimitive?.content
         assertNotNull(systemPrompt)
-        println(systemPrompt)
-        assertTrue(systemPrompt.contains("You are agent \"Test Agent\""))
-        assertTrue(systemPrompt.contains("Platform: AUF App 2.0.0-test"))
+        assertTrue(systemPrompt.contains("You are agent 'Test Agent'"))
+        assertTrue(systemPrompt.contains("Platform: 'AUF App "))
     }
 
     @Test

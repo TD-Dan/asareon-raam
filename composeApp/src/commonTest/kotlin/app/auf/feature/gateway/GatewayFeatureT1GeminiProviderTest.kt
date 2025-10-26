@@ -70,11 +70,9 @@ class GatewayFeatureT1GeminiProviderTest {
                 })
             })
             putJsonObject("system_instruction") {
-                putJsonObject("content") {
-                    put("parts", buildJsonArray {
-                        add(buildJsonObject { put("text", "You are a helpful assistant.") })
-                    })
-                }
+                put("parts", buildJsonArray {
+                    add(buildJsonObject { put("text", "You are a helpful assistant.") })
+                })
             }
         }
 

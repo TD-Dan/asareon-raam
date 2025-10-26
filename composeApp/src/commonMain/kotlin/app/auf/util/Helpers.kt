@@ -5,6 +5,6 @@ Converts Any type toString and abbreviates to given max length or returns origin
  */
 fun abbreviate(source: Any, max: Int) : String {
     val raw = source.toString()
-    return if (raw.length > max) "'${raw.take(max)}...'"
-    else "'$raw'"
+    return if (raw.length > max) "${raw.take(max)}..."
+    else raw
 }

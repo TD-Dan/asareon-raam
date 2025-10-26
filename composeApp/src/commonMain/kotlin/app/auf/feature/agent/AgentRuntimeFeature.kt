@@ -530,14 +530,14 @@ class AgentRuntimeFeature(
             // The following directives and context are provided for this turn.
 
             **OPERATIONAL DIRECTIVES:**
-            *   **IDENTITY:** You are agent "${abbreviate(agent.name, 64)}" (ID: ${agent.id}).
+            *   **IDENTITY:** You are agent '${abbreviate(agent.name, 64)}' (ID: ${agent.id}).
             *   **FORMATTING:** Your response MUST be your direct reply only. DO NOT include prefixes (names, IDs, timestamps). The application handles all formatting.
             *   **DISCIPLINE:** You MUST NOT speak for or impersonate any other participant. Generate content only from your own perspective as "${abbreviate(agent.name, 64)}".
 
             **SITUATIONAL AWARENESS:**
-            *   Platform: AUF App ${Version.APP_VERSION}
-            *   Host LLM: ${agent.modelProvider}
-            *   Host Model: ${agent.modelName}
+            *   Platform: 'AUF App ${Version.APP_VERSION}'
+            *   Host LLM: '${agent.modelProvider}'
+            *   Host Model: '${agent.modelName}'
             *   Session: '${abbreviate(sessionName, 64)}'
             *   Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())}
 
