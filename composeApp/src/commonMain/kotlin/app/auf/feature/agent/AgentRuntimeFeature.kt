@@ -11,7 +11,6 @@ import androidx.compose.runtime.getValue
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
 import app.auf.core.generated.ActionNames
-import app.auf.feature.session.LedgerEntry
 import app.auf.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -87,8 +86,8 @@ class AgentRuntimeFeature(
             ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<IdentitiesUpdatedPayload>(it) }
                 if (payload != null) {
-                    val activeIdentity = payload.identities.find { it.id == payload.activeId }
-                    newFeatureState = currentFeatureState.copy(activeUserIdentity = activeIdentity)
+                    // FIX: Cache the entire list of user identities.
+                    newFeatureState = currentFeatureState.copy(userIdentities = payload.identities)
                 }
             }
         }
@@ -253,6 +252,7 @@ class AgentRuntimeFeature(
                     waitingSinceTimestamp = agent.waitingSinceTimestamp ?: currentTime
                 )
             } else if (agent.id == senderId && !isAvatarCard(payload)) {
+                // An agent's own text response should advance its own lastSeenMessageId frontier
                 agent.copy(lastSeenMessageId = messageId)
             } else {
                 agent
@@ -492,17 +492,18 @@ class AgentRuntimeFeature(
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[decoded.correlationId] ?: return
 
-        // THIS IS THE CORE OF THE NEW LOGIC
-        val enrichedMessages = decoded.messages.mapNotNull { entryJson ->
+        // FIX: Remove dependency on LedgerEntry and use a robust, decoupled identity lookup.
+        val enrichedMessages = decoded.messages.mapNotNull { element ->
             try {
-                val entry = json.decodeFromJsonElement<LedgerEntry>(entryJson)
-                val senderId = entry.senderId
-                val rawContent = entry.rawContent ?: return@mapNotNull null
+                val entryJson = element.jsonObject
+                val senderId = entryJson["senderId"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val rawContent = entryJson["rawContent"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
 
+                val user = agentState.userIdentities.find { it.id == senderId }
                 val (senderName, role) = when {
                     agentState.agents.containsKey(senderId) -> agentState.agents[senderId]!!.name to "model"
-                    agentState.activeUserIdentity?.id == senderId -> agentState.activeUserIdentity!!.name to "user"
-                    else -> "Unknown" to "user" // Fallback for case where user is not the active one
+                    user != null -> user.name to "user"
+                    else -> "Unknown" to "user" // Truly unknown
                 }
 
                 GatewayMessage(role, rawContent, senderId, senderName)
@@ -511,7 +512,6 @@ class AgentRuntimeFeature(
                 null
             }
         }
-
 
         val requestActionName = if (agent.turnMode == TurnMode.PREVIEW) ActionNames.GATEWAY_PREPARE_PREVIEW else ActionNames.GATEWAY_GENERATE_CONTENT
         val step = if (agent.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"

@@ -77,9 +77,9 @@ data class AgentRuntimeState(
     val sessionNames: Map<String, String> = emptyMap(),
     val availableModels: Map<String, List<String>> = emptyMap(),
 
-    // NEW: Cache for the active user identity from CoreFeature
+    // FIX: Cache the full list of user identities, not just the active one.
     @Transient
-    val activeUserIdentity: Identity? = null,
+    val userIdentities: List<Identity> = emptyList(),
 
     @Transient
     val editingAgentId: String? = null,
