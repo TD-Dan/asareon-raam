@@ -9,8 +9,10 @@ import app.auf.core.Store
 import app.auf.core.generated.ActionNames
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
-import app.auf.fakes.FakePlatformDependencies
+import app.auf.feature.session.Session
 import app.auf.feature.session.SessionFeature
+import app.auf.feature.session.SessionState
+import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -111,10 +113,13 @@ class AgentRuntimeFeatureT2CoreTest {
     @Test
     fun `sentinel sanitizes timestamp echo out of ai response`() {
         val agent = createTestAgent(status = AgentStatus.PROCESSING)
+        // THE FIX: Provide a valid session in the initial state for the agent to post to.
+        val session = Session("session-1", "Test Session", emptyList(), 1L)
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
             .withFeature(SessionFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined))) // Need real session feature to post to
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
+            .withInitialState("session", SessionState(sessions = mapOf("session-1" to session)))
             .build()
         val gatewayResponsePayload = buildJsonObject {
             put("correlationId", "agent-1")
@@ -262,6 +267,7 @@ class AgentRuntimeFeatureT2CoreTest {
 
         val systemPrompt = gatewayRequest.payload?.get("systemPrompt")?.jsonPrimitive?.content
         assertNotNull(systemPrompt)
+        println(systemPrompt)
         assertTrue(systemPrompt.contains("You are agent \"Test Agent\""))
         assertTrue(systemPrompt.contains("Platform: AUF App 2.0.0-test"))
     }
