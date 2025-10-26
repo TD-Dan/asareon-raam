@@ -57,7 +57,7 @@ class OpenAIProvider(
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         val openAiMessages = buildJsonArray {
             request.contents.forEach { message ->
-                // OpenAI has a native 'name' field. We create a sanitized token for it.
+                // FIX: Enrich the 'name' field with both name and ID, then sanitize for API compliance.
                 val sanitizedName = "${message.senderName}_${message.senderId}".replace(Regex("[^a-zA-Z0-9_-]"), "_").take(64)
                 add(buildJsonObject {
                     put("role", if (message.role == "model") "assistant" else message.role)
