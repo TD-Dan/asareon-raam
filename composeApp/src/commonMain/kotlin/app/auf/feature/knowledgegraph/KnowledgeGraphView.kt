@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -15,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.Action
 import app.auf.core.Store
@@ -27,45 +27,36 @@ import kotlinx.serialization.json.put
 fun KnowledgeGraphView(store: Store) {
     val appState by store.state.collectAsState()
     val kgState = appState.featureStates["knowledgegraph"] as? KnowledgeGraphState
-    val activeGraph = kgState?.graphs?.find { it.id == kgState.activeGraphId }
-    val selectedHolon = activeGraph?.holons?.find { it.id == kgState.activeHolonId }
-
-    var showCreateDialog by remember { mutableStateOf(false) }
-
-    if (showCreateDialog) {
-        CreateGraphDialog(
-            onDismiss = { showCreateDialog = false },
-            onCreate = { name ->
-                store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_CREATE_GRAPH, buildJsonObject { put("name", name) }))
-                showCreateDialog = false
-            }
-        )
-    }
+    val selectedHolon = kgState?.holons?.get(kgState.activeHolonId)
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Knowledge Graph Manager") },
                 actions = {
-                    GraphSelector(kgState, store)
-                    IconButton(onClick = { showCreateDialog = true }) {
-                        Icon(Icons.Default.Add, contentDescription = "Create New Graph")
+                    PersonaSelector(kgState, store)
+                    // TODO: Re-implement Create Persona functionality
+                    IconButton(onClick = { /* TODO */ }) {
+                        Icon(Icons.Default.Add, contentDescription = "Create New Persona")
                     }
                 }
             )
         }
     ) { paddingValues ->
         Row(Modifier.fillMaxSize().padding(paddingValues)) {
-            if (activeGraph == null) {
+            if (kgState?.rootHolonId == null) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Select or create a Knowledge Graph to begin.")
+                    when {
+                        kgState?.isLoading == true -> CircularProgressIndicator()
+                        kgState?.fatalError != null -> Text(kgState.fatalError, color = MaterialTheme.colorScheme.error)
+                        else -> Text("Select a Persona to load its Knowledge Graph.")
+                    }
                 }
             } else {
-                HolonMasterList(
-                    graph = activeGraph,
-                    selectedHolonId = kgState?.activeHolonId,
+                HolonTreeView(
+                    kgState = kgState,
                     store = store,
-                    modifier = Modifier.width(350.dp)
+                    modifier = Modifier.width(400.dp)
                 )
                 VerticalDivider()
                 HolonDetailView(
@@ -78,22 +69,79 @@ fun KnowledgeGraphView(store: Store) {
 }
 
 @Composable
-private fun HolonMasterList(graph: HolonKnowledgeGraph, selectedHolonId: String?, store: Store, modifier: Modifier = Modifier) {
+private fun HolonTreeView(kgState: KnowledgeGraphState, store: Store, modifier: Modifier = Modifier) {
+    val rootHolon = kgState.rootHolonId?.let { kgState.holons[it] }
+
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(vertical = 8.dp)) {
-        items(graph.holons.sortedBy { it.name }, key = { it.id }) { holon ->
-            ListItem(
-                headlineContent = { Text(holon.name, maxLines = 1, style = MaterialTheme.typography.titleSmall) },
-                supportingContent = { Text(holon.summary ?: holon.type, maxLines = 1, style = MaterialTheme.typography.bodySmall) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SELECT_HOLON, buildJsonObject { put("holonId", holon.id) })) }
-                    .background(if (holon.id == selectedHolonId) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
-                    .padding(horizontal = 16.dp)
-            )
-            HorizontalDivider()
+        if (rootHolon != null) {
+            item {
+                HolonTreeItem(
+                    holon = rootHolon,
+                    selectedHolonId = kgState.activeHolonId,
+                    store = store
+                )
+            }
+            // Render the rest of the tree recursively
+            rootHolon.header.subHolons.sortedBy { it.name }.forEach { subRef ->
+                val childHolon = kgState.holons[subRef.id]
+                if (childHolon != null) {
+                    item {
+                        RecursiveHolonTree(
+                            holon = childHolon,
+                            allHolons = kgState.holons,
+                            selectedHolonId = kgState.activeHolonId,
+                            store = store
+                        )
+                    }
+                }
+            }
         }
     }
 }
+
+@Composable
+private fun RecursiveHolonTree(
+    holon: Holon,
+    allHolons: Map<String, Holon>,
+    selectedHolonId: String?,
+    store: Store
+) {
+    HolonTreeItem(holon = holon, selectedHolonId = selectedHolonId, store = store)
+    holon.header.subHolons.sortedBy { it.name }.forEach { subRef ->
+        val childHolon = allHolons[subRef.id]
+        if (childHolon != null) {
+            RecursiveHolonTree(
+                holon = childHolon,
+                allHolons = allHolons,
+                selectedHolonId = selectedHolonId,
+                store = store
+            )
+        }
+    }
+}
+
+@Composable
+private fun HolonTreeItem(holon: Holon, selectedHolonId: String?, store: Store) {
+    val header = holon.header
+    ListItem(
+        headlineContent = {
+            Text(
+                header.name,
+                maxLines = 1,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = if (header.id == selectedHolonId) FontWeight.Bold else FontWeight.Normal
+            )
+        },
+        supportingContent = { Text(header.summary ?: header.type, maxLines = 1, style = MaterialTheme.typography.bodySmall) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SELECT_HOLON, buildJsonObject { put("holonId", header.id) })) }
+            .background(if (header.id == selectedHolonId) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
+            .padding(start = (header.depth * 16).dp, end = 16.dp)
+    )
+    HorizontalDivider()
+}
+
 
 @Composable
 private fun HolonDetailView(holon: Holon?, modifier: Modifier = Modifier) {
@@ -101,7 +149,7 @@ private fun HolonDetailView(holon: Holon?, modifier: Modifier = Modifier) {
         if (holon == null) {
             Text("Select a holon to view its content.")
         } else if (holon.content == null) {
-            CircularProgressIndicator()
+            CircularProgressIndicator() // Content is being fetched
         } else {
             SelectionContainer(modifier = Modifier.fillMaxSize()) {
                 Text(
@@ -119,57 +167,30 @@ private fun HolonDetailView(holon: Holon?, modifier: Modifier = Modifier) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GraphSelector(kgState: KnowledgeGraphState?, store: Store) {
+private fun PersonaSelector(kgState: KnowledgeGraphState?, store: Store) {
     if (kgState == null) return
     var isExpanded by remember { mutableStateOf(false) }
-    val activeGraphName = kgState.graphs.find { it.id == kgState.activeGraphId }?.name ?: "Select Graph"
+    val activePersonaName = kgState.availablePersonas.find { it.id == kgState.activePersonaId }?.name ?: "Select Persona"
 
     ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
         OutlinedTextField(
-            value = activeGraphName,
+            value = activePersonaName,
             onValueChange = {},
             readOnly = true,
-            label = { Text("Active HKG") },
+            label = { Text("Active Persona") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
             modifier = Modifier.menuAnchor().width(250.dp).padding(end = 8.dp)
         )
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
-            kgState.graphs.forEach { graph ->
+            kgState.availablePersonas.forEach { persona ->
                 DropdownMenuItem(
-                    text = { Text(graph.name) },
+                    text = { Text(persona.name) },
                     onClick = {
-                        store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SELECT_GRAPH_SCOPE, buildJsonObject { put("graphId", graph.id) }))
+                        store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SELECT_PERSONA, buildJsonObject { put("personaId", persona.id) }))
                         isExpanded = false
                     }
                 )
             }
         }
     }
-}
-
-@Composable
-private fun CreateGraphDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Create New Knowledge Graph") },
-        text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Graph Name") },
-                singleLine = true
-            )
-        },
-        confirmButton = {
-            Button(onClick = { onCreate(name) }, enabled = name.isNotBlank()) {
-                Text("Create")
-            }
-        },
-        dismissButton = {
-            Button(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
 }

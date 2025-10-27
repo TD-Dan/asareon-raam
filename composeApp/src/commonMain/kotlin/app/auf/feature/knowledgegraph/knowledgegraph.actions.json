@@ -1,11 +1,11 @@
 {
   "feature_name": "knowledgegraph",
-  "summary": "The master source of truth for creating, managing, and serving Holon Knowledge Graphs (HKGs).",
+  "summary": "The master source of truth for loading, managing, and visualizing a single, hierarchical Holon Knowledge Graph (HKG) tree.",
   "listensFor": [
     {
-      "action_name": "knowledgegraph.SELECT_GRAPH_SCOPE",
-      "summary": "Sets the active HKG to be displayed in the UI.",
-      "payload_schema": { "type": "object", "properties": { "graphId": { "type": ["string", "null"] } } }
+      "action_name": "knowledgegraph.SELECT_PERSONA",
+      "summary": "Sets the active AI Persona, which acts as the root of the HKG to be loaded and displayed.",
+      "payload_schema": { "type": "object", "properties": { "personaId": { "type": ["string", "null"] } } }
     },
     {
       "action_name": "knowledgegraph.SELECT_HOLON",
@@ -13,41 +13,46 @@
       "payload_schema": { "type": "object", "properties": { "holonId": { "type": ["string", "null"] } } }
     },
     {
-      "action_name": "knowledgegraph.CREATE_GRAPH",
-      "summary": "Creates a new, empty Holon Knowledge Graph.",
+      "action_name": "knowledgegraph.CREATE_PERSONA",
+      "summary": "Creates a new, empty AI Persona Root holon, establishing a new HKG.",
       "payload_schema": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] }
     },
     {
-      "action_name": "knowledgegraph.DELETE_GRAPH",
-      "summary": "Deletes an entire Holon Knowledge Graph and all its holons.",
-      "payload_schema": { "type": "object", "properties": { "graphId": { "type": "string" } }, "required": ["graphId"] }
+      "action_name": "knowledgegraph.DELETE_PERSONA",
+      "summary": "Deletes an entire HKG by deleting its root persona directory.",
+      "payload_schema": { "type": "object", "properties": { "personaId": { "type": "string" } }, "required": ["personaId"] }
     },
     {
       "action_name": "knowledgegraph.UPDATE_HOLON",
-      "summary": "Creates or updates a holon within a specific HKG.",
-      "payload_schema": { "type": "object", "properties": { "graphId": { "type": "string" }, "holonId": { "type": "string" }, "content": { "type": "string" } }, "required": ["graphId", "holonId", "content"] }
+      "summary": "Creates or updates a holon file within the active HKG.",
+      "payload_schema": { "type": "object", "properties": { "holonId": { "type": "string" }, "content": { "type": "string" } }, "required": ["holonId", "content"] }
     },
     {
       "action_name": "knowledgegraph.DELETE_HOLON",
-      "summary": "Deletes a holon from a specific HKG.",
-      "payload_schema": { "type": "object", "properties": { "graphId": { "type": "string" }, "holonId": { "type": "string" } }, "required": ["graphId", "holonId"] }
+      "summary": "Deletes a holon file from the active HKG.",
+      "payload_schema": { "type": "object", "properties": { "holonId": { "type": "string" } }, "required": ["holonId"] }
     }
   ],
   "publishes": [
     {
-      "action_name": "knowledgegraph.publish.GRAPH_NAMES_UPDATED",
-      "summary": "Broadcasts the map of all available HKG IDs to their names.",
-      "payload_schema": { "type": "object", "properties": { "names": { "type": "object" } }, "required": ["names"] }
+      "action_name": "knowledgegraph.publish.AVAILABLE_PERSONAS_UPDATED",
+      "summary": "Broadcasts the list of all discovered, valid AI_Persona_Root holon headers.",
+      "payload_schema": { "type": "object", "properties": { "personas": { "type": "array" } }, "required": ["personas"] }
     },
     {
-      "action_name": "knowledgegraph.internal.GRAPH_LOADED",
-      "summary": "[INTERNAL] Dispatched when an HKG's manifest is loaded.",
+      "action_name": "knowledgegraph.internal.PERSONA_DISCOVERED",
+      "summary": "[INTERNAL] Dispatched when a valid AI_Persona_Root is found and parsed.",
       "payload_schema": { "type": "object" }
     },
     {
       "action_name": "knowledgegraph.internal.HOLON_LOADED",
-      "summary": "[INTERNAL] Dispatched when a single holon's content is loaded.",
+      "summary": "[INTERNAL] Dispatched when a single holon's content is parsed and added to the graph.",
       "payload_schema": { "type": "object" }
+    },
+    {
+      "action_name": "knowledgegraph.internal.LOAD_FAILED",
+      "summary": "[INTERNAL] Dispatched when loading or parsing fails fatally.",
+      "payload_schema": { "type": "object", "properties": { "error": { "type": "string" } } }
     }
   ],
   "private_envelopes": [
