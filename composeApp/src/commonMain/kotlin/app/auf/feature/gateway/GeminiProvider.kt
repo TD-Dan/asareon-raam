@@ -77,10 +77,8 @@ class GeminiProvider(
                 })
             }
         }
+        // THE FIX: Construct the system_instruction block first to improve audit legibility.
         return buildJsonObject {
-            put("contents", apiContents)
-            // FIX: Correct the structure for system_instruction.
-            // The "parts" array must be a direct child of "system_instruction".
             request.systemPrompt?.let {
                 putJsonObject("system_instruction") {
                     put("parts", buildJsonArray {
@@ -88,6 +86,7 @@ class GeminiProvider(
                     })
                 }
             }
+            put("contents", apiContents)
         }
     }
 

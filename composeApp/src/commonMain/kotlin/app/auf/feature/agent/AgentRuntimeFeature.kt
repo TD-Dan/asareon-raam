@@ -42,7 +42,6 @@ class AgentRuntimeFeature(
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val agentConfigFILENAME = "agent.json"
     private val activeTurnJobs = mutableMapOf<String, Job>()
-    // THE FIX: Regex is now more flexible and matches any characters inside the parentheses.
     private val redundantHeaderRegex = Regex("""^.+? \([^)]+\) @ \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z:\s*""")
 
     override fun init(store: Store) {
@@ -89,7 +88,7 @@ class AgentRuntimeFeature(
                 val decoded = try { action.payload?.let { json.decodeFromJsonElement<SessionNamesPayload>(it) } } catch(e: Exception) { null }
                 if (decoded != null) { newFeatureState = currentFeatureState.copy(sessionNames = decoded.names) }
             }
-            ActionNames.KNOWLEDGEGRAPH_PUBLISH_GRAPH_NAMES_UPDATED -> { // NEW
+            ActionNames.KNOWLEDGEGRAPH_PUBLISH_GRAPH_NAMES_UPDATED -> {
                 val decoded = try { action.payload?.let { json.decodeFromJsonElement<GraphNamesPayload>(it) } } catch(e: Exception) { null }
                 if (decoded != null) { newFeatureState = currentFeatureState.copy(knowledgeGraphNames = decoded.names) }
             }
@@ -503,6 +502,7 @@ class AgentRuntimeFeature(
         } ?: ""
 
         val sessionName = agentState.sessionNames[agent.primarySessionId] ?: "Unknown Session"
+        // THE FIX: The misleading "CONVERSATIONAL HISTORY BEGINS" line is removed.
         val systemPrompt = """
             --- SYSTEM BOOTSTRAP DIRECTIVES ---
             // You are an autonomous agent operating within the multi user and multi agent AUF App.
@@ -522,8 +522,6 @@ class AgentRuntimeFeature(
 
             --- HOLON KNOWLEDGE GRAPH CONTEXT ---
             $hkgContextContent
-
-            --- CONVERSATIONAL HISTORY BEGINS ---
         """.trimIndent()
 
         val requestActionName = if (agent.turnMode == TurnMode.PREVIEW) ActionNames.GATEWAY_PREPARE_PREVIEW else ActionNames.GATEWAY_GENERATE_CONTENT
