@@ -152,12 +152,12 @@ class FileSystemFeature(
                     if (!platformDependencies.fileExists(sandboxPath)) platformDependencies.createDirectories(sandboxPath)
                     val listing = platformDependencies.listDirectory(sandboxPath)
                     val payload = buildJsonObject { put("listing", Json.encodeToJsonElement(listing)) }
-                    val envelope = PrivateDataEnvelope("filesystem.response.list", payload)
+                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, payload)
                     store.deliverPrivateData(this.name, originator, envelope)
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, "filesystem","Filesystem listing failed: ${e.message}")
                     val payload = buildJsonObject { put("listing", Json.encodeToJsonElement(emptyList<FileEntry>())) }
-                    val envelope = PrivateDataEnvelope("filesystem.response.list", payload)
+                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, payload)
                     store.deliverPrivateData(this.name, originator, envelope)
                 }
             }
@@ -169,14 +169,14 @@ class FileSystemFeature(
                         put("subpath", payload.subpath)
                         put("content", cryptoManager.decrypt(platformDependencies.readFileContent(fullPath)))
                     }
-                    val envelope = PrivateDataEnvelope("filesystem.response.read", responsePayload)
+                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, responsePayload)
                     store.deliverPrivateData(this.name, originator, envelope)
                 } catch (e: Exception) {
                     val responsePayload = buildJsonObject {
                         put("subpath", payload.subpath)
                         put("content", JsonNull)
                     }
-                    val envelope = PrivateDataEnvelope("filesystem.response.read", responsePayload)
+                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, responsePayload)
                     store.deliverPrivateData(this.name, originator, envelope)
                 }
             }

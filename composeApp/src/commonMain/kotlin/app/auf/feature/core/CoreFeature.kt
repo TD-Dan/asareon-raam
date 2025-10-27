@@ -62,7 +62,7 @@ class CoreFeature(
 
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
         when (envelope.type) {
-            "filesystem.response.read" -> {
+            ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> {
                 if (envelope.payload["subpath"]?.jsonPrimitive?.content == identitiesFileName) {
                     val content = envelope.payload["content"]?.jsonPrimitive?.contentOrNull
                     if (content != null) {

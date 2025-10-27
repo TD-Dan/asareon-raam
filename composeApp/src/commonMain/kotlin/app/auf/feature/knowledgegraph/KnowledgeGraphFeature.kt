@@ -150,9 +150,9 @@ class KnowledgeGraphFeature(
 
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
         when (envelope.type) {
-            "filesystem.response.list" -> handleFileSystemList(envelope.payload, store)
-            "filesystem.response.read" -> handleFileSystemRead(envelope.payload, store)
-            "agent.request.context" -> handleAgentContextRequest(envelope.payload, store)
+            ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> handleFileSystemList(envelope.payload, store)
+            ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> handleFileSystemRead(envelope.payload, store)
+            ActionNames.Envelopes.AGENT_REQUEST_CONTEXT -> handleAgentContextRequest(envelope.payload, store)
         }
     }
 
@@ -174,7 +174,7 @@ class KnowledgeGraphFeature(
             put("correlationId", request.correlationId)
             put("context", context)
         }
-        val responseEnvelope = PrivateDataEnvelope("knowledgegraph.response.context", responsePayload)
+        val responseEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, responsePayload)
         store.deliverPrivateData(this.name, "agent", responseEnvelope)
     }
 

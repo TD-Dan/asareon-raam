@@ -45,13 +45,13 @@ class SessionFeature(
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
         val data = envelope.payload
         when (envelope.type) {
-            "filesystem.response.list" -> {
+            ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> {
                 val fileList = data["listing"]?.jsonArray?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
                 fileList.filter { it.path.endsWith(".json") }.forEach {
                     store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", platformDependencies.getFileName(it.path)) }))
                 }
             }
-            "filesystem.response.read" -> {
+            ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> {
                 try {
                     val session = json.decodeFromString<Session>(data["content"]?.jsonPrimitive?.content ?: "")
                     store.dispatch(this.name, Action(ActionNames.SESSION_INTERNAL_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.id to session))) as JsonObject))

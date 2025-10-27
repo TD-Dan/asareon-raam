@@ -110,7 +110,11 @@ private fun LogicalContextPane(previewData: StagedPreviewData, store: Store) {
                                 color = MaterialTheme.colorScheme.tertiary,
                                 fontWeight = FontWeight.Bold
                             )
-                            Divider(modifier = Modifier.padding(vertical = 8.dp))
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                thickness = DividerDefaults.Thickness,
+                                color = DividerDefaults.color
+                            )
                             SelectionContainer {
                                 Text(text = systemPrompt, style = MaterialTheme.typography.bodyMedium)
                             }
@@ -127,7 +131,11 @@ private fun LogicalContextPane(previewData: StagedPreviewData, store: Store) {
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            thickness = DividerDefaults.Thickness,
+                            color = DividerDefaults.color
+                        )
                         SelectionContainer {
                             Text(text = message.content, style = MaterialTheme.typography.bodyMedium)
                         }

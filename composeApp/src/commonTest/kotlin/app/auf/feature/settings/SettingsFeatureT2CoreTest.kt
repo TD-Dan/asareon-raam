@@ -49,7 +49,7 @@ class SettingsFeatureT2CoreTest {
             put("subpath", "settings.json")
             put("content", """{ "file.key": "file.value" }""")
         }
-        val envelope = PrivateDataEnvelope("filesystem.response.read", privateDataPayload)
+        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, privateDataPayload)
 
         feature.onPrivateData(envelope, harness.store)
 

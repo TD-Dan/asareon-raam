@@ -15,6 +15,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.*
+import app.auf.core.Feature
 
 class AgentRuntimeFeatureT3GatewayPeerTest {
 
@@ -24,6 +25,26 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
     private lateinit var platform: FakePlatformDependencies
     private val agent = AgentInstance("agent-1", "Test", "", "test-provider", "test-model", "session-1")
 
+    // FIX: A fake KnowledgeGraphFeature to unblock the cognitive cycle in tests.
+    private object FakeKnowledgeGraphFeature : Feature {
+        override val name: String = "knowledgegraph"
+        override val composableProvider: Feature.ComposableProvider? = null
+        override fun onPrivateData(envelope: PrivateDataEnvelope, store: app.auf.core.Store) {
+            if (envelope.type == ActionNames.Envelopes.AGENT_REQUEST_CONTEXT) {
+                val correlationId = envelope.payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
+                val responsePayload = buildJsonObject {
+                    put("correlationId", correlationId)
+                    put("context", buildJsonObject {}) // Respond with empty context
+                }
+                store.deliverPrivateData(
+                    this.name,
+                    "agent",
+                    PrivateDataEnvelope(ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, responsePayload)
+                )
+            }
+        }
+    }
+
 
     @BeforeTest
     fun setup() {
@@ -31,6 +52,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
         feature = AgentRuntimeFeature(platform, scope)
         harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(FakeKnowledgeGraphFeature)
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
             .build(platform = platform)
@@ -48,7 +70,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
             put("correlationId", agent.id)
             put("messages", buildJsonArray { })
         }
-        val ledgerEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, ledgerResponsePayload) // THE FIX
+        val ledgerEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, ledgerResponsePayload)
         feature.onPrivateData(ledgerEnvelope, harness.store)
 
         val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
@@ -58,7 +80,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
             put("correlationId", agent.id)
             put("rawContent", "This is the successful response.")
         }
-        val gatewayEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewaySuccessPayload) // THE FIX
+        val gatewayEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewaySuccessPayload)
         feature.onPrivateData(gatewayEnvelope, harness.store)
 
         val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
@@ -73,7 +95,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
             put("correlationId", agent.id)
             put("errorMessage", "API key invalid.")
         }
-        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewayErrorPayload) // THE FIX
+        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewayErrorPayload)
         feature.onPrivateData(envelope, harness.store)
 
         val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
@@ -90,7 +112,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
             put("unexpected_key", "some_value")
         }
 
-        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewayMismatchedPayload) // THE FIX
+        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewayMismatchedPayload)
         feature.onPrivateData(envelope, harness.store)
 
         val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState

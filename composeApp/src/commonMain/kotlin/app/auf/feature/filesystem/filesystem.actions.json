@@ -254,6 +254,35 @@
       }
     }
   ],
+  "private_envelopes": [
+    {
+      "type_name": "filesystem.response.LIST",
+      "summary": "The response envelope containing a directory listing, delivered to the original requester.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "listing": {
+            "type": "array",
+            "items": { "$ref": "#/definitions/FileEntry" }
+          },
+          "subpath": { "type": ["string", "null"] }
+        },
+        "required": ["listing"]
+      }
+    },
+    {
+      "type_name": "filesystem.response.READ",
+      "summary": "The response envelope containing the content of a file, delivered to the original requester.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "subpath": { "type": "string" },
+          "content": { "type": ["string", "null"] }
+        },
+        "required": ["subpath"]
+      }
+    }
+  ],
   "definitions": {
     "FileEntry": {
       "type": "object",

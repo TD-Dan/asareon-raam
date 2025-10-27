@@ -95,25 +95,45 @@ class AgentRuntimeFeatureT2CoreTest {
         }
     }
 
+    private object FakeKnowledgeGraphFeature : Feature {
+        override val name: String = "knowledgegraph"
+        override val composableProvider: Feature.ComposableProvider? = null
+        override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
+            if (envelope.type == ActionNames.Envelopes.AGENT_REQUEST_CONTEXT) {
+                val correlationId = envelope.payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
+                val responsePayload = buildJsonObject {
+                    put("correlationId", correlationId)
+                    put("context", buildJsonObject {}) // Respond with empty context
+                }
+                store.deliverPrivateData(
+                    this.name,
+                    "agent",
+                    PrivateDataEnvelope(ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, responsePayload)
+                )
+            }
+        }
+    }
+
+
     private fun createTestAgent(
         id: String = "agent-1",
         name: String = "Test Agent",
         sessionId: String? = "session-1",
         status: AgentStatus = AgentStatus.IDLE,
-        turnMode: TurnMode = TurnMode.DIRECT
+        turnMode: TurnMode = TurnMode.DIRECT,
+        kgId: String? = "p1"
     ): AgentInstance {
-        return AgentInstance(id = id, name = name, knowledgeGraphId = "p1", modelProvider = "mp1", modelName = "mn1", primarySessionId = sessionId, status = status, turnMode = turnMode)
+        return AgentInstance(id = id, name = name, knowledgeGraphId = kgId, modelProvider = "mp1", modelName = "mn1", primarySessionId = sessionId, status = status, turnMode = turnMode)
     }
 
     // TEST: New test for sentinel logic.
     @Test
     fun `sentinel sanitizes timestamp echo out of ai response`() {
         val agent = createTestAgent(status = AgentStatus.PROCESSING)
-        // THE FIX: Provide a valid session in the initial state for the agent to post to.
         val session = Session("session-1", "Test Session", emptyList(), 1L)
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
-            .withFeature(SessionFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined))) // Need real session feature to post to
+            .withFeature(SessionFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .withInitialState("session", SessionState(sessions = mapOf("session-1" to session)))
             .build()
@@ -180,6 +200,7 @@ class AgentRuntimeFeatureT2CoreTest {
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
             .withFeature(FakeSessionFeature)
+            .withFeature(FakeKnowledgeGraphFeature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .build()
 
@@ -195,6 +216,7 @@ class AgentRuntimeFeatureT2CoreTest {
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
             .withFeature(FakeSessionFeature)
+            .withFeature(FakeKnowledgeGraphFeature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .build()
 
@@ -212,7 +234,7 @@ class AgentRuntimeFeatureT2CoreTest {
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("2.0.0-test"), CoroutineScope(Dispatchers.Unconfined)))
             .withFeature(FakeSessionFeature)
-            // THE FIX: Explicitly set the lifecycle to RUNNING when overriding the initial CoreState.
+            .withFeature(FakeKnowledgeGraphFeature)
             .withInitialState("core", CoreState(userIdentities = listOf(user), activeUserId = "user-id-1", lifecycle = AppLifecycle.RUNNING))
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .build()
@@ -235,7 +257,6 @@ class AgentRuntimeFeatureT2CoreTest {
         // ASSERT
         val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
 
-        // FIX: Add instrumentation output to diagnose the failure.
         if (gatewayRequest == null) {
             println("--- DEBUG LOGS FOR FAILING TEST ---")
             harness.platform.capturedLogs.forEach { println(it) }
@@ -289,6 +310,7 @@ class AgentRuntimeFeatureT2CoreTest {
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
             .withFeature(FakeSessionFeature)
             .withFeature(FakeGatewayFeature)
+            .withFeature(FakeKnowledgeGraphFeature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .build()
 
@@ -334,4 +356,28 @@ class AgentRuntimeFeatureT2CoreTest {
         assertNull(finalState.viewingContextForAgentId)
     }
 
+    // FIX: New test to verify graceful degradation
+    @Test
+    fun `cognitive cycle proceeds without HKG context if KG feature is absent`() {
+        val agent = createTestAgent(kgId = "p1") // Agent wants an HKG
+        val harness = TestEnvironment.create()
+            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
+            .withFeature(FakeSessionFeature)
+            // NO KnowledgeGraphFeature is provided
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
+            .build()
+
+        // ACT
+        harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", "agent-1") }))
+
+        // ASSERT
+        val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
+        assertNotNull(gatewayRequest, "Gateway request should still be dispatched.")
+        val systemPrompt = gatewayRequest.payload?.get("systemPrompt")?.jsonPrimitive?.content
+        assertNotNull(systemPrompt)
+        assertTrue(systemPrompt.contains("--- HOLON KNOWLEDGE GRAPH CONTEXT ---\n\n--- CONVERSATIONAL HISTORY BEGINS ---"), "System prompt should contain an empty HKG section.")
+
+        val log = harness.platform.capturedLogs.find { it.level == LogLevel.INFO && it.message.contains("KnowledgeGraphFeature not found") }
+        assertNotNull(log, "An info log should indicate the graceful fallback.")
+    }
 }

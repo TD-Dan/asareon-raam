@@ -118,7 +118,7 @@ class FileSystemFeatureT2CoreTest {
 
         val privateData = harness.deliveredPrivateData.firstOrNull()
         assertNotNull(privateData, "Private data should have been delivered.")
-        assertEquals("filesystem.response.read", privateData.envelope.type)
+        assertEquals(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, privateData.envelope.type)
         val payload = privateData.envelope.payload
         assertEquals(subpath, payload["subpath"]?.jsonPrimitive?.content)
         assertEquals(originalContent, payload["content"]?.jsonPrimitive?.content, "Delivered content should be the decrypted original.")

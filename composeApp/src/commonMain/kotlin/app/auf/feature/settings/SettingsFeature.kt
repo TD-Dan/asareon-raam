@@ -37,7 +37,7 @@ class SettingsFeature(
 
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
         when (envelope.type) {
-            "filesystem.response.read" -> {
+            ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> {
                 val payload = envelope.payload
                 if (payload["subpath"]?.jsonPrimitive?.content == settingsFileName) {
                     val loadedValues = payload["content"]?.jsonPrimitive?.contentOrNull?.let {

@@ -49,5 +49,19 @@
       "summary": "[INTERNAL] Dispatched when a single holon's content is loaded.",
       "payload_schema": { "type": "object" }
     }
+  ],
+  "private_envelopes": [
+    {
+      "type_name": "knowledgegraph.response.context",
+      "summary": "The response envelope containing the compiled HKG context for an agent's turn.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": { "type": "string" },
+          "context": { "type": "object" }
+        },
+        "required": ["correlationId", "context"]
+      }
+    }
   ]
 }

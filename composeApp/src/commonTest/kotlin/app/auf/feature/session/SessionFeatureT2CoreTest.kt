@@ -268,7 +268,7 @@ class SessionFeatureT2CoreTest {
             FileEntry("/app/session/notes.txt", false)
         )
         val payload = buildJsonObject { put("listing", Json.encodeToJsonElement<List<FileEntry>>(fileList)) }
-        val envelope = PrivateDataEnvelope("filesystem.response.list", payload)
+        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, payload)
 
         sessionFeature.onPrivateData(envelope, harness.store)
 
@@ -286,7 +286,7 @@ class SessionFeatureT2CoreTest {
             put("subpath", "loaded-1.json")
             put("content", sessionJsonContent)
         }
-        val envelope = PrivateDataEnvelope("filesystem.response.read", payload)
+        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, payload)
 
         sessionFeature.onPrivateData(envelope, harness.store)
 
@@ -304,7 +304,7 @@ class SessionFeatureT2CoreTest {
             put("subpath", "bad-1.json")
             put("content", corruptedJsonContent)
         }
-        val envelope = PrivateDataEnvelope("filesystem.response.read", payload)
+        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, payload)
 
         sessionFeature.onPrivateData(envelope, harness.store)
 
