@@ -19,10 +19,6 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
-import kotlin.collections.containsKey
-import kotlin.plus
-import kotlin.text.compareTo
-import kotlin.text.get
 
 class AgentRuntimeFeature(
     private val platformDependencies: PlatformDependencies,
@@ -40,7 +36,7 @@ class AgentRuntimeFeature(
     @Serializable private data class SetPreviewDataPayload(val agentId: String, val agnosticRequest: GatewayRequest, val rawRequestJson: String)
     @Serializable private data class GatewayPreviewResponsePayload(val correlationId: String, val agnosticRequest: GatewayRequest, val rawRequestJson: String)
     @Serializable private data class IdentitiesUpdatedPayload(val identities: List<Identity>, val activeId: String?)
-    @Serializable private data class StageTurnContextPayload(val agentId: String, val messages: List<GatewayMessage>) // NEW
+    @Serializable private data class StageTurnContextPayload(val agentId: String, val messages: List<GatewayMessage>)
 
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
@@ -77,7 +73,7 @@ class AgentRuntimeFeature(
             ActionNames.AGENT_INTERNAL_CONFIRM_DELETE -> handleDeleteAgent(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.AGENT_INTERNAL_SET_STATUS -> handleSetStatus(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP -> handleSetProcessingStep(action, currentFeatureState)?.let { newFeatureState = it }
-            ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT -> handleStageTurnContext(action, currentFeatureState)?.let { newFeatureState = it } // CORRECTED
+            ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT -> handleStageTurnContext(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> handleAgentLoaded(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.AGENT_INITIATE_TURN -> handleInitiateTurn(action, currentFeatureState)?.let { newFeatureState = it }
             ActionNames.AGENT_DISCARD_PREVIEW -> handleDiscardPreview(action, currentFeatureState)?.let { newFeatureState = it }
@@ -418,7 +414,7 @@ class AgentRuntimeFeature(
             }
             ActionNames.AGENT_CANCEL_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
-                store.dispatch(this.name, Action("gateway.CANCEL_REQUEST", buildJsonObject { // Not in manifest yet
+                store.dispatch(this.name, Action(ActionNames.GATEWAY_CANCEL_REQUEST, buildJsonObject {
                     put("correlationId", agentId)
                 }))
                 activeTurnJobs[agentId]?.cancel()
@@ -489,23 +485,21 @@ class AgentRuntimeFeature(
             ActionNames.Envelopes.GATEWAY_RESPONSE -> handleGatewayResponse(envelope.payload, store)
             ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW -> handleGatewayPreviewResponse(envelope.payload, store)
             ActionNames.Envelopes.SESSION_RESPONSE_LEDGER -> handleSessionLedgerResponse(envelope.payload, store)
-            "knowledgegraph.response.context" -> handleKnowledgeGraphContextResponse(envelope.payload, store) // NEW
-            "filesystem.response.list" -> handleFileSystemListResponse(envelope.payload, store)
-            "filesystem.response.read" -> handleFileSystemReadResponse(envelope.payload, store)
+            ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT -> handleKnowledgeGraphContextResponse(envelope.payload, store)
+            ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> handleFileSystemListResponse(envelope.payload, store)
+            ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> handleFileSystemReadResponse(envelope.payload, store)
         }
     }
 
-    private fun handleKnowledgeGraphContextResponse(payload: JsonObject, store: Store) {
-        val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
+    // New private helper function to encapsulate the final step of the cognitive cycle.
+    private fun assemblePromptAndRequestGeneration(
+        agent: AgentInstance,
+        ledgerContext: List<GatewayMessage>,
+        hkgContext: JsonObject?,
+        store: Store
+    ) {
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
-        val agent = agentState.agents[agentId] ?: return
-        val ledgerContext = agent.stagedTurnContext ?: run {
-            platformDependencies.log(LogLevel.ERROR, name, "HKG context received for agent '$agentId', but staged ledger context was missing. Aborting turn.")
-            updateAgentAvatarCard(agentId, AgentStatus.ERROR, "Internal Error: Staged context lost.", store)
-            return
-        }
-
-        val hkgContextContent = payload["context"]?.jsonObject?.entries?.joinToString("\n\n---\n\n") { (holonId, content) ->
+        val hkgContextContent = hkgContext?.entries?.joinToString("\n\n---\n\n") { (holonId, content) ->
             "--- START OF FILE $holonId.json ---\n${content.jsonPrimitive.content}\n--- END OF FILE $holonId.json ---"
         } ?: ""
 
@@ -547,6 +541,21 @@ class AgentRuntimeFeature(
             put("contents", json.encodeToJsonElement(ledgerContext))
             put("systemPrompt", systemPrompt)
         }))
+    }
+
+
+    private fun handleKnowledgeGraphContextResponse(payload: JsonObject, store: Store) {
+        val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
+        val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+        val agent = agentState.agents[agentId] ?: return
+        val ledgerContext = agent.stagedTurnContext ?: run {
+            platformDependencies.log(LogLevel.ERROR, name, "HKG context received for agent '$agentId', but staged ledger context was missing. Aborting turn.")
+            updateAgentAvatarCard(agentId, AgentStatus.ERROR, "Internal Error: Staged context lost.", store)
+            return
+        }
+
+        val hkgContext = payload["context"]?.jsonObject
+        assemblePromptAndRequestGeneration(agent, ledgerContext, hkgContext, store)
     }
 
 
@@ -603,35 +612,34 @@ class AgentRuntimeFeature(
             }
         }
 
-        // NEW LOGIC: Stage context and request HKG
-        store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
-            put("agentId", agent.id)
-            put("messages", json.encodeToJsonElement(enrichedMessages))
-        }))
-
         val kgId = agent.knowledgeGraphId
-        if (kgId == null) {
-            // If no HKG is linked, proceed without it.
-            handleKnowledgeGraphContextResponse(buildJsonObject {
-                put("correlationId", agent.id)
-                put("context", buildJsonObject {})
-            }, store)
-            return
-        }
+        val kgFeatureExists = store.features.any { it.name == "knowledgegraph" }
 
-        store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
-            put("agentId", agent.id); put("step", "Requesting HKG")
-        }))
+        if (kgId != null && kgFeatureExists) {
+            // Path 1: HKG is available and requested. Stage the ledger and request the HKG context.
+            store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
+                put("agentId", agent.id)
+                put("messages", json.encodeToJsonElement(enrichedMessages))
+            }))
+            store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+                put("agentId", agent.id); put("step", "Requesting HKG")
+            }))
 
-        // This is a private, cross-feature request. Not an action.
-        val requestEnvelope = PrivateDataEnvelope(
-            type = "agent.request.context",
-            payload = buildJsonObject {
-                put("correlationId", agent.id)
-                put("knowledgeGraphId", kgId)
+            val requestEnvelope = PrivateDataEnvelope(
+                type = ActionNames.Envelopes.AGENT_REQUEST_CONTEXT,
+                payload = buildJsonObject {
+                    put("correlationId", agent.id)
+                    put("knowledgeGraphId", kgId)
+                }
+            )
+            store.deliverPrivateData(this.name, "knowledgegraph", requestEnvelope)
+        } else {
+            // Path 2: HKG is not needed or the feature is absent. Proceed directly.
+            if (kgId != null && !kgFeatureExists) {
+                platformDependencies.log(LogLevel.INFO, name, "Agent '${agent.id}' has an HKG configured, but KnowledgeGraphFeature not found. Proceeding without HKG context.")
             }
-        )
-        store.deliverPrivateData(this.name, "knowledgegraph", requestEnvelope)
+            assemblePromptAndRequestGeneration(agent, enrichedMessages, null, store)
+        }
     }
 
     private fun handleFileSystemListResponse(payload: JsonObject, store: Store) {

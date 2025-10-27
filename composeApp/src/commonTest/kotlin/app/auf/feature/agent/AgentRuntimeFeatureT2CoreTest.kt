@@ -9,12 +9,14 @@ import app.auf.feature.session.SessionFeature
 import app.auf.feature.session.SessionState
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
+import app.auf.util.LogLevel
 import io.ktor.http.content.Version
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive

@@ -16,6 +16,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.*
 import app.auf.core.Feature
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 class AgentRuntimeFeatureT3GatewayPeerTest {
 
