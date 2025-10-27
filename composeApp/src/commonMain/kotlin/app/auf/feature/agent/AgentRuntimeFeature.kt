@@ -27,7 +27,7 @@ class AgentRuntimeFeature(
     override val name: String = "agent"
 
     @Serializable private data class SessionNamesPayload(val names: Map<String, String>)
-    @Serializable private data class GraphNamesPayload(val names: Map<String, String>) // NEW
+    @Serializable private data class GraphNamesPayload(val names: Map<String, String>)
     @Serializable private data class GatewayResponsePayload(val correlationId: String, val rawContent: String? = null, val errorMessage: String? = null)
     @Serializable private data class LedgerResponsePayload(val correlationId: String, val messages: List<JsonObject>) // Generic JsonObject representing LedgerEntry
     @Serializable private data class MessagePostedPayload(val sessionId: String, val entry: JsonObject)
@@ -42,8 +42,8 @@ class AgentRuntimeFeature(
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val agentConfigFILENAME = "agent.json"
     private val activeTurnJobs = mutableMapOf<String, Job>()
-    // ADDITION: Regex to detect and strip redundant headers from LLM output.
-    private val redundantHeaderRegex = Regex("""^.+? \([0-9a-f-]{36}\) @ \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z:\s*""")
+    // THE FIX: Regex is now more flexible and matches any characters inside the parentheses.
+    private val redundantHeaderRegex = Regex("""^.+? \([^)]+\) @ \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z:\s*""")
 
     override fun init(store: Store) {
         coroutineScope.launch {
@@ -491,7 +491,6 @@ class AgentRuntimeFeature(
         }
     }
 
-    // New private helper function to encapsulate the final step of the cognitive cycle.
     private fun assemblePromptAndRequestGeneration(
         agent: AgentInstance,
         ledgerContext: List<GatewayMessage>,

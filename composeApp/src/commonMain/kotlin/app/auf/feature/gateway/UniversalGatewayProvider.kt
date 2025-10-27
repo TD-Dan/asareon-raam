@@ -10,10 +10,8 @@ import kotlinx.serialization.Serializable
 data class GatewayMessage(
     val role: String,
     val content: String,
-    // Enriched with sender identity
     val senderId: String,
     val senderName: String,
-    // Enriched with timestamp
     val timestamp: Long
 )
 @Serializable
@@ -21,7 +19,6 @@ data class GatewayRequest(
     val modelName: String,
     val contents: List<GatewayMessage>,
     val correlationId: String,
-    // NEW: The system prompt for behavioral control.
     val systemPrompt: String? = null
 )
 
