@@ -6,15 +6,38 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
 
-// --- CANONICAL HOLON MODELS (ADAPTED FROM V1.5.0) ---
+// --- CANONICAL HOLON MODELS (ADAPTED FROM V1.5.0 & SAGE HKG) ---
 
+/**
+ * The canonical, in-memory representation of a Holon.
+ * This data class is a faithful implementation of the definition found in
+ * 'system-holon-definition-20250809T101500Z.json'.
+ */
 @Serializable
 data class Holon(
+    /** The structured metadata defining the holon's identity and relationships. */
     val header: HolonHeader,
+
+    /** The flexible, narrative core containing the holon's cognitive content. */
     val payload: JsonElement,
-    @Transient val content: String? = null // Full raw content is stored when loaded
+
+    /**
+     * An optional block for agentic holons (e.g., AI_Persona_Root) that defines
+     * their core, machine-readable behaviors, and boot sequences.
+     */
+    val execute: JsonElement? = null,
+
+    /**
+     * The full, raw JSON content of the holon file.
+     * Per the eager-loading directive, this is non-nullable and loaded at startup.
+     */
+    val content: String
 )
 
+/**
+ * The holon's header, containing structured metadata for indexing, linking,
+ * and understanding the holon's role in the system.
+ */
 @Serializable
 data class HolonHeader(
     val id: String,
@@ -29,12 +52,14 @@ data class HolonHeader(
     val relationships: List<Relationship> = emptyList(),
     @SerialName("sub_holons")
     val subHolons: List<SubHolonRef> = emptyList(),
-    // Transient properties are enriched during the loading process
+
+    // Transient properties are enriched during the loading process and are not persisted.
     @Transient val filePath: String = "",
     @Transient val parentId: String? = null,
     @Transient val depth: Int = 0
 )
 
+/** Defines a semantic link between this holon and a target holon. */
 @Serializable
 data class Relationship(
     @SerialName("target_id")
@@ -42,6 +67,7 @@ data class Relationship(
     val type: String
 )
 
+/** A lightweight reference to a child holon, used to define the HKG tree structure. */
 @Serializable
 data class SubHolonRef(
     val id: String,
@@ -53,24 +79,24 @@ data class SubHolonRef(
 // --- FEATURE STATE ---
 
 /**
- * The state container for the KnowledgeGraphFeature. It now represents a single,
- * hierarchical Holon Knowledge Graph tree, not a collection of graphs.
+ * The state container for the KnowledgeGraphFeature. It is architected to manage
+ * multiple, distinct Holon Knowledge Graph trees simultaneously in memory.
  */
 @Serializable
 data class KnowledgeGraphState(
-    // Core Data: The complete graph is stored as a map for efficient lookups.
+    /** A single, unified map of ALL holons from ALL loaded HKGs, keyed by holon ID. */
     val holons: Map<String, Holon> = emptyMap(),
-    val rootHolonId: String? = null,
 
-    // Persona Management
-    val availablePersonas: List<HolonHeader> = emptyList(),
-    val activePersonaId: String? = null,
+    /** A map of all discovered AI Persona names to their root holon IDs, used for UI selection. */
+    val personaRoots: Map<String, String> = emptyMap(),
 
-    // UI & Loading State
+    // --- UI State ---
+    /** The root persona ID of the HKG currently being displayed in the UI. */
+    val activePersonaIdForView: String? = null,
+    /** The holon ID of the item currently selected for detail inspection in the UI. */
+    val activeHolonIdForView: String? = null,
+
+    // --- Loading & Error State ---
     val isLoading: Boolean = false,
     val fatalError: String? = null,
-    val activeHolonId: String? = null,
-
-    // Caches for UI rendering and lookups
-    @Transient val agentNames: Map<String, String> = emptyMap()
 ) : FeatureState

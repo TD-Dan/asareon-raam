@@ -88,7 +88,7 @@ class AgentRuntimeFeature(
                 val decoded = try { action.payload?.let { json.decodeFromJsonElement<SessionNamesPayload>(it) } } catch(e: Exception) { null }
                 if (decoded != null) { newFeatureState = currentFeatureState.copy(sessionNames = decoded.names) }
             }
-            ActionNames.KNOWLEDGEGRAPH_PUBLISH_GRAPH_NAMES_UPDATED -> {
+            ActionNames.KNOWLEDGEGRAPH_PUBLISH_AVAILABLE_PERSONAS_UPDATED -> {
                 val decoded = try { action.payload?.let { json.decodeFromJsonElement<GraphNamesPayload>(it) } } catch(e: Exception) { null }
                 if (decoded != null) { newFeatureState = currentFeatureState.copy(knowledgeGraphNames = decoded.names) }
             }

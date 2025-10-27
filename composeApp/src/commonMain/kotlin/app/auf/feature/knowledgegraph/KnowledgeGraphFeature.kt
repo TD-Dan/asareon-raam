@@ -22,43 +22,54 @@ class KnowledgeGraphFeature(
     override val name: String = "knowledgegraph"
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
 
-    // Payloads for type-safe decoding
-    @Serializable private data class PersonaIdPayload(val personaId: String?)
-    @Serializable private data class HolonIdPayload(val holonId: String?)
-    @Serializable private data class AgentContextRequest(val correlationId: String, val knowledgeGraphId: String)
+    // --- Payloads for Type-Safe Decoding ---
+    @Serializable private data class RequestContextPayload(val personaId: String, val correlationId: String)
+    @Serializable private data class SetViewPersonaPayload(val personaId: String?)
+    @Serializable private data class SetViewHolonPayload(val holonId: String?)
     @Serializable private data class ReadPayload(val subpath: String, val content: String?, val parentId: String? = null, val depth: Int = 0)
 
     override fun onAction(action: Action, store: Store, previousState: AppState) {
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
-                // Begin discovery of available personas
+                // Kick off the discovery of all available HKG personas
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
             }
-            ActionNames.KNOWLEDGEGRAPH_SELECT_PERSONA -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<PersonaIdPayload>(it) } ?: return
-                val personaId = payload.personaId ?: return
-                // Start the recursive load from the root of the selected persona's tree
-                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
-                    put("subpath", "$personaId/$personaId.json")
-                    // Root holon has no parent and is at depth 0
-                    put("parentId", JsonNull)
-                    put("depth", 0)
-                }))
-            }
-            ActionNames.KNOWLEDGEGRAPH_SELECT_HOLON -> {
+            ActionNames.KNOWLEDGEGRAPH_REQUEST_CONTEXT -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<RequestContextPayload>(it) } ?: return
+                val originator = action.originator ?: return
                 val kgState = store.state.value.featureStates[name] as? KnowledgeGraphState ?: return
-                val payload = action.payload?.let { json.decodeFromJsonElement<HolonIdPayload>(it) } ?: return
-                val holon = kgState.holons[payload.holonId]
-                // If holon content hasn't been loaded yet, fetch it
-                if (holon != null && holon.content == null) {
-                    store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
-                        put("subpath", holon.header.filePath)
-                        put("parentId", holon.header.parentId)
-                        put("depth", holon.header.depth)
-                    }))
+
+                val contextMap = buildContextForPersona(payload.personaId, kgState)
+
+                val responsePayload = buildJsonObject {
+                    put("correlationId", payload.correlationId)
+                    put("personaId", payload.personaId)
+                    put("context", Json.encodeToJsonElement(contextMap))
                 }
+                val responseEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, responsePayload)
+                store.deliverPrivateData(this.name, originator, responseEnvelope)
             }
         }
+    }
+
+    private fun buildContextForPersona(personaId: String, kgState: KnowledgeGraphState): Map<String, String> {
+        val rootHolon = kgState.holons[personaId] ?: return emptyMap()
+        val contextMap = mutableMapOf<String, String>()
+        val holonsToProcess = mutableListOf(rootHolon)
+        val processedIds = mutableSetOf<String>()
+
+        while (holonsToProcess.isNotEmpty()) {
+            val currentHolon = holonsToProcess.removeAt(0)
+            if (processedIds.contains(currentHolon.header.id)) continue
+
+            contextMap[currentHolon.header.id] = currentHolon.content
+            processedIds.add(currentHolon.header.id)
+
+            currentHolon.header.subHolons.forEach { subRef ->
+                kgState.holons[subRef.id]?.let { holonsToProcess.add(it) }
+            }
+        }
+        return contextMap
     }
 
     override fun reducer(state: AppState, action: Action): AppState {
@@ -68,41 +79,32 @@ class KnowledgeGraphFeature(
 
         var newFeatureState: KnowledgeGraphState? = null
         when (action.name) {
-            ActionNames.KNOWLEDGEGRAPH_SELECT_PERSONA -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<PersonaIdPayload>(it) } ?: return state
-                // Clear the old graph and set loading state when a new persona is selected
-                newFeatureState = KnowledgeGraphState(
-                    isLoading = true,
-                    activePersonaId = payload.personaId,
-                    availablePersonas = currentFeatureState.availablePersonas
-                )
-            }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_DISCOVERED -> {
                 val personaHeader = action.payload?.let { json.decodeFromJsonElement<HolonHeader>(it) } ?: return state
-                if (currentFeatureState.availablePersonas.none { it.id == personaHeader.id }) {
-                    newFeatureState = currentFeatureState.copy(
-                        availablePersonas = currentFeatureState.availablePersonas + personaHeader
-                    )
+                if (!currentFeatureState.personaRoots.containsKey(personaHeader.name)) {
+                    val newRoots = currentFeatureState.personaRoots + (personaHeader.name to personaHeader.id)
+                    newFeatureState = currentFeatureState.copy(personaRoots = newRoots)
                 }
             }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_HOLON_LOADED -> {
                 val holon = action.payload?.let { json.decodeFromJsonElement<Holon>(it) } ?: return state
                 val newHolons = currentFeatureState.holons + (holon.header.id to holon)
-                // If this is the root holon (no parent), set the rootHolonId
-                val newRootId = if (holon.header.parentId == null) holon.header.id else currentFeatureState.rootHolonId
-                newFeatureState = currentFeatureState.copy(
-                    holons = newHolons,
-                    rootHolonId = newRootId,
-                    isLoading = false // A holon loaded, so we are no longer in a pure loading state
-                )
+                newFeatureState = currentFeatureState.copy(holons = newHolons, isLoading = false)
             }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED -> {
                 val error = action.payload?.get("error")?.jsonPrimitive?.content ?: "Unknown loading error."
                 newFeatureState = currentFeatureState.copy(isLoading = false, fatalError = error)
             }
-            ActionNames.KNOWLEDGEGRAPH_SELECT_HOLON -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<HolonIdPayload>(it) } ?: return state
-                newFeatureState = currentFeatureState.copy(activeHolonId = payload.holonId)
+            ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_PERSONA -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<SetViewPersonaPayload>(it) } ?: return state
+                newFeatureState = currentFeatureState.copy(
+                    activePersonaIdForView = payload.personaId,
+                    activeHolonIdForView = null // Reset holon selection when persona changes
+                )
+            }
+            ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<SetViewHolonPayload>(it) } ?: return state
+                newFeatureState = currentFeatureState.copy(activeHolonIdForView = payload.holonId)
             }
         }
 
@@ -115,34 +117,7 @@ class KnowledgeGraphFeature(
         when (envelope.type) {
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> handleFileSystemList(envelope.payload, store)
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> handleFileSystemRead(envelope.payload, store)
-            ActionNames.Envelopes.AGENT_REQUEST_CONTEXT -> handleAgentContextRequest(envelope.payload, store)
         }
-    }
-
-    private fun handleAgentContextRequest(payload: JsonObject, store: Store) {
-        val request = try { json.decodeFromJsonElement<AgentContextRequest>(payload) } catch (e: Exception) { return }
-        val kgState = store.state.value.featureStates[name] as? KnowledgeGraphState ?: return
-        val personaId = request.knowledgeGraphId // In v2, the agent's KG ID is the persona ID
-        val graph = kgState.holons
-
-        if (kgState.activePersonaId != personaId) {
-            platformDependencies.log(LogLevel.WARN, name, "Agent requested context for KG '$personaId', but active persona is '${kgState.activePersonaId}'. Providing context anyway.")
-        }
-
-        val context = buildJsonObject {
-            graph.values.forEach { holon ->
-                holon.content?.let { content ->
-                    put(holon.header.id, content)
-                }
-            }
-        }
-
-        val responsePayload = buildJsonObject {
-            put("correlationId", request.correlationId)
-            put("context", context)
-        }
-        val responseEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, responsePayload)
-        store.deliverPrivateData(this.name, "agent", responseEnvelope)
     }
 
     private fun handleFileSystemList(payload: JsonObject, store: Store) {
@@ -150,9 +125,11 @@ class KnowledgeGraphFeature(
         // This is the initial discovery: find all potential persona directories.
         listing.filter { it.isDirectory }.forEach { dir ->
             val personaId = platformDependencies.getFileName(dir.path)
-            // Request the root holon file to verify it's a valid persona.
+            // Request the root holon file to verify it's a valid persona and start the loading cascade.
             store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
                 put("subpath", "$personaId/$personaId.json")
+                put("parentId", JsonNull)
+                put("depth", 0)
             }))
         }
     }
@@ -170,19 +147,20 @@ class KnowledgeGraphFeature(
             )
             val enrichedHolon = holon.copy(header = enrichedHeader, content = content)
 
-            // If it's a root persona, dispatch a discovery event.
+            // If it's a root persona, dispatch a discovery event for the UI selector.
             if (enrichedHeader.type == "AI_Persona_Root") {
                 store.dispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_DISCOVERED, json.encodeToJsonElement(enrichedHeader) as JsonObject))
             }
 
-            // Dispatch the loaded holon to the reducer to add it to the state map.
+            // Dispatch the loaded holon to the reducer to add it to the master map.
             store.dispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_HOLON_LOADED, json.encodeToJsonElement(enrichedHolon) as JsonObject))
 
             // --- RECURSIVE TRAVERSAL ---
             // For each sub_holon reference, dispatch a new read request for its file.
             val currentDir = platformDependencies.getParentDirectory(enrichedHeader.filePath) ?: ""
             enrichedHeader.subHolons.forEach { subRef ->
-                val subHolonPath = "$currentDir/${subRef.id}/${subRef.id}.json"
+                val subHolonDir = "$currentDir/${subRef.id}"
+                val subHolonPath = "$subHolonDir/${subRef.id}.json"
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
                     put("subpath", subHolonPath)
                     put("parentId", enrichedHeader.id)

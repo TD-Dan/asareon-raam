@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -27,7 +28,7 @@ import kotlinx.serialization.json.put
 fun KnowledgeGraphView(store: Store) {
     val appState by store.state.collectAsState()
     val kgState = appState.featureStates["knowledgegraph"] as? KnowledgeGraphState
-    val selectedHolon = kgState?.holons?.get(kgState.activeHolonId)
+    val selectedHolon = kgState?.holons?.get(kgState.activeHolonIdForView)
 
     Scaffold(
         topBar = {
@@ -44,12 +45,14 @@ fun KnowledgeGraphView(store: Store) {
         }
     ) { paddingValues ->
         Row(Modifier.fillMaxSize().padding(paddingValues)) {
-            if (kgState?.rootHolonId == null) {
+            val activePersonaRootId = kgState?.activePersonaIdForView?.let { kgState.personaRoots.entries.find { (_, v) -> v == it }?.value }
+
+            if (activePersonaRootId == null) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     when {
                         kgState?.isLoading == true -> CircularProgressIndicator()
                         kgState?.fatalError != null -> Text(kgState.fatalError, color = MaterialTheme.colorScheme.error)
-                        else -> Text("Select a Persona to load its Knowledge Graph.")
+                        else -> Text("Select a Persona to display its Knowledge Graph.")
                     }
                 }
             } else {
@@ -70,52 +73,27 @@ fun KnowledgeGraphView(store: Store) {
 
 @Composable
 private fun HolonTreeView(kgState: KnowledgeGraphState, store: Store, modifier: Modifier = Modifier) {
-    val rootHolon = kgState.rootHolonId?.let { kgState.holons[it] }
+    val rootHolon = kgState.activePersonaIdForView?.let { kgState.holons[it] }
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(vertical = 8.dp)) {
         if (rootHolon != null) {
-            item {
+            // Create a list of all holons to render for the active tree
+            val treeHolons = mutableListOf<Holon>()
+            fun buildTreeList(holon: Holon) {
+                treeHolons.add(holon)
+                holon.header.subHolons.sortedBy { it.name }.forEach { subRef ->
+                    kgState.holons[subRef.id]?.let { buildTreeList(it) }
+                }
+            }
+            buildTreeList(rootHolon)
+
+            items(treeHolons, key = { it.header.id }) { holon ->
                 HolonTreeItem(
-                    holon = rootHolon,
-                    selectedHolonId = kgState.activeHolonId,
+                    holon = holon,
+                    selectedHolonId = kgState.activeHolonIdForView,
                     store = store
                 )
             }
-            // Render the rest of the tree recursively
-            rootHolon.header.subHolons.sortedBy { it.name }.forEach { subRef ->
-                val childHolon = kgState.holons[subRef.id]
-                if (childHolon != null) {
-                    item {
-                        RecursiveHolonTree(
-                            holon = childHolon,
-                            allHolons = kgState.holons,
-                            selectedHolonId = kgState.activeHolonId,
-                            store = store
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RecursiveHolonTree(
-    holon: Holon,
-    allHolons: Map<String, Holon>,
-    selectedHolonId: String?,
-    store: Store
-) {
-    HolonTreeItem(holon = holon, selectedHolonId = selectedHolonId, store = store)
-    holon.header.subHolons.sortedBy { it.name }.forEach { subRef ->
-        val childHolon = allHolons[subRef.id]
-        if (childHolon != null) {
-            RecursiveHolonTree(
-                holon = childHolon,
-                allHolons = allHolons,
-                selectedHolonId = selectedHolonId,
-                store = store
-            )
         }
     }
 }
@@ -135,7 +113,7 @@ private fun HolonTreeItem(holon: Holon, selectedHolonId: String?, store: Store) 
         supportingContent = { Text(header.summary ?: header.type, maxLines = 1, style = MaterialTheme.typography.bodySmall) },
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SELECT_HOLON, buildJsonObject { put("holonId", header.id) })) }
+            .clickable { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON, buildJsonObject { put("holonId", header.id) })) }
             .background(if (header.id == selectedHolonId) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
             .padding(start = (header.depth * 16).dp, end = 16.dp)
     )
@@ -148,9 +126,8 @@ private fun HolonDetailView(holon: Holon?, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         if (holon == null) {
             Text("Select a holon to view its content.")
-        } else if (holon.content == null) {
-            CircularProgressIndicator() // Content is being fetched
         } else {
+            // Per the eager-loading directive, content is always present.
             SelectionContainer(modifier = Modifier.fillMaxSize()) {
                 Text(
                     text = holon.content,
@@ -170,7 +147,7 @@ private fun HolonDetailView(holon: Holon?, modifier: Modifier = Modifier) {
 private fun PersonaSelector(kgState: KnowledgeGraphState?, store: Store) {
     if (kgState == null) return
     var isExpanded by remember { mutableStateOf(false) }
-    val activePersonaName = kgState.availablePersonas.find { it.id == kgState.activePersonaId }?.name ?: "Select Persona"
+    val activePersonaName = kgState.personaRoots.entries.find { it.value == kgState.activePersonaIdForView }?.key ?: "Select Persona"
 
     ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
         OutlinedTextField(
@@ -182,11 +159,11 @@ private fun PersonaSelector(kgState: KnowledgeGraphState?, store: Store) {
             modifier = Modifier.menuAnchor().width(250.dp).padding(end = 8.dp)
         )
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
-            kgState.availablePersonas.forEach { persona ->
+            kgState.personaRoots.entries.sortedBy { it.key }.forEach { (name, id) ->
                 DropdownMenuItem(
-                    text = { Text(persona.name) },
+                    text = { Text(name) },
                     onClick = {
-                        store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SELECT_PERSONA, buildJsonObject { put("personaId", persona.id) }))
+                        store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_PERSONA, buildJsonObject { put("personaId", id) }))
                         isExpanded = false
                     }
                 )
