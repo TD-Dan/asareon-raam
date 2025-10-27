@@ -37,7 +37,8 @@ class KnowledgeGraphFeature(
     @Serializable private data class AgentContextRequest(val correlationId: String, val knowledgeGraphId: String)
 
     override fun onAction(action: Action, store: Store, previousState: AppState) {
-        val kgState = store.state.value.featureStates[name] as? KnowledgeGraphState ?: return
+        // FIX: Removed the overly-aggressive global state guard.
+        // The when block now handles state requirements on a per-action basis.
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
@@ -83,6 +84,8 @@ class KnowledgeGraphFeature(
                 }
             }
             ActionNames.KNOWLEDGEGRAPH_SELECT_HOLON -> {
+                // FIX: The state guard is now localized to the only action that needs it.
+                val kgState = store.state.value.featureStates[name] as? KnowledgeGraphState ?: return
                 val payload = action.payload?.let { json.decodeFromJsonElement<HolonIdPayload>(it) } ?: return
                 val holonId = payload.holonId ?: return
                 val graphId = kgState.activeGraphId ?: return

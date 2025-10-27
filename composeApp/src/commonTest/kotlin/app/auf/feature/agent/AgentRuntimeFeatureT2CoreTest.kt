@@ -23,6 +23,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -358,7 +359,6 @@ class AgentRuntimeFeatureT2CoreTest {
         assertNull(finalState.viewingContextForAgentId)
     }
 
-    // FIX: New test to verify graceful degradation
     @Test
     fun `cognitive cycle proceeds without HKG context if KG feature is absent`() {
         val agent = createTestAgent(kgId = "p1") // Agent wants an HKG
@@ -377,9 +377,9 @@ class AgentRuntimeFeatureT2CoreTest {
         assertNotNull(gatewayRequest, "Gateway request should still be dispatched.")
         val systemPrompt = gatewayRequest.payload?.get("systemPrompt")?.jsonPrimitive?.content
         assertNotNull(systemPrompt)
-        assertTrue(systemPrompt.contains("--- HOLON KNOWLEDGE GRAPH CONTEXT ---\n\n--- CONVERSATIONAL HISTORY BEGINS ---"), "System prompt should contain an empty HKG section.")
+        assertFalse(systemPrompt.contains("--- HOLON KNOWLEDGE GRAPH CONTEXT ---"), "System prompt should not contain an empty HKG section.")
 
-        val log = harness.platform.capturedLogs.find { it.level == LogLevel.INFO && it.message.contains("KnowledgeGraphFeature not found") }
+        val log = harness.platform.capturedLogs.find { it.level == LogLevel.WARN && it.message.contains("KnowledgeGraphFeature not found") }
         assertNotNull(log, "An info log should indicate the graceful fallback.")
     }
 }

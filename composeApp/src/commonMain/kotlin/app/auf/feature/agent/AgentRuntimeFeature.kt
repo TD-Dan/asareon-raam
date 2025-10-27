@@ -502,8 +502,7 @@ class AgentRuntimeFeature(
         } ?: ""
 
         val sessionName = agentState.sessionNames[agent.primarySessionId] ?: "Unknown Session"
-        // THE FIX: The misleading "CONVERSATIONAL HISTORY BEGINS" line is removed.
-        val systemPrompt = """
+        var systemPrompt = """
             --- SYSTEM BOOTSTRAP DIRECTIVES ---
             // You are an autonomous agent operating within the multi user and multi agent AUF App.
             // The following directives and context are provided for this turn.
@@ -520,9 +519,16 @@ class AgentRuntimeFeature(
             *   Session: '${abbreviate(sessionName, 64)}'
             *   Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())}
 
+
+        """.trimIndent()
+
+        if (hkgContextContent != "") {
+            systemPrompt += """
             --- HOLON KNOWLEDGE GRAPH CONTEXT ---
             $hkgContextContent
-        """.trimIndent()
+            
+            """.trimIndent()
+        }
 
         val requestActionName = if (agent.turnMode == TurnMode.PREVIEW) ActionNames.GATEWAY_PREPARE_PREVIEW else ActionNames.GATEWAY_GENERATE_CONTENT
         val step = if (agent.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"
@@ -633,7 +639,7 @@ class AgentRuntimeFeature(
         } else {
             // Path 2: HKG is not needed or the feature is absent. Proceed directly.
             if (kgId != null && !kgFeatureExists) {
-                platformDependencies.log(LogLevel.INFO, name, "Agent '${agent.id}' has an HKG configured, but KnowledgeGraphFeature not found. Proceeding without HKG context.")
+                platformDependencies.log(LogLevel.WARN, name, "Agent '${agent.id}' has an HKG configured, but KnowledgeGraphFeature not found. Proceeding without HKG context.")
             }
             assemblePromptAndRequestGeneration(agent, enrichedMessages, null, store)
         }
