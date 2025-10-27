@@ -45,7 +45,7 @@ fun KnowledgeGraphView(store: Store) {
         }
     ) { paddingValues ->
         Row(Modifier.fillMaxSize().padding(paddingValues)) {
-            val activePersonaRootId = kgState?.activePersonaIdForView?.let { kgState.personaRoots.entries.find { (_, v) -> v == it }?.value }
+            val activePersonaRootId = kgState?.activePersonaIdForView
 
             if (activePersonaRootId == null) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -77,13 +77,15 @@ private fun HolonTreeView(kgState: KnowledgeGraphState, store: Store, modifier: 
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(vertical = 8.dp)) {
         if (rootHolon != null) {
-            // Create a list of all holons to render for the active tree
+            // Create a flat list representing the tree hierarchy for the LazyColumn
             val treeHolons = mutableListOf<Holon>()
             fun buildTreeList(holon: Holon) {
                 treeHolons.add(holon)
-                holon.header.subHolons.sortedBy { it.name }.forEach { subRef ->
-                    kgState.holons[subRef.id]?.let { buildTreeList(it) }
-                }
+                // FIX: Map SubHolonRefs to full Holon objects, then sort by the header name.
+                holon.header.subHolons
+                    .mapNotNull { subRef -> kgState.holons[subRef.id] }
+                    .sortedBy { childHolon -> childHolon.header.name }
+                    .forEach { sortedChildHolon -> buildTreeList(sortedChildHolon) }
             }
             buildTreeList(rootHolon)
 
