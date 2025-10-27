@@ -102,7 +102,7 @@ class AgentRuntimeFeatureT2CoreTest {
         status: AgentStatus = AgentStatus.IDLE,
         turnMode: TurnMode = TurnMode.DIRECT
     ): AgentInstance {
-        return AgentInstance(id = id, name = name, personaId = "p1", modelProvider = "mp1", modelName = "mn1", primarySessionId = sessionId, status = status, turnMode = turnMode)
+        return AgentInstance(id = id, name = name, knowledgeGraphId = "p1", modelProvider = "mp1", modelName = "mn1", primarySessionId = sessionId, status = status, turnMode = turnMode)
     }
 
     // TEST: New test for sentinel logic.
