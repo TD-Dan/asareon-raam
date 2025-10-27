@@ -174,6 +174,19 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
 
     Surface(modifier = Modifier.fillMaxWidth(), shadowElevation = 8.dp) {
         Row(Modifier.padding(8.dp), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
+
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier.weight(1f).onKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && (event.isCtrlPressed || event.isMetaPressed)) {
+                        if (text.isNotBlank()) { onSend(text); text = "" }
+                        return@onKeyEvent true
+                    }
+                    false
+                },
+                placeholder = { Text("Enter message (Ctrl+Enter to send)...") }
+            )
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
                     Icon(Icons.Default.MoreVert, "More options")
@@ -198,18 +211,6 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                     )
                 }
             }
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.weight(1f).onKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && (event.isCtrlPressed || event.isMetaPressed)) {
-                        if (text.isNotBlank()) { onSend(text); text = "" }
-                        return@onKeyEvent true
-                    }
-                    false
-                },
-                placeholder = { Text("Enter message (Ctrl+Enter to send)...") }
-            )
             IconButton(onClick = { if (text.isNotBlank()) { onSend(text); text = "" } }, enabled = text.isNotBlank()) {
                 Icon(Icons.AutoMirrored.Filled.Send, "Send")
             }
