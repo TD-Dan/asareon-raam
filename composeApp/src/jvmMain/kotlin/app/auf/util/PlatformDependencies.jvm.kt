@@ -72,6 +72,17 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
             ?: emptyList()
     }
 
+    actual open fun listDirectoryRecursive(path: String): List<FileEntry> {
+        val root = File(path)
+        if (!root.exists()) throw IOException("Path does not exist or is not accessible: $path")
+        if (!root.isDirectory) throw IOException("Path is not a directory: $path")
+
+        return root.walkTopDown()
+            .filter { it.isFile }
+            .map { FileEntry(it.absolutePath, isDirectory = false) }
+            .toList()
+    }
+
     actual open fun createDirectories(path: String) {
         File(path).mkdirs()
     }

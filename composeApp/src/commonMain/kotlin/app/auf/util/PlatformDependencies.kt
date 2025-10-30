@@ -38,6 +38,7 @@ expect open class PlatformDependencies(appVersion: String) {
     open fun writeFileContent(path: String, content: String)
     open fun fileExists(path: String): Boolean
     open fun listDirectory(path: String): List<FileEntry>
+    open fun listDirectoryRecursive(path: String): List<FileEntry>
     open fun createDirectories(path: String)
     open fun copyFile(sourcePath: String, destinationPath: String)
     open fun deleteFile(path: String)

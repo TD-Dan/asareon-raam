@@ -27,6 +27,7 @@ class FileSystemFeature(
     @Serializable private data class ToggleItemPayload(val path: String, val recursive: Boolean = false)
     @Serializable private data class DirectoryLoadedPayload(val parentPath: String, val children: List<FileEntry>)
     @Serializable private data class NavigationFailedPayload(val path: String, val error: String)
+    @Serializable private data class ReadDirectoryContentsPayload(val path: String)
     @Serializable private data class SystemReadPayload(val subpath: String)
     @Serializable private data class SystemWritePayload(val subpath: String, val content: String, val encrypt: Boolean = false)
     @Serializable private data class SystemDeletePayload(val subpath: String)
@@ -158,6 +159,26 @@ class FileSystemFeature(
                     platformDependencies.log(LogLevel.ERROR, "filesystem","Filesystem listing failed: ${e.message}")
                     val payload = buildJsonObject { put("listing", Json.encodeToJsonElement(emptyList<FileEntry>())) }
                     val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, payload)
+                    store.deliverPrivateData(this.name, originator, envelope)
+                }
+            }
+            ActionNames.FILESYSTEM_READ_DIRECTORY_CONTENTS -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<ReadDirectoryContentsPayload>(it) } ?: return
+                try {
+                    val listing = platformDependencies.listDirectoryRecursive(payload.path)
+                    val responsePayload = buildJsonObject {
+                        put("path", payload.path)
+                        put("listing", Json.encodeToJsonElement(listing))
+                    }
+                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_DIRECTORY_CONTENTS, responsePayload)
+                    store.deliverPrivateData(this.name, originator, envelope)
+                } catch (e: Exception) {
+                    platformDependencies.log(LogLevel.ERROR, "filesystem", "Recursive directory read failed for '${payload.path}': ${e.message}")
+                    val responsePayload = buildJsonObject {
+                        put("path", payload.path)
+                        put("listing", Json.encodeToJsonElement(emptyList<FileEntry>()))
+                    }
+                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_DIRECTORY_CONTENTS, responsePayload)
                     store.deliverPrivateData(this.name, originator, envelope)
                 }
             }

@@ -31,6 +31,15 @@
       "payload_schema": null
     },
     {
+      "action_name": "filesystem.READ_DIRECTORY_CONTENTS",
+      "summary": "[PRIVATE-CHANNEL] Requests a recursive listing of all files within a given directory path. The response is delivered via the private channel.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"]
+      }
+    },
+    {
       "action_name": "filesystem.SYSTEM_READ",
       "summary": "[INTERNAL-SANDBOXED] Requests to read a file from the originator's private sandbox.",
       "payload_schema": {
@@ -280,6 +289,21 @@
           "content": { "type": ["string", "null"] }
         },
         "required": ["subpath"]
+      }
+    },
+    {
+      "type_name": "filesystem.response.DIRECTORY_CONTENTS",
+      "summary": "The response envelope containing a recursive listing of all files in a directory, delivered to the original requester.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "listing": {
+            "type": "array",
+            "items": { "$ref": "#/definitions/FileEntry" }
+          }
+        },
+        "required": ["path", "listing"]
       }
     }
   ],

@@ -9,6 +9,7 @@ import app.auf.util.FileEntry
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -147,5 +148,39 @@ class FileSystemFeatureT2CoreTest {
 
         assertFalse(platform.fileExists(fullDirPath), "Directory should have been deleted.")
         assertFalse(platform.fileExists(fullFilePath), "File inside directory should have been deleted.")
+    }
+
+    @Test
+    fun `READ_DIRECTORY_CONTENTS delivers recursive file listing via private channel`() {
+        // Arrange
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val originator = "knowledgegraph"
+        val dirPath = "/import/source"
+        platform.createDirectories(dirPath + "/subdir")
+        platform.writeFileContent(dirPath + "/file1.json", "{}")
+        platform.writeFileContent(dirPath + "/subdir/file2.json", "{}")
+
+        val action = Action(ActionNames.FILESYSTEM_READ_DIRECTORY_CONTENTS, buildJsonObject {
+            put("path", dirPath)
+        })
+
+        // Act
+        harness.store.dispatch(originator, action)
+
+        // Assert
+        assertEquals(1, harness.deliveredPrivateData.size, "Exactly one private data envelope should be delivered.")
+        val delivery = harness.deliveredPrivateData.first()
+        assertEquals(originator, delivery.recipient)
+        assertEquals(feature.name, delivery.originator)
+        assertEquals(ActionNames.Envelopes.FILESYSTEM_RESPONSE_DIRECTORY_CONTENTS, delivery.envelope.type)
+
+        val payload = delivery.envelope.payload
+        assertEquals(dirPath, payload["path"]?.jsonPrimitive?.content)
+        val listing = Json.decodeFromJsonElement<List<FileEntry>>(payload["listing"]!!)
+        assertEquals(2, listing.size)
+        assertTrue(listing.any { it.path == "$dirPath/file1.json" })
+        assertTrue(listing.any { it.path == "$dirPath/subdir/file2.json" })
     }
 }

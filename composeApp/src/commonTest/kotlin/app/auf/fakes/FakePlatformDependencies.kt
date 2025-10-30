@@ -65,6 +65,14 @@ open class FakePlatformDependencies(
         }
     }
 
+    override fun listDirectoryRecursive(path: String): List<FileEntry> {
+        if (!directories.contains(path)) throw Exception("Path does not exist '$path'")
+        val pathWithSeparator = if (path.endsWith(pathSeparator)) path else "$path$pathSeparator"
+        return files.keys
+            .filter { it.startsWith(pathWithSeparator) }
+            .map { FileEntry(it, isDirectory = false) }
+    }
+
     override fun createDirectories(path: String) {
         var currentPath = ""
         val parts = path.split(pathSeparator).filter { it.isNotEmpty() }

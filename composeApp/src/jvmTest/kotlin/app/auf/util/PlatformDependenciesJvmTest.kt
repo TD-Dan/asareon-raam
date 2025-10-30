@@ -141,6 +141,33 @@ class PlatformDependenciesJvmTest {
     }
 
     @Test
+    fun `listDirectoryRecursive finds all files in nested structure`() {
+        // Arrange
+        val root = File(tempDir, "recursive_root")
+        val sub1 = File(root, "sub1")
+        val sub2 = File(root, "sub2")
+        platform.createDirectories(sub1.absolutePath)
+        platform.createDirectories(sub2.absolutePath)
+
+        platform.writeFileContent(File(root, "root_file.txt").absolutePath, "")
+        platform.writeFileContent(File(sub1, "sub1_file.txt").absolutePath, "")
+        platform.writeFileContent(File(sub2, "sub2_file.txt").absolutePath, "")
+        platform.writeFileContent(File(sub2, "another.log").absolutePath, "")
+
+        // Act
+        val entries = platform.listDirectoryRecursive(root.absolutePath)
+        val entryPaths = entries.map { it.path }
+
+        // Assert
+        assertEquals(4, entries.size, "Should find all 4 files.")
+        assertFalse(entries.any { it.isDirectory }, "Recursive list should only return files.")
+        assertTrue(entryPaths.any { it.endsWith("root_file.txt") })
+        assertTrue(entryPaths.any { it.endsWith("sub1_file.txt") })
+        assertTrue(entryPaths.any { it.endsWith("sub2_file.txt") })
+        assertTrue(entryPaths.any { it.endsWith("another.log") })
+    }
+
+    @Test
     fun `deleteFile removes the specified file`() {
         // Arrange
         val fileToDelete = File(tempDir, "to_delete.txt")
