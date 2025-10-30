@@ -28,6 +28,7 @@ class FileSystemFeature(
     @Serializable private data class DirectoryLoadedPayload(val parentPath: String, val children: List<FileEntry>)
     @Serializable private data class NavigationFailedPayload(val path: String, val error: String)
     @Serializable private data class ReadDirectoryContentsPayload(val path: String)
+    @Serializable private data class ReadFilesContentPayload(val paths: List<String>)
     @Serializable private data class SystemReadPayload(val subpath: String)
     @Serializable private data class SystemWritePayload(val subpath: String, val content: String, val encrypt: Boolean = false)
     @Serializable private data class SystemDeletePayload(val subpath: String)
@@ -181,6 +182,22 @@ class FileSystemFeature(
                     val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_DIRECTORY_CONTENTS, responsePayload)
                     store.deliverPrivateData(this.name, originator, envelope)
                 }
+            }
+            ActionNames.FILESYSTEM_READ_FILES_CONTENT -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<ReadFilesContentPayload>(it) } ?: return
+                val contentMap = mutableMapOf<String, String>()
+                payload.paths.forEach { path ->
+                    try {
+                        contentMap[path] = platformDependencies.readFileContent(path)
+                    } catch (e: Exception) {
+                        platformDependencies.log(LogLevel.WARN, "filesystem", "Bulk read failed for one file '$path': ${e.message}")
+                    }
+                }
+                val responsePayload = buildJsonObject {
+                    put("contents", Json.encodeToJsonElement(contentMap))
+                }
+                val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, responsePayload)
+                store.deliverPrivateData(this.name, originator, envelope)
             }
             ActionNames.FILESYSTEM_SYSTEM_READ -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<SystemReadPayload>(it) } ?: return

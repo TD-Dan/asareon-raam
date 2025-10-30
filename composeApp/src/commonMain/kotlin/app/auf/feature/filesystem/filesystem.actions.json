@@ -40,6 +40,20 @@
       }
     },
     {
+      "action_name": "filesystem.READ_FILES_CONTENT",
+      "summary": "[PRIVATE-CHANNEL] Requests the content of multiple files at once. The response, a map of paths to content, is delivered via the private channel.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["paths"]
+      }
+    },
+    {
       "action_name": "filesystem.SYSTEM_READ",
       "summary": "[INTERNAL-SANDBOXED] Requests to read a file from the originator's private sandbox.",
       "payload_schema": {
@@ -304,6 +318,20 @@
           }
         },
         "required": ["path", "listing"]
+      }
+    },
+    {
+      "type_name": "filesystem.response.FILES_CONTENT",
+      "summary": "The response envelope containing the content of multiple files, delivered to the original requester.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "contents": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        },
+        "required": ["contents"]
       }
     }
   ],

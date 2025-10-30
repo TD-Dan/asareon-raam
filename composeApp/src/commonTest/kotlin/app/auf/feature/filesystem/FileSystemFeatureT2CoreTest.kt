@@ -8,11 +8,14 @@ import app.auf.util.BasePath
 import app.auf.util.FileEntry
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -182,5 +185,40 @@ class FileSystemFeatureT2CoreTest {
         assertEquals(2, listing.size)
         assertTrue(listing.any { it.path == "$dirPath/file1.json" })
         assertTrue(listing.any { it.path == "$dirPath/subdir/file2.json" })
+    }
+
+    @Test
+    fun `READ_FILES_CONTENT delivers content map via private channel`() {
+        // Arrange
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val originator = "knowledgegraph"
+        val path1 = "/import/file1.json"
+        val path2 = "/import/file2.json"
+        platform.writeFileContent(path1, "{\"key\": \"value1\"}")
+        platform.writeFileContent(path2, "{\"key\": \"value2\"}")
+
+        val action = Action(ActionNames.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
+            putJsonArray("paths") {
+                add(JsonPrimitive(path1))
+                add(JsonPrimitive(path2))
+            }
+        })
+
+        // Act
+        harness.store.dispatch(originator, action)
+
+        // Assert
+        assertEquals(1, harness.deliveredPrivateData.size)
+        val delivery = harness.deliveredPrivateData.first()
+        assertEquals(originator, delivery.recipient)
+        assertEquals(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, delivery.envelope.type)
+
+        val payload = delivery.envelope.payload
+        val contents = payload["contents"]!!.jsonObject
+        assertEquals(2, contents.size)
+        assertEquals("{\"key\": \"value1\"}", contents[path1]?.jsonPrimitive?.content)
+        assertEquals("{\"key\": \"value2\"}", contents[path2]?.jsonPrimitive?.content)
     }
 }
