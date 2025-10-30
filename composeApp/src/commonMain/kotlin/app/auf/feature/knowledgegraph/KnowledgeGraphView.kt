@@ -10,6 +10,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,53 +22,81 @@ import androidx.compose.ui.unit.dp
 import app.auf.core.Action
 import app.auf.core.Store
 import app.auf.core.generated.ActionNames
+import app.auf.util.PlatformDependencies
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun KnowledgeGraphView(store: Store) {
+fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies) {
     val appState by store.state.collectAsState()
     val kgState = appState.featureStates["knowledgegraph"] as? KnowledgeGraphState
-    val selectedHolon = kgState?.holons?.get(kgState.activeHolonIdForView)
+
+    if (kgState == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Knowledge Graph Manager") },
                 actions = {
-                    PersonaSelector(kgState, store)
-                    // TODO: Re-implement Create Persona functionality
-                    IconButton(onClick = { /* TODO */ }) {
-                        Icon(Icons.Default.Add, contentDescription = "Create New Persona")
+                    if (kgState.viewMode == KnowledgeGraphViewMode.INSPECTOR) {
+                        PersonaSelector(kgState, store)
+                        IconButton(
+                            onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.IMPORT.name) })) },
+                            enabled = kgState.activePersonaIdForView != null
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = "Import Holons")
+                        }
+                        IconButton(onClick = { /* TODO Create Persona */ }) {
+                            Icon(Icons.Default.Add, contentDescription = "Create New Persona")
+                        }
+                    } else {
+                        IconButton(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) })) }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close View")
+                        }
                     }
                 }
             )
         }
     ) { paddingValues ->
-        Row(Modifier.fillMaxSize().padding(paddingValues)) {
-            val activePersonaRootId = kgState?.activePersonaIdForView
+        when (kgState.viewMode) {
+            KnowledgeGraphViewMode.INSPECTOR -> InspectorPane(kgState, store, Modifier.padding(paddingValues))
+            KnowledgeGraphViewMode.IMPORT -> ImportPane(kgState, store, platformDependencies, Modifier.padding(paddingValues))
+            KnowledgeGraphViewMode.EXPORT -> { /* TODO */ }
+        }
+    }
+}
 
-            if (activePersonaRootId == null) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    when {
-                        kgState?.isLoading == true -> CircularProgressIndicator()
-                        kgState?.fatalError != null -> Text(kgState.fatalError, color = MaterialTheme.colorScheme.error)
-                        else -> Text("Select a Persona to display its Knowledge Graph.")
-                    }
+@Composable
+private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxSize()) {
+        val activePersonaRootId = kgState.activePersonaIdForView
+        val selectedHolon = kgState.holons[kgState.activeHolonIdForView]
+
+        if (activePersonaRootId == null) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                when {
+                    kgState.isLoading -> CircularProgressIndicator()
+                    kgState.fatalError != null -> Text(kgState.fatalError, color = MaterialTheme.colorScheme.error)
+                    else -> Text("Select a Persona to display its Knowledge Graph.")
                 }
-            } else {
-                HolonTreeView(
-                    kgState = kgState,
-                    store = store,
-                    modifier = Modifier.width(400.dp)
-                )
-                VerticalDivider()
-                HolonDetailView(
-                    holon = selectedHolon,
-                    modifier = Modifier.weight(1f)
-                )
             }
+        } else {
+            HolonTreeView(
+                kgState = kgState,
+                store = store,
+                modifier = Modifier.width(400.dp)
+            )
+            VerticalDivider()
+            HolonDetailView(
+                holon = selectedHolon,
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }
@@ -77,11 +107,9 @@ private fun HolonTreeView(kgState: KnowledgeGraphState, store: Store, modifier: 
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(vertical = 8.dp)) {
         if (rootHolon != null) {
-            // Create a flat list representing the tree hierarchy for the LazyColumn
             val treeHolons = mutableListOf<Holon>()
             fun buildTreeList(holon: Holon) {
                 treeHolons.add(holon)
-                // FIX: Map SubHolonRefs to full Holon objects, then sort by the header name.
                 holon.header.subHolons
                     .mapNotNull { subRef -> kgState.holons[subRef.id] }
                     .sortedBy { childHolon -> childHolon.header.name }
@@ -90,11 +118,7 @@ private fun HolonTreeView(kgState: KnowledgeGraphState, store: Store, modifier: 
             buildTreeList(rootHolon)
 
             items(treeHolons, key = { it.header.id }) { holon ->
-                HolonTreeItem(
-                    holon = holon,
-                    selectedHolonId = kgState.activeHolonIdForView,
-                    store = store
-                )
+                HolonTreeItem(holon, kgState.activeHolonIdForView, store)
             }
         }
     }
@@ -105,12 +129,7 @@ private fun HolonTreeItem(holon: Holon, selectedHolonId: String?, store: Store) 
     val header = holon.header
     ListItem(
         headlineContent = {
-            Text(
-                header.name,
-                maxLines = 1,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = if (header.id == selectedHolonId) FontWeight.Bold else FontWeight.Normal
-            )
+            Text(header.name, maxLines = 1, style = MaterialTheme.typography.titleSmall, fontWeight = if (header.id == selectedHolonId) FontWeight.Bold else FontWeight.Normal)
         },
         supportingContent = { Text(header.summary ?: header.type, maxLines = 1, style = MaterialTheme.typography.bodySmall) },
         modifier = Modifier
@@ -122,22 +141,17 @@ private fun HolonTreeItem(holon: Holon, selectedHolonId: String?, store: Store) 
     HorizontalDivider()
 }
 
-
 @Composable
 private fun HolonDetailView(holon: Holon?, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         if (holon == null) {
             Text("Select a holon to view its content.")
         } else {
-            // Per the eager-loading directive, content is always present.
             SelectionContainer(modifier = Modifier.fillMaxSize()) {
                 Text(
                     text = holon.content,
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp)
-                        .verticalScroll(rememberScrollState())
+                    modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())
                 )
             }
         }
@@ -169,6 +183,63 @@ private fun PersonaSelector(kgState: KnowledgeGraphState?, store: Store) {
                         isExpanded = false
                     }
                 )
+            }
+        }
+    }
+}
+
+// A new composable for the Import UI, adapted from v1.5.0
+@Composable
+private fun ImportPane(
+    kgState: KnowledgeGraphState,
+    store: Store,
+    platformDependencies: PlatformDependencies,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = kgState.importSourcePath,
+                onValueChange = {},
+                label = { Text("Source Folder") },
+                modifier = Modifier.weight(1f),
+                readOnly = true
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = {
+                platformDependencies.selectDirectoryPath()?.let {
+                    store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS, buildJsonObject { put("path", it) }))
+                }
+            }) {
+                Text("Select & Analyze...")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (kgState.isLoading) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        } else if (kgState.importItems.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(if (kgState.importSourcePath.isBlank()) "Select a folder to begin analysis." else "No importable .json files found.")
+            }
+        } else {
+            LazyColumn(modifier = Modifier.weight(1f)) {
+                items(kgState.importItems, key = { it.sourcePath }) { item ->
+                    // TODO: Build the row item view for analysis review
+                    Text("Found: ${item.sourcePath} -> Action: ${item.initialAction.summary}")
+                    HorizontalDivider()
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                OutlinedButton(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) })) }) {
+                    Text("Cancel")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(onClick = { /* TODO: Dispatch EXECUTE_IMPORT */ }) {
+                    Text("Execute Import")
+                }
             }
         }
     }

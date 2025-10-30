@@ -7,37 +7,14 @@ import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
 
 // --- CANONICAL HOLON MODELS (ADAPTED FROM V1.5.0 & SAGE HKG) ---
-
-/**
- * The canonical, in-memory representation of a Holon.
- * This data class is a faithful implementation of the definition found in
- * 'system-holon-definition-20250809T101500Z.json'.
- */
 @Serializable
 data class Holon(
-    /** The structured metadata defining the holon's identity and relationships. */
     val header: HolonHeader,
-
-    /** The flexible, narrative core containing the holon's cognitive content. */
     val payload: JsonElement,
-
-    /**
-     * An optional block for agentic holons (e.g., AI_Persona_Root) that defines
-     * their core, machine-readable behaviors, and boot sequences.
-     */
     val execute: JsonElement? = null,
-
-    /**
-     * The full, raw JSON content of the holon file.
-     * Per the eager-loading directive, this is non-nullable and loaded at startup.
-     */
     val content: String
 )
 
-/**
- * The holon's header, containing structured metadata for indexing, linking,
- * and understanding the holon's role in the system.
- */
 @Serializable
 data class HolonHeader(
     val id: String,
@@ -45,58 +22,69 @@ data class HolonHeader(
     val name: String,
     val summary: String? = null,
     val version: String = "0.0.0",
-    @SerialName("created_at")
-    val createdAt: String? = null,
-    @SerialName("modified_at")
-    val modifiedAt: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("modified_at") val modifiedAt: String? = null,
     val relationships: List<Relationship> = emptyList(),
-    @SerialName("sub_holons")
-    val subHolons: List<SubHolonRef> = emptyList(),
-
-    // Transient properties are enriched during the loading process and are not persisted.
+    @SerialName("sub_holons") val subHolons: List<SubHolonRef> = emptyList(),
     @Transient val filePath: String = "",
     @Transient val parentId: String? = null,
     @Transient val depth: Int = 0
 )
 
-/** Defines a semantic link between this holon and a target holon. */
 @Serializable
-data class Relationship(
-    @SerialName("target_id")
-    val targetId: String,
-    val type: String
+data class Relationship(@SerialName("target_id") val targetId: String, val type: String)
+
+@Serializable
+data class SubHolonRef(val id: String, val type: String, val summary: String)
+
+// --- IMPORT/EXPORT MODELS (ADAPTED FROM V1.5.0) ---
+
+@Serializable
+enum class KnowledgeGraphViewMode { INSPECTOR, IMPORT, EXPORT }
+
+@Serializable
+data class ImportItem(
+    val sourcePath: String,
+    val initialAction: ImportAction,
+    val targetPath: String?
 )
 
-/** A lightweight reference to a child holon, used to define the HKG tree structure. */
 @Serializable
-data class SubHolonRef(
-    val id: String,
-    val type: String,
+sealed interface ImportAction {
     val summary: String
-)
+}
+
+@Serializable @SerialName("Update")
+data class Update(val targetHolonId: String, override val summary: String = "Update existing holon") : ImportAction
+@Serializable @SerialName("Integrate")
+data class Integrate(val parentHolonId: String, override val summary: String = "Integrate with known parent") : ImportAction
+@Serializable @SerialName("AssignParent")
+data class AssignParent(var assignedParentId: String? = null, override val summary: String = "New holon - requires parent") : ImportAction
+@Serializable @SerialName("Quarantine")
+data class Quarantine(val reason: String, override val summary: String = "Quarantine File") : ImportAction
+@Serializable @SerialName("Ignore")
+data class Ignore(override val summary: String = "Do not import") : ImportAction
+@Serializable @SerialName("CreateRoot")
+data class CreateRoot(override val summary: String = "IMPORT AS NEW ROOT PERSONA") : ImportAction
 
 
 // --- FEATURE STATE ---
-
-/**
- * The state container for the KnowledgeGraphFeature. It is architected to manage
- * multiple, distinct Holon Knowledge Graph trees simultaneously in memory.
- */
 @Serializable
 data class KnowledgeGraphState(
-    /** A single, unified map of ALL holons from ALL loaded HKGs, keyed by holon ID. */
     val holons: Map<String, Holon> = emptyMap(),
-
-    /** A map of all discovered AI Persona names to their root holon IDs, used for UI selection. */
     val personaRoots: Map<String, String> = emptyMap(),
 
     // --- UI State ---
-    /** The root persona ID of the HKG currently being displayed in the UI. */
     val activePersonaIdForView: String? = null,
-    /** The holon ID of the item currently selected for detail inspection in the UI. */
     val activeHolonIdForView: String? = null,
+    val viewMode: KnowledgeGraphViewMode = KnowledgeGraphViewMode.INSPECTOR,
+
+    // --- Import State ---
+    val importSourcePath: String = "",
+    val importItems: List<ImportItem> = emptyList(),
+    val importSelectedActions: Map<String, ImportAction> = emptyMap(),
 
     // --- Loading & Error State ---
     val isLoading: Boolean = false,
-    val fatalError: String? = null,
+    val fatalError: String? = null
 ) : FeatureState
