@@ -54,6 +54,22 @@ sealed interface ImportAction {
     val summary: String
 }
 
+enum class ImportActionType {
+    UPDATE, INTEGRATE, ASSIGN_PARENT, QUARANTINE, IGNORE, CREATE_ROOT;
+
+    fun toInstance(initialAction: ImportAction): ImportAction {
+        return when (this) {
+            UPDATE -> initialAction as? Update ?: Update("")
+            INTEGRATE -> initialAction as? Integrate ?: Integrate("")
+            ASSIGN_PARENT -> AssignParent()
+            QUARANTINE -> Quarantine("Manual Quarantine")
+            IGNORE -> Ignore()
+            CREATE_ROOT -> CreateRoot()
+        }
+    }
+}
+
+
 @Serializable @SerialName("Update")
 data class Update(val targetHolonId: String, override val summary: String = "Update existing holon") : ImportAction
 @Serializable @SerialName("Integrate")
@@ -83,6 +99,7 @@ data class KnowledgeGraphState(
     val importSourcePath: String = "",
     val importItems: List<ImportItem> = emptyList(),
     val importSelectedActions: Map<String, ImportAction> = emptyMap(),
+    val importFileContents: Map<String, String> = emptyMap(),
 
     // --- Loading & Error State ---
     val isLoading: Boolean = false,

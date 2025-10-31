@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -48,7 +49,6 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
                         PersonaSelector(kgState, store)
                         IconButton(
                             onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.IMPORT.name) })) }
-                            // FIX: Removed the incorrect 'enabled' condition. Import should always be available from the inspector.
                         ) {
                             Icon(Icons.Default.Download, contentDescription = "Import Holons")
                         }
@@ -188,7 +188,6 @@ private fun PersonaSelector(kgState: KnowledgeGraphState?, store: Store) {
     }
 }
 
-// A new composable for the Import UI, adapted from v1.5.0
 @Composable
 private fun ImportPane(
     kgState: KnowledgeGraphState,
@@ -198,23 +197,14 @@ private fun ImportPane(
 ) {
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            OutlinedTextField(
-                value = kgState.importSourcePath,
-                onValueChange = {},
-                label = { Text("Source Folder") },
-                modifier = Modifier.weight(1f),
-                readOnly = true
-            )
+            OutlinedTextField(value = kgState.importSourcePath, onValueChange = {}, label = { Text("Source Folder") }, modifier = Modifier.weight(1f), readOnly = true)
             Spacer(modifier = Modifier.width(8.dp))
             Button(onClick = {
                 platformDependencies.selectDirectoryPath()?.let {
                     store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS, buildJsonObject { put("path", it) }))
                 }
-            }) {
-                Text("Select & Analyze...")
-            }
+            }) { Text("Select & Analyze...") }
         }
-
         Spacer(modifier = Modifier.height(16.dp))
 
         if (kgState.isLoading) {
@@ -226,20 +216,126 @@ private fun ImportPane(
         } else {
             LazyColumn(modifier = Modifier.weight(1f)) {
                 items(kgState.importItems, key = { it.sourcePath }) { item ->
-                    // TODO: Build the row item view for analysis review
-                    Text("Found: ${item.sourcePath} -> Action: ${item.initialAction.summary}")
+                    ImportItemRow(
+                        item = item,
+                        selectedAction = kgState.importSelectedActions[item.sourcePath] ?: item.initialAction,
+                        onActionSelected = { newAction ->
+                            store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION, buildJsonObject {
+                                put("sourcePath", item.sourcePath)
+                                put("action", Json.encodeToJsonElement(newAction))
+                            }))
+                        },
+                        potentialParents = kgState.holons.values.map { it.header },
+                        platform = platformDependencies
+                    )
                     HorizontalDivider()
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                OutlinedButton(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) })) }) {
-                    Text("Cancel")
-                }
+                OutlinedButton(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) })) }) { Text("Cancel") }
                 Spacer(modifier = Modifier.width(8.dp))
-                Button(onClick = { /* TODO: Dispatch EXECUTE_IMPORT */ }) {
-                    Text("Execute Import")
+                Button(
+                    onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_EXECUTE_IMPORT)) },
+                    enabled = kgState.importItems.isNotEmpty()
+                ) { Text("Execute Import") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImportItemRow(
+    item: ImportItem,
+    selectedAction: ImportAction,
+    onActionSelected: (ImportAction) -> Unit,
+    potentialParents: List<HolonHeader>,
+    platform: PlatformDependencies
+) {
+    val fileName = remember(item.sourcePath) { item.sourcePath.substringAfterLast(platform.pathSeparator) }
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(fileName, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Spacer(modifier = Modifier.width(16.dp))
+        ActionSelector(item.initialAction, selectedAction, onActionSelected, potentialParents)
+    }
+}
+
+@Composable
+private fun ActionSelector(
+    initialAction: ImportAction,
+    selectedAction: ImportAction,
+    onActionSelected: (ImportAction) -> Unit,
+    potentialParents: List<HolonHeader>
+) {
+    when (selectedAction) {
+        is AssignParent -> ParentSelector(selectedAction, onActionSelected, potentialParents)
+        else -> GenericActionSelector(initialAction, selectedAction, onActionSelected)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ParentSelector(
+    selectedAction: AssignParent,
+    onActionSelected: (ImportAction) -> Unit,
+    potentialParents: List<HolonHeader>
+) {
+    var parentMenuExpanded by remember { mutableStateOf(false) }
+    var actionMenuExpanded by remember { mutableStateOf(false) }
+    val selectedParentName = selectedAction.assignedParentId?.let { id -> potentialParents.find { it.id == id }?.name } ?: "Select Parent..."
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        ExposedDropdownMenuBox(expanded = parentMenuExpanded, onExpandedChange = { parentMenuExpanded = !parentMenuExpanded }) {
+            OutlinedTextField(
+                value = selectedParentName, onValueChange = {}, readOnly = true,
+                modifier = Modifier.menuAnchor().width(200.dp),
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = parentMenuExpanded) }
+            )
+            ExposedDropdownMenu(expanded = parentMenuExpanded, onDismissRequest = { parentMenuExpanded = false }) {
+                potentialParents.sortedBy { it.name }.forEach { parent ->
+                    DropdownMenuItem(text = { Text(parent.name) }, onClick = {
+                        onActionSelected(AssignParent(assignedParentId = parent.id))
+                        parentMenuExpanded = false
+                    })
                 }
+
+            }
+        }
+
+        IconButton(onClick = { actionMenuExpanded = true }) { Icon(Icons.Default.MoreVert, "Change Action Type") }
+        DropdownMenu(expanded = actionMenuExpanded, onDismissRequest = { actionMenuExpanded = false }) {
+            ImportActionType.entries.filter { it != ImportActionType.CREATE_ROOT && it != ImportActionType.ASSIGN_PARENT }.forEach { type ->
+                DropdownMenuItem(text = { Text(type.toInstance(selectedAction).summary) }, onClick = {
+                    onActionSelected(type.toInstance(selectedAction))
+                    actionMenuExpanded = false
+                })
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GenericActionSelector(
+    initialAction: ImportAction,
+    selectedAction: ImportAction,
+    onActionSelected: (ImportAction) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val availableActions = ImportActionType.entries.filter { it != ImportActionType.CREATE_ROOT && it != ImportActionType.ASSIGN_PARENT }
+
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
+        OutlinedTextField(
+            value = selectedAction.summary, onValueChange = {}, readOnly = true,
+            modifier = Modifier.menuAnchor().width(250.dp),
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            availableActions.forEach { type ->
+                DropdownMenuItem(text = { Text(type.toInstance(initialAction).summary) }, onClick = {
+                    onActionSelected(type.toInstance(initialAction))
+                    expanded = false
+                })
             }
         }
     }
