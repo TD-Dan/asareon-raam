@@ -6,13 +6,13 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
 
-// --- CANONICAL HOLON MODELS (ADAPTED FROM V1.5.0 & SAGE HKG) ---
+// --- CANONICAL HOLON MODELS ---
 @Serializable
 data class Holon(
     val header: HolonHeader,
     val payload: JsonElement,
     val execute: JsonElement? = null,
-    val content: String
+    @Transient val content: String = ""
 )
 
 @Serializable
@@ -37,7 +37,7 @@ data class Relationship(@SerialName("target_id") val targetId: String, val type:
 @Serializable
 data class SubHolonRef(val id: String, val type: String, val summary: String)
 
-// --- IMPORT/EXPORT MODELS (ADAPTED FROM V1.5.0) ---
+// --- IMPORT/EXPORT MODELS ---
 
 @Serializable
 enum class KnowledgeGraphViewMode { INSPECTOR, IMPORT, EXPORT }
@@ -83,6 +83,9 @@ data class Ignore(override val summary: String = "Do not import") : ImportAction
 @Serializable @SerialName("CreateRoot")
 data class CreateRoot(override val summary: String = "IMPORT AS NEW ROOT PERSONA") : ImportAction
 
+// --- LOCAL CONTEXT FOR ASYNC OPERATIONS ---
+@Serializable
+data class ReadContext(val parentId: String?, val depth: Int)
 
 // --- FEATURE STATE ---
 @Serializable
@@ -102,6 +105,9 @@ data class KnowledgeGraphState(
     val importFileContents: Map<String, String> = emptyMap(),
     val isImportRecursive: Boolean = true,
     val showOnlyChangedImportItems: Boolean = false,
+
+    // --- Transient State for Async Operations ---
+    @Transient val pendingReads: Map<String, ReadContext> = emptyMap(),
 
     // --- Loading & Error State ---
     val isLoading: Boolean = false,

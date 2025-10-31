@@ -101,6 +101,19 @@
       "payload_schema": { "type": "object", "properties": { "personas": { "type": "array", "items": { "type": "object" } } }, "required": ["personas"] }
     },
     {
+      "action_name": "knowledgegraph.internal.ADD_PENDING_READ",
+      "summary": "[INTERNAL] Stages the context for a pending file read operation, allowing the feature to remember the parent and depth of a holon across an asynchronous boundary.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "subpath": { "type": "string" },
+          "parentId": { "type": ["string", "null"] },
+          "depth": { "type": "integer" }
+        },
+        "required": ["subpath", "depth"]
+      }
+    },
+    {
       "action_name": "knowledgegraph.internal.PERSONA_DISCOVERED",
       "summary": "[INTERNAL] Dispatched when a valid AI_Persona_Root is found and parsed during startup.",
       "payload_schema": { "type": "object", "description": "Contains the full HolonHeader of the discovered persona." }
