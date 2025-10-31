@@ -47,8 +47,8 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
                     if (kgState.viewMode == KnowledgeGraphViewMode.INSPECTOR) {
                         PersonaSelector(kgState, store)
                         IconButton(
-                            onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.IMPORT.name) })) },
-                            enabled = kgState.activePersonaIdForView != null
+                            onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.IMPORT.name) })) }
+                            // FIX: Removed the incorrect 'enabled' condition. Import should always be available from the inspector.
                         ) {
                             Icon(Icons.Default.Download, contentDescription = "Import Holons")
                         }
