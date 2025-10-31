@@ -3,6 +3,8 @@ package app.auf.feature.knowledgegraph
 import app.auf.core.Action
 import app.auf.core.PrivateDataEnvelope
 import app.auf.core.generated.ActionNames
+import app.auf.feature.core.AppLifecycle
+import app.auf.feature.core.CoreState
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
 import app.auf.util.FileEntry
@@ -50,7 +52,10 @@ class KnowledgeGraphFeatureT2CoreTest {
 
     @Test
     fun `on SYSTEM_PUBLISH_STARTING should dispatch FILESYSTEM_SYSTEM_LIST`() {
-        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val harness = TestEnvironment.create()
+            .withFeature(feature)
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
+            .build(platform = platform)
         harness.store.dispatch("system.main", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
 
         val listAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_LIST }
@@ -87,7 +92,8 @@ class KnowledgeGraphFeatureT2CoreTest {
 
         val childReadRequest = harness.processedActions.last()
         assertEquals(ActionNames.FILESYSTEM_SYSTEM_READ, childReadRequest.name)
-        assertTrue(childReadRequest.payload?.get("subpath")?.jsonPrimitive?.content?.endsWith("holon-a/holon-a.json") == true)
+        // CORRECTED: Assert the full, correct hierarchical path
+        assertEquals("persona-1/holon-a/holon-a.json", childReadRequest.payload?.get("subpath")?.jsonPrimitive?.content)
     }
 
     @Test
@@ -112,7 +118,7 @@ class KnowledgeGraphFeatureT2CoreTest {
         assertEquals(ActionNames.FILESYSTEM_READ_FILES_CONTENT, readFilesAction.name)
         assertTrue(readFilesAction.payload.toString().contains("/import/holon-a.json"))
 
-        // 4. Simulate FileSystem response with file contents
+        // 4. CORRECTED: Simulate the second private data response to complete the workflow
         val filesContentResponse = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, buildJsonObject {
             put("contents", buildJsonObject { put("/import/holon-a.json", holonAContent) })
         })
@@ -123,7 +129,7 @@ class KnowledgeGraphFeatureT2CoreTest {
         assertEquals(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisCompleteAction.name)
         val finalState = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
         assertEquals(1, finalState.importItems.size)
-        assertIs<AssignParent>(finalState.importItems.first().initialAction)
+        assertIs<Quarantine>(finalState.importItems.first().initialAction) // It's a new top-level holon
     }
 
     @Test
@@ -132,7 +138,7 @@ class KnowledgeGraphFeatureT2CoreTest {
             "persona-1" to json.decodeFromString(persona1Content),
             "holon-a" to json.decodeFromString(holonAContent)
         ))
-        val harness = TestEnvironment.create().withFeature(feature).withInitialState("knowledgegraph", initialState).build(platform = platform) // CORRECTED
+        val harness = TestEnvironment.create().withFeature(feature).withInitialState("knowledgegraph", initialState).build(platform = platform)
 
         harness.store.dispatch("agent", Action(ActionNames.KNOWLEDGEGRAPH_REQUEST_CONTEXT, buildJsonObject {
             put("personaId", "persona-1"); put("correlationId", "corr-123")

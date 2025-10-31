@@ -1,7 +1,6 @@
 package app.auf.feature.knowledgegraph
 
 import app.auf.core.Action
-import app.auf.core.PrivateDataEnvelope
 import app.auf.core.generated.ActionNames
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.fakes.FakePlatformDependencies
@@ -9,15 +8,12 @@ import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -65,7 +61,7 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
     @Test
     fun `end-to-end import workflow correctly analyzes, integrates, and writes files`() {
         // --- 1. Arrange ---
-        // Setup existing HKG in the fake filesystem's APP_ZONE
+        // Setup existing HKG in the fake filesystem's APP_ZONE using the CANONICAL HIERARCHICAL STRUCTURE
         platform.writeFileContent("/fake/.auf/v2/knowledgegraph/p1/p1.json", existingPersonaContent)
         platform.writeFileContent("/fake/.auf/v2/knowledgegraph/p1/h1/h1.json", existingHolonContent)
         // Setup source directory for import
@@ -81,24 +77,14 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
 
         // Pre-load the existing HKG
         harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
-        (harness.store.features.find { it.name == "knowledgegraph" } as KnowledgeGraphFeature).onPrivateData(
-            PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, buildJsonObject {
-                put("listing", buildJsonArray { add(json.encodeToJsonElement(app.auf.util.FileEntry("p1", true))) })
-            }), harness.store
-        )
-        (harness.store.features.find { it.name == "knowledgegraph" } as KnowledgeGraphFeature).onPrivateData(
-            PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, buildJsonObject {
-                put("subpath", "p1/p1.json"); put("content", existingPersonaContent)
-            }), harness.store
-        )
-        (harness.store.features.find { it.name == "knowledgegraph" } as KnowledgeGraphFeature).onPrivateData(
-            PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, buildJsonObject {
-                put("subpath", "p1/h1/h1.json"); put("content", existingHolonContent)
-            }), harness.store
-        )
+        harness.store.deliveredPrivateData.toList().forEach { kgFeature.onPrivateData(it.envelope, harness.store) }
+        harness.store.deliveredPrivateData.clear()
 
         // --- 2. Act 1 (Analysis) ---
         harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS, buildJsonObject { put("path", "/import/source") }))
+        harness.store.deliveredPrivateData.toList().forEach { kgFeature.onPrivateData(it.envelope, harness.store) }
+        harness.store.deliveredPrivateData.clear()
+
 
         // --- 3. Assert 1 (State Verification) ---
         val stateAfterAnalysis = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
@@ -108,24 +94,28 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
         val assignParentAction = stateAfterAnalysis.importSelectedActions["/import/source/h3.json"]
         assertIs<Update>(updateAction)
         assertEquals("h1", updateAction.targetHolonId)
-        assertIs<AssignParent>(integrateAction) // Will become Integrate after user selection
+        assertIs<Quarantine>(integrateAction) // Correctly identified as a top-level unknown
         assertIs<Integrate>(assignParentAction) // Correctly identified as child of h2
         assertEquals("h2", assignParentAction.parentHolonId)
 
         // --- 4. Act 2 (User Override) ---
         // User assigns h2 to be a child of p1
         val newAction = Integrate(parentHolonId = "p1")
-        harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION, buildJsonObject {
+        // CORRECTED: The action payload must be a JsonObject, so we build one.
+        val actionPayload = buildJsonObject {
             put("sourcePath", "/import/source/h2.json")
             put("action", json.encodeToJsonElement(newAction))
-        }))
+        }
+        harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION, actionPayload))
+
 
         // --- 5. Act 3 (Execution) ---
         harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
+        harness.store.deliveredPrivateData.toList().forEach { kgFeature.onPrivateData(it.envelope, harness.store) }
 
         // --- 6. Assert 2 (Ground Truth Verification) ---
-        val writtenFiles = harness.platform.writtenFiles // CORRECTED
-        // 1. Holon h1 should be updated
+        val writtenFiles = harness.platform.writtenFiles
+        // 1. Holon h1 should be updated at its original hierarchical path
         val updatedH1Path = "/fake/.auf/v2/knowledgegraph/p1/h1/h1.json"
         assertTrue(writtenFiles.containsKey(updatedH1Path))
         assertEquals(updatedHolonContent, writtenFiles[updatedH1Path])

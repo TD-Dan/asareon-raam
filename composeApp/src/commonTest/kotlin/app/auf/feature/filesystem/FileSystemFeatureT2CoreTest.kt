@@ -167,6 +167,7 @@ class FileSystemFeatureT2CoreTest {
 
         val action = Action(ActionNames.FILESYSTEM_READ_DIRECTORY_CONTENTS, buildJsonObject {
             put("path", dirPath)
+            put("recursive", true) // CORRECTED
         })
 
         // Act

@@ -14,6 +14,7 @@ import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
+import kotlin.collections.set
 
 class KnowledgeGraphFeature(
     private val platformDependencies: PlatformDependencies,
@@ -31,6 +32,7 @@ class KnowledgeGraphFeature(
     @Serializable private data class AnalysisCompletePayload(val items: List<ImportItem>, val contents: Map<String, String>)
     @Serializable private data class SetImportRecursivePayload(val recursive: Boolean)
     @Serializable private data class UpdateImportActionPayload(val sourcePath: String, val action: ImportAction)
+    @Serializable private data class CreatePersonaPayload(val name: String)
     @Serializable private data class ReadPayload(val subpath: String, val content: String?, val parentId: String? = null, val depth: Int = 0)
     @Serializable private data class DirectoryContentsPayload(val path: String, val listing: List<FileEntry>)
     @Serializable private data class FilesContentPayload(val contents: Map<String, String>)
@@ -76,8 +78,10 @@ class KnowledgeGraphFeature(
                         is AssignParent -> importAction.assignedParentId
                         else -> null
                     }
-                }
+                }.toSet() // Use a set to avoid duplicate reads
+
                 val parentHolonFilePaths = parentHolonIdsToRead.mapNotNull { kgState.holons[it]?.header?.filePath }
+
                 if (parentHolonFilePaths.isNotEmpty()) {
                     store.dispatch(this.name, Action(ActionNames.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
                         put("paths", Json.encodeToJsonElement(parentHolonFilePaths))
@@ -85,6 +89,40 @@ class KnowledgeGraphFeature(
                 } else {
                     executeImportWrites(emptyMap(), store)
                 }
+            }
+            ActionNames.KNOWLEDGEGRAPH_CREATE_PERSONA -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<CreatePersonaPayload>(it) } ?: return
+                val timestamp = platformDependencies.getSystemTimeMillis()
+                val isoTimestamp = platformDependencies.formatIsoTimestamp(timestamp)
+                // CORRECTED: Use the correct method and then make the result file-safe.
+                val fileSafeTimestamp = platformDependencies.formatIsoTimestamp(timestamp).replace(":", "").replace("Z", "")
+                val newId = "${payload.name.lowercase().replace(" ", "-")}-$fileSafeTimestamp"
+
+                val newHolon = Holon(
+                    header = HolonHeader(
+                        id = newId,
+                        type = "AI_Persona_Root",
+                        name = payload.name,
+                        summary = "A newly created Holon Knowledge Graph.",
+                        version = "1.0.0",
+                        createdAt = isoTimestamp,
+                        modifiedAt = isoTimestamp
+                    ),
+                    payload = buildJsonObject {},
+                    content = "" // Will be replaced by full serialized content
+                )
+                val fullContent = json.encodeToString(Holon.serializer(), newHolon)
+                val finalHolon = newHolon.copy(content = fullContent)
+
+                val destSubpath = "$newId/$newId.json"
+                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+                    put("subpath", destSubpath)
+                    put("content", finalHolon.content)
+                }))
+
+                store.dispatch("ui.kgView", Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Created persona '${payload.name}'.") }))
+                // Trigger a reload to see the new persona
+                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
             }
         }
     }
@@ -232,24 +270,23 @@ class KnowledgeGraphFeature(
         val fileData = try { json.decodeFromJsonElement<FilesContentPayload>(payload) } catch (e: Exception) { return }
         val kgState = store.state.value.featureStates[name] as? KnowledgeGraphState ?: return
         val currentGraphHeaders = kgState.holons.values.map { it.header }
-        val existingParentMap = currentGraphHeaders.flatMap { parent -> parent.subHolons.map { child -> child.id to parent.id } }.toMap()
 
         val sourceHolons = fileData.contents.mapNotNull { (path, content) ->
             try { path to json.decodeFromString<Holon>(content) } catch (e: Exception) { null }
         }.toMap()
 
         val sourceParentMap = sourceHolons.values.flatMap { holon -> holon.header.subHolons.map { child -> child.id to holon.header.id } }.toMap()
-        val combinedParentMap = existingParentMap + sourceParentMap
 
         val importItems = fileData.contents.keys.mapNotNull { path ->
             val sourceHolon = sourceHolons[path]
             val holonId = platformDependencies.getFileName(path).removeSuffix(".json")
+
             when {
                 sourceHolon == null -> ImportItem(path, Quarantine("Malformed JSON"), null)
-                sourceHolon.header.type == "AI_Persona_Root" && !kgState.holons.containsKey(holonId) -> ImportItem(path, CreateRoot(), null)
                 kgState.holons.containsKey(holonId) -> ImportItem(path, Update(holonId), kgState.holons[holonId]!!.header.filePath)
-                combinedParentMap.containsKey(holonId) -> ImportItem(path, Integrate(combinedParentMap[holonId]!!), null)
-                else -> ImportItem(path, AssignParent(), null)
+                sourceHolon.header.type == "AI_Persona_Root" -> ImportItem(path, CreateRoot(), null)
+                sourceParentMap.containsKey(holonId) -> ImportItem(path, Integrate(sourceParentMap[holonId]!!), null)
+                else -> ImportItem(path, Quarantine("Unknown top-level holon."), null)
             }
         }
         store.dispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, buildJsonObject {
@@ -370,8 +407,7 @@ class KnowledgeGraphFeature(
 
             val currentDir = platformDependencies.getParentDirectory(enrichedHeader.filePath) ?: ""
             enrichedHeader.subHolons.forEach { subRef ->
-                val subHolonDir = "$currentDir/${subRef.id}"
-                val subHolonPath = "$subHolonDir/${subRef.id}.json"
+                val subHolonPath = "$currentDir/${subRef.id}/${subRef.id}.json"
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
                     put("subpath", subHolonPath); put("parentId", enrichedHeader.id); put("depth", enrichedHeader.depth + 1)
                 }))

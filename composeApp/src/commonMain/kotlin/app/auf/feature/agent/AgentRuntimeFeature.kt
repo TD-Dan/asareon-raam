@@ -57,7 +57,7 @@ class AgentRuntimeFeature(
     }
 
     override fun reducer(state: AppState, action: Action): AppState {
-        platformDependencies.log(LogLevel.DEBUG, name, "REDUCER << $action")
+        //platformDependencies.log(LogLevel.DEBUG, name, "REDUCER << $action")  // instrumentation can be enabled if needed
         val (stateWithFeature, currentFeatureState) = state.featureStates[name]
             ?.let { state to (it as AgentRuntimeState) }
             ?: (state.copy(featureStates = state.featureStates + (name to AgentRuntimeState())) to AgentRuntimeState())
@@ -102,7 +102,7 @@ class AgentRuntimeFeature(
 
         return newFeatureState?.let {
             val finalState = if (action.name != ActionNames.SESSION_PUBLISH_SESSION_DELETED) it.copy(agentsToPersist = null) else it
-            platformDependencies.log(LogLevel.DEBUG, name, "REDUCER >> State changed: ${finalState != currentFeatureState}")
+            //platformDependencies.log(LogLevel.DEBUG, name, "REDUCER >> State changed: ${finalState != currentFeatureState}")  // instrumentation can be enabled if needed
             if (finalState != currentFeatureState) stateWithFeature.copy(featureStates = stateWithFeature.featureStates + (name to finalState)) else stateWithFeature
         } ?: stateWithFeature
     }
@@ -298,7 +298,7 @@ class AgentRuntimeFeature(
     }
 
     override fun onAction(action: Action, store: Store, previousState: AppState) {
-        platformDependencies.log(LogLevel.DEBUG, name, "ON_ACTION << $action")
+        //platformDependencies.log(LogLevel.DEBUG, name, "ON_ACTION << $action") // instrumentation can be enabled if needed
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
@@ -479,7 +479,7 @@ class AgentRuntimeFeature(
     }
 
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
-        platformDependencies.log(LogLevel.DEBUG, name, "ON_PRIVATE_DATA << ${envelope.type} from ${envelope.payload["correlationId"]?.jsonPrimitive?.contentOrNull}")
+        // platformDependencies.log(LogLevel.DEBUG, name, "ON_PRIVATE_DATA << ${envelope.type} from ${envelope.payload["correlationId"]?.jsonPrimitive?.contentOrNull}") // instrumentation can be enabled if needed
         when (envelope.type) {
             ActionNames.Envelopes.GATEWAY_RESPONSE -> handleGatewayResponse(envelope.payload, store)
             ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW -> handleGatewayPreviewResponse(envelope.payload, store)

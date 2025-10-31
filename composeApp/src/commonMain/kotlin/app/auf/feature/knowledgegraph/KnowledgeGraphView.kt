@@ -9,7 +9,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreVert
@@ -52,8 +51,8 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
                         ) {
                             Icon(Icons.Default.Download, contentDescription = "Import Holons")
                         }
-                        IconButton(onClick = { /* TODO Create Persona */ }) {
-                            Icon(Icons.Default.Add, contentDescription = "Create New Persona")
+                        Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_CREATE_PERSONA, buildJsonObject { put("name", "New Persona") })) }) {
+                            Text("Create Persona")
                         }
                     } else {
                         IconButton(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) })) }) {
@@ -344,7 +343,7 @@ private fun GenericActionSelector(
     onActionSelected: (ImportAction) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val availableActions = ImportActionType.entries.filter { it != ImportActionType.CREATE_ROOT && it != ImportActionType.ASSIGN_PARENT }
+    val availableActions = ImportActionType.entries.filter { it != ImportActionType.ASSIGN_PARENT }
 
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
         OutlinedTextField(
