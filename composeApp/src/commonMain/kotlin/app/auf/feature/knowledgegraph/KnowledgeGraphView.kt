@@ -195,6 +195,14 @@ private fun ImportPane(
     platformDependencies: PlatformDependencies,
     modifier: Modifier = Modifier
 ) {
+    val filteredItems = remember(kgState.importItems, kgState.showOnlyChangedImportItems) {
+        if (kgState.showOnlyChangedImportItems) {
+            kgState.importItems.filter { it.initialAction !is Ignore }
+        } else {
+            kgState.importItems
+        }
+    }
+
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             OutlinedTextField(value = kgState.importSourcePath, onValueChange = {}, label = { Text("Source Folder") }, modifier = Modifier.weight(1f), readOnly = true)
@@ -204,6 +212,20 @@ private fun ImportPane(
                     store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS, buildJsonObject { put("path", it) }))
                 }
             }) { Text("Select & Analyze...") }
+        }
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable {
+                store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE, buildJsonObject { put("recursive", !kgState.isImportRecursive) }))
+            }) {
+                Checkbox(checked = kgState.isImportRecursive, onCheckedChange = null)
+                Text("Import sub-folders recursively")
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable {
+                store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_TOGGLE_SHOW_ONLY_CHANGED))
+            }) {
+                Checkbox(checked = kgState.showOnlyChangedImportItems, onCheckedChange = null)
+                Text("Show only changed files")
+            }
         }
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -215,7 +237,7 @@ private fun ImportPane(
             }
         } else {
             LazyColumn(modifier = Modifier.weight(1f)) {
-                items(kgState.importItems, key = { it.sourcePath }) { item ->
+                items(filteredItems, key = { it.sourcePath }) { item ->
                     ImportItemRow(
                         item = item,
                         selectedAction = kgState.importSelectedActions[item.sourcePath] ?: item.initialAction,

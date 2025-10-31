@@ -100,6 +100,8 @@ data class KnowledgeGraphState(
     val importItems: List<ImportItem> = emptyList(),
     val importSelectedActions: Map<String, ImportAction> = emptyMap(),
     val importFileContents: Map<String, String> = emptyMap(),
+    val isImportRecursive: Boolean = true,
+    val showOnlyChangedImportItems: Boolean = false,
 
     // --- Loading & Error State ---
     val isLoading: Boolean = false,

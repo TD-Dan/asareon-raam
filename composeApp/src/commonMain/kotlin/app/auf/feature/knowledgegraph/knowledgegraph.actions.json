@@ -43,6 +43,20 @@
       }
     },
     {
+      "action_name": "knowledgegraph.SET_IMPORT_RECURSIVE",
+      "summary": "Sets whether the import analysis should search sub-folders recursively.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "recursive": { "type": "boolean" } },
+        "required": ["recursive"]
+      }
+    },
+    {
+      "action_name": "knowledgegraph.TOGGLE_SHOW_ONLY_CHANGED",
+      "summary": "Toggles whether the import view should only show files with a proposed change.",
+      "payload_schema": null
+    },
+    {
       "action_name": "knowledgegraph.UPDATE_IMPORT_ACTION",
       "summary": "Allows the user to override the automatically determined import action for a specific file.",
       "payload_schema": {
@@ -101,8 +115,8 @@
       "summary": "[INTERNAL] Dispatched after an import analysis is complete, containing the list of proposed actions.",
       "payload_schema": {
         "type": "object",
-        "properties": { "items": { "type": "array" } },
-        "required": ["items"]
+        "properties": { "items": { "type": "array" }, "contents": { "type": "object" } },
+        "required": ["items", "contents"]
       }
     },
     {

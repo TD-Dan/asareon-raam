@@ -32,10 +32,13 @@
     },
     {
       "action_name": "filesystem.READ_DIRECTORY_CONTENTS",
-      "summary": "[PRIVATE-CHANNEL] Requests a recursive listing of all files within a given directory path. The response is delivered via the private channel.",
+      "summary": "[PRIVATE-CHANNEL] Requests a listing of all files within a given directory path. The response is delivered via the private channel.",
       "payload_schema": {
         "type": "object",
-        "properties": { "path": { "type": "string" } },
+        "properties": {
+          "path": { "type": "string" },
+          "recursive": { "type": "boolean", "default": false }
+        },
         "required": ["path"]
       }
     },
