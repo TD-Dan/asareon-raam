@@ -3,167 +3,196 @@ package app.auf.feature.knowledgegraph
 import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.generated.ActionNames
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.test.TestEnvironment
-import app.auf.test.TestHarness
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
-import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Tier 1 Unit Tests for KnowledgeGraphFeature.
+ * Tier 1 Unit Tests for KnowledgeGraphFeature's reducer.
  *
- * Mandate (P-TEST-001, T1): To test the reducer's state integrity in complete isolation.
+ * Mandate (P-TEST-001, T1): To test the reducer as a pure function in complete isolation.
  * These tests focus on pure state transformations and do not involve side effects.
  */
 class KnowledgeGraphFeatureT1ReducerTest {
-    private lateinit var harness: TestHarness
-    private lateinit var feature: KnowledgeGraphFeature
-    private val json = Json
-    // FIX: A self-contained scope for the test class, as the reducer doesn't use it anyway.
-    private val testScope = CoroutineScope(Dispatchers.Unconfined)
 
-    private val sampleGraph1 = HolonKnowledgeGraph(id = "graph-1", name = "Graph One")
-    private val sampleGraph2 = HolonKnowledgeGraph(id = "graph-2", name = "Graph Two")
-    private val sampleHolon1 = Holon(id = "holon-a", type = "Test", name = "Holon A")
-    private val sampleHolon2 = Holon(id = "holon-b", type = "Test", name = "Holon B")
+    private val json = Json { ignoreUnknownKeys = true }
+    private val feature = KnowledgeGraphFeature(
+        platformDependencies = app.auf.fakes.FakePlatformDependencies("test"),
+        coroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)
+    )
+    private val featureName = feature.name
 
-    @BeforeTest
-    fun setup() {
-        val platform = FakePlatformDependencies("test")
-        // FIX: Instantiate the feature first with its own scope.
-        feature = KnowledgeGraphFeature(platform, testScope)
-        // FIX: The harness can now be built with the feature instance.
-        harness = TestEnvironment.create()
-            .withFeature(feature)
-            .build(platform = platform)
-    }
+    private fun createAppState(kgState: KnowledgeGraphState = KnowledgeGraphState()) = AppState(
+        featureStates = mapOf(featureName to kgState)
+    )
 
-    private fun createInitialState(
-        graphs: List<HolonKnowledgeGraph> = emptyList(),
-        activeGraphId: String? = null,
-        activeHolonId: String? = null
-    ): AppState {
-        return AppState(
-            featureStates = mapOf("knowledgegraph" to KnowledgeGraphState(
-                graphs = graphs,
-                activeGraphId = activeGraphId,
-                activeHolonId = activeHolonId
-            ))
-        )
+    private val samplePersonaHeader = HolonHeader(id = "persona-1", type = "AI_Persona_Root", name = "Persona One")
+    private val sampleHolon = Holon(
+        header = HolonHeader(id = "holon-a", type = "Test_Holon", name = "Holon A"),
+        payload = buildJsonObject {},
+        content = "{}"
+    )
+
+    // --- Reducer - Loading & State Hydration ---
+
+    @Test
+    fun `on INTERNAL_PERSONA_DISCOVERED should add a new persona root`() {
+        val initialState = createAppState()
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_DISCOVERED, json.encodeToJsonElement(samplePersonaHeader) as JsonObject)
+
+        val newState = feature.reducer(initialState, action)
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
+
+        assertEquals(1, newKgState.personaRoots.size)
+        assertEquals("persona-1", newKgState.personaRoots["Persona One"])
     }
 
     @Test
-    fun `reducer on SELECT_GRAPH_SCOPE should set active graph and clear active holon`() {
-        val initialState = createInitialState(
-            graphs = listOf(sampleGraph1, sampleGraph2),
-            activeGraphId = "graph-1",
-            activeHolonId = "some-holon"
-        )
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_SELECT_GRAPH_SCOPE, buildJsonObject { put("graphId", "graph-2") })
+    fun `on INTERNAL_HOLON_LOADED should add a new holon to the state map`() {
+        val initialState = createAppState()
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_HOLON_LOADED, json.encodeToJsonElement(sampleHolon) as JsonObject)
 
         val newState = feature.reducer(initialState, action)
-        val newFeatureState = newState.featureStates["knowledgegraph"] as? KnowledgeGraphState
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
 
-        assertNotNull(newFeatureState)
-        assertEquals("graph-2", newFeatureState.activeGraphId)
-        assertNull(newFeatureState.activeHolonId, "Selecting a new graph scope must clear the active holon.")
+        assertEquals(1, newKgState.holons.size)
+        assertNotNull(newKgState.holons["holon-a"])
+        assertEquals("Holon A", newKgState.holons["holon-a"]?.header?.name)
+        assertFalse(newKgState.isLoading, "isLoading should be cleared after a holon is loaded.")
     }
 
     @Test
-    fun `reducer on SELECT_HOLON should set active holon`() {
-        val initialState = createInitialState(activeHolonId = "holon-a")
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_SELECT_HOLON, buildJsonObject { put("holonId", "holon-b") })
+    fun `on INTERNAL_LOAD_FAILED should set the fatalError message and clear isLoading flag`() {
+        val initialState = createAppState(KnowledgeGraphState(isLoading = true))
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject { put("error", "Test error") })
 
         val newState = feature.reducer(initialState, action)
-        val newFeatureState = newState.featureStates["knowledgegraph"] as? KnowledgeGraphState
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
 
-        assertNotNull(newFeatureState)
-        assertEquals("holon-b", newFeatureState.activeHolonId)
+        assertFalse(newKgState.isLoading)
+        assertEquals("Test error", newKgState.fatalError)
+    }
+
+    // --- Reducer - UI State Management ---
+
+    @Test
+    fun `on SET_VIEW_MODE should correctly switch the viewMode`() {
+        val initialState = createAppState(KnowledgeGraphState(viewMode = KnowledgeGraphViewMode.INSPECTOR))
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.IMPORT.name) })
+
+        val newState = feature.reducer(initialState, action)
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
+
+        assertEquals(KnowledgeGraphViewMode.IMPORT, newKgState.viewMode)
     }
 
     @Test
-    fun `reducer on INTERNAL_GRAPH_LOADED should add a new graph`() {
-        val initialState = createInitialState(graphs = listOf(sampleGraph1))
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_GRAPH_LOADED, json.encodeToJsonElement(sampleGraph2) as JsonObject)
+    fun `on SET_ACTIVE_VIEW_PERSONA should set active persona and clear active holon`() {
+        val initialState = createAppState(KnowledgeGraphState(activePersonaIdForView = "old-persona", activeHolonIdForView = "old-holon"))
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_PERSONA, buildJsonObject { put("personaId", "new-persona") })
 
         val newState = feature.reducer(initialState, action)
-        val newFeatureState = newState.featureStates["knowledgegraph"] as? KnowledgeGraphState
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
 
-        assertNotNull(newFeatureState)
-        assertEquals(2, newFeatureState.graphs.size)
-        assertTrue(newFeatureState.graphs.any { it.id == "graph-2" })
+        assertEquals("new-persona", newKgState.activePersonaIdForView)
+        assertNull(newKgState.activeHolonIdForView, "Active holon should be cleared when persona changes.")
     }
 
     @Test
-    fun `reducer on INTERNAL_GRAPH_LOADED should update an existing graph`() {
-        val updatedGraph1 = sampleGraph1.copy(name = "Updated Name")
-        val initialState = createInitialState(graphs = listOf(sampleGraph1, sampleGraph2))
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_GRAPH_LOADED, json.encodeToJsonElement(updatedGraph1) as JsonObject)
+    fun `on SET_ACTIVE_VIEW_HOLON should set the active holon ID`() {
+        val initialState = createAppState(KnowledgeGraphState(activeHolonIdForView = "old-holon"))
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON, buildJsonObject { put("holonId", "new-holon") })
 
         val newState = feature.reducer(initialState, action)
-        val newFeatureState = newState.featureStates["knowledgegraph"] as? KnowledgeGraphState
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
 
-        assertNotNull(newFeatureState)
-        assertEquals(2, newFeatureState.graphs.size)
-        assertEquals("Updated Name", newFeatureState.graphs.find { it.id == "graph-1" }?.name)
+        assertEquals("new-holon", newKgState.activeHolonIdForView)
+    }
+
+    // --- Reducer - Import Workflow State ---
+
+    @Test
+    fun `on START_IMPORT_ANALYSIS should set isLoading, set the source path, and clear old import items`() {
+        val oldItem = ImportItem("/old/path", Ignore(), null)
+        val initialState = createAppState(KnowledgeGraphState(importItems = listOf(oldItem)))
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS, buildJsonObject { put("path", "/new/path") })
+
+        val newState = feature.reducer(initialState, action)
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
+
+        assertTrue(newKgState.isLoading)
+        assertEquals("/new/path", newKgState.importSourcePath)
+        assertTrue(newKgState.importItems.isEmpty())
+        assertTrue(newKgState.importSelectedActions.isEmpty())
     }
 
     @Test
-    fun `reducer on DELETE_GRAPH should remove the specified graph`() {
-        val initialState = createInitialState(graphs = listOf(sampleGraph1, sampleGraph2))
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_DELETE_GRAPH, buildJsonObject { put("graphId", "graph-1") })
+    fun `on INTERNAL_ANALYSIS_COMPLETE should populate importItems and clear isLoading`() {
+        val newItem = ImportItem("/new/path", Update("target-id"), "/target/path")
+        val initialState = createAppState(KnowledgeGraphState(isLoading = true))
+        val payload = buildJsonObject {
+            put("items", json.encodeToJsonElement(listOf(newItem)))
+            put("contents", buildJsonObject { put("/new/path", "{}") })
+        }
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, payload)
 
         val newState = feature.reducer(initialState, action)
-        val newFeatureState = newState.featureStates["knowledgegraph"] as? KnowledgeGraphState
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
 
-        assertNotNull(newFeatureState)
-        assertEquals(1, newFeatureState.graphs.size)
-        assertEquals("graph-2", newFeatureState.graphs.first().id)
+        assertFalse(newKgState.isLoading)
+        assertEquals(1, newKgState.importItems.size)
+        assertEquals(1, newKgState.importSelectedActions.size)
+        assertEquals(Update("target-id"), newKgState.importSelectedActions["/new/path"])
+        assertEquals("{}", newKgState.importFileContents["/new/path"])
     }
 
     @Test
-    fun `reducer on INTERNAL_HOLON_LOADED should add a holon to the active graph`() {
-        val graphWithOneHolon = sampleGraph1.copy(holons = listOf(sampleHolon1))
-        val initialState = createInitialState(graphs = listOf(graphWithOneHolon), activeGraphId = "graph-1")
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_HOLON_LOADED, json.encodeToJsonElement(sampleHolon2) as JsonObject)
+    fun `on UPDATE_IMPORT_ACTION should update the action for a single item in importSelectedActions`() {
+        val initialState = createAppState(KnowledgeGraphState(
+            importSelectedActions = mapOf("/path/1" to Update("id1"), "/path/2" to Ignore())
+        ))
+        val payload = buildJsonObject {
+            put("sourcePath", "/path/1")
+            put("action", json.encodeToJsonElement(Quarantine("test reason") as ImportAction))
+        }
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION, payload)
 
         val newState = feature.reducer(initialState, action)
-        val newFeatureState = newState.featureStates["knowledgegraph"] as? KnowledgeGraphState
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
 
-        assertNotNull(newFeatureState)
-        val updatedGraph = newFeatureState.graphs.find { it.id == "graph-1" }
-        assertNotNull(updatedGraph)
-        assertEquals(2, updatedGraph.holons.size)
-        assertTrue(updatedGraph.holons.any { it.id == "holon-b" })
+        assertEquals(2, newKgState.importSelectedActions.size)
+        assertEquals(Quarantine("test reason"), newKgState.importSelectedActions["/path/1"])
+        assertEquals(Ignore(), newKgState.importSelectedActions["/path/2"])
     }
 
     @Test
-    fun `reducer on DELETE_HOLON should remove a holon from the specified graph`() {
-        val graphWithHolons = sampleGraph1.copy(holons = listOf(sampleHolon1, sampleHolon2))
-        val initialState = createInitialState(graphs = listOf(graphWithHolons))
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject {
-            put("graphId", "graph-1")
-            put("holonId", "holon-a")
-        })
+    fun `on SET_IMPORT_RECURSIVE should correctly toggle the isImportRecursive flag`() {
+        val initialState = createAppState(KnowledgeGraphState(isImportRecursive = true))
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE, buildJsonObject { put("recursive", false) })
 
         val newState = feature.reducer(initialState, action)
-        val newFeatureState = newState.featureStates["knowledgegraph"] as? KnowledgeGraphState
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
 
-        assertNotNull(newFeatureState)
-        val updatedGraph = newFeatureState.graphs.find { it.id == "graph-1" }
-        assertNotNull(updatedGraph)
-        assertEquals(1, updatedGraph.holons.size)
-        assertEquals("holon-b", updatedGraph.holons.first().id)
+        assertFalse(newKgState.isImportRecursive)
+        assertTrue(newKgState.isLoading, "Changing recursive flag should trigger a new analysis.")
+    }
+
+    @Test
+    fun `on TOGGLE_SHOW_ONLY_CHANGED should correctly toggle the showOnlyChangedImportItems flag`() {
+        val initialState = createAppState(KnowledgeGraphState(showOnlyChangedImportItems = false))
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_TOGGLE_SHOW_ONLY_CHANGED)
+
+        val newState = feature.reducer(initialState, action)
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
+
+        assertTrue(newKgState.showOnlyChangedImportItems)
     }
 }
