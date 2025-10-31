@@ -1,6 +1,7 @@
 package app.auf.feature.knowledgegraph
 
 import app.auf.core.Action
+import app.auf.core.PrivateDataEnvelope
 import app.auf.core.generated.ActionNames
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.fakes.FakePlatformDependencies
@@ -8,6 +9,8 @@ import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
@@ -121,7 +124,7 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
         harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
 
         // --- 6. Assert 2 (Ground Truth Verification) ---
-        val writtenFiles = platform.writtenFiles
+        val writtenFiles = harness.platform.writtenFiles // CORRECTED
         // 1. Holon h1 should be updated
         val updatedH1Path = "/fake/.auf/v2/knowledgegraph/p1/h1/h1.json"
         assertTrue(writtenFiles.containsKey(updatedH1Path))

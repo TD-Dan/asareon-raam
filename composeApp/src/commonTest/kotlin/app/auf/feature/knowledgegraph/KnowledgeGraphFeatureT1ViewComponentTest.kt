@@ -78,7 +78,7 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
 
     @Test
     fun `clicking 'Select & Analyze' button should dispatch START_IMPORT_ANALYSIS`() {
-        fakePlatform.selectedDirectoryPath = "/fake/import/dir"
+        fakePlatform.selectedDirectoryPathToReturn = "/fake/import/dir" // CORRECTED
         setViewState(KnowledgeGraphState(viewMode = KnowledgeGraphViewMode.IMPORT))
         fakeStore.dispatchedActions.clear()
 
@@ -131,7 +131,7 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         val action = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION }
         assertNotNull(action)
         assertEquals("/path/to/file1.json", action.payload?.get("sourcePath")?.toString()?.trim('"'))
-        val newAction = action.payload?.get("action")?.let { json.decodeFromJsonElement<ImportAction>(it) }
+        val newAction = action.payload?.get("action")?.let { json.decodeFromJsonElement(ImportAction.serializer(), it) } // CORRECTED
         assertTrue(newAction is Ignore)
     }
 

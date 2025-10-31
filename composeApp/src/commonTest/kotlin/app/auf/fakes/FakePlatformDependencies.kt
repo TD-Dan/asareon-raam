@@ -27,6 +27,8 @@ open class FakePlatformDependencies(
     var currentTime = 1_000_000_000_000L
     var uuidCounter = 0
     val capturedLogs = mutableListOf<CapturedLog>() // This property is now correctly defined.
+    val writtenFiles = mutableMapOf<String, String>() // NEW: For T3 test assertions
+    var selectedDirectoryPathToReturn: String? = null // NEW: For T1 view tests
 
     override val pathSeparator: Char = '/'
 
@@ -40,6 +42,7 @@ open class FakePlatformDependencies(
             createDirectories(parent)
         }
         files[path] = FakeFile(content, currentTime)
+        writtenFiles[path] = content // NEW: Capture written content
     }
 
     override fun fileExists(path: String): Boolean {
@@ -47,11 +50,11 @@ open class FakePlatformDependencies(
     }
 
     override fun listDirectory(path: String): List<FileEntry> {
-        if (!directories.contains(path)) throw Exception("Path does not exist '$path'")
+        if (!directories.contains(path) && path != "/") throw Exception("Path does not exist '$path'")
         val directChildren = mutableSetOf<String>()
-        val pathWithSeparator = if (path.endsWith(pathSeparator)) path else "$path$pathSeparator"
+        val pathWithSeparator = if (path.endsWith(pathSeparator) || path == "/") path else "$path$pathSeparator"
         (files.keys + directories).forEach { entryPath ->
-            if (entryPath.startsWith(pathWithSeparator)) {
+            if (entryPath.startsWith(pathWithSeparator) && entryPath != pathWithSeparator) {
                 val relativePath = entryPath.removePrefix(pathWithSeparator)
                 val firstSegment = relativePath.split(pathSeparator).first()
                 if (firstSegment.isNotEmpty()) {
@@ -60,7 +63,7 @@ open class FakePlatformDependencies(
             }
         }
         return directChildren.map { childName ->
-            val fullPath = "$pathWithSeparator$childName".removeSuffix("/")
+            val fullPath = if (path == "/") "/$childName" else "$pathWithSeparator$childName".removeSuffix("/")
             FileEntry(fullPath, directories.contains(fullPath))
         }
     }
@@ -99,6 +102,7 @@ open class FakePlatformDependencies(
 
     override fun deleteFile(path: String) {
         files.remove(path)
+        writtenFiles.remove(path)
     }
 
     override fun deleteDirectory(path: String) {
@@ -106,6 +110,7 @@ open class FakePlatformDependencies(
 
         // Remove all files within the directory using a predicate
         files.keys.removeAll { it.startsWith(pathWithSeparator) }
+        writtenFiles.keys.removeAll { it.startsWith(pathWithSeparator) }
 
         // Remove all subdirectories using a predicate
         directories.removeAll { it.startsWith(pathWithSeparator) }
@@ -138,7 +143,7 @@ open class FakePlatformDependencies(
 
     override fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String) { /* No-op */ }
     override fun openFolderInExplorer(path: String) { /* No-op */ }
-    override fun selectDirectoryPath(): String? = "/fake/selected/directory"
+    override fun selectDirectoryPath(): String? = selectedDirectoryPathToReturn // CORRECTED
 
     override fun getSystemTimeMillis(): Long = currentTime
     override fun generateUUID(): String {

@@ -81,7 +81,7 @@ class KnowledgeGraphFeatureT2CoreTest {
         feature.onPrivateData(readResponse, harness.store)
 
         // 4. Assert state now contains the persona root and a request for its child was sent
-        val stateAfterPersona = harness.store.state.value.featureStates[featureName] as KnowledgeGraphState
+        val stateAfterPersona = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
         assertNotNull(stateAfterPersona.holons["persona-1"])
         assertEquals("Persona One", stateAfterPersona.holons["persona-1"]?.header?.name)
 
@@ -121,7 +121,7 @@ class KnowledgeGraphFeatureT2CoreTest {
         // 5. Assert a final internal action was dispatched to update the state with the analysis
         val analysisCompleteAction = harness.processedActions.last()
         assertEquals(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisCompleteAction.name)
-        val finalState = harness.store.state.value.featureStates[featureName] as KnowledgeGraphState
+        val finalState = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
         assertEquals(1, finalState.importItems.size)
         assertIs<AssignParent>(finalState.importItems.first().initialAction)
     }
@@ -132,7 +132,7 @@ class KnowledgeGraphFeatureT2CoreTest {
             "persona-1" to json.decodeFromString(persona1Content),
             "holon-a" to json.decodeFromString(holonAContent)
         ))
-        val harness = TestEnvironment.create().withFeature(feature).withInitialState(featureName, initialState).build(platform)
+        val harness = TestEnvironment.create().withFeature(feature).withInitialState("knowledgegraph", initialState).build(platform = platform) // CORRECTED
 
         harness.store.dispatch("agent", Action(ActionNames.KNOWLEDGEGRAPH_REQUEST_CONTEXT, buildJsonObject {
             put("personaId", "persona-1"); put("correlationId", "corr-123")
