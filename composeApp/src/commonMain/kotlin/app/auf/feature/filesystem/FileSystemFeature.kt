@@ -48,27 +48,27 @@ class FileSystemFeature(
         val originator = action.originator ?: return
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
-                store.dispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+                store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyWhitelist); put("type", "STRING_SET"); put("label", "Whitelisted Paths")
                     put("description", "Whitelisted directory paths that the app is allowed to edit.")
                     put("section", "FileSystem"); put("defaultValue", "")
                 }))
-                store.dispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+                store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyFavorites); put("type", "STRING_SET"); put("label", "Favorite Paths")
                     put("description", "A list of favorite directory paths.")
                     put("section", "FileSystem"); put("defaultValue", "")
                 }))
             }
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
-                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", platformDependencies.getUserHomePath()) }))
+                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", platformDependencies.getUserHomePath()) }))
             }
             ActionNames.FILESYSTEM_NAVIGATE -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
-                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_LOAD_CHILDREN, buildJsonObject { put("path", payload.path) }))
+                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_LOAD_CHILDREN, buildJsonObject { put("path", payload.path) }))
             }
             ActionNames.FILESYSTEM_SELECT_DIRECTORY_UI -> {
                 platformDependencies.selectDirectoryPath()?.let {
-                    store.dispatch(this.name, Action(ActionNames.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", it) }))
+                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", it) }))
                 }
             }
             ActionNames.FILESYSTEM_TOGGLE_ITEM_EXPANDED -> {
@@ -76,7 +76,7 @@ class FileSystemFeature(
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
                 val item = findItemByPath(state.rootItems, payload.path)
                 if (item?.isDirectory == true && item.children == null) {
-                    store.dispatch(this.name, Action(ActionNames.FILESYSTEM_LOAD_CHILDREN, action.payload))
+                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_LOAD_CHILDREN, action.payload))
                 }
             }
             ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED -> {
@@ -95,11 +95,11 @@ class FileSystemFeature(
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
                 try {
                     val children = platformDependencies.listDirectory(payload.path)
-                    store.dispatch(this.name, Action(ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED, buildJsonObject {
+                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED, buildJsonObject {
                         put("parentPath", payload.path); put("children", Json.encodeToJsonElement(children))
                     }))
                 } catch (e: Exception) {
-                    store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Failed to read directory ${payload.path}: ${e.message}") }))
+                    store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Failed to read directory ${payload.path}: ${e.message}") }))
                 }
             }
             ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED -> {
@@ -107,7 +107,7 @@ class FileSystemFeature(
                 val payload = action.payload?.let { Json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return
                 if (findItemByPath(state.rootItems, payload.parentPath)?.isSelected == true) {
                     payload.children.forEach { child ->
-                        store.dispatch(this.name, Action(ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED, buildJsonObject {
+                        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED, buildJsonObject {
                             put("path", child.path); put("recursive", true)
                         }))
                     }
@@ -117,7 +117,7 @@ class FileSystemFeature(
                 val state = store.state.value.featureStates[name] as? FileSystemState ?: return
                 val selectedFiles = findSelectedFiles(state.rootItems)
                 if (selectedFiles.isEmpty()) {
-                    store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "No files selected.") })); return
+                    store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "No files selected.") })); return
                 }
                 val stringBuilder = StringBuilder()
                 val rootPath = state.currentPath ?: ""
@@ -130,23 +130,23 @@ class FileSystemFeature(
                     } catch (_: Exception) { errorCount++ }
                 }
                 if (stringBuilder.isNotEmpty()) {
-                    store.dispatch(this.name, Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", stringBuilder.toString().trim()) }))
+                    store.deferredDispatch(this.name, Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", stringBuilder.toString().trim()) }))
                 }
                 if (errorCount > 0) {
-                    store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Failed to read $errorCount files.") }))
+                    store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Failed to read $errorCount files.") }))
                 }
             }
             ActionNames.FILESYSTEM_ADD_WHITELIST_PATH, ActionNames.FILESYSTEM_REMOVE_WHITELIST_PATH -> {
                 val state = store.state.value.featureStates[name] as? FileSystemState ?: return
                 val path = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: return
                 val newSet = if (action.name.startsWith("filesystem.ADD")) state.whitelistedPaths + path else state.whitelistedPaths - path
-                store.dispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", settingKeyWhitelist); put("value", serializeSet(newSet)) }))
+                store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", settingKeyWhitelist); put("value", serializeSet(newSet)) }))
             }
             ActionNames.FILESYSTEM_ADD_FAVORITE_PATH, ActionNames.FILESYSTEM_REMOVE_FAVORITE_PATH -> {
                 val state = store.state.value.featureStates[name] as? FileSystemState ?: return
                 val path = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: return
                 val newSet = if (action.name.startsWith("filesystem.ADD")) state.favoritePaths + path else state.favoritePaths - path
-                store.dispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", settingKeyFavorites); put("value", serializeSet(newSet)) }))
+                store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", settingKeyFavorites); put("value", serializeSet(newSet)) }))
             }
             ActionNames.FILESYSTEM_SYSTEM_LIST -> {
                 val sandboxPath = getSandboxPathFor(originator)
@@ -228,7 +228,7 @@ class FileSystemFeature(
                 try {
                     platformDependencies.writeFileContent(fullPath, if (payload.encrypt) cryptoManager.encrypt(payload.content) else payload.content)
                 } catch (e: Exception) {
-                    store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Error writing system file: ${e.message}") }))
+                    store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Error writing system file: ${e.message}") }))
                 }
             }
             ActionNames.FILESYSTEM_SYSTEM_DELETE -> {

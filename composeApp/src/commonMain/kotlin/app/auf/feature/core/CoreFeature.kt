@@ -68,12 +68,12 @@ class CoreFeature(
                     if (content != null) {
                         try {
                             val loaded = Json.decodeFromString<IdentitiesLoadedPayload>(content)
-                            store.dispatch(this.name, Action(ActionNames.CORE_INTERNAL_IDENTITIES_LOADED, Json.encodeToJsonElement(loaded) as JsonObject))
+                            store.deferredDispatch(this.name, Action(ActionNames.CORE_INTERNAL_IDENTITIES_LOADED, Json.encodeToJsonElement(loaded) as JsonObject))
                         } catch (e: Exception) {
                             platformDependencies.log(app.auf.util.LogLevel.ERROR, name, "Failed to parse identities.json: ${e.message}")
                         }
                     } else {
-                        store.dispatch(this.name, Action(ActionNames.CORE_INTERNAL_IDENTITIES_LOADED, buildJsonObject {
+                        store.deferredDispatch(this.name, Action(ActionNames.CORE_INTERNAL_IDENTITIES_LOADED, buildJsonObject {
                             put("identities", buildJsonArray { })
                         }))
                     }
@@ -85,33 +85,33 @@ class CoreFeature(
     override fun onAction(action: Action, store: Store, previousState: AppState) {
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
-                store.dispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+                store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyWidth); put("type", "NUMERIC_LONG"); put("label", "Window Width")
                     put("description", "The width of the application window in pixels.")
                     put("section", "Appearance"); put("defaultValue", "1200")
                 }))
-                store.dispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+                store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyHeight); put("type", "NUMERIC_LONG"); put("label", "Window Height")
                     put("description", "The height of the application window in pixels.")
                     put("section", "Appearance"); put("defaultValue", "800")
                 }))
             }
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
-                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", identitiesFileName)}))
+                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", identitiesFileName)}))
             }
             ActionNames.CORE_UPDATE_WINDOW_SIZE -> {
                 val coreState = store.state.value.featureStates[name] as? CoreState
                 coreState?.let {
-                    store.dispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
+                    store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
                         put("key", settingKeyWidth); put("value", it.windowWidth.toString())
                     }))
-                    store.dispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
+                    store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
                         put("key", settingKeyHeight); put("value", it.windowHeight.toString())
                     }))
                 }
             }
             ActionNames.CORE_OPEN_LOGS_FOLDER -> {
-                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_OPEN_APP_SUBFOLDER, buildJsonObject {
+                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_OPEN_APP_SUBFOLDER, buildJsonObject {
                     put("folder", "logs")
                 }))
             }
@@ -119,7 +119,7 @@ class CoreFeature(
                 val payload = action.payload?.let { Json.decodeFromJsonElement<CopyToClipboardPayload>(it) }
                 payload?.let {
                     platformDependencies.copyToClipboard(it.text)
-                    store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Copied to clipboard.") }))
+                    store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Copied to clipboard.") }))
                 }
             }
             ActionNames.CORE_ADD_USER_IDENTITY,

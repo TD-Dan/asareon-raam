@@ -48,13 +48,13 @@ class SessionFeature(
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> {
                 val fileList = data["listing"]?.jsonArray?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
                 fileList.filter { it.path.endsWith(".json") }.forEach {
-                    store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", platformDependencies.getFileName(it.path)) }))
+                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", platformDependencies.getFileName(it.path)) }))
                 }
             }
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> {
                 try {
                     val session = json.decodeFromString<Session>(data["content"]?.jsonPrimitive?.content ?: "")
-                    store.dispatch(this.name, Action(ActionNames.SESSION_INTERNAL_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.id to session))) as JsonObject))
+                    store.deferredDispatch(this.name, Action(ActionNames.SESSION_INTERNAL_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.id to session))) as JsonObject))
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, name, "Failed to parse session file: ${data["subpath"]}. Error: ${e.message}")
                 }
@@ -81,10 +81,10 @@ class SessionFeature(
             ActionNames.SESSION_DELETE -> {
                 val sessionIdToDelete = sessionState.lastDeletedSessionId
                 if (sessionIdToDelete != null) {
-                    store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE, buildJsonObject { put("subpath", "$sessionIdToDelete.json") }))
+                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE, buildJsonObject { put("subpath", "$sessionIdToDelete.json") }))
                     val updatedSessionState = store.state.value.featureStates[name] as? SessionState ?: return
                     broadcastSessionNames(updatedSessionState, store)
-                    store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject { put("sessionId", sessionIdToDelete) }))
+                    store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject { put("sessionId", sessionIdToDelete) }))
                 }
             }
             ActionNames.SESSION_INTERNAL_LOADED -> {
@@ -96,26 +96,26 @@ class SessionFeature(
                 persistSession(sessionId, store)
                 val updatedSession = (store.state.value.featureStates[name] as? SessionState)?.sessions?.get(sessionId) ?: return
                 val postedEntry = updatedSession.ledger.last()
-                store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+                store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
                     put("sessionId", sessionId)
                     put("entry", json.encodeToJsonElement(postedEntry))
                 }))
-                store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
+                store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
             ActionNames.SESSION_UPDATE_MESSAGE, ActionNames.SESSION_TOGGLE_MESSAGE_COLLAPSED, ActionNames.SESSION_TOGGLE_MESSAGE_RAW_VIEW -> {
                 val sessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: resolveSessionIdFromGenericPayload(action.payload, sessionState) ?: return
                 persistSession(sessionId, store)
-                store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
+                store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
             ActionNames.SESSION_DELETE_MESSAGE -> {
                 val sessionId = resolveSessionIdFromGenericPayload(action.payload, sessionState) ?: return
                 val messageId = action.payload?.get("messageId")?.jsonPrimitive?.contentOrNull ?: return
                 persistSession(sessionId, store)
-                store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
+                store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
                     put("sessionId", sessionId)
                     put("messageId", messageId)
                 }))
-                store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
+                store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
             ActionNames.SESSION_REQUEST_LEDGER_CONTENT -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<RequestLedgerPayload>(it) } ?: return
@@ -147,13 +147,13 @@ class SessionFeature(
                 it.metadata?.get("is_transient")?.jsonPrimitive?.booleanOrNull ?: false
             }
         )
-        store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
             put("subpath", "${persistedSession.id}.json"); put("content", json.encodeToString(persistedSession))
         }))
     }
 
     private fun broadcastSessionNames(state: SessionState, store: Store) {
-        store.dispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED, buildJsonObject {
+        store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED, buildJsonObject {
             put("names", Json.encodeToJsonElement(state.sessions.mapValues { it.value.name }))
         }))
     }
