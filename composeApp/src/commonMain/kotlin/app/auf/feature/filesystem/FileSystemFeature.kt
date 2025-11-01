@@ -26,9 +26,9 @@ class FileSystemFeature(
     @Serializable private data class PathPayload(val path: String)
     @Serializable private data class ToggleItemPayload(val path: String, val recursive: Boolean = false)
     @Serializable private data class DirectoryLoadedPayload(val parentPath: String, val children: List<FileEntry>)
-    @Serializable private data class NavigationFailedPayload(val path: String, val error: String)
-    @Serializable private data class ReadDirectoryContentsPayload(val path: String, val recursive: Boolean = false)
-    @Serializable private data class ReadFilesContentPayload(val paths: List<String>)
+    @Serializable private data class SystemListPayload(val subpath: String = "")
+    @Serializable private data class SystemListRecursivePayload(val subpath: String)
+    @Serializable private data class ReadFilesContentPayload(val subpaths: List<String>)
     @Serializable private data class SystemReadPayload(val subpath: String)
     @Serializable private data class SystemWritePayload(val subpath: String, val content: String, val encrypt: Boolean = false)
     @Serializable private data class SystemDeletePayload(val subpath: String)
@@ -99,7 +99,7 @@ class FileSystemFeature(
                         put("parentPath", payload.path); put("children", Json.encodeToJsonElement(children))
                     }))
                 } catch (e: Exception) {
-                    store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Failed to read directory ${payload.path}: ${e.message}") }))
+                    store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Failed to read directory ${payload.path}: ${e.message}") }))
                 }
             }
             ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED -> {
@@ -149,57 +149,66 @@ class FileSystemFeature(
                 store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", settingKeyFavorites); put("value", serializeSet(newSet)) }))
             }
             ActionNames.FILESYSTEM_SYSTEM_LIST -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<SystemListPayload>(it) } ?: SystemListPayload()
                 val sandboxPath = getSandboxPathFor(originator)
+                val fullPath = if (payload.subpath.isNotBlank()) "$sandboxPath${platformDependencies.pathSeparator}${payload.subpath}" else sandboxPath
                 try {
-                    if (!platformDependencies.fileExists(sandboxPath)) platformDependencies.createDirectories(sandboxPath)
-                    val listing = platformDependencies.listDirectory(sandboxPath)
-                    val payload = buildJsonObject { put("listing", Json.encodeToJsonElement(listing)) }
-                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, payload)
+                    if (!platformDependencies.fileExists(fullPath)) platformDependencies.createDirectories(fullPath)
+                    val absoluteListing = platformDependencies.listDirectory(fullPath)
+                    val relativeListing = absoluteListing.map { FileEntry(platformDependencies.getFileName(it.path), it.isDirectory) }
+                    val responsePayload = buildJsonObject {
+                        put("listing", Json.encodeToJsonElement(relativeListing))
+                        put("subpath", payload.subpath)
+                    }
+                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, responsePayload)
                     store.deliverPrivateData(this.name, originator, envelope)
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, "filesystem","Filesystem listing failed: ${e.message}")
-                    val payload = buildJsonObject { put("listing", Json.encodeToJsonElement(emptyList<FileEntry>())) }
-                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, payload)
+                    val responsePayload = buildJsonObject {
+                        put("listing", Json.encodeToJsonElement(emptyList<FileEntry>()))
+                        put("subpath", payload.subpath)
+                    }
+                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, responsePayload)
                     store.deliverPrivateData(this.name, originator, envelope)
                 }
             }
-            ActionNames.FILESYSTEM_READ_DIRECTORY_CONTENTS -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<ReadDirectoryContentsPayload>(it) } ?: return
+            ActionNames.FILESYSTEM_SYSTEM_LIST_RECURSIVE -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<SystemListRecursivePayload>(it) } ?: return
+                val sandboxPath = getSandboxPathFor(originator)
+                val fullPath = if (payload.subpath.isNotBlank()) "$sandboxPath${platformDependencies.pathSeparator}${payload.subpath}" else sandboxPath
                 try {
-                    val listing = if (payload.recursive) {
-                        platformDependencies.listDirectoryRecursive(payload.path)
-                    } else {
-                        platformDependencies.listDirectory(payload.path)
-                    }
+                    if (!platformDependencies.fileExists(fullPath)) platformDependencies.createDirectories(fullPath)
+                    val absoluteListing = platformDependencies.listDirectoryRecursive(fullPath)
+                    val relativeListing = absoluteListing.map { it.copy(path = it.path.removePrefix(sandboxPath).removePrefix(platformDependencies.pathSeparator.toString())) }
                     val responsePayload = buildJsonObject {
-                        put("path", payload.path)
-                        put("listing", Json.encodeToJsonElement(listing))
+                        put("listing", Json.encodeToJsonElement(relativeListing))
+                        put("subpath", payload.subpath)
                     }
-                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_DIRECTORY_CONTENTS, responsePayload)
+                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST_RECURSIVE, responsePayload)
                     store.deliverPrivateData(this.name, originator, envelope)
                 } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, "filesystem", "Directory read failed for '${payload.path}': ${e.message}")
+                    platformDependencies.log(LogLevel.ERROR, "filesystem", "Recursive directory read failed for '${payload.subpath}': ${e.message}")
                     val responsePayload = buildJsonObject {
-                        put("path", payload.path)
                         put("listing", Json.encodeToJsonElement(emptyList<FileEntry>()))
+                        put("subpath", payload.subpath)
                     }
-                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_DIRECTORY_CONTENTS, responsePayload)
+                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST_RECURSIVE, responsePayload)
                     store.deliverPrivateData(this.name, originator, envelope)
                 }
             }
             ActionNames.FILESYSTEM_READ_FILES_CONTENT -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<ReadFilesContentPayload>(it) } ?: return
+                val sandboxPath = getSandboxPathFor(originator)
                 val contentMap = mutableMapOf<String, String>()
-                payload.paths.forEach { path ->
+                payload.subpaths.forEach { subpath ->
+                    val fullPath = "$sandboxPath${platformDependencies.pathSeparator}$subpath"
                     try {
-                        contentMap[path] = platformDependencies.readFileContent(path)
+                        contentMap[subpath] = platformDependencies.readFileContent(fullPath)
                     } catch (e: Exception) {
-                        platformDependencies.log(LogLevel.WARN, "filesystem", "Bulk read failed for one file '$path': ${e.message}")
+                        platformDependencies.log(LogLevel.WARN, "filesystem", "Bulk read failed for one file '$subpath': ${e.message}")
                     }
                 }
-                val responsePayload = buildJsonObject {
-                    put("contents", Json.encodeToJsonElement(contentMap))
-                }
+                val responsePayload = buildJsonObject { put("contents", Json.encodeToJsonElement(contentMap)) }
                 val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, responsePayload)
                 store.deliverPrivateData(this.name, originator, envelope)
             }
@@ -248,7 +257,7 @@ class FileSystemFeature(
             }
         }
     }
-
+    // ... (rest of the file is unchanged)
     override fun reducer(state: AppState, action: Action): AppState {
         val currentFeatureState = state.featureStates[name] as? FileSystemState ?: FileSystemState()
         var newFeatureState: FileSystemState? = null
@@ -261,7 +270,6 @@ class FileSystemFeature(
                 else currentFeatureState.copy(rootItems = updateItemByPath(currentFeatureState.rootItems, decoded.parentPath) { it.copy(children = newChildren) })
             }
             ActionNames.FILESYSTEM_NAVIGATE -> newFeatureState = currentFeatureState.copy(currentPath = payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path)
-            ActionNames.FILESYSTEM_PUBLISH_NAVIGATION_FAILED -> newFeatureState = currentFeatureState.copy(error = payload?.let { Json.decodeFromJsonElement<NavigationFailedPayload>(it) }?.error, rootItems = emptyList())
             ActionNames.FILESYSTEM_TOGGLE_ITEM_EXPANDED -> {
                 val path = payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: return state
                 newFeatureState = currentFeatureState.copy(rootItems = updateItemByPath(currentFeatureState.rootItems, path) { it.copy(isExpanded = !it.isExpanded) })

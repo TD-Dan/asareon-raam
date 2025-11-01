@@ -76,14 +76,14 @@ class KnowledgeGraphFeatureT2CoreTest {
         })
         feature.onPrivateData(listResponse, harness.store)
 
-        // 2. Assert that READ_DIRECTORY_CONTENTS was requested for the persona root
+        // 2. Assert that SYSTEM_LIST_RECURSIVE was requested for the persona root
         val dirReadRequest = harness.processedActions.last()
-        assertEquals(ActionNames.FILESYSTEM_READ_DIRECTORY_CONTENTS, dirReadRequest.name)
-        assertEquals("persona-1", dirReadRequest.payload?.get("path")?.jsonPrimitive?.content)
+        assertEquals(ActionNames.FILESYSTEM_SYSTEM_LIST_RECURSIVE, dirReadRequest.name)
+        assertEquals("persona-1", dirReadRequest.payload?.get("subpath")?.jsonPrimitive?.content)
 
-        // 3. Simulate the filesystem returning the recursive file list
-        val dirContentsResponse = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_DIRECTORY_CONTENTS, buildJsonObject {
-            put("path", "persona-1")
+        // 3. Simulate the filesystem returning the recursive file list (as subpaths)
+        val dirContentsResponse = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST_RECURSIVE, buildJsonObject {
+            put("subpath", "persona-1")
             put("listing", buildJsonArray {
                 add(json.encodeToJsonElement(FileEntry("persona-1/persona-1.json", false)))
                 add(json.encodeToJsonElement(FileEntry("persona-1/holon-a/holon-a.json", false)))
@@ -94,8 +94,7 @@ class KnowledgeGraphFeatureT2CoreTest {
         // 4. Assert that READ_FILES_CONTENT was requested for all files
         val filesReadRequest = harness.processedActions.last()
         assertEquals(ActionNames.FILESYSTEM_READ_FILES_CONTENT, filesReadRequest.name)
-        // FIX: Use explicit serializer to fix type inference issue.
-        val pathsToRead = filesReadRequest.payload?.get("paths")?.let { json.decodeFromJsonElement(serializer<List<String>>(), it) }
+        val pathsToRead = filesReadRequest.payload?.get("subpaths")?.let { json.decodeFromJsonElement(serializer<List<String>>(), it) }
         assertNotNull(pathsToRead)
         assertEquals(2, pathsToRead.size)
 
@@ -129,6 +128,8 @@ class KnowledgeGraphFeatureT2CoreTest {
         val feature = harness.store.features.find { it.name == "knowledgegraph" }!!
 
         harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS, buildJsonObject { put("path", "/import") }))
+        // NOTE: This now dispatches to the old, non-sandboxed action, which we are phasing out. This test will need a major rewrite later.
+        // For now, let's confirm the old path is still hit.
         assertEquals(ActionNames.FILESYSTEM_READ_DIRECTORY_CONTENTS, harness.processedActions.last().name)
 
         val dirContentsResponse = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_DIRECTORY_CONTENTS, buildJsonObject {

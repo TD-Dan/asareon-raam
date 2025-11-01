@@ -27,38 +27,40 @@
     },
     {
       "action_name": "filesystem.SYSTEM_LIST",
-      "summary": "[PRIVATE-CHANNEL] Requests a listing of files in the originator's private sandbox. Request is delivered via private channel with 'filesystem.response.list' as type",
-      "payload_schema": null
-    },
-    {
-      "action_name": "filesystem.READ_DIRECTORY_CONTENTS",
-      "summary": "[PRIVATE-CHANNEL] Requests a listing of all files within a given directory path. The response is delivered via the private channel.",
+      "summary": "[PRIVATE-CHANNEL] Requests a listing of files/directories in the originator's private sandbox. The response is delivered via private channel.",
       "payload_schema": {
         "type": "object",
         "properties": {
-          "path": { "type": "string" },
-          "recursive": { "type": "boolean", "default": false }
-        },
-        "required": ["path"]
+          "subpath": { "type": "string", "description": "An optional sub-directory within the sandbox to list.", "default": "" }
+        }
+      }
+    },
+    {
+      "action_name": "filesystem.SYSTEM_LIST_RECURSIVE",
+      "summary": "[PRIVATE-CHANNEL] Requests a recursive listing of all files within a given subpath of the originator's sandbox. The response is delivered via the private channel.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "subpath": { "type": "string" } },
+        "required": ["subpath"]
       }
     },
     {
       "action_name": "filesystem.READ_FILES_CONTENT",
-      "summary": "[PRIVATE-CHANNEL] Requests the content of multiple files at once. The response, a map of paths to content, is delivered via the private channel.",
+      "summary": "[PRIVATE-CHANNEL] Requests the content of multiple files at once. Paths must be subpaths relative to the originator's sandbox. The response is delivered via the private channel.",
       "payload_schema": {
         "type": "object",
         "properties": {
-          "paths": {
+          "subpaths": {
             "type": "array",
             "items": { "type": "string" }
           }
         },
-        "required": ["paths"]
+        "required": ["subpaths"]
       }
     },
     {
       "action_name": "filesystem.SYSTEM_READ",
-      "summary": "[INTERNAL-SANDBOXED] Requests to read a file from the originator's private sandbox.",
+      "summary": "[PRIVATE-CHANNEL] Requests to read a file from the originator's private sandbox. Response is delivered via private channel.",
       "payload_schema": {
         "type": "object",
         "properties": { "subpath": { "type": "string" } },
@@ -193,97 +195,28 @@
       "action_name": "filesystem.COPY_SELECTION_TO_CLIPBOARD",
       "summary": "Initiates the process of reading selected files and copying their formatted content to the clipboard.",
       "payload_schema": null
-    },
-    {
-      "action_name": "filesystem.STAGE_CREATE",
-      "summary": "Stages a new 'Create' operation in the transaction buffer.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "path": { "type": "string" },
-          "content": { "type": "string" }
-        },
-        "required": ["path", "content"]
-      }
-    },
-    {
-      "action_name": "filesystem.STAGE_UPDATE",
-      "summary": "Stages a new 'Update' operation in the transaction buffer.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "path": { "type": "string" },
-          "newContent": { "type": "string" }
-        },
-        "required": ["path", "newContent"]
-      }
-    },
-    {
-      "action_name": "filesystem.STAGE_DELETE",
-      "summary": "Stages a new 'Delete' operation in the transaction buffer.",
-      "payload_schema": {
-        "type": "object",
-        "properties": { "path": { "type": "string" } },
-        "required": ["path"]
-      }
-    },
-    {
-      "action_name": "filesystem.COMMIT",
-      "summary": "Executes all staged operations within the security sandbox.",
-      "payload_schema": null
-    },
-    {
-      "action_name": "filesystem.DISCARD",
-      "summary": "Clears all staged operations without executing them.",
-      "payload_schema": null
     }
   ],
-  "publishes": [
-    {
-      "action_name": "filesystem.publish.NAVIGATION_UPDATED",
-      "summary": "Broadcasts that the directory listing has been successfully updated.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "path": { "type": "string" },
-          "listing": {
-            "type": "array",
-            "items": { "$ref": "#/definitions/FileEntry" }
-          }
-        }
-      }
-    },
-    {
-      "action_name": "filesystem.publish.NAVIGATION_FAILED",
-      "summary": "Broadcasts that a navigation attempt failed.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "path": { "type": "string" },
-          "error": { "type": "string" }
-        }
-      }
-    },
-    {
-      "action_name": "filesystem.internal.DIRECTORY_LOADED",
-      "summary": "[INTERNAL] Dispatched after a directory's children have been loaded from disk.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "parentPath": { "type": "string" },
-          "children": {
-            "type": "array",
-            "items": { "$ref": "#/definitions/FileEntry" }
-          }
-        },
-        "required": ["parentPath", "children"]
-      }
-    }
-  ],
+  "publishes": [],
   "private_envelopes": [
     {
       "type_name": "filesystem.response.LIST",
-      "summary": "The response envelope containing a directory listing, delivered to the original requester.",
+      "summary": "The response envelope containing a directory listing (as subpaths), delivered to the original requester.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "listing": {
+            "type": "array",
+            "items": { "$ref": "#/definitions/FileEntry" }
+          },
+          "subpath": { "type": ["string", "null"] }
+        },
+        "required": ["listing"]
+      }
+    },
+    {
+      "type_name": "filesystem.response.LIST_RECURSIVE",
+      "summary": "The response envelope containing a recursive directory listing (as subpaths), delivered to the original requester.",
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -309,21 +242,6 @@
       }
     },
     {
-      "type_name": "filesystem.response.DIRECTORY_CONTENTS",
-      "summary": "The response envelope containing a recursive listing of all files in a directory, delivered to the original requester.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "path": { "type": "string" },
-          "listing": {
-            "type": "array",
-            "items": { "$ref": "#/definitions/FileEntry" }
-          }
-        },
-        "required": ["path", "listing"]
-      }
-    },
-    {
       "type_name": "filesystem.response.FILES_CONTENT",
       "summary": "The response envelope containing the content of multiple files, delivered to the original requester.",
       "payload_schema": {
@@ -331,6 +249,7 @@
         "properties": {
           "contents": {
             "type": "object",
+            "description": "A map of subpaths to their string content.",
             "additionalProperties": { "type": "string" }
           }
         },
@@ -341,6 +260,7 @@
   "definitions": {
     "FileEntry": {
       "type": "object",
+      "description": "Represents a file or directory. The 'path' property MUST be a subpath relative to the originator's sandbox.",
       "properties": {
         "path": { "type": "string" },
         "isDirectory": { "type": "boolean" }

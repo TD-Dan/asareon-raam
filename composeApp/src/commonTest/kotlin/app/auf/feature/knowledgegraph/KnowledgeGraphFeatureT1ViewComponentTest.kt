@@ -89,9 +89,10 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
 
     @Test
     fun `clicking Edit button dispatches SET_HOLON_TO_EDIT`() {
-        val h1 = Holon(HolonHeader(id = "h1", type = "Type_A", name = "H1", summary = "summary"), buildJsonObject {})
+        val h1 = Holon(HolonHeader(id = "h1", type = "Type_A", name = "H1"), buildJsonObject {})
         setViewState(KnowledgeGraphState(
             holons = mapOf("h1" to h1),
+            activePersonaIdForView = "p1",
             activeHolonIdForView = "h1"
         ))
         fakeStore.dispatchedActions.clear()
@@ -104,9 +105,10 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
 
     @Test
     fun `when holonIdToEdit is set HolonEditView is shown`() {
-        val h1 = Holon(HolonHeader(id = "h1", type = "Type_A", name = "H1", summary = "summary"), buildJsonObject {}, content = "Test Content")
+        val h1 = Holon(HolonHeader(id = "h1", type = "Type_A", name = "H1"), buildJsonObject {}, content = "Test Content")
         setViewState(KnowledgeGraphState(
             holons = mapOf("h1" to h1),
+            activePersonaIdForView = "p1",
             holonIdToEdit = "h1"
         ))
         composeTestRule.onNodeWithText("Editing: H1").assertExists()
@@ -115,9 +117,10 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
 
     @Test
     fun `clicking Save in HolonEditView dispatches UPDATE_HOLON_CONTENT`() {
-        val h1 = Holon(HolonHeader(id = "h1", type = "Type_A", name = "H1", summary = "summary"), buildJsonObject {}, content = "Old")
+        val h1 = Holon(HolonHeader(id = "h1", type = "Type_A", name = "H1"), buildJsonObject {}, content = "Old")
         setViewState(KnowledgeGraphState(
             holons = mapOf("h1" to h1),
+            activePersonaIdForView = "p1",
             holonIdToEdit = "h1"
         ))
         fakeStore.dispatchedActions.clear()
@@ -136,6 +139,7 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         val p1 = Holon(HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1"), buildJsonObject {})
         setViewState(KnowledgeGraphState(
             holons = mapOf("p1" to p1),
+            activePersonaIdForView = "p1",
             activeHolonIdForView = "p1"
         ))
 
@@ -146,7 +150,6 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
     // --- Deletion Workflow UI Tests ---
     @Test
     fun `clicking delete in kebab menu dispatches SET_PERSONA_TO_DELETE`() {
-        // FIX: Use named arguments for HolonHeader constructor
         val p1 = Holon(HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1"), buildJsonObject {})
         setViewState(KnowledgeGraphState(
             holons = mapOf("p1" to p1),
@@ -165,7 +168,6 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
 
     @Test
     fun `when personaIdToDelete is set, AlertDialog is shown`() {
-        // FIX: Use named arguments for HolonHeader constructor
         val p1 = Holon(HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1"), buildJsonObject {})
         setViewState(KnowledgeGraphState(
             holons = mapOf("p1" to p1),
