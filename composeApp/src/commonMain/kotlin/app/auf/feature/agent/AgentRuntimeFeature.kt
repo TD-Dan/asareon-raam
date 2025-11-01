@@ -50,7 +50,7 @@ class AgentRuntimeFeature(
                 delay(1000)
                 val currentState = store.state.value.featureStates[name] as? AgentRuntimeState
                 if (currentState?.agents?.values?.any { it.status == AgentStatus.WAITING && it.automaticMode && it.isAgentActive } == true) {
-                    store.dispatch(name, Action(ActionNames.AGENT_INTERNAL_CHECK_AUTOMATIC_TRIGGERS))
+                    store.deferredDispatch(name, Action(ActionNames.AGENT_INTERNAL_CHECK_AUTOMATIC_TRIGGERS))
                 }
             }
         }
@@ -302,8 +302,8 @@ class AgentRuntimeFeature(
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
-                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
-                store.dispatch(this.name, Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
+                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
+                store.deferredDispatch(this.name, Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
             }
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
@@ -330,7 +330,7 @@ class AgentRuntimeFeature(
                     put("autoWaitTimeSeconds", agentToClone.autoWaitTimeSeconds)
                     put("autoMaxWaitTimeSeconds", agentToClone.autoMaxWaitTimeSeconds)
                 }
-                store.dispatch(this.name, Action(ActionNames.AGENT_CREATE, createPayload))
+                store.deferredDispatch(this.name, Action(ActionNames.AGENT_CREATE, createPayload))
             }
             ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE, ActionNames.AGENT_TOGGLE_ACTIVE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
@@ -351,14 +351,14 @@ class AgentRuntimeFeature(
             ActionNames.AGENT_DELETE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 agentState.agentAvatarCardIds[agentId]?.let { cardInfo ->
-                    store.dispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+                    store.deferredDispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                         put("session", cardInfo.sessionId)
                         put("messageId", cardInfo.messageId)
                     }))
                 }
-                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject { put("subpath", agentId) }))
-                store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_CONFIRM_DELETE, buildJsonObject { put("agentId", agentId) }))
-                store.dispatch(this.name, Action(ActionNames.AGENT_PUBLISH_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
+                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject { put("subpath", agentId) }))
+                store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_CONFIRM_DELETE, buildJsonObject { put("agentId", agentId) }))
+                store.deferredDispatch(this.name, Action(ActionNames.AGENT_PUBLISH_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
                 broadcastAgentNames(store)
             }
             ActionNames.SESSION_PUBLISH_SESSION_DELETED -> {
@@ -377,12 +377,38 @@ class AgentRuntimeFeature(
                 if (agent.turnMode == TurnMode.DIRECT) {
                     updateAgentAvatarCard(agentId, AgentStatus.PROCESSING, null, store)
                 }
-                store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+                store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
                     put("agentId", agentId); put("step", "Requesting Ledger")
                 }))
-                store.dispatch(this.name, Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject {
+                store.deferredDispatch(this.name, Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject {
                     put("sessionId", sessionId); put("correlationId", agentId)
                 }))
+            }
+            ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agent = agentState.agents[agentId] ?: return
+                val kgId = agent.knowledgeGraphId
+                val kgFeatureExists = store.features.any { it.name == "knowledgegraph" }
+
+                if (kgId != null && kgFeatureExists) {
+                    store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+                        put("agentId", agent.id); put("step", "Requesting HKG")
+                    }))
+                    val requestEnvelope = PrivateDataEnvelope(
+                        type = ActionNames.Envelopes.AGENT_REQUEST_CONTEXT,
+                        payload = buildJsonObject {
+                            put("correlationId", agent.id)
+                            put("knowledgeGraphId", kgId)
+                        }
+                    )
+                    store.deliverPrivateData(this.name, "knowledgegraph", requestEnvelope)
+                } else {
+                    if (kgId != null && !kgFeatureExists) {
+                        platformDependencies.log(LogLevel.WARN, name, "Agent '${agent.id}' has an HKG configured, but KnowledgeGraphFeature not found. Proceeding without HKG context.")
+                    }
+                    val ledgerContext = agent.stagedTurnContext ?: emptyList()
+                    assemblePromptAndRequestGeneration(agent, ledgerContext, null, store)
+                }
             }
             ActionNames.AGENT_EXECUTE_PREVIEWED_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
@@ -391,21 +417,21 @@ class AgentRuntimeFeature(
 
                 updateAgentAvatarCard(agentId, AgentStatus.PROCESSING, null, store)
 
-                store.dispatch(this.name, Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
+                store.deferredDispatch(this.name, Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
                     put("providerId", agent.modelProvider)
                     put("modelName", previewData.agnosticRequest.modelName)
                     put("correlationId", previewData.agnosticRequest.correlationId)
                     put("contents", json.encodeToJsonElement(previewData.agnosticRequest.contents))
                     previewData.agnosticRequest.systemPrompt?.let { put("systemPrompt", it) } // Pass the system prompt
                 }))
-                store.dispatch(this.name, Action(ActionNames.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId) }))
+                store.deferredDispatch(this.name, Action(ActionNames.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId) }))
                 store.dispatch("ui.agent", Action(ActionNames.CORE_SHOW_DEFAULT_VIEW))
             }
             ActionNames.AGENT_DISCARD_PREVIEW -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[agentId]
                 if (agent?.status != AgentStatus.PROCESSING) {
-                    store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+                    store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
                         put("agentId", agentId); put("step", JsonNull)
                     }))
                 }
@@ -413,7 +439,7 @@ class AgentRuntimeFeature(
             }
             ActionNames.AGENT_CANCEL_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
-                store.dispatch(this.name, Action(ActionNames.GATEWAY_CANCEL_REQUEST, buildJsonObject {
+                store.deferredDispatch(this.name, Action(ActionNames.GATEWAY_CANCEL_REQUEST, buildJsonObject {
                     put("correlationId", agentId)
                 }))
                 activeTurnJobs[agentId]?.cancel()
@@ -440,7 +466,7 @@ class AgentRuntimeFeature(
                         val debounceTrigger = waitedFor >= agent.autoWaitTimeSeconds
                         val timeoutTrigger = totalWait >= agent.autoMaxWaitTimeSeconds
                         if (debounceTrigger || timeoutTrigger) {
-                            store.dispatch(this.name, Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+                            store.deferredDispatch(this.name, Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
                                 put("agentId", agent.id)
                                 put("preview", false)
                             }))
@@ -452,7 +478,7 @@ class AgentRuntimeFeature(
     }
 
     private fun saveAgentConfig(agent: AgentInstance, store: Store) {
-        store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
             put("subpath", "${agent.id}/$agentConfigFILENAME")
             put("content", json.encodeToString(agent))
         }))
@@ -461,7 +487,7 @@ class AgentRuntimeFeature(
     private fun touchAgentAvatarCard(agent: AgentInstance, store: Store) {
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val cardInfo = agentState.agentAvatarCardIds[agent.id] ?: return
-        store.dispatch(this.name, Action(
+        store.deferredDispatch(this.name, Action(
             name = ActionNames.SESSION_UPDATE_MESSAGE,
             payload = buildJsonObject {
                 put("session", cardInfo.sessionId)
@@ -473,7 +499,7 @@ class AgentRuntimeFeature(
     private fun broadcastAgentNames(store: Store) {
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val nameMap = agentState.agents.mapValues { it.value.name }
-        store.dispatch(this.name, Action(ActionNames.AGENT_PUBLISH_AGENT_NAMES_UPDATED, buildJsonObject {
+        store.deferredDispatch(this.name, Action(ActionNames.AGENT_PUBLISH_AGENT_NAMES_UPDATED, buildJsonObject {
             put("names", Json.encodeToJsonElement(nameMap))
         }))
     }
@@ -533,11 +559,11 @@ class AgentRuntimeFeature(
         val requestActionName = if (agent.turnMode == TurnMode.PREVIEW) ActionNames.GATEWAY_PREPARE_PREVIEW else ActionNames.GATEWAY_GENERATE_CONTENT
         val step = if (agent.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"
 
-        store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+        store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
             put("agentId", agent.id); put("step", step)
         }))
 
-        store.dispatch(this.name, Action(requestActionName, buildJsonObject {
+        store.deferredDispatch(this.name, Action(requestActionName, buildJsonObject {
             put("providerId", agent.modelProvider)
             put("modelName", agent.modelName)
             put("correlationId", agent.id)
@@ -566,7 +592,7 @@ class AgentRuntimeFeature(
         val decoded = try { json.decodeFromJsonElement<GatewayPreviewResponsePayload>(payload) } catch (e: Exception) { return }
         val agent = (store.state.value.featureStates[name] as? AgentRuntimeState)?.agents?.get(decoded.correlationId) ?: return
 
-        store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PREVIEW_DATA, buildJsonObject {
+        store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PREVIEW_DATA, buildJsonObject {
             put("agentId", agent.id)
             put("agnosticRequest", json.encodeToJsonElement(decoded.agnosticRequest))
             put("rawRequestJson", decoded.rawRequestJson)
@@ -615,41 +641,17 @@ class AgentRuntimeFeature(
             }
         }
 
-        val kgId = agent.knowledgeGraphId
-        val kgFeatureExists = store.features.any { it.name == "knowledgegraph" }
-
-        if (kgId != null && kgFeatureExists) {
-            // Path 1: HKG is available and requested. Stage the ledger and request the HKG context.
-            store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
-                put("agentId", agent.id)
-                put("messages", json.encodeToJsonElement(enrichedMessages))
-            }))
-            store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
-                put("agentId", agent.id); put("step", "Requesting HKG")
-            }))
-
-            val requestEnvelope = PrivateDataEnvelope(
-                type = ActionNames.Envelopes.AGENT_REQUEST_CONTEXT,
-                payload = buildJsonObject {
-                    put("correlationId", agent.id)
-                    put("knowledgeGraphId", kgId)
-                }
-            )
-            store.deliverPrivateData(this.name, "knowledgegraph", requestEnvelope)
-        } else {
-            // Path 2: HKG is not needed or the feature is absent. Proceed directly.
-            if (kgId != null && !kgFeatureExists) {
-                platformDependencies.log(LogLevel.WARN, name, "Agent '${agent.id}' has an HKG configured, but KnowledgeGraphFeature not found. Proceeding without HKG context.")
-            }
-            assemblePromptAndRequestGeneration(agent, enrichedMessages, null, store)
-        }
+        store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
+            put("agentId", agent.id)
+            put("messages", json.encodeToJsonElement(enrichedMessages))
+        }))
     }
 
     private fun handleFileSystemListResponse(payload: JsonObject, store: Store) {
         val fileList = payload["listing"]?.jsonArray?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
         fileList.forEach { entry ->
             if (entry.isDirectory) {
-                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
                     put("subpath", "${platformDependencies.getFileName(entry.path)}/$agentConfigFILENAME")
                 }))
             }
@@ -660,7 +662,7 @@ class AgentRuntimeFeature(
         val content = payload["content"]?.jsonPrimitive?.contentOrNull ?: return
         try {
             val agent = json.decodeFromString<AgentInstance>(content)
-            store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
+            store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, name, "Failed to parse agent config from file: ${payload["subpath"]}. Error: ${e.message}")
         }
@@ -697,14 +699,14 @@ class AgentRuntimeFeature(
                 // If the header is found, strip it and post a sentinel warning.
                 contentToPost = contentToPost.substring(match.range.last + 1).trimStart()
                 val warningMessage = """SYSTEM SENTINEL (llm-output-sanitizer): Warning for [${agent.name}]: Please do not include the standard system "name (id) @timestamp:" part in your output. This is added automatically by the application."""
-                store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
+                store.deferredDispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
                     put("session", sessionId)
                     put("senderId", "system")
                     put("message", warningMessage)
                 }))
             }
 
-            store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
+            store.deferredDispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
                 put("session", sessionId); put("senderId", agent.id); put("message", contentToPost)
             }))
             updateAgentAvatarCard(agent.id, AgentStatus.IDLE, null, store)
@@ -721,11 +723,11 @@ class AgentRuntimeFeature(
         val agent = agentState.agents[agentId] ?: return
         val newSessionId = agent.primarySessionId
         agentState.agentAvatarCardIds[agentId]?.let { oldCardInfo ->
-            store.dispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+            store.deferredDispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                 put("session", oldCardInfo.sessionId); put("messageId", oldCardInfo.messageId)
             }))
         }
-        store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
+        store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
             put("agentId", agentId); put("status", status.name); error?.let { put("error", it) }
         }))
         if (newSessionId == null) return
@@ -740,7 +742,7 @@ class AgentRuntimeFeature(
             put("render_as_partial", true); put("is_transient", true); put("agentStatus", status.name)
             error?.let { put("errorMessage", it) }
         }
-        store.dispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
+        store.deferredDispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
             put("session", newSessionId); put("senderId", agentId); put("messageId", messageId)
             put("metadata", metadata); afterMessageId?.let { put("afterMessageId", it) }
         }))

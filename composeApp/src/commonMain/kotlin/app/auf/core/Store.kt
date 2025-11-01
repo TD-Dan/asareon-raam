@@ -52,6 +52,8 @@ open class Store(
     open val state = _state.asStateFlow()
 
     private var lifecycleStarted = false
+    private var isDispatching = false
+    private val deferredActionQueue = mutableListOf<Action>()
 
     /**
      * A test-only hook to allow a derived class (like RecordingStore) to observe
@@ -95,122 +97,168 @@ open class Store(
         }
     }
 
-
     /**
-     * The single, generic entry point for all state changes and side effects.
+     * Enqueues an action to be dispatched only after the currently executing action cycle
+     * has fully completed.
+     *
+     * **INTENT: This function is for CONTINUATIONS.** It is the safe, correct, and required
+     * method for internal feature handlers (`onAction`, `onPrivateData`) to trigger subsequent
+     * actions. It guarantees a sequential, non-recursive flow of events.
+     *
+     * @param originator A string identifying the source of the action (e.g., a feature name).
+     * @param action The universal `Action` object to be queued.
      */
-    open fun dispatch(originator: String, action: Action) {
-        // --- PHASE 1: STAMP & PARSE ---
-        val stampedAction = action.copy( originator = originator)
-        val parsedName = parseActionName(stampedAction.name)
-
-        // --- PHASE 2: AUTHORIZATION & LIFECYCLE GUARDS ---
-
-        // TODO: This guard makes no longer sense as the payload is now alway null or jsonObject. We can replace this guard with a smarter one once we have checks for action properties
-        /*if (stampedAction.payload != null && stampedAction.payload !is JsonObject) {
-            platformDependencies.log(
-                level = LogLevel.FATAL,
-                tag = "Store",
-                message = "CONTRACT VIOLATION: Action '${stampedAction.name}' dispatched with a non-Object payload of type '${stampedAction.payload::class.simpleName}'. Action rejected."
-            )
-            return
-        }*/
-
-        if (!validActionNames.contains(stampedAction.name)) {
-            platformDependencies.log(
-                level = LogLevel.ERROR,
-                tag = "Store",
-                message = "SECURITY VIOLATION: Unknown Action '${stampedAction.name}' dispatched by '$originator'. Action ignored."
-            )
-            return
-        }
-
-        val isAuthorized = when (parsedName.type) {
-            ParsedActionName.ActionType.SYSTEM -> originator.startsWith("system")
-            ParsedActionName.ActionType.INTERNAL, ParsedActionName.ActionType.PUBLISH -> originator == parsedName.feature
-            ParsedActionName.ActionType.PUBLIC -> true
-        }
-
-        if (!isAuthorized) {
-            platformDependencies.log(
-                level = LogLevel.ERROR,
-                tag = "Store",
-                message = "SECURITY VIOLATION: Action '${stampedAction.name}' dispatched by unauthorized originator '$originator'. Action ignored."
-            )
-            return
-        }
-
-        val coreState = _state.value.featureStates["core"] as? CoreState
-        val currentLifecycle = coreState?.lifecycle ?: AppLifecycle.BOOTING
+    fun deferredDispatch(originator: String, action: Action) {
+        val stampedAction = action.copy(originator = originator)
         platformDependencies.log(
             level = LogLevel.INFO,
             tag = "Store",
-            message = "Dispatching: $stampedAction"
+            message = "Deferring: $stampedAction"
         )
+        deferredActionQueue.add(stampedAction)
+    }
 
-        val isActionAllowed = when (currentLifecycle) {
-            AppLifecycle.BOOTING -> stampedAction.name == ActionNames.SYSTEM_PUBLISH_INITIALIZING
-            AppLifecycle.INITIALIZING -> true
-            AppLifecycle.RUNNING -> stampedAction.name != ActionNames.SYSTEM_PUBLISH_INITIALIZING && stampedAction.name != ActionNames.SYSTEM_PUBLISH_STARTING
-            AppLifecycle.CLOSING -> stampedAction.name == ActionNames.SYSTEM_PUBLISH_CLOSING
-        }
 
-        if (!isActionAllowed) {
+    /**
+     * The single, generic entry point for all state changes and side effects.
+     *
+     * **INTENT: This function is for INITIATORS.** It should be called by external sources
+     * like the UI, system startup routines, or test harnesses to introduce a new, top-level
+     * event into the application.
+     *
+     * **FLOW CONTROL:** This function is protected against re-entrancy. If it is called while
+     * another action cycle is already in progress, it will automatically defer the incoming
+     * action and log a `WARN`. This acts as a safety net and a signal that an internal
+     * feature handler should be using `deferredDispatch` instead.
+     *
+     * @param originator A string identifying the source of the action (e.g., a feature name or UI component).
+     * @param action The universal `Action` object to be processed.
+     */
+    open fun dispatch(originator: String, action: Action) {
+        // --- PHASE 1: STAMP & DEFERRAL GUARD ---
+        val stampedAction = action.copy(originator = originator)
+        if (isDispatching) {
             platformDependencies.log(
-                level = LogLevel.ERROR,
+                level = LogLevel.WARN,
                 tag = "Store",
-                message = "Action '$stampedAction' dispatched in invalid lifecycle state '$currentLifecycle'. Action ignored."
+                message = "Re-entrant dispatch detected for $stampedAction. Auto-deferring."
             )
+            deferredActionQueue.add(stampedAction)
             return
         }
 
-        onDispatch?.invoke(stampedAction)
-
-        // --- PHASE 3, 4, 5: ROUTE, REDUCE, UPDATE, NOTIFY (WITH EXCEPTION HANDLING) ---
-        val previousState = _state.value
-        var newState = previousState
-
+        isDispatching = true
         try {
-            if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
-                // Targeted dispatch for internal actions
-                val targetFeature = features.find { it.name == parsedName.feature }
-                if (targetFeature != null) {
-                    newState = targetFeature.reducer(previousState, stampedAction)
+            // --- PHASE 2: PARSE, AUTHORIZATION & LIFECYCLE GUARDS ---
+            val parsedName = parseActionName(stampedAction.name)
+
+            if (!validActionNames.contains(stampedAction.name)) {
+                platformDependencies.log(
+                    level = LogLevel.ERROR,
+                    tag = "Store",
+                    message = "SECURITY VIOLATION: Unknown Action '${stampedAction.name}' dispatched by '$originator'. Action ignored."
+                )
+                return
+            }
+
+            val isAuthorized = when (parsedName.type) {
+                ParsedActionName.ActionType.SYSTEM -> originator.startsWith("system")
+                ParsedActionName.ActionType.INTERNAL, ParsedActionName.ActionType.PUBLISH -> originator == parsedName.feature
+                ParsedActionName.ActionType.PUBLIC -> true
+            }
+
+            if (!isAuthorized) {
+                platformDependencies.log(
+                    level = LogLevel.ERROR,
+                    tag = "Store",
+                    message = "SECURITY VIOLATION: Action '${stampedAction.name}' dispatched by unauthorized originator '$originator'. Action ignored."
+                )
+                return
+            }
+
+            val coreState = _state.value.featureStates["core"] as? CoreState
+            val currentLifecycle = coreState?.lifecycle ?: AppLifecycle.BOOTING
+            platformDependencies.log(
+                level = LogLevel.INFO,
+                tag = "Store",
+                message = "Dispatching: $stampedAction"
+            )
+
+            val isActionAllowed = when (currentLifecycle) {
+                AppLifecycle.BOOTING -> stampedAction.name == ActionNames.SYSTEM_PUBLISH_INITIALIZING
+                AppLifecycle.INITIALIZING -> true
+                AppLifecycle.RUNNING -> stampedAction.name != ActionNames.SYSTEM_PUBLISH_INITIALIZING && stampedAction.name != ActionNames.SYSTEM_PUBLISH_STARTING
+                AppLifecycle.CLOSING -> stampedAction.name == ActionNames.SYSTEM_PUBLISH_CLOSING
+            }
+
+            if (!isActionAllowed) {
+                platformDependencies.log(
+                    level = LogLevel.ERROR,
+                    tag = "Store",
+                    message = "Action '$stampedAction' dispatched in invalid lifecycle state '$currentLifecycle'. Action ignored."
+                )
+                return
+            }
+
+            onDispatch?.invoke(stampedAction)
+
+            // --- PHASE 3, 4, 5: ROUTE, REDUCE, UPDATE, NOTIFY (WITH EXCEPTION HANDLING) ---
+            val previousState = _state.value
+            var newState = previousState
+
+            try {
+                if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
+                    // Targeted dispatch for internal actions
+                    val targetFeature = features.find { it.name == parsedName.feature }
+                    if (targetFeature != null) {
+                        newState = targetFeature.reducer(previousState, stampedAction)
+                    } else {
+                        platformDependencies.log(
+                            level = LogLevel.ERROR,
+                            tag = "Store",
+                            message = "Internal action '${stampedAction.name}' dispatched, but target feature '${parsedName.feature}' not found."
+                        )
+                    }
                 } else {
-                    platformDependencies.log(
-                        level = LogLevel.ERROR,
-                        tag = "Store",
-                        message = "Internal action '${stampedAction.name}' dispatched, but target feature '${parsedName.feature}' not found."
-                    )
+                    // Broadcast dispatch for all other action types
+                    newState = features.fold(previousState) { currentState, feature ->
+                        feature.reducer(currentState, stampedAction)
+                    }
                 }
-            } else {
-                // Broadcast dispatch for all other action types
-                newState = features.fold(previousState) { currentState, feature ->
-                    feature.reducer(currentState, stampedAction)
+
+                if (newState != previousState) {
+                    _state.value = newState
                 }
+            } catch (e: Exception) {
+                handleFeatureException(e, "reducer", "broadcast")
+                // Abort state mutation if reducer fails.
+                return
             }
 
-            if (newState != previousState) {
-                _state.value = newState
+            // --- Side Effects (onAction) ---
+            try {
+                if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
+                    val targetFeature = features.find { it.name == parsedName.feature }
+                    targetFeature?.onAction(stampedAction, this, previousState)
+                } else {
+                    features.forEach { feature ->
+                        feature.onAction(stampedAction, this, previousState)
+                    }
+                }
+            } catch (e: Exception) {
+                handleFeatureException(e, "onAction", "broadcast")
             }
-        } catch (e: Exception) {
-            handleFeatureException(e, "reducer", "broadcast")
-            // Abort state mutation if reducer fails.
-            return
+        } finally {
+            isDispatching = false
         }
 
-        // --- Side Effects (onAction) ---
-        try {
-            if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
-                val targetFeature = features.find { it.name == parsedName.feature }
-                targetFeature?.onAction(stampedAction, this, previousState)
-            } else {
-                features.forEach { feature ->
-                    feature.onAction(stampedAction, this, previousState)
-                }
-            }
-        } catch (e: Exception) {
-            handleFeatureException(e, "onAction", "broadcast")
+        // --- PHASE 6: PROCESS DEFERRED ACTIONS ---
+        // After the current dispatch cycle is complete and the flag is cleared,
+        // process any actions that were deferred during the cycle.
+        while (deferredActionQueue.isNotEmpty()) {
+            val nextAction = deferredActionQueue.removeAt(0)
+            // The originator is guaranteed to be non-null as it's stamped upon deferral.
+            dispatch(nextAction.originator!!, nextAction)
         }
     }
 
