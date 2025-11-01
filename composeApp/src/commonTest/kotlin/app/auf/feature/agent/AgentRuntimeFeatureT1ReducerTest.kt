@@ -122,13 +122,13 @@ class AgentRuntimeFeatureT1ReducerTest {
         }
 
         val envelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, corruptedPayload)
-        feature.onPrivateData(envelope, harness.store)
+        // FIX: Use the architecturally correct store interface. The harness helper is no longer needed.
+        harness.store.deliverPrivateData("session", "agent", envelope)
 
 
         val log = platform.capturedLogs.find { it.level == LogLevel.ERROR }
         assertNotNull(log, "A fatal error should be logged.")
 
-        // FIX: Update assertion to be more robust and check the unified error message.
         val expectedError = "FATAL: Failed to parse session ledger."
         assertTrue(log.message.contains(expectedError), "Log message should contain the unified error string.")
 

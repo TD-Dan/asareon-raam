@@ -13,6 +13,7 @@ import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.*
 import kotlin.collections.set
 
@@ -41,7 +42,7 @@ class KnowledgeGraphFeature(
     @Serializable private data class ReadResponsePayload(val subpath: String, val content: String?) // For decoding private responses
     @Serializable private data class DirectoryContentsPayload(val path: String, val listing: List<FileEntry>)
     @Serializable private data class FilesContentPayload(val contents: Map<String, String>)
-    @Serializable private data class ProcessRawHolonPayload(val subpath: String, val rawContent: String, val parentId: String?, val depth: Int)
+    @Serializable private data class ProcessRawHolonPayload(val subpath: String, val rawContent: String, @Transient val parentId: String? = null, @Transient val depth: Int = 0)
 
 
     override fun onAction(action: Action, store: Store, previousState: AppState) {

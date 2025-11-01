@@ -53,14 +53,14 @@ class SettingsFeature(
 
     override fun onAction(action: Action, store: Store, previousState: AppState) {
         when (action.name) {
-            ActionNames.SYSTEM_PUBLISH_INITIALIZING -> store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", settingsFileName) }))
+            ActionNames.SYSTEM_PUBLISH_INITIALIZING -> store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", settingsFileName) }))
             ActionNames.SETTINGS_UI_INTERNAL_INPUT_CHANGED -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
                 val value = action.payload.get("value")?.jsonPrimitive?.content ?: return
                 debounceJobs[key]?.cancel()
                 debounceJobs[key] = featureScope.launch {
                     delay(750L)
-                    store.dispatch(name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", key); put("value", value) }))
+                    store.deferredDispatch(name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", key); put("value", value) }))
                 }
             }
             ActionNames.SETTINGS_UPDATE -> {
@@ -70,9 +70,9 @@ class SettingsFeature(
                     put("content", Json.encodeToString(latestSettingsState.values))
                     put("encrypt", true)
                 }))
-                action.payload?.let { store.dispatch(this.name, Action(ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED, it)) }
+                action.payload?.let { store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED, it)) }
             }
-            ActionNames.SETTINGS_OPEN_FOLDER -> store.dispatch(this.name, Action(ActionNames.FILESYSTEM_OPEN_SYSTEM_FOLDER))
+            ActionNames.SETTINGS_OPEN_FOLDER -> store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_OPEN_SYSTEM_FOLDER))
         }
     }
 

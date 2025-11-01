@@ -505,7 +505,8 @@ class AgentRuntimeFeature(
     }
 
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
-        // platformDependencies.log(LogLevel.DEBUG, name, "ON_PRIVATE_DATA << ${envelope.type} from ${envelope.payload["correlationId"]?.jsonPrimitive?.contentOrNull}") // instrumentation can be enabled if needed
+        // [INSTRUMENTATION] Added logging
+        platformDependencies.log(LogLevel.DEBUG, name, "[INSTRUMENTATION] onPrivateData << ${envelope.type}")
         when (envelope.type) {
             ActionNames.Envelopes.GATEWAY_RESPONSE -> handleGatewayResponse(envelope.payload, store)
             ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW -> handleGatewayPreviewResponse(envelope.payload, store)
@@ -603,11 +604,15 @@ class AgentRuntimeFeature(
     }
 
     private fun handleSessionLedgerResponse(payload: JsonObject, store: Store) {
+        // [INSTRUMENTATION] Added logging
+        platformDependencies.log(LogLevel.DEBUG, name, "[INSTRUMENTATION] Entering handleSessionLedgerResponse.")
         val decoded = try {
             json.decodeFromJsonElement<LedgerResponsePayload>(payload)
         } catch (e: Exception) {
             val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
             val errorMessage = "FATAL: Failed to parse session ledger."
+            // [INSTRUMENTATION] Added logging
+            platformDependencies.log(LogLevel.DEBUG, name, "[INSTRUMENTATION] Caught exception in handleSessionLedgerResponse. Calling updateAgentAvatarCard.")
             platformDependencies.log(LogLevel.ERROR, name, "$errorMessage for agent '$agentId'. Error: ${e.message}")
             if (agentId != null) {
                 updateAgentAvatarCard(agentId, AgentStatus.ERROR, errorMessage, store)
@@ -719,6 +724,8 @@ class AgentRuntimeFeature(
     }
 
     private fun updateAgentAvatarCard(agentId: String, status: AgentStatus, error: String? = null, store: Store) {
+        // [INSTRUMENTATION] Added logging
+        platformDependencies.log(LogLevel.DEBUG, name, "[INSTRUMENTATION] Entering updateAgentAvatarCard for agent '$agentId', status: $status, error: $error")
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[agentId] ?: return
         val newSessionId = agent.primarySessionId
