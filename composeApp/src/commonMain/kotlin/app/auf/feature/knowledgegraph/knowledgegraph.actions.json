@@ -116,6 +116,20 @@
       "payload_schema": { "type": "object", "properties": { "names": { "type": "object" } }, "required": ["names"] }
     },
     {
+      "action_name": "knowledgegraph.internal.PROCESS_RAW_HOLON",
+      "summary": "[INTERNAL] The single, atomic processor for a raw holon file. It validates, enriches, and adds a single holon to the state.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "subpath": { "type": "string" },
+          "rawContent": { "type": "string" },
+          "parentId": { "type": [ "string", "null" ] },
+          "depth": { "type": "integer" }
+        },
+        "required": [ "subpath", "rawContent", "depth" ]
+      }
+    },
+    {
       "action_name": "knowledgegraph.internal.CONFIRM_DELETE_PERSONA",
       "summary": "[INTERNAL] Dispatched after the deletion side-effect is complete to commit the state change.",
       "payload_schema": { "type": "object", "properties": { "personaId": { "type": "string" } }, "required": ["personaId"] }
@@ -137,16 +151,6 @@
         },
         "required": ["subpath", "depth"]
       }
-    },
-    {
-      "action_name": "knowledgegraph.internal.PERSONA_DISCOVERED",
-      "summary": "[INTERNAL] Dispatched when a valid AI_Persona_Root is found and parsed during startup.",
-      "payload_schema": { "type": "object", "description": "Contains the full HolonHeader of the discovered persona." }
-    },
-    {
-      "action_name": "knowledgegraph.internal.HOLON_LOADED",
-      "summary": "[INTERNAL] Dispatched when a single holon's content is parsed and added to the graph.",
-      "payload_schema": { "type": "object", "description": "Contains the full Holon object." }
     },
     {
       "action_name": "knowledgegraph.internal.ANALYSIS_COMPLETE",

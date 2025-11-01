@@ -69,28 +69,50 @@ class KnowledgeGraphFeatureT2CoreTest {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val feature = harness.store.features.find { it.name == "knowledgegraph" }!!
 
+        // 1. Simulate the filesystem listing personas
         val listResponse = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, buildJsonObject {
             put("listing", buildJsonArray { add(json.encodeToJsonElement(FileEntry("persona-1", true))) })
         })
         feature.onPrivateData(listResponse, harness.store)
 
-        val readRequest = harness.processedActions.last()
-        assertEquals(ActionNames.FILESYSTEM_SYSTEM_READ, readRequest.name)
-        assertEquals("persona-1/persona-1.json", readRequest.payload?.get("subpath")?.jsonPrimitive?.content)
+        // 2. Assert that a read was requested for the persona root
+        val rootReadRequest = harness.processedActions.last()
+        assertEquals(ActionNames.FILESYSTEM_SYSTEM_READ, rootReadRequest.name)
+        assertEquals("persona-1/persona-1.json", rootReadRequest.payload?.get("subpath")?.jsonPrimitive?.content)
 
-        val readResponse = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, buildJsonObject {
+        // 3. Simulate the filesystem returning the content for the persona root
+        val rootReadResponse = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, buildJsonObject {
             put("subpath", "persona-1/persona-1.json")
             put("content", persona1Content)
         })
-        feature.onPrivateData(readResponse, harness.store)
+        feature.onPrivateData(rootReadResponse, harness.store)
 
+        // 4. Assert the persona is loaded in the state and its content is preserved
         val stateAfterPersona = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
-        assertNotNull(stateAfterPersona.holons["persona-1"])
-        assertEquals("Persona One", stateAfterPersona.holons["persona-1"]?.header?.name)
+        val loadedPersona = stateAfterPersona.holons["persona-1"]
+        assertNotNull(loadedPersona)
+        assertEquals("Persona One", loadedPersona.header.name)
+        assertEquals(persona1Content, loadedPersona.content, "Content of root holon should be preserved.")
 
+        // 5. Assert that a read was requested for the child holon
         val childReadRequest = harness.processedActions.last()
         assertEquals(ActionNames.FILESYSTEM_SYSTEM_READ, childReadRequest.name)
         assertEquals("persona-1/holon-a/holon-a.json", childReadRequest.payload?.get("subpath")?.jsonPrimitive?.content)
+
+        // 6. Simulate the filesystem returning the content for the child
+        val childReadResponse = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, buildJsonObject {
+            put("subpath", "persona-1/holon-a/holon-a.json")
+            put("content", holonAContent)
+        })
+        feature.onPrivateData(childReadResponse, harness.store)
+
+        // 7. Assert the final state is correct and complete
+        val finalState = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
+        val loadedChild = finalState.holons["holon-a"]
+        assertNotNull(loadedChild)
+        assertEquals("Holon A", loadedChild.header.name)
+        assertEquals(holonAContent, loadedChild.content, "Content of child holon should be preserved.")
+        assertEquals("persona-1", loadedChild.header.parentId)
     }
 
     @Test

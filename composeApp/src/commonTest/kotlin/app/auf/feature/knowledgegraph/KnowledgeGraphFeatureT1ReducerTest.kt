@@ -34,40 +34,103 @@ class KnowledgeGraphFeatureT1ReducerTest {
         featureStates = mapOf(featureName to kgState)
     )
 
-    private val samplePersonaHeader = HolonHeader(id = "persona-1", type = "AI_Persona_Root", name = "Persona One")
-    private val sampleHolon = Holon(
-        header = HolonHeader(id = "holon-a", type = "Test_Holon", name = "Holon A"),
-        payload = buildJsonObject {},
-        content = "{}"
-    )
+    private val samplePersonaContent = """
+        {
+            "header": { "id": "persona-1", "type": "AI_Persona_Root", "name": "Persona One" }, "payload": {}
+        }
+    """.trimIndent()
+    private val sampleHolonContent = """
+        {
+            "header": { "id": "holon-a", "type": "Test_Holon", "name": "Holon A" }, "payload": {}
+        }
+    """.trimIndent()
 
-    // --- Reducer - Loading & State Hydration ---
+
+    // --- Reducer - Loading & State Hydration (Hardened Protocol) ---
 
     @Test
-    fun `on INTERNAL_PERSONA_DISCOVERED should add a new persona root`() {
+    fun `on PROCESS_RAW_HOLON should correctly parse, enrich, and add a valid persona holon`() {
         val initialState = createAppState()
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_DISCOVERED, json.encodeToJsonElement(samplePersonaHeader) as JsonObject)
+        val payload = buildJsonObject {
+            put("subpath", "persona-1/persona-1.json")
+            put("rawContent", samplePersonaContent)
+            put("parentId", null)
+            put("depth", 0)
+        }
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PROCESS_RAW_HOLON, payload)
 
         val newState = feature.reducer(initialState, action)
         val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
+
+        assertEquals(1, newKgState.holons.size)
+        val loadedHolon = newKgState.holons["persona-1"]
+        assertNotNull(loadedHolon)
+        assertEquals("Persona One", loadedHolon.header.name)
+        assertEquals(samplePersonaContent, loadedHolon.content, "The raw content must be preserved.")
+        assertEquals("persona-1/persona-1.json", loadedHolon.header.filePath)
+        assertNull(loadedHolon.header.parentId)
+        assertEquals(0, loadedHolon.header.depth)
 
         assertEquals(1, newKgState.personaRoots.size)
         assertEquals("persona-1", newKgState.personaRoots["Persona One"])
     }
 
     @Test
-    fun `on INTERNAL_HOLON_LOADED should add a new holon to the state map`() {
+    fun `on PROCESS_RAW_HOLON should correctly parse, enrich, and add a valid child holon`() {
         val initialState = createAppState()
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_HOLON_LOADED, json.encodeToJsonElement(sampleHolon) as JsonObject)
+        val payload = buildJsonObject {
+            put("subpath", "persona-1/holon-a/holon-a.json")
+            put("rawContent", sampleHolonContent)
+            put("parentId", "persona-1")
+            put("depth", 1)
+        }
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PROCESS_RAW_HOLON, payload)
 
         val newState = feature.reducer(initialState, action)
         val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
 
-        assertEquals(1, newKgState.holons.size)
-        assertNotNull(newKgState.holons["holon-a"])
-        assertEquals("Holon A", newKgState.holons["holon-a"]?.header?.name)
-        assertFalse(newKgState.isLoading, "isLoading should be cleared after a holon is loaded.")
+        val loadedHolon = newKgState.holons["holon-a"]
+        assertNotNull(loadedHolon)
+        assertEquals("Holon A", loadedHolon.header.name)
+        assertEquals(sampleHolonContent, loadedHolon.content)
+        assertEquals("persona-1", loadedHolon.header.parentId)
+        assertEquals(1, loadedHolon.header.depth)
     }
+
+    @Test
+    fun `on PROCESS_RAW_HOLON with malformed JSON should set fatalError`() {
+        val initialState = createAppState()
+        val payload = buildJsonObject {
+            put("subpath", "bad/bad.json"); put("rawContent", "{malformed_json:"); put("depth", 0)
+        }
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PROCESS_RAW_HOLON, payload)
+
+        val newState = feature.reducer(initialState, action)
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
+
+        assertTrue(newKgState.fatalError?.startsWith("Failed to parse JSON for holon at 'bad/bad.json'") == true)
+        assertTrue(newKgState.holons.isEmpty())
+        assertFalse(newKgState.isLoading)
+    }
+
+    @Test
+    fun `on PROCESS_RAW_HOLON with ID mismatch should set fatalError`() {
+        val initialState = createAppState()
+        val payload = buildJsonObject {
+            put("subpath", "path/to/expected-id.json") // File name implies ID is 'expected-id'
+            put("rawContent", sampleHolonContent)      // Content says ID is 'holon-a'
+            put("depth", 0)
+        }
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PROCESS_RAW_HOLON, payload)
+
+        val newState = feature.reducer(initialState, action)
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
+
+        assertEquals("ID mismatch in 'path/to/expected-id.json': expected 'expected-id', found 'holon-a'.", newKgState.fatalError)
+        assertTrue(newKgState.holons.isEmpty())
+        assertFalse(newKgState.isLoading)
+    }
+
 
     @Test
     fun `on INTERNAL_LOAD_FAILED should set the fatalError message and clear isLoading flag`() {

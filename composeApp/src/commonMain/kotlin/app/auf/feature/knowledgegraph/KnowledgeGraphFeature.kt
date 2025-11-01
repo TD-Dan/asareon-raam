@@ -41,6 +41,7 @@ class KnowledgeGraphFeature(
     @Serializable private data class ReadResponsePayload(val subpath: String, val content: String?) // For decoding private responses
     @Serializable private data class DirectoryContentsPayload(val path: String, val listing: List<FileEntry>)
     @Serializable private data class FilesContentPayload(val contents: Map<String, String>)
+    @Serializable private data class ProcessRawHolonPayload(val subpath: String, val rawContent: String, val parentId: String?, val depth: Int)
 
 
     override fun onAction(action: Action, store: Store, previousState: AppState) {
@@ -60,6 +61,22 @@ class KnowledgeGraphFeature(
                 }
                 val responseEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, responsePayload)
                 store.deliverPrivateData(this.name, originator, responseEnvelope)
+            }
+            ActionNames.KNOWLEDGEGRAPH_INTERNAL_PROCESS_RAW_HOLON -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<ProcessRawHolonPayload>(it) } ?: return
+                val holonId = platformDependencies.getFileName(payload.subpath).removeSuffix(".json")
+                val latestKgState = store.state.value.featureStates[name] as? KnowledgeGraphState ?: return
+                val newHolon = latestKgState.holons[holonId] ?: return // Holon should exist in the new state
+
+                val currentDir = platformDependencies.getParentDirectory(newHolon.header.filePath)
+                newHolon.header.subHolons.forEach { subRef ->
+                    val subHolonPath = "$currentDir/${subRef.id}/${subRef.id}.json"
+                    val subContext = ReadContext(parentId = newHolon.header.id, depth = newHolon.header.depth + 1)
+                    store.dispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ADD_PENDING_READ, json.encodeToJsonElement(subContext).jsonObject.toMutableMap().apply {
+                        put("subpath", JsonPrimitive(subHolonPath))
+                    }.let { JsonObject(it) }))
+                    store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", subHolonPath) }))
+                }
             }
             ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<StartImportAnalysisPayload>(it) } ?: return
@@ -187,18 +204,39 @@ class KnowledgeGraphFeature(
                 val context = json.decodeFromJsonElement<ReadContext>(payload)
                 newFeatureState = currentFeatureState.copy(pendingReads = currentFeatureState.pendingReads + (subpath to context))
             }
-            ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_DISCOVERED -> {
-                val personaHeader = action.payload?.let { json.decodeFromJsonElement<HolonHeader>(it) } ?: return state
-                if (!currentFeatureState.personaRoots.containsKey(personaHeader.name)) {
-                    val newRoots = currentFeatureState.personaRoots + (personaHeader.name to personaHeader.id)
-                    newFeatureState = currentFeatureState.copy(personaRoots = newRoots)
+            ActionNames.KNOWLEDGEGRAPH_INTERNAL_PROCESS_RAW_HOLON -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<ProcessRawHolonPayload>(it) } ?: return stateWithFeature
+
+                val holon: Holon = try {
+                    json.decodeFromString<Holon>(payload.rawContent)
+                } catch (e: Exception) {
+                    val error = "Failed to parse JSON for holon at '${payload.subpath}': ${e.message}"
+                    return stateWithFeature.copy(featureStates = stateWithFeature.featureStates + (name to currentFeatureState.copy(isLoading = false, fatalError = error)))
                 }
-            }
-            ActionNames.KNOWLEDGEGRAPH_INTERNAL_HOLON_LOADED -> {
-                val holon = action.payload?.let { json.decodeFromJsonElement<Holon>(it) } ?: return state
-                val newHolons = currentFeatureState.holons + (holon.header.id to holon)
-                val newPendingReads = currentFeatureState.pendingReads - holon.header.filePath
-                newFeatureState = currentFeatureState.copy(holons = newHolons, isLoading = false, pendingReads = newPendingReads)
+
+                val expectedId = platformDependencies.getFileName(payload.subpath).removeSuffix(".json")
+                if (holon.header.id != expectedId) {
+                    val error = "ID mismatch in '${payload.subpath}': expected '$expectedId', found '${holon.header.id}'."
+                    return stateWithFeature.copy(featureStates = stateWithFeature.featureStates + (name to currentFeatureState.copy(isLoading = false, fatalError = error)))
+                }
+
+                val enrichedHeader = holon.header.copy(filePath = payload.subpath, parentId = payload.parentId, depth = payload.depth)
+                val enrichedHolon = holon.copy(header = enrichedHeader, content = payload.rawContent)
+
+                var newRoots = currentFeatureState.personaRoots
+                if (enrichedHeader.type == "AI_Persona_Root") {
+                    if (!newRoots.containsKey(enrichedHeader.name)) {
+                        newRoots = newRoots + (enrichedHeader.name to enrichedHeader.id)
+                    }
+                }
+                val newHolons = currentFeatureState.holons + (enrichedHolon.header.id to enrichedHolon)
+                val newPendingReads = currentFeatureState.pendingReads - enrichedHolon.header.filePath
+                newFeatureState = currentFeatureState.copy(
+                    holons = newHolons,
+                    personaRoots = newRoots,
+                    pendingReads = newPendingReads,
+                    isLoading = newPendingReads.isNotEmpty()
+                )
             }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED -> {
                 val error = action.payload?.get("error")?.jsonPrimitive?.content ?: "Unknown loading error."
@@ -477,29 +515,12 @@ class KnowledgeGraphFeature(
         val content = fileData.content ?: return
         val context = kgState.pendingReads[fileData.subpath] ?: ReadContext(null, 0)
 
-        try {
-            val holon = json.decodeFromString<Holon>(content)
-            val enrichedHeader = holon.header.copy(filePath = fileData.subpath, parentId = context.parentId, depth = context.depth)
-            // CRITICAL FIX: Populate the transient `content` field.
-            val enrichedHolon = holon.copy(header = enrichedHeader, content = content)
-
-            if (enrichedHeader.type == "AI_Persona_Root") {
-                store.dispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_DISCOVERED, json.encodeToJsonElement(enrichedHeader) as JsonObject))
-            }
-            store.dispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_HOLON_LOADED, json.encodeToJsonElement(enrichedHolon) as JsonObject))
-
-            val currentDir = platformDependencies.getParentDirectory(enrichedHeader.filePath)
-            enrichedHeader.subHolons.forEach { subRef ->
-                val subHolonPath = "$currentDir/${subRef.id}/${subRef.id}.json"
-                val subContext = ReadContext(parentId = enrichedHeader.id, depth = enrichedHeader.depth + 1)
-                store.dispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ADD_PENDING_READ, json.encodeToJsonElement(subContext).jsonObject.toMutableMap().apply {
-                    put("subpath", JsonPrimitive(subHolonPath))
-                }.let { JsonObject(it) }))
-                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", subHolonPath) }))
-            }
-        } catch (e: Exception) {
-            platformDependencies.log(LogLevel.ERROR, name, "Failed to parse holon at '${fileData.subpath}': ${e.message}")
-        }
+        store.dispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PROCESS_RAW_HOLON, buildJsonObject {
+            put("subpath", fileData.subpath)
+            put("rawContent", content)
+            context.parentId?.let { put("parentId", it) }
+            put("depth", context.depth)
+        }))
     }
 
     override val composableProvider: Feature.ComposableProvider = object : Feature.ComposableProvider {
