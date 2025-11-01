@@ -159,4 +159,22 @@ class KnowledgeGraphFeatureT2CoreTest {
         assertNotNull(confirmAction, "Should dispatch an internal action to update the state.")
         assertEquals("persona-to-delete", confirmAction.payload?.get("personaId")?.jsonPrimitive?.content)
     }
+
+    @Test
+    fun `create persona workflow dispatches correct sequence`() {
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        harness.store.dispatch("ui.dialog", Action(ActionNames.KNOWLEDGEGRAPH_CREATE_PERSONA, buildJsonObject {
+            put("name", "My Test Persona")
+        }))
+
+        val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
+        assertNotNull(writeAction, "Should dispatch a write action to the filesystem.")
+        assertTrue(writeAction.payload?.get("subpath")?.jsonPrimitive?.content?.startsWith("my-test-persona-") == true)
+
+        val toastAction = harness.processedActions.find { it.name == ActionNames.CORE_SHOW_TOAST }
+        assertNotNull(toastAction, "Should dispatch a toast to confirm creation.")
+
+        val listAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_LIST }
+        assertNotNull(listAction, "Should dispatch a list action to reload the graph.")
+    }
 }

@@ -89,6 +89,11 @@
       "payload_schema": { "type": "object", "properties": { "personaId": { "type": ["string", "null"] } } }
     },
     {
+      "action_name": "knowledgegraph.SET_CREATING_PERSONA",
+      "summary": "A UI action to toggle the visibility of the 'Create New Persona' dialog.",
+      "payload_schema": { "type": "object", "properties": { "isCreating": { "type": "boolean" } }, "required": ["isCreating"] }
+    },
+    {
       "action_name": "knowledgegraph.UPDATE_HOLON",
       "summary": "Creates or updates a holon file within a loaded HKG.",
       "payload_schema": { "type": "object", "properties": { "holonId": { "type": "string" }, "content": { "type": "string" } }, "required": ["holonId", "content"] }

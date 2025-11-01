@@ -35,6 +35,7 @@ class KnowledgeGraphFeature(
     @Serializable private data class CreatePersonaPayload(val name: String)
     @Serializable private data class DeletePersonaPayload(val personaId: String)
     @Serializable private data class SetPersonaToDeletePayload(val personaId: String?)
+    @Serializable private data class SetCreatingPersonaPayload(val isCreating: Boolean)
     @Serializable private data class ReadResponsePayload(val subpath: String, val content: String?) // For decoding private responses
     @Serializable private data class DirectoryContentsPayload(val path: String, val listing: List<FileEntry>)
     @Serializable private data class FilesContentPayload(val contents: Map<String, String>)
@@ -225,6 +226,10 @@ class KnowledgeGraphFeature(
             ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SetPersonaToDeletePayload>(it) } ?: return state
                 newFeatureState = currentFeatureState.copy(personaIdToDelete = payload.personaId)
+            }
+            ActionNames.KNOWLEDGEGRAPH_SET_CREATING_PERSONA -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<SetCreatingPersonaPayload>(it) } ?: return state
+                newFeatureState = currentFeatureState.copy(isCreatingPersona = payload.isCreating)
             }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<DeletePersonaPayload>(it) } ?: return state

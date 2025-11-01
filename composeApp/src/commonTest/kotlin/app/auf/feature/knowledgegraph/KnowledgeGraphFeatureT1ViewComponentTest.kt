@@ -4,6 +4,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.generated.ActionNames
@@ -207,5 +208,43 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         val action = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE }
         assertNotNull(action)
         assertNull(action.payload?.get("personaId"))
+    }
+
+    // --- Creation Workflow UI Tests ---
+    @Test
+    fun `clicking Create Persona button dispatches SET_CREATING_PERSONA`() {
+        setViewState(KnowledgeGraphState())
+        fakeStore.dispatchedActions.clear()
+
+        composeTestRule.onNodeWithText("Create Persona").performClick()
+
+        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_SET_CREATING_PERSONA }
+        assertNotNull(action)
+        assertEquals("true", action.payload?.get("isCreating")?.toString())
+    }
+
+    @Test
+    fun `when isCreatingPersona is true, AlertDialog is shown`() {
+        setViewState(KnowledgeGraphState(isCreatingPersona = true))
+
+        composeTestRule.onNodeWithText("Create New Persona").assertExists()
+        composeTestRule.onNodeWithText("Persona Name").assertExists()
+    }
+
+    @Test
+    fun `clicking Create in dialog dispatches CREATE_PERSONA and closes dialog`() {
+        setViewState(KnowledgeGraphState(isCreatingPersona = true))
+        fakeStore.dispatchedActions.clear()
+
+        composeTestRule.onNodeWithText("Persona Name").performTextInput("My New Persona")
+        composeTestRule.onNodeWithText("Create").performClick()
+
+        val createAction = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_CREATE_PERSONA }
+        assertNotNull(createAction)
+        assertEquals("My New Persona", createAction.payload?.get("name")?.toString()?.trim('"'))
+
+        val closeAction = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_SET_CREATING_PERSONA }
+        assertNotNull(closeAction)
+        assertEquals("false", closeAction.payload?.get("isCreating")?.toString())
     }
 }

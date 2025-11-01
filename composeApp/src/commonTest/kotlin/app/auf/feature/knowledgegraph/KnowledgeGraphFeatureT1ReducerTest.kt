@@ -233,4 +233,16 @@ class KnowledgeGraphFeatureT1ReducerTest {
         assertTrue(newKgState.personaRoots.containsKey("P2"))
         assertNull(newKgState.activePersonaIdForView, "Active view should be cleared if the deleted persona was active.")
     }
+
+    // --- Reducer - Creation Workflow ---
+    @Test
+    fun `on SET_CREATING_PERSONA should toggle isCreatingPersona flag`() {
+        val initialState = createAppState(KnowledgeGraphState(isCreatingPersona = false))
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_SET_CREATING_PERSONA, buildJsonObject { put("isCreating", true) })
+
+        val newState = feature.reducer(initialState, action)
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
+
+        assertTrue(newKgState.isCreatingPersona)
+    }
 }

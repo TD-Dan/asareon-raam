@@ -40,6 +40,7 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
         return
     }
 
+    // --- Deletion Dialog ---
     kgState.personaIdToDelete?.let { personaId ->
         val personaName = kgState.holons[personaId]?.header?.name ?: "Unknown Persona"
         AlertDialog(
@@ -56,6 +57,34 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
         )
     }
 
+    // --- Creation Dialog ---
+    if (kgState.isCreatingPersona) {
+        var newPersonaName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_CREATING_PERSONA, buildJsonObject { put("isCreating", false) })) },
+            title = { Text("Create New Persona") },
+            text = {
+                OutlinedTextField(
+                    value = newPersonaName,
+                    onValueChange = { newPersonaName = it },
+                    label = { Text("Persona Name") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_CREATE_PERSONA, buildJsonObject { put("name", newPersonaName) }))
+                        store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_CREATING_PERSONA, buildJsonObject { put("isCreating", false) }))
+                    },
+                    enabled = newPersonaName.isNotBlank()
+                ) { Text("Create") }
+            },
+            dismissButton = { Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_CREATING_PERSONA, buildJsonObject { put("isCreating", false) })) }) { Text("Cancel") } }
+        )
+    }
+
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -68,7 +97,7 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
                         ) {
                             Icon(Icons.Default.Download, contentDescription = "Import Holons")
                         }
-                        Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_CREATE_PERSONA, buildJsonObject { put("name", "New Persona") })) }) {
+                        Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_CREATING_PERSONA, buildJsonObject { put("isCreating", true) })) }) {
                             Text("Create Persona")
                         }
                     } else {
