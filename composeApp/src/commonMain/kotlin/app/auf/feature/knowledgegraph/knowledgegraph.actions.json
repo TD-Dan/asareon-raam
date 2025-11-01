@@ -12,6 +12,15 @@
       }
     },
     {
+      "action_name": "knowledgegraph.LOAD_PERSONA",
+      "summary": "Initiates the loading or reloading of a single, complete Holon Knowledge Graph from its root persona ID.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "personaId": { "type": "string" } },
+        "required": ["personaId"]
+      }
+    },
+    {
       "action_name": "knowledgegraph.REQUEST_CONTEXT",
       "summary": "The public, universal action for any feature to request the full context of a specific HKG. The response will be delivered privately to the originator.",
       "payload_schema": {
@@ -32,6 +41,20 @@
       "action_name": "knowledgegraph.SET_ACTIVE_VIEW_HOLON",
       "summary": "A UI-facing action to select a specific holon for detailed inspection within the active view.",
       "payload_schema": { "type": "object", "properties": { "holonId": { "type": ["string", "null"] } } }
+    },
+    {
+      "action_name": "knowledgegraph.TOGGLE_SHOW_SUMMARIES",
+      "summary": "Toggles the visibility of summary text in the holon tree view.",
+      "payload_schema": null
+    },
+    {
+      "action_name": "knowledgegraph.SET_TYPE_FILTERS",
+      "summary": "Sets the set of holon types to display in the tree view. An empty set means show all.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "types": { "type": "array", "items": { "type": "string" } } },
+        "required": ["types"]
+      }
     },
     {
       "action_name": "knowledgegraph.START_IMPORT_ANALYSIS",
@@ -94,9 +117,22 @@
       "payload_schema": { "type": "object", "properties": { "isCreating": { "type": "boolean" } }, "required": ["isCreating"] }
     },
     {
-      "action_name": "knowledgegraph.UPDATE_HOLON",
-      "summary": "Creates or updates a holon file within a loaded HKG.",
-      "payload_schema": { "type": "object", "properties": { "holonId": { "type": "string" }, "content": { "type": "string" } }, "required": ["holonId", "content"] }
+      "action_name": "knowledgegraph.UPDATE_HOLON_CONTENT",
+      "summary": "Updates the full string content of a holon file within a loaded HKG.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "holonId": { "type": "string" }, "newContent": { "type": "string" } },
+        "required": ["holonId", "newContent"]
+      }
+    },
+    {
+      "action_name": "knowledgegraph.RENAME_HOLON",
+      "summary": "Updates the 'name' field in a holon's header.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "holonId": { "type": "string" }, "newName": { "type": "string" } },
+        "required": ["holonId", "newName"]
+      }
     },
     {
       "action_name": "knowledgegraph.DELETE_HOLON",
@@ -107,6 +143,16 @@
       "action_name": "knowledgegraph.SET_HOLON_TO_DELETE",
       "summary": "A UI action to stage a single holon for deletion, triggering a confirmation dialog.",
       "payload_schema": { "type": "object", "properties": { "holonId": { "type": ["string", "null"] } } }
+    },
+    {
+      "action_name": "knowledgegraph.SET_HOLON_TO_EDIT",
+      "summary": "A UI action to enter or exit the holon editor view.",
+      "payload_schema": { "type": "object", "properties": { "holonId": { "type": ["string", "null"] } } }
+    },
+    {
+      "action_name": "knowledgegraph.SET_HOLON_TO_RENAME",
+      "summary": "A UI action to show or hide the holon rename dialog.",
+      "payload_schema": { "type": "object", "properties": { "holonId": { "type": ["string", "null"] } } }
     }
   ],
   "publishes": [
@@ -116,17 +162,14 @@
       "payload_schema": { "type": "object", "properties": { "names": { "type": "object" } }, "required": ["names"] }
     },
     {
-      "action_name": "knowledgegraph.internal.PROCESS_RAW_HOLON",
-      "summary": "[INTERNAL] The single, atomic processor for a raw holon file. It validates, enriches, and adds a single holon to the state.",
+      "action_name": "knowledgegraph.internal.PERSONA_LOADED",
+      "summary": "[INTERNAL] Dispatched after a full persona HKG has been constructed in memory. Atomically merges the new/updated holons into the main state.",
       "payload_schema": {
         "type": "object",
         "properties": {
-          "subpath": { "type": "string" },
-          "rawContent": { "type": "string" },
-          "parentId": { "type": [ "string", "null" ] },
-          "depth": { "type": "integer" }
+          "holons": { "type": "object", "description": "A map of Holon ID to fully-formed Holon objects." }
         },
-        "required": [ "subpath", "rawContent", "depth" ]
+        "required": ["holons"]
       }
     },
     {
@@ -138,19 +181,6 @@
       "action_name": "knowledgegraph.internal.CONFIRM_DELETE_HOLON",
       "summary": "[INTERNAL] Dispatched after a holon's deletion side-effect is complete to commit the state change.",
       "payload_schema": { "type": "object", "properties": { "holonId": { "type": "string" } }, "required": ["holonId"] }
-    },
-    {
-      "action_name": "knowledgegraph.internal.ADD_PENDING_READ",
-      "summary": "[INTERNAL] Stages the context for a pending file read operation, allowing the feature to remember the parent and depth of a holon across an asynchronous boundary.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "subpath": { "type": "string" },
-          "parentId": { "type": ["string", "null"] },
-          "depth": { "type": "integer" }
-        },
-        "required": ["subpath", "depth"]
-      }
     },
     {
       "action_name": "knowledgegraph.internal.ANALYSIS_COMPLETE",

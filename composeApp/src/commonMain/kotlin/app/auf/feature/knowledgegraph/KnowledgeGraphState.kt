@@ -83,10 +83,6 @@ data class Ignore(override val summary: String = "Do not import") : ImportAction
 @Serializable @SerialName("CreateRoot")
 data class CreateRoot(override val summary: String = "IMPORT AS NEW ROOT PERSONA") : ImportAction
 
-// --- LOCAL CONTEXT FOR ASYNC OPERATIONS ---
-@Serializable
-data class ReadContext(val parentId: String?, val depth: Int)
-
 // --- FEATURE STATE ---
 @Serializable
 data class KnowledgeGraphState(
@@ -97,6 +93,8 @@ data class KnowledgeGraphState(
     val activePersonaIdForView: String? = null,
     val activeHolonIdForView: String? = null,
     val viewMode: KnowledgeGraphViewMode = KnowledgeGraphViewMode.INSPECTOR,
+    val showSummariesInTreeView: Boolean = true,
+    val activeTypeFilters: Set<String> = emptySet(),
 
     // --- Import State ---
     val importSourcePath: String = "",
@@ -106,13 +104,12 @@ data class KnowledgeGraphState(
     val isImportRecursive: Boolean = true,
     val showOnlyChangedImportItems: Boolean = false,
 
-    // --- Transient State for Async Operations ---
-    @Transient val pendingReads: Map<String, ReadContext> = emptyMap(),
-
     // --- Transient State for UI Interactions ---
     @Transient val personaIdToDelete: String? = null,
     @Transient val isCreatingPersona: Boolean = false,
     @Transient val holonIdToDelete: String? = null,
+    @Transient val holonIdToEdit: String? = null,
+    @Transient val holonIdToRename: String? = null,
 
     // --- Loading & Error State ---
     val isLoading: Boolean = false,

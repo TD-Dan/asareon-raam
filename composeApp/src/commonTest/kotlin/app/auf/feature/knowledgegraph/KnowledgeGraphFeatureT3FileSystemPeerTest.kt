@@ -77,14 +77,9 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
 
         // Pre-load the existing HKG
         harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
-        harness.store.deliveredPrivateData.toList().forEach { kgFeature.onPrivateData(it.envelope, harness.store) }
-        harness.store.deliveredPrivateData.clear()
 
         // --- 2. Act 1 (Analysis) ---
         harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS, buildJsonObject { put("path", "/import/source") }))
-        harness.store.deliveredPrivateData.toList().forEach { kgFeature.onPrivateData(it.envelope, harness.store) }
-        harness.store.deliveredPrivateData.clear()
-
 
         // --- 3. Assert 1 (State Verification) ---
         val stateAfterAnalysis = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
@@ -101,7 +96,6 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
         // --- 4. Act 2 (User Override) ---
         // User assigns h2 to be a child of p1
         val newAction = Integrate(parentHolonId = "p1")
-        // CORRECTED: The action payload must be a JsonObject, so we build one.
         val actionPayload = buildJsonObject {
             put("sourcePath", "/import/source/h2.json")
             put("action", json.encodeToJsonElement(newAction))
@@ -111,7 +105,6 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
 
         // --- 5. Act 3 (Execution) ---
         harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
-        harness.store.deliveredPrivateData.toList().forEach { kgFeature.onPrivateData(it.envelope, harness.store) }
 
         // --- 6. Assert 2 (Ground Truth Verification) ---
         val writtenFiles = harness.platform.writtenFiles

@@ -9,10 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -72,6 +69,13 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
             dismissButton = { Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", null as String?) })) }) { Text("Cancel") } }
         )
     }
+    kgState.holonIdToRename?.let { holonId ->
+        RenameHolonDialog(
+            holon = kgState.holons[holonId],
+            onDismiss = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_RENAME, buildJsonObject { put("holonId", null as String?) })) },
+            onRename = { newName -> store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject { put("holonId", holonId); put("newName", newName) })) }
+        )
+    }
 
 
     // --- Creation Dialog ---
@@ -108,6 +112,14 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
                 title = { Text("Knowledge Graph Manager") },
                 actions = {
                     if (kgState.viewMode == KnowledgeGraphViewMode.INSPECTOR) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Show Summaries", style = MaterialTheme.typography.labelMedium)
+                            Switch(
+                                checked = kgState.showSummariesInTreeView,
+                                onCheckedChange = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_TOGGLE_SHOW_SUMMARIES)) },
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            )
+                        }
                         PersonaSelector(kgState, store)
                         IconButton(
                             onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.IMPORT.name) })) }
@@ -134,72 +146,143 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxSize()) {
-        val activePersonaRootId = kgState.activePersonaIdForView
-        val selectedHolon = kgState.holons[kgState.activeHolonIdForView]
+    val activePersonaRootId = kgState.activePersonaIdForView
+    val selectedHolonId = kgState.activeHolonIdForView
+    val holonToEditId = kgState.holonIdToEdit
+    val selectedHolon = kgState.holons[selectedHolonId]
 
-        if (activePersonaRootId == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                when {
-                    kgState.isLoading -> CircularProgressIndicator()
-                    kgState.fatalError != null -> Text(kgState.fatalError, color = MaterialTheme.colorScheme.error)
-                    else -> Text("Select a Persona to display its Knowledge Graph.")
+    val allHolonsInView = remember(kgState.holons, activePersonaRootId) {
+        activePersonaRootId?.let { rootId ->
+            val holons = mutableListOf<Holon>()
+            val visited = mutableSetOf<String>()
+            fun traverse(holonId: String) {
+                if (visited.contains(holonId)) return
+                kgState.holons[holonId]?.let { holon ->
+                    holons.add(holon)
+                    visited.add(holonId)
+                    holon.header.subHolons.forEach { subRef -> traverse(subRef.id) }
                 }
             }
-        } else {
-            HolonTreeView(
-                kgState = kgState,
-                store = store,
-                modifier = Modifier.width(400.dp)
-            )
-            VerticalDivider()
-            HolonDetailView(
-                holon = selectedHolon,
-                store = store,
-                modifier = Modifier.weight(1f)
-            )
+            traverse(rootId)
+            holons
+        } ?: emptyList()
+    }
+
+    val availableTypes = remember(allHolonsInView) { (listOf("All") + allHolonsInView.map { it.header.type }.distinct().sorted()).toSet() }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        if (activePersonaRootId != null) {
+            FlowRow(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                availableTypes.forEach { type ->
+                    val isSelected = if (type == "All") kgState.activeTypeFilters.isEmpty() else kgState.activeTypeFilters.contains(type)
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            val newFilters = if (type == "All") {
+                                emptySet()
+                            } else if (isSelected) {
+                                kgState.activeTypeFilters - type
+                            } else {
+                                kgState.activeTypeFilters + type
+                            }
+                            store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_TYPE_FILTERS, buildJsonObject { put("types", Json.encodeToJsonElement(newFilters)) }))
+                        },
+                        label = { Text(type) }
+                    )
+                }
+            }
+            HorizontalDivider()
+        }
+
+        Row(Modifier.fillMaxSize()) {
+            if (activePersonaRootId == null) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    when {
+                        kgState.isLoading -> CircularProgressIndicator()
+                        kgState.fatalError != null -> Text(kgState.fatalError, color = MaterialTheme.colorScheme.error)
+                        else -> Text("Select a Persona to display its Knowledge Graph.")
+                    }
+                }
+            } else {
+                HolonTreeView(
+                    allHolonsInView = allHolonsInView,
+                    kgState = kgState,
+                    store = store,
+                    modifier = Modifier.width(400.dp)
+                )
+                VerticalDivider()
+
+                if (holonToEditId != null) {
+                    HolonEditView(
+                        holon = kgState.holons[holonToEditId],
+                        onDismiss = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT, buildJsonObject { put("holonId", null as String?) })) },
+                        onSave = { newContent ->
+                            store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT, buildJsonObject {
+                                put("holonId", holonToEditId)
+                                put("newContent", newContent)
+                            }))
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                } else {
+                    HolonDetailView(
+                        holon = selectedHolon,
+                        store = store,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun HolonTreeView(kgState: KnowledgeGraphState, store: Store, modifier: Modifier = Modifier) {
+private fun HolonTreeView(allHolonsInView: List<Holon>, kgState: KnowledgeGraphState, store: Store, modifier: Modifier = Modifier) {
     val rootHolon = kgState.activePersonaIdForView?.let { kgState.holons[it] }
+    val holonsById = remember(allHolonsInView) { allHolonsInView.associateBy { it.header.id } }
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(vertical = 8.dp)) {
         if (rootHolon != null) {
             val treeHolons = mutableListOf<Holon>()
             fun buildTreeList(holon: Holon) {
-                treeHolons.add(holon)
+                if (kgState.activeTypeFilters.isEmpty() || kgState.activeTypeFilters.contains(holon.header.type)) {
+                    treeHolons.add(holon)
+                }
                 holon.header.subHolons
-                    .mapNotNull { subRef -> kgState.holons[subRef.id] }
+                    .mapNotNull { subRef -> holonsById[subRef.id] }
                     .sortedBy { childHolon -> childHolon.header.name }
                     .forEach { sortedChildHolon -> buildTreeList(sortedChildHolon) }
             }
             buildTreeList(rootHolon)
 
             items(treeHolons, key = { it.header.id }) { holon ->
-                HolonTreeItem(holon, kgState.activeHolonIdForView, store)
+                HolonTreeItem(holon, kgState.activeHolonIdForView, kgState.showSummariesInTreeView, store)
             }
         }
     }
 }
 
+
 @Composable
-private fun HolonTreeItem(holon: Holon, selectedHolonId: String?, store: Store) {
+private fun HolonTreeItem(holon: Holon, selectedHolonId: String?, showSummary: Boolean, store: Store) {
     val header = holon.header
     ListItem(
         headlineContent = {
             Text(header.name, maxLines = 1, style = MaterialTheme.typography.titleSmall, fontWeight = if (header.id == selectedHolonId) FontWeight.Bold else FontWeight.Normal)
         },
-        supportingContent = { Text(header.summary ?: header.type, maxLines = 1, style = MaterialTheme.typography.bodySmall) },
+        supportingContent = {
+            if (showSummary) {
+                Text(header.summary ?: header.type, maxLines = 1, style = MaterialTheme.typography.bodySmall)
+            }
+        },
         modifier = Modifier
             .fillMaxWidth()
             .clickable { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON, buildJsonObject { put("holonId", header.id) })) }
             .background(if (header.id == selectedHolonId) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
-            .padding(start = (header.depth * 16).dp)
+            .padding(start = (header.depth * 24).dp)
     )
     HorizontalDivider()
 }
@@ -220,15 +303,17 @@ private fun HolonDetailView(holon: Holon?, store: Store, modifier: Modifier = Mo
             TopAppBar(
                 title = { Text(holon.header.name, style = MaterialTheme.typography.titleMedium) },
                 actions = {
-                    Button(onClick = { /* TODO: Implement Edit */ }) { Text("Edit") }
+                    Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT, buildJsonObject { put("holonId", holon.header.id) })) }) { Text("Edit") }
                     Spacer(Modifier.width(8.dp))
-                    OutlinedButton(onClick = { /* TODO: Implement Rename */ }) { Text("Rename") }
-                    Spacer(Modifier.width(8.dp))
-                    Button(
-                        onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", holon.header.id) })) },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        enabled = holon.header.type != "AI_Persona_Root"
-                    ) { Text("Delete") }
+                    // Hide Rename and Delete for root personas
+                    if (holon.header.type != "AI_Persona_Root") {
+                        OutlinedButton(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_RENAME, buildJsonObject { put("holonId", holon.header.id) })) }) { Text("Rename") }
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", holon.header.id) })) },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) { Text("Delete") }
+                    }
                 }
             )
         }
@@ -241,6 +326,69 @@ private fun HolonDetailView(holon: Holon?, store: Store, modifier: Modifier = Mo
             )
         }
     }
+}
+
+@Composable
+private fun HolonEditView(holon: Holon?, onDismiss: () -> Unit, onSave: (String) -> Unit, modifier: Modifier = Modifier) {
+    if (holon == null) {
+        onDismiss()
+        return
+    }
+
+    var text by remember(holon.header.id) { mutableStateOf(holon.content) }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Editing: ${holon.header.name}", style = MaterialTheme.typography.titleMedium)
+            Row {
+                OutlinedButton(onClick = onDismiss) { Text("Cancel") }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = { onSave(text); onDismiss() }) { Text("Save Changes") }
+            }
+        }
+        HorizontalDivider()
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            label = { Text("Holon Content") }
+        )
+    }
+}
+
+@Composable
+private fun RenameHolonDialog(holon: Holon?, onDismiss: () -> Unit, onRename: (String) -> Unit) {
+    if (holon == null) {
+        onDismiss()
+        return
+    }
+
+    var newName by remember { mutableStateOf(holon.header.name) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename Holon") },
+        text = {
+            OutlinedTextField(
+                value = newName,
+                onValueChange = { newName = it },
+                label = { Text("New Name") },
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onRename(newName); onDismiss() },
+                enabled = newName.isNotBlank() && newName != holon.header.name
+            ) { Text("Rename") }
+        },
+        dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 
@@ -268,6 +416,7 @@ private fun PersonaSelector(kgState: KnowledgeGraphState?, store: Store) {
                         text = { Text(name) },
                         onClick = {
                             store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_PERSONA, buildJsonObject { put("personaId", id) }))
+                            store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", id) }))
                             isExpanded = false
                         }
                     )
