@@ -12,6 +12,7 @@ import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
 import app.auf.ui.AppTheme
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import org.junit.Before
@@ -19,7 +20,6 @@ import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -207,7 +207,7 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE }
         assertNotNull(action)
-        assertNull(action.payload?.get("personaId"))
+        assertTrue(action.payload?.get("personaId") is JsonNull)
     }
 
     // --- Creation Workflow UI Tests ---

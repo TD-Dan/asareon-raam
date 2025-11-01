@@ -25,6 +25,7 @@ import app.auf.core.Store
 import app.auf.core.generated.ActionNames
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
@@ -44,7 +45,7 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
     kgState.personaIdToDelete?.let { personaId ->
         val personaName = kgState.holons[personaId]?.header?.name ?: "Unknown Persona"
         AlertDialog(
-            onDismissRequest = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", null as String?) })) },
+            onDismissRequest = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", JsonNull) })) },
             title = { Text("Delete Persona?") },
             text = { Text("Are you sure you want to permanently delete '$personaName'? This action cannot be undone.") },
             confirmButton = {
@@ -53,7 +54,7 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) { Text("Delete") }
             },
-            dismissButton = { Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", null as String?) })) }) { Text("Cancel") } }
+            dismissButton = { Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", JsonNull) })) }) { Text("Cancel") } }
         )
     }
     kgState.holonIdToDelete?.let { holonId ->
@@ -156,6 +157,7 @@ private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: 
             VerticalDivider()
             HolonDetailView(
                 holon = selectedHolon,
+                store = store,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -188,33 +190,11 @@ private fun HolonTreeView(kgState: KnowledgeGraphState, store: Store, modifier: 
 @Composable
 private fun HolonTreeItem(holon: Holon, selectedHolonId: String?, store: Store) {
     val header = holon.header
-    var menuExpanded by remember { mutableStateOf(false) }
     ListItem(
         headlineContent = {
             Text(header.name, maxLines = 1, style = MaterialTheme.typography.titleSmall, fontWeight = if (header.id == selectedHolonId) FontWeight.Bold else FontWeight.Normal)
         },
         supportingContent = { Text(header.summary ?: header.type, maxLines = 1, style = MaterialTheme.typography.bodySmall) },
-        trailingContent = {
-            Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "Holon options")
-                }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Delete Holon") },
-                        onClick = {
-                            store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", header.id) }))
-                            menuExpanded = false
-                        },
-                        leadingIcon = { Icon(Icons.Default.Delete, null) },
-                        enabled = header.type != "AI_Persona_Root"
-                    )
-                }
-            }
-        },
         modifier = Modifier
             .fillMaxWidth()
             .clickable { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON, buildJsonObject { put("holonId", header.id) })) }
@@ -224,22 +204,45 @@ private fun HolonTreeItem(holon: Holon, selectedHolonId: String?, store: Store) 
     HorizontalDivider()
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HolonDetailView(holon: Holon?, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        if (holon == null) {
+private fun HolonDetailView(holon: Holon?, store: Store, modifier: Modifier = Modifier) {
+    if (holon == null) {
+        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("Select a holon to view its content.")
-        } else {
-            SelectionContainer(modifier = Modifier.fillMaxSize()) {
-                Text(
-                    text = holon.content,
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())
-                )
-            }
+        }
+        return
+    }
+
+    Scaffold(
+        modifier = modifier,
+        topBar = {
+            TopAppBar(
+                title = { Text(holon.header.name, style = MaterialTheme.typography.titleMedium) },
+                actions = {
+                    Button(onClick = { /* TODO: Implement Edit */ }) { Text("Edit") }
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedButton(onClick = { /* TODO: Implement Rename */ }) { Text("Rename") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", holon.header.id) })) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        enabled = holon.header.type != "AI_Persona_Root"
+                    ) { Text("Delete") }
+                }
+            )
+        }
+    ) { paddingValues ->
+        SelectionContainer(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            Text(
+                text = holon.content,
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())
+            )
         }
     }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
