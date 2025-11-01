@@ -10,6 +10,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
@@ -37,6 +38,22 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
     if (kgState == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
+    }
+
+    kgState.personaIdToDelete?.let { personaId ->
+        val personaName = kgState.holons[personaId]?.header?.name ?: "Unknown Persona"
+        AlertDialog(
+            onDismissRequest = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", null as String?) })) },
+            title = { Text("Delete Persona?") },
+            text = { Text("Are you sure you want to permanently delete '$personaName'? This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject { put("personaId", personaId) })) },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = { Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", null as String?) })) }) { Text("Cancel") } }
+        )
     }
 
     Scaffold(
@@ -162,25 +179,51 @@ private fun HolonDetailView(holon: Holon?, modifier: Modifier = Modifier) {
 private fun PersonaSelector(kgState: KnowledgeGraphState?, store: Store) {
     if (kgState == null) return
     var isExpanded by remember { mutableStateOf(false) }
+    var menuExpanded by remember { mutableStateOf(false) }
     val activePersonaName = kgState.personaRoots.entries.find { it.value == kgState.activePersonaIdForView }?.key ?: "Select Persona"
 
-    ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
-        OutlinedTextField(
-            value = activePersonaName,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Selected Persona") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
-            modifier = Modifier.menuAnchor().width(250.dp).padding(end = 8.dp)
-        )
-        ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
-            kgState.personaRoots.entries.sortedBy { it.key }.forEach { (name, id) ->
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
+            OutlinedTextField(
+                value = activePersonaName,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Selected Persona") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
+                modifier = Modifier.menuAnchor().width(250.dp)
+            )
+            ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
+                kgState.personaRoots.entries.sortedBy { it.key }.forEach { (name, id) ->
+                    DropdownMenuItem(
+                        text = { Text(name) },
+                        onClick = {
+                            store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_PERSONA, buildJsonObject { put("personaId", id) }))
+                            isExpanded = false
+                        }
+                    )
+                }
+            }
+        }
+        Box {
+            IconButton(
+                onClick = { menuExpanded = true },
+                enabled = kgState.activePersonaIdForView != null
+            ) {
+                Icon(Icons.Default.MoreVert, contentDescription = "More options")
+            }
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false }
+            ) {
                 DropdownMenuItem(
-                    text = { Text(name) },
+                    text = { Text("Delete Persona") },
                     onClick = {
-                        store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_PERSONA, buildJsonObject { put("personaId", id) }))
-                        isExpanded = false
-                    }
+                        kgState.activePersonaIdForView?.let {
+                            store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", it) }))
+                        }
+                        menuExpanded = false
+                    },
+                    leadingIcon = { Icon(Icons.Default.Delete, null) }
                 )
             }
         }

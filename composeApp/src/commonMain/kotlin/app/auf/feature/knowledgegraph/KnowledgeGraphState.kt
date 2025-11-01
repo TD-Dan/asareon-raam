@@ -109,6 +109,9 @@ data class KnowledgeGraphState(
     // --- Transient State for Async Operations ---
     @Transient val pendingReads: Map<String, ReadContext> = emptyMap(),
 
+    // --- Transient State for UI Interactions ---
+    @Transient val personaIdToDelete: String? = null,
+
     // --- Loading & Error State ---
     val isLoading: Boolean = false,
     val fatalError: String? = null

@@ -143,4 +143,20 @@ class KnowledgeGraphFeatureT2CoreTest {
         assertTrue(context.containsKey("persona-1"))
         assertTrue(context.containsKey("holon-a"))
     }
+
+    @Test
+    fun `delete persona workflow dispatches correct sequence`() {
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        harness.store.dispatch("ui.dialog", Action(ActionNames.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject {
+            put("personaId", "persona-to-delete")
+        }))
+
+        val deleteDirAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY }
+        assertNotNull(deleteDirAction, "Should dispatch an action to delete the directory.")
+        assertEquals("persona-to-delete", deleteDirAction.payload?.get("subpath")?.jsonPrimitive?.content)
+
+        val confirmAction = harness.processedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA }
+        assertNotNull(confirmAction, "Should dispatch an internal action to update the state.")
+        assertEquals("persona-to-delete", confirmAction.payload?.get("personaId")?.jsonPrimitive?.content)
+    }
 }

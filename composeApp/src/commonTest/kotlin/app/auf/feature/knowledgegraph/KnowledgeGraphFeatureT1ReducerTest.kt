@@ -195,4 +195,42 @@ class KnowledgeGraphFeatureT1ReducerTest {
 
         assertTrue(newKgState.showOnlyChangedImportItems)
     }
+
+    // --- Reducer - Deletion Workflow ---
+    @Test
+    fun `on SET_PERSONA_TO_DELETE should set the personaIdToDelete`() {
+        val initialState = createAppState()
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", "p1") })
+
+        val newState = feature.reducer(initialState, action)
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
+
+        assertEquals("p1", newKgState.personaIdToDelete)
+    }
+
+    @Test
+    fun `on CONFIRM_DELETE_PERSONA should remove the persona and all its descendant holons`() {
+        val p1 = Holon(HolonHeader("p1", "AI_Persona_Root", "P1", subHolons = listOf(SubHolonRef("h1", "T", "S"))), buildJsonObject {})
+        val h1 = Holon(HolonHeader("h1", "T", "H1", subHolons = listOf(SubHolonRef("h2", "T", "S"))), buildJsonObject {})
+        val h2 = Holon(HolonHeader("h2", "T", "H2"), buildJsonObject {})
+        val p2 = Holon(HolonHeader("p2", "AI_Persona_Root", "P2"), buildJsonObject {})
+
+        val initialState = createAppState(KnowledgeGraphState(
+            holons = mapOf("p1" to p1, "h1" to h1, "h2" to h2, "p2" to p2),
+            personaRoots = mapOf("P1" to "p1", "P2" to "p2"),
+            activePersonaIdForView = "p1"
+        ))
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA, buildJsonObject { put("personaId", "p1") })
+
+        val newState = feature.reducer(initialState, action)
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
+
+        assertFalse(newKgState.holons.containsKey("p1"))
+        assertFalse(newKgState.holons.containsKey("h1"))
+        assertFalse(newKgState.holons.containsKey("h2"))
+        assertTrue(newKgState.holons.containsKey("p2"))
+        assertFalse(newKgState.personaRoots.containsKey("P1"))
+        assertTrue(newKgState.personaRoots.containsKey("P2"))
+        assertNull(newKgState.activePersonaIdForView, "Active view should be cleared if the deleted persona was active.")
+    }
 }

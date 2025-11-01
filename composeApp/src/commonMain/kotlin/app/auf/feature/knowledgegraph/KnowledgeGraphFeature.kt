@@ -33,6 +33,8 @@ class KnowledgeGraphFeature(
     @Serializable private data class SetImportRecursivePayload(val recursive: Boolean)
     @Serializable private data class UpdateImportActionPayload(val sourcePath: String, val action: ImportAction)
     @Serializable private data class CreatePersonaPayload(val name: String)
+    @Serializable private data class DeletePersonaPayload(val personaId: String)
+    @Serializable private data class SetPersonaToDeletePayload(val personaId: String?)
     @Serializable private data class ReadResponsePayload(val subpath: String, val content: String?) // For decoding private responses
     @Serializable private data class DirectoryContentsPayload(val path: String, val listing: List<FileEntry>)
     @Serializable private data class FilesContentPayload(val contents: Map<String, String>)
@@ -111,6 +113,15 @@ class KnowledgeGraphFeature(
 
                 store.dispatch("ui.kgView", Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Created persona '${payload.name}'.") }))
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
+            }
+            ActionNames.KNOWLEDGEGRAPH_DELETE_PERSONA -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<DeletePersonaPayload>(it) } ?: return
+                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
+                    put("subpath", payload.personaId)
+                }))
+                store.dispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA, buildJsonObject {
+                    put("personaId", payload.personaId)
+                }))
             }
         }
     }
@@ -210,6 +221,32 @@ class KnowledgeGraphFeature(
             }
             ActionNames.KNOWLEDGEGRAPH_TOGGLE_SHOW_ONLY_CHANGED -> {
                 newFeatureState = currentFeatureState.copy(showOnlyChangedImportItems = !currentFeatureState.showOnlyChangedImportItems)
+            }
+            ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<SetPersonaToDeletePayload>(it) } ?: return state
+                newFeatureState = currentFeatureState.copy(personaIdToDelete = payload.personaId)
+            }
+            ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<DeletePersonaPayload>(it) } ?: return state
+                val rootHolon = currentFeatureState.holons[payload.personaId] ?: return state
+                val idsToDelete = mutableSetOf<String>()
+                val queue = mutableListOf(rootHolon)
+                while (queue.isNotEmpty()) {
+                    val current = queue.removeAt(0)
+                    idsToDelete.add(current.header.id)
+                    current.header.subHolons.forEach { subRef ->
+                        currentFeatureState.holons[subRef.id]?.let { queue.add(it) }
+                    }
+                }
+                val newHolons = currentFeatureState.holons - idsToDelete
+                val newRoots = currentFeatureState.personaRoots.filterValues { it != payload.personaId }
+                newFeatureState = currentFeatureState.copy(
+                    holons = newHolons,
+                    personaRoots = newRoots,
+                    activePersonaIdForView = if (currentFeatureState.activePersonaIdForView == payload.personaId) null else currentFeatureState.activePersonaIdForView,
+                    activeHolonIdForView = null,
+                    personaIdToDelete = null
+                )
             }
         }
 

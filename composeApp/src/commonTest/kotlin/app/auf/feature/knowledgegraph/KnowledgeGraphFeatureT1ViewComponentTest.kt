@@ -1,6 +1,7 @@
 package app.auf.feature.knowledgegraph
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import app.auf.core.Action
@@ -10,12 +11,14 @@ import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
 import app.auf.ui.AppTheme
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -149,5 +152,60 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_EXECUTE_IMPORT }
         assertNotNull(action)
+    }
+
+    // --- Deletion Workflow UI Tests ---
+    @Test
+    fun `clicking delete in kebab menu dispatches SET_PERSONA_TO_DELETE`() {
+        val p1 = Holon(HolonHeader("p1", "AI_Persona_Root", "P1"), buildJsonObject {})
+        setViewState(KnowledgeGraphState(
+            holons = mapOf("p1" to p1),
+            personaRoots = mapOf("P1" to "p1"),
+            activePersonaIdForView = "p1"
+        ))
+        fakeStore.dispatchedActions.clear()
+
+        composeTestRule.onNodeWithContentDescription("More options").performClick()
+        composeTestRule.onNodeWithText("Delete Persona").performClick()
+
+        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE }
+        assertNotNull(action)
+        assertEquals("p1", action.payload?.get("personaId")?.toString()?.trim('"'))
+    }
+
+    @Test
+    fun `when personaIdToDelete is set, AlertDialog is shown`() {
+        val p1 = Holon(HolonHeader("p1", "AI_Persona_Root", "P1"), buildJsonObject {})
+        setViewState(KnowledgeGraphState(
+            holons = mapOf("p1" to p1),
+            personaIdToDelete = "p1"
+        ))
+
+        composeTestRule.onNodeWithText("Delete Persona?").assertExists()
+        composeTestRule.onNodeWithText("Are you sure you want to permanently delete 'P1'? This action cannot be undone.").assertExists()
+    }
+
+    @Test
+    fun `clicking Delete in dialog dispatches DELETE_PERSONA`() {
+        setViewState(KnowledgeGraphState(personaIdToDelete = "p1"))
+        fakeStore.dispatchedActions.clear()
+
+        composeTestRule.onNodeWithText("Delete").performClick()
+
+        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_DELETE_PERSONA }
+        assertNotNull(action)
+        assertEquals("p1", action.payload?.get("personaId")?.toString()?.trim('"'))
+    }
+
+    @Test
+    fun `clicking Cancel in dialog dispatches SET_PERSONA_TO_DELETE with null`() {
+        setViewState(KnowledgeGraphState(personaIdToDelete = "p1"))
+        fakeStore.dispatchedActions.clear()
+
+        composeTestRule.onNodeWithText("Cancel").performClick()
+
+        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE }
+        assertNotNull(action)
+        assertNull(action.payload?.get("personaId"))
     }
 }

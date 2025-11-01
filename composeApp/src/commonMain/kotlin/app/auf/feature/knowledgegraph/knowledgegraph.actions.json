@@ -84,6 +84,11 @@
       "payload_schema": { "type": "object", "properties": { "personaId": { "type": "string" } }, "required": ["personaId"] }
     },
     {
+      "action_name": "knowledgegraph.SET_PERSONA_TO_DELETE",
+      "summary": "A UI action to stage a persona for deletion, triggering a confirmation dialog.",
+      "payload_schema": { "type": "object", "properties": { "personaId": { "type": ["string", "null"] } } }
+    },
+    {
       "action_name": "knowledgegraph.UPDATE_HOLON",
       "summary": "Creates or updates a holon file within a loaded HKG.",
       "payload_schema": { "type": "object", "properties": { "holonId": { "type": "string" }, "content": { "type": "string" } }, "required": ["holonId", "content"] }
@@ -98,7 +103,12 @@
     {
       "action_name": "knowledgegraph.publish.AVAILABLE_PERSONAS_UPDATED",
       "summary": "Broadcasts the list of all discovered, valid AI_Persona_Root holon headers, allowing other features (like the UI) to know which HKGs are available.",
-      "payload_schema": { "type": "object", "properties": { "personas": { "type": "array", "items": { "type": "object" } } }, "required": ["personas"] }
+      "payload_schema": { "type": "object", "properties": { "names": { "type": "object" } }, "required": ["names"] }
+    },
+    {
+      "action_name": "knowledgegraph.internal.CONFIRM_DELETE_PERSONA",
+      "summary": "[INTERNAL] Dispatched after the deletion side-effect is complete to commit the state change.",
+      "payload_schema": { "type": "object", "properties": { "personaId": { "type": "string" } }, "required": ["personaId"] }
     },
     {
       "action_name": "knowledgegraph.internal.ADD_PENDING_READ",
