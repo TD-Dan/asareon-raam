@@ -36,6 +36,8 @@ class KnowledgeGraphFeature(
     @Serializable private data class DeletePersonaPayload(val personaId: String)
     @Serializable private data class SetPersonaToDeletePayload(val personaId: String?)
     @Serializable private data class SetCreatingPersonaPayload(val isCreating: Boolean)
+    @Serializable private data class DeleteHolonPayload(val holonId: String)
+    @Serializable private data class SetHolonToDeletePayload(val holonId: String?)
     @Serializable private data class ReadResponsePayload(val subpath: String, val content: String?) // For decoding private responses
     @Serializable private data class DirectoryContentsPayload(val path: String, val listing: List<FileEntry>)
     @Serializable private data class FilesContentPayload(val contents: Map<String, String>)
@@ -122,6 +124,31 @@ class KnowledgeGraphFeature(
                 }))
                 store.dispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA, buildJsonObject {
                     put("personaId", payload.personaId)
+                }))
+            }
+            ActionNames.KNOWLEDGEGRAPH_DELETE_HOLON -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<DeleteHolonPayload>(it) } ?: return
+                val holonToDelete = kgState.holons[payload.holonId] ?: return
+                val parentId = holonToDelete.header.parentId
+                val parentHolon = parentId?.let { kgState.holons[it] }
+
+                platformDependencies.getParentDirectory(holonToDelete.header.filePath)?.let { holonDir ->
+                    store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
+                        put("subpath", holonDir)
+                    }))
+                }
+
+                if (parentHolon != null) {
+                    val updatedSubHolons = parentHolon.header.subHolons.filter { it.id != payload.holonId }
+                    val updatedParentHeader = parentHolon.header.copy(subHolons = updatedSubHolons)
+                    val updatedParent = parentHolon.copy(header = updatedParentHeader)
+                    store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+                        put("subpath", updatedParent.header.filePath)
+                        put("content", json.encodeToString(Holon.serializer(), updatedParent))
+                    }))
+                }
+                store.dispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_HOLON, buildJsonObject {
+                    put("holonId", payload.holonId)
                 }))
             }
         }
@@ -251,6 +278,39 @@ class KnowledgeGraphFeature(
                     activePersonaIdForView = if (currentFeatureState.activePersonaIdForView == payload.personaId) null else currentFeatureState.activePersonaIdForView,
                     activeHolonIdForView = null,
                     personaIdToDelete = null
+                )
+            }
+            ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<SetHolonToDeletePayload>(it) } ?: return state
+                newFeatureState = currentFeatureState.copy(holonIdToDelete = payload.holonId)
+            }
+            ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_HOLON -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<DeleteHolonPayload>(it) } ?: return state
+                val holonToDelete = currentFeatureState.holons[payload.holonId] ?: return state
+                // 1. Find all descendant IDs
+                val idsToDelete = mutableSetOf<String>()
+                val queue = mutableListOf(holonToDelete)
+                while (queue.isNotEmpty()) {
+                    val current = queue.removeAt(0)
+                    idsToDelete.add(current.header.id)
+                    current.header.subHolons.forEach { subRef ->
+                        currentFeatureState.holons[subRef.id]?.let { queue.add(it) }
+                    }
+                }
+                // 2. Remove all descendants from the state
+                var newHolons = currentFeatureState.holons - idsToDelete
+                // 3. Update the parent's sub_holons list
+                holonToDelete.header.parentId?.let { parentId ->
+                    currentFeatureState.holons[parentId]?.let { parentHolon ->
+                        val updatedSubHolons = parentHolon.header.subHolons.filter { it.id != payload.holonId }
+                        val updatedParent = parentHolon.copy(header = parentHolon.header.copy(subHolons = updatedSubHolons))
+                        newHolons = newHolons + (parentId to updatedParent)
+                    }
+                }
+                newFeatureState = currentFeatureState.copy(
+                    holons = newHolons,
+                    holonIdToDelete = null,
+                    activeHolonIdForView = if (currentFeatureState.activeHolonIdForView in idsToDelete) null else currentFeatureState.activeHolonIdForView
                 )
             }
         }

@@ -40,7 +40,7 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
         return
     }
 
-    // --- Deletion Dialog ---
+    // --- Deletion Dialogs ---
     kgState.personaIdToDelete?.let { personaId ->
         val personaName = kgState.holons[personaId]?.header?.name ?: "Unknown Persona"
         AlertDialog(
@@ -56,6 +56,22 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
             dismissButton = { Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", null as String?) })) }) { Text("Cancel") } }
         )
     }
+    kgState.holonIdToDelete?.let { holonId ->
+        val holonName = kgState.holons[holonId]?.header?.name ?: "Unknown Holon"
+        AlertDialog(
+            onDismissRequest = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", null as String?) })) },
+            title = { Text("Delete Holon?") },
+            text = { Text("Are you sure you want to permanently delete '$holonName'? This will also delete all of its children.") },
+            confirmButton = {
+                Button(
+                    onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject { put("holonId", holonId) })) },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = { Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", null as String?) })) }) { Text("Cancel") } }
+        )
+    }
+
 
     // --- Creation Dialog ---
     if (kgState.isCreatingPersona) {
@@ -172,16 +188,38 @@ private fun HolonTreeView(kgState: KnowledgeGraphState, store: Store, modifier: 
 @Composable
 private fun HolonTreeItem(holon: Holon, selectedHolonId: String?, store: Store) {
     val header = holon.header
+    var menuExpanded by remember { mutableStateOf(false) }
     ListItem(
         headlineContent = {
             Text(header.name, maxLines = 1, style = MaterialTheme.typography.titleSmall, fontWeight = if (header.id == selectedHolonId) FontWeight.Bold else FontWeight.Normal)
         },
         supportingContent = { Text(header.summary ?: header.type, maxLines = 1, style = MaterialTheme.typography.bodySmall) },
+        trailingContent = {
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Holon options")
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Delete Holon") },
+                        onClick = {
+                            store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", header.id) }))
+                            menuExpanded = false
+                        },
+                        leadingIcon = { Icon(Icons.Default.Delete, null) },
+                        enabled = header.type != "AI_Persona_Root"
+                    )
+                }
+            }
+        },
         modifier = Modifier
             .fillMaxWidth()
             .clickable { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON, buildJsonObject { put("holonId", header.id) })) }
             .background(if (header.id == selectedHolonId) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
-            .padding(start = (header.depth * 16).dp, end = 16.dp)
+            .padding(start = (header.depth * 16).dp)
     )
     HorizontalDivider()
 }

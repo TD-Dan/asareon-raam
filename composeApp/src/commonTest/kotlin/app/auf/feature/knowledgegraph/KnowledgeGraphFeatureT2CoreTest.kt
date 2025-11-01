@@ -19,6 +19,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -176,5 +177,29 @@ class KnowledgeGraphFeatureT2CoreTest {
 
         val listAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_LIST }
         assertNotNull(listAction, "Should dispatch a list action to reload the graph.")
+    }
+
+    @Test
+    fun `delete holon workflow dispatches correct sequence`() {
+        val p1 = Holon(HolonHeader("p1", "AI_Persona_Root", "P1", filePath = "p1/p1.json", subHolons = listOf(SubHolonRef("h1", "T", "S"))), buildJsonObject {})
+        val h1 = Holon(HolonHeader("h1", "T", "H1", filePath = "p1/h1/h1.json", parentId = "p1"), buildJsonObject {})
+        val initialState = KnowledgeGraphState(holons = mapOf("p1" to p1, "h1" to h1))
+        val harness = TestEnvironment.create().withFeature(feature).withInitialState("knowledgegraph", initialState).build(platform = platform)
+
+        harness.store.dispatch("ui.menu", Action(ActionNames.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject { put("holonId", "h1") }))
+
+        val deleteDirAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY }
+        assertNotNull(deleteDirAction, "Should delete the holon's directory.")
+        assertEquals("p1/h1", deleteDirAction.payload?.get("subpath")?.jsonPrimitive?.content)
+
+        val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
+        assertNotNull(writeAction, "Should write the updated parent.")
+        assertEquals("p1/p1.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
+        val updatedParentContent = writeAction.payload?.get("content")?.jsonPrimitive?.content ?: ""
+        assertFalse(updatedParentContent.contains("h1"), "Updated parent content should not contain the deleted holon ID.")
+
+        val confirmAction = harness.processedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_HOLON }
+        assertNotNull(confirmAction, "Should confirm the state change.")
+        assertEquals("h1", confirmAction.payload?.get("holonId")?.jsonPrimitive?.content)
     }
 }

@@ -102,6 +102,11 @@
       "action_name": "knowledgegraph.DELETE_HOLON",
       "summary": "Deletes a holon file from a loaded HKG.",
       "payload_schema": { "type": "object", "properties": { "holonId": { "type": "string" } }, "required": ["holonId"] }
+    },
+    {
+      "action_name": "knowledgegraph.SET_HOLON_TO_DELETE",
+      "summary": "A UI action to stage a single holon for deletion, triggering a confirmation dialog.",
+      "payload_schema": { "type": "object", "properties": { "holonId": { "type": ["string", "null"] } } }
     }
   ],
   "publishes": [
@@ -114,6 +119,11 @@
       "action_name": "knowledgegraph.internal.CONFIRM_DELETE_PERSONA",
       "summary": "[INTERNAL] Dispatched after the deletion side-effect is complete to commit the state change.",
       "payload_schema": { "type": "object", "properties": { "personaId": { "type": "string" } }, "required": ["personaId"] }
+    },
+    {
+      "action_name": "knowledgegraph.internal.CONFIRM_DELETE_HOLON",
+      "summary": "[INTERNAL] Dispatched after a holon's deletion side-effect is complete to commit the state change.",
+      "payload_schema": { "type": "object", "properties": { "holonId": { "type": "string" } }, "required": ["holonId"] }
     },
     {
       "action_name": "knowledgegraph.internal.ADD_PENDING_READ",

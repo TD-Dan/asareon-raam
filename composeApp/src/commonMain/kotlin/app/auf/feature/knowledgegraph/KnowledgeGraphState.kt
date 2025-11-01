@@ -112,6 +112,7 @@ data class KnowledgeGraphState(
     // --- Transient State for UI Interactions ---
     @Transient val personaIdToDelete: String? = null,
     @Transient val isCreatingPersona: Boolean = false,
+    @Transient val holonIdToDelete: String? = null,
 
     // --- Loading & Error State ---
     val isLoading: Boolean = false,

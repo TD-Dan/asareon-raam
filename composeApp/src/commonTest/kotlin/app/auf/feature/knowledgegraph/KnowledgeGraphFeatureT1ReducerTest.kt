@@ -234,6 +234,34 @@ class KnowledgeGraphFeatureT1ReducerTest {
         assertNull(newKgState.activePersonaIdForView, "Active view should be cleared if the deleted persona was active.")
     }
 
+    @Test
+    fun `on SET_HOLON_TO_DELETE should set the holonIdToDelete`() {
+        val initialState = createAppState()
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", "h1") })
+        val newState = feature.reducer(initialState, action)
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
+        assertEquals("h1", newKgState.holonIdToDelete)
+    }
+
+    @Test
+    fun `on CONFIRM_DELETE_HOLON should remove holon and update parent`() {
+        val h1 = Holon(HolonHeader("h1", "T", "H1", subHolons = listOf(SubHolonRef("h2", "T", "S"))), buildJsonObject {})
+        val h2 = Holon(HolonHeader("h2", "T", "H2", parentId = "h1"), buildJsonObject {})
+        val p1 = Holon(HolonHeader("p1", "AI_Persona_Root", "P1", subHolons = listOf(SubHolonRef("h1", "T", "S"))), buildJsonObject {})
+
+        val initialState = createAppState(KnowledgeGraphState(holons = mapOf("p1" to p1, "h1" to h1, "h2" to h2)))
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_HOLON, buildJsonObject { put("holonId", "h1") })
+
+        val newState = feature.reducer(initialState, action)
+        val newKgState = newState.featureStates[featureName] as KnowledgeGraphState
+
+        assertFalse(newKgState.holons.containsKey("h1"), "Deleted holon should be removed.")
+        assertFalse(newKgState.holons.containsKey("h2"), "Descendant holon should be removed.")
+        assertTrue(newKgState.holons.containsKey("p1"), "Parent should still exist.")
+        val updatedParent = newKgState.holons["p1"]!!
+        assertTrue(updatedParent.header.subHolons.isEmpty(), "Parent's sub_holons list should be updated.")
+    }
+
     // --- Reducer - Creation Workflow ---
     @Test
     fun `on SET_CREATING_PERSONA should toggle isCreatingPersona flag`() {
