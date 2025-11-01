@@ -169,7 +169,7 @@ private fun PersonaSelector(kgState: KnowledgeGraphState?, store: Store) {
             value = activePersonaName,
             onValueChange = {},
             readOnly = true,
-            label = { Text("Active Persona") },
+            label = { Text("Selected Persona") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
             modifier = Modifier.menuAnchor().width(250.dp).padding(end = 8.dp)
         )

@@ -13,6 +13,7 @@ import app.auf.util.LogLevel
 import io.ktor.http.content.Version
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -131,7 +132,7 @@ class AgentRuntimeFeatureT2CoreTest {
 
     // TEST: New test for sentinel logic.
     @Test
-    fun `sentinel sanitizes timestamp echo out of ai response`() {
+    fun `sentinel sanitizes timestamp echo out of ai response`() = runTest {
         val agent = createTestAgent(status = AgentStatus.PROCESSING)
         val session = Session("session-1", "Test Session", emptyList(), 1L)
         val harness = TestEnvironment.create()
@@ -163,7 +164,7 @@ class AgentRuntimeFeatureT2CoreTest {
     }
 
     @Test
-    fun `INITIATE_TURN with preview=false dispatches SESSION_REQUEST_LEDGER_CONTENT`() {
+    fun `INITIATE_TURN with preview=false dispatches SESSION_REQUEST_LEDGER_CONTENT`() = runTest {
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to createTestAgent())))
@@ -181,7 +182,7 @@ class AgentRuntimeFeatureT2CoreTest {
     }
 
     @Test
-    fun `INITIATE_TURN with preview=true dispatches SESSION_REQUEST_LEDGER_CONTENT`() {
+    fun `INITIATE_TURN with preview=true dispatches SESSION_REQUEST_LEDGER_CONTENT`() = runTest {
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to createTestAgent())))
@@ -198,7 +199,7 @@ class AgentRuntimeFeatureT2CoreTest {
     }
 
     @Test
-    fun `on session ledger response for direct turn, dispatches GATEWAY_GENERATE_CONTENT`() {
+    fun `on session ledger response for direct turn, dispatches GATEWAY_GENERATE_CONTENT`() = runTest {
         val agent = createTestAgent(status = AgentStatus.IDLE, turnMode = TurnMode.DIRECT)
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
@@ -214,7 +215,7 @@ class AgentRuntimeFeatureT2CoreTest {
     }
 
     @Test
-    fun `on session ledger response for preview turn, dispatches GATEWAY_PREPARE_PREVIEW`() {
+    fun `on session ledger response for preview turn, dispatches GATEWAY_PREPARE_PREVIEW`() = runTest {
         val agent = createTestAgent(status = AgentStatus.IDLE, turnMode = TurnMode.PREVIEW)
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
@@ -230,7 +231,7 @@ class AgentRuntimeFeatureT2CoreTest {
     }
 
     @Test
-    fun `assembles enriched context with correct identities from various sources`() {
+    fun `assembles enriched context with correct identities from various sources`() = runTest {
         // ARRANGE
         val user = Identity("user-id-1", "User Alpha")
         val agent = createTestAgent(id = "agent-1", name = "Test Agent")
@@ -292,7 +293,7 @@ class AgentRuntimeFeatureT2CoreTest {
     }
 
     @Test
-    fun `CLONE action dispatches a CREATE action with modified name`() {
+    fun `CLONE action dispatches a CREATE action with modified name`() = runTest {
         val agent = createTestAgent()
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
@@ -307,7 +308,7 @@ class AgentRuntimeFeatureT2CoreTest {
     }
 
     @Test
-    fun `full preview workflow results in staged data and correct final execution`() {
+    fun `full preview workflow results in staged data and correct final execution`() = runTest {
         val agent = createTestAgent()
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
@@ -344,7 +345,7 @@ class AgentRuntimeFeatureT2CoreTest {
     }
 
     @Test
-    fun `DISCARD_PREVIEW action clears staged data and viewing context`() {
+    fun `DISCARD_PREVIEW action clears staged data and viewing context`() = runTest {
         val previewData = StagedPreviewData(GatewayRequest("m1", emptyList(), "c1"), "{}")
         val agent = createTestAgent().copy(stagedPreviewData = previewData)
         val harness = TestEnvironment.create()
@@ -360,7 +361,7 @@ class AgentRuntimeFeatureT2CoreTest {
     }
 
     @Test
-    fun `cognitive cycle proceeds without HKG context if KG feature is absent`() {
+    fun `cognitive cycle proceeds without HKG context if KG feature is absent`() = runTest {
         val agent = createTestAgent(kgId = "p1") // Agent wants an HKG
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))

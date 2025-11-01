@@ -40,13 +40,13 @@ class KnowledgeGraphFeatureT2CoreTest {
     private val persona1Content = """
         {
             "header": { "id": "persona-1", "type": "AI_Persona_Root", "name": "Persona One", "sub_holons": [{"id": "holon-a", "type": "T", "summary": "S"}] },
-            "payload": {}, "execute": null, "content": "..."
+            "payload": {}, "execute": null
         }
     """.trimIndent()
     private val holonAContent = """
         {
             "header": { "id": "holon-a", "type": "Test_Holon", "name": "Holon A" },
-            "payload": {}, "execute": null, "content": "Holon A Content"
+            "payload": {}, "execute": null
         }
     """.trimIndent()
 

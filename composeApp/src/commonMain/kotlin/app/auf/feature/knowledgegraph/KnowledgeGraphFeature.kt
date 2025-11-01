@@ -93,8 +93,8 @@ class KnowledgeGraphFeature(
                 val payload = action.payload?.let { json.decodeFromJsonElement<CreatePersonaPayload>(it) } ?: return
                 val timestamp = platformDependencies.getSystemTimeMillis()
                 val isoTimestamp = platformDependencies.formatIsoTimestamp(timestamp)
-                val fileSafeTimestamp = isoTimestamp.replace(":", "").replace("Z", "")
-                val newId = "${payload.name.lowercase().replace(" ", "-")}-$fileSafeTimestamp"
+                val fileSafeTimestamp = isoTimestamp.replace(":", "").replace("-", "").replace("Z", "").replace("T", "T") // Make it more compact
+                val newId = "${payload.name.lowercase().replace(" ", "-")}-${fileSafeTimestamp}"
 
                 val newHolonHeader = HolonHeader(
                     id = newId, type = "AI_Persona_Root", name = payload.name,
@@ -330,7 +330,7 @@ class KnowledgeGraphFeature(
                         val parentSubpath = kgState.holons[parentId]?.header?.filePath ?: processedHolonPaths[parentId]
                         if (parentSubpath == null) { wasProcessed = false; remainingActions[sourcePath] = action; continue }
 
-                        val parentDir = platformDependencies.getParentDirectory(parentSubpath)?.let { platformDependencies.getParentDirectory(it) }
+                        val parentDir = platformDependencies.getParentDirectory(parentSubpath)
                         if (parentDir == null) { wasProcessed = false; remainingActions[sourcePath] = action; continue }
 
                         val destSubpath = "$parentDir/$holonId/$holonId.json"
@@ -339,16 +339,18 @@ class KnowledgeGraphFeature(
                         }))
                         processedHolonPaths[holonId] = destSubpath
 
-                        val parentContentStr = updatedParentContents[parentSubpath] ?: parentContents[parentSubpath] ?: continue
-                        val parentFileHolon = json.decodeFromString<Holon>(parentContentStr)
-                        val newSubRef = SubHolonRef(holonId, sourceHolon.header.type, sourceHolon.header.summary ?: "")
-                        if (parentFileHolon.header.subHolons.none { it.id == holonId }) {
-                            val updatedHeader = parentFileHolon.header.copy(subHolons = parentFileHolon.header.subHolons + newSubRef)
-                            val updatedParentHolon = parentFileHolon.copy(header = updatedHeader)
-                            updatedParentContents[parentSubpath] = json.encodeToString(Holon.serializer(), updatedParentHolon)
+                        val parentContentStr = updatedParentContents[parentSubpath] ?: parentContents[parentSubpath]
+                        if (parentContentStr != null) {
+                            val parentFileHolon = json.decodeFromString<Holon>(parentContentStr)
+                            val newSubRef = SubHolonRef(holonId, sourceHolon.header.type, sourceHolon.header.summary ?: "")
+                            if (parentFileHolon.header.subHolons.none { it.id == holonId }) {
+                                val updatedHeader = parentFileHolon.header.copy(subHolons = parentFileHolon.header.subHolons + newSubRef)
+                                val updatedParentHolon = parentFileHolon.copy(header = updatedHeader)
+                                updatedParentContents[parentSubpath] = json.encodeToString(Holon.serializer(), updatedParentHolon)
+                            }
                         }
                     }
-                    is Quarantine -> { /* ... */ }
+                    is Quarantine -> { /* No-op */ }
                     is Ignore -> { /* No-op */ }
                 }
                 if (wasProcessed) processedInPass++
@@ -376,6 +378,7 @@ class KnowledgeGraphFeature(
         try {
             val holon = json.decodeFromString<Holon>(content)
             val enrichedHeader = holon.header.copy(filePath = fileData.subpath, parentId = context.parentId, depth = context.depth)
+            // CRITICAL FIX: Populate the transient `content` field.
             val enrichedHolon = holon.copy(header = enrichedHeader, content = content)
 
             if (enrichedHeader.type == "AI_Persona_Root") {
