@@ -26,7 +26,9 @@ data class ConfirmationDialogRequest(
     val title: String,
     val text: String,
     val confirmButtonText: String,
-    val onConfirmAction: Action
+    val onConfirmAction: Action,
+    val cancelButtonText: String? = "Cancel",
+    val isDestructive: Boolean = false
 )
 
 @Serializable

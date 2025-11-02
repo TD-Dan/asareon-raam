@@ -98,7 +98,9 @@
           "title": { "type": "string" },
           "text": { "type": "string" },
           "confirmButtonText": { "type": "string" },
-          "onConfirmAction": { "type": "object", "description": "A complete, serialized Action object to be dispatched upon confirmation." }
+          "onConfirmAction": { "type": "object", "description": "A complete, serialized Action object to be dispatched upon confirmation." },
+          "cancelButtonText": { "type": ["string", "null"] },
+          "isDestructive": { "type": "boolean", "default": false }
         },
         "required": ["title", "text", "confirmButtonText", "onConfirmAction"]
       }
