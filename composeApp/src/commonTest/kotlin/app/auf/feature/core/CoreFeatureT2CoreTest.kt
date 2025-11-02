@@ -6,8 +6,11 @@ import app.auf.core.generated.ActionNames
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -22,6 +25,7 @@ import kotlin.test.assertTrue
  */
 class CoreFeatureT2CoreTest {
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `onAction for SYSTEM_PUBLISH_INITIALIZING dispatches ADD actions for its settings`() = runTest {
         val platform = FakePlatformDependencies("test")
@@ -32,6 +36,7 @@ class CoreFeatureT2CoreTest {
 
         // ACT: Dispatch the lifecycle action that triggers the side-effect.
         harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
+        runCurrent() // Allow deferred actions to process
 
         // ASSERT: Verify that the correct side-effects (dispatching ADD actions) occurred.
         val addActions = harness.processedActions.filter { it.name == ActionNames.SETTINGS_ADD }
@@ -40,6 +45,7 @@ class CoreFeatureT2CoreTest {
         assertNotNull(addActions.find { it.payload?.get("key").toString().contains("height") })
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `onAction for CORE_COPY_TO_CLIPBOARD copies text and shows a toast`() = runTest {
         val platform = FakePlatformDependencies("test")
@@ -54,16 +60,18 @@ class CoreFeatureT2CoreTest {
 
         // ACT
         harness.store.dispatch("ui", action)
+        runCurrent() // Allow deferred actions to process
 
         // ASSERT
         assertEquals(textToCopy, platform.clipboardContent, "The text should be copied to the platform's clipboard.")
 
         val toastAction = harness.processedActions.find { it.name == ActionNames.CORE_SHOW_TOAST }
         assertNotNull(toastAction, "A toast message should be shown.")
-        assertEquals("Copied to clipboard.", toastAction.payload?.get("message").toString().trim('"'))
+        assertEquals("Copied to clipboard.", toastAction.payload?.get("message")?.jsonPrimitive?.content)
     }
 
     // NEW TEST: Verifies persistence and broadcasting side effects.
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `onAction for ADD_USER_IDENTITY persists and broadcasts the new identity state`() = runTest {
         val platform = FakePlatformDependencies("test")
@@ -76,13 +84,15 @@ class CoreFeatureT2CoreTest {
         harness.store.dispatch("ui", Action(ActionNames.CORE_ADD_USER_IDENTITY, buildJsonObject {
             put("name", "Test User")
         }))
+        runCurrent() // Allow deferred actions to process
 
         // ASSERT: Persistence
         val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
         assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
-        assertEquals("identities.json", writeAction.payload?.get("subpath").toString().trim('"'))
+        assertEquals("identities.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
         assertTrue(writeAction.payload?.get("encrypt").toString().toBoolean(), "Persistence should be encrypted.")
-        val content = writeAction.payload?.get("content").toString()
+        val content = writeAction.payload?.get("content")?.jsonPrimitive?.content
+        assertNotNull(content)
         assertTrue(content.contains("Test User"), "The new user's name should be in the persisted content.")
 
         // ASSERT: Broadcasting
@@ -92,6 +102,7 @@ class CoreFeatureT2CoreTest {
         assertTrue(broadcastContent.contains("Test User"), "The new user's name should be in the broadcast payload.")
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `onAction for REMOVE_USER_IDENTITY persists and broadcasts changes`() = runTest {
         val platform = FakePlatformDependencies("test")
@@ -112,11 +123,13 @@ class CoreFeatureT2CoreTest {
         harness.store.dispatch("ui", Action(ActionNames.CORE_REMOVE_USER_IDENTITY, buildJsonObject {
             put("id", "id-1")
         }))
+        runCurrent() // Execute pending coroutine tasks before asserting.
 
         // ASSERT: Persistence
         val writeAction = harness.processedActions.findLast { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
         assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
-        val content = writeAction.payload?.get("content").toString()
+        val content = writeAction.payload?.get("content")?.jsonPrimitive?.content // [FIX] Use .jsonPrimitive.content
+        assertNotNull(content)
         assertTrue(content.contains("User 2") && !content.contains("User 1"), "The remaining user should be in the persisted content.")
         assertTrue(content.contains("\"activeId\":\"id-2\""), "The activeId should be updated in the persisted content.")
 
@@ -126,9 +139,10 @@ class CoreFeatureT2CoreTest {
         assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
         val broadcastContent = broadcastAction.payload.toString()
         assertTrue(broadcastContent.contains("User 2") && !broadcastContent.contains("User 1"), "The remaining user should be in the broadcast payload.")
-        assertEquals("\"id-2\"", broadcastAction.payload?.get("activeId").toString())
+        assertEquals("id-2", broadcastAction.payload?.get("activeId")?.jsonPrimitive?.content)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `onAction for SET_ACTIVE_USER_IDENTITY persists and broadcasts changes`() = runTest {
         val platform = FakePlatformDependencies("test")
@@ -149,11 +163,13 @@ class CoreFeatureT2CoreTest {
         harness.store.dispatch("ui", Action(ActionNames.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject {
             put("id", "id-2")
         }))
+        runCurrent() // Execute pending coroutine tasks before asserting.
 
         // ASSERT: Persistence
         val writeAction = harness.processedActions.findLast { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
         assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
-        val content = writeAction.payload?.get("content").toString()
+        val content = writeAction.payload?.get("content")?.jsonPrimitive?.content // [FIX] Use .jsonPrimitive.content
+        assertNotNull(content)
         assertTrue(content.contains("User 1") && content.contains("User 2"), "Both users should be in the persisted content.")
         assertTrue(content.contains("\"activeId\":\"id-2\""), "The new activeId should be in the persisted content.")
 
@@ -162,6 +178,6 @@ class CoreFeatureT2CoreTest {
         assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
         val broadcastContent = broadcastAction.payload.toString()
         assertTrue(broadcastContent.contains("User 1") && broadcastContent.contains("User 2"), "Both users should be in the broadcast payload.")
-        assertEquals("\"id-2\"", broadcastAction.payload?.get("activeId").toString())
+        assertEquals("id-2", broadcastAction.payload?.get("activeId")?.jsonPrimitive?.content)
     }
 }
