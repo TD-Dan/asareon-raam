@@ -27,7 +27,8 @@ class GatewayFeature(
     // REFACTOR: A map to track active generation jobs for cancellation.
     private val activeRequests = mutableMapOf<String, Job>()
 
-    override fun onAction(action: Action, store: Store, previousState: AppState) {
+    override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
+        val gatewayState = newState as? GatewayState ?: return
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
                 // Each provider registers its own settings, making the system extensible.
@@ -39,7 +40,7 @@ class GatewayFeature(
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
                 // After settings are loaded, trigger an initial model refresh for all providers.
                 providerMap.keys.forEach { providerId ->
-                    refreshProviderModels(providerId, store)
+                    refreshProviderModels(providerId, gatewayState, store)
                 }
             }
 
@@ -48,18 +49,17 @@ class GatewayFeature(
                 // If one of our known API keys changed, trigger a model refresh for that provider.
                 if (key in providerApiKeys) {
                     val providerId = key.split('.')[1]
-                    refreshProviderModels(providerId, store)
+                    refreshProviderModels(providerId, gatewayState, store)
                 }
             }
 
             ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS -> {
-                val gatewayState = store.state.value.featureStates[name] as? GatewayState ?: return
                 val payload = Json.encodeToJsonElement(gatewayState.availableModels).jsonObject
                 store.dispatch(this.name, Action(ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED, payload))
             }
 
             ActionNames.GATEWAY_GENERATE_CONTENT -> {
-                handleGenerateContent(action, store)
+                handleGenerateContent(action, gatewayState, store)
             }
 
             ActionNames.GATEWAY_PREPARE_PREVIEW -> {
@@ -84,13 +84,12 @@ class GatewayFeature(
         }
     }
 
-    private fun handleGenerateContent(action: Action, store: Store) {
+    private fun handleGenerateContent(action: Action, gatewayState: GatewayState, store: Store) {
         val payload = action.payload ?: return
         val originator = action.originator ?: return
         val providerId = payload["providerId"]?.jsonPrimitive?.contentOrNull ?: return
         val modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: return
         val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
-        // FIX: Extract the system prompt from the payload.
         val systemPrompt = payload["systemPrompt"]?.jsonPrimitive?.contentOrNull
 
         val contents = payload["contents"]?.jsonArray?.let {
@@ -103,11 +102,7 @@ class GatewayFeature(
             return
         }
 
-        val gatewayState = store.state.value.featureStates[name] as? GatewayState ?: return
-
-        // REFACTOR: The coroutine job is now tracked for cancellation.
         val job = coroutineScope.launch {
-            // FIX: Pass the system prompt to the GatewayRequest constructor.
             val request = GatewayRequest(modelName, contents, correlationId, systemPrompt)
             val response = provider.generateContent(request, gatewayState.apiKeys)
 
@@ -143,7 +138,6 @@ class GatewayFeature(
         val providerId = payload["providerId"]?.jsonPrimitive?.contentOrNull ?: return
         val modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: return
         val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
-        // FIX: Extract the system prompt from the payload.
         val systemPrompt = payload["systemPrompt"]?.jsonPrimitive?.contentOrNull
         val contents = payload["contents"]?.jsonArray?.let { json.decodeFromJsonElement<List<GatewayMessage>>(it) } ?: return
 
@@ -153,11 +147,8 @@ class GatewayFeature(
             return
         }
 
-        // FIX: Pass the system prompt to the GatewayRequest constructor.
         val agnosticRequest = GatewayRequest(modelName, contents, correlationId, systemPrompt)
 
-        // Find the specific provider implementation to call its build payload method.
-        // This is a controlled, safe downcast because we know the map contains our specific provider classes.
         val rawJsonElement = when(provider) {
             is app.auf.feature.gateway.gemini.GeminiProvider -> provider.buildRequestPayload(agnosticRequest)
             is app.auf.feature.gateway.openai.OpenAIProvider -> provider.buildRequestPayload(agnosticRequest)
@@ -179,9 +170,8 @@ class GatewayFeature(
     }
 
 
-    private fun refreshProviderModels(providerId: String, store: Store) {
+    private fun refreshProviderModels(providerId: String, gatewayState: GatewayState, store: Store) {
         val provider = providerMap[providerId] ?: return
-        val gatewayState = store.state.value.featureStates[name] as? GatewayState ?: return
 
         coroutineScope.launch {
             val models = provider.listAvailableModels(gatewayState.apiKeys)
@@ -193,35 +183,32 @@ class GatewayFeature(
         }
     }
 
-    override fun reducer(state: AppState, action: Action): AppState {
-        val currentFeatureState = state.featureStates[name] as? GatewayState ?: GatewayState()
-        var newFeatureState: GatewayState? = null
+    override fun reducer(state: FeatureState?, action: Action): FeatureState? {
+        val currentFeatureState = state as? GatewayState ?: GatewayState()
 
         when (action.name) {
             ActionNames.GATEWAY_INTERNAL_MODELS_UPDATED -> {
-                val payload = action.payload ?: return state
-                val providerId = payload["providerId"]?.jsonPrimitive?.contentOrNull ?: return state
-                val models = Json.decodeFromJsonElement<List<String>>(payload["models"] ?: return state)
+                val payload = action.payload ?: return currentFeatureState
+                val providerId = payload["providerId"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
+                val models = Json.decodeFromJsonElement<List<String>>(payload["models"] ?: return currentFeatureState)
                 val newModels = currentFeatureState.availableModels + (providerId to models)
-                newFeatureState = currentFeatureState.copy(availableModels = newModels)
+                return currentFeatureState.copy(availableModels = newModels)
             }
             ActionNames.SETTINGS_PUBLISH_LOADED -> {
                 val loadedValues = action.payload?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap()
                 val relevantKeys = loadedValues.filterKeys { it in providerApiKeys }
                 if (relevantKeys.isNotEmpty()) {
-                    newFeatureState = currentFeatureState.copy(apiKeys = currentFeatureState.apiKeys + relevantKeys)
+                    return currentFeatureState.copy(apiKeys = currentFeatureState.apiKeys + relevantKeys)
                 }
             }
             ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED -> {
-                val key = action.payload?.get("key")?.jsonPrimitive?.contentOrNull ?: return state
-                val value = action.payload["value"]?.jsonPrimitive?.contentOrNull ?: return state
+                val key = action.payload?.get("key")?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
+                val value = action.payload["value"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
                 if (key in providerApiKeys) {
-                    newFeatureState = currentFeatureState.copy(apiKeys = currentFeatureState.apiKeys + (key to value))
+                    return currentFeatureState.copy(apiKeys = currentFeatureState.apiKeys + (key to value))
                 }
             }
         }
-        return newFeatureState?.let {
-            if (it != currentFeatureState) state.copy(featureStates = state.featureStates + (name to it)) else state
-        } ?: state
+        return currentFeatureState
     }
 }

@@ -46,8 +46,9 @@ class FileSystemFeature(
         return "$appZoneRoot${platformDependencies.pathSeparator}$safeOriginator"
     }
 
-    override fun onAction(action: Action, store: Store, previousState: AppState) {
+    override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val originator = action.originator ?: return
+        val fileSystemState = newState as? FileSystemState ?: return
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
                 store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
@@ -105,24 +106,21 @@ class FileSystemFeature(
                 } ?: platformDependencies.log(LogLevel.INFO, name, "User cancelled one-time access grant for '$originator'.")
             }
             ActionNames.FILESYSTEM_TOGGLE_ITEM_EXPANDED -> {
-                val state = store.state.value.featureStates[name] as? FileSystemState ?: return
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
-                val item = findItemByPath(state.rootItems, payload.path)
+                val item = findItemByPath(fileSystemState.rootItems, payload.path)
                 if (item?.isDirectory == true && item.children == null) {
                     store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_LOAD_CHILDREN, action.payload))
                 }
             }
             ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED -> {
-                val state = store.state.value.featureStates[name] as? FileSystemState ?: return
                 val payload = action.payload?.let { Json.decodeFromJsonElement<ToggleItemPayload>(it) } ?: return
                 if (payload.recursive) {
-                    findItemByPath(state.rootItems, payload.path)?.let { dispatchLoadChildrenRecursive(it, 3, store) }
+                    findItemByPath(fileSystemState.rootItems, payload.path)?.let { dispatchLoadChildrenRecursive(it, 3, store) }
                 }
             }
             ActionNames.FILESYSTEM_EXPAND_ALL -> {
-                val state = store.state.value.featureStates[name] as? FileSystemState ?: return
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
-                findItemByPath(state.rootItems, payload.path)?.let { dispatchLoadChildrenRecursive(it, 3, store) }
+                findItemByPath(fileSystemState.rootItems, payload.path)?.let { dispatchLoadChildrenRecursive(it, 3, store) }
             }
             ActionNames.FILESYSTEM_LOAD_CHILDREN -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
@@ -136,9 +134,8 @@ class FileSystemFeature(
                 }
             }
             ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED -> {
-                val state = store.state.value.featureStates[name] as? FileSystemState ?: return
                 val payload = action.payload?.let { Json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return
-                if (findItemByPath(state.rootItems, payload.parentPath)?.isSelected == true) {
+                if (findItemByPath(fileSystemState.rootItems, payload.parentPath)?.isSelected == true) {
                     payload.children.forEach { child ->
                         store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED, buildJsonObject {
                             put("path", child.path); put("recursive", true)
@@ -147,13 +144,12 @@ class FileSystemFeature(
                 }
             }
             ActionNames.FILESYSTEM_COPY_SELECTION_TO_CLIPBOARD -> {
-                val state = store.state.value.featureStates[name] as? FileSystemState ?: return
-                val selectedFiles = findSelectedFiles(state.rootItems)
+                val selectedFiles = findSelectedFiles(fileSystemState.rootItems)
                 if (selectedFiles.isEmpty()) {
                     store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "No files selected.") })); return
                 }
                 val stringBuilder = StringBuilder()
-                val rootPath = state.currentPath ?: ""
+                val rootPath = fileSystemState.currentPath ?: ""
                 var errorCount = 0
                 selectedFiles.forEach { item ->
                     try {
@@ -170,15 +166,13 @@ class FileSystemFeature(
                 }
             }
             ActionNames.FILESYSTEM_ADD_WHITELIST_PATH, ActionNames.FILESYSTEM_REMOVE_WHITELIST_PATH -> {
-                val state = store.state.value.featureStates[name] as? FileSystemState ?: return
                 val path = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: return
-                val newSet = if (action.name.startsWith("filesystem.ADD")) state.whitelistedPaths + path else state.whitelistedPaths - path
+                val newSet = if (action.name.startsWith("filesystem.ADD")) fileSystemState.whitelistedPaths + path else fileSystemState.whitelistedPaths - path
                 store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", settingKeyWhitelist); put("value", serializeSet(newSet)) }))
             }
             ActionNames.FILESYSTEM_ADD_FAVORITE_PATH, ActionNames.FILESYSTEM_REMOVE_FAVORITE_PATH -> {
-                val state = store.state.value.featureStates[name] as? FileSystemState ?: return
                 val path = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: return
-                val newSet = if (action.name.startsWith("filesystem.ADD")) state.favoritePaths + path else state.favoritePaths - path
+                val newSet = if (action.name.startsWith("filesystem.ADD")) fileSystemState.favoritePaths + path else fileSystemState.favoritePaths - path
                 store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", settingKeyFavorites); put("value", serializeSet(newSet)) }))
             }
             ActionNames.FILESYSTEM_SYSTEM_LIST -> {
@@ -291,47 +285,47 @@ class FileSystemFeature(
         }
     }
 
-    override fun reducer(state: AppState, action: Action): AppState {
-        val currentFeatureState = state.featureStates[name] as? FileSystemState ?: FileSystemState()
-        var newFeatureState: FileSystemState? = null
+    override fun reducer(state: FeatureState?, action: Action): FeatureState? {
+        val currentFeatureState = state as? FileSystemState ?: FileSystemState()
         val payload = action.payload
+
         when (action.name) {
             ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED -> {
-                val decoded = payload?.let { Json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return state
+                val decoded = payload?.let { Json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return currentFeatureState
                 val newChildren = decoded.children.map { FileSystemItem(it.path, platformDependencies.getFileName(it.path), it.isDirectory) }
-                newFeatureState = if (currentFeatureState.currentPath == decoded.parentPath) currentFeatureState.copy(rootItems = newChildren, error = null)
+                return if (currentFeatureState.currentPath == decoded.parentPath) currentFeatureState.copy(rootItems = newChildren, error = null)
                 else currentFeatureState.copy(rootItems = updateItemByPath(currentFeatureState.rootItems, decoded.parentPath) { it.copy(children = newChildren) })
             }
-            ActionNames.FILESYSTEM_NAVIGATE -> newFeatureState = currentFeatureState.copy(currentPath = payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path)
+            ActionNames.FILESYSTEM_NAVIGATE -> return currentFeatureState.copy(currentPath = payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path)
             ActionNames.FILESYSTEM_TOGGLE_ITEM_EXPANDED -> {
-                val path = payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: return state
-                newFeatureState = currentFeatureState.copy(rootItems = updateItemByPath(currentFeatureState.rootItems, path) { it.copy(isExpanded = !it.isExpanded) })
+                val path = payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: return currentFeatureState
+                return currentFeatureState.copy(rootItems = updateItemByPath(currentFeatureState.rootItems, path) { it.copy(isExpanded = !it.isExpanded) })
             }
             ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED -> {
-                val decoded = payload?.let { Json.decodeFromJsonElement<ToggleItemPayload>(it) } ?: return state
+                val decoded = payload?.let { Json.decodeFromJsonElement<ToggleItemPayload>(it) } ?: return currentFeatureState
                 val targetItem = findItemByPath(currentFeatureState.rootItems, decoded.path)
                 val targetState = if (targetItem?.isDirectory == true) { val stats = getSelectionStats(targetItem); stats.selectedCount < stats.totalCount }
                 else !(targetItem?.isSelected ?: false)
-                newFeatureState = currentFeatureState.copy(rootItems = updateItemByPath(currentFeatureState.rootItems, decoded.path, decoded.recursive) { it.copy(isSelected = targetState) })
+                return currentFeatureState.copy(rootItems = updateItemByPath(currentFeatureState.rootItems, decoded.path, decoded.recursive) { it.copy(isSelected = targetState) })
             }
-            ActionNames.FILESYSTEM_EXPAND_ALL -> newFeatureState = currentFeatureState.copy(rootItems = updateExpansionStateRecursive(currentFeatureState.rootItems, payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: "", true))
-            ActionNames.FILESYSTEM_COLLAPSE_ALL -> newFeatureState = currentFeatureState.copy(rootItems = updateExpansionStateRecursive(currentFeatureState.rootItems, payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: "", false))
-            ActionNames.FILESYSTEM_ADD_WHITELIST_PATH -> newFeatureState = currentFeatureState.copy(whitelistedPaths = currentFeatureState.whitelistedPaths + (payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: ""))
-            ActionNames.FILESYSTEM_REMOVE_WHITELIST_PATH -> newFeatureState = currentFeatureState.copy(whitelistedPaths = currentFeatureState.whitelistedPaths - (payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: ""))
-            ActionNames.FILESYSTEM_ADD_FAVORITE_PATH -> newFeatureState = currentFeatureState.copy(favoritePaths = currentFeatureState.favoritePaths + (payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: ""))
-            ActionNames.FILESYSTEM_REMOVE_FAVORITE_PATH -> newFeatureState = currentFeatureState.copy(favoritePaths = currentFeatureState.favoritePaths - (payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: ""))
-            ActionNames.SETTINGS_PUBLISH_LOADED -> newFeatureState = currentFeatureState.copy(
+            ActionNames.FILESYSTEM_EXPAND_ALL -> return currentFeatureState.copy(rootItems = updateExpansionStateRecursive(currentFeatureState.rootItems, payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: "", true))
+            ActionNames.FILESYSTEM_COLLAPSE_ALL -> return currentFeatureState.copy(rootItems = updateExpansionStateRecursive(currentFeatureState.rootItems, payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: "", false))
+            ActionNames.FILESYSTEM_ADD_WHITELIST_PATH -> return currentFeatureState.copy(whitelistedPaths = currentFeatureState.whitelistedPaths + (payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: ""))
+            ActionNames.FILESYSTEM_REMOVE_WHITELIST_PATH -> return currentFeatureState.copy(whitelistedPaths = currentFeatureState.whitelistedPaths - (payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: ""))
+            ActionNames.FILESYSTEM_ADD_FAVORITE_PATH -> return currentFeatureState.copy(favoritePaths = currentFeatureState.favoritePaths + (payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: ""))
+            ActionNames.FILESYSTEM_REMOVE_FAVORITE_PATH -> return currentFeatureState.copy(favoritePaths = currentFeatureState.favoritePaths - (payload?.let { Json.decodeFromJsonElement<PathPayload>(it) }?.path ?: ""))
+            ActionNames.SETTINGS_PUBLISH_LOADED -> return currentFeatureState.copy(
                 whitelistedPaths = deserializeSet(payload?.get(settingKeyWhitelist)?.jsonPrimitive?.content),
                 favoritePaths = deserializeSet(payload?.get(settingKeyFavorites)?.jsonPrimitive?.content)
             )
             ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED -> {
                 when (payload?.get("key")?.jsonPrimitive?.content) {
-                    settingKeyWhitelist -> newFeatureState = currentFeatureState.copy(whitelistedPaths = deserializeSet(payload["value"]?.jsonPrimitive?.content))
-                    settingKeyFavorites -> newFeatureState = currentFeatureState.copy(favoritePaths = deserializeSet(payload["value"]?.jsonPrimitive?.content))
+                    settingKeyWhitelist -> return currentFeatureState.copy(whitelistedPaths = deserializeSet(payload["value"]?.jsonPrimitive?.content))
+                    settingKeyFavorites -> return currentFeatureState.copy(favoritePaths = deserializeSet(payload["value"]?.jsonPrimitive?.content))
                 }
             }
         }
-        return newFeatureState?.let { if (it != currentFeatureState) state.copy(featureStates = state.featureStates + (name to it)) else state } ?: state
+        return currentFeatureState
     }
 
     private fun dispatchLoadChildrenRecursive(item: FileSystemItem, maxDepth: Int, store: Store) {

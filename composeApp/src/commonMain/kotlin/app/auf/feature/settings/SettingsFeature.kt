@@ -51,7 +51,7 @@ class SettingsFeature(
         }
     }
 
-    override fun onAction(action: Action, store: Store, previousState: AppState) {
+    override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", settingsFileName) }))
             ActionNames.SETTINGS_UI_INTERNAL_INPUT_CHANGED -> {
@@ -64,7 +64,7 @@ class SettingsFeature(
                 }
             }
             ActionNames.SETTINGS_UPDATE -> {
-                val latestSettingsState = store.state.value.featureStates[name] as? SettingsState ?: return
+                val latestSettingsState = newState as? SettingsState ?: return
                 store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                     put("subpath", settingsFileName)
                     put("content", Json.encodeToString(latestSettingsState.values))
@@ -76,17 +76,17 @@ class SettingsFeature(
         }
     }
 
-    override fun reducer(state: AppState, action: Action): AppState {
-        val currentFeatureState = state.featureStates[name] as? SettingsState ?: SettingsState()
-        var newFeatureState: SettingsState? = null
+    override fun reducer(state: FeatureState?, action: Action): FeatureState? {
+        val currentFeatureState = state as? SettingsState ?: SettingsState()
         val payload = action.payload
+
         when (action.name) {
             ActionNames.SETTINGS_ADD -> {
-                val key = payload?.get("key")?.jsonPrimitive?.content ?: return state
-                val defaultValue = payload["defaultValue"]?.jsonPrimitive?.content ?: return state
+                val key = payload?.get("key")?.jsonPrimitive?.content ?: return currentFeatureState
+                val defaultValue = payload["defaultValue"]?.jsonPrimitive?.content ?: return currentFeatureState
                 if (currentFeatureState.definitions.none { it["key"]?.jsonPrimitive?.content == key }) {
                     val newValues = if (currentFeatureState.values.containsKey(key)) currentFeatureState.values else currentFeatureState.values + (key to defaultValue)
-                    newFeatureState = currentFeatureState.copy(definitions = currentFeatureState.definitions + payload, values = newValues)
+                    return currentFeatureState.copy(definitions = currentFeatureState.definitions + payload, values = newValues)
                 }
             }
             ActionNames.SETTINGS_PUBLISH_LOADED -> {
@@ -95,23 +95,23 @@ class SettingsFeature(
                     it["key"]!!.jsonPrimitive.content to it["defaultValue"]!!.jsonPrimitive.content
                 }
                 val finalValues = allDefaults + loadedValues
-                newFeatureState = currentFeatureState.copy(values = finalValues, inputValues = finalValues)
+                return currentFeatureState.copy(values = finalValues, inputValues = finalValues)
             }
             ActionNames.SETTINGS_UI_INTERNAL_INPUT_CHANGED -> {
-                val key = payload?.get("key")?.jsonPrimitive?.content ?: return state
-                val value = payload["value"]?.jsonPrimitive?.content ?: return state
-                newFeatureState = currentFeatureState.copy(inputValues = currentFeatureState.inputValues + (key to value))
+                val key = payload?.get("key")?.jsonPrimitive?.content ?: return currentFeatureState
+                val value = payload["value"]?.jsonPrimitive?.content ?: return currentFeatureState
+                return currentFeatureState.copy(inputValues = currentFeatureState.inputValues + (key to value))
             }
             ActionNames.SETTINGS_UPDATE -> {
-                val key = payload?.get("key")?.jsonPrimitive?.content ?: return state
-                val value = payload["value"]?.jsonPrimitive?.content ?: return state
-                newFeatureState = currentFeatureState.copy(
+                val key = payload?.get("key")?.jsonPrimitive?.content ?: return currentFeatureState
+                val value = payload["value"]?.jsonPrimitive?.content ?: return currentFeatureState
+                return currentFeatureState.copy(
                     values = currentFeatureState.values + (key to value),
                     inputValues = currentFeatureState.inputValues + (key to value)
                 )
             }
         }
-        return newFeatureState?.let { if (it != currentFeatureState) state.copy(featureStates = state.featureStates + (name to it)) else state } ?: state
+        return currentFeatureState
     }
 
     inner class SettingsComposableProvider : Feature.ComposableProvider {
