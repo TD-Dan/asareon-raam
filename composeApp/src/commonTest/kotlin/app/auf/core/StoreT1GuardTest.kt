@@ -48,18 +48,14 @@ class StoreT1GuardTest {
         }
     }
 
-    // A specialized feature for the onAction crash test, which has a reducer that
-    // successfully changes state before the onAction handler fails.
+    // A specialized feature for the onAction crash test. It successfully changes its own
+    // state in the reducer, and then fails in the onAction handler for the same action.
+    private data class CrashingState(val changed: Boolean = false) : FeatureState
     private class StateChangingCrashingFeature : CrashingFeature() {
         override val name = "CrashingFeature" // Same name to occupy the same state slice
         override fun reducer(state: FeatureState?, action: Action): FeatureState? {
-            // This feature doesn't have its own state, it modifies TestFeature's state.
-            // This is an anti-pattern, but we are keeping the test as is to validate
-            // that the Store's reducer loop correctly commits state changes before `onAction`.
             if (action.name == "test.CRASH_ON_ACTION") {
-                // We cannot modify another feature's state from here. This test needs rethinking.
-                // For now, let's just confirm this reducer is called.
-                return state // Pass-through
+                return CrashingState(changed = true)
             }
             return super.reducer(state, action)
         }
@@ -87,7 +83,12 @@ class StoreT1GuardTest {
             "TestFeature" to TestState()
         )
         extraFeatures.forEach {
-            initialFeatureStates[it.name] = object : FeatureState {}
+            // Ensure the feature has a default state if it's a crashing feature
+            if (it.name == "CrashingFeature") {
+                initialFeatureStates[it.name] = CrashingState()
+            } else {
+                initialFeatureStates[it.name] = object : FeatureState {}
+            }
         }
 
         return Store(AppState(featureStates = initialFeatureStates), features, platform, testActionRegistry)
@@ -153,26 +154,22 @@ class StoreT1GuardTest {
     @Test
     fun `exception in onAction should NOT abort state change, but should log FATAL and show toast`() {
         platform.capturedLogs.clear()
-        // We need a feature that successfully changes state, then a different one that crashes.
-        val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING), CrashingFeature())
+        val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING), StateChangingCrashingFeature())
         val action = Action("test.CRASH_ON_ACTION")
 
-        // Manually dispatch an action that will change state first.
-        store.dispatch("test", Action("test.INCREMENT"))
-        // Now dispatch the crashing action.
         store.dispatch("test.crasher", action)
 
         val finalState = store.state.value
         val finalCoreState = finalState.featureStates["core"] as CoreState
-        val finalTestState = finalState.featureStates["TestFeature"] as TestState
+        val finalCrashingState = finalState.featureStates["CrashingFeature"] as CrashingState
 
-        assertEquals(1, finalTestState.value, "State change from the successful reducer should be preserved.")
+        assertTrue(finalCrashingState.changed, "State change from the successful reducer should be preserved.")
         assertNotNull(finalCoreState.toastMessage, "A toast message should be present.")
         assertTrue(finalCoreState.toastMessage!!.contains("An internal error occurred in 'broadcast'"))
 
         val log = platform.capturedLogs.find { it.level == LogLevel.FATAL }
         assertNotNull(log, "A FATAL log should have been captured.")
-        assertTrue(log.message.contains("FATAL EXCEPTION in onAction"))
+        assertTrue(log.message.contains("FATAL EXCEPTION in reducer/onAction"), "Log message should identify the correct generic location.")
     }
 
 
