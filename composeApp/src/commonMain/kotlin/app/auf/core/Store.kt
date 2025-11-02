@@ -213,49 +213,58 @@ open class Store(
 
         // --- PHASE 2: ROUTE, REDUCE, UPDATE ---
         val previousState = _state.value
-        var newState = previousState
+        val newFeatureStates = previousState.featureStates.toMutableMap()
+        var stateChanged = false
 
         try {
             if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
                 // Targeted dispatch for internal actions
                 val targetFeature = features.find { it.name == parsedName.feature }
                 if (targetFeature != null) {
-                    newState = targetFeature.reducer(previousState, action)
+                    val oldFeatureState = previousState.featureStates[targetFeature.name]
+                    val newFeatureState = targetFeature.reducer(oldFeatureState, action)
+                    if (oldFeatureState !== newFeatureState) {
+                        newFeatureState?.let { newFeatureStates[targetFeature.name] = it } ?: newFeatureStates.remove(targetFeature.name)
+                        stateChanged = true
+                    }
                 } else {
-                    platformDependencies.log(
-                        level = LogLevel.ERROR,
-                        tag = "Store",
-                        message = "Internal action '${action.name}' dispatched, but target feature '${parsedName.feature}' not found."
-                    )
+                    platformDependencies.log(LogLevel.ERROR, "Store", "Internal action '${action.name}' dispatched, but target feature '${parsedName.feature}' not found.")
                 }
             } else {
                 // Broadcast dispatch for all other action types
-                newState = features.fold(previousState) { currentState, feature ->
-                    feature.reducer(currentState, action)
+                features.forEach { feature ->
+                    val oldFeatureState = previousState.featureStates[feature.name]
+                    val newFeatureState = feature.reducer(oldFeatureState, action)
+                    if (oldFeatureState !== newFeatureState) {
+                        newFeatureState?.let { newFeatureStates[feature.name] = it } ?: newFeatureStates.remove(feature.name)
+                        stateChanged = true
+                    }
                 }
             }
 
+            val newState = if (stateChanged) previousState.copy(featureStates = newFeatureStates) else previousState
             if (newState != previousState) {
                 _state.value = newState
             }
-        } catch (e: Exception) {
-            handleFeatureException(e, "reducer", "broadcast")
-            // Abort state mutation if reducer fails.
-            return
-        }
 
-        // --- PHASE 3: Side Effects (onAction) / NOTIFY (WITH EXCEPTION HANDLING)---
-        try {
+            // --- PHASE 3: Side Effects (onAction) / NOTIFY (WITH EXCEPTION HANDLING)---
+            // This runs after the state has been updated, providing the final state to the handlers.
             if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
                 val targetFeature = features.find { it.name == parsedName.feature }
-                targetFeature?.onAction(action, this, previousState)
+                if (targetFeature != null) {
+                    val prevFeatureState = previousState.featureStates[targetFeature.name]
+                    val newFeatureState = newState.featureStates[targetFeature.name]
+                    targetFeature.onAction(action, this, prevFeatureState, newFeatureState)
+                }
             } else {
                 features.forEach { feature ->
-                    feature.onAction(action, this, previousState)
+                    val prevFeatureState = previousState.featureStates[feature.name]
+                    val newFeatureState = newState.featureStates[feature.name]
+                    feature.onAction(action, this, prevFeatureState, newFeatureState)
                 }
             }
         } catch (e: Exception) {
-            handleFeatureException(e, "onAction", "broadcast")
+            handleFeatureException(e, "reducer/onAction", "broadcast")
         }
     }
 

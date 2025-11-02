@@ -9,9 +9,9 @@ import androidx.compose.runtime.Composable
  */
 interface Feature {
     val name: String
-    fun reducer(state: AppState, action: Action): AppState = state
+    fun reducer(state: FeatureState?, action: Action): FeatureState? = state
 
-    fun onAction(action: Action, store: Store, previousState: AppState) {}
+    fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {}
 
     fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {}
     fun init(store: Store) {}

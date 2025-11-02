@@ -57,7 +57,8 @@ class CoreFeature(
         }
     }
 
-    override fun onAction(action: Action, store: Store, previousState: AppState) {
+    override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
+        val latestCoreState = newState as? CoreState
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
                 store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
@@ -75,8 +76,7 @@ class CoreFeature(
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", identitiesFileName)}))
             }
             ActionNames.CORE_UPDATE_WINDOW_SIZE -> {
-                val coreState = store.state.value.featureStates[name] as? CoreState
-                coreState?.let {
+                latestCoreState?.let {
                     store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
                         put("key", settingKeyWidth); put("value", it.windowWidth.toString())
                     }))
@@ -101,8 +101,9 @@ class CoreFeature(
             ActionNames.CORE_REMOVE_USER_IDENTITY,
             ActionNames.CORE_SET_ACTIVE_USER_IDENTITY,
             ActionNames.CORE_INTERNAL_IDENTITIES_LOADED -> {
-                val latestState = store.state.value.featureStates[name] as? CoreState ?: return
-                persistAndBroadcastIdentities(latestState, store)
+                if (latestCoreState != null) {
+                    persistAndBroadcastIdentities(latestCoreState, store)
+                }
             }
         }
     }
@@ -121,28 +122,27 @@ class CoreFeature(
         }))
     }
 
-    override fun reducer(state: AppState, action: Action): AppState {
-        val coreState = state.featureStates[name] as? CoreState ?: CoreState()
-        var newCoreState = coreState
+    override fun reducer(state: FeatureState?, action: Action): FeatureState? {
+        val coreState = state as? CoreState ?: CoreState()
 
         when (action.name) {
-            ActionNames.SYSTEM_PUBLISH_INITIALIZING -> newCoreState = coreState.copy(lifecycle = AppLifecycle.INITIALIZING)
-            ActionNames.SYSTEM_PUBLISH_STARTING -> newCoreState = coreState.copy(lifecycle = AppLifecycle.RUNNING)
-            ActionNames.SYSTEM_PUBLISH_CLOSING -> newCoreState = coreState.copy(lifecycle = AppLifecycle.CLOSING)
+            ActionNames.SYSTEM_PUBLISH_INITIALIZING -> return coreState.copy(lifecycle = AppLifecycle.INITIALIZING)
+            ActionNames.SYSTEM_PUBLISH_STARTING -> return coreState.copy(lifecycle = AppLifecycle.RUNNING)
+            ActionNames.SYSTEM_PUBLISH_CLOSING -> return coreState.copy(lifecycle = AppLifecycle.CLOSING)
             ActionNames.CORE_SET_ACTIVE_VIEW -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<SetActiveViewPayload>(it) }
-                newCoreState = payload?.let { coreState.copy(activeViewKey = it.key) } ?: coreState
+                return payload?.let { coreState.copy(activeViewKey = it.key) } ?: coreState
             }
-            ActionNames.CORE_SHOW_DEFAULT_VIEW -> newCoreState = coreState.copy(activeViewKey = coreState.defaultViewKey)
+            ActionNames.CORE_SHOW_DEFAULT_VIEW -> return coreState.copy(activeViewKey = coreState.defaultViewKey)
             ActionNames.CORE_UPDATE_WINDOW_SIZE -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<UpdateWindowSizePayload>(it) }
-                newCoreState = payload?.let { coreState.copy(windowWidth = it.width, windowHeight = it.height) } ?: coreState
+                return payload?.let { coreState.copy(windowWidth = it.width, windowHeight = it.height) } ?: coreState
             }
             ActionNames.CORE_SHOW_TOAST -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<ShowToastPayload>(it) }
-                newCoreState = payload?.let { coreState.copy(toastMessage = it.message) } ?: coreState
+                return payload?.let { coreState.copy(toastMessage = it.message) } ?: coreState
             }
-            ActionNames.CORE_CLEAR_TOAST -> newCoreState = coreState.copy(toastMessage = null)
+            ActionNames.CORE_CLEAR_TOAST -> return coreState.copy(toastMessage = null)
             ActionNames.CORE_SHOW_CONFIRMATION_DIALOG -> {
                 val request = action.payload?.let {
                     try {
@@ -152,59 +152,62 @@ class CoreFeature(
                         null
                     }
                 }
-                newCoreState = coreState.copy(confirmationRequest = request)
+                return coreState.copy(confirmationRequest = request)
             }
-            ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG -> newCoreState = coreState.copy(confirmationRequest = null)
+            ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG -> return coreState.copy(confirmationRequest = null)
             ActionNames.SETTINGS_PUBLISH_LOADED -> {
                 val loadedValues = action.payload
                 val width = loadedValues?.get(settingKeyWidth)?.jsonPrimitive?.content?.toIntOrNull()
                 val height = loadedValues?.get(settingKeyHeight)?.jsonPrimitive?.content?.toIntOrNull()
-                newCoreState = coreState.copy(windowWidth = width ?: coreState.windowWidth, windowHeight = height ?: coreState.windowHeight)
+                return coreState.copy(windowWidth = width ?: coreState.windowWidth, windowHeight = height ?: coreState.windowHeight)
             }
             ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED -> {
-                val payload = action.payload ?: return state
+                val payload = action.payload ?: return coreState
                 val key = payload["key"]?.jsonPrimitive?.content
                 val value = payload["value"]?.jsonPrimitive?.content
+                var newCoreState = coreState
                 when (key) {
                     settingKeyWidth -> value?.toIntOrNull()?.let { if (it != coreState.windowWidth) newCoreState = coreState.copy(windowWidth = it) }
                     settingKeyHeight -> value?.toIntOrNull()?.let { if (it != coreState.windowHeight) newCoreState = coreState.copy(windowHeight = it) }
                 }
+                return newCoreState
             }
             ActionNames.CORE_INTERNAL_IDENTITIES_LOADED -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<IdentitiesLoadedPayload>(it) } ?: return state
+                val payload = action.payload?.let { Json.decodeFromJsonElement<IdentitiesLoadedPayload>(it) } ?: return coreState
                 if (payload.identities.isEmpty()) {
                     val defaultUser = Identity(platformDependencies.generateUUID(), "User")
-                    newCoreState = coreState.copy(
+                    return coreState.copy(
                         userIdentities = listOf(defaultUser),
                         activeUserId = defaultUser.id
                     )
                 } else {
                     val activeId = if (payload.activeId in payload.identities.map { it.id }) payload.activeId else payload.identities.first().id
-                    newCoreState = coreState.copy(
+                    return coreState.copy(
                         userIdentities = payload.identities,
                         activeUserId = activeId
                     )
                 }
             }
             ActionNames.CORE_ADD_USER_IDENTITY -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<AddUserIdentityPayload>(it) } ?: return state
+                val payload = action.payload?.let { Json.decodeFromJsonElement<AddUserIdentityPayload>(it) } ?: return coreState
                 val newUser = Identity(platformDependencies.generateUUID(), payload.name)
-                newCoreState = coreState.copy(userIdentities = coreState.userIdentities + newUser)
+                return coreState.copy(userIdentities = coreState.userIdentities + newUser)
             }
             ActionNames.CORE_REMOVE_USER_IDENTITY -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return state
+                val payload = action.payload?.let { Json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return coreState
                 val updatedIdentities = coreState.userIdentities.filterNot { it.id == payload.id }
                 val updatedActiveId = if (coreState.activeUserId == payload.id) updatedIdentities.firstOrNull()?.id else coreState.activeUserId
-                newCoreState = coreState.copy(userIdentities = updatedIdentities, activeUserId = updatedActiveId)
+                return coreState.copy(userIdentities = updatedIdentities, activeUserId = updatedActiveId)
             }
             ActionNames.CORE_SET_ACTIVE_USER_IDENTITY -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return state
+                val payload = action.payload?.let { Json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return coreState
                 if (coreState.userIdentities.any { it.id == payload.id }) {
-                    newCoreState = coreState.copy(activeUserId = payload.id)
+                    return coreState.copy(activeUserId = payload.id)
                 }
+                return coreState
             }
+            else -> return coreState
         }
-        return if (newCoreState != coreState) state.copy(featureStates = state.featureStates + (name to newCoreState)) else state
     }
 
     inner class CoreComposableProvider : Feature.ComposableProvider {
