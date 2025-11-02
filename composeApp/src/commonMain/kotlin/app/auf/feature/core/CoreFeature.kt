@@ -109,13 +109,13 @@ class CoreFeature(
 
     private fun persistAndBroadcastIdentities(state: CoreState, store: Store) {
         val persistencePayload = IdentitiesLoadedPayload(state.userIdentities, state.activeUserId)
-        store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
             put("subpath", identitiesFileName)
             put("content", Json.encodeToString(persistencePayload))
             put("encrypt", true)
         }))
 
-        store.dispatch(this.name, Action(ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
+        store.deferredDispatch(this.name, Action(ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
             put("identities", Json.encodeToJsonElement(state.userIdentities))
             state.activeUserId?.let { put("activeId", it) }
         }))
@@ -144,7 +144,14 @@ class CoreFeature(
             }
             ActionNames.CORE_CLEAR_TOAST -> newCoreState = coreState.copy(toastMessage = null)
             ActionNames.CORE_SHOW_CONFIRMATION_DIALOG -> {
-                val request = action.payload?.let { Json.decodeFromJsonElement<ConfirmationDialogRequest>(it) }
+                val request = action.payload?.let {
+                    try {
+                        Json.decodeFromJsonElement<ConfirmationDialogRequest>(it)
+                    } catch (e: Exception) {
+                        platformDependencies.log(app.auf.util.LogLevel.ERROR, name, "Failed to decode ConfirmationDialogRequest: ${e.message}")
+                        null
+                    }
+                }
                 newCoreState = coreState.copy(confirmationRequest = request)
             }
             ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG -> newCoreState = coreState.copy(confirmationRequest = null)

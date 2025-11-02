@@ -9,6 +9,7 @@ import app.auf.test.TestEnvironment
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -34,15 +35,18 @@ class CoreFeatureT3PeerTest {
             .withFeature(CoreFeature(platform))
             .build(platform = platform)
 
-        // ARRANGE: Create a fake payload that mimics a successful file read from FileSystemFeature.
-        val identitiesToLoad = listOf(Identity("id-1", "Loaded User"))
-        val activeId = "id-1"
-        val fileContent = Json.encodeToString(
-            mapOf(
-                "identities" to identitiesToLoad,
-                "activeId" to activeId
-            )
-        )
+        // ARRANGE: Manually construct the JSON string that FileSystemFeature would provide.
+        // This correctly tests the JSON contract without needing access to the private data class.
+        val fileContent = buildJsonObject {
+            putJsonArray("identities") {
+                add(buildJsonObject {
+                    put("id", "id-1")
+                    put("name", "Loaded User")
+                })
+            }
+            put("activeId", "id-1")
+        }.toString()
+
         val envelope = PrivateDataEnvelope(
             type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ,
             payload = buildJsonObject {
@@ -76,13 +80,15 @@ class CoreFeatureT3PeerTest {
         // ARRANGE: Define the action that should be triggered on confirmation.
         val onConfirmAction = Action(ActionNames.CORE_CLEAR_TOAST)
 
-        // ACT 1: Dispatch the action to show the dialog.
+        // ACT 1: Dispatch the action to show the dialog with a COMPLETE payload.
         val showDialogAction = Action(
             name = ActionNames.CORE_SHOW_CONFIRMATION_DIALOG,
             payload = buildJsonObject {
                 put("title", "Confirm")
                 put("text", "Are you sure?")
                 put("confirmButtonText", "Yes")
+                put("isDestructive", false)
+                put("cancelButtonText", "No")
                 putJsonObject("onConfirmAction") {
                     put("name", onConfirmAction.name)
                 }
