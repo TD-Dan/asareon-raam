@@ -257,7 +257,7 @@ class FileSystemFeature(
             }
         }
     }
-    // ... (rest of the file is unchanged)
+
     override fun reducer(state: AppState, action: Action): AppState {
         val currentFeatureState = state.featureStates[name] as? FileSystemState ?: FileSystemState()
         var newFeatureState: FileSystemState? = null
