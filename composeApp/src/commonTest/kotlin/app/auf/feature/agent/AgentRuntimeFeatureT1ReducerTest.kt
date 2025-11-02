@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
+import app.auf.core.FeatureState
 import app.auf.core.PrivateDataEnvelope
 import app.auf.core.generated.ActionNames
 import app.auf.feature.core.AppLifecycle
@@ -45,15 +46,11 @@ class AgentRuntimeFeatureT1ReducerTest {
     @Test
     fun `reducer on AGENT_TRIGGER_MANUAL_TURN should lock in the commitment frontier`() = runTest {
         val agent = AgentInstance("agent-1", "Test", "", "", "", lastSeenMessageId = "msg-aware-frontier")
-        val initialState = harness.store.state.value.copy(
-            featureStates = harness.store.state.value.featureStates +
-                    ("agent" to AgentRuntimeState(agents = mapOf(agent.id to agent)))
-        )
+        val initialState = AgentRuntimeState(agents = mapOf(agent.id to agent))
         val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) })
 
-        val newState = feature.reducer(initialState, triggerAction)
-        val newAgentState = newState.featureStates["agent"] as? AgentRuntimeState
-        val updatedAgent = newAgentState?.agents?.get("agent-1")
+        val newState = feature.reducer(initialState, triggerAction) as? AgentRuntimeState
+        val updatedAgent = newState?.agents?.get("agent-1")
 
         assertNotNull(updatedAgent)
         assertEquals("msg-aware-frontier", updatedAgent.processingFrontierMessageId, "The commitment frontier should be set from the awareness frontier.")
@@ -63,10 +60,7 @@ class AgentRuntimeFeatureT1ReducerTest {
     @Test
     fun `reducer should log error and not change state on invalid status string in SET_STATUS`() = runTest {
         val agent = AgentInstance("agent-1", "Test", "", "", "")
-        val initialState = harness.store.state.value.copy(
-            featureStates = harness.store.state.value.featureStates +
-                    ("agent" to AgentRuntimeState(agents = mapOf(agent.id to agent)))
-        )
+        val initialState = AgentRuntimeState(agents = mapOf(agent.id to agent))
         val invalidAction = Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
             put("agentId", agent.id)
             put("status", "proccessing") // Deliberate typo
@@ -83,10 +77,7 @@ class AgentRuntimeFeatureT1ReducerTest {
     @Test
     fun `reducer on MESSAGE_POSTED with avatar card should update avatar card ID map`() = runTest {
         val agent = AgentInstance("agent-1", "Test", "", "", "", primarySessionId = "session-1")
-        val initialState = harness.store.state.value.copy(
-            featureStates = harness.store.state.value.featureStates +
-                    ("agent" to AgentRuntimeState(agents = mapOf(agent.id to agent)))
-        )
+        val initialState = AgentRuntimeState(agents = mapOf(agent.id to agent))
         val validPayload = buildJsonObject {
             put("sessionId", "session-1")
             put("entry", buildJsonObject {
@@ -100,11 +91,10 @@ class AgentRuntimeFeatureT1ReducerTest {
         }
         val validAction = Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, validPayload)
 
-        val newState = feature.reducer(initialState, validAction)
-        val newAgentState = newState.featureStates["agent"] as? AgentRuntimeState
+        val newState = feature.reducer(initialState, validAction) as? AgentRuntimeState
 
-        assertNotNull(newAgentState)
-        assertEquals("msg-new-card-1", newAgentState.agentAvatarCardIds["agent-1"]?.messageId)
+        assertNotNull(newState)
+        assertEquals("msg-new-card-1", newState.agentAvatarCardIds["agent-1"]?.messageId)
     }
 
     // --- Deadlock & Side-Effect Tests ---

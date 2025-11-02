@@ -17,9 +17,9 @@ private data class FakeStateA(val value: String = "") : FeatureState
 private class FakeFeatureA : Feature {
     override val name = "fakeA"
     override val composableProvider: Feature.ComposableProvider? = null
-    override fun reducer(state: AppState, action: Action): AppState {
-        if (!state.featureStates.containsKey(name)) {
-            return state.copy(featureStates = state.featureStates + (name to FakeStateA()))
+    override fun reducer(state: FeatureState?, action: Action): FeatureState? {
+        if (state == null) {
+            return FakeStateA()
         }
         return state
     }
@@ -29,9 +29,9 @@ private data class FakeStateB(val count: Int = 0) : FeatureState
 private class FakeFeatureB : Feature {
     override val name = "fakeB"
     override val composableProvider: Feature.ComposableProvider? = null
-    override fun reducer(state: AppState, action: app.auf.core.Action): AppState {
-        if (!state.featureStates.containsKey(name)) {
-            return state.copy(featureStates = state.featureStates + (name to FakeStateB()))
+    override fun reducer(state: FeatureState?, action: Action): FeatureState? {
+        if (state == null) {
+            return FakeStateB()
         }
         return state
     }

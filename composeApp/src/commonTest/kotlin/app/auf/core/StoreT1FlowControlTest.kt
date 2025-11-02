@@ -30,17 +30,17 @@ class StoreT1FlowControlTest {
         override val composableProvider: Feature.ComposableProvider? = null
 
         // The reducer adds the action name to a log to verify order of state changes.
-        override fun reducer(state: AppState, action: Action): AppState {
+        override fun reducer(state: FeatureState?, action: Action): FeatureState? {
             if (action.name.startsWith("seq.")) {
-                val currentLog = (state.featureStates[name] as? SequencingState)?.log ?: emptyList()
+                val currentLog = (state as? SequencingState)?.log ?: emptyList()
                 val newLog = currentLog + "${action.name}:REDUCER"
-                return state.copy(featureStates = state.featureStates + (name to SequencingState(newLog)))
+                return SequencingState(newLog)
             }
             return state
         }
 
         // The onAction handler triggers subsequent dispatches based on the action name.
-        override fun onAction(action: Action, store: Store, previousState: AppState) {
+        override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
             when (action.name) {
                 "seq.A_DEFERRED_B" -> store.deferredDispatch(name, Action("seq.B"))
                 "seq.A_IMMEDIATE_B" -> store.dispatch(name, Action("seq.B")) // Test re-entrancy guard
@@ -138,17 +138,17 @@ class StoreT1FlowControlTest {
         class StateCheckingFeature : Feature {
             override val name = "StateCheck"
             override val composableProvider: Feature.ComposableProvider? = null
-            override fun reducer(state: AppState, action: Action): AppState {
+            override fun reducer(state: FeatureState?, action: Action): FeatureState? {
                 return if (action.name == "seq.A") {
-                    state.copy(featureStates = state.featureStates + (name to SequencingState(log = listOf("State from A"))))
+                    SequencingState(log = listOf("State from A"))
                 } else state
             }
-            override fun onAction(action: Action, store: Store, previousState: AppState) {
+            override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
                 when(action.name) {
                     "seq.A" -> store.deferredDispatch(name, Action("seq.B"))
                     "seq.B" -> {
                         // CAPTURE: When B's onAction runs, what does it see in the state?
-                        stateValueWhenB_onAction_WasCalled = (store.state.value.featureStates[name] as SequencingState).log.first()
+                        stateValueWhenB_onAction_WasCalled = (newState as SequencingState).log.first()
                     }
                 }
             }

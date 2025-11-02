@@ -138,12 +138,17 @@ class TestEnvironment {
         }
         allFeatures.addAll(features)
 
-        var fullyPopulatedState = AppState(featureStates = initialStates)
         val initStateAction = Action("test.internal.INIT_DEFAULT_STATE")
 
+        // Initialize state for features that don't have it specified
+        val newFeatureStates = initialStates.toMutableMap()
         allFeatures.forEach { feature ->
-            fullyPopulatedState = feature.reducer(fullyPopulatedState, initStateAction)
+            if (!newFeatureStates.containsKey(feature.name)) {
+                val defaultState = feature.reducer(null, initStateAction)
+                defaultState?.let { newFeatureStates[feature.name] = it }
+            }
         }
+        val fullyPopulatedState = AppState(featureStates = newFeatureStates)
 
         val validActionNames = actionRegistryOverride ?: ActionNames.allActionNames
         val store = RecordingStore(fullyPopulatedState, allFeatures, platform, validActionNames)

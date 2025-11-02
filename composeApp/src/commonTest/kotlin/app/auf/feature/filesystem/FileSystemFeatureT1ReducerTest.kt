@@ -2,6 +2,7 @@ package app.auf.feature.filesystem
 
 import app.auf.core.Action
 import app.auf.core.AppState
+import app.auf.core.FeatureState
 import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
 import kotlin.test.Test
@@ -25,14 +26,10 @@ class FileSystemFeatureT1ReducerTest {
     private val feature = FileSystemFeature(platform)
     private val featureName = feature.name
 
-    private fun createAppState(fsState: FileSystemState = FileSystemState()) = AppState(
-        featureStates = mapOf(featureName to fsState)
-    )
-
     @Test
     fun `reducer DIRECTORY_LOADED correctly updates path and rootItems and clears error`() {
         platform.directories.add("/test")
-        val initialState = createAppState(FileSystemState(error = "Old error"))
+        val initialState = FileSystemState(error = "Old error")
         val payload = buildJsonObject {
             put("parentPath", "/test")
             putJsonArray("children") {
@@ -45,14 +42,13 @@ class FileSystemFeatureT1ReducerTest {
         val action = Action(ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED, payload)
 
         val navigatingState = feature.reducer(initialState, Action(ActionNames.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", "/test") }))
-        val newState = feature.reducer(navigatingState, action)
-        val newFsState = newState.featureStates[featureName] as? FileSystemState
+        val newState = feature.reducer(navigatingState, action) as? FileSystemState
 
-        assertNotNull(newFsState)
-        assertEquals("/test", newFsState.currentPath)
-        assertEquals(1, newFsState.rootItems.size)
-        assertEquals("file.txt", newFsState.rootItems.first().name)
-        assertNull(newFsState.error, "Error should be cleared on a successful navigation.")
+        assertNotNull(newState)
+        assertEquals("/test", newState.currentPath)
+        assertEquals(1, newState.rootItems.size)
+        assertEquals("file.txt", newState.rootItems.first().name)
+        assertNull(newState.error, "Error should be cleared on a successful navigation.")
     }
 
     /*
@@ -78,36 +74,33 @@ class FileSystemFeatureT1ReducerTest {
 
     @Test
     fun `reducer ADD_WHITELIST_PATH adds path to whitelist`() {
-        val initialState = createAppState()
+        val initialState = FileSystemState()
         val action = Action(ActionNames.FILESYSTEM_ADD_WHITELIST_PATH, buildJsonObject { put("path", "/safe/path") })
-        val newState = feature.reducer(initialState, action)
-        val newFsState = newState.featureStates[featureName] as FileSystemState
-        assertTrue(newFsState.whitelistedPaths.contains("/safe/path"))
-        assertEquals(1, newFsState.whitelistedPaths.size)
+        val newState = feature.reducer(initialState, action) as FileSystemState
+        assertTrue(newState.whitelistedPaths.contains("/safe/path"))
+        assertEquals(1, newState.whitelistedPaths.size)
     }
 
     @Test
     fun `reducer REMOVE_WHITELIST_PATH removes path from whitelist`() {
-        val initialState = createAppState(FileSystemState(whitelistedPaths = setOf("/safe/path", "/other")))
+        val initialState = FileSystemState(whitelistedPaths = setOf("/safe/path", "/other"))
         val action = Action(ActionNames.FILESYSTEM_REMOVE_WHITELIST_PATH, buildJsonObject { put("path", "/safe/path") })
-        val newState = feature.reducer(initialState, action)
-        val newFsState = newState.featureStates[featureName] as FileSystemState
-        assertFalse(newFsState.whitelistedPaths.contains("/safe/path"))
-        assertTrue(newFsState.whitelistedPaths.contains("/other"))
-        assertEquals(1, newFsState.whitelistedPaths.size)
+        val newState = feature.reducer(initialState, action) as FileSystemState
+        assertFalse(newState.whitelistedPaths.contains("/safe/path"))
+        assertTrue(newState.whitelistedPaths.contains("/other"))
+        assertEquals(1, newState.whitelistedPaths.size)
     }
 
     @Test
     fun `reducer EXPAND_ALL recursively expands known children`() {
-        val initialState = createAppState(FileSystemState(rootItems = listOf(
+        val initialState = FileSystemState(rootItems = listOf(
             FileSystemItem("/a", "a", true, children = listOf(
                 FileSystemItem("/a/b", "b", true, children = emptyList(), isExpanded = false)
             ), isExpanded = false)
-        )))
+        ))
         val action = Action(ActionNames.FILESYSTEM_EXPAND_ALL, buildJsonObject { put("path", "/a") })
-        val newState = feature.reducer(initialState, action)
-        val newFsState = newState.featureStates[featureName] as FileSystemState
-        val itemA = newFsState.rootItems.first()
+        val newState = feature.reducer(initialState, action) as FileSystemState
+        val itemA = newState.rootItems.first()
         val itemB = itemA.children?.first()
         assertTrue(itemA.isExpanded, "Parent should be expanded")
         assertNotNull(itemB)
@@ -116,18 +109,17 @@ class FileSystemFeatureT1ReducerTest {
 
     @Test
     fun `reducer TOGGLE_ITEM_SELECTED recursively selects known children`() {
-        val initialState = createAppState(FileSystemState(rootItems = listOf(
+        val initialState = FileSystemState(rootItems = listOf(
             FileSystemItem("/a", "a", true, isSelected = false, children = listOf(
                 FileSystemItem("/a/file.txt", "file.txt", false, isSelected = false)
             ))
-        )))
+        ))
         val action = Action(ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED, buildJsonObject {
             put("path", "/a")
             put("recursive", true)
         })
-        val newState = feature.reducer(initialState, action)
-        val newFsState = newState.featureStates[featureName] as FileSystemState
-        val itemA = newFsState.rootItems.first()
+        val newState = feature.reducer(initialState, action) as FileSystemState
+        val itemA = newState.rootItems.first()
         val itemFile = itemA.children?.first()
         assertTrue(itemA.isSelected, "Parent directory should be selected")
         assertNotNull(itemFile)
@@ -136,15 +128,14 @@ class FileSystemFeatureT1ReducerTest {
 
     @Test
     fun `reducer hydrates state from settings LOADED action`() {
-        val initialState = createAppState()
+        val initialState = FileSystemState()
         val payload = buildJsonObject {
             put("filesystem.whitelistedPaths", "path1,path2")
             put("filesystem.favoritePaths", "fav1")
         }
         val action = Action(ActionNames.SETTINGS_PUBLISH_LOADED, payload)
-        val newState = feature.reducer(initialState, action)
-        val newFsState = newState.featureStates[featureName] as FileSystemState
-        assertEquals(setOf("path1", "path2"), newFsState.whitelistedPaths)
-        assertEquals(setOf("fav1"), newFsState.favoritePaths)
+        val newState = feature.reducer(initialState, action) as FileSystemState
+        assertEquals(setOf("path1", "path2"), newState.whitelistedPaths)
+        assertEquals(setOf("fav1"), newState.favoritePaths)
     }
 }

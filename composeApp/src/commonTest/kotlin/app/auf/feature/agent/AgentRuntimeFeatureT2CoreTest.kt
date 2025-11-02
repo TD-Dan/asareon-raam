@@ -43,7 +43,7 @@ class AgentRuntimeFeatureT2CoreTest {
         override val composableProvider: Feature.ComposableProvider? = null
         private val json = Json { ignoreUnknownKeys = true }
 
-        override fun onAction(action: Action, store: Store, previousState: AppState) {
+        override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
             if (action.name == ActionNames.SESSION_REQUEST_LEDGER_CONTENT) {
                 val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.content ?: return
                 // Simulate a ledger with one user message and one agent message
@@ -75,7 +75,7 @@ class AgentRuntimeFeatureT2CoreTest {
         override val composableProvider: Feature.ComposableProvider? = null
         private val json = Json { ignoreUnknownKeys = true }
 
-        override fun onAction(action: Action, store: Store, previousState: AppState) {
+        override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
             if (action.name == ActionNames.GATEWAY_PREPARE_PREVIEW) {
                 val payload = action.payload!!
                 val agentId = payload["correlationId"]!!.jsonPrimitive.content
