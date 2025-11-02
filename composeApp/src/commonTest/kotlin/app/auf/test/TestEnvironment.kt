@@ -69,6 +69,26 @@ data class TestHarness(
  * A fluent builder for creating controlled, multi-feature test environments.
  * This is the cornerstone of our Tier 2, 3, and 4 testing strategy.
  * It defaults to using the canonical ActionRegistrySource but allows for explicit overrides.
+ *
+ * # USAGE WARNING: LIFECYCLE STATE
+ *
+ * This builder defaults to an `AppLifecycle.RUNNING` state **only if you do not
+ * provide your own `CoreState`**. If you use `.withInitialState("core", ...)`
+ * to set up specific test data, the `CoreState` constructor will default to
+ * `AppLifecycle.BOOTING`, which will block most actions.
+ *
+ * **This is a frequent cause of test failures.**
+ *
+ * ### Example of Correct Setup:
+ * ```
+ * TestEnvironment.create()
+ *     .withFeature(MyFeature())
+ *     .withInitialState("core", CoreState(
+ *         userIdentities = listOf(testUser), // Your specific setup data
+ *         lifecycle = AppLifecycle.RUNNING    // <-- IMPORTANT: Explicitly set the lifecycle
+ *     ))
+ *     .build(platform)
+ * ```
  */
 class TestEnvironment {
     private val features = mutableListOf<Feature>()
