@@ -43,7 +43,6 @@ class KnowledgeGraphFeature(
     @Serializable private data class RenameHolonPayload(val holonId: String, val newName: String)
     @Serializable private data class DeleteHolonPayload(val holonId: String)
     @Serializable private data class SetHolonToDeletePayload(val holonId: String?)
-    @Serializable private data class DirectoryContentsPayload(val path: String, val listing: List<FileEntry>)
     @Serializable private data class FilesContentPayload(val contents: Map<String, String>)
     @Serializable private data class PersonaLoadedPayload(val holons: Map<String, Holon>)
 
@@ -57,9 +56,8 @@ class KnowledgeGraphFeature(
             }
             ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<LoadPersonaPayload>(it) } ?: return
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_READ_DIRECTORY_CONTENTS, buildJsonObject {
-                    put("path", payload.personaId)
-                    put("recursive", true)
+                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST_RECURSIVE, buildJsonObject {
+                    put("subpath", payload.personaId)
                 }))
             }
             ActionNames.KNOWLEDGEGRAPH_REQUEST_CONTEXT -> {
@@ -74,11 +72,13 @@ class KnowledgeGraphFeature(
                 store.deliverPrivateData(this.name, originator, responseEnvelope)
             }
             ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<StartImportAnalysisPayload>(it) } ?: return
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_READ_DIRECTORY_CONTENTS, buildJsonObject {
-                    put("path", payload.path)
-                    put("recursive", kgState.isImportRecursive)
-                }))
+                // TODO: This workflow is blocked pending a design for non-sandboxed file access.
+                // The old `FILESYSTEM_READ_DIRECTORY_CONTENTS` action has been removed. A new,
+                // secure mechanism for user-initiated, sandboxed imports needs to be designed.
+                // val payload = action.payload?.let { json.decodeFromJsonElement<StartImportAnalysisPayload>(it) } ?: return
+                // store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_..., buildJsonObject { ... }))
+                platformDependencies.log(LogLevel.WARN, name, "KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS is currently disabled pending refactor.")
+
             }
             ActionNames.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE -> {
                 if (kgState.importSourcePath.isNotBlank()) {
@@ -378,12 +378,13 @@ class KnowledgeGraphFeature(
                     store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", personaId) }))
                 }
             }
-            ActionNames.Envelopes.FILESYSTEM_RESPONSE_DIRECTORY_CONTENTS -> {
-                val fileData = try { json.decodeFromJsonElement<DirectoryContentsPayload>(envelope.payload) } catch (e: Exception) { return }
-                val jsonFiles = fileData.listing.filter { it.path.endsWith(".json") }.map { it.path }
+            ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST_RECURSIVE -> {
+                val listing = envelope.payload["listing"]?.let { json.decodeFromJsonElement<List<FileEntry>>(it) } ?: return
+                val jsonFiles = listing.filter { it.path.endsWith(".json") }.map { it.path }
+
                 if (jsonFiles.isNotEmpty()) {
                     store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
-                        put("paths", Json.encodeToJsonElement(jsonFiles))
+                        put("subpaths", Json.encodeToJsonElement(jsonFiles))
                     }))
                 } else if (kgState?.viewMode == KnowledgeGraphViewMode.IMPORT) {
                     store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, buildJsonObject {

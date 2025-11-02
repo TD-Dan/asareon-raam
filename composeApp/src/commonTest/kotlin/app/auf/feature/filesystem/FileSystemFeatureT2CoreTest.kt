@@ -153,6 +153,9 @@ class FileSystemFeatureT2CoreTest {
         assertFalse(platform.fileExists(fullFilePath), "File inside directory should have been deleted.")
     }
 
+    /*
+    // TODO: This test is disabled because it tests the non-sandboxed file access pattern, which
+    // has been removed and is pending a new design for user-initiated workflows like "import".
     @Test
     fun `READ_DIRECTORY_CONTENTS delivers recursive file listing via private channel`() {
         // Arrange
@@ -222,4 +225,5 @@ class FileSystemFeatureT2CoreTest {
         assertEquals("{\"key\": \"value1\"}", contents[path1]?.jsonPrimitive?.content)
         assertEquals("{\"key\": \"value2\"}", contents[path2]?.jsonPrimitive?.content)
     }
+    */
 }
