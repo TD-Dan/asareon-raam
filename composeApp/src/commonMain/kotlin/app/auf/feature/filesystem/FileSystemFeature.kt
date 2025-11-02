@@ -75,26 +75,33 @@ class FileSystemFeature(
             }
             ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<RequestScopedReadUiPayload>(it) } ?: RequestScopedReadUiPayload()
-                platformDependencies.log(LogLevel.WARN, name, "[DANGER ZONE] Requesting user grant for one-time read access for feature '$originator'.")
+                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_INTERNAL_SHOW_SCOPED_READ_PROMPT, buildJsonObject {
+                    put("originator", originator)
+                    put("recursive", payload.recursive)
+                    put("fileExtensions", Json.encodeToJsonElement(payload.fileExtensions ?: emptyList<String>()))
+                }))
+            }
+            ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ -> {
+                val state = store.state.value.featureStates[name] as? FileSystemState ?: return
+                val request = state.scopedReadRequest ?: return
                 platformDependencies.selectDirectoryPath()?.let { selectedPath ->
-                    platformDependencies.log(LogLevel.INFO, name, "User granted one-time access to '$selectedPath' for '$originator'.")
+                    platformDependencies.log(LogLevel.INFO, name, "User granted one-time access to '$selectedPath' for '${request.originator}'.")
                     try {
-                        val listing = if (payload.recursive) platformDependencies.listDirectoryRecursive(selectedPath) else platformDependencies.listDirectory(selectedPath)
-                        val filteredListing = payload.fileExtensions?.let { extensions ->
+                        val listing = if (request.recursive) platformDependencies.listDirectoryRecursive(selectedPath) else platformDependencies.listDirectory(selectedPath)
+                        val filteredListing = request.fileExtensions?.let { extensions ->
                             listing.filter { fileEntry -> extensions.any { ext -> fileEntry.path.endsWith(".$ext") } }
                         } ?: listing
 
                         val responsePayload = buildJsonObject {
                             put("listing", Json.encodeToJsonElement(filteredListing))
-                            put("subpath", selectedPath) // Use subpath to convey the root of the scoped read
+                            put("subpath", selectedPath)
                         }
                         val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST_RECURSIVE, responsePayload)
-                        store.deliverPrivateData(this.name, originator, envelope)
+                        store.deliverPrivateData(this.name, request.originator, envelope)
                     } catch (e: Exception) {
                         platformDependencies.log(LogLevel.ERROR, name, "Scoped read failed for '$selectedPath': ${e.message}")
-                        // Optionally, deliver an empty/error response
                     }
-                } ?: platformDependencies.log(LogLevel.INFO, name, "User cancelled one-time access grant for '$originator'.")
+                } ?: platformDependencies.log(LogLevel.INFO, name, "User cancelled one-time access grant for '${request.originator}'.")
             }
             ActionNames.FILESYSTEM_TOGGLE_ITEM_EXPANDED -> {
                 val state = store.state.value.featureStates[name] as? FileSystemState ?: return
@@ -288,6 +295,17 @@ class FileSystemFeature(
         var newFeatureState: FileSystemState? = null
         val payload = action.payload
         when (action.name) {
+            ActionNames.FILESYSTEM_INTERNAL_SHOW_SCOPED_READ_PROMPT -> {
+                val originator = payload?.get("originator")?.jsonPrimitive?.content ?: "unknown feature"
+                val recursive = payload?.get("recursive")?.jsonPrimitive?.booleanOrNull ?: true
+                val extensions = payload?.get("fileExtensions")?.let { Json.decodeFromJsonElement<List<String>>(it) }
+                newFeatureState = currentFeatureState.copy(
+                    scopedReadRequest = ScopedReadRequest(originator, recursive, extensions)
+                )
+            }
+            ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ, ActionNames.FILESYSTEM_INTERNAL_CANCEL_SCOPED_READ -> {
+                newFeatureState = currentFeatureState.copy(scopedReadRequest = null)
+            }
             ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED -> {
                 val decoded = payload?.let { Json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return state
                 val newChildren = decoded.children.map { FileSystemItem(it.path, platformDependencies.getFileName(it.path), it.isDirectory) }
