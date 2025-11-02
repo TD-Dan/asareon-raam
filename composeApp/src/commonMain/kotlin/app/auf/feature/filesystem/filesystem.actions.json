@@ -17,6 +17,17 @@
       "payload_schema": null
     },
     {
+      "action_name": "filesystem.REQUEST_SCOPED_READ_UI",
+      "summary": "Requests that the FileSystemFeature orchestrate a user-mediated, one-time read of a directory outside the originator's sandbox. This feature will show a security warning, then the OS file picker, and deliver the results via a private channel.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "recursive": { "type": "boolean", "default": true },
+          "fileExtensions": { "type": "array", "items": { "type": "string" }, "description": "Optional list of extensions to filter by (e.g., [\"json\", \"md\"])" }
+        }
+      }
+    },
+    {
       "action_name": "filesystem.LOAD_CHILDREN",
       "summary": "[INTERNAL] Triggers a side-effect to load a directory's children from disk.",
       "payload_schema": {

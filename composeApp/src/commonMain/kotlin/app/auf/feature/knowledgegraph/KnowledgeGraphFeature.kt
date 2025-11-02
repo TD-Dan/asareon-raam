@@ -72,13 +72,11 @@ class KnowledgeGraphFeature(
                 store.deliverPrivateData(this.name, originator, responseEnvelope)
             }
             ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS -> {
-                // TODO: This workflow is blocked pending a design for non-sandboxed file access.
-                // The old `FILESYSTEM_READ_DIRECTORY_CONTENTS` action has been removed. A new,
-                // secure mechanism for user-initiated, sandboxed imports needs to be designed.
-                // val payload = action.payload?.let { json.decodeFromJsonElement<StartImportAnalysisPayload>(it) } ?: return
-                // store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_..., buildJsonObject { ... }))
-                platformDependencies.log(LogLevel.WARN, name, "KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS is currently disabled pending refactor.")
-
+                val kgState = store.state.value.featureStates[name] as? KnowledgeGraphState ?: return
+                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI, buildJsonObject {
+                    put("recursive", kgState.isImportRecursive)
+                    putJsonArray("fileExtensions") { add("json") }
+                }))
             }
             ActionNames.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE -> {
                 if (kgState.importSourcePath.isNotBlank()) {

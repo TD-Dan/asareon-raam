@@ -34,6 +34,8 @@ class FileSystemFeature(
     @Serializable private data class SystemDeletePayload(val subpath: String)
     @Serializable private data class SystemDeleteDirectoryPayload(val subpath: String)
     @Serializable private data class OpenAppSubfolderPayload(val folder: String)
+    @Serializable private data class RequestScopedReadUiPayload(val recursive: Boolean = true, val fileExtensions: List<String>? = null)
+
 
     private val settingKeyWhitelist = "filesystem.whitelistedPaths"
     private val settingKeyFavorites = "filesystem.favoritePaths"
@@ -70,6 +72,29 @@ class FileSystemFeature(
                 platformDependencies.selectDirectoryPath()?.let {
                     store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", it) }))
                 }
+            }
+            ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<RequestScopedReadUiPayload>(it) } ?: RequestScopedReadUiPayload()
+                platformDependencies.log(LogLevel.WARN, name, "[DANGER ZONE] Requesting user grant for one-time read access for feature '$originator'.")
+                platformDependencies.selectDirectoryPath()?.let { selectedPath ->
+                    platformDependencies.log(LogLevel.INFO, name, "User granted one-time access to '$selectedPath' for '$originator'.")
+                    try {
+                        val listing = if (payload.recursive) platformDependencies.listDirectoryRecursive(selectedPath) else platformDependencies.listDirectory(selectedPath)
+                        val filteredListing = payload.fileExtensions?.let { extensions ->
+                            listing.filter { fileEntry -> extensions.any { ext -> fileEntry.path.endsWith(".$ext") } }
+                        } ?: listing
+
+                        val responsePayload = buildJsonObject {
+                            put("listing", Json.encodeToJsonElement(filteredListing))
+                            put("subpath", selectedPath) // Use subpath to convey the root of the scoped read
+                        }
+                        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST_RECURSIVE, responsePayload)
+                        store.deliverPrivateData(this.name, originator, envelope)
+                    } catch (e: Exception) {
+                        platformDependencies.log(LogLevel.ERROR, name, "Scoped read failed for '$selectedPath': ${e.message}")
+                        // Optionally, deliver an empty/error response
+                    }
+                } ?: platformDependencies.log(LogLevel.INFO, name, "User cancelled one-time access grant for '$originator'.")
             }
             ActionNames.FILESYSTEM_TOGGLE_ITEM_EXPANDED -> {
                 val state = store.state.value.featureStates[name] as? FileSystemState ?: return

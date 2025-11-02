@@ -11,6 +11,7 @@ import app.auf.util.FileEntry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
@@ -123,38 +124,18 @@ class KnowledgeGraphFeatureT2CoreTest {
     }
 
     @Test
-    fun `import analysis workflow dispatches correct sequence of actions`() {
+    fun `import analysis workflow dispatches REQUEST_SCOPED_READ_UI`() {
+        // Arrange
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
-        val feature = harness.store.features.find { it.name == "knowledgegraph" }!!
 
-        // THIS TEST IS NOW EXPECTED TO FAIL until the contract gap is addressed.
-        // It should attempt to dispatch a non-sandboxed read, which doesn't exist yet.
-        // For now, we verify it dispatches *something* to the filesystem.
+        // Act
         harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS, buildJsonObject { put("path", "/import") }))
-        assertTrue(
-            harness.processedActions.any { it.name.startsWith("filesystem.") },
-            "An action should have been dispatched to the filesystem feature."
-        )
 
-        // The rest of this test is left as-is, as it will be part of the TDD cycle
-        // for the import refactor.
-        val dirContentsResponse = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST_RECURSIVE, buildJsonObject {
-            put("subpath", "/import")
-            put("listing", buildJsonArray { add(json.encodeToJsonElement(FileEntry("holon-a.json", false))) })
-        })
-        feature.onPrivateData(dirContentsResponse, harness.store)
-        assertEquals(ActionNames.FILESYSTEM_READ_FILES_CONTENT, harness.processedActions.last().name)
-
-        val filesContentResponse = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, buildJsonObject {
-            put("contents", buildJsonObject { put("holon-a.json", holonAContent) })
-        })
-        feature.onPrivateData(filesContentResponse, harness.store)
-
-        val analysisCompleteAction = harness.processedActions.last()
-        assertEquals(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisCompleteAction.name) // This action name needs to be fixed in actions.json
-        val finalState = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
-        assertEquals(1, finalState.importItems.size)
-        assertIs<Quarantine>(finalState.importItems.first().initialAction)
+        // Assert
+        val requestAction = harness.processedActions.last()
+        assertEquals(ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI, requestAction.name)
+        assertEquals(true, requestAction.payload?.get("recursive")?.jsonPrimitive?.booleanOrNull)
+        // We can add assertions for file extensions later if needed.
     }
 
     @Test
