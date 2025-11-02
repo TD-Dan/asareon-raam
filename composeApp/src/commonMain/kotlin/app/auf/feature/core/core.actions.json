@@ -88,6 +88,25 @@
         },
         "required": ["id"]
       }
+    },
+    {
+      "action_name": "core.SHOW_CONFIRMATION_DIALOG",
+      "summary": "Requests the Core feature to display a generic, modal confirmation dialog.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "text": { "type": "string" },
+          "confirmButtonText": { "type": "string" },
+          "onConfirmAction": { "type": "object", "description": "A complete, serialized Action object to be dispatched upon confirmation." }
+        },
+        "required": ["title", "text", "confirmButtonText", "onConfirmAction"]
+      }
+    },
+    {
+      "action_name": "core.DISMISS_CONFIRMATION_DIALOG",
+      "summary": "Clears any active confirmation dialog from the UI.",
+      "payload_schema": null
     }
   ],
   "publishes": [

@@ -43,14 +43,6 @@ fun FileSystemView(
     var isFavoritesMenuExpanded by remember { mutableStateOf(false) }
     var isWhitelistMenuExpanded by remember { mutableStateOf(false) }
 
-    if (fsState?.scopedReadRequest != null) {
-        ScopedReadDialog(
-            request = fsState.scopedReadRequest,
-            onConfirm = { store.dispatch("filesystem.ui", Action(ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ)) },
-            onDismiss = { store.dispatch("filesystem.ui", Action(ActionNames.FILESYSTEM_INTERNAL_CANCEL_SCOPED_READ)) }
-        )
-    }
-
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         // --- Header ---
         Row(
@@ -152,30 +144,6 @@ fun FileSystemView(
             }
     }
 }
-
-@Composable
-private fun ScopedReadDialog(request: ScopedReadRequest, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Danger Zone: Grant File Access?") },
-        text = {
-            Text(
-                "You are about to grant the '${request.originator}' feature one-time read access to a folder and its entire file content.\n\n" +
-                        "Do not expose folders with sensitive content."
-            )
-        },
-        confirmButton = {
-            Button(onClick = onConfirm) {
-                Text("Proceed with Care")
-            }
-        },
-        dismissButton = {
-            // As requested, no standard cancel/dismiss button shown to the user.
-            // The onDismiss handler is still required by the API for clicks outside the dialog.
-        }
-    )
-}
-
 
 @Composable
 private fun FileTree(

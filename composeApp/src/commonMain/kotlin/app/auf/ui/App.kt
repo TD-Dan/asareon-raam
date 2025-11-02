@@ -6,6 +6,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
+import app.auf.feature.core.ConfirmationDialog
 import app.auf.feature.core.CoreState
 
 @Composable
@@ -30,6 +31,21 @@ fun App(store: Store, features: List<Feature>) {
         ) { paddingValues ->
             Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
                 MainAppContent(store, features)
+
+                // --- GLOBAL DIALOGS ---
+                coreState?.confirmationRequest?.let { request ->
+                    ConfirmationDialog(
+                        request = request,
+                        onConfirm = {
+                            // Dispatch the action the dialog was configured with, then dismiss.
+                            store.dispatch("system.ui", request.onConfirmAction)
+                            store.dispatch("system.ui", Action(ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG))
+                        },
+                        onDismiss = {
+                            store.dispatch("system.ui", Action(ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG))
+                        }
+                    )
+                }
             }
         }
     }

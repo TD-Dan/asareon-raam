@@ -222,26 +222,8 @@
       }
     },
     {
-      "action_name": "filesystem.internal.SHOW_SCOPED_READ_PROMPT",
-      "summary": "[INTERNAL] Sets the transient state required to show the 'Danger Zone' UI for a user-mediated read.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "originator": { "type": "string" },
-          "recursive": { "type": "boolean" },
-          "fileExtensions": { "type": "array", "items": { "type": "string" } }
-        },
-        "required": ["originator"]
-      }
-    },
-    {
       "action_name": "filesystem.internal.EXECUTE_SCOPED_READ",
       "summary": "[INTERNAL] Triggers the side-effect of showing the OS file picker after the user has confirmed the 'Danger Zone' prompt.",
-      "payload_schema": null
-    },
-    {
-      "action_name": "filesystem.internal.CANCEL_SCOPED_READ",
-      "summary": "[INTERNAL] Clears the transient state for the 'Danger Zone' UI if the user dismisses it.",
       "payload_schema": null
     }
   ],

@@ -40,16 +40,6 @@ data class FileSystemItem(
 )
 
 /**
- * A transient data class that holds the details of a pending user-mediated
- * access grant request. Its presence in the state triggers the "Danger Zone" UI.
- */
-data class ScopedReadRequest(
-    val originator: String,
-    val recursive: Boolean,
-    val fileExtensions: List<String>?
-)
-
-/**
  * The state container for the FileSystemFeature.
  *
  * It models the state of the browser (current path, bookmarks, listing) and, critically,
@@ -72,10 +62,6 @@ data class FileSystemState(
     /** A set of absolute directory paths marked as favorites by the user. */
     val favoritePaths: Set<String> = emptySet(),
     /** The runtime ACL mapping a feature's name to its secure, sandboxed directory path. */
-    val sandboxedPaths: Map<String, String> = emptyMap(),
-
-    // --- Transient State for Scoped Read UI Workflow ---
-    @Transient
-    val scopedReadRequest: ScopedReadRequest? = null
+    val sandboxedPaths: Map<String, String> = emptyMap()
 
 ) : FeatureState
