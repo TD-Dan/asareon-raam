@@ -101,7 +101,11 @@ class CoreFeatureT2CoreTest {
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
             .withFeature(FileSystemFeature(platform))
-            .withInitialState("core", CoreState(userIdentities = listOf(user1, user2), activeUserId = "id-1"))
+            .withInitialState("core", CoreState(
+                userIdentities = listOf(user1, user2),
+                activeUserId = "id-1",
+                lifecycle = AppLifecycle.RUNNING // FIX: Set correct lifecycle
+            ))
             .build(platform = platform)
 
         // ACT
@@ -134,7 +138,11 @@ class CoreFeatureT2CoreTest {
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
             .withFeature(FileSystemFeature(platform))
-            .withInitialState("core", CoreState(userIdentities = listOf(user1, user2), activeUserId = "id-1"))
+            .withInitialState("core", CoreState(
+                userIdentities = listOf(user1, user2),
+                activeUserId = "id-1",
+                lifecycle = AppLifecycle.RUNNING // FIX: Set correct lifecycle
+            ))
             .build(platform = platform)
 
         // ACT

@@ -74,7 +74,10 @@ class CoreFeatureT3PeerTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withInitialState("core", CoreState(toastMessage = "Initial Toast"))
+            .withInitialState("core", CoreState(
+                toastMessage = "Initial Toast",
+                lifecycle = AppLifecycle.RUNNING // FIX: Set correct lifecycle
+            ))
             .build(platform = platform)
 
         // ARRANGE: Define the action that should be triggered on confirmation.
