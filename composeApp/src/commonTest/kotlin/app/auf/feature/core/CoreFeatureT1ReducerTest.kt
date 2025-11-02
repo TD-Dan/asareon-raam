@@ -157,6 +157,19 @@ class CoreFeatureT1ReducerTest {
     }
 
     @Test
+    fun `reducer on CORE_REMOVE_USER_IDENTITY correctly handles removing the last user`() {
+        val user1 = Identity("id-1", "The Last User")
+        val initialState = createAppState(CoreState(userIdentities = listOf(user1), activeUserId = "id-1"))
+        val action = Action(ActionNames.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", "id-1") })
+
+        val newState = feature.reducer(initialState, action)
+        val newCoreState = newState.featureStates[featureName] as CoreState
+
+        assertTrue(newCoreState.userIdentities.isEmpty(), "The user identities list should be empty.")
+        assertNull(newCoreState.activeUserId, "The active user ID should be null when no users are left.")
+    }
+
+    @Test
     fun `reducer on CORE_SET_ACTIVE_USER_IDENTITY sets the active user`() {
         val user1 = Identity("id-1", "User 1")
         val user2 = Identity("id-2", "User 2")

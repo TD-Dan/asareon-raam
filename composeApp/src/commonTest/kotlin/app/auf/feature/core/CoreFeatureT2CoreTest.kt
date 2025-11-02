@@ -1,6 +1,7 @@
 package app.auf.feature.core
 
 import app.auf.core.Action
+import app.auf.core.Identity
 import app.auf.core.generated.ActionNames
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.fakes.FakePlatformDependencies
@@ -89,5 +90,70 @@ class CoreFeatureT2CoreTest {
         assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
         val broadcastContent = broadcastAction.payload.toString()
         assertTrue(broadcastContent.contains("Test User"), "The new user's name should be in the broadcast payload.")
+    }
+
+    @Test
+    fun `onAction for REMOVE_USER_IDENTITY persists and broadcasts changes`() = runTest {
+        val platform = FakePlatformDependencies("test")
+        val user1 = Identity("id-1", "User 1")
+        val user2 = Identity("id-2", "User 2")
+
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .withFeature(FileSystemFeature(platform))
+            .withInitialState("core", CoreState(userIdentities = listOf(user1, user2), activeUserId = "id-1"))
+            .build(platform = platform)
+
+        // ACT
+        harness.store.dispatch("ui", Action(ActionNames.CORE_REMOVE_USER_IDENTITY, buildJsonObject {
+            put("id", "id-1")
+        }))
+
+        // ASSERT: Persistence
+        val writeAction = harness.processedActions.findLast { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
+        assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
+        val content = writeAction.payload?.get("content").toString()
+        assertTrue(content.contains("User 2") && !content.contains("User 1"), "The remaining user should be in the persisted content.")
+        assertTrue(content.contains("\"activeId\":\"id-2\""), "The activeId should be updated in the persisted content.")
+
+
+        // ASSERT: Broadcasting
+        val broadcastAction = harness.processedActions.findLast { it.name == ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED }
+        assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
+        val broadcastContent = broadcastAction.payload.toString()
+        assertTrue(broadcastContent.contains("User 2") && !broadcastContent.contains("User 1"), "The remaining user should be in the broadcast payload.")
+        assertEquals("\"id-2\"", broadcastAction.payload?.get("activeId").toString())
+    }
+
+    @Test
+    fun `onAction for SET_ACTIVE_USER_IDENTITY persists and broadcasts changes`() = runTest {
+        val platform = FakePlatformDependencies("test")
+        val user1 = Identity("id-1", "User 1")
+        val user2 = Identity("id-2", "User 2")
+
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .withFeature(FileSystemFeature(platform))
+            .withInitialState("core", CoreState(userIdentities = listOf(user1, user2), activeUserId = "id-1"))
+            .build(platform = platform)
+
+        // ACT
+        harness.store.dispatch("ui", Action(ActionNames.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject {
+            put("id", "id-2")
+        }))
+
+        // ASSERT: Persistence
+        val writeAction = harness.processedActions.findLast { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
+        assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
+        val content = writeAction.payload?.get("content").toString()
+        assertTrue(content.contains("User 1") && content.contains("User 2"), "Both users should be in the persisted content.")
+        assertTrue(content.contains("\"activeId\":\"id-2\""), "The new activeId should be in the persisted content.")
+
+        // ASSERT: Broadcasting
+        val broadcastAction = harness.processedActions.findLast { it.name == ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED }
+        assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
+        val broadcastContent = broadcastAction.payload.toString()
+        assertTrue(broadcastContent.contains("User 1") && broadcastContent.contains("User 2"), "Both users should be in the broadcast payload.")
+        assertEquals("\"id-2\"", broadcastAction.payload?.get("activeId").toString())
     }
 }
