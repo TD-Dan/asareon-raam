@@ -211,44 +211,49 @@ open class Store(
 
         onDispatch?.invoke(action)
 
-        // --- PHASE 2: ROUTE, REDUCE, UPDATE ---
-        val previousState = _state.value
-        val newFeatureStates = previousState.featureStates.toMutableMap()
-        var stateChanged = false
-
+        // --- [REFACTOR] PHASE 2 & 3 Combined into a single, safe block ---
         try {
+            // --- PHASE 2: ROUTE, REDUCE, UPDATE ---
+            val previousState = _state.value
+            val newState: AppState
+
             if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
                 // Targeted dispatch for internal actions
                 val targetFeature = features.find { it.name == parsedName.feature }
                 if (targetFeature != null) {
                     val oldFeatureState = previousState.featureStates[targetFeature.name]
                     val newFeatureState = targetFeature.reducer(oldFeatureState, action)
-                    if (oldFeatureState !== newFeatureState) {
+                    newState = if (oldFeatureState !== newFeatureState) {
+                        val newFeatureStates = previousState.featureStates.toMutableMap()
                         newFeatureState?.let { newFeatureStates[targetFeature.name] = it } ?: newFeatureStates.remove(targetFeature.name)
-                        stateChanged = true
+                        previousState.copy(featureStates = newFeatureStates)
+                    } else {
+                        previousState
                     }
                 } else {
                     platformDependencies.log(LogLevel.ERROR, "Store", "Internal action '${action.name}' dispatched, but target feature '${parsedName.feature}' not found.")
+                    newState = previousState
                 }
             } else {
-                // Broadcast dispatch for all other action types
-                features.forEach { feature ->
-                    val oldFeatureState = previousState.featureStates[feature.name]
+                // Sequential fold for all broadcast actions. This is architecturally critical.
+                newState = features.fold(previousState) { accumulatingState, feature ->
+                    val oldFeatureState = accumulatingState.featureStates[feature.name]
                     val newFeatureState = feature.reducer(oldFeatureState, action)
                     if (oldFeatureState !== newFeatureState) {
+                        val newFeatureStates = accumulatingState.featureStates.toMutableMap()
                         newFeatureState?.let { newFeatureStates[feature.name] = it } ?: newFeatureStates.remove(feature.name)
-                        stateChanged = true
+                        accumulatingState.copy(featureStates = newFeatureStates)
+                    } else {
+                        accumulatingState
                     }
                 }
             }
 
-            val newState = if (stateChanged) previousState.copy(featureStates = newFeatureStates) else previousState
             if (newState != previousState) {
                 _state.value = newState
             }
 
-            // --- PHASE 3: Side Effects (onAction) / NOTIFY (WITH EXCEPTION HANDLING)---
-            // This runs after the state has been updated, providing the final state to the handlers.
+            // --- PHASE 3: Side Effects (onAction) ---
             if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
                 val targetFeature = features.find { it.name == parsedName.feature }
                 if (targetFeature != null) {
