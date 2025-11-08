@@ -36,6 +36,7 @@ class FileSystemFeature(
     @Serializable private data class OpenAppSubfolderPayload(val folder: String)
     @Serializable data class RequestScopedReadUiPayload(val recursive: Boolean = true, val fileExtensions: List<String>? = null)
     @Serializable private data class StageScopedReadPayload(val requestId: String, val originator: String, val requestPayload: JsonObject)
+    @Serializable private data class ExecuteScopedReadPayload(val clientOriginator: String, val requestPayload: JsonObject)
     @Serializable private data class ConfirmationResponsePayload(val requestId: String, val confirmed: Boolean)
 
 
@@ -57,17 +58,17 @@ class FileSystemFeature(
                 if (pendingRequest?.requestId == payload.requestId) {
                     if (payload.confirmed) {
                         store.deferredDispatch(
-                            originator = pendingRequest.originator,
+                            originator = this.name, // This internal action MUST originate from this feature
                             action = Action(
                                 name = ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ,
-                                payload = Json.encodeToJsonElement(pendingRequest.payload) as JsonObject
+                                payload = buildJsonObject {
+                                    // Carry the original client and their request payload forward
+                                    put("clientOriginator", pendingRequest.originator)
+                                    put("requestPayload", Json.encodeToJsonElement(pendingRequest.payload))
+                                }
                             )
                         )
                     }
-                    // --- THE FIX ---
-                    // Regardless of outcome, the request is now handled. Dispatch an action
-                    // to clean up the state. This must be dispatched by 'this.name' because
-                    // it's an internal cleanup action for this feature.
                     store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_INTERNAL_FINALIZE_SCOPED_READ))
                 }
             }
@@ -124,12 +125,17 @@ class FileSystemFeature(
                 store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_CONFIRMATION_DIALOG, dialogRequest))
             }
             ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<RequestScopedReadUiPayload>(it) } ?: RequestScopedReadUiPayload()
+                // --- THE FIX ---
+                // Decode the new, richer payload to get the client's identity and original request.
+                val payload = action.payload?.let { Json.decodeFromJsonElement<ExecuteScopedReadPayload>(it) } ?: return
+                val clientOriginator = payload.clientOriginator
+                val requestPayload = Json.decodeFromJsonElement<RequestScopedReadUiPayload>(payload.requestPayload)
+
                 platformDependencies.selectDirectoryPath()?.let { selectedPath ->
-                    platformDependencies.log(LogLevel.INFO, name, "User granted one-time access to '$selectedPath' for '$originator'.")
+                    platformDependencies.log(LogLevel.INFO, name, "User granted one-time access to '$selectedPath' for '$clientOriginator'.")
                     try {
-                        val listing = if (payload.recursive) platformDependencies.listDirectoryRecursive(selectedPath) else platformDependencies.listDirectory(selectedPath)
-                        val filteredListing = payload.fileExtensions?.let { extensions ->
+                        val listing = if (requestPayload.recursive) platformDependencies.listDirectoryRecursive(selectedPath) else platformDependencies.listDirectory(selectedPath)
+                        val filteredListing = requestPayload.fileExtensions?.let { extensions ->
                             listing.filter { fileEntry -> extensions.any { ext -> fileEntry.path.endsWith(".$ext") } }
                         } ?: listing
 
@@ -137,12 +143,13 @@ class FileSystemFeature(
                             put("listing", Json.encodeToJsonElement(filteredListing))
                             put("subpath", selectedPath)
                         }
+                        // Deliver the response to the ORIGINAL client.
                         val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST_RECURSIVE, responsePayload)
-                        store.deliverPrivateData(this.name, originator, envelope)
+                        store.deliverPrivateData(this.name, clientOriginator, envelope)
                     } catch (e: Exception) {
                         platformDependencies.log(LogLevel.ERROR, name, "Scoped read failed for '$selectedPath': ${e.message}")
                     }
-                } ?: platformDependencies.log(LogLevel.INFO, name, "User cancelled one-time access grant for '$originator'.")
+                } ?: platformDependencies.log(LogLevel.INFO, name, "User cancelled one-time access grant for '$clientOriginator'.")
             }
             ActionNames.FILESYSTEM_TOGGLE_ITEM_EXPANDED -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return

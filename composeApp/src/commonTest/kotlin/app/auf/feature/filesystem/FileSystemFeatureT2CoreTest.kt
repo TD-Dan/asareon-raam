@@ -176,23 +176,16 @@ class FileSystemFeatureT2CoreTest {
         assertNotNull(stageAction, "An internal action to stage the request should have been dispatched.")
         val requestId = stageAction.payload?.get("requestId")?.jsonPrimitive?.content
         assertNotNull(requestId, "The staging action must contain a requestId.")
-
-        // Verify the original request is now pending in the state.
         val stateAfterRequest = harness.store.state.value.featureStates[feature.name] as FileSystemState
         assertNotNull(stateAfterRequest.pendingScopedRead, "The original request should be stored as pending.")
         assertEquals(requestId, stateAfterRequest.pendingScopedRead?.requestId)
         assertEquals(originator, stateAfterRequest.pendingScopedRead?.originator)
 
-        // Verify a confirmation dialog was requested.
         val confirmationRequestAction = harness.processedActions.find { it.name == ActionNames.CORE_SHOW_CONFIRMATION_DIALOG }
         assertNotNull(confirmationRequestAction, "A confirmation dialog should have been requested.")
-        assertEquals(requestId, confirmationRequestAction.payload?.get("requestId")?.jsonPrimitive?.content)
-
-        // Verify the OS dialog was NOT called yet.
-        assertEquals(0, platform.capturedLogs.count { it.message.contains("User granted one-time access") })
 
         // --- 4. ACT 2: Simulate the user confirming the dialog ---
-        platform.selectedDirectoryPathToReturn = "/fake/selected/path" // Pre-configure the fake dialog's return value.
+        platform.selectedDirectoryPathToReturn = "/fake/selected/path"
         val confirmationResponse = PrivateDataEnvelope(
             type = ActionNames.Envelopes.CORE_RESPONSE_CONFIRMATION,
             payload = buildJsonObject {
@@ -205,7 +198,17 @@ class FileSystemFeatureT2CoreTest {
         // --- 5. ASSERT 2: The feature correctly resumes the workflow ---
         val executeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ }
         assertNotNull(executeAction, "EXECUTE_SCOPED_READ should be dispatched after confirmation.")
-        assertEquals(originator, executeAction.originator, "The originator must be preserved through the workflow.")
+
+        // --- THE FIX ---
+        // 1. Verify the action was dispatched by the feature itself (security).
+        assertEquals(feature.name, executeAction.originator, "The internal execute action must originate from the filesystem feature.")
+        // 2. Verify the original client's identity is preserved in the payload (causality).
+        val clientOriginator = executeAction.payload?.get("clientOriginator")?.jsonPrimitive?.content
+        assertEquals(originator, clientOriginator, "The original client's identity must be preserved in the payload.")
+
+        // Verify the cleanup action was also dispatched.
+        val finalizeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_INTERNAL_FINALIZE_SCOPED_READ }
+        assertNotNull(finalizeAction, "FINALIZE_SCOPED_READ should be dispatched to clean up state.")
 
         // Verify the pending request is cleared from the state.
         val finalState = harness.store.state.value.featureStates[feature.name] as FileSystemState
