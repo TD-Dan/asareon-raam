@@ -125,8 +125,6 @@ class FileSystemFeature(
                 store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_CONFIRMATION_DIALOG, dialogRequest))
             }
             ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ -> {
-                // --- THE FIX ---
-                // Decode the new, richer payload to get the client's identity and original request.
                 val payload = action.payload?.let { Json.decodeFromJsonElement<ExecuteScopedReadPayload>(it) } ?: return
                 val clientOriginator = payload.clientOriginator
                 val requestPayload = Json.decodeFromJsonElement<RequestScopedReadUiPayload>(payload.requestPayload)
@@ -134,20 +132,50 @@ class FileSystemFeature(
                 platformDependencies.selectDirectoryPath()?.let { selectedPath ->
                     platformDependencies.log(LogLevel.INFO, name, "User granted one-time access to '$selectedPath' for '$clientOriginator'.")
                     try {
-                        val listing = if (requestPayload.recursive) platformDependencies.listDirectoryRecursive(selectedPath) else platformDependencies.listDirectory(selectedPath)
-                        val filteredListing = requestPayload.fileExtensions?.let { extensions ->
-                            listing.filter { fileEntry -> extensions.any { ext -> fileEntry.path.endsWith(".$ext") } }
-                        } ?: listing
-
-                        val responsePayload = buildJsonObject {
-                            put("listing", Json.encodeToJsonElement(filteredListing))
-                            put("subpath", selectedPath)
+                        // 1. List files recursively
+                        val allFiles = if (requestPayload.recursive) {
+                            platformDependencies.listDirectoryRecursive(selectedPath)
+                        } else {
+                            platformDependencies.listDirectory(selectedPath).filterNot { it.isDirectory }
                         }
-                        // Deliver the response to the ORIGINAL client.
-                        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST_RECURSIVE, responsePayload)
+
+                        // 2. Filter by extension
+                        val filteredFiles = requestPayload.fileExtensions?.let { extensions ->
+                            allFiles.filter { fileEntry -> extensions.any { ext -> fileEntry.path.endsWith(".$ext", ignoreCase = true) } }
+                        } ?: allFiles
+
+                        // 3. Enforce security limit
+                        if (filteredFiles.size > 1000) {
+                            val errorMsg = "Import failed: Directory contains more than 1000 files (${filteredFiles.size}). Please select a smaller directory."
+                            platformDependencies.log(LogLevel.ERROR, name, errorMsg)
+                            store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
+                            return // Abort the operation
+                        }
+
+                        // 4. Read content and build the relative-path map
+                        val contentMap = mutableMapOf<String, String>()
+                        val rootPathWithSeparator = if (selectedPath.endsWith(platformDependencies.pathSeparator)) selectedPath else "$selectedPath${platformDependencies.pathSeparator}"
+                        filteredFiles.forEach { fileEntry ->
+                            try {
+                                val fileContent = platformDependencies.readFileContent(fileEntry.path)
+                                val relativePath = fileEntry.path.removePrefix(rootPathWithSeparator)
+                                contentMap[relativePath] = fileContent
+                            } catch (e: Exception) {
+                                platformDependencies.log(LogLevel.WARN, name, "Scoped read failed for one file '${fileEntry.path}': ${e.message}")
+                            }
+                        }
+
+                        // 5. Deliver the complete payload
+                        val responsePayload = buildJsonObject {
+                            put("contents", Json.encodeToJsonElement(contentMap))
+                        }
+                        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, responsePayload)
                         store.deliverPrivateData(this.name, clientOriginator, envelope)
+
                     } catch (e: Exception) {
-                        platformDependencies.log(LogLevel.ERROR, name, "Scoped read failed for '$selectedPath': ${e.message}")
+                        val errorMsg = "Scoped read failed for '$selectedPath': ${e.message}"
+                        platformDependencies.log(LogLevel.ERROR, name, errorMsg)
+                        store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
                     }
                 } ?: platformDependencies.log(LogLevel.INFO, name, "User cancelled one-time access grant for '$clientOriginator'.")
             }

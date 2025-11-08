@@ -18,7 +18,7 @@
     },
     {
       "action_name": "filesystem.REQUEST_SCOPED_READ_UI",
-      "summary": "Requests that the FileSystemFeature orchestrate a user-mediated, one-time read of a directory outside the originator's sandbox. This feature will show a security warning, then the OS file picker, and deliver the results via a private channel.",
+      "summary": "Orchestrates a user-mediated, one-time read of a directory outside the originator's sandbox. Shows a security warning, then the OS file picker, and delivers the complete content of all found files via a private 'filesystem.response.FILES_CONTENT' envelope.",
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -297,13 +297,13 @@
     },
     {
       "type_name": "filesystem.response.FILES_CONTENT",
-      "summary": "The response envelope containing the content of multiple files, delivered to the original requester.",
+      "summary": "The response envelope containing the content of multiple files. Paths MUST be relative to the root of the read operation.",
       "payload_schema": {
         "type": "object",
         "properties": {
           "contents": {
             "type": "object",
-            "description": "A map of subpaths to their string content.",
+            "description": "A map of relative file paths to their string content.",
             "additionalProperties": { "type": "string" }
           }
         },

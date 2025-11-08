@@ -383,20 +383,6 @@ class KnowledgeGraphFeature(
                     store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", personaId) }))
                 }
             }
-            ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST_RECURSIVE -> {
-                val listing = envelope.payload["listing"]?.let { json.decodeFromJsonElement<List<FileEntry>>(it) } ?: return
-                val jsonFiles = listing.filter { it.path.endsWith(".json") }.map { it.path }
-
-                if (jsonFiles.isNotEmpty()) {
-                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
-                        put("subpaths", Json.encodeToJsonElement(jsonFiles))
-                    }))
-                } else if (kgState?.viewMode == KnowledgeGraphViewMode.IMPORT) {
-                    store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, buildJsonObject {
-                        put("items", Json.encodeToJsonElement(emptyList<ImportItem>())); put("contents", buildJsonObject {})
-                    }))
-                }
-            }
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
                 if (kgState?.viewMode == KnowledgeGraphViewMode.IMPORT) {
                     if (kgState.importItems.isEmpty()) {
@@ -538,7 +524,7 @@ class KnowledgeGraphFeature(
                             }
                         }
                     }
-                    is Quarantine -> { /* No-op */ }
+                    is Quarantine -> { /* TODO: needs to be moved to a special quarantine folder for further editing. */ }
                     is Ignore -> { /* No-op */ }
                 }
                 if (wasProcessed) processedInPass++
