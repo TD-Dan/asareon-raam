@@ -67,6 +67,34 @@ class KnowledgeGraphFeatureT2CoreTest {
     }
 
     @Test
+    fun `on PERSONA_LOADED should broadcast AVAILABLE_PERSONAS_UPDATED`() {
+        // --- ARRANGE ---
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+
+        val p1 = Holon(HolonHeader("p1", "AI_Persona_Root", "Persona One"), buildJsonObject {})
+        val h1 = Holon(HolonHeader("h1", "T", "Holon A", parentId = "p1", depth = 1), buildJsonObject {})
+
+        val payload = buildJsonObject {
+            put("holons", json.encodeToJsonElement(mapOf("p1" to p1, "h1" to h1)))
+        }
+        val loadAction = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED, payload)
+
+        // --- ACT ---
+        harness.store.dispatch(feature.name, loadAction)
+
+        // --- ASSERT ---
+        val broadcastAction = harness.processedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_PUBLISH_AVAILABLE_PERSONAS_UPDATED }
+        assertNotNull(broadcastAction, "The feature should have broadcasted the persona update.")
+        assertEquals(feature.name, broadcastAction.originator, "The broadcast must originate from the feature itself.")
+
+        val broadcastPayload = broadcastAction.payload?.get("names")?.jsonObject
+        assertNotNull(broadcastPayload)
+        assertEquals(1, broadcastPayload.size)
+        assertEquals("Persona One", broadcastPayload["p1"]?.jsonPrimitive?.content)
+    }
+
+
+    @Test
     fun `full load sequence correctly populates holons from filesystem`() {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val feature = harness.store.features.find { it.name == "knowledgegraph" }!!

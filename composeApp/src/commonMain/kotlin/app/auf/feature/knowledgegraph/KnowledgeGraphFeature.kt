@@ -50,9 +50,24 @@ class KnowledgeGraphFeature(
     override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val originator = action.originator ?: return
         val kgState = newState as? KnowledgeGraphState ?: return
+        val prevKgState = previousState as? KnowledgeGraphState
+
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
+            }
+            ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED -> {
+                // THE FIX: If the set of known personas has changed, broadcast the new set.
+                if (prevKgState?.personaRoots != kgState.personaRoots) {
+                    // Invert the Name->ID map to ID->Name for the payload, which is what consumers expect.
+                    val idToNameMap = kgState.personaRoots.entries.associate { (name, id) -> id to name }
+                    store.deferredDispatch(this.name, Action(
+                        name = ActionNames.KNOWLEDGEGRAPH_PUBLISH_AVAILABLE_PERSONAS_UPDATED,
+                        payload = buildJsonObject {
+                            put("names", json.encodeToJsonElement(idToNameMap))
+                        }
+                    ))
+                }
             }
             ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<LoadPersonaPayload>(it) } ?: return
