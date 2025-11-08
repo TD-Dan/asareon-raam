@@ -305,7 +305,6 @@ private fun HolonDetailView(holon: Holon?, store: Store, modifier: Modifier = Mo
                 actions = {
                     Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT, buildJsonObject { put("holonId", holon.header.id) })) }) { Text("Edit") }
                     Spacer(Modifier.width(8.dp))
-                    // Hide Rename and Delete for root personas
                     if (holon.header.type != "AI_Persona_Root") {
                         OutlinedButton(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_RENAME, buildJsonObject { put("holonId", holon.header.id) })) }) { Text("Rename") }
                         Spacer(Modifier.width(8.dp))
@@ -466,12 +465,10 @@ private fun ImportPane(
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            OutlinedTextField(value = kgState.importSourcePath, onValueChange = {}, label = { Text("Source Folder") }, modifier = Modifier.weight(1f), readOnly = true)
-            Spacer(modifier = Modifier.width(8.dp))
+            Text("Select a folder to analyze for holon files.", modifier = Modifier.weight(1f))
             Button(onClick = {
-                platformDependencies.selectDirectoryPath()?.let {
-                    store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS, buildJsonObject { put("path", it) }))
-                }
+                // **THE FIX**: This now only dispatches the action. No direct platform calls.
+                store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS))
             }) { Text("Select & Analyze...") }
         }
         Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -488,26 +485,13 @@ private fun ImportPane(
                 Text("Show only changed files")
             }
         }
-
-        // **THE FIX**: Add the summary line here.
-        if (kgState.importFileContents.isNotEmpty() && !kgState.isLoading) {
-            val totalFiles = kgState.importFileContents.size
-            val createCount = kgState.importSelectedActions.values.count { it is CreateRoot || it is Integrate || it is AssignParent }
-            val updateCount = kgState.importSelectedActions.values.count { it is Update }
-            Text(
-                text = "Analysis complete: Found $totalFiles total files. Plan: $createCount to create, $updateCount to update.",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-
         Spacer(modifier = Modifier.height(16.dp))
 
         if (kgState.isLoading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         } else if (kgState.importItems.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(if (kgState.importSourcePath.isBlank()) "Select a folder to begin analysis." else "No importable .json files found.")
+                Text("Ready to analyze a folder.")
             }
         } else {
             LazyColumn(modifier = Modifier.weight(1f)) {
@@ -528,7 +512,24 @@ private fun ImportPane(
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                // **THE FIX**: Summary line is moved here and enhanced.
+                if (kgState.importFileContents.isNotEmpty() && !kgState.isLoading) {
+                    val total = kgState.importFileContents.size
+                    val create = kgState.importSelectedActions.values.count { it is CreateRoot || it is Integrate || it is AssignParent }
+                    val update = kgState.importSelectedActions.values.count { it is Update }
+                    val ignore = kgState.importSelectedActions.values.count { it is Ignore }
+                    val quarantine = kgState.importSelectedActions.values.count { it is Quarantine }
+
+                    Text(
+                        text = "Found $total files. Plan: $create create, $update update, $quarantine quarantine, $ignore ignore.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+
                 OutlinedButton(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) })) }) { Text("Cancel") }
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(

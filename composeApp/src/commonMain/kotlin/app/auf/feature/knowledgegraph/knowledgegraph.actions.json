@@ -58,12 +58,8 @@
     },
     {
       "action_name": "knowledgegraph.START_IMPORT_ANALYSIS",
-      "summary": "Initiates the analysis of a selected directory for HKG import.",
-      "payload_schema": {
-        "type": "object",
-        "properties": { "path": { "type": "string" } },
-        "required": ["path"]
-      }
+      "summary": "Initiates the user-facing workflow to select and analyze a directory for HKG import.",
+      "payload_schema": null
     },
     {
       "action_name": "knowledgegraph.SET_IMPORT_RECURSIVE",

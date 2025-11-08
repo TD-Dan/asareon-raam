@@ -97,7 +97,6 @@ data class KnowledgeGraphState(
     val activeTypeFilters: Set<String> = emptySet(),
 
     // --- Import State ---
-    val importSourcePath: String = "",
     val importItems: List<ImportItem> = emptyList(),
     val importSelectedActions: Map<String, ImportAction> = emptyMap(),
     val importFileContents: Map<String, String> = emptyMap(),

@@ -31,7 +31,6 @@ class KnowledgeGraphFeature(
     @Serializable private data class SetHolonToRenamePayload(val holonId: String?)
     @Serializable private data class SetViewModePayload(val mode: KnowledgeGraphViewMode)
     @Serializable private data class SetTypeFiltersPayload(val types: Set<String>)
-    @Serializable private data class StartImportAnalysisPayload(val path: String)
     @Serializable private data class AnalysisCompletePayload(val items: List<ImportItem>, val contents: Map<String, String>)
     @Serializable private data class SetImportRecursivePayload(val recursive: Boolean)
     @Serializable private data class UpdateImportActionPayload(val sourcePath: String, val action: ImportAction)
@@ -58,7 +57,6 @@ class KnowledgeGraphFeature(
             }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED -> {
                 if (prevKgState?.personaRoots != kgState.personaRoots) {
-                    // Invert the Name->ID map to ID->Name for the payload, which is what consumers expect.
                     val idToNameMap = kgState.personaRoots.entries.associate { (name, id) -> id to name }
                     store.deferredDispatch(this.name, Action(
                         name = ActionNames.KNOWLEDGEGRAPH_PUBLISH_AVAILABLE_PERSONAS_UPDATED,
@@ -86,8 +84,9 @@ class KnowledgeGraphFeature(
                 store.deliverPrivateData(this.name, originator, responseEnvelope)
             }
             ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS -> {
+                // **THE FIX**: This action now has no payload. It simply triggers the file selection workflow.
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI, buildJsonObject {
-                    put("recursive", kgState.isImportRecursive)
+                    put("recursive", true) // Default to recursive, user can toggle later.
                     putJsonArray("fileExtensions") { add("json") }
                 }))
             }
@@ -122,7 +121,7 @@ class KnowledgeGraphFeature(
                 val payload = action.payload?.let { json.decodeFromJsonElement<CreatePersonaPayload>(it) } ?: return
                 val timestamp = platformDependencies.getSystemTimeMillis()
                 val isoTimestamp = platformDependencies.formatIsoTimestamp(timestamp)
-                val fileSafeTimestamp = isoTimestamp.replace(":", "").replace("-", "").replace("Z", "").replace("T", "T") // Make it more compact
+                val fileSafeTimestamp = isoTimestamp.replace(":", "").replace("-", "").replace("Z", "").replace("T", "T")
                 val newId = "${payload.name.lowercase().replace(" ", "-")}-${fileSafeTimestamp}"
 
                 val newHolonHeader = HolonHeader(
@@ -148,7 +147,6 @@ class KnowledgeGraphFeature(
                     put("subpath", holonToUpdate.header.filePath)
                     put("content", payload.newContent)
                 }))
-                // Trigger a reload to re-parse the holon and update the state
                 holonToUpdate.header.parentId?.let { parentId ->
                     kgState.holons[parentId]?.let { parent ->
                         if (parent.header.type == "AI_Persona_Root") {
@@ -250,12 +248,12 @@ class KnowledgeGraphFeature(
                 return currentFeatureState.copy(
                     activePersonaIdForView = payload.personaId,
                     activeHolonIdForView = null,
-                    activeTypeFilters = emptySet() // Reset filters on persona change
+                    activeTypeFilters = emptySet()
                 )
             }
             ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SetViewHolonPayload>(it) } ?: return currentFeatureState
-                return currentFeatureState.copy(activeHolonIdForView = payload.holonId, holonIdToEdit = null) // Exit edit mode
+                return currentFeatureState.copy(activeHolonIdForView = payload.holonId, holonIdToEdit = null)
             }
             ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SetHolonToEditPayload>(it) } ?: return currentFeatureState
@@ -277,13 +275,12 @@ class KnowledgeGraphFeature(
                 return currentFeatureState.copy(viewMode = payload.mode)
             }
             ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<StartImportAnalysisPayload>(it) } ?: return currentFeatureState
+                // **THE FIX**: This action now simply resets the import state for a new operation.
                 return currentFeatureState.copy(
                     isLoading = true,
-                    importSourcePath = payload.path,
                     importItems = emptyList(),
                     importSelectedActions = emptyMap(),
-                    importFileContents = emptyMap() // **THE FIX**: Clear previous results
+                    importFileContents = emptyMap()
                 )
             }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE -> {
@@ -303,6 +300,7 @@ class KnowledgeGraphFeature(
             }
             ActionNames.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SetImportRecursivePayload>(it) } ?: return currentFeatureState
+                // **THE FIX**: This now only updates the flag and sets loading. The re-analysis is an `onAction` side effect.
                 return currentFeatureState.copy(isImportRecursive = payload.recursive, isLoading = true)
             }
             ActionNames.KNOWLEDGEGRAPH_TOGGLE_SHOW_ONLY_CHANGED -> {
@@ -345,7 +343,6 @@ class KnowledgeGraphFeature(
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_HOLON -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<DeleteHolonPayload>(it) } ?: return currentFeatureState
                 val holonToDelete = currentFeatureState.holons[payload.holonId] ?: return currentFeatureState
-                // 1. Find all descendant IDs
                 val idsToDelete = mutableSetOf<String>()
                 val queue = mutableListOf(holonToDelete)
                 while (queue.isNotEmpty()) {
@@ -355,9 +352,7 @@ class KnowledgeGraphFeature(
                         currentFeatureState.holons[subRef.id]?.let { queue.add(it) }
                     }
                 }
-                // 2. Remove all descendants from the state
                 var newHolons = currentFeatureState.holons - idsToDelete
-                // 3. Update the parent's sub_holons list
                 holonToDelete.header.parentId?.let { parentId ->
                     currentFeatureState.holons[parentId]?.let { parentHolon ->
                         val updatedSubHolons = parentHolon.header.subHolons.filter { it.id != payload.holonId }
@@ -389,11 +384,9 @@ class KnowledgeGraphFeature(
                 val fileData = try { json.decodeFromJsonElement<FilesContentPayload>(envelope.payload) } catch (e: Exception) { null } ?: return
                 if (kgState?.viewMode == KnowledgeGraphViewMode.IMPORT) {
                     if (kgState.importItems.isEmpty()) {
-                        // This is the initial analysis result
-                        val analysisPayload = runImportAnalysis(fileData.contents, kgState, kgState.isImportRecursive)
+                        val analysisPayload = runImportAnalysis(fileData.contents, kgState, true) // Always start recursive
                         store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
                     } else {
-                        // This is the parent content for executing the write plan
                         executeImportWrites(fileData.contents, kgState, store)
                     }
                 } else {
@@ -403,10 +396,6 @@ class KnowledgeGraphFeature(
         }
     }
 
-    /**
-     * [NEW] A pure function to perform the core import analysis logic.
-     * This can be called from multiple places (initial load, re-filtering).
-     */
     private fun runImportAnalysis(
         fileContents: Map<String, String>,
         kgState: KnowledgeGraphState,
@@ -419,11 +408,6 @@ class KnowledgeGraphFeature(
         val sourceParentMap = sourceHolons.values.flatMap { holon -> holon.header.subHolons.map { child -> child.id to holon.header.id } }.toMap()
 
         val importItems = fileContents.keys.mapNotNull { path ->
-            // **THE FIX**: Apply recursive filter here
-            if (!isRecursive && path.contains(platformDependencies.pathSeparator)) {
-                return@mapNotNull null
-            }
-
             val sourceHolon = sourceHolons[path]
             val holonId = platformDependencies.getFileName(path).removeSuffix(".json")
 
@@ -435,8 +419,16 @@ class KnowledgeGraphFeature(
                 else -> ImportItem(path, Quarantine("Unknown top-level holon."), null)
             }
         }
+
+        // Apply recursive filter AFTER initial analysis
+        val filteredItems = if (isRecursive) {
+            importItems
+        } else {
+            importItems.filter { !it.sourcePath.contains(platformDependencies.pathSeparator) }
+        }
+
         return buildJsonObject {
-            put("items", Json.encodeToJsonElement(importItems));
+            put("items", Json.encodeToJsonElement(filteredItems));
             put("contents", Json.encodeToJsonElement(fileContents))
         }
     }
@@ -445,7 +437,6 @@ class KnowledgeGraphFeature(
         val fileData = try { json.decodeFromJsonElement<FilesContentPayload>(payload) } catch (e: Exception) { return }
         val holonsById = mutableMapOf<String, Holon>()
 
-        // First pass: Parse all holons and store them by ID
         for ((path, rawContent) in fileData.contents) {
             try {
                 val holon = json.decodeFromString<Holon>(rawContent)
@@ -460,7 +451,6 @@ class KnowledgeGraphFeature(
             }
         }
 
-        // Second pass: Build hierarchy and enrich with depth/parentId
         val enrichedHolons = mutableMapOf<String, Holon>()
         val rootHolons = holonsById.values.filter { holon -> holonsById.values.none { parent -> parent.header.subHolons.any { it.id == holon.header.id } } }
 
