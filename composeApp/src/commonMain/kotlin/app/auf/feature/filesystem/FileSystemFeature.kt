@@ -54,17 +54,21 @@ class FileSystemFeature(
             ActionNames.Envelopes.CORE_RESPONSE_CONFIRMATION -> {
                 val payload = Json.decodeFromJsonElement<ConfirmationResponsePayload>(envelope.payload)
                 val pendingRequest = state.pendingScopedRead
-                if (payload.confirmed && pendingRequest?.requestId == payload.requestId) {
-                    // --- THE FIX ---
-                    // Dispatch the next action using the PRESERVED originator from the pending request,
-                    // not 'this.name'. This correctly maintains the causality chain.
-                    store.deferredDispatch(
-                        originator = pendingRequest.originator,
-                        action = Action(
-                            name = ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ,
-                            payload = Json.encodeToJsonElement(pendingRequest.payload) as JsonObject
+                if (pendingRequest?.requestId == payload.requestId) {
+                    if (payload.confirmed) {
+                        store.deferredDispatch(
+                            originator = pendingRequest.originator,
+                            action = Action(
+                                name = ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ,
+                                payload = Json.encodeToJsonElement(pendingRequest.payload) as JsonObject
+                            )
                         )
-                    )
+                    }
+                    // --- THE FIX ---
+                    // Regardless of outcome, the request is now handled. Dispatch an action
+                    // to clean up the state. This must be dispatched by 'this.name' because
+                    // it's an internal cleanup action for this feature.
+                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_INTERNAL_FINALIZE_SCOPED_READ))
                 }
             }
         }
@@ -335,8 +339,7 @@ class FileSystemFeature(
                 )
                 return currentFeatureState.copy(pendingScopedRead = pendingRequest)
             }
-            ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG -> {
-                // Clear the pending request once the dialog is dismissed, regardless of outcome.
+            ActionNames.FILESYSTEM_INTERNAL_FINALIZE_SCOPED_READ -> {
                 return currentFeatureState.copy(pendingScopedRead = null)
             }
             ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED -> {

@@ -238,6 +238,11 @@
         },
         "required": ["requestId", "originator", "requestPayload"]
       }
+    },
+    {
+      "action_name": "filesystem.internal.FINALIZE_SCOPED_READ",
+      "summary": "[INTERNAL] Clears the pending scoped read request from the state after the workflow is complete.",
+      "payload_schema": null
     }
   ],
   "private_envelopes": [
