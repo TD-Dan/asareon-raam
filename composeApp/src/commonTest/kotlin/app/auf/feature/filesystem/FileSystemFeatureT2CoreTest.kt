@@ -1,6 +1,7 @@
 package app.auf.feature.filesystem
 
 import app.auf.core.Action
+import app.auf.core.PrivateDataEnvelope
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.core.generated.ActionNames
 import app.auf.test.TestEnvironment
@@ -21,6 +22,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -153,77 +155,56 @@ class FileSystemFeatureT2CoreTest {
         assertFalse(platform.fileExists(fullFilePath), "File inside directory should have been deleted.")
     }
 
-    /*
-    // TODO: This test is disabled because it tests the non-sandboxed file access pattern, which
-    // has been removed and is pending a new design for user-initiated workflows like "import".
     @Test
-    fun `READ_DIRECTORY_CONTENTS delivers recursive file listing via private channel`() {
-        // Arrange
+    fun `REQUEST_SCOPED_READ_UI waits for confirmation and then executes file dialog`() {
+        // --- 1. ARRANGE ---
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
-        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        // The harness includes the real Store and CoreFeature, which is necessary for this test.
+        val harness = TestEnvironment.create()
+            .withFeature(feature)
+            .build(platform = platform)
         val originator = "knowledgegraph"
-        val dirPath = "/import/source"
-        platform.createDirectories(dirPath + "/subdir")
-        platform.writeFileContent(dirPath + "/file1.json", "{}")
-        platform.writeFileContent(dirPath + "/subdir/file2.json", "{}")
-
-        val action = Action(ActionNames.FILESYSTEM_READ_DIRECTORY_CONTENTS, buildJsonObject {
-            put("path", dirPath)
-            put("recursive", true) // CORRECTED
+        val requestAction = Action(ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI, buildJsonObject {
+            put("recursive", true)
         })
 
-        // Act
-        harness.store.dispatch(originator, action)
+        // --- 2. ACT 1: Dispatch the initial request ---
+        harness.store.dispatch(originator, requestAction)
 
-        // Assert
-        assertEquals(1, harness.deliveredPrivateData.size, "Exactly one private data envelope should be delivered.")
-        val delivery = harness.deliveredPrivateData.first()
-        assertEquals(originator, delivery.recipient)
-        assertEquals(feature.name, delivery.originator)
-        assertEquals(ActionNames.Envelopes.FILESYSTEM_RESPONSE_DIRECTORY_CONTENTS, delivery.envelope.type)
+        // --- 3. ASSERT 1: The feature correctly asks for confirmation ---
+        // Verify the OS dialog was NOT called yet.
+        assertEquals(null, platform.selectedDirectoryPathToReturn, "The OS dialog should not be shown before confirmation.")
 
-        val payload = delivery.envelope.payload
-        assertEquals(dirPath, payload["path"]?.jsonPrimitive?.content)
-        val listing = Json.decodeFromJsonElement<List<FileEntry>>(payload["listing"]!!)
-        assertEquals(2, listing.size)
-        assertTrue(listing.any { it.path == "$dirPath/file1.json" })
-        assertTrue(listing.any { it.path == "$dirPath/subdir/file2.json" })
-    }
+        // Verify a confirmation dialog was requested.
+        val confirmationRequestAction = harness.processedActions.find { it.name == ActionNames.CORE_SHOW_CONFIRMATION_DIALOG }
+        assertNotNull(confirmationRequestAction, "A confirmation dialog should have been requested.")
+        val requestId = confirmationRequestAction.payload?.get("requestId")?.jsonPrimitive?.content
+        assertNotNull(requestId, "The confirmation request must have a requestId.")
 
-    @Test
-    fun `READ_FILES_CONTENT delivers content map via private channel`() {
-        // Arrange
-        val platform = FakePlatformDependencies("test")
-        val feature = FileSystemFeature(platform)
-        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
-        val originator = "knowledgegraph"
-        val path1 = "/import/file1.json"
-        val path2 = "/import/file2.json"
-        platform.writeFileContent(path1, "{\"key\": \"value1\"}")
-        platform.writeFileContent(path2, "{\"key\": \"value2\"}")
+        // Verify the original request is now pending in the state.
+        val stateAfterRequest = harness.store.state.value.featureStates[feature.name] as FileSystemState
+        assertNotNull(stateAfterRequest.pendingScopedRead, "The original request should be stored as pending.")
+        assertEquals(requestId, stateAfterRequest.pendingScopedRead?.requestId)
 
-        val action = Action(ActionNames.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
-            putJsonArray("paths") {
-                add(JsonPrimitive(path1))
-                add(JsonPrimitive(path2))
+        // --- 4. ACT 2: Simulate the user confirming the dialog ---
+        platform.selectedDirectoryPathToReturn = "/fake/selected/path" // Pre-configure the fake dialog's return value.
+        val confirmationResponse = PrivateDataEnvelope(
+            type = ActionNames.Envelopes.CORE_RESPONSE_CONFIRMATION,
+            payload = buildJsonObject {
+                put("requestId", requestId)
+                put("confirmed", true)
             }
-        })
+        )
+        harness.store.deliverPrivateData("core", feature.name, confirmationResponse)
 
-        // Act
-        harness.store.dispatch(originator, action)
+        // --- 5. ASSERT 2: The feature correctly resumes the workflow ---
+        val executeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ }
+        assertNotNull(executeAction, "EXECUTE_SCOPED_READ should be dispatched after confirmation.")
+        assertEquals("/fake/selected/path", executeAction.payload?.get("path")?.jsonPrimitive?.content)
 
-        // Assert
-        assertEquals(1, harness.deliveredPrivateData.size)
-        val delivery = harness.deliveredPrivateData.first()
-        assertEquals(originator, delivery.recipient)
-        assertEquals(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, delivery.envelope.type)
-
-        val payload = delivery.envelope.payload
-        val contents = payload["contents"]!!.jsonObject
-        assertEquals(2, contents.size)
-        assertEquals("{\"key\": \"value1\"}", contents[path1]?.jsonPrimitive?.content)
-        assertEquals("{\"key\": \"value2\"}", contents[path2]?.jsonPrimitive?.content)
+        // Verify the pending request is cleared from the state.
+        val finalState = harness.store.state.value.featureStates[feature.name] as FileSystemState
+        assertNull(finalState.pendingScopedRead, "The pending request should be cleared after being handled.")
     }
-    */
 }
