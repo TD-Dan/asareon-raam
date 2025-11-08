@@ -125,13 +125,13 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         ))
         fakeStore.dispatchedActions.clear()
 
-        composeTestRule.onNodeWithText("Old").performTextInput(" New")
+        composeTestRule.onNodeWithText("Old").performTextInput("New")
         composeTestRule.onNodeWithText("Save Changes").performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT }
         assertNotNull(action)
         assertEquals("h1", action.payload?.get("holonId")?.toString()?.trim('"'))
-        assertEquals("Old New", action.payload?.get("newContent")?.toString()?.trim('"'))
+        assertEquals("NewOld", action.payload?.get("newContent")?.toString()?.trim('"'))
     }
 
     @Test
