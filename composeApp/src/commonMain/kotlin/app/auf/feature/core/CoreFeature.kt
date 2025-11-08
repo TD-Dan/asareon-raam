@@ -83,7 +83,7 @@ class CoreFeature(
                 val payload = action.payload?.let { Json.decodeFromJsonElement<DismissConfirmationPayload>(it) } ?: return
                 val request = prevCoreState?.confirmationRequest ?: return
 
-                // THE FIX: Send a private response back to the original requester.
+                // Send a private response back to the original requester.
                 val responsePayload = buildJsonObject {
                     put("requestId", request.requestId)
                     put("confirmed", payload.confirmed)
@@ -169,7 +169,7 @@ class CoreFeature(
                         null
                     }
                 }
-                // THE FIX: Capture the originator when the request is stored.
+                // Capture the originator when the request is stored.
                 return coreState.copy(confirmationRequest = request?.copy(originator = originator))
             }
             ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG -> return coreState.copy(confirmationRequest = null)
@@ -239,7 +239,6 @@ class CoreFeature(
 
         @Composable
         override fun RibbonContent(store: Store, activeViewKey: String?) {
-            // NEW: Add a ribbon button for the Identity Manager
             IconButton(onClick = { store.dispatch("core.ui", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKeyIdentities) })) }) {
                 Icon(Icons.Default.Person, "Identity Manager", tint = if (activeViewKey == viewKeyIdentities) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }

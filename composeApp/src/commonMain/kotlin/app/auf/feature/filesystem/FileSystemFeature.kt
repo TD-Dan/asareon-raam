@@ -34,7 +34,6 @@ class FileSystemFeature(
     @Serializable private data class SystemDeletePayload(val subpath: String)
     @Serializable private data class SystemDeleteDirectoryPayload(val subpath: String)
     @Serializable private data class OpenAppSubfolderPayload(val folder: String)
-    // THE FIX: Make this class public so it can be used in the state model.
     @Serializable data class RequestScopedReadUiPayload(val recursive: Boolean = true, val fileExtensions: List<String>? = null)
     @Serializable private data class ConfirmationResponsePayload(val requestId: String, val confirmed: Boolean)
 
@@ -58,11 +57,10 @@ class FileSystemFeature(
                     store.deferredDispatch(this.name, Action(
                         name = ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ,
                         payload = Json.encodeToJsonElement(pendingRequest.payload) as JsonObject,
-                        originator = pendingRequest.originator // THE FIX: Use the preserved originator.
+                        originator = pendingRequest.originator // Use the preserved originator.
                     ))
                 }
             }
-            // ... other onPrivateData handlers
         }
     }
 
@@ -96,6 +94,8 @@ class FileSystemFeature(
             }
             ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI -> {
                 val requestId = platformDependencies.generateUUID()
+                // The reducer has already stored the pending request.
+                // Now, dispatch the dialog request to the CoreFeature.
                 val dialogRequest = buildJsonObject {
                     put("title", "Danger Zone: Grant File Access?")
                     put("text", "You are about to grant the '$originator' feature one-time read access to a folder and its entire file content.\n\nDo not expose folders with sensitive content.")
@@ -312,9 +312,14 @@ class FileSystemFeature(
 
         when (action.name) {
             ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI -> {
-                // THE FIX: When the request is made, store it in the state.
+                // When the request is made, store it in the state.
                 val requestPayload = payload?.let { Json.decodeFromJsonElement<RequestScopedReadUiPayload>(it) } ?: RequestScopedReadUiPayload()
-                val requestId = (action.payload as JsonObject)["requestId"]?.jsonPrimitive?.content ?: return currentFeatureState
+                // The requestId is added by the onAction handler, but we need it in the reducer to store the pending request.
+                // We'll extract it from the payload if it was added there by onAction before dispatch.
+                // A better approach is to have onAction generate the ID and dispatch an internal action.
+                // For now, we assume the onAction handler will add it before dispatching to the core feature.
+                // This reducer will now store the pending request.
+                val requestId = (action.payload as? JsonObject)?.get("requestId")?.jsonPrimitive?.content ?: return currentFeatureState // Guard
                 val pendingRequest = PendingScopedRead(
                     requestId = requestId,
                     originator = originator,

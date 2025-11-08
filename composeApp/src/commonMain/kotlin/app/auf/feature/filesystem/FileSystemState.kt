@@ -40,7 +40,7 @@ data class FileSystemItem(
 )
 
 /**
- * THE FIX: A transient data class to hold the state of a pending scoped read request
+ * A transient data class to hold the state of a pending scoped read request
  * while waiting for user confirmation.
  */
 @Serializable
@@ -76,7 +76,7 @@ data class FileSystemState(
     /** The runtime ACL mapping a feature's name to its secure, sandboxed directory path. */
     @Transient val sandboxedPaths: Map<String, String> = emptyMap(),
 
-    // THE FIX: Add the pending request to the transient state.
+    // A transient field to hold the state of a pending scoped read request.
     @Transient val pendingScopedRead: PendingScopedRead? = null
 
 ) : FeatureState
