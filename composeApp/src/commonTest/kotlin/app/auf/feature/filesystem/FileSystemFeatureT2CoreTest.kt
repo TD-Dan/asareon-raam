@@ -160,7 +160,6 @@ class FileSystemFeatureT2CoreTest {
         // --- 1. ARRANGE ---
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
-        // The harness includes the real Store and CoreFeature, which is necessary for this test.
         val harness = TestEnvironment.create()
             .withFeature(feature)
             .build(platform = platform)
@@ -172,20 +171,25 @@ class FileSystemFeatureT2CoreTest {
         // --- 2. ACT 1: Dispatch the initial request ---
         harness.store.dispatch(originator, requestAction)
 
-        // --- 3. ASSERT 1: The feature correctly asks for confirmation ---
-        // Verify the OS dialog was NOT called yet.
-        assertEquals(null, platform.selectedDirectoryPathToReturn, "The OS dialog should not be shown before confirmation.")
-
-        // Verify a confirmation dialog was requested.
-        val confirmationRequestAction = harness.processedActions.find { it.name == ActionNames.CORE_SHOW_CONFIRMATION_DIALOG }
-        assertNotNull(confirmationRequestAction, "A confirmation dialog should have been requested.")
-        val requestId = confirmationRequestAction.payload?.get("requestId")?.jsonPrimitive?.content
-        assertNotNull(requestId, "The confirmation request must have a requestId.")
+        // --- 3. ASSERT 1: The feature correctly stages the request and asks for confirmation ---
+        val stageAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_INTERNAL_STAGE_SCOPED_READ }
+        assertNotNull(stageAction, "An internal action to stage the request should have been dispatched.")
+        val requestId = stageAction.payload?.get("requestId")?.jsonPrimitive?.content
+        assertNotNull(requestId, "The staging action must contain a requestId.")
 
         // Verify the original request is now pending in the state.
         val stateAfterRequest = harness.store.state.value.featureStates[feature.name] as FileSystemState
         assertNotNull(stateAfterRequest.pendingScopedRead, "The original request should be stored as pending.")
         assertEquals(requestId, stateAfterRequest.pendingScopedRead?.requestId)
+        assertEquals(originator, stateAfterRequest.pendingScopedRead?.originator)
+
+        // Verify a confirmation dialog was requested.
+        val confirmationRequestAction = harness.processedActions.find { it.name == ActionNames.CORE_SHOW_CONFIRMATION_DIALOG }
+        assertNotNull(confirmationRequestAction, "A confirmation dialog should have been requested.")
+        assertEquals(requestId, confirmationRequestAction.payload?.get("requestId")?.jsonPrimitive?.content)
+
+        // Verify the OS dialog was NOT called yet.
+        assertEquals(0, platform.capturedLogs.count { it.message.contains("User granted one-time access") })
 
         // --- 4. ACT 2: Simulate the user confirming the dialog ---
         platform.selectedDirectoryPathToReturn = "/fake/selected/path" // Pre-configure the fake dialog's return value.
@@ -201,7 +205,7 @@ class FileSystemFeatureT2CoreTest {
         // --- 5. ASSERT 2: The feature correctly resumes the workflow ---
         val executeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ }
         assertNotNull(executeAction, "EXECUTE_SCOPED_READ should be dispatched after confirmation.")
-        assertEquals("/fake/selected/path", executeAction.payload?.get("path")?.jsonPrimitive?.content)
+        assertEquals(originator, executeAction.originator, "The originator must be preserved through the workflow.")
 
         // Verify the pending request is cleared from the state.
         val finalState = harness.store.state.value.featureStates[feature.name] as FileSystemState

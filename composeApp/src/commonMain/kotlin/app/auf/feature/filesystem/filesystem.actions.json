@@ -225,6 +225,19 @@
       "action_name": "filesystem.internal.EXECUTE_SCOPED_READ",
       "summary": "[INTERNAL] Triggers the side-effect of showing the OS file picker after the user has confirmed the 'Danger Zone' prompt.",
       "payload_schema": null
+    },
+    {
+      "action_name": "filesystem.internal.STAGE_SCOPED_READ",
+      "summary": "[INTERNAL] Stores the details of a pending scoped read request while awaiting user confirmation.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "requestId": { "type": "string" },
+          "originator": { "type": "string" },
+          "requestPayload": { "type": "object" }
+        },
+        "required": ["requestId", "originator", "requestPayload"]
+      }
     }
   ],
   "private_envelopes": [

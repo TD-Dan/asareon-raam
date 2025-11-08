@@ -35,6 +35,7 @@ class FileSystemFeature(
     @Serializable private data class SystemDeleteDirectoryPayload(val subpath: String)
     @Serializable private data class OpenAppSubfolderPayload(val folder: String)
     @Serializable data class RequestScopedReadUiPayload(val recursive: Boolean = true, val fileExtensions: List<String>? = null)
+    @Serializable private data class StageScopedReadPayload(val requestId: String, val originator: String, val requestPayload: JsonObject)
     @Serializable private data class ConfirmationResponsePayload(val requestId: String, val confirmed: Boolean)
 
 
@@ -94,13 +95,22 @@ class FileSystemFeature(
             }
             ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI -> {
                 val requestId = platformDependencies.generateUUID()
-                // The reducer has already stored the pending request.
-                // Now, dispatch the dialog request to the CoreFeature.
+                store.deferredDispatch(this.name, Action(
+                    name = ActionNames.FILESYSTEM_INTERNAL_STAGE_SCOPED_READ,
+                    payload = buildJsonObject {
+                        put("requestId", requestId)
+                        put("originator", originator)
+                        put("requestPayload", action.payload ?: buildJsonObject {})
+                    }
+                ))
+            }
+            ActionNames.FILESYSTEM_INTERNAL_STAGE_SCOPED_READ -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<StageScopedReadPayload>(it) } ?: return
                 val dialogRequest = buildJsonObject {
                     put("title", "Danger Zone: Grant File Access?")
-                    put("text", "You are about to grant the '$originator' feature one-time read access to a folder and its entire file content.\n\nDo not expose folders with sensitive content.")
+                    put("text", "You are about to grant the '${payload.originator}' feature one-time read access to a folder and its entire file content.\n\nDo not expose folders with sensitive content.")
                     put("confirmButtonText", "Proceed with Care")
-                    put("requestId", requestId)
+                    put("requestId", payload.requestId)
                 }
                 store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_CONFIRMATION_DIALOG, dialogRequest))
             }
@@ -308,21 +318,14 @@ class FileSystemFeature(
     override fun reducer(state: FeatureState?, action: Action): FeatureState? {
         val currentFeatureState = state as? FileSystemState ?: FileSystemState()
         val payload = action.payload
-        val originator = action.originator ?: ""
 
         when (action.name) {
-            ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI -> {
-                // When the request is made, store it in the state.
-                val requestPayload = payload?.let { Json.decodeFromJsonElement<RequestScopedReadUiPayload>(it) } ?: RequestScopedReadUiPayload()
-                // The requestId is added by the onAction handler, but we need it in the reducer to store the pending request.
-                // We'll extract it from the payload if it was added there by onAction before dispatch.
-                // A better approach is to have onAction generate the ID and dispatch an internal action.
-                // For now, we assume the onAction handler will add it before dispatching to the core feature.
-                // This reducer will now store the pending request.
-                val requestId = (action.payload as? JsonObject)?.get("requestId")?.jsonPrimitive?.content ?: return currentFeatureState // Guard
+            ActionNames.FILESYSTEM_INTERNAL_STAGE_SCOPED_READ -> {
+                val decoded = payload?.let { Json.decodeFromJsonElement<StageScopedReadPayload>(it) } ?: return currentFeatureState
+                val requestPayload = Json.decodeFromJsonElement<RequestScopedReadUiPayload>(decoded.requestPayload)
                 val pendingRequest = PendingScopedRead(
-                    requestId = requestId,
-                    originator = originator,
+                    requestId = decoded.requestId,
+                    originator = decoded.originator,
                     payload = requestPayload
                 )
                 return currentFeatureState.copy(pendingScopedRead = pendingRequest)
