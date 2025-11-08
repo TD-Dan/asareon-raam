@@ -55,11 +55,16 @@ class FileSystemFeature(
                 val payload = Json.decodeFromJsonElement<ConfirmationResponsePayload>(envelope.payload)
                 val pendingRequest = state.pendingScopedRead
                 if (payload.confirmed && pendingRequest?.requestId == payload.requestId) {
-                    store.deferredDispatch(this.name, Action(
-                        name = ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ,
-                        payload = Json.encodeToJsonElement(pendingRequest.payload) as JsonObject,
-                        originator = pendingRequest.originator // Use the preserved originator.
-                    ))
+                    // --- THE FIX ---
+                    // Dispatch the next action using the PRESERVED originator from the pending request,
+                    // not 'this.name'. This correctly maintains the causality chain.
+                    store.deferredDispatch(
+                        originator = pendingRequest.originator,
+                        action = Action(
+                            name = ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ,
+                            payload = Json.encodeToJsonElement(pendingRequest.payload) as JsonObject
+                        )
+                    )
                 }
             }
         }
