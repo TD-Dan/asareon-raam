@@ -97,7 +97,6 @@ class KnowledgeGraphFeatureT2CoreTest {
     @Test
     fun `full load sequence correctly populates holons from filesystem`() {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
-        val feature = harness.store.features.find { it.name == "knowledgegraph" }!!
 
         // 1. Dispatch the action to load a persona.
         harness.store.dispatch("system", Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "persona-1") }))
@@ -115,7 +114,8 @@ class KnowledgeGraphFeatureT2CoreTest {
                 add(json.encodeToJsonElement(FileEntry("persona-1/holon-a/holon-a.json", false)))
             })
         })
-        feature.onPrivateData(dirContentsResponse, harness.store)
+        // THE FIX: Use the store's delivery mechanism to ensure the event loop runs.
+        harness.store.deliverPrivateData("filesystem", "knowledgegraph", dirContentsResponse)
 
         // 4. Assert that READ_FILES_CONTENT was requested for all files using their relative subpaths.
         val filesReadRequest = harness.processedActions.last()
@@ -134,7 +134,8 @@ class KnowledgeGraphFeatureT2CoreTest {
                 put("persona-1/holon-a/holon-a.json", holonAContent)
             })
         })
-        feature.onPrivateData(filesContentResponse, harness.store)
+        // THE FIX: Use the store's delivery mechanism here as well.
+        harness.store.deliverPrivateData("filesystem", "knowledgegraph", filesContentResponse)
 
         // 6. Assert the final state is correct and complete
         val finalState = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState

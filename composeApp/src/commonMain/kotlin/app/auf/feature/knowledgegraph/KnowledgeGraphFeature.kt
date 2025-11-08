@@ -57,7 +57,6 @@ class KnowledgeGraphFeature(
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
             }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED -> {
-                // THE FIX: If the set of known personas has changed, broadcast the new set.
                 if (prevKgState?.personaRoots != kgState.personaRoots) {
                     // Invert the Name->ID map to ID->Name for the payload, which is what consumers expect.
                     val idToNameMap = kgState.personaRoots.entries.associate { (name, id) -> id to name }
