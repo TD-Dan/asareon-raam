@@ -488,6 +488,19 @@ private fun ImportPane(
                 Text("Show only changed files")
             }
         }
+
+        // **THE FIX**: Add the summary line here.
+        if (kgState.importFileContents.isNotEmpty() && !kgState.isLoading) {
+            val totalFiles = kgState.importFileContents.size
+            val createCount = kgState.importSelectedActions.values.count { it is CreateRoot || it is Integrate || it is AssignParent }
+            val updateCount = kgState.importSelectedActions.values.count { it is Update }
+            Text(
+                text = "Analysis complete: Found $totalFiles total files. Plan: $createCount to create, $updateCount to update.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
 
         if (kgState.isLoading) {

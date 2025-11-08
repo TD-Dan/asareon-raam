@@ -92,10 +92,11 @@ class KnowledgeGraphFeature(
                 }))
             }
             ActionNames.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE -> {
-                if (kgState.importSourcePath.isNotBlank()) {
-                    store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS, buildJsonObject {
-                        put("path", kgState.importSourcePath)
-                    }))
+                // **THE FIX**: This handler no longer performs I/O. It re-runs the analysis
+                // on the already-cached file content with the new recursive setting.
+                if (kgState.importFileContents.isNotEmpty()) {
+                    val analysisPayload = runImportAnalysis(kgState.importFileContents, kgState, kgState.isImportRecursive)
+                    store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
                 }
             }
             ActionNames.KNOWLEDGEGRAPH_EXECUTE_IMPORT -> {
@@ -281,7 +282,8 @@ class KnowledgeGraphFeature(
                     isLoading = true,
                     importSourcePath = payload.path,
                     importItems = emptyList(),
-                    importSelectedActions = emptyMap()
+                    importSelectedActions = emptyMap(),
+                    importFileContents = emptyMap() // **THE FIX**: Clear previous results
                 )
             }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE -> {
@@ -384,17 +386,58 @@ class KnowledgeGraphFeature(
                 }
             }
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
+                val fileData = try { json.decodeFromJsonElement<FilesContentPayload>(envelope.payload) } catch (e: Exception) { null } ?: return
                 if (kgState?.viewMode == KnowledgeGraphViewMode.IMPORT) {
                     if (kgState.importItems.isEmpty()) {
-                        handleFilesContentForAnalysis(envelope.payload, store)
+                        // This is the initial analysis result
+                        val analysisPayload = runImportAnalysis(fileData.contents, kgState, kgState.isImportRecursive)
+                        store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
                     } else {
-                        val parentContents = try { json.decodeFromJsonElement<FilesContentPayload>(envelope.payload).contents } catch (e: Exception) { emptyMap() }
-                        executeImportWrites(parentContents, kgState, store)
+                        // This is the parent content for executing the write plan
+                        executeImportWrites(fileData.contents, kgState, store)
                     }
                 } else {
                     handleFilesContentForLoad(envelope.payload, store)
                 }
             }
+        }
+    }
+
+    /**
+     * [NEW] A pure function to perform the core import analysis logic.
+     * This can be called from multiple places (initial load, re-filtering).
+     */
+    private fun runImportAnalysis(
+        fileContents: Map<String, String>,
+        kgState: KnowledgeGraphState,
+        isRecursive: Boolean
+    ): JsonObject {
+        val sourceHolons = fileContents.mapNotNull { (path, content) ->
+            try { path to json.decodeFromString<Holon>(content) } catch (e: Exception) { null }
+        }.toMap()
+
+        val sourceParentMap = sourceHolons.values.flatMap { holon -> holon.header.subHolons.map { child -> child.id to holon.header.id } }.toMap()
+
+        val importItems = fileContents.keys.mapNotNull { path ->
+            // **THE FIX**: Apply recursive filter here
+            if (!isRecursive && path.contains(platformDependencies.pathSeparator)) {
+                return@mapNotNull null
+            }
+
+            val sourceHolon = sourceHolons[path]
+            val holonId = platformDependencies.getFileName(path).removeSuffix(".json")
+
+            when {
+                sourceHolon == null -> ImportItem(path, Quarantine("Malformed JSON"), null)
+                kgState.holons.containsKey(holonId) -> ImportItem(path, Update(holonId), kgState.holons[holonId]!!.header.filePath)
+                sourceHolon.header.type == "AI_Persona_Root" -> ImportItem(path, CreateRoot(), null)
+                sourceParentMap.containsKey(holonId) -> ImportItem(path, Integrate(sourceParentMap[holonId]!!), null)
+                else -> ImportItem(path, Quarantine("Unknown top-level holon."), null)
+            }
+        }
+        return buildJsonObject {
+            put("items", Json.encodeToJsonElement(importItems));
+            put("contents", Json.encodeToJsonElement(fileContents))
         }
     }
 
@@ -436,33 +479,6 @@ class KnowledgeGraphFeature(
 
         store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED, buildJsonObject {
             put("holons", json.encodeToJsonElement(enrichedHolons))
-        }))
-    }
-
-    private fun handleFilesContentForAnalysis(payload: JsonObject, store: Store) {
-        val fileData = try { json.decodeFromJsonElement<FilesContentPayload>(payload) } catch (e: Exception) { return }
-        val kgState = store.state.value.featureStates[name] as? KnowledgeGraphState ?: return
-
-        val sourceHolons = fileData.contents.mapNotNull { (path, content) ->
-            try { path to json.decodeFromString<Holon>(content) } catch (e: Exception) { null }
-        }.toMap()
-
-        val sourceParentMap = sourceHolons.values.flatMap { holon -> holon.header.subHolons.map { child -> child.id to holon.header.id } }.toMap()
-
-        val importItems = fileData.contents.keys.mapNotNull { path ->
-            val sourceHolon = sourceHolons[path]
-            val holonId = platformDependencies.getFileName(path).removeSuffix(".json")
-
-            when {
-                sourceHolon == null -> ImportItem(path, Quarantine("Malformed JSON"), null)
-                kgState.holons.containsKey(holonId) -> ImportItem(path, Update(holonId), kgState.holons[holonId]!!.header.filePath)
-                sourceHolon.header.type == "AI_Persona_Root" -> ImportItem(path, CreateRoot(), null)
-                sourceParentMap.containsKey(holonId) -> ImportItem(path, Integrate(sourceParentMap[holonId]!!), null)
-                else -> ImportItem(path, Quarantine("Unknown top-level holon."), null)
-            }
-        }
-        store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, buildJsonObject {
-            put("items", Json.encodeToJsonElement(importItems)); put("contents", Json.encodeToJsonElement(fileData.contents))
         }))
     }
 
