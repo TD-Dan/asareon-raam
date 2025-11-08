@@ -81,10 +81,13 @@ class FileSystemFeature(
                     put("text", "You are about to grant the '$originator' feature one-time read access to a folder and its entire file content.\n\nDo not expose folders with sensitive content.")
                     put("confirmButtonText", "Proceed with Care")
                     put("onConfirmAction", Json.encodeToJsonElement(onConfirmAction))
+                    // THE FIX: Pass the original originator through the dialog request.
+                    put("onConfirmOriginator", originator)
                 }
                 store.dispatch(this.name, Action(ActionNames.CORE_SHOW_CONFIRMATION_DIALOG, dialogRequest))
             }
             ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ -> {
+                // THE FIX: The OS file picker is now called *after* confirmation.
                 val payload = action.payload?.let { Json.decodeFromJsonElement<RequestScopedReadUiPayload>(it) } ?: RequestScopedReadUiPayload()
                 platformDependencies.selectDirectoryPath()?.let { selectedPath ->
                     platformDependencies.log(LogLevel.INFO, name, "User granted one-time access to '$selectedPath' for '$originator'.")

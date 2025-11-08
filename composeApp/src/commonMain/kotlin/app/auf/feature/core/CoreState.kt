@@ -27,6 +27,7 @@ data class ConfirmationDialogRequest(
     val text: String,
     val confirmButtonText: String,
     val onConfirmAction: Action,
+    val onConfirmOriginator: String? = null, // THE FIX: Add the originator field.
     val cancelButtonText: String? = "Cancel",
     val isDestructive: Boolean = false
 )

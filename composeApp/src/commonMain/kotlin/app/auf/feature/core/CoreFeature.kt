@@ -59,6 +59,8 @@ class CoreFeature(
 
     override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val latestCoreState = newState as? CoreState
+        val prevCoreState = previousState as? CoreState
+
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
                 store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
@@ -74,6 +76,18 @@ class CoreFeature(
             }
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", identitiesFileName)}))
+            }
+            ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG -> {
+                // THE FIX: When a dialog is dismissed, check if it was just confirmed.
+                // If the previous state had a request and the new state does not, it means a button was clicked.
+                val confirmedRequest = prevCoreState?.confirmationRequest
+                if (confirmedRequest != null && latestCoreState?.confirmationRequest == null) {
+                    // Dispatch the stored action using the preserved originator.
+                    store.dispatch(
+                        originator = confirmedRequest.onConfirmOriginator ?: this.name,
+                        action = confirmedRequest.onConfirmAction
+                    )
+                }
             }
             ActionNames.CORE_UPDATE_WINDOW_SIZE -> {
                 latestCoreState?.let {

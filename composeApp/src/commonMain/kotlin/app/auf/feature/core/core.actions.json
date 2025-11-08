@@ -99,6 +99,7 @@
           "text": { "type": "string" },
           "confirmButtonText": { "type": "string" },
           "onConfirmAction": { "type": "object", "description": "A complete, serialized Action object to be dispatched upon confirmation." },
+          "onConfirmOriginator": { "type": "string", "description": "The feature name that should be stamped as the originator of the onConfirmAction." },
           "cancelButtonText": { "type": ["string", "null"] },
           "isDestructive": { "type": "boolean", "default": false }
         },
