@@ -1,23 +1,22 @@
 package app.auf.feature.core
 
 import app.auf.core.Action
-import app.auf.core.Identity
 import app.auf.core.PrivateDataEnvelope
 import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Tier 3 Peer Tests for CoreFeature.
@@ -28,6 +27,7 @@ import kotlin.test.assertNull
  */
 class CoreFeatureT3PeerTest {
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `onPrivateData correctly loads identities from filesystem response`() = runTest {
         val platform = FakePlatformDependencies("test")
@@ -36,7 +36,6 @@ class CoreFeatureT3PeerTest {
             .build(platform = platform)
 
         // ARRANGE: Manually construct the JSON string that FileSystemFeature would provide.
-        // This correctly tests the JSON contract without needing access to the private data class.
         val fileContent = buildJsonObject {
             putJsonArray("identities") {
                 add(buildJsonObject {
@@ -57,6 +56,7 @@ class CoreFeatureT3PeerTest {
 
         // ACT: Deliver the private data directly to the CoreFeature.
         harness.store.deliverPrivateData("FileSystemFeature", "core", envelope)
+        runCurrent() // Process deferred actions
 
         // ASSERT 1: Verify that the correct internal action was dispatched.
         val loadedAction = harness.processedActions.find { it.name == ActionNames.CORE_INTERNAL_IDENTITIES_LOADED }
@@ -69,58 +69,102 @@ class CoreFeatureT3PeerTest {
         assertEquals("id-1", finalState.activeUserId)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `confirmation dialog flow correctly dispatches onConfirmAction`() = runTest {
+    fun `confirmation dialog flow delivers private response on CONFIRM`() = runTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withInitialState("core", CoreState(
-                toastMessage = "Initial Toast",
-                lifecycle = AppLifecycle.RUNNING // FIX: Set correct lifecycle
-            ))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
-        // ARRANGE: Define the action that should be triggered on confirmation.
-        val onConfirmAction = Action(ActionNames.CORE_CLEAR_TOAST)
+        val originatorFeatureName = "FileSystemFeature"
+        val testRequestId = "test-request-123"
 
-        // ACT 1: Dispatch the action to show the dialog with a COMPLETE payload.
+        // --- ACT 1: Another feature requests a confirmation ---
         val showDialogAction = Action(
+            name = ActionNames.CORE_SHOW_CONFIRMATION_DIALOG,
+            payload = buildJsonObject {
+                put("title", "Confirm Deletion")
+                put("text", "Are you sure?")
+                put("confirmButtonText", "Delete")
+                put("requestId", testRequestId)
+            }
+        )
+        harness.store.dispatch(originatorFeatureName, showDialogAction)
+        runCurrent()
+
+        // --- ASSERT 1: The request is correctly stored in the state ---
+        val stateAfterShow = harness.store.state.value.featureStates["core"] as CoreState
+        assertNotNull(stateAfterShow.confirmationRequest, "Confirmation request should be in the state.")
+        assertEquals(testRequestId, stateAfterShow.confirmationRequest?.requestId)
+        assertEquals(originatorFeatureName, stateAfterShow.confirmationRequest?.originator, "Originator should be captured.")
+
+        // --- ACT 2: The UI dispatches the confirmation action ---
+        harness.store.dispatch("core.ui", Action(ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
+            put("confirmed", true)
+        }))
+        runCurrent()
+
+        // --- ASSERT 2: The correct private response is delivered and state is cleared ---
+        assertEquals(1, harness.deliveredPrivateData.size, "A private data envelope should have been delivered.")
+        val delivery = harness.deliveredPrivateData.first()
+        assertEquals("core", delivery.originator)
+        assertEquals(originatorFeatureName, delivery.recipient)
+        assertEquals(ActionNames.Envelopes.CORE_RESPONSE_CONFIRMATION, delivery.envelope.type)
+
+        val responsePayload = Json.decodeFromString<ConfirmationResponsePayload>(delivery.envelope.payload.toString())
+        assertEquals(testRequestId, responsePayload.requestId)
+        assertTrue(responsePayload.confirmed, "The response should indicate confirmation.")
+
+        val finalState = harness.store.state.value.featureStates["core"] as CoreState
+        assertNull(finalState.confirmationRequest, "Confirmation request should be cleared from state.")
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `confirmation dialog flow delivers private response on DISMISS`() = runTest {
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        val originatorFeatureName = "FileSystemFeature"
+        val testRequestId = "test-request-456"
+
+        // --- ACT 1: Show the dialog ---
+        harness.store.dispatch(originatorFeatureName, Action(
             name = ActionNames.CORE_SHOW_CONFIRMATION_DIALOG,
             payload = buildJsonObject {
                 put("title", "Confirm")
                 put("text", "Are you sure?")
                 put("confirmButtonText", "Yes")
-                put("isDestructive", false)
-                put("cancelButtonText", "No")
-                putJsonObject("onConfirmAction") {
-                    put("name", onConfirmAction.name)
-                }
+                put("requestId", testRequestId)
             }
-        )
-        harness.store.dispatch("SomeOtherFeature", showDialogAction)
+        ))
+        runCurrent()
 
-        // ASSERT 1: The state should now contain the dialog request.
-        val stateAfterShow = harness.store.state.value.featureStates["core"] as CoreState
-        assertNotNull(stateAfterShow.confirmationRequest, "Confirmation request should be in the state.")
-        assertEquals("Confirm", stateAfterShow.confirmationRequest?.title)
-        assertEquals(onConfirmAction.name, stateAfterShow.confirmationRequest?.onConfirmAction?.name)
+        // --- ACT 2: The UI dispatches the dismiss action ---
+        harness.store.dispatch("core.ui", Action(ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
+            put("confirmed", false)
+        }))
+        runCurrent()
 
-        // ARRANGE 2: Get the confirmation action from the state, simulating a UI button click.
-        val retrievedConfirmAction = stateAfterShow.confirmationRequest?.onConfirmAction
-        assertNotNull(retrievedConfirmAction)
+        // --- ASSERT: The correct private response is delivered ---
+        assertEquals(1, harness.deliveredPrivateData.size)
+        val delivery = harness.deliveredPrivateData.first()
+        assertEquals(ActionNames.Envelopes.CORE_RESPONSE_CONFIRMATION, delivery.envelope.type)
 
-        // ACT 2: Dispatch the confirmation action.
-        harness.store.dispatch("core.ui.dialog", retrievedConfirmAction)
+        val responsePayload = Json.decodeFromString<ConfirmationResponsePayload>(delivery.envelope.payload.toString())
+        assertEquals(testRequestId, responsePayload.requestId)
+        assertTrue(!responsePayload.confirmed, "The response should indicate dismissal (not confirmed).")
 
-        // ASSERT 2: The nested action should have been processed.
-        val stateAfterConfirm = harness.store.state.value.featureStates["core"] as CoreState
-        assertNull(stateAfterConfirm.toastMessage, "The toast message should have been cleared by the onConfirmAction.")
-
-        // ACT 3: Dispatch the dismiss action to clean up the UI state.
-        harness.store.dispatch("core.ui.dialog", Action(ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG))
-
-        // ASSERT 3: The dialog request should be gone from the state.
         val finalState = harness.store.state.value.featureStates["core"] as CoreState
-        assertNull(finalState.confirmationRequest, "Confirmation request should be null after dismissal.")
+        assertNull(finalState.confirmationRequest, "Confirmation request should be cleared from state.")
     }
+
+    // Helper class for decoding the private response payload in tests
+    @kotlinx.serialization.Serializable
+    private data class ConfirmationResponsePayload(val requestId: String, val confirmed: Boolean)
 }

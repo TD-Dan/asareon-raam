@@ -30,6 +30,8 @@ class CoreFeature(
     @Serializable private data class AddUserIdentityPayload(val name: String)
     @Serializable private data class IdentityIdPayload(val id: String)
     @Serializable private data class IdentitiesLoadedPayload(val identities: List<Identity>, val activeId: String? = null)
+    @Serializable private data class DismissConfirmationPayload(val confirmed: Boolean)
+
 
     private val settingKeyWidth = "core.window.width"
     private val settingKeyHeight = "core.window.height"
@@ -78,16 +80,16 @@ class CoreFeature(
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", identitiesFileName)}))
             }
             ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG -> {
-                // THE FIX: When a dialog is dismissed, check if it was just confirmed.
-                // If the previous state had a request and the new state does not, it means a button was clicked.
-                val confirmedRequest = prevCoreState?.confirmationRequest
-                if (confirmedRequest != null && latestCoreState?.confirmationRequest == null) {
-                    // Dispatch the stored action using the preserved originator.
-                    store.dispatch(
-                        originator = confirmedRequest.onConfirmOriginator ?: this.name,
-                        action = confirmedRequest.onConfirmAction
-                    )
+                val payload = action.payload?.let { Json.decodeFromJsonElement<DismissConfirmationPayload>(it) } ?: return
+                val request = prevCoreState?.confirmationRequest ?: return
+
+                // THE FIX: Send a private response back to the original requester.
+                val responsePayload = buildJsonObject {
+                    put("requestId", request.requestId)
+                    put("confirmed", payload.confirmed)
                 }
+                val envelope = PrivateDataEnvelope(ActionNames.Envelopes.CORE_RESPONSE_CONFIRMATION, responsePayload)
+                store.deliverPrivateData(this.name, request.originator, envelope)
             }
             ActionNames.CORE_UPDATE_WINDOW_SIZE -> {
                 latestCoreState?.let {
@@ -138,6 +140,7 @@ class CoreFeature(
 
     override fun reducer(state: FeatureState?, action: Action): FeatureState? {
         val coreState = state as? CoreState ?: CoreState()
+        val originator = action.originator ?: ""
 
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> return coreState.copy(lifecycle = AppLifecycle.INITIALIZING)
@@ -166,7 +169,8 @@ class CoreFeature(
                         null
                     }
                 }
-                return coreState.copy(confirmationRequest = request)
+                // THE FIX: Capture the originator when the request is stored.
+                return coreState.copy(confirmationRequest = request?.copy(originator = originator))
             }
             ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG -> return coreState.copy(confirmationRequest = null)
             ActionNames.SETTINGS_PUBLISH_LOADED -> {

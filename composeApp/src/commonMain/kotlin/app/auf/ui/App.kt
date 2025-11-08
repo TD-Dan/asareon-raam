@@ -8,6 +8,8 @@ import app.auf.core.*
 import app.auf.core.generated.ActionNames
 import app.auf.feature.core.ConfirmationDialog
 import app.auf.feature.core.CoreState
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 @Composable
 fun App(store: Store, features: List<Feature>) {
@@ -37,12 +39,16 @@ fun App(store: Store, features: List<Feature>) {
                     ConfirmationDialog(
                         request = request,
                         onConfirm = {
-                            // Dispatch the action the dialog was configured with, then dismiss.
-                            store.dispatch("system.ui", request.onConfirmAction)
-                            store.dispatch("system.ui", Action(ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG))
+                            // THE FIX: Dispatch the secure response action.
+                            store.dispatch("system.ui", Action(ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
+                                put("confirmed", true)
+                            }))
                         },
                         onDismiss = {
-                            store.dispatch("system.ui", Action(ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG))
+                            // THE FIX: Explicitly dispatch the 'dismiss' response.
+                            store.dispatch("system.ui", Action(ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
+                                put("confirmed", false)
+                            }))
                         }
                     )
                 }

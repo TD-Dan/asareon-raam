@@ -26,10 +26,10 @@ data class ConfirmationDialogRequest(
     val title: String,
     val text: String,
     val confirmButtonText: String,
-    val onConfirmAction: Action,
-    val onConfirmOriginator: String? = null, // THE FIX: Add the originator field.
+    val requestId: String,
     val cancelButtonText: String? = "Cancel",
-    val isDestructive: Boolean = false
+    val isDestructive: Boolean = false,
+    @Transient val originator: String = "" // THE FIX: Capture the original requester.
 )
 
 @Serializable

@@ -34,7 +34,9 @@ class FileSystemFeature(
     @Serializable private data class SystemDeletePayload(val subpath: String)
     @Serializable private data class SystemDeleteDirectoryPayload(val subpath: String)
     @Serializable private data class OpenAppSubfolderPayload(val folder: String)
-    @Serializable private data class RequestScopedReadUiPayload(val recursive: Boolean = true, val fileExtensions: List<String>? = null)
+    // THE FIX: Make this class public so it can be used in the state model.
+    @Serializable data class RequestScopedReadUiPayload(val recursive: Boolean = true, val fileExtensions: List<String>? = null)
+    @Serializable private data class ConfirmationResponsePayload(val requestId: String, val confirmed: Boolean)
 
 
     private val settingKeyWhitelist = "filesystem.whitelistedPaths"
@@ -44,6 +46,24 @@ class FileSystemFeature(
         val appZoneRoot = platformDependencies.getBasePathFor(BasePath.APP_ZONE)
         val safeOriginator = originator.replace(Regex("[^a-zA-Z0-9_-]"), "_")
         return "$appZoneRoot${platformDependencies.pathSeparator}$safeOriginator"
+    }
+
+    override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
+        val state = store.state.value.featureStates[name] as? FileSystemState ?: return
+        when (envelope.type) {
+            ActionNames.Envelopes.CORE_RESPONSE_CONFIRMATION -> {
+                val payload = Json.decodeFromJsonElement<ConfirmationResponsePayload>(envelope.payload)
+                val pendingRequest = state.pendingScopedRead
+                if (payload.confirmed && pendingRequest?.requestId == payload.requestId) {
+                    store.deferredDispatch(this.name, Action(
+                        name = ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ,
+                        payload = Json.encodeToJsonElement(pendingRequest.payload) as JsonObject,
+                        originator = pendingRequest.originator // THE FIX: Use the preserved originator.
+                    ))
+                }
+            }
+            // ... other onPrivateData handlers
+        }
     }
 
     override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
@@ -75,19 +95,16 @@ class FileSystemFeature(
                 }
             }
             ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI -> {
-                val onConfirmAction = Action(ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ, action.payload)
+                val requestId = platformDependencies.generateUUID()
                 val dialogRequest = buildJsonObject {
                     put("title", "Danger Zone: Grant File Access?")
                     put("text", "You are about to grant the '$originator' feature one-time read access to a folder and its entire file content.\n\nDo not expose folders with sensitive content.")
                     put("confirmButtonText", "Proceed with Care")
-                    put("onConfirmAction", Json.encodeToJsonElement(onConfirmAction))
-                    // THE FIX: Pass the original originator through the dialog request.
-                    put("onConfirmOriginator", originator)
+                    put("requestId", requestId)
                 }
-                store.dispatch(this.name, Action(ActionNames.CORE_SHOW_CONFIRMATION_DIALOG, dialogRequest))
+                store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_CONFIRMATION_DIALOG, dialogRequest))
             }
             ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ -> {
-                // THE FIX: The OS file picker is now called *after* confirmation.
                 val payload = action.payload?.let { Json.decodeFromJsonElement<RequestScopedReadUiPayload>(it) } ?: RequestScopedReadUiPayload()
                 platformDependencies.selectDirectoryPath()?.let { selectedPath ->
                     platformDependencies.log(LogLevel.INFO, name, "User granted one-time access to '$selectedPath' for '$originator'.")
@@ -291,8 +308,24 @@ class FileSystemFeature(
     override fun reducer(state: FeatureState?, action: Action): FeatureState? {
         val currentFeatureState = state as? FileSystemState ?: FileSystemState()
         val payload = action.payload
+        val originator = action.originator ?: ""
 
         when (action.name) {
+            ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI -> {
+                // THE FIX: When the request is made, store it in the state.
+                val requestPayload = payload?.let { Json.decodeFromJsonElement<RequestScopedReadUiPayload>(it) } ?: RequestScopedReadUiPayload()
+                val requestId = (action.payload as JsonObject)["requestId"]?.jsonPrimitive?.content ?: return currentFeatureState
+                val pendingRequest = PendingScopedRead(
+                    requestId = requestId,
+                    originator = originator,
+                    payload = requestPayload
+                )
+                return currentFeatureState.copy(pendingScopedRead = pendingRequest)
+            }
+            ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG -> {
+                // Clear the pending request once the dialog is dismissed, regardless of outcome.
+                return currentFeatureState.copy(pendingScopedRead = null)
+            }
             ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED -> {
                 val decoded = payload?.let { Json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return currentFeatureState
                 val newChildren = decoded.children.map { FileSystemItem(it.path, platformDependencies.getFileName(it.path), it.isDirectory) }

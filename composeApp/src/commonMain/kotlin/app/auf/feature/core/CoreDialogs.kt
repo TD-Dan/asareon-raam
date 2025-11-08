@@ -20,7 +20,7 @@ fun ConfirmationDialog(
         text = { Text(request.text) },
         confirmButton = {
             Button(
-                onClick = onConfirm,
+                onClick = onConfirm, // THE FIX: This will now dispatch the new response action.
                 colors = if (request.isDestructive) {
                     ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 } else {

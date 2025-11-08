@@ -40,6 +40,18 @@ data class FileSystemItem(
 )
 
 /**
+ * THE FIX: A transient data class to hold the state of a pending scoped read request
+ * while waiting for user confirmation.
+ */
+@Serializable
+data class PendingScopedRead(
+    val requestId: String,
+    val originator: String,
+    val payload: FileSystemFeature.RequestScopedReadUiPayload
+)
+
+
+/**
  * The state container for the FileSystemFeature.
  *
  * It models the state of the browser (current path, bookmarks, listing) and, critically,
@@ -62,6 +74,9 @@ data class FileSystemState(
     /** A set of absolute directory paths marked as favorites by the user. */
     val favoritePaths: Set<String> = emptySet(),
     /** The runtime ACL mapping a feature's name to its secure, sandboxed directory path. */
-    val sandboxedPaths: Map<String, String> = emptyMap()
+    @Transient val sandboxedPaths: Map<String, String> = emptyMap(),
+
+    // THE FIX: Add the pending request to the transient state.
+    @Transient val pendingScopedRead: PendingScopedRead? = null
 
 ) : FeatureState

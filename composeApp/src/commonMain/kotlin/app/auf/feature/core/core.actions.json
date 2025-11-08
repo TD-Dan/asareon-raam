@@ -98,18 +98,23 @@
           "title": { "type": "string" },
           "text": { "type": "string" },
           "confirmButtonText": { "type": "string" },
-          "onConfirmAction": { "type": "object", "description": "A complete, serialized Action object to be dispatched upon confirmation." },
-          "onConfirmOriginator": { "type": "string", "description": "The feature name that should be stamped as the originator of the onConfirmAction." },
+          "requestId": { "type": "string", "description": "A unique ID for the requesting feature to track the response." },
           "cancelButtonText": { "type": ["string", "null"] },
           "isDestructive": { "type": "boolean", "default": false }
         },
-        "required": ["title", "text", "confirmButtonText", "onConfirmAction"]
+        "required": ["title", "text", "confirmButtonText", "requestId"]
       }
     },
     {
       "action_name": "core.DISMISS_CONFIRMATION_DIALOG",
-      "summary": "Clears any active confirmation dialog from the UI.",
-      "payload_schema": null
+      "summary": "Clears any active confirmation dialog from the UI. Dispatches a private response if it was a confirmation.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "confirmed": { "type": "boolean", "default": false }
+        },
+        "required": ["confirmed"]
+      }
     }
   ],
   "publishes": [
@@ -146,6 +151,20 @@
           "activeId": { "type": ["string", "null"] }
         },
         "required": ["identities"]
+      }
+    }
+  ],
+  "private_envelopes": [
+    {
+      "type_name": "core.response.CONFIRMATION",
+      "summary": "The private response envelope sent to the original feature that requested a confirmation dialog.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "requestId": { "type": "string" },
+          "confirmed": { "type": "boolean" }
+        },
+        "required": ["requestId", "confirmed"]
       }
     }
   ]
