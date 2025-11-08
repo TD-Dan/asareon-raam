@@ -30,6 +30,16 @@ internal class CryptoManager {
     private val encryptionPrefix = "[AUF_ENC_V1]"
 
     /**
+     * Checks if a given string is prefixed with the encryption marker.
+     *
+     * @param data The string to check.
+     * @return True if the string is encrypted, false otherwise.
+     */
+    fun isEncrypted(data: String): Boolean {
+        return data.startsWith(encryptionPrefix)
+    }
+
+    /**
      * Encrypts a plaintext string using a simple XOR cipher and Base64 encoding.
      * The output is prefixed with a recognizable marker.
      *
@@ -55,7 +65,7 @@ internal class CryptoManager {
      * @return The decrypted plaintext string, or the original input if it's not encrypted.
      */
     fun decrypt(ciphertext: String): String {
-        if (!ciphertext.startsWith(encryptionPrefix)) {
+        if (!isEncrypted(ciphertext)) {
             // Not our encrypted data, return as-is.
             return ciphertext
         }
