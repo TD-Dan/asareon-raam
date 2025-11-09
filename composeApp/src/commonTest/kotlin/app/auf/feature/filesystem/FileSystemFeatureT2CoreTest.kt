@@ -50,7 +50,7 @@ class FileSystemFeatureT2CoreTest {
 
         harness.store.dispatch(feature.name, action)
 
-        val dispatchedAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_LOAD_CHILDREN }
+        val dispatchedAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_INTERNAL_LOAD_CHILDREN }
         assertNotNull(dispatchedAction, "LOAD_CHILDREN should have been dispatched.")
         assertEquals("/a/b", dispatchedAction.payload?.get("path")?.jsonPrimitive?.content)
     }

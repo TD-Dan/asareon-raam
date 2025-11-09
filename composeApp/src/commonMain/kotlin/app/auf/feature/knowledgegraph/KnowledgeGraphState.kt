@@ -109,6 +109,7 @@ data class KnowledgeGraphState(
     @Transient val holonIdToDelete: String? = null,
     @Transient val holonIdToEdit: String? = null,
     @Transient val holonIdToRename: String? = null,
+    @Transient val pendingImportCorrelationId: String? = null,
 
     // --- Loading & Error State ---
     val isLoading: Boolean = false,

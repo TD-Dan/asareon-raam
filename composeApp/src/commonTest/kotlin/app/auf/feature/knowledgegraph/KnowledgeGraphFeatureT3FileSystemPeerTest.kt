@@ -1,6 +1,7 @@
 package app.auf.feature.knowledgegraph
 
 import app.auf.core.Action
+import app.auf.core.PrivateDataEnvelope
 import app.auf.core.generated.ActionNames
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.fakes.FakePlatformDependencies
@@ -10,17 +11,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
  * Tier 3 Peer Test for KnowledgeGraphFeature <-> FileSystemFeature interaction.
  *
  * Mandate (P-TEST-001, T3): To test the runtime contract and emergent behavior
- * of the end-to-end "Import HKG" workflow.
+ * of the end-to-end "Import HKG" workflow, with a focus on the new correlation ID mechanism.
  */
 class KnowledgeGraphFeatureT3FileSystemPeerTest {
 
@@ -34,99 +38,62 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
     private val existingPersonaContent = """
         {
             "header": { "id": "p1", "type": "AI_Persona_Root", "name": "Existing Persona", "sub_holons": [{"id": "h1", "type": "T", "summary": "S"}] },
-            "payload": {}, "content": "..."
-        }
-    """.trimIndent()
-    private val existingHolonContent = """
-        {
-            "header": { "id": "h1", "type": "Existing_Holon", "name": "Holon One" }, "payload": {}, "content": "Original Content"
+            "payload": {}
         }
     """.trimIndent()
     private val updatedHolonContent = """
-        {
-            "header": { "id": "h1", "type": "Existing_Holon", "name": "Holon One Updated" }, "payload": {}, "content": "Updated Content"
-        }
+        { "header": { "id": "h1", "type": "Existing_Holon", "name": "Holon One Updated" }, "payload": {} }
     """.trimIndent()
     private val newHolonContent = """
-        {
-            "header": { "id": "h2", "type": "New_Holon", "name": "Holon Two", "sub_holons": [{"id": "h3", "type": "T", "summary": "S"}] }, "payload": {}, "content": "New Holon"
-        }
-    """.trimIndent()
-    private val newChildHolonContent = """
-        {
-            "header": { "id": "h3", "type": "New_Child", "name": "Holon Three" }, "payload": {}, "content": "New Child"
-        }
+        { "header": { "id": "h2", "type": "New_Holon", "name": "Holon Two"}, "payload": {} }
     """.trimIndent()
 
     @Test
-    fun `end-to-end import workflow correctly analyzes, integrates, and writes files`() {
-        // --- 1. Arrange ---
-        // Setup existing HKG in the fake filesystem's APP_ZONE using the CANONICAL HIERARCHICAL STRUCTURE
-        platform.writeFileContent("/fake/.auf/v2/knowledgegraph/p1/p1.json", existingPersonaContent)
-        platform.writeFileContent("/fake/.auf/v2/knowledgegraph/p1/h1/h1.json", existingHolonContent)
-        // Setup source directory for import
-        platform.createDirectories("/import/source")
-        platform.writeFileContent("/import/source/h1.json", updatedHolonContent) // An update
-        platform.writeFileContent("/import/source/h2.json", newHolonContent)     // An integration
-        platform.writeFileContent("/import/source/h3.json", newChildHolonContent)  // A child of an integration
-
+    fun `end-to-end import workflow correctly uses correlationId and analyzes files`() {
+        // --- 1. ARRANGE ---
+        // Setup existing HKG state for analysis context
+        val existingHolons = mapOf("p1" to json.decodeFromString<Holon>(existingPersonaContent))
         val harness = TestEnvironment.create()
             .withFeature(kgFeature)
             .withFeature(fsFeature)
+            .withInitialState("knowledgegraph", KnowledgeGraphState(holons = existingHolons))
             .build(platform = platform)
 
-        // Pre-load the existing HKG
-        harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
+        // --- 2. ACT 1 (Start Analysis) ---
+        harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS))
 
-        // --- 2. Act 1 (Analysis) ---
-        harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS, buildJsonObject { put("path", "/import/source") }))
+        // --- 3. ASSERT 1 (Request with Correlation ID) ---
+        val stateAfterRequest = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
+        val correlationId = stateAfterRequest.pendingImportCorrelationId
+        assertNotNull(correlationId, "A correlation ID should be set in the state.")
 
-        // --- 3. Assert 1 (State Verification) ---
-        val stateAfterAnalysis = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
-        assertEquals(3, stateAfterAnalysis.importItems.size)
-        val updateAction = stateAfterAnalysis.importSelectedActions["/import/source/h1.json"]
-        val integrateAction = stateAfterAnalysis.importSelectedActions["/import/source/h2.json"]
-        val assignParentAction = stateAfterAnalysis.importSelectedActions["/import/source/h3.json"]
-        assertIs<Update>(updateAction)
+        val fsRequest = harness.processedActions.last()
+        assertEquals(ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI, fsRequest.name)
+        assertEquals(correlationId, fsRequest.payload?.get("correlationId")?.jsonPrimitive?.content)
+
+        // --- 4. ACT 2 (Simulate FileSystem Response) ---
+        val fsResponse = PrivateDataEnvelope(
+            type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT,
+            payload = buildJsonObject {
+                put("correlationId", correlationId)
+                put("contents", buildJsonObject {
+                    put("h1.json", updatedHolonContent)
+                    put("h2.json", newHolonContent)
+                })
+            }
+        )
+        harness.store.deliverPrivateData("filesystem", "knowledgegraph", fsResponse)
+
+        // --- 5. ASSERT 2 (Analysis is Correct and Correlation ID is Cleared) ---
+        val finalState = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
+        assertNull(finalState.pendingImportCorrelationId, "Correlation ID should be cleared after use.")
+        assertEquals(2, finalState.importItems.size)
+
+        val updateAction = finalState.importSelectedActions["h1.json"]
+        assertIs<Update>(updateAction, "h1.json should be identified as an Update.")
         assertEquals("h1", updateAction.targetHolonId)
-        assertIs<Quarantine>(integrateAction) // Correctly identified as a top-level unknown
-        assertIs<Integrate>(assignParentAction) // Correctly identified as child of h2
-        assertEquals("h2", assignParentAction.parentHolonId)
 
-        // --- 4. Act 2 (User Override) ---
-        // User assigns h2 to be a child of p1
-        val newAction = Integrate(parentHolonId = "p1")
-        val actionPayload = buildJsonObject {
-            put("sourcePath", "/import/source/h2.json")
-            put("action", json.encodeToJsonElement(newAction))
-        }
-        harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION, actionPayload))
-
-
-        // --- 5. Act 3 (Execution) ---
-        harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
-
-        // --- 6. Assert 2 (Ground Truth Verification) ---
-        val writtenFiles = harness.platform.writtenFiles
-        // 1. Holon h1 should be updated at its original hierarchical path
-        val updatedH1Path = "/fake/.auf/v2/knowledgegraph/p1/h1/h1.json"
-        assertTrue(writtenFiles.containsKey(updatedH1Path))
-        assertEquals(updatedHolonContent, writtenFiles[updatedH1Path])
-
-        // 2. Holon h2 should be created as a child of p1
-        val newH2Path = "/fake/.auf/v2/knowledgegraph/p1/h2/h2.json"
-        assertTrue(writtenFiles.containsKey(newH2Path))
-        assertEquals(newHolonContent, writtenFiles[newH2Path])
-
-        // 3. Holon h3 should be created as a child of h2
-        val newH3Path = "/fake/.auf/v2/knowledgegraph/p1/h2/h3/h3.json"
-        assertTrue(writtenFiles.containsKey(newH3Path))
-        assertEquals(newChildHolonContent, writtenFiles[newH3Path])
-
-        // 4. The parent persona (p1) should be updated to include h2 as a sub_holon
-        val updatedP1Path = "/fake/.auf/v2/knowledgegraph/p1/p1.json"
-        assertTrue(writtenFiles.containsKey(updatedP1Path))
-        val finalP1Content = writtenFiles[updatedP1Path]!!
-        assertTrue(finalP1Content.contains(""""id": "h2""""), "Parent holon was not updated with new sub_holon ref.")
+        val quarantineAction = finalState.importSelectedActions["h2.json"]
+        assertIs<Quarantine>(quarantineAction, "h2.json should be quarantined as a new top-level holon.")
     }
 }

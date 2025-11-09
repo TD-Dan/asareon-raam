@@ -23,6 +23,7 @@
     {
       "action_name": "knowledgegraph.REQUEST_CONTEXT",
       "summary": "The public, universal action for any feature to request the full context of a specific HKG. The response will be delivered privately to the originator.",
+      "responseEnvelopeType": "knowledgegraph.response.CONTEXT",
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -158,6 +159,14 @@
       "payload_schema": { "type": "object", "properties": { "names": { "type": "object" } }, "required": ["names"] }
     },
     {
+      "action_name": "knowledgegraph.internal.SET_PENDING_IMPORT_ID",
+      "summary": "[INTERNAL] Dispatched to store the correlation ID for a pending import analysis workflow.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "id": { "type": ["string", "null"] } }
+      }
+    },
+    {
       "action_name": "knowledgegraph.internal.PERSONA_LOADED",
       "summary": "[INTERNAL] Dispatched after a full persona HKG has been constructed in memory. Atomically merges the new/updated holons into the main state.",
       "payload_schema": {
@@ -195,7 +204,7 @@
   ],
   "private_envelopes": [
     {
-      "type_name": "knowledgegraph.response.context",
+      "type_name": "knowledgegraph.response.CONTEXT",
       "summary": "The private response envelope sent to a feature that dispatched 'knowledgegraph.REQUEST_CONTEXT'. Contains the compiled HKG content.",
       "payload_schema": {
         "type": "object",

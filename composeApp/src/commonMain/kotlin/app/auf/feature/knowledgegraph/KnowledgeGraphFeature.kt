@@ -42,8 +42,9 @@ class KnowledgeGraphFeature(
     @Serializable private data class RenameHolonPayload(val holonId: String, val newName: String)
     @Serializable private data class DeleteHolonPayload(val holonId: String)
     @Serializable private data class SetHolonToDeletePayload(val holonId: String?)
-    @Serializable private data class FilesContentPayload(val contents: Map<String, String>)
+    @Serializable private data class FilesContentPayload(val correlationId: String?, val contents: Map<String, String>)
     @Serializable private data class PersonaLoadedPayload(val holons: Map<String, Holon>)
+    @Serializable private data class SetPendingImportIdPayload(val id: String?)
 
 
     override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
@@ -68,8 +69,9 @@ class KnowledgeGraphFeature(
             }
             ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<LoadPersonaPayload>(it) } ?: return
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST_RECURSIVE, buildJsonObject {
+                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
                     put("subpath", payload.personaId)
+                    put("recursive", true)
                 }))
             }
             ActionNames.KNOWLEDGEGRAPH_REQUEST_CONTEXT -> {
@@ -84,15 +86,15 @@ class KnowledgeGraphFeature(
                 store.deliverPrivateData(this.name, originator, responseEnvelope)
             }
             ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS -> {
-                // **THE FIX**: This action now has no payload. It simply triggers the file selection workflow.
+                val correlationId = platformDependencies.generateUUID()
+                store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_SET_PENDING_IMPORT_ID, buildJsonObject { put("id", correlationId) }))
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI, buildJsonObject {
-                    put("recursive", true) // Default to recursive, user can toggle later.
+                    put("correlationId", correlationId)
+                    put("recursive", true)
                     putJsonArray("fileExtensions") { add("json") }
                 }))
             }
             ActionNames.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE -> {
-                // **THE FIX**: This handler no longer performs I/O. It re-runs the analysis
-                // on the already-cached file content with the new recursive setting.
                 if (kgState.importFileContents.isNotEmpty()) {
                     val analysisPayload = runImportAnalysis(kgState.importFileContents, kgState, kgState.isImportRecursive)
                     store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
@@ -111,7 +113,7 @@ class KnowledgeGraphFeature(
 
                 if (parentHolonFilePaths.isNotEmpty()) {
                     store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
-                        put("paths", Json.encodeToJsonElement(parentHolonFilePaths))
+                        put("subpaths", Json.encodeToJsonElement(parentHolonFilePaths))
                     }))
                 } else {
                     executeImportWrites(emptyMap(), kgState, store)
@@ -228,6 +230,10 @@ class KnowledgeGraphFeature(
         val currentFeatureState = state as? KnowledgeGraphState ?: KnowledgeGraphState()
 
         when (action.name) {
+            ActionNames.KNOWLEDGEGRAPH_INTERNAL_SET_PENDING_IMPORT_ID -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<SetPendingImportIdPayload>(it) }
+                return currentFeatureState.copy(pendingImportCorrelationId = payload?.id)
+            }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<PersonaLoadedPayload>(it) } ?: return currentFeatureState
                 val newHolons = currentFeatureState.holons + payload.holons
@@ -275,7 +281,6 @@ class KnowledgeGraphFeature(
                 return currentFeatureState.copy(viewMode = payload.mode)
             }
             ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS -> {
-                // **THE FIX**: This action now simply resets the import state for a new operation.
                 return currentFeatureState.copy(
                     isLoading = true,
                     importItems = emptyList(),
@@ -289,7 +294,8 @@ class KnowledgeGraphFeature(
                     isLoading = false,
                     importItems = payload.items,
                     importSelectedActions = payload.items.associate { it.sourcePath to it.initialAction },
-                    importFileContents = payload.contents
+                    importFileContents = payload.contents,
+                    pendingImportCorrelationId = null
                 )
             }
             ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION -> {
@@ -300,7 +306,6 @@ class KnowledgeGraphFeature(
             }
             ActionNames.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SetImportRecursivePayload>(it) } ?: return currentFeatureState
-                // **THE FIX**: This now only updates the flag and sets loading. The re-analysis is an `onAction` side effect.
                 return currentFeatureState.copy(isImportRecursive = payload.recursive, isLoading = true)
             }
             ActionNames.KNOWLEDGEGRAPH_TOGGLE_SHOW_ONLY_CHANGED -> {
@@ -375,20 +380,28 @@ class KnowledgeGraphFeature(
         when (envelope.type) {
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> {
                 val listing = envelope.payload["listing"]?.let { json.decodeFromJsonElement<List<FileEntry>>(it) } ?: return
-                listing.filter { it.isDirectory }.forEach { dir ->
-                    val personaId = platformDependencies.getFileName(dir.path)
-                    store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", personaId) }))
+                val isRecursiveResponse = envelope.payload["subpath"]?.jsonPrimitive?.content?.isNotEmpty() == true
+
+                if (isRecursiveResponse) {
+                    val fileSubpaths = listing.filter { !it.isDirectory }.map { it.path }
+                    if (fileSubpaths.isNotEmpty()) {
+                        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
+                            put("subpaths", Json.encodeToJsonElement(fileSubpaths))
+                        }))
+                    }
+                } else {
+                    listing.filter { it.isDirectory }.forEach { dir ->
+                        val personaId = platformDependencies.getFileName(dir.path)
+                        store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", personaId) }))
+                    }
                 }
             }
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
-                val fileData = try { json.decodeFromJsonElement<FilesContentPayload>(envelope.payload) } catch (e: Exception) { null } ?: return
-                if (kgState?.viewMode == KnowledgeGraphViewMode.IMPORT) {
-                    if (kgState.importItems.isEmpty()) {
-                        val analysisPayload = runImportAnalysis(fileData.contents, kgState, true) // Always start recursive
-                        store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
-                    } else {
-                        executeImportWrites(fileData.contents, kgState, store)
-                    }
+                val fileData = try { json.decodeFromJsonElement<FilesContentPayload>(envelope.payload) } catch (e: Exception) { return }
+
+                if (fileData.correlationId != null && fileData.correlationId == kgState?.pendingImportCorrelationId) {
+                    val analysisPayload = runImportAnalysis(fileData.contents, kgState, kgState.isImportRecursive)
+                    store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
                 } else {
                     handleFilesContentForLoad(envelope.payload, store)
                 }
@@ -420,7 +433,6 @@ class KnowledgeGraphFeature(
             }
         }
 
-        // Apply recursive filter AFTER initial analysis
         val filteredItems = if (isRecursive) {
             importItems
         } else {

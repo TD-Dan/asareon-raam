@@ -11,6 +11,7 @@ import app.auf.util.FileEntry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -68,7 +69,6 @@ class KnowledgeGraphFeatureT2CoreTest {
 
     @Test
     fun `on PERSONA_LOADED should broadcast AVAILABLE_PERSONAS_UPDATED`() {
-        // --- ARRANGE ---
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
 
         val p1 = Holon(HolonHeader("p1", "AI_Persona_Root", "Persona One"), buildJsonObject {})
@@ -79,10 +79,8 @@ class KnowledgeGraphFeatureT2CoreTest {
         }
         val loadAction = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED, payload)
 
-        // --- ACT ---
         harness.store.dispatch(feature.name, loadAction)
 
-        // --- ASSERT ---
         val broadcastAction = harness.processedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_PUBLISH_AVAILABLE_PERSONAS_UPDATED }
         assertNotNull(broadcastAction, "The feature should have broadcasted the persona update.")
         assertEquals(feature.name, broadcastAction.originator, "The broadcast must originate from the feature itself.")
@@ -101,20 +99,20 @@ class KnowledgeGraphFeatureT2CoreTest {
         // 1. Dispatch the action to load a persona.
         harness.store.dispatch("system", Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "persona-1") }))
 
-        // 2. Assert that SYSTEM_LIST_RECURSIVE was requested for the persona root sandbox.
+        // 2. Assert that a recursive SYSTEM_LIST was requested for the persona root sandbox.
         val dirReadRequest = harness.processedActions.last()
-        assertEquals(ActionNames.FILESYSTEM_SYSTEM_LIST_RECURSIVE, dirReadRequest.name)
+        assertEquals(ActionNames.FILESYSTEM_SYSTEM_LIST, dirReadRequest.name)
         assertEquals("persona-1", dirReadRequest.payload?.get("subpath")?.jsonPrimitive?.content)
+        assertEquals(true, dirReadRequest.payload?.get("recursive")?.jsonPrimitive?.booleanOrNull)
 
         // 3. Simulate the filesystem returning the recursive file list (as subpaths).
-        val dirContentsResponse = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST_RECURSIVE, buildJsonObject {
+        val dirContentsResponse = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, buildJsonObject {
             put("subpath", "persona-1")
             put("listing", buildJsonArray {
                 add(json.encodeToJsonElement(FileEntry("persona-1/persona-1.json", false)))
                 add(json.encodeToJsonElement(FileEntry("persona-1/holon-a/holon-a.json", false)))
             })
         })
-        // THE FIX: Use the store's delivery mechanism to ensure the event loop runs.
         harness.store.deliverPrivateData("filesystem", "knowledgegraph", dirContentsResponse)
 
         // 4. Assert that READ_FILES_CONTENT was requested for all files using their relative subpaths.
@@ -129,12 +127,12 @@ class KnowledgeGraphFeatureT2CoreTest {
 
         // 5. Simulate the filesystem returning the content for all files, keyed by their relative subpaths.
         val filesContentResponse = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, buildJsonObject {
+            put("correlationId", JsonNull) // No correlation ID for a system load
             put("contents", buildJsonObject {
                 put("persona-1/persona-1.json", persona1Content)
                 put("persona-1/holon-a/holon-a.json", holonAContent)
             })
         })
-        // THE FIX: Use the store's delivery mechanism here as well.
         harness.store.deliverPrivateData("filesystem", "knowledgegraph", filesContentResponse)
 
         // 6. Assert the final state is correct and complete
@@ -153,18 +151,22 @@ class KnowledgeGraphFeatureT2CoreTest {
     }
 
     @Test
-    fun `import analysis workflow dispatches REQUEST_SCOPED_READ_UI`() {
+    fun `import analysis workflow dispatches REQUEST_SCOPED_READ_UI with correlationId`() {
         // Arrange
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
 
         // Act
-        harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS, buildJsonObject { put("path", "/import") }))
+        harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS))
 
         // Assert
+        val setPendingIdAction = harness.processedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_INTERNAL_SET_PENDING_IMPORT_ID }
+        assertNotNull(setPendingIdAction, "An internal action should be dispatched to set the pending ID.")
+        val correlationId = setPendingIdAction.payload?.get("id")?.jsonPrimitive?.content
+        assertNotNull(correlationId, "The pending ID should not be null.")
+
         val requestAction = harness.processedActions.last()
         assertEquals(ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI, requestAction.name)
-        assertEquals(true, requestAction.payload?.get("recursive")?.jsonPrimitive?.booleanOrNull)
-        // We can add assertions for file extensions later if needed.
+        assertEquals(correlationId, requestAction.payload?.get("correlationId")?.jsonPrimitive?.content, "The correlation ID must be passed in the request.")
     }
 
     @Test
