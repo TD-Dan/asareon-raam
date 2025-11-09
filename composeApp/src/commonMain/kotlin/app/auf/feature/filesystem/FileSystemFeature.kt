@@ -230,7 +230,10 @@ class FileSystemFeature(
                         val content = platformDependencies.readFileContent(item.path)
                         val relativePath = item.path.removePrefix(rootPath).removePrefix(platformDependencies.pathSeparator.toString())
                         stringBuilder.append("```${relativePath.substringAfterLast('.', "")} \"$relativePath\"\n$content\n```\n\n")
-                    } catch (_: Exception) { errorCount++ }
+                    } catch (e: Exception) {
+                        platformDependencies.log(LogLevel.WARN, name, "Could not read file for clipboard copy: ${item.path}: ${e.message}")
+                        errorCount++
+                    }
                 }
                 if (stringBuilder.isNotEmpty()) {
                     store.deferredDispatch(this.name, Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", stringBuilder.toString().trim()) }))
@@ -300,6 +303,7 @@ class FileSystemFeature(
                     val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, responsePayload)
                     store.deliverPrivateData(this.name, originator, envelope)
                 } catch (e: Exception) {
+                    // TODO: THIS IS A VIOLATION! NO SILENT ERRORS ALLOWED! INSTEAD OF RETURNING A VALID ERROR STATE THIS RETURNS NULL ON ERROR! NEEDS TO BE FIXED!
                     val responsePayload = buildJsonObject {
                         put("subpath", payload.subpath)
                         put("content", JsonNull)

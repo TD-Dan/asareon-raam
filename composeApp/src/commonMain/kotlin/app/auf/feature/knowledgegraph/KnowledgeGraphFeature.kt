@@ -397,13 +397,20 @@ class KnowledgeGraphFeature(
                 }
             }
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
-                val fileData = try { json.decodeFromJsonElement<FilesContentPayload>(envelope.payload) } catch (e: Exception) { return }
-
-                if (fileData.correlationId != null && fileData.correlationId == kgState?.pendingImportCorrelationId) {
-                    val analysisPayload = runImportAnalysis(fileData.contents, kgState, kgState.isImportRecursive)
-                    store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
-                } else {
-                    handleFilesContentForLoad(envelope.payload, store)
+                try {
+                    val fileData = json.decodeFromJsonElement<FilesContentPayload>(envelope.payload)
+                    if (fileData.correlationId != null && fileData.correlationId == kgState?.pendingImportCorrelationId) {
+                        val analysisPayload = runImportAnalysis(fileData.contents, kgState, kgState.isImportRecursive)
+                        store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
+                    } else {
+                        handleFilesContentForLoad(fileData, store)
+                    }
+                } catch (e: Exception) {
+                    val errorMsg = "Failed to process file content response: ${e.message}"
+                    platformDependencies.log(LogLevel.ERROR, name, errorMsg)
+                    store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
+                        put("error", errorMsg)
+                    }))
                 }
             }
         }
@@ -445,8 +452,7 @@ class KnowledgeGraphFeature(
         }
     }
 
-    private fun handleFilesContentForLoad(payload: JsonObject, store: Store) {
-        val fileData = try { json.decodeFromJsonElement<FilesContentPayload>(payload) } catch (e: Exception) { return }
+    private fun handleFilesContentForLoad(fileData: FilesContentPayload, store: Store) {
         val holonsById = mutableMapOf<String, Holon>()
 
         for ((path, rawContent) in fileData.contents) {
@@ -459,9 +465,19 @@ class KnowledgeGraphFeature(
                 }
                 holonsById[holon.header.id] = holon.copy(header = holon.header.copy(filePath = path), content = rawContent)
             } catch (e: Exception) {
+                // [FIX] Make failure observable
                 platformDependencies.log(LogLevel.ERROR, name, "Failed to parse JSON for holon at '$path': ${e.message}")
             }
         }
+
+        // If all files failed to parse, abort with a clear state update.
+        if (holonsById.isEmpty() && fileData.contents.isNotEmpty()) {
+            store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
+                put("error", "Loading failed: All holon files in the persona were malformed or had ID mismatches.")
+            }))
+            return
+        }
+
 
         val enrichedHolons = mutableMapOf<String, Holon>()
         val rootHolons = holonsById.values.filter { holon -> holonsById.values.none { parent -> parent.header.subHolons.any { it.id == holon.header.id } } }
