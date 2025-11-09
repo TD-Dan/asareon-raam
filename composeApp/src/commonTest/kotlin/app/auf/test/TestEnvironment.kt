@@ -63,6 +63,54 @@ data class TestHarness(
     /** A convenience accessor for the list of delivered private data envelopes. */
     val deliveredPrivateData: List<CapturedPrivateData>
         get() = store.deliveredPrivateData
+
+    /**
+     * [NEW] Executes a block of test code and, if it fails, prints a detailed
+     * diagnostic report of all actions and logs before re-throwing the original exception.
+     * This is the primary tool for debugging test failures.
+     */
+    fun runAndLogOnFailure(block: () -> Unit) {
+        try {
+            block()
+        } catch (e: Throwable) {
+            // Use Throwable to catch AssertionErrors and others
+            println("\n\n" + "=".repeat(80))
+            println("TEST FAILED: An exception was thrown. Printing diagnostic report...")
+            println("=".repeat(80))
+
+            println("\n--- PROCESSED ACTIONS (${processedActions.size}) ---")
+            if (processedActions.isEmpty()) {
+                println("No actions were processed by the Store.")
+            } else {
+                processedActions.forEachIndexed { index, action ->
+                    println("${index.toString().padStart(3, ' ')}: $action")
+                }
+            }
+
+            println("\n--- DELIVERED PRIVATE DATA (${deliveredPrivateData.size}) ---")
+            if (deliveredPrivateData.isEmpty()) {
+                println("No private data was delivered.")
+            } else {
+                deliveredPrivateData.forEachIndexed { index, delivery ->
+                    println("${index.toString().padStart(3, ' ')}: From='${delivery.originator}' To='${delivery.recipient}' Type='${delivery.envelope.type}'")
+                }
+            }
+
+            println("\n--- PLATFORM LOGS (${platform.capturedLogs.size}) ---")
+            if (platform.capturedLogs.isEmpty()) {
+                println("No platform logs were captured.")
+            } else {
+                platform.capturedLogs.forEach { log ->
+                    println("[${log.level}] [${log.tag}] ${log.message}")
+                }
+            }
+
+            println("=".repeat(80))
+            println("Original Exception:")
+            println("=".repeat(80))
+            throw e // Re-throw the original exception to ensure the test fails correctly.
+        }
+    }
 }
 
 /**

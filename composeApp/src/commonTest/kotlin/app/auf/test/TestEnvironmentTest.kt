@@ -50,16 +50,17 @@ class TestEnvironmentTest {
             .withFeature(FakeFeatureB())
             .build()
 
-        // ACT
-        val initialFeatureStates = harness.store.state.value.featureStates.keys
+        // [NEW] Wrap test assertions to get automatic logging on failure.
+        harness.runAndLogOnFailure {
+            // ACT
+            val initialFeatureStates = harness.store.state.value.featureStates.keys
 
-        // ASSERT
-        // THE FIX: Assert the count of STATEFUL features is correct (3), and verify presence of each key.
-        // The stateless RecordingFeature correctly does not have a state slice.
-        assertTrue(initialFeatureStates.contains("core"), "CoreFeature state should be present.")
-        assertTrue(initialFeatureStates.contains("fakeA"), "FakeFeatureA state should be present.")
-        assertTrue(initialFeatureStates.contains("fakeB"), "FakeFeatureB state should be present.")
-        assertEquals(3, initialFeatureStates.size, "Should include state slices for the two fake features plus Core.")
+            // ASSERT
+            assertTrue(initialFeatureStates.contains("core"), "CoreFeature state should be present.")
+            assertTrue(initialFeatureStates.contains("fakeA"), "FakeFeatureA state should be present.")
+            assertTrue(initialFeatureStates.contains("fakeB"), "FakeFeatureB state should be present.")
+            assertEquals(3, initialFeatureStates.size, "Should include state slices for the two fake features plus Core.")
+        }
     }
 
     @Test
@@ -70,12 +71,14 @@ class TestEnvironmentTest {
             .withInitialState("fakeA", FakeStateA("initial value"))
             .build()
 
-        // ACT
-        val stateSlice = harness.store.state.value.featureStates["fakeA"] as? FakeStateA
+        harness.runAndLogOnFailure {
+            // ACT
+            val stateSlice = harness.store.state.value.featureStates["fakeA"] as? FakeStateA
 
-        // ASSERT
-        assertNotNull(stateSlice)
-        assertEquals("initial value", stateSlice.value)
+            // ASSERT
+            assertNotNull(stateSlice)
+            assertEquals("initial value", stateSlice.value)
+        }
     }
 
     @Test
@@ -87,22 +90,25 @@ class TestEnvironmentTest {
             .withInitialState("fakeA", FakeStateA("initial value"))
             .build()
 
-        // ACT
-        // Dispatching an action is no longer needed, the builder guarantees the state.
-        val stateSliceA = harness.store.state.value.featureStates["fakeA"] as? FakeStateA
-        val stateSliceB = harness.store.state.value.featureStates["fakeB"] as? FakeStateB
+        harness.runAndLogOnFailure {
+            // ACT
+            val stateSliceA = harness.store.state.value.featureStates["fakeA"] as? FakeStateA
+            val stateSliceB = harness.store.state.value.featureStates["fakeB"] as? FakeStateB
 
-        // ASSERT
-        assertNotNull(stateSliceA)
-        assertEquals("initial value", stateSliceA.value)
-        assertNotNull(stateSliceB)
-        assertEquals(0, stateSliceB.count)
+            // ASSERT
+            assertNotNull(stateSliceA)
+            assertEquals("initial value", stateSliceA.value)
+            assertNotNull(stateSliceB)
+            assertEquals(0, stateSliceB.count)
+        }
     }
 
     @Test
     fun `build should automatically include CoreFeature and its state`() {
         val harness = TestEnvironment.create().withFeature(FakeFeatureA()).build()
-        assertNotNull(harness.store.state.value.featureStates["core"])
+        harness.runAndLogOnFailure {
+            assertNotNull(harness.store.state.value.featureStates["core"])
+        }
     }
 
     @Test
@@ -110,35 +116,39 @@ class TestEnvironmentTest {
         // ARRANGE
         val harness = TestEnvironment.create().build()
 
-        // ACT
-        harness.store.dispatch("ui", app.auf.core.Action("core.SET_ACTIVE_VIEW", buildJsonObject { put("key", "test")}))
-        harness.store.dispatch("ui", app.auf.core.Action("unknown.ACTION"))
+        harness.runAndLogOnFailure {
+            // ACT
+            harness.store.dispatch("ui", app.auf.core.Action("core.SET_ACTIVE_VIEW", buildJsonObject { put("key", "test") }))
+            harness.store.dispatch("ui", app.auf.core.Action("unknown.ACTION"))
 
-        // ASSERT
-        val validAction = harness.processedActions.find { it.name == "core.SET_ACTIVE_VIEW" }
-        assertNotNull(validAction, "A known valid action from the registry should be present.")
-        val invalidAction = harness.processedActions.find { it.name == "unknown.ACTION" }
-        assertNull(invalidAction, "An unknown action should be blocked by the Store.")
-        val log = harness.platform.capturedLogs.find { it.message.contains("Unknown Action") }
-        assertNotNull(log, "The store should log a security violation for the unknown action.")
+            // ASSERT
+            val validAction = harness.processedActions.find { it.name == "core.SET_ACTIVE_VIEW" }
+            assertNotNull(validAction, "A known valid action from the registry should be present.")
+            val invalidAction = harness.processedActions.find { it.name == "unknown.ACTION" }
+            assertNull(invalidAction, "An unknown action should be blocked by the Store.")
+            val log = harness.platform.capturedLogs.find { it.message.contains("Unknown Action") }
+            assertNotNull(log, "The store should log a security violation for the unknown action.")
+        }
     }
 
     @Test
     fun `withActionRegistry() successfully overrides the default registry`() {
         // ARRANGE
-        val minimalRegistry = setOf("system.STARTING", "fakeA.ALLOWED")
+        val minimalRegistry = setOf("system.publish.STARTING", "fakeA.ALLOWED")
         val harness = TestEnvironment.create()
             .withActionRegistry(minimalRegistry)
             .build()
 
-        // ACT
-        harness.store.dispatch("ui", app.auf.core.Action("fakeA.ALLOWED"))
-        harness.store.dispatch("ui", app.auf.core.Action("core.SET_ACTIVE_VIEW")) // This is valid in the real registry, but not our override
+        harness.runAndLogOnFailure {
+            // ACT
+            harness.store.dispatch("ui", app.auf.core.Action("fakeA.ALLOWED"))
+            harness.store.dispatch("ui", app.auf.core.Action("core.SET_ACTIVE_VIEW")) // This is valid in the real registry, but not our override
 
-        // ASSERT
-        assertEquals(1, harness.processedActions.size, "Only the action in the minimal registry should pass.")
-        assertEquals("fakeA.ALLOWED", harness.processedActions.first().name)
-        val log = harness.platform.capturedLogs.find { it.message.contains("Unknown Action 'core.SET_ACTIVE_VIEW'") }
-        assertNotNull(log, "The store should block an action not present in the override set.")
+            // ASSERT
+            assertEquals(1, harness.processedActions.size, "Only the action in the minimal registry should pass.")
+            assertEquals("fakeA.ALLOWED", harness.processedActions.first().name)
+            val log = harness.platform.capturedLogs.find { it.message.contains("Unknown Action 'core.SET_ACTIVE_VIEW'") }
+            assertNotNull(log, "The store should block an action not present in the override set.")
+        }
     }
 }

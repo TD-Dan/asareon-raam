@@ -552,7 +552,7 @@ class AgentRuntimeFeature(
 
 
     private fun handleGatewayPreviewResponse(payload: JsonObject, store: Store) {
-        val decoded = try { json.decodeFromJsonElement<GatewayPreviewResponsePayload>(payload) } catch (e: Exception) { return }
+        val decoded = try { json.decodeFromJsonElement<GatewayPreviewResponsePayload>(payload) } catch (e: Exception) { return } //TODO: THIS IS A VIOLATION! NO SILENT FAILURES ALLOWED!
         val agent = (store.state.value.featureStates[name] as? AgentRuntimeState)?.agents?.get(decoded.correlationId) ?: return
 
         store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PREVIEW_DATA, buildJsonObject {
