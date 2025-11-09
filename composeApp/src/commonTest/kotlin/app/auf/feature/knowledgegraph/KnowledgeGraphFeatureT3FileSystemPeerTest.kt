@@ -50,50 +50,52 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
 
     @Test
     fun `end-to-end import workflow correctly uses correlationId and analyzes files`() {
-        // --- 1. ARRANGE ---
-        // Setup existing HKG state for analysis context
-        val existingHolons = mapOf("p1" to json.decodeFromString<Holon>(existingPersonaContent))
         val harness = TestEnvironment.create()
             .withFeature(kgFeature)
             .withFeature(fsFeature)
-            .withInitialState("knowledgegraph", KnowledgeGraphState(holons = existingHolons))
+            .withInitialState("knowledgegraph", KnowledgeGraphState(holons = mapOf(
+                "p1" to json.decodeFromString<Holon>(existingPersonaContent)
+            )))
             .build(platform = platform)
 
-        // --- 2. ACT 1 (Start Analysis) ---
-        harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS))
+        harness.runAndLogOnFailure {
+            // --- 2. ACT 1 (Start Analysis) ---
+            harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS))
 
-        // --- 3. ASSERT 1 (Request with Correlation ID) ---
-        val stateAfterRequest = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
-        val correlationId = stateAfterRequest.pendingImportCorrelationId
-        assertNotNull(correlationId, "A correlation ID should be set in the state.")
+            // --- 3. ASSERT 1 (Request with Correlation ID) ---
+            val stateAfterRequest = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
+            val correlationId = stateAfterRequest.pendingImportCorrelationId
+            assertNotNull(correlationId, "A correlation ID should be set in the state.")
 
-        val fsRequest = harness.processedActions.last()
-        assertEquals(ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI, fsRequest.name)
-        assertEquals(correlationId, fsRequest.payload?.get("correlationId")?.jsonPrimitive?.content)
+            // [THE FIX]: Correctly find the relevant action in the sequence, not just the last one.
+            val fsRequest = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI }
+            assertNotNull(fsRequest, "A scoped read request should have been dispatched.")
+            assertEquals(correlationId, fsRequest.payload?.get("correlationId")?.jsonPrimitive?.content)
 
-        // --- 4. ACT 2 (Simulate FileSystem Response) ---
-        val fsResponse = PrivateDataEnvelope(
-            type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT,
-            payload = buildJsonObject {
-                put("correlationId", correlationId)
-                put("contents", buildJsonObject {
-                    put("h1.json", updatedHolonContent)
-                    put("h2.json", newHolonContent)
-                })
-            }
-        )
-        harness.store.deliverPrivateData("filesystem", "knowledgegraph", fsResponse)
+            // --- 4. ACT 2 (Simulate FileSystem Response) ---
+            val fsResponse = PrivateDataEnvelope(
+                type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT,
+                payload = buildJsonObject {
+                    put("correlationId", correlationId)
+                    put("contents", buildJsonObject {
+                        put("h1.json", updatedHolonContent)
+                        put("h2.json", newHolonContent)
+                    })
+                }
+            )
+            harness.store.deliverPrivateData("filesystem", "knowledgegraph", fsResponse)
 
-        // --- 5. ASSERT 2 (Analysis is Correct and Correlation ID is Cleared) ---
-        val finalState = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
-        assertNull(finalState.pendingImportCorrelationId, "Correlation ID should be cleared after use.")
-        assertEquals(2, finalState.importItems.size)
+            // --- 5. ASSERT 2 (Analysis is Correct and Correlation ID is Cleared) ---
+            val finalState = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
+            assertNull(finalState.pendingImportCorrelationId, "Correlation ID should be cleared after use.")
+            assertEquals(2, finalState.importItems.size)
 
-        val updateAction = finalState.importSelectedActions["h1.json"]
-        assertIs<Update>(updateAction, "h1.json should be identified as an Update.")
-        assertEquals("h1", updateAction.targetHolonId)
+            val updateAction = finalState.importSelectedActions["h1.json"]
+            assertIs<Update>(updateAction, "h1.json should be identified as an Update.")
+            assertEquals("h1", updateAction.targetHolonId)
 
-        val quarantineAction = finalState.importSelectedActions["h2.json"]
-        assertIs<Quarantine>(quarantineAction, "h2.json should be quarantined as a new top-level holon.")
+            val quarantineAction = finalState.importSelectedActions["h2.json"]
+            assertIs<Quarantine>(quarantineAction, "h2.json should be quarantined as a new top-level holon.")
+        }
     }
 }

@@ -467,7 +467,6 @@ private fun ImportPane(
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("Select a folder to analyze for holon files.", modifier = Modifier.weight(1f))
             Button(onClick = {
-                // **THE FIX**: This now only dispatches the action. No direct platform calls.
                 store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS))
             }) { Text("Select & Analyze...") }
         }
@@ -513,7 +512,6 @@ private fun ImportPane(
             }
             Spacer(modifier = Modifier.height(16.dp))
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                // **THE FIX**: Summary line is moved here and enhanced.
                 if (kgState.importFileContents.isNotEmpty() && !kgState.isLoading) {
                     val total = kgState.importFileContents.size
                     val create = kgState.importSelectedActions.values.count { it is CreateRoot || it is Integrate || it is AssignParent }

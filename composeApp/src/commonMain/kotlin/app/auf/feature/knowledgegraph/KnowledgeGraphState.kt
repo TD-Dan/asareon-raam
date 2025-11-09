@@ -113,5 +113,6 @@ data class KnowledgeGraphState(
 
     // --- Loading & Error State ---
     val isLoading: Boolean = false,
+    /** [NEW] A feature-scoped, user-facing error message for unrecoverable states. */
     val fatalError: String? = null
 ) : FeatureState

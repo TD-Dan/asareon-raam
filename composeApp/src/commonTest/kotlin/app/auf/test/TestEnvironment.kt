@@ -101,7 +101,8 @@ data class TestHarness(
                 println("No platform logs were captured.")
             } else {
                 platform.capturedLogs.forEach { log ->
-                    println("[${log.level}] [${log.tag}] ${log.message}")
+                    val throwableString = log.throwable?.let { "\n${it.stackTraceToString()}" } ?: ""
+                    println("[${log.level}] [${log.tag}] ${log.message}$throwableString")
                 }
             }
 

@@ -243,7 +243,7 @@ class KnowledgeGraphFeature(
                 return currentFeatureState.copy(holons = newHolons, personaRoots = newRoots, isLoading = false)
             }
             ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA -> {
-                return currentFeatureState.copy(isLoading = true)
+                return currentFeatureState.copy(isLoading = true, fatalError = null)
             }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED -> {
                 val error = action.payload?.get("error")?.jsonPrimitive?.content ?: "Unknown loading error."
@@ -406,8 +406,9 @@ class KnowledgeGraphFeature(
                         handleFilesContentForLoad(fileData, store)
                     }
                 } catch (e: Exception) {
-                    val errorMsg = "Failed to process file content response: ${e.message}"
-                    platformDependencies.log(LogLevel.ERROR, name, errorMsg)
+                    val errorMsg = "Failed to process file content response."
+                    platformDependencies.log(LogLevel.ERROR, name, errorMsg, e)
+                    store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
                     store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
                         put("error", errorMsg)
                     }))
@@ -454,6 +455,7 @@ class KnowledgeGraphFeature(
 
     private fun handleFilesContentForLoad(fileData: FilesContentPayload, store: Store) {
         val holonsById = mutableMapOf<String, Holon>()
+        var hasErrors = false
 
         for ((path, rawContent) in fileData.contents) {
             try {
@@ -461,21 +463,27 @@ class KnowledgeGraphFeature(
                 val expectedId = platformDependencies.getFileName(path).removeSuffix(".json")
                 if (holon.header.id != expectedId) {
                     platformDependencies.log(LogLevel.ERROR, name, "ID mismatch in '$path': expected '$expectedId', found '${holon.header.id}'. Skipping.")
+                    hasErrors = true
                     continue
                 }
                 holonsById[holon.header.id] = holon.copy(header = holon.header.copy(filePath = path), content = rawContent)
             } catch (e: Exception) {
-                // [FIX] Make failure observable
-                platformDependencies.log(LogLevel.ERROR, name, "Failed to parse JSON for holon at '$path': ${e.message}")
+                platformDependencies.log(LogLevel.ERROR, name, "Failed to parse JSON for holon at '$path'", e)
+                hasErrors = true
             }
         }
 
-        // If all files failed to parse, abort with a clear state update.
         if (holonsById.isEmpty() && fileData.contents.isNotEmpty()) {
+            val errorMsg = "Loading failed: All holon files in the persona were malformed or had ID mismatches."
+            store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
             store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
-                put("error", "Loading failed: All holon files in the persona were malformed or had ID mismatches.")
+                put("error", errorMsg)
             }))
             return
+        }
+
+        if(hasErrors) {
+            store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Warning: Some holon files failed to load. Check logs.") }))
         }
 
 
