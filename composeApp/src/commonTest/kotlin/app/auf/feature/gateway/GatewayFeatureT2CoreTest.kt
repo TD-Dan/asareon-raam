@@ -189,19 +189,24 @@ class GatewayFeatureT2CoreTest {
         runCurrent()
 
         // ASSERT
-        val privateData = harness.deliveredPrivateData.firstOrNull()
-        assertNotNull(privateData, "Private data for preview should have been delivered.")
-        assertEquals("gateway.response.preview", privateData.envelope.type)
+        harness.runAndLogOnFailure {
+            val privateData = harness.deliveredPrivateData.firstOrNull()
+            assertNotNull(privateData, "Private data for preview should have been delivered.")
+            assertEquals("gateway.response.preview", privateData.envelope.type)
 
-        val previewPayload = privateData.envelope.payload
-        val agnosticRequest = Json.decodeFromJsonElement<GatewayRequest>(previewPayload["agnosticRequest"]!!)
-        val rawJson = previewPayload["rawRequestJson"]?.jsonPrimitive?.content
+            val previewPayload = privateData.envelope.payload
+            val agnosticRequest = Json.decodeFromJsonElement<GatewayRequest>(previewPayload["agnosticRequest"]!!)
+            val rawJson = previewPayload["rawRequestJson"]?.jsonPrimitive?.content
 
-        assertEquals(systemPrompt, agnosticRequest.systemPrompt)
-        assertNotNull(rawJson, "rawRequestJson should exist.")
-        // This assertion is provider-specific, but proves the data flowed through.
-        // We'll use the Gemini format for this test.
-        assertTrue(rawJson.contains("system_instruction"), "The raw JSON should contain the provider-specific system prompt key.")
-        assertTrue(rawJson.contains(systemPrompt), "The raw JSON should contain the system prompt content.")
+            assertEquals(systemPrompt, agnosticRequest.systemPrompt)
+            assertNotNull(rawJson, "rawRequestJson should exist.")
+            // This assertion is provider-specific, but proves the data flowed through.
+            // We'll use the Gemini format for this test.
+            assertTrue(
+                rawJson.contains("system_instruction"),
+                "The raw JSON should contain the provider-specific system prompt key."
+            )
+            assertTrue(rawJson.contains(systemPrompt), "The raw JSON should contain the system prompt content.")
+        }
     }
 }

@@ -151,16 +151,23 @@ class AgentRuntimeFeatureT2CoreTest {
         (harness.store.features.find { it.name == "agent" } as AgentRuntimeFeature).onPrivateData(envelope, harness.store)
 
         // ASSERT
-        val sentinelAction = harness.processedActions.find { it.name == ActionNames.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.content == "system" }
-        assertNotNull(sentinelAction, "A sentinel warning should have been posted.")
-        assertTrue(sentinelAction.payload?.get("message")?.jsonPrimitive?.content?.contains("Warning for [Test Agent]") == true)
+        harness.runAndLogOnFailure {
+            val sentinelAction =
+                harness.processedActions.find { it.name == ActionNames.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.content == "system" }
+            assertNotNull(sentinelAction, "A sentinel warning should have been posted.")
+            assertTrue(sentinelAction.payload?.get("message")?.jsonPrimitive?.content?.contains("Warning for [Test Agent]") == true)
 
-        val agentResponseAction = harness.processedActions.find { it.name == ActionNames.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.content == "agent-1" }
-        assertNotNull(agentResponseAction, "The agent's own response should have been posted.")
-        assertEquals("This is the actual response.", agentResponseAction.payload?.get("message")?.jsonPrimitive?.content)
+            val agentResponseAction =
+                harness.processedActions.find { it.name == ActionNames.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.content == "agent-1" }
+            assertNotNull(agentResponseAction, "The agent's own response should have been posted.")
+            assertEquals(
+                "This is the actual response.",
+                agentResponseAction.payload?.get("message")?.jsonPrimitive?.content
+            )
 
-        val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-        assertEquals(AgentStatus.IDLE, finalState.agents["agent-1"]?.status)
+            val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            assertEquals(AgentStatus.IDLE, finalState.agents["agent-1"]?.status)
+        }
     }
 
     @Test
@@ -374,13 +381,19 @@ class AgentRuntimeFeatureT2CoreTest {
         harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", "agent-1") }))
 
         // ASSERT
-        val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
-        assertNotNull(gatewayRequest, "Gateway request should still be dispatched.")
-        val systemPrompt = gatewayRequest.payload?.get("systemPrompt")?.jsonPrimitive?.content
-        assertNotNull(systemPrompt)
-        assertFalse(systemPrompt.contains("--- HOLON KNOWLEDGE GRAPH CONTEXT ---"), "System prompt should not contain an empty HKG section.")
+        harness.runAndLogOnFailure {
+            val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
+            assertNotNull(gatewayRequest, "Gateway request should still be dispatched.")
+            val systemPrompt = gatewayRequest.payload?.get("systemPrompt")?.jsonPrimitive?.content
+            assertNotNull(systemPrompt)
+            assertFalse(
+                systemPrompt.contains("--- HOLON KNOWLEDGE GRAPH CONTEXT ---"),
+                "System prompt should not contain an empty HKG section."
+            )
 
-        val log = harness.platform.capturedLogs.find { it.level == LogLevel.WARN && it.message.contains("KnowledgeGraphFeature not found") }
-        assertNotNull(log, "An info log should indicate the graceful fallback.")
+            val log =
+                harness.platform.capturedLogs.find { it.level == LogLevel.WARN && it.message.contains("KnowledgeGraphFeature not found") }
+            assertNotNull(log, "An info log should indicate the graceful fallback.")
+        }
     }
 }
