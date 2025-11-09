@@ -9,9 +9,9 @@ private data class FakeFile(val content: String, val lastModified: Long)
 
 /**
  * A public data class to hold a captured log message for test assertions.
- * Its visibility is now correct.
+ * [REFACTOR] Now includes an optional throwable to enable more precise test assertions.
  */
-data class CapturedLog(val level: LogLevel, val tag: String, val message: String)
+data class CapturedLog(val level: LogLevel, val tag: String, val message: String, val throwable: Throwable? = null)
 
 /**
  * A "Fake" implementation of the PlatformDependencies contract for use in unit tests.
@@ -155,7 +155,7 @@ open class FakePlatformDependencies(
     override fun copyToClipboard(text: String) { clipboardContent = text }
     override fun applyNativeWindowDecorations(window: Any) { /* No-op */ }
 
-    override fun log(level: LogLevel, tag: String, message: String) {
-        capturedLogs.add(CapturedLog(level, tag, message))
+    override fun log(level: LogLevel, tag: String, message: String, throwable: Throwable?) {
+        capturedLogs.add(CapturedLog(level, tag, message, throwable))
     }
 }

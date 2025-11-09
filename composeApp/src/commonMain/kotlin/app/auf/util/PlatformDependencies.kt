@@ -72,10 +72,13 @@ expect open class PlatformDependencies(appVersion: String) {
     // --- Logging ---
     /**
      * Logs a message to the platform's standard output or logging system.
+     * [REFACTOR] This function is now overloaded to accept an optional throwable,
+     * making it the sole authority on exception formatting.
      *
      * @param level The severity level of the message.
      * @param tag A short string identifying the source of the message (e.g., the class name).
      * @param message The content of the log message.
+     * @param throwable An optional exception whose stack trace will be automatically appended.
      */
-    open fun log(level: LogLevel, tag: String, message: String)
+    open fun log(level: LogLevel, tag: String, message: String, throwable: Throwable? = null)
 }
