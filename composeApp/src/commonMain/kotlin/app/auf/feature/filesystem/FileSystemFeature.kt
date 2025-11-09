@@ -26,15 +26,14 @@ class FileSystemFeature(
     @Serializable private data class PathPayload(val path: String)
     @Serializable private data class ToggleItemPayload(val path: String, val recursive: Boolean = false)
     @Serializable private data class DirectoryLoadedPayload(val parentPath: String, val children: List<FileEntry>)
-    @Serializable private data class SystemListPayload(val subpath: String = "")
-    @Serializable private data class SystemListRecursivePayload(val subpath: String)
+    @Serializable private data class SystemListPayload(val subpath: String = "", val recursive: Boolean = false)
     @Serializable private data class ReadFilesContentPayload(val subpaths: List<String>)
     @Serializable private data class SystemReadPayload(val subpath: String)
     @Serializable private data class SystemWritePayload(val subpath: String, val content: String, val encrypt: Boolean = false)
     @Serializable private data class SystemDeletePayload(val subpath: String)
     @Serializable private data class SystemDeleteDirectoryPayload(val subpath: String)
     @Serializable private data class OpenAppSubfolderPayload(val folder: String)
-    @Serializable data class RequestScopedReadUiPayload(val recursive: Boolean = true, val fileExtensions: List<String>? = null)
+    @Serializable data class RequestScopedReadUiPayload(val correlationId: String? = null, val recursive: Boolean = true, val fileExtensions: List<String>? = null)
     @Serializable private data class StageScopedReadPayload(val requestId: String, val originator: String, val requestPayload: JsonObject)
     @Serializable private data class ExecuteScopedReadPayload(val clientOriginator: String, val requestPayload: JsonObject)
     @Serializable private data class ConfirmationResponsePayload(val requestId: String, val confirmed: Boolean)
@@ -96,7 +95,7 @@ class FileSystemFeature(
             }
             ActionNames.FILESYSTEM_NAVIGATE -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_LOAD_CHILDREN, buildJsonObject { put("path", payload.path) }))
+                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_INTERNAL_LOAD_CHILDREN, buildJsonObject { put("path", payload.path) }))
             }
             ActionNames.FILESYSTEM_SELECT_DIRECTORY_UI -> {
                 platformDependencies.selectDirectoryPath()?.let {
@@ -167,6 +166,7 @@ class FileSystemFeature(
 
                         // 5. Deliver the complete payload
                         val responsePayload = buildJsonObject {
+                            put("correlationId", requestPayload.correlationId)
                             put("contents", Json.encodeToJsonElement(contentMap))
                         }
                         val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, responsePayload)
@@ -183,7 +183,7 @@ class FileSystemFeature(
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
                 val item = findItemByPath(fileSystemState.rootItems, payload.path)
                 if (item?.isDirectory == true && item.children == null) {
-                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_LOAD_CHILDREN, action.payload))
+                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_INTERNAL_LOAD_CHILDREN, action.payload))
                 }
             }
             ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED -> {
@@ -196,7 +196,7 @@ class FileSystemFeature(
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
                 findItemByPath(fileSystemState.rootItems, payload.path)?.let { dispatchLoadChildrenRecursive(it, 3, store) }
             }
-            ActionNames.FILESYSTEM_LOAD_CHILDREN -> {
+            ActionNames.FILESYSTEM_INTERNAL_LOAD_CHILDREN -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<PathPayload>(it) } ?: return
                 try {
                     val children = platformDependencies.listDirectory(payload.path)
@@ -255,8 +255,8 @@ class FileSystemFeature(
                 val fullPath = if (payload.subpath.isNotBlank()) "$sandboxPath${platformDependencies.pathSeparator}${payload.subpath}" else sandboxPath
                 try {
                     if (!platformDependencies.fileExists(fullPath)) platformDependencies.createDirectories(fullPath)
-                    val absoluteListing = platformDependencies.listDirectory(fullPath)
-                    val relativeListing = absoluteListing.map { FileEntry(platformDependencies.getFileName(it.path), it.isDirectory) }
+                    val absoluteListing = if (payload.recursive) platformDependencies.listDirectoryRecursive(fullPath) else platformDependencies.listDirectory(fullPath)
+                    val relativeListing = absoluteListing.map { it.copy(path = it.path.removePrefix(sandboxPath).removePrefix(platformDependencies.pathSeparator.toString())) }
                     val responsePayload = buildJsonObject {
                         put("listing", Json.encodeToJsonElement(relativeListing))
                         put("subpath", payload.subpath)
@@ -270,30 +270,6 @@ class FileSystemFeature(
                         put("subpath", payload.subpath)
                     }
                     val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, responsePayload)
-                    store.deliverPrivateData(this.name, originator, envelope)
-                }
-            }
-            ActionNames.FILESYSTEM_SYSTEM_LIST_RECURSIVE -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<SystemListRecursivePayload>(it) } ?: return
-                val sandboxPath = getSandboxPathFor(originator)
-                val fullPath = if (payload.subpath.isNotBlank()) "$sandboxPath${platformDependencies.pathSeparator}${payload.subpath}" else sandboxPath
-                try {
-                    if (!platformDependencies.fileExists(fullPath)) platformDependencies.createDirectories(fullPath)
-                    val absoluteListing = platformDependencies.listDirectoryRecursive(fullPath)
-                    val relativeListing = absoluteListing.map { it.copy(path = it.path.removePrefix(sandboxPath).removePrefix(platformDependencies.pathSeparator.toString())) }
-                    val responsePayload = buildJsonObject {
-                        put("listing", Json.encodeToJsonElement(relativeListing))
-                        put("subpath", payload.subpath)
-                    }
-                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST_RECURSIVE, responsePayload)
-                    store.deliverPrivateData(this.name, originator, envelope)
-                } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, "filesystem", "Recursive directory read failed for '${payload.subpath}': ${e.message}")
-                    val responsePayload = buildJsonObject {
-                        put("listing", Json.encodeToJsonElement(emptyList<FileEntry>()))
-                        put("subpath", payload.subpath)
-                    }
-                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST_RECURSIVE, responsePayload)
                     store.deliverPrivateData(this.name, originator, envelope)
                 }
             }
@@ -370,7 +346,8 @@ class FileSystemFeature(
                 val pendingRequest = PendingScopedRead(
                     requestId = decoded.requestId,
                     originator = decoded.originator,
-                    payload = requestPayload
+                    payload = requestPayload,
+                    correlationId = requestPayload.correlationId
                 )
                 return currentFeatureState.copy(pendingScopedRead = pendingRequest)
             }
@@ -417,7 +394,7 @@ class FileSystemFeature(
 
     private fun dispatchLoadChildrenRecursive(item: FileSystemItem, maxDepth: Int, store: Store) {
         if (maxDepth <= 0 || !item.isDirectory) return
-        if (item.children == null) store.dispatch(this.name, Action(ActionNames.FILESYSTEM_LOAD_CHILDREN, buildJsonObject { put("path", item.path) }))
+        if (item.children == null) store.dispatch(this.name, Action(ActionNames.FILESYSTEM_INTERNAL_LOAD_CHILDREN, buildJsonObject { put("path", item.path) }))
         else item.children.forEach { dispatchLoadChildrenRecursive(it, maxDepth - 1, store) }
     }
 

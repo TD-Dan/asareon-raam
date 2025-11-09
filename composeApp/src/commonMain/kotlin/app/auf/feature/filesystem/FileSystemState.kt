@@ -47,7 +47,8 @@ data class FileSystemItem(
 data class PendingScopedRead(
     val requestId: String,
     val originator: String,
-    val payload: FileSystemFeature.RequestScopedReadUiPayload
+    val payload: FileSystemFeature.RequestScopedReadUiPayload,
+    val correlationId: String? = null
 )
 
 

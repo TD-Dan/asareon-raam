@@ -18,46 +18,33 @@
     },
     {
       "action_name": "filesystem.REQUEST_SCOPED_READ_UI",
-      "summary": "Orchestrates a user-mediated, one-time read of a directory outside the originator's sandbox. Shows a security warning, then the OS file picker, and delivers the complete content of all found files via a private 'filesystem.response.FILES_CONTENT' envelope.",
+      "summary": "Orchestrates a user-mediated, one-time read of a directory outside the originator's sandbox. The response is delivered via the private channel.",
+      "responseEnvelopeType": "filesystem.response.FILES_CONTENT",
       "payload_schema": {
         "type": "object",
         "properties": {
+          "correlationId": { "type": ["string", "null"] },
           "recursive": { "type": "boolean", "default": true },
           "fileExtensions": { "type": "array", "items": { "type": "string" }, "description": "Optional list of extensions to filter by (e.g., [\"json\", \"md\"])" }
         }
       }
     },
     {
-      "action_name": "filesystem.LOAD_CHILDREN",
-      "summary": "[INTERNAL] Triggers a side-effect to load a directory's children from disk.",
-      "payload_schema": {
-        "type": "object",
-        "properties": { "path": { "type": "string" } },
-        "required": ["path"]
-      }
-    },
-    {
       "action_name": "filesystem.SYSTEM_LIST",
-      "summary": "[PRIVATE-CHANNEL] Requests a listing of files/directories in the originator's private sandbox. The response is delivered via private channel.",
+      "summary": "A sandboxed service action for other features to request a listing of files/directories in their private sandbox. The response is delivered via the private channel.",
+      "responseEnvelopeType": "filesystem.response.LIST",
       "payload_schema": {
         "type": "object",
         "properties": {
-          "subpath": { "type": "string", "description": "An optional sub-directory within the sandbox to list.", "default": "" }
+          "subpath": { "type": "string", "description": "An optional sub-directory within the sandbox to list.", "default": "" },
+          "recursive": { "type": "boolean", "default": false }
         }
       }
     },
     {
-      "action_name": "filesystem.SYSTEM_LIST_RECURSIVE",
-      "summary": "[PRIVATE-CHANNEL] Requests a recursive listing of all files within a given subpath of the originator's sandbox. The response is delivered via the private channel.",
-      "payload_schema": {
-        "type": "object",
-        "properties": { "subpath": { "type": "string" } },
-        "required": ["subpath"]
-      }
-    },
-    {
       "action_name": "filesystem.READ_FILES_CONTENT",
-      "summary": "[PRIVATE-CHANNEL] Requests the content of multiple files at once. Paths must be subpaths relative to the originator's sandbox. The response is delivered via the private channel.",
+      "summary": "A sandboxed service action for other features to request the content of multiple files at once. The response is delivered via the private channel.",
+      "responseEnvelopeType": "filesystem.response.FILES_CONTENT",
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -71,7 +58,8 @@
     },
     {
       "action_name": "filesystem.SYSTEM_READ",
-      "summary": "[PRIVATE-CHANNEL] Requests to read a file from the originator's private sandbox. Response is delivered via private channel.",
+      "summary": "A sandboxed service action for other features to read a file from their private sandbox. The response is delivered via the private channel.",
+      "responseEnvelopeType": "filesystem.response.READ",
       "payload_schema": {
         "type": "object",
         "properties": { "subpath": { "type": "string" } },
@@ -80,7 +68,7 @@
     },
     {
       "action_name": "filesystem.SYSTEM_WRITE",
-      "summary": "[INTERNAL-SANDBOXED] Requests to write a file to the originator's private sandbox.",
+      "summary": "A sandboxed service action for other features to write a file to their private sandbox.",
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -97,7 +85,7 @@
     },
     {
       "action_name": "filesystem.SYSTEM_DELETE",
-      "summary": "[INTERNAL-SANDBOXED] Requests to delete a file from the originator's private sandbox.",
+      "summary": "A sandboxed service action for other features to delete a file from their private sandbox.",
       "payload_schema": {
         "type": "object",
         "properties": { "subpath": { "type": "string" } },
@@ -106,7 +94,7 @@
     },
     {
       "action_name": "filesystem.SYSTEM_DELETE_DIRECTORY",
-      "summary": "[INTERNAL-SANDBOXED] Requests to recursively delete a directory from the originator's private sandbox.",
+      "summary": "A sandboxed service action for other features to recursively delete a directory from their private sandbox.",
       "payload_schema": {
         "type": "object",
         "properties": { "subpath": { "type": "string" } },
@@ -115,12 +103,12 @@
     },
     {
       "action_name": "filesystem.OPEN_SYSTEM_FOLDER",
-      "summary": "[INTERNAL-SANDBOXED] Requests to open the originator's private sandbox in the OS file explorer.",
+      "summary": "A sandboxed service action for other features to open their private sandbox in the OS file explorer.",
       "payload_schema": null
     },
     {
       "action_name": "filesystem.OPEN_APP_SUBFOLDER",
-      "summary": "[INTERNAL] Requests to open a well-known subfolder within the app's secure data zone (e.g., 'logs').",
+      "summary": "A service action to open a well-known subfolder within the app's secure data zone (e.g., 'logs').",
       "payload_schema": {
         "type": "object",
         "properties": { "folder": { "type": "string" } },
@@ -210,6 +198,15 @@
   ],
   "publishes": [
     {
+      "action_name": "filesystem.internal.LOAD_CHILDREN",
+      "summary": "[INTERNAL] Triggers a side-effect to load a directory's children from disk.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"]
+      }
+    },
+    {
       "action_name": "filesystem.internal.DIRECTORY_LOADED",
       "summary": "[INTERNAL] Dispatched after a directory's children have been read from disk. Used to update the UI.",
       "payload_schema": {
@@ -269,21 +266,6 @@
       }
     },
     {
-      "type_name": "filesystem.response.LIST_RECURSIVE",
-      "summary": "The response envelope containing a recursive directory listing (as subpaths), delivered to the original requester.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "listing": {
-            "type": "array",
-            "items": { "$ref": "#/definitions/FileEntry" }
-          },
-          "subpath": { "type": ["string", "null"] }
-        },
-        "required": ["listing"]
-      }
-    },
-    {
       "type_name": "filesystem.response.READ",
       "summary": "The response envelope containing the content of a file, delivered to the original requester.",
       "payload_schema": {
@@ -301,6 +283,7 @@
       "payload_schema": {
         "type": "object",
         "properties": {
+          "correlationId": { "type": ["string", "null"] },
           "contents": {
             "type": "object",
             "description": "A map of relative file paths to their string content.",
