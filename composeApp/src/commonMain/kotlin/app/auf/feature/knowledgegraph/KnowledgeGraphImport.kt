@@ -14,38 +14,70 @@ import kotlinx.serialization.json.put
 private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
 
 /**
- * Analyzes a map of file contents to determine the appropriate import action for each.
+ * [REFACTOR] This is now the master, idempotent analysis function for the import workflow.
+ * It performs a two-pass analysis to generate a complete and consistent import plan,
+ * respecting any user overrides.
  *
- * This function is now hardened with explicit error logging for malformed JSON files.
+ * @param fileContents The raw content of the files to be imported.
+ * @param kgState The current state of the KnowledgeGraphFeature.
+ * @param userOverrides A map of user-selected actions that must be respected.
+ * @param isRecursive Whether the analysis should consider files in subdirectories.
+ * @param platformDependencies Platform dependencies for path manipulation.
+ * @return A JsonObject containing the `items` (for UI) and `selectedActions` (the final plan).
  */
 internal fun runImportAnalysis(
     fileContents: Map<String, String>,
     kgState: KnowledgeGraphState,
+    userOverrides: Map<String, ImportAction>,
     isRecursive: Boolean,
     platformDependencies: PlatformDependencies
 ): JsonObject {
+    // --- Pass 1: Initial Action Determination ---
     val sourceHolons = fileContents.mapNotNull { (path, content) ->
-        try {
-            path to json.decodeFromString<Holon>(content)
-        } catch (e: Exception) {
-            platformDependencies.log(LogLevel.WARN, "ImportAnalysis", "Malformed JSON in source file '$path', quarantining.", e)
-            null
-        }
+        try { path to json.decodeFromString<Holon>(content) } catch (e: Exception) { null }
     }.toMap()
 
-    val sourceParentMap = sourceHolons.values.flatMap { holon -> holon.header.subHolons.map { child -> child.id to holon.header.id } }.toMap()
+    val sourceParentMap = sourceHolons.values.flatMap { holon ->
+        holon.header.subHolons.map { child -> child.id to holon.header.id }
+    }.toMap()
 
-    val importItems = fileContents.keys.mapNotNull { path ->
+    val initialActions = fileContents.keys.associateWith { path ->
+        // Respect user override if it exists
+        if (userOverrides.containsKey(path)) return@associateWith userOverrides[path]!!
+
         val sourceHolon = sourceHolons[path]
         val holonId = platformDependencies.getFileName(path).removeSuffix(".json")
 
         when {
-            sourceHolon == null -> ImportItem(path, Quarantine("Malformed JSON"), null)
-            kgState.holons.containsKey(holonId) -> ImportItem(path, Update(holonId), kgState.holons[holonId]!!.header.filePath)
-            sourceHolon.header.type == "AI_Persona_Root" -> ImportItem(path, CreateRoot(), null)
-            sourceParentMap.containsKey(holonId) -> ImportItem(path, Integrate(sourceParentMap[holonId]!!), null)
-            else -> ImportItem(path, Quarantine("Unknown top-level holon."), null)
+            sourceHolon == null -> Quarantine("Malformed JSON")
+            kgState.holons.containsKey(holonId) -> Update(holonId)
+            sourceHolon.header.type == "AI_Persona_Root" -> CreateRoot()
+            sourceParentMap.containsKey(holonId) -> Integrate(sourceParentMap[holonId]!!)
+            else -> Quarantine("Unknown top-level holon.")
         }
+    }
+
+    // --- Pass 2: Consistency Check (Cascading Demotion) ---
+    val finalActions = initialActions.toMutableMap()
+    for ((path, action) in initialActions) {
+        if (action is Integrate) {
+            val parentHolonId = action.parentHolonId
+            // Find the source path of the parent holon within the import set
+            val parentSourcePath = sourceHolons.entries.find { it.value.header.id == parentHolonId }?.key
+            val parentAction = parentSourcePath?.let { finalActions[it] }
+
+            if (parentAction is Ignore || parentAction is Quarantine) {
+                finalActions[path] = Quarantine("Parent holon '${parentHolonId}' is not being imported.")
+            }
+        }
+    }
+
+    val importItems = fileContents.keys.map { path ->
+        ImportItem(
+            sourcePath = path,
+            initialAction = finalActions[path]!!, // The consistent action is now the initial for the UI
+            targetPath = (finalActions[path] as? Update)?.let { kgState.holons[it.targetHolonId]?.header?.filePath }
+        )
     }
 
     val filteredItems = if (isRecursive) {
@@ -55,7 +87,9 @@ internal fun runImportAnalysis(
     }
 
     return buildJsonObject {
-        put("items", Json.encodeToJsonElement(filteredItems));
+        put("items", Json.encodeToJsonElement(filteredItems))
+        // [NEW] Return the final, consistent plan as 'selectedActions'
+        put("selectedActions", Json.encodeToJsonElement(finalActions))
         put("contents", Json.encodeToJsonElement(fileContents))
     }
 }

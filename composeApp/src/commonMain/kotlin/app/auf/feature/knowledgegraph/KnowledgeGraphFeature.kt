@@ -31,7 +31,7 @@ class KnowledgeGraphFeature(
     @Serializable private data class SetHolonToRenamePayload(val holonId: String?)
     @Serializable private data class SetViewModePayload(val mode: KnowledgeGraphViewMode)
     @Serializable private data class SetTypeFiltersPayload(val types: Set<String>)
-    @Serializable private data class AnalysisCompletePayload(val items: List<ImportItem>, val contents: Map<String, String>)
+    @Serializable private data class AnalysisCompletePayload(val items: List<ImportItem>, val selectedActions: Map<String, ImportAction>, val contents: Map<String, String>)
     @Serializable private data class SetImportRecursivePayload(val recursive: Boolean)
     @Serializable private data class UpdateImportActionPayload(val sourcePath: String, val action: ImportAction)
     @Serializable private data class CreatePersonaPayload(val name: String)
@@ -96,7 +96,7 @@ class KnowledgeGraphFeature(
             }
             ActionNames.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE -> {
                 if (kgState.importFileContents.isNotEmpty()) {
-                    val analysisPayload = runImportAnalysis(kgState.importFileContents, kgState, kgState.isImportRecursive, platformDependencies)
+                    val analysisPayload = runImportAnalysis(kgState.importFileContents, kgState, kgState.importUserOverrides, kgState.isImportRecursive, platformDependencies)
                     store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
                 }
             }
@@ -285,6 +285,7 @@ class KnowledgeGraphFeature(
                     isLoading = true,
                     importItems = emptyList(),
                     importSelectedActions = emptyMap(),
+                    importUserOverrides = emptyMap(),
                     importFileContents = emptyMap()
                 )
             }
@@ -293,15 +294,22 @@ class KnowledgeGraphFeature(
                 return currentFeatureState.copy(
                     isLoading = false,
                     importItems = payload.items,
-                    importSelectedActions = payload.items.associate { it.sourcePath to it.initialAction },
+                    importSelectedActions = payload.selectedActions,
                     importFileContents = payload.contents,
                     pendingImportCorrelationId = null
                 )
             }
             ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<UpdateImportActionPayload>(it) } ?: return currentFeatureState
+                // [THE FIX] This reducer is now simple. It records the user's choice...
+                val newOverrides = currentFeatureState.importUserOverrides + (payload.sourcePath to payload.action)
+                // ...and then re-runs the master analysis function with the new override.
+                val analysisPayload = runImportAnalysis(currentFeatureState.importFileContents, currentFeatureState, newOverrides, currentFeatureState.isImportRecursive, platformDependencies)
+                val newAnalysis = json.decodeFromJsonElement<AnalysisCompletePayload>(analysisPayload)
                 return currentFeatureState.copy(
-                    importSelectedActions = currentFeatureState.importSelectedActions + (payload.sourcePath to payload.action)
+                    importUserOverrides = newOverrides,
+                    importItems = newAnalysis.items,
+                    importSelectedActions = newAnalysis.selectedActions
                 )
             }
             ActionNames.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE -> {
@@ -400,7 +408,7 @@ class KnowledgeGraphFeature(
                 try {
                     val fileData = json.decodeFromJsonElement<FilesContentPayload>(envelope.payload)
                     if (fileData.correlationId != null && fileData.correlationId == kgState?.pendingImportCorrelationId) {
-                        val analysisPayload = runImportAnalysis(fileData.contents, kgState, kgState.isImportRecursive, platformDependencies)
+                        val analysisPayload = runImportAnalysis(fileData.contents, kgState, kgState.importUserOverrides, kgState.isImportRecursive, platformDependencies)
                         store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
                     } else {
                         handleFilesContentForLoad(fileData, store)

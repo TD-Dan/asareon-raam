@@ -12,6 +12,7 @@ import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -185,5 +186,35 @@ class KnowledgeGraphFeatureT1ReducerTest {
         assertFalse(newState.personaRoots.containsKey("P1"))
         assertTrue(newState.personaRoots.containsKey("P2"))
         assertNull(newState.activePersonaIdForView, "Active view should be cleared if the deleted persona was active.")
+    }
+
+    // --- Reducer - Import Workflow ---
+    @Test
+    fun `UPDATE_IMPORT_ACTION should trigger cascading demotion of children`() {
+        val parentContent = """{ "header": { "id": "parent", "type": "T", "name": "P", "sub_holons": [{"id": "child", "type": "T", "summary": "S"}] }, "payload": {} }"""
+        val childContent = """{ "header": { "id": "child", "type": "T", "name": "C" }, "payload": {} }"""
+
+        val initialState = KnowledgeGraphState(
+            importFileContents = mapOf("parent.json" to parentContent, "child.json" to childContent),
+            importSelectedActions = mapOf(
+                "parent.json" to Integrate("root"),
+                "child.json" to Integrate("parent")
+            )
+        )
+
+        // User ignores the parent
+        val action = Action(ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION, buildJsonObject {
+            put("sourcePath", "parent.json")
+            put("action", Json.encodeToJsonElement(Ignore()))
+        })
+
+        val newState = feature.reducer(initialState, action) as KnowledgeGraphState
+
+        // Assert the user's override was respected
+        assertIs<Ignore>(newState.importUserOverrides["parent.json"])
+        // Assert the child was automatically quarantined
+        val childAction = newState.importSelectedActions["child.json"]
+        assertIs<Quarantine>(childAction)
+        assertEquals("Parent holon 'parent' is not being imported.", childAction.reason)
     }
 }

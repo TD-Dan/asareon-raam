@@ -10,7 +10,7 @@ private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenien
  * This is a pure function.
  *
  * It returns the original content if the child already exists in the sub_holons list
- * or if the parent content string is malformed JSON.
+ * or if the parent content is malformed JSON.
  *
  * @param parentContent The raw JSON string of the parent Holon.
  * @param childRef The SubHolonRef object of the child to add.

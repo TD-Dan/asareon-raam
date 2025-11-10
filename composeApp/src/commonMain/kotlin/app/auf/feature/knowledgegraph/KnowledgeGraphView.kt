@@ -549,7 +549,17 @@ private fun ImportItemRow(
 ) {
     val fileName = remember(item.sourcePath) { item.sourcePath.substringAfterLast(platform.pathSeparator) }
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(fileName, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(fileName, style = MaterialTheme.typography.bodyMedium)
+            // [THE FIX] Display the reason for the quarantine.
+            if (selectedAction is Quarantine) {
+                Text(
+                    text = "Reason: ${selectedAction.reason}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
         Spacer(modifier = Modifier.width(16.dp))
         ActionSelector(item.initialAction, selectedAction, onActionSelected, potentialParents)
     }
@@ -563,7 +573,7 @@ private fun ActionSelector(
     potentialParents: List<HolonHeader>
 ) {
     when (selectedAction) {
-        is AssignParent -> ParentSelector(selectedAction, onActionSelected, potentialParents)
+        is AssignParent -> ParentSelector(initialAction, selectedAction, onActionSelected, potentialParents)
         else -> GenericActionSelector(initialAction, selectedAction, onActionSelected)
     }
 }
@@ -571,6 +581,7 @@ private fun ActionSelector(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ParentSelector(
+    initialAction: ImportAction,
     selectedAction: AssignParent,
     onActionSelected: (ImportAction) -> Unit,
     potentialParents: List<HolonHeader>
@@ -599,9 +610,10 @@ private fun ParentSelector(
 
         IconButton(onClick = { actionMenuExpanded = true }) { Icon(Icons.Default.MoreVert, "Change Action Type") }
         DropdownMenu(expanded = actionMenuExpanded, onDismissRequest = { actionMenuExpanded = false }) {
-            ImportActionType.entries.filter { it != ImportActionType.CREATE_ROOT && it != ImportActionType.ASSIGN_PARENT }.forEach { type ->
-                DropdownMenuItem(text = { Text(type.toInstance(selectedAction).summary) }, onClick = {
-                    onActionSelected(type.toInstance(selectedAction))
+            // [THE FIX] A holon requiring a parent can also be quarantined or ignored.
+            listOf(ImportActionType.ASSIGN_PARENT, ImportActionType.QUARANTINE, ImportActionType.IGNORE).forEach { type ->
+                DropdownMenuItem(text = { Text(type.toInstance(initialAction).summary) }, onClick = {
+                    onActionSelected(type.toInstance(initialAction))
                     actionMenuExpanded = false
                 })
             }
@@ -617,7 +629,14 @@ private fun GenericActionSelector(
     onActionSelected: (ImportAction) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val availableActions = ImportActionType.entries.filter { it != ImportActionType.ASSIGN_PARENT }
+    // [THE FIX] The list of available actions is now context-dependent.
+    val availableActions = remember(initialAction) {
+        when (initialAction) {
+            is Quarantine -> listOf(ImportActionType.QUARANTINE, ImportActionType.IGNORE, ImportActionType.ASSIGN_PARENT)
+            is Integrate -> listOf(ImportActionType.INTEGRATE, ImportActionType.ASSIGN_PARENT, ImportActionType.QUARANTINE, ImportActionType.IGNORE)
+            else -> ImportActionType.entries.filter { it != ImportActionType.ASSIGN_PARENT }
+        }
+    }
 
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
         OutlinedTextField(

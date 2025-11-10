@@ -98,7 +98,10 @@ data class KnowledgeGraphState(
 
     // --- Import State ---
     val importItems: List<ImportItem> = emptyList(),
+    /** The final, calculated set of actions for the import plan after consistency checks. */
     val importSelectedActions: Map<String, ImportAction> = emptyMap(),
+    /** [NEW] A map of user-explicit choices that override the initial analysis. */
+    val importUserOverrides: Map<String, ImportAction> = emptyMap(),
     val importFileContents: Map<String, String> = emptyMap(),
     val isImportRecursive: Boolean = true,
     val showOnlyChangedImportItems: Boolean = false,
@@ -113,6 +116,5 @@ data class KnowledgeGraphState(
 
     // --- Loading & Error State ---
     val isLoading: Boolean = false,
-    /** [NEW] A feature-scoped, user-facing error message for unrecoverable states. */
     val fatalError: String? = null
 ) : FeatureState
