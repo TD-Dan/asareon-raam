@@ -71,7 +71,7 @@ internal class CryptoManager(
     fun decrypt(ciphertext: String): String {
         if (!isEncrypted(ciphertext)) {
             // Not our encrypted data, return as-is.
-            platformDependencies.log(LogLevel.WARN, "CryptoManager", "Decryption failed: cipher type not recognized.")
+            platformDependencies.log(LogLevel.WARN, "CryptoManager", "Decryption failed: not a valid cipher.")
             return ciphertext
         }
 

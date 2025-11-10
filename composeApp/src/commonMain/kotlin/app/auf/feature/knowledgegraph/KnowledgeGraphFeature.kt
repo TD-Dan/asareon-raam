@@ -96,7 +96,7 @@ class KnowledgeGraphFeature(
             }
             ActionNames.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE -> {
                 if (kgState.importFileContents.isNotEmpty()) {
-                    val analysisPayload = runImportAnalysis(kgState.importFileContents, kgState, kgState.isImportRecursive)
+                    val analysisPayload = runImportAnalysis(kgState.importFileContents, kgState, kgState.isImportRecursive, platformDependencies)
                     store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
                 }
             }
@@ -116,7 +116,7 @@ class KnowledgeGraphFeature(
                         put("subpaths", Json.encodeToJsonElement(parentHolonFilePaths))
                     }))
                 } else {
-                    executeImportWrites(emptyMap(), kgState, store)
+                    executeImportWrites(emptyMap(), kgState, store, platformDependencies)
                 }
             }
             ActionNames.KNOWLEDGEGRAPH_CREATE_PERSONA -> {
@@ -400,7 +400,7 @@ class KnowledgeGraphFeature(
                 try {
                     val fileData = json.decodeFromJsonElement<FilesContentPayload>(envelope.payload)
                     if (fileData.correlationId != null && fileData.correlationId == kgState?.pendingImportCorrelationId) {
-                        val analysisPayload = runImportAnalysis(fileData.contents, kgState, kgState.isImportRecursive)
+                        val analysisPayload = runImportAnalysis(fileData.contents, kgState, kgState.isImportRecursive, platformDependencies)
                         store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
                     } else {
                         handleFilesContentForLoad(fileData, store)
@@ -414,42 +414,6 @@ class KnowledgeGraphFeature(
                     }))
                 }
             }
-        }
-    }
-
-    private fun runImportAnalysis(
-        fileContents: Map<String, String>,
-        kgState: KnowledgeGraphState,
-        isRecursive: Boolean
-    ): JsonObject {
-        val sourceHolons = fileContents.mapNotNull { (path, content) ->
-            try { path to json.decodeFromString<Holon>(content) } catch (e: Exception) { null }
-        }.toMap()
-
-        val sourceParentMap = sourceHolons.values.flatMap { holon -> holon.header.subHolons.map { child -> child.id to holon.header.id } }.toMap()
-
-        val importItems = fileContents.keys.mapNotNull { path ->
-            val sourceHolon = sourceHolons[path]
-            val holonId = platformDependencies.getFileName(path).removeSuffix(".json")
-
-            when {
-                sourceHolon == null -> ImportItem(path, Quarantine("Malformed JSON"), null)
-                kgState.holons.containsKey(holonId) -> ImportItem(path, Update(holonId), kgState.holons[holonId]!!.header.filePath)
-                sourceHolon.header.type == "AI_Persona_Root" -> ImportItem(path, CreateRoot(), null)
-                sourceParentMap.containsKey(holonId) -> ImportItem(path, Integrate(sourceParentMap[holonId]!!), null)
-                else -> ImportItem(path, Quarantine("Unknown top-level holon."), null)
-            }
-        }
-
-        val filteredItems = if (isRecursive) {
-            importItems
-        } else {
-            importItems.filter { !it.sourcePath.contains(platformDependencies.pathSeparator) }
-        }
-
-        return buildJsonObject {
-            put("items", Json.encodeToJsonElement(filteredItems))
-            put("contents", Json.encodeToJsonElement(fileContents))
         }
     }
 
@@ -491,7 +455,9 @@ class KnowledgeGraphFeature(
 
 
         val enrichedHolons = mutableMapOf<String, Holon>()
-        val rootHolons = holonsById.values.filter { holon -> holonsById.values.none { parent -> parent.header.subHolons.any { it.id == holon.header.id } } }
+        val allSubHolonIds = holonsById.values.flatMap { it.header.subHolons }.map { it.id }.toSet()
+        val rootHolons = holonsById.values.filter { it.header.id !in allSubHolonIds }
+
 
         fun enrichRecursively(holon: Holon, parentId: String?, depth: Int) {
             val enrichedHeader = holon.header.copy(parentId = parentId, depth = depth)
@@ -509,83 +475,6 @@ class KnowledgeGraphFeature(
         store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED, buildJsonObject {
             put("holons", json.encodeToJsonElement(enrichedHolons))
         }))
-    }
-
-    private fun executeImportWrites(parentContents: Map<String, String>, kgState: KnowledgeGraphState, store: Store) {
-        val updatedParentContents = parentContents.toMutableMap()
-        val processedHolonPaths = mutableMapOf<String, String>()
-
-        var remainingActions = kgState.importSelectedActions.toMutableMap()
-        var processedInPass: Int
-        do {
-            processedInPass = 0
-            val actionsThisPass = remainingActions.toMap()
-            remainingActions.clear()
-
-            for ((sourcePath, action) in actionsThisPass) {
-                var wasProcessed = true
-                val sourceContent = kgState.importFileContents[sourcePath] ?: continue
-                val sourceHolon = try { json.decodeFromString<Holon>(sourceContent) } catch (e: Exception) { continue }
-                val holonId = sourceHolon.header.id
-
-                when (action) {
-                    is CreateRoot -> {
-                        val destSubpath = "$holonId/$holonId.json"
-                        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                            put("subpath", destSubpath); put("content", sourceContent)
-                        }))
-                        processedHolonPaths[holonId] = destSubpath
-                    }
-                    is Update -> {
-                        val destSubpath = kgState.holons[action.targetHolonId]?.header?.filePath ?: continue
-                        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                            put("subpath", destSubpath); put("content", sourceContent)
-                        }))
-                    }
-                    is Integrate, is AssignParent -> {
-                        val parentId = if (action is Integrate) action.parentHolonId else (action as AssignParent).assignedParentId
-                        if (parentId == null) { wasProcessed = false; remainingActions[sourcePath] = action; continue }
-
-                        val parentSubpath = kgState.holons[parentId]?.header?.filePath ?: processedHolonPaths[parentId]
-                        if (parentSubpath == null) { wasProcessed = false; remainingActions[sourcePath] = action; continue }
-
-                        val parentDir = platformDependencies.getParentDirectory(parentSubpath)
-                        if (parentDir == null) { wasProcessed = false; remainingActions[sourcePath] = action; continue }
-
-                        val destSubpath = "$parentDir/$holonId/$holonId.json"
-                        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                            put("subpath", destSubpath); put("content", sourceContent)
-                        }))
-                        processedHolonPaths[holonId] = destSubpath
-
-                        val parentContentStr = updatedParentContents[parentSubpath] ?: parentContents[parentSubpath]
-                        if (parentContentStr != null) {
-                            val parentFileHolon = json.decodeFromString<Holon>(parentContentStr)
-                            val newSubRef = SubHolonRef(holonId, sourceHolon.header.type, sourceHolon.header.summary ?: "")
-                            if (parentFileHolon.header.subHolons.none { it.id == holonId }) {
-                                val updatedHeader = parentFileHolon.header.copy(subHolons = parentFileHolon.header.subHolons + newSubRef)
-                                val updatedParentHolon = parentFileHolon.copy(header = updatedHeader)
-                                updatedParentContents[parentSubpath] = json.encodeToString(Holon.serializer(), updatedParentHolon)
-                            }
-                        }
-                    }
-                    is Quarantine -> { /* TODO: needs to be moved to a special quarantine folder for further editing. */ }
-                    is Ignore -> { /* No-op */ }
-                }
-                if (wasProcessed) processedInPass++
-            }
-        } while (processedInPass > 0 && remainingActions.isNotEmpty())
-
-        updatedParentContents.forEach { (subpath, content) ->
-            if (parentContents[subpath] != content) {
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                    put("subpath", subpath); put("content", content)
-                }))
-            }
-        }
-        store.dispatch("ui.kgView", Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Import complete. Reloading Knowledge Graph...") }))
-        store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) }))
-        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
     }
 
     override val composableProvider: Feature.ComposableProvider = object : Feature.ComposableProvider {
