@@ -448,7 +448,7 @@ class KnowledgeGraphFeature(
         }
 
         return buildJsonObject {
-            put("items", Json.encodeToJsonElement(filteredItems));
+            put("items", Json.encodeToJsonElement(filteredItems))
             put("contents", Json.encodeToJsonElement(fileContents))
         }
     }
@@ -466,7 +466,10 @@ class KnowledgeGraphFeature(
                     hasErrors = true
                     continue
                 }
-                holonsById[holon.header.id] = holon.copy(header = holon.header.copy(filePath = path), content = rawContent)
+                holonsById[holon.header.id] = holon.copy(
+                    header = holon.header.copy(filePath = path),
+                    content = rawContent
+                )
             } catch (e: Exception) {
                 platformDependencies.log(LogLevel.ERROR, name, "Failed to parse JSON for holon at '$path'", e)
                 hasErrors = true
@@ -492,7 +495,7 @@ class KnowledgeGraphFeature(
 
         fun enrichRecursively(holon: Holon, parentId: String?, depth: Int) {
             val enrichedHeader = holon.header.copy(parentId = parentId, depth = depth)
-            val enrichedHolon = holon.copy(header = enrichedHeader)
+            val enrichedHolon = holon.copy(header = enrichedHeader, content = holon.content)
             enrichedHolons[holon.header.id] = enrichedHolon
             enrichedHolon.header.subHolons.forEach { subRef ->
                 holonsById[subRef.id]?.let { childHolon ->
