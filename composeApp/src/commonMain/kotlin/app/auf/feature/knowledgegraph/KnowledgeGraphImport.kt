@@ -63,9 +63,12 @@ internal fun runImportAnalysis(
 /**
  * Executes the multi-pass, dependency-aware import plan.
  *
- * This function is now hardened with:
+ * [REFACTOR] This function is now hardened with:
  * 1. Correct multi-pass logic that re-queues unprocessed holons.
  * 2. Explicit error logging for any file that fails to parse during execution.
+ * 3. A robust mechanism for finding parent content that correctly handles parents
+ *    that are new within the same import batch.
+ * 4. Logic is simplified by delegating holon modification to `addSubHolonRefToContent`.
  */
 internal fun executeImportWrites(
     parentContents: Map<String, String>,
@@ -74,7 +77,11 @@ internal fun executeImportWrites(
     platformDependencies: PlatformDependencies
 ) {
     val updatedParentContents = parentContents.toMutableMap()
-    val processedHolonPaths = mutableMapOf<String, String>()
+    val processedHolonPaths = mutableMapOf<String, String>() // Maps holonId -> destination subpath
+    val importHolonIdToSourcePath = kgState.importFileContents.mapNotNull { (path, content) ->
+        try { json.decodeFromString<Holon>(content).header.id to path } catch (e: Exception) { null }
+    }.toMap()
+
 
     val remainingActions = kgState.importSelectedActions.toMutableMap()
     var processedInPass: Int
@@ -111,23 +118,17 @@ internal fun executeImportWrites(
                 is Integrate, is AssignParent -> {
                     val parentId = if (action is Integrate) action.parentHolonId else (action as AssignParent).assignedParentId
                     if (parentId == null) {
-                        wasProcessed = false
-                        remainingActions[sourcePath] = action
-                        continue
+                        wasProcessed = false; remainingActions[sourcePath] = action; continue
                     }
 
                     val parentSubpath = kgState.holons[parentId]?.header?.filePath ?: processedHolonPaths[parentId]
                     if (parentSubpath == null) {
-                        wasProcessed = false
-                        remainingActions[sourcePath] = action
-                        continue
+                        wasProcessed = false; remainingActions[sourcePath] = action; continue
                     }
 
                     val parentDir = platformDependencies.getParentDirectory(parentSubpath)
                     if (parentDir == null) {
-                        wasProcessed = false
-                        remainingActions[sourcePath] = action
-                        continue
+                        wasProcessed = false; remainingActions[sourcePath] = action; continue
                     }
 
                     val destSubpath = "$parentDir/$holonId/$holonId.json"
@@ -136,18 +137,20 @@ internal fun executeImportWrites(
                     }))
                     processedHolonPaths[holonId] = destSubpath
 
-                    val parentContentStr = updatedParentContents[parentSubpath] ?: parentContents[parentSubpath]
+                    // [THE FIX] Robustly find parent content from any valid source.
+                    val parentContentStr = updatedParentContents[parentSubpath]
+                        ?: parentContents[parentSubpath]
+                        ?: kgState.importFileContents[importHolonIdToSourcePath[parentId]]
+
                     if (parentContentStr != null) {
-                        val parentFileHolon = json.decodeFromString<Holon>(parentContentStr)
                         val newSubRef = SubHolonRef(holonId, sourceHolon.header.type, sourceHolon.header.summary ?: "")
-                        if (parentFileHolon.header.subHolons.none { it.id == holonId }) {
-                            val updatedHeader = parentFileHolon.header.copy(subHolons = parentFileHolon.header.subHolons + newSubRef)
-                            val updatedParentHolon = parentFileHolon.copy(header = updatedHeader)
-                            updatedParentContents[parentSubpath] = json.encodeToString(Holon.serializer(), updatedParentHolon)
+                        val updatedContent = addSubHolonRefToContent(parentContentStr, newSubRef)
+                        if (updatedContent != parentContentStr) {
+                            updatedParentContents[parentSubpath] = updatedContent
                         }
                     }
                 }
-                is Quarantine -> { /* TODO: needs to be moved to a special quarantine folder for further editing. */ }
+                is Quarantine -> { /* No-op */ }
                 is Ignore -> { /* No-op */ }
             }
             if (wasProcessed) processedInPass++ else remainingActions[sourcePath] = action

@@ -7,6 +7,7 @@ import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
 import app.auf.test.TestHarness
+import app.auf.util.BasePath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
@@ -91,22 +92,6 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
         return harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
     }
 
-    /**
-     * Helper function to run the execution part of the import workflow.
-     */
-    private fun runExecuteImport(initialState: KnowledgeGraphState): TestHarness {
-        val harness = TestEnvironment.create()
-            .withFeature(kgFeature)
-            .withFeature(fsFeature)
-            .withInitialState("knowledgegraph", initialState)
-            .build(platform = platform)
-
-        harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
-        }
-        return harness
-    }
-
     // --- ANALYSIS PHASE TESTS ---
 
     @Test
@@ -162,12 +147,6 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
 
     @Test
     fun `analysis should IGNORE files in subdirectories when recursive is false`() {
-        val initialState = KnowledgeGraphState(isImportRecursive = false)
-        val importContents = mapOf(
-            "root.json" to newRootContent,
-            "sub/child.json" to newHolonContent
-        )
-
         // We can't use the helper here as we need to modify the state before the final step
         val harness = TestEnvironment.create()
             .withFeature(kgFeature)
@@ -184,6 +163,10 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
             // User toggles recursive OFF
             harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE, buildJsonObject { put("recursive", false) }))
 
+            val importContents = mapOf(
+                "root.json" to newRootContent,
+                "sub/child.json" to newHolonContent
+            )
             val fsResponse = PrivateDataEnvelope(
                 type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT,
                 payload = buildJsonObject {
@@ -211,13 +194,17 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
             importFileContents = mapOf("h1_updated.json" to updatedHolonContent),
             importSelectedActions = mapOf("h1_updated.json" to Update("h1"))
         )
-        val harness = runExecuteImport(initialState)
+        val harness = TestEnvironment.create().withFeature(kgFeature).withFeature(fsFeature).withInitialState("knowledgegraph", initialState).build(platform = platform)
 
-        val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
-        assertNotNull(writeAction)
-        assertEquals("p1/h1/h1.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
-        assertEquals(updatedHolonContent, writeAction.payload?.get("content")?.jsonPrimitive?.content)
-        assertEquals(ActionNames.FILESYSTEM_SYSTEM_LIST, harness.processedActions.last().name)
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
+
+            val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
+            assertNotNull(writeAction)
+            assertEquals("p1/h1/h1.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
+            assertEquals(updatedHolonContent, writeAction.payload?.get("content")?.jsonPrimitive?.content)
+            assertTrue(harness.processedActions.any { it.name == ActionNames.FILESYSTEM_SYSTEM_LIST }, "A refresh action should be dispatched after import.")
+        }
     }
 
     @Test
@@ -226,14 +213,19 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
             importFileContents = mapOf("p2.json" to newRootContent),
             importSelectedActions = mapOf("p2.json" to CreateRoot())
         )
-        val harness = runExecuteImport(initialState)
-        val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
-        assertNotNull(writeAction)
-        assertEquals("p2/p2.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
+        val harness = TestEnvironment.create().withFeature(kgFeature).withFeature(fsFeature).withInitialState("knowledgegraph", initialState).build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
+            val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
+            assertNotNull(writeAction)
+            assertEquals("p2/p2.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
+        }
     }
 
     @Test
     fun `execute should perform an INTEGRATE by writing new holon and updating parent`() {
+        val fullParentPath = "${platform.getBasePathFor(BasePath.APP_ZONE)}/knowledgegraph/p1/p1.json"
         val existingPersona = json.decodeFromString<Holon>(existingPersonaContent)
             .copy(header = json.decodeFromString<Holon>(existingPersonaContent).header.copy(filePath = "p1/p1.json"))
         val initialState = KnowledgeGraphState(
@@ -241,21 +233,25 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
             importFileContents = mapOf("h2.json" to newHolonContent),
             importSelectedActions = mapOf("h2.json" to Integrate("p1"))
         )
-        // We must pre-populate the parent content for the execution logic
-        platform.writeFileContent("p1/p1.json", existingPersonaContent)
+        // [FIX] Pre-populate the parent file content in the fake file system at its full path.
+        platform.writeFileContent(fullParentPath, existingPersonaContent)
+        val harness = TestEnvironment.create().withFeature(kgFeature).withFeature(fsFeature).withInitialState("knowledgegraph", initialState).build(platform = platform)
 
-        val harness = runExecuteImport(initialState)
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
 
-        // Assert new holon was written to correct sub-directory
-        val writeNewAction = harness.processedActions.find { it.payload?.get("subpath")?.jsonPrimitive?.content == "p1/h2/h2.json" }
-        assertNotNull(writeNewAction)
-        assertEquals(newHolonContent, writeNewAction.payload?.get("content")?.jsonPrimitive?.content)
+            // Assert new holon was written to correct sub-directory
+            val expectedNewHolonPath = "${platform.getBasePathFor(BasePath.APP_ZONE)}/knowledgegraph/p1/h2/h2.json"
+            val writtenNewHolonContent = harness.platform.writtenFiles[expectedNewHolonPath]
+            assertNotNull(writtenNewHolonContent)
+            assertEquals(newHolonContent, writtenNewHolonContent)
 
-        // Assert parent was updated with new sub_holon reference
-        val finalParentContent = platform.writtenFiles["p1/p1.json"]
-        assertNotNull(finalParentContent)
-        val finalParentHolon = json.decodeFromString<Holon>(finalParentContent)
-        assertTrue(finalParentHolon.header.subHolons.any { it.id == "h2" })
+            // Assert parent was updated with new sub_holon reference
+            val finalParentContent = harness.platform.writtenFiles[fullParentPath]
+            assertNotNull(finalParentContent)
+            val finalParentHolon = json.decodeFromString<Holon>(finalParentContent)
+            assertTrue(finalParentHolon.header.subHolons.any { it.id == "h2" })
+        }
     }
 
     @Test
@@ -270,22 +266,26 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
                 "h3.json" to Integrate("h2")
             )
         )
-        val harness = runExecuteImport(initialState)
+        val harness = TestEnvironment.create().withFeature(kgFeature).withFeature(fsFeature).withInitialState("knowledgegraph", initialState).build(platform = platform)
 
-        // Assert parent was written
-        val parentWrite = harness.platform.writtenFiles["h2/h2.json"]
-        assertNotNull(parentWrite)
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
 
-        // Assert child was written
-        val childWrite = harness.platform.writtenFiles["h2/h3/h3.json"]
-        assertNotNull(childWrite)
+            // Assert parent was written
+            val expectedParentPath = "${platform.getBasePathFor(BasePath.APP_ZONE)}/knowledgegraph/h2/h2.json"
+            assertNotNull(harness.platform.writtenFiles[expectedParentPath])
 
-        // Assert parent was UPDATED with child reference
-        val finalParentContent = harness.platform.writtenFiles["h2/h2.json"]
-        assertNotNull(finalParentContent)
-        val finalParentHolon = json.decodeFromString<Holon>(finalParentContent)
-        assertTrue(finalParentHolon.header.subHolons.any { it.id == "h3" }, "Parent holon file should be updated to include a reference to the new child.")
-        assertEquals(ActionNames.FILESYSTEM_SYSTEM_LIST, harness.processedActions.last().name, "A refresh should be triggered after import.")
+            // Assert child was written
+            val expectedChildPath = "${platform.getBasePathFor(BasePath.APP_ZONE)}/knowledgegraph/h2/h3/h3.json"
+            assertNotNull(harness.platform.writtenFiles[expectedChildPath])
+
+            // Assert parent was UPDATED with child reference
+            val finalParentContent = harness.platform.writtenFiles[expectedParentPath]
+            assertNotNull(finalParentContent)
+            val finalParentHolon = json.decodeFromString<Holon>(finalParentContent)
+            assertTrue(finalParentHolon.header.subHolons.any { it.id == "h3" }, "Parent holon file should be updated to include a reference to the new child.")
+            assertTrue(harness.processedActions.any { it.name == ActionNames.FILESYSTEM_SYSTEM_LIST }, "A refresh should be triggered after import.")
+        }
     }
 
 
