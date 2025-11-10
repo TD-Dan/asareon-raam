@@ -114,7 +114,7 @@ class FileSystemFeatureT2CoreTest {
         val originator = "settings"
         val subpath = "test.json"
         val sandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator/$subpath"
-        val encryptedContent = CryptoManager().encrypt(originalContent)
+        val encryptedContent = CryptoManager(platform).encrypt(originalContent)
         platform.writeFileContent(sandboxPath, encryptedContent)
         val action = Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
             put("subpath", subpath)

@@ -196,21 +196,34 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
     // --- Durable & Real-time Logging Implementation ---
     @Synchronized
     actual open fun log(level: LogLevel, tag: String, message: String, throwable: Throwable?) {
-        val fullMessage = if (throwable != null) {
-            "$message\n${throwable.stackTraceToString()}"
-        } else {
-            message
+        val fullMessage : String = when (level) {
+            // For ERROR and FATAL include full stack trace, and warn if exception details are provided
+            LogLevel.ERROR, LogLevel.FATAL -> {
+                if (throwable != null) {
+                    "$message\n${throwable.stackTraceToString()}"
+                } else {
+                    "$message\n!!! LOG CALL IS MISSING THE EXCEPTION DETAILS, PLEASE INCLUDE THE 'e' in the log !!!"
+                }
+            }
+            // For WARN include only the message if present
+            LogLevel.WARN -> {
+                if (throwable != null) {
+                    "$message\n(e: ${throwable.message})"
+                }
+                else {
+                    message
+                }
+            }
+            else -> message
         }
+
         val logLine = "[${displayFormatter.format(Date())}] [${level.name}] [$tag] $fullMessage"
 
-        when (level) {
-            LogLevel.ERROR, LogLevel.FATAL -> {
-                System.err.println(logLine)
-                if (throwable == null)
-                    System.err.println("!!! LOG CALL IS MISSING THE EXCEPTION DETAILS, PLEASE INCLUDE THE 'e' in the log !!!")
-            }
-            else -> println(logLine)
+        if (level >= LogLevel.ERROR) {
+            System.err.println(logLine)
         }
+        else println(logLine)
+
         try {
             File(logFilePath).appendText(logLine + "\n")
         } catch (e: Exception) {

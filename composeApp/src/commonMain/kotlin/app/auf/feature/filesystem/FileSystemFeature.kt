@@ -21,7 +21,7 @@ class FileSystemFeature(
     override val name: String = "filesystem"
     override val composableProvider: Feature.ComposableProvider = FileSystemComposableProvider()
 
-    private val cryptoManager = CryptoManager()
+    private val cryptoManager = CryptoManager(platformDependencies)
 
     @Serializable private data class PathPayload(val path: String)
     @Serializable private data class ToggleItemPayload(val path: String, val recursive: Boolean = false)
@@ -160,7 +160,7 @@ class FileSystemFeature(
                                 val relativePath = fileEntry.path.removePrefix(rootPathWithSeparator)
                                 contentMap[relativePath] = fileContent
                             } catch (e: Exception) {
-                                platformDependencies.log(LogLevel.WARN, name, "Scoped read failed for one file '${fileEntry.path}': ${e.message}")
+                                platformDependencies.log(LogLevel.WARN, name, "Scoped read failed for one file '${fileEntry.path}': ${e.message}", e)
                             }
                         }
 
@@ -174,7 +174,7 @@ class FileSystemFeature(
 
                     } catch (e: Exception) {
                         val errorMsg = "Scoped read failed for '$selectedPath': ${e.message}"
-                        platformDependencies.log(LogLevel.ERROR, name, errorMsg)
+                        platformDependencies.log(LogLevel.ERROR, name, errorMsg, e)
                         store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
                     }
                 } ?: platformDependencies.log(LogLevel.INFO, name, "User cancelled one-time access grant for '$clientOriginator'.")
@@ -204,7 +204,8 @@ class FileSystemFeature(
                         put("parentPath", payload.path); put("children", Json.encodeToJsonElement(children))
                     }))
                 } catch (e: Exception) {
-                    store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Failed to read directory ${payload.path}: ${e.message}") }))
+                    platformDependencies.log(LogLevel.ERROR, name, "Failed to read directory ${payload.path}", e)
+                    store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Failed to read directory: ${e.message}") }))
                 }
             }
             ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED -> {
@@ -231,7 +232,7 @@ class FileSystemFeature(
                         val relativePath = item.path.removePrefix(rootPath).removePrefix(platformDependencies.pathSeparator.toString())
                         stringBuilder.append("```${relativePath.substringAfterLast('.', "")} \"$relativePath\"\n$content\n```\n\n")
                     } catch (e: Exception) {
-                        platformDependencies.log(LogLevel.WARN, name, "Could not read file for clipboard copy: ${item.path}: ${e.message}")
+                        platformDependencies.log(LogLevel.WARN, name, "Could not read file for clipboard copy: ${item.path}: ${e.message}", e)
                         errorCount++
                     }
                 }
@@ -267,7 +268,7 @@ class FileSystemFeature(
                     val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, responsePayload)
                     store.deliverPrivateData(this.name, originator, envelope)
                 } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, "filesystem","Filesystem listing failed: ${e.message}")
+                    platformDependencies.log(LogLevel.ERROR, "filesystem","Filesystem listing failed: ${e.message}", e)
                     val responsePayload = buildJsonObject {
                         put("listing", Json.encodeToJsonElement(emptyList<FileEntry>()))
                         put("subpath", payload.subpath)
@@ -285,10 +286,13 @@ class FileSystemFeature(
                     try {
                         contentMap[subpath] = platformDependencies.readFileContent(fullPath)
                     } catch (e: Exception) {
-                        platformDependencies.log(LogLevel.WARN, "filesystem", "Bulk read failed for one file '$subpath': ${e.message}")
+                        platformDependencies.log(LogLevel.WARN, "filesystem", "Bulk read failed for one file '$subpath': ${e.message}", e)
                     }
                 }
-                val responsePayload = buildJsonObject { put("contents", Json.encodeToJsonElement(contentMap)) }
+                val responsePayload = buildJsonObject {
+                    put("correlationId", JsonNull)
+                    put("contents", Json.encodeToJsonElement(contentMap))
+                }
                 val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, responsePayload)
                 store.deliverPrivateData(this.name, originator, envelope)
             }
@@ -303,7 +307,7 @@ class FileSystemFeature(
                     val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, responsePayload)
                     store.deliverPrivateData(this.name, originator, envelope)
                 } catch (e: Exception) {
-                    // TODO: THIS IS A VIOLATION! NO SILENT ERRORS ALLOWED! INSTEAD OF RETURNING A VALID ERROR STATE THIS RETURNS NULL ON ERROR! NEEDS TO BE FIXED!
+                    platformDependencies.log(LogLevel.ERROR, name, "System read failed for '${payload.subpath}'", e)
                     val responsePayload = buildJsonObject {
                         put("subpath", payload.subpath)
                         put("content", JsonNull)
@@ -318,6 +322,7 @@ class FileSystemFeature(
                 try {
                     platformDependencies.writeFileContent(fullPath, if (payload.encrypt) cryptoManager.encrypt(payload.content) else payload.content)
                 } catch (e: Exception) {
+                    platformDependencies.log(LogLevel.ERROR, name, "Error writing system file", e)
                     store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Error writing system file: ${e.message}") }))
                 }
             }

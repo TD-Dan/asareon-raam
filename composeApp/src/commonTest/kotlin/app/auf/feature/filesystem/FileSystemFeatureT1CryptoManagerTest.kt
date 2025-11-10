@@ -1,5 +1,6 @@
 package app.auf.feature.filesystem
 
+import app.auf.fakes.FakePlatformDependencies
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -11,7 +12,7 @@ import kotlin.test.assertNotEquals
  */
 class FileSystemFeatureT1CryptoManagerTest {
 
-    private val cryptoManager = CryptoManager()
+    private val cryptoManager = CryptoManager(FakePlatformDependencies("v2-test"))
 
     @Test
     fun `encrypt then decrypt returns original plaintext`() {

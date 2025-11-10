@@ -1,5 +1,7 @@
 package app.auf.feature.filesystem
 
+import app.auf.util.LogLevel
+import app.auf.util.PlatformDependencies
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -17,7 +19,9 @@ import kotlin.io.encoding.ExperimentalEncodingApi
  * All encrypted output is prefixed with a marker to allow for transparent decryption.
  */
 @OptIn(ExperimentalEncodingApi::class)
-internal class CryptoManager {
+internal class CryptoManager(
+    private val platformDependencies: PlatformDependencies
+) {
 
     // A hardcoded key defined as raw bytes to be less conspicuous in the compiled binary.
     // This matches the user's request for a key that "looks like" executable data.
@@ -67,6 +71,7 @@ internal class CryptoManager {
     fun decrypt(ciphertext: String): String {
         if (!isEncrypted(ciphertext)) {
             // Not our encrypted data, return as-is.
+            platformDependencies.log(LogLevel.WARN, "CryptoManager", "Decryption failed: cipher type not recognized.")
             return ciphertext
         }
 
@@ -80,7 +85,8 @@ internal class CryptoManager {
             }
             decryptedBytes.decodeToString()
         } catch (e: Exception) {
-            // If any error occurs (e.g., invalid Base64), return the original text to avoid data loss.
+            // If any error occurs (e.g., invalid Base64), log the failure and return the original text to avoid data loss.
+            platformDependencies.log(LogLevel.ERROR, "CryptoManager", "Decryption failed for ciphertext, returning original.", e)
             ciphertext
         }
     }
