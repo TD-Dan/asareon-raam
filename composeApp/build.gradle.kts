@@ -1,9 +1,12 @@
+@file:OptIn(ExperimentalComposeLibrary::class)
+
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig
 import kotlinx.serialization.json.*
+import org.jetbrains.compose.ExperimentalComposeLibrary
 
 buildscript {
     repositories {
@@ -205,6 +208,7 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
+            implementation(compose.uiTest)
         }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)

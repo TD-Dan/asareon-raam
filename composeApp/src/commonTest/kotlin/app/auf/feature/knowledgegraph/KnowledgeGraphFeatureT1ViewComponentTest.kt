@@ -1,10 +1,8 @@
 package app.auf.feature.knowledgegraph
 
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTextInput
 import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.generated.ActionNames
@@ -12,7 +10,6 @@ import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
 import app.auf.ui.AppTheme
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import org.junit.Before
@@ -20,7 +17,6 @@ import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 
 /**
  * Tier 1 Component Test for KnowledgeGraphView's various components.
@@ -60,19 +56,24 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
     // --- Inspector View Tests ---
     @Test
     fun `clicking 'Show Summaries' switch dispatches TOGGLE_SHOW_SUMMARIES`() {
-        setViewState(KnowledgeGraphState(activePersonaIdForView = "p1"))
+        val p1 = Holon(HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1"), buildJsonObject {})
+        setViewState(KnowledgeGraphState(
+            holons = mapOf("p1" to p1),
+            activePersonaIdForView = "p1"
+        ))
         fakeStore.dispatchedActions.clear()
 
-        composeTestRule.onNodeWithText("Show Summaries").performClick()
+        // [FIX] Use the correct SemanticsMatcher 'isToggleable()' to find the Switch.
+        composeTestRule.onNode(isToggleable()).performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_TOGGLE_SHOW_SUMMARIES }
-        assertNotNull(action)
+        assertNotNull(action, "Expected TOGGLE_SHOW_SUMMARIES action to be dispatched.")
     }
 
     @Test
     fun `clicking a filter chip dispatches SET_TYPE_FILTERS`() {
-        val p1 = Holon(HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1"), buildJsonObject {})
-        val h1 = Holon(HolonHeader(id = "h1", type = "Type_A", name = "H1"), buildJsonObject {})
+        val h1 = Holon(HolonHeader(id = "h1", type = "Type_A", name = "H1", summary = "Type_A"), buildJsonObject {})
+        val p1 = Holon(HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1", subHolons = listOf(SubHolonRef("h1", "Type_A", ""))), buildJsonObject {})
         setViewState(KnowledgeGraphState(
             holons = mapOf("p1" to p1, "h1" to h1),
             personaRoots = mapOf("P1" to "p1"),
@@ -80,11 +81,42 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         ))
         fakeStore.dispatchedActions.clear()
 
-        composeTestRule.onNodeWithText("Type_A").performClick()
+        // [FIX] Use a compound matcher with 'isSelectable()' to uniquely identify the FilterChip.
+        composeTestRule.onNode(hasText("Type_A") and isSelectable()).performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_SET_TYPE_FILTERS }
         assertNotNull(action)
         assertEquals("""{"types":["Type_A"]}""", action.payload.toString())
+    }
+
+    @Test
+    fun `selecting a holon displays its content`() {
+        // Arrange: Create a valid state with a child holon that has specific content.
+        val h1Content = "This is the unique holon content."
+        val h1 = Holon(HolonHeader(id = "h1", type = "Type_A", name = "Holon One"), buildJsonObject {}, content = h1Content)
+        val p1 = Holon(HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1", subHolons = listOf(SubHolonRef("h1", "Type_A", ""))), buildJsonObject {})
+        val initialState = KnowledgeGraphState(
+            holons = mapOf("p1" to p1, "h1" to h1),
+            personaRoots = mapOf("P1" to "p1"),
+            activePersonaIdForView = "p1"
+        )
+        setViewState(initialState)
+        fakeStore.dispatchedActions.clear()
+
+        // Act 1: Click the holon in the tree view.
+        composeTestRule.onNodeWithText("Holon One").performClick()
+
+        // Assert 1: The correct action was dispatched.
+        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON }
+        assertNotNull(action)
+        assertEquals("h1", action.payload?.get("holonId")?.toString()?.trim('"'))
+
+        // Act 2: Manually update the state to simulate the reducer's effect and trigger a re-render.
+        val stateAfterClick = initialState.copy(activeHolonIdForView = "h1")
+        setViewState(stateAfterClick)
+
+        // Assert 2: The unique content of the selected holon is now visible.
+        composeTestRule.onNodeWithText(h1Content).assertExists()
     }
 
     @Test
