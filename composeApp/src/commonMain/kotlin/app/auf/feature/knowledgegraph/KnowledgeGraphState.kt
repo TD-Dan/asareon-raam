@@ -12,7 +12,8 @@ data class Holon(
     val header: HolonHeader,
     val payload: JsonElement,
     val execute: JsonElement? = null,
-    @Transient val content: String = ""
+    // [FIX] Removed the @Transient annotation. The content is essential data.
+    val content: String = ""
 )
 
 @Serializable
