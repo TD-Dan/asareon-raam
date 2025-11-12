@@ -48,6 +48,12 @@ fun normalizeHolonId(id: String): String {
         throw IllegalArgumentException("Invalid holon ID: name part becomes empty after sanitization. Original: '$id'")
     }
 
+    // 5. Content Validation: The name part must be at least 3 alphanumerics.
+    val containsThreeAlphanumerics = Regex("^[a-z0-9].*[a-z0-9].*[a-z0-9].*")
+    if (! normalizedName.matches(containsThreeAlphanumerics)) {
+        throw IllegalArgumentException("Invalid holon ID: name should have at least 3 letters. Original: '$id'")
+    }
+
     return "$normalizedName-${timestampPart.uppercase()}"
 }
 

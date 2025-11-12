@@ -103,8 +103,8 @@ class KnowledgeGraphFeature(
                 val name = payload?.get("name")?.jsonPrimitive?.content ?: return
                 val timestamp = platformDependencies.getSystemTimeMillis()
                 val isoTimestamp = platformDependencies.formatIsoTimestamp(timestamp)
-                val fileSafeTimestamp = isoTimestamp.replace(":", "").replace("-", "").replace("Z", "").replace("T", "T")
-                val newId = "${name.lowercase().replace(" ", "-")}-${fileSafeTimestamp}"
+                val fileSafeTimestamp = isoTimestamp.replace(":", "").replace("-", "")
+                val newId = normalizeHolonId("${name.lowercase().replace(" ", "-")}-${fileSafeTimestamp}")
 
                 val newHolonHeader = HolonHeader(
                     id = newId, type = "AI_Persona_Root", name = name,
