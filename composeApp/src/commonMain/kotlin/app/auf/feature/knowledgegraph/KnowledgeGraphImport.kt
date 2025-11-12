@@ -14,16 +14,8 @@ import kotlinx.serialization.json.put
 private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
 
 /**
- * [REFACTOR] This is now the master, idempotent analysis function for the import workflow.
- * It performs a two-pass analysis to generate a complete and consistent import plan,
- * respecting any user overrides.
- *
- * @param fileContents The raw content of the files to be imported.
- * @param kgState The current state of the KnowledgeGraphFeature.
- * @param userOverrides A map of user-selected actions that must be respected.
- * @param isRecursive Whether the analysis should consider files in subdirectories.
- * @param platformDependencies Platform dependencies for path manipulation.
- * @return A JsonObject containing the `items` (for UI) and `selectedActions` (the final plan).
+ * The master, idempotent analysis function for the import workflow.
+ * It performs a two-pass analysis to generate a complete and consistent import plan.
  */
 internal fun runImportAnalysis(
     fileContents: Map<String, String>,
@@ -62,7 +54,6 @@ internal fun runImportAnalysis(
     for ((path, action) in initialActions) {
         if (action is Integrate) {
             val parentHolonId = action.parentHolonId
-            // Find the source path of the parent holon within the import set
             val parentSourcePath = sourceHolons.entries.find { it.value.header.id == parentHolonId }?.key
             val parentAction = parentSourcePath?.let { finalActions[it] }
 
@@ -75,7 +66,7 @@ internal fun runImportAnalysis(
     val importItems = fileContents.keys.map { path ->
         ImportItem(
             sourcePath = path,
-            initialAction = finalActions[path]!!, // The consistent action is now the initial for the UI
+            initialAction = finalActions[path]!!,
             targetPath = (finalActions[path] as? Update)?.let { kgState.holons[it.targetHolonId]?.header?.filePath }
         )
     }
@@ -88,116 +79,119 @@ internal fun runImportAnalysis(
 
     return buildJsonObject {
         put("items", Json.encodeToJsonElement(filteredItems))
-        // [NEW] Return the final, consistent plan as 'selectedActions'
         put("selectedActions", Json.encodeToJsonElement(finalActions))
         put("contents", Json.encodeToJsonElement(fileContents))
     }
 }
 
 /**
- * Executes the multi-pass, dependency-aware import plan.
- *
- * [REFACTOR] This function is now hardened with:
- * 1. Correct multi-pass logic that re-queues unprocessed holons.
- * 2. Explicit error logging for any file that fails to parse during execution.
- * 3. A robust mechanism for finding parent content that correctly handles parents
- *    that are new within the same import batch.
- * 4. Logic is simplified by delegating holon modification to `addSubHolonRefToContent`.
+ * [RE-ARCHITECTED] Executes the import plan as a transaction on structured Holon objects.
+ * This function no longer manipulates JSON strings. It builds an in-memory representation
+ * of all changes and serializes them only at the final step, ensuring data integrity.
  */
 internal fun executeImportWrites(
-    parentContents: Map<String, String>,
+    parentContents: Map<String, String>, // This parameter is now obsolete and will be ignored.
     kgState: KnowledgeGraphState,
     store: Store,
     platformDependencies: PlatformDependencies
 ) {
-    val updatedParentContents = parentContents.toMutableMap()
-    val processedHolonPaths = mutableMapOf<String, String>() // Maps holonId -> destination subpath
-    val importHolonIdToSourcePath = kgState.importFileContents.mapNotNull { (path, content) ->
-        try { json.decodeFromString<Holon>(content).header.id to path } catch (e: Exception) { null }
-    }.toMap()
-
-
+    // Transactional workspace for all holons being modified or created in this import.
+    val holonsInTransaction = mutableMapOf<String, Holon>()
     val remainingActions = kgState.importSelectedActions.toMutableMap()
     var processedInPass: Int
+
+    // Initial Pass: Parse all source files into canonical Holon objects.
+    remainingActions.keys.forEach { sourcePath ->
+        val sourceContent = kgState.importFileContents[sourcePath]
+        if (sourceContent != null) {
+            try {
+                val sourceHolon = json.decodeFromString<Holon>(sourceContent)
+                holonsInTransaction[sourceHolon.header.id] = sourceHolon.copy(rawContent = sourceContent)
+            } catch (e: Exception) {
+                platformDependencies.log(LogLevel.WARN, "ImportExecution", "Skipping malformed holon '$sourcePath' during execution.")
+            }
+        }
+    }
+
+
+    // Multi-pass processing to resolve parent-child dependencies.
     do {
         processedInPass = 0
         val actionsThisPass = remainingActions.toMap()
         remainingActions.clear()
 
         for ((sourcePath, action) in actionsThisPass) {
-            var wasProcessed = true
-            val sourceContent = kgState.importFileContents[sourcePath] ?: continue
-            val sourceHolon = try {
-                json.decodeFromString<Holon>(sourceContent)
-            } catch (e: Exception) {
-                platformDependencies.log(LogLevel.ERROR, "ImportExecution", "Failed to parse source holon '$sourcePath' during execution, skipping.", e)
+            val sourceHolon = holonsInTransaction[platformDependencies.getFileName(sourcePath).removeSuffix(".json")]
+            if (sourceHolon == null) {
+                // Was malformed and skipped in the initial pass.
+                if (action !is Quarantine) remainingActions[sourcePath] = action
                 continue
             }
-            val holonId = sourceHolon.header.id
 
+            var wasProcessed = true
             when (action) {
-                is CreateRoot -> {
-                    val destSubpath = "$holonId/$holonId.json"
-                    store.deferredDispatch("knowledgegraph", Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                        put("subpath", destSubpath); put("content", sourceContent)
-                    }))
-                    processedHolonPaths[holonId] = destSubpath
-                }
-                is Update -> {
-                    val destSubpath = kgState.holons[action.targetHolonId]?.header?.filePath ?: continue
-                    store.deferredDispatch("knowledgegraph", Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                        put("subpath", destSubpath); put("content", sourceContent)
-                    }))
-                }
                 is Integrate, is AssignParent -> {
                     val parentId = if (action is Integrate) action.parentHolonId else (action as AssignParent).assignedParentId
                     if (parentId == null) {
-                        wasProcessed = false; remainingActions[sourcePath] = action; continue
+                        wasProcessed = false; continue
                     }
 
-                    val parentSubpath = kgState.holons[parentId]?.header?.filePath ?: processedHolonPaths[parentId]
-                    if (parentSubpath == null) {
-                        wasProcessed = false; remainingActions[sourcePath] = action; continue
-                    }
+                    // Find the parent either in the existing state or within this transaction.
+                    val parentHolon = kgState.holons[parentId] ?: holonsInTransaction[parentId]
 
-                    val parentDir = platformDependencies.getParentDirectory(parentSubpath)
-                    if (parentDir == null) {
-                        wasProcessed = false; remainingActions[sourcePath] = action; continue
-                    }
-
-                    val destSubpath = "$parentDir/$holonId/$holonId.json"
-                    store.deferredDispatch("knowledgegraph", Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                        put("subpath", destSubpath); put("content", sourceContent)
-                    }))
-                    processedHolonPaths[holonId] = destSubpath
-
-                    // [THE FIX] Robustly find parent content from any valid source.
-                    val parentContentStr = updatedParentContents[parentSubpath]
-                        ?: parentContents[parentSubpath]
-                        ?: kgState.importFileContents[importHolonIdToSourcePath[parentId]]
-
-                    if (parentContentStr != null) {
-                        val newSubRef = SubHolonRef(holonId, sourceHolon.header.type, sourceHolon.header.summary ?: "")
-                        val updatedContent = addSubHolonRefToContent(parentContentStr, newSubRef)
-                        if (updatedContent != parentContentStr) {
-                            updatedParentContents[parentSubpath] = updatedContent
+                    if (parentHolon == null) {
+                        // Parent not yet processed in this transaction, defer to next pass.
+                        wasProcessed = false
+                    } else {
+                        // Parent found, perform the structural modification.
+                        val childRef = SubHolonRef(sourceHolon.header.id, sourceHolon.header.type, sourceHolon.header.summary ?: "")
+                        if (!parentHolon.header.subHolons.any { it.id == childRef.id }) {
+                            val updatedSubHolons = parentHolon.header.subHolons + childRef
+                            val updatedHeader = parentHolon.header.copy(subHolons = updatedSubHolons)
+                            val updatedParent = parentHolon.copy(header = updatedHeader)
+                            // Overwrite the parent in our transaction map with the updated version.
+                            holonsInTransaction[parentId] = updatedParent
                         }
                     }
                 }
-                is Quarantine -> { /* No-op */ }
-                is Ignore -> { /* No-op */ }
+                // Other actions don't have dependencies, they are already processed by being in the map.
+                else -> { /* No-op */ }
             }
             if (wasProcessed) processedInPass++ else remainingActions[sourcePath] = action
         }
     } while (processedInPass > 0 && remainingActions.isNotEmpty())
 
-    updatedParentContents.forEach { (subpath, content) ->
-        if (parentContents[subpath] != content) {
+    // Final Pass: Determine paths, synchronize, serialize, and dispatch write actions.
+    holonsInTransaction.forEach { (holonId, holon) ->
+        val action = kgState.importSelectedActions.entries.find { platformDependencies.getFileName(it.key).removeSuffix(".json") == holonId }?.value
+
+        val finalPath = when (action) {
+            is CreateRoot -> "$holonId/$holonId.json"
+            is Update -> kgState.holons[action.targetHolonId]?.header?.filePath
+            is Integrate, is AssignParent -> {
+                val parentId = if (action is Integrate) action.parentHolonId else (action as AssignParent).assignedParentId
+                val parent = kgState.holons[parentId] ?: holonsInTransaction[parentId]
+                parent?.let { platformDependencies.getParentDirectory(it.header.filePath) + "/$holonId/$holonId.json" }
+            }
+            else -> null
+        }
+
+        if (finalPath != null) {
+            val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())
+            val headerWithMeta = holon.header.copy(
+                filePath = finalPath,
+                modifiedAt = newTimestamp,
+                createdAt = holon.header.createdAt ?: newTimestamp
+            )
+            val finalHolon = synchronizeRawContent(holon.copy(header = headerWithMeta))
+            val contentToWrite = prepareHolonForWriting(finalHolon)
             store.deferredDispatch("knowledgegraph", Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                put("subpath", subpath); put("content", content)
+                put("subpath", finalPath); put("content", contentToWrite)
             }))
         }
     }
+
+
     store.dispatch("ui.kgView", Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Import complete. Reloading Knowledge Graph...") }))
     store.deferredDispatch("knowledgegraph", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) }))
     store.deferredDispatch("knowledgegraph", Action(ActionNames.FILESYSTEM_SYSTEM_LIST))

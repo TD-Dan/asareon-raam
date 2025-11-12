@@ -5,49 +5,38 @@ import kotlinx.serialization.json.Json
 private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
 
 /**
- * Takes a parent Holon's JSON content string and a reference to a new child,
- * and returns a new JSON content string with the child reference added.
- * This is a pure function.
+ * The canonical function for serializing a Holon to a string for file system persistence.
+ * It serializes a minimal, clean representation of the holon, ensuring that runtime-only
+ * fields like `rawContent` are not included in the file.
  *
- * It returns the original content if the child already exists in the sub_holons list
- * or if the parent content is malformed JSON.
- *
- * @param parentContent The raw JSON string of the parent Holon.
- * @param childRef The SubHolonRef object of the child to add.
- * @return The updated JSON string of the parent Holon.
+ * @param holon The in-memory Holon object to prepare.
+ * @return A pretty-printed JSON string.
  */
-internal fun addSubHolonRefToContent(parentContent: String, childRef: SubHolonRef): String {
-    return try {
-        val parentHolon = json.decodeFromString<Holon>(parentContent)
-        // Ensure idempotency: do not add a duplicate reference.
-        if (parentHolon.header.subHolons.any { it.id == childRef.id }) {
-            return parentContent
-        }
-        val updatedSubHolons = parentHolon.header.subHolons + childRef
-        val updatedHeader = parentHolon.header.copy(subHolons = updatedSubHolons)
-        val updatedHolon = parentHolon.copy(header = updatedHeader)
-        prepareHolonForWriting(updatedHolon)
-    } catch (e: Exception) {
-        // Fail gracefully if the parent content is not a valid Holon.
-        // TODO: add error reporting. We cannot fail silently!
-        // TODO: add unit test(s) to verify correct behaviour!
-        // TODO: re-raise exception!
-        parentContent
-    }
+internal fun prepareHolonForWriting(holon: Holon): String {
+    @kotlinx.serialization.Serializable
+    data class SerializableHolon(
+        val header: HolonHeader,
+        val payload: kotlinx.serialization.json.JsonElement,
+        val execute: kotlinx.serialization.json.JsonElement? = null
+    )
+
+    val serializable = SerializableHolon(
+        header = holon.header,
+        payload = holon.payload,
+        execute = holon.execute
+    )
+
+    return json.encodeToString(SerializableHolon.serializer(), serializable)
 }
 
 /**
- * Takes an in-memory Holon object and prepares it for file system persistence.
- * This function creates a 'clean' version of the holon by:
- * 1. Retaining the enriched runtime metadata (`filePath`, `parentId`, `depth`).
- * 2. Setting the `content` field to an empty string to prevent recursive serialization.
- * This is the canonical function for serializing a holon before writing it to disk.
+ * Synchronizes a Holon's `rawContent` cache to match its structured data.
+ * This is the canonical way to ensure consistency after a structured change (e.g., a rename).
  *
- * @param holon The in-memory Holon object to prepare.
- * @return A pretty-printed JSON string representation of the holon.
+ * @param holon The potentially desynchronized Holon object.
+ * @return A new, fully consistent Holon object.
  */
-internal fun prepareHolonForWriting(holon: Holon): String {
-    // Create a copy, explicitly clearing the content field before serialization.
-    val cleanHolon = holon.copy(content = "")
-    return json.encodeToString(Holon.serializer(), cleanHolon)
+internal fun synchronizeRawContent(holon: Holon): Holon {
+    val newRawContent = prepareHolonForWriting(holon)
+    return holon.copy(rawContent = newRawContent)
 }

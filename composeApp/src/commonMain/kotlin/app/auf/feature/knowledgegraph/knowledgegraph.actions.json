@@ -115,16 +115,20 @@
     },
     {
       "action_name": "knowledgegraph.UPDATE_HOLON_CONTENT",
-      "summary": "Updates the full string content of a holon file within a loaded HKG.",
+      "summary": "Updates the user-editable 'payload' and 'execute' sections of a holon. This action protects the holon's header from direct modification.",
       "payload_schema": {
         "type": "object",
-        "properties": { "holonId": { "type": "string" }, "newContent": { "type": "string" } },
-        "required": ["holonId", "newContent"]
+        "properties": {
+          "holonId": { "type": "string" },
+          "payload": { "type": "object", "description": "The new JSON object for the payload section." },
+          "execute": { "type": "object", "description": "The new JSON object for the execute section." }
+        },
+        "required": ["holonId"]
       }
     },
     {
       "action_name": "knowledgegraph.RENAME_HOLON",
-      "summary": "Updates the 'name' field in a holon's header.",
+      "summary": "A managed command to safely update the 'name' field in a holon's header.",
       "payload_schema": {
         "type": "object",
         "properties": { "holonId": { "type": "string" }, "newName": { "type": "string" } },

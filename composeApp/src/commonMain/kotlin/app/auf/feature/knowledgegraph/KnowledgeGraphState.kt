@@ -12,8 +12,10 @@ data class Holon(
     val header: HolonHeader,
     val payload: JsonElement,
     val execute: JsonElement? = null,
-    // [FIX] Removed the @Transient annotation. The content is essential data.
-    val content: String = ""
+    // [REFACTOR] Renamed for clarity per our plan. This field holds the original,
+    // unprocessed string content from the file, used primarily as a cache for the UI.
+    // The canonical source of truth is the structured data above.
+    val rawContent: String = ""
 )
 
 @Serializable
@@ -27,8 +29,8 @@ data class HolonHeader(
     @SerialName("modified_at") val modifiedAt: String? = null,
     val relationships: List<Relationship> = emptyList(),
     @SerialName("sub_holons") val subHolons: List<SubHolonRef> = emptyList(),
-    // [THE FIX] These are essential runtime metadata, not transient UI state.
-    // Removing @Transient ensures they persist across internal state updates.
+    // These fields are essential runtime metadata, not transient UI state.
+    // They are enriched at load time and persisted back to the file on any modification.
     val filePath: String = "",
     val parentId: String? = null,
     val depth: Int = 0
@@ -103,7 +105,7 @@ data class KnowledgeGraphState(
     val importItems: List<ImportItem> = emptyList(),
     /** The final, calculated set of actions for the import plan after consistency checks. */
     val importSelectedActions: Map<String, ImportAction> = emptyMap(),
-    /** [NEW] A map of user-explicit choices that override the initial analysis. */
+    /** A map of user-explicit choices that override the initial analysis. */
     val importUserOverrides: Map<String, ImportAction> = emptyMap(),
     val importFileContents: Map<String, String> = emptyMap(),
     val isImportRecursive: Boolean = true,

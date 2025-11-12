@@ -22,10 +22,13 @@ import app.auf.core.Store
 import app.auf.core.generated.ActionNames
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
+
+private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -219,10 +222,11 @@ private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: 
                     HolonEditView(
                         holon = kgState.holons[holonToEditId],
                         onDismiss = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT, buildJsonObject { put("holonId", null as String?) })) },
-                        onSave = { newContent ->
+                        onSave = { holonId, newPayload, newExecute ->
                             store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT, buildJsonObject {
-                                put("holonId", holonToEditId)
-                                put("newContent", newContent)
+                                put("holonId", holonId)
+                                newPayload?.let { put("payload", it) }
+                                newExecute?.let { put("execute", it) }
                             }))
                         },
                         modifier = Modifier.weight(1f)
@@ -319,7 +323,7 @@ private fun HolonDetailView(holon: Holon?, store: Store, modifier: Modifier = Mo
     ) { paddingValues ->
         SelectionContainer(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
             Text(
-                text = holon.content,
+                text = holon.rawContent,
                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                 modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())
             )
@@ -328,13 +332,52 @@ private fun HolonDetailView(holon: Holon?, store: Store, modifier: Modifier = Mo
 }
 
 @Composable
-private fun HolonEditView(holon: Holon?, onDismiss: () -> Unit, onSave: (String) -> Unit, modifier: Modifier = Modifier) {
+private fun HolonEditView(
+    holon: Holon?,
+    onDismiss: () -> Unit,
+    onSave: (holonId: String, newPayload: JsonElement?, newExecute: JsonElement?) -> Unit,
+    modifier: Modifier = Modifier
+) {
     if (holon == null) {
-        onDismiss()
-        return
+        onDismiss(); return
     }
 
-    var text by remember(holon.header.id) { mutableStateOf(holon.content) }
+    var payloadText by remember(holon.header.id) { mutableStateOf(json.encodeToString(JsonElement.serializer(), holon.payload)) }
+    var executeText by remember(holon.header.id) { mutableStateOf(holon.execute?.let { json.encodeToString(JsonElement.serializer(), it) } ?: "") }
+    var isPayloadValid by remember { mutableStateOf(true) }
+    var isExecuteValid by remember { mutableStateOf(true) }
+
+    fun validateAndSave() {
+        var payloadJson: JsonElement? = null
+        var executeJson: JsonElement? = null
+        var isValid = true
+
+        try {
+            payloadJson = json.parseToJsonElement(payloadText)
+            isPayloadValid = true
+        } catch (e: Exception) {
+            isPayloadValid = false
+            isValid = false
+        }
+
+        if (executeText.isNotBlank()) {
+            try {
+                executeJson = json.parseToJsonElement(executeText)
+                isExecuteValid = true
+            } catch (e: Exception) {
+                isExecuteValid = false
+                isValid = false
+            }
+        } else {
+            isExecuteValid = true
+        }
+
+
+        if (isValid) {
+            onSave(holon.header.id, payloadJson, executeJson)
+            onDismiss()
+        }
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -346,17 +389,36 @@ private fun HolonEditView(holon: Holon?, onDismiss: () -> Unit, onSave: (String)
             Row {
                 OutlinedButton(onClick = onDismiss) { Text("Cancel") }
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = { onSave(text); onDismiss() }) { Text("Save Changes") }
+                Button(onClick = { validateAndSave() }) { Text("Save Changes") }
             }
         }
         HorizontalDivider()
-        OutlinedTextField(
-            value = text,
-            onValueChange = { text = it },
-            modifier = Modifier.fillMaxSize().padding(16.dp),
-            textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-            label = { Text("Holon Content") }
-        )
+
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
+            OutlinedTextField(
+                value = payloadText,
+                onValueChange = { payloadText = it; isPayloadValid = true },
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                label = { Text("Payload") },
+                isError = !isPayloadValid
+            )
+            if (!isPayloadValid) {
+                Text("Invalid JSON format in payload.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+            }
+            Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                value = executeText,
+                onValueChange = { executeText = it; isExecuteValid = true },
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                label = { Text("Execute (optional)") },
+                isError = !isExecuteValid
+            )
+            if (!isExecuteValid) {
+                Text("Invalid JSON format in execute.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+            }
+        }
     }
 }
 

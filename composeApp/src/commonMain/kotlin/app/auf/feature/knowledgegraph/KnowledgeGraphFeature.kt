@@ -38,7 +38,7 @@ class KnowledgeGraphFeature(
     @Serializable private data class DeletePersonaPayload(val personaId: String)
     @Serializable private data class SetPersonaToDeletePayload(val personaId: String?)
     @Serializable private data class SetCreatingPersonaPayload(val isCreating: Boolean)
-    @Serializable private data class UpdateHolonContentPayload(val holonId: String, val newContent: String)
+    @Serializable private data class UpdateHolonContentPayload(val holonId: String, val payload: JsonElement? = null, val execute: JsonElement? = null)
     @Serializable private data class RenameHolonPayload(val holonId: String, val newName: String)
     @Serializable private data class DeleteHolonPayload(val holonId: String)
     @Serializable private data class SetHolonToDeletePayload(val holonId: String?)
@@ -146,46 +146,51 @@ class KnowledgeGraphFeature(
                 val payload = action.payload?.let { json.decodeFromJsonElement<UpdateHolonContentPayload>(it) } ?: return
                 val holonToUpdate = kgState.holons[payload.holonId] ?: return
 
-                // [REFACTOR] We cannot just write the newContent string, as it might be malformed.
-                // We must parse it, update the in-memory holon, then re-serialize it.
-                val updatedHolon = try {
-                    val tempHolon = json.decodeFromString<Holon>(payload.newContent)
-                    holonToUpdate.copy(
-                        header = tempHolon.header,
-                        payload = tempHolon.payload,
-                        execute = tempHolon.execute,
-                        content = payload.newContent // Keep the raw string for the editor view
-                    )
-                } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, name, "Failed to parse updated holon content. Aborting write.", e)
-                    store.dispatch(name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Error: Invalid JSON format. Changes not saved.") }))
-                    return
-                }
+                val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())
+                val updatedHeader = holonToUpdate.header.copy(modifiedAt = newTimestamp)
 
+                // Create an intermediate updated holon with the new payload/execute and timestamp
+                val intermediateHolon = holonToUpdate.copy(
+                    header = updatedHeader,
+                    payload = payload.payload ?: holonToUpdate.payload,
+                    execute = payload.execute ?: holonToUpdate.execute
+                )
+
+                // [THE FIX] Create the final, fully consistent holon by regenerating its rawContent cache.
+                val finalSyncedHolon = synchronizeRawContent(intermediateHolon)
+
+                // The reducer will handle updating the state. Here we just dispatch the write.
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                    put("subpath", holonToUpdate.header.filePath)
-                    put("content", prepareHolonForWriting(updatedHolon))
+                    put("subpath", finalSyncedHolon.header.filePath)
+                    put("content", prepareHolonForWriting(finalSyncedHolon))
                 }))
 
-                holonToUpdate.header.parentId?.let { parentId ->
-                    kgState.holons[parentId]?.let { parent ->
-                        if (parent.header.type == "AI_Persona_Root") {
-                            store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", parent.header.id) }))
-                        }
-                    }
-                } ?: store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", holonToUpdate.header.id) }))
+                // Dispatch a second action to update the in-memory state in the reducer
+                // For simplicity here, we'll reload, but a dedicated internal action would be better.
+                kgState.activePersonaIdForView?.let {
+                    store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
+                }
             }
             ActionNames.KNOWLEDGEGRAPH_RENAME_HOLON -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<RenameHolonPayload>(it) } ?: return
                 val holonToUpdate = kgState.holons[payload.holonId] ?: return
-                val updatedHeader = holonToUpdate.header.copy(name = payload.newName)
-                val updatedHolon = holonToUpdate.copy(header = updatedHeader)
-                val newContent = prepareHolonForWriting(updatedHolon)
+
+                val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())
+                val updatedHeader = holonToUpdate.header.copy(name = payload.newName, modifiedAt = newTimestamp)
+                val intermediateHolon = holonToUpdate.copy(header = updatedHeader)
+
+                // [THE FIX] Ensure consistency before writing
+                val finalSyncedHolon = synchronizeRawContent(intermediateHolon)
+
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                    put("subpath", holonToUpdate.header.filePath)
-                    put("content", newContent)
+                    put("subpath", finalSyncedHolon.header.filePath)
+                    put("content", prepareHolonForWriting(finalSyncedHolon))
                 }))
-                store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", kgState.activePersonaIdForView ?: "") }))
+
+                // Reload the persona to refresh the state with the synchronized data
+                kgState.activePersonaIdForView?.let {
+                    store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
+                }
             }
             ActionNames.KNOWLEDGEGRAPH_DELETE_PERSONA -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<DeletePersonaPayload>(it) } ?: return
@@ -210,11 +215,16 @@ class KnowledgeGraphFeature(
 
                 if (parentHolon != null) {
                     val updatedSubHolons = parentHolon.header.subHolons.filter { it.id != payload.holonId }
-                    val updatedParentHeader = parentHolon.header.copy(subHolons = updatedSubHolons)
-                    val updatedParent = parentHolon.copy(header = updatedParentHeader)
+                    val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())
+                    val updatedParentHeader = parentHolon.header.copy(subHolons = updatedSubHolons, modifiedAt = newTimestamp)
+                    val intermediateParent = parentHolon.copy(header = updatedParentHeader)
+
+                    // [THE FIX] Ensure parent is consistent before writing
+                    val finalSyncedParent = synchronizeRawContent(intermediateParent)
+
                     store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                        put("subpath", updatedParent.header.filePath)
-                        put("content", prepareHolonForWriting(updatedParent))
+                        put("subpath", finalSyncedParent.header.filePath)
+                        put("content", prepareHolonForWriting(finalSyncedParent))
                     }))
                 }
                 store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_HOLON, buildJsonObject {
@@ -234,7 +244,7 @@ class KnowledgeGraphFeature(
             val currentHolon = holonsToProcess.removeAt(0)
             if (processedIds.contains(currentHolon.header.id)) continue
 
-            contextMap[currentHolon.header.id] = currentHolon.content
+            contextMap[currentHolon.header.id] = currentHolon.rawContent
             processedIds.add(currentHolon.header.id)
 
             currentHolon.header.subHolons.forEach { subRef ->
@@ -456,9 +466,10 @@ class KnowledgeGraphFeature(
                     hasErrors = true
                     continue
                 }
+                // Store the holon with its filePath enriched and original content preserved.
                 holonsById[holon.header.id] = holon.copy(
                     header = holon.header.copy(filePath = path),
-                    content = rawContent
+                    rawContent = rawContent
                 )
             } catch (e: Exception) {
                 platformDependencies.log(LogLevel.ERROR, name, "Failed to parse JSON for holon at '$path'", e)
@@ -487,7 +498,11 @@ class KnowledgeGraphFeature(
 
         fun enrichRecursively(holon: Holon, parentId: String?, depth: Int) {
             val enrichedHeader = holon.header.copy(parentId = parentId, depth = depth)
-            val enrichedHolon = holon.copy(header = enrichedHeader, content = holon.content)
+            var enrichedHolon = holon.copy(header = enrichedHeader)
+
+            // [THE FIX] After enriching, immediately synchronize the rawContent cache.
+            enrichedHolon = synchronizeRawContent(enrichedHolon)
+
             enrichedHolons[holon.header.id] = enrichedHolon
             enrichedHolon.header.subHolons.forEach { subRef ->
                 holonsById[subRef.id]?.let { childHolon ->
