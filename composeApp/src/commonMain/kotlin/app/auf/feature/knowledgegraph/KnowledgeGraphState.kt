@@ -27,9 +27,11 @@ data class HolonHeader(
     @SerialName("modified_at") val modifiedAt: String? = null,
     val relationships: List<Relationship> = emptyList(),
     @SerialName("sub_holons") val subHolons: List<SubHolonRef> = emptyList(),
-    @Transient val filePath: String = "",
-    @Transient val parentId: String? = null,
-    @Transient val depth: Int = 0
+    // [THE FIX] These are essential runtime metadata, not transient UI state.
+    // Removing @Transient ensures they persist across internal state updates.
+    val filePath: String = "",
+    val parentId: String? = null,
+    val depth: Int = 0
 )
 
 @Serializable

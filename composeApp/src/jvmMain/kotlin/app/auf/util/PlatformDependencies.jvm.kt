@@ -202,7 +202,7 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
                 if (throwable != null) {
                     "$message\n${throwable.stackTraceToString()}"
                 } else {
-                    "$message\n!!! LOG CALL IS MISSING THE EXCEPTION DETAILS, PLEASE INCLUDE THE 'e' in the log !!!"
+                    "$message\n(Log call is missing exception details, add 'e' to the log call if possible!)"
                 }
             }
             // For WARN include only the message if present
