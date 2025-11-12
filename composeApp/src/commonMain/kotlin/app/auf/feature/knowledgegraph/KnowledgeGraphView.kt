@@ -613,7 +613,6 @@ private fun ImportItemRow(
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
         Column(modifier = Modifier.weight(1f)) {
             Text(fileName, style = MaterialTheme.typography.bodyMedium)
-            // [THE FIX] Display the reason for the quarantine.
             if (selectedAction is Quarantine) {
                 Text(
                     text = "Reason: ${selectedAction.reason}",
@@ -623,27 +622,29 @@ private fun ImportItemRow(
             }
         }
         Spacer(modifier = Modifier.width(16.dp))
-        ActionSelector(item.initialAction, selectedAction, onActionSelected, potentialParents)
+        ActionSelector(item, selectedAction, onActionSelected, potentialParents)
     }
 }
 
 @Composable
 private fun ActionSelector(
-    initialAction: ImportAction,
+    item: ImportItem,
     selectedAction: ImportAction,
     onActionSelected: (ImportAction) -> Unit,
     potentialParents: List<HolonHeader>
 ) {
-    when (selectedAction) {
-        is AssignParent -> ParentSelector(initialAction, selectedAction, onActionSelected, potentialParents)
-        else -> GenericActionSelector(initialAction, selectedAction, onActionSelected)
+    // [THE FIX] The logic is simplified. The UI just checks if a specific action type is available.
+    if (item.availableActions.contains(ImportActionType.ASSIGN_PARENT)) {
+        ParentSelector(item, selectedAction as? AssignParent ?: AssignParent(), onActionSelected, potentialParents)
+    } else {
+        GenericActionSelector(item, selectedAction, onActionSelected)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ParentSelector(
-    initialAction: ImportAction,
+    item: ImportItem,
     selectedAction: AssignParent,
     onActionSelected: (ImportAction) -> Unit,
     potentialParents: List<HolonHeader>
@@ -672,10 +673,10 @@ private fun ParentSelector(
 
         IconButton(onClick = { actionMenuExpanded = true }) { Icon(Icons.Default.MoreVert, "Change Action Type") }
         DropdownMenu(expanded = actionMenuExpanded, onDismissRequest = { actionMenuExpanded = false }) {
-            // [THE FIX] A holon requiring a parent can also be quarantined or ignored.
-            listOf(ImportActionType.ASSIGN_PARENT, ImportActionType.QUARANTINE, ImportActionType.IGNORE).forEach { type ->
-                DropdownMenuItem(text = { Text(type.toInstance(initialAction).summary) }, onClick = {
-                    onActionSelected(type.toInstance(initialAction))
+            // [THE FIX] The UI reads the available actions directly from the state object.
+            item.availableActions.forEach { type ->
+                DropdownMenuItem(text = { Text(type.toInstance(item.initialAction).summary) }, onClick = {
+                    onActionSelected(type.toInstance(item.initialAction))
                     actionMenuExpanded = false
                 })
             }
@@ -686,19 +687,11 @@ private fun ParentSelector(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GenericActionSelector(
-    initialAction: ImportAction,
+    item: ImportItem,
     selectedAction: ImportAction,
     onActionSelected: (ImportAction) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    // [THE FIX] The list of available actions is now context-dependent.
-    val availableActions = remember(initialAction) {
-        when (initialAction) {
-            is Quarantine -> listOf(ImportActionType.QUARANTINE, ImportActionType.IGNORE, ImportActionType.ASSIGN_PARENT)
-            is Integrate -> listOf(ImportActionType.INTEGRATE, ImportActionType.ASSIGN_PARENT, ImportActionType.QUARANTINE, ImportActionType.IGNORE)
-            else -> ImportActionType.entries.filter { it != ImportActionType.ASSIGN_PARENT }
-        }
-    }
 
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
         OutlinedTextField(
@@ -707,9 +700,11 @@ private fun GenericActionSelector(
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            availableActions.forEach { type ->
-                DropdownMenuItem(text = { Text(type.toInstance(initialAction).summary) }, onClick = {
-                    onActionSelected(type.toInstance(initialAction))
+            // [THE FIX] The UI is now "dumb" and simply renders the list of actions
+            // provided by the analyzer in the state.
+            item.availableActions.forEach { type ->
+                DropdownMenuItem(text = { Text(type.toInstance(item.initialAction).summary) }, onClick = {
+                    onActionSelected(type.toInstance(item.initialAction))
                     expanded = false
                 })
             }

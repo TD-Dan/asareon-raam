@@ -51,7 +51,10 @@ enum class KnowledgeGraphViewMode { INSPECTOR, IMPORT, EXPORT }
 data class ImportItem(
     val sourcePath: String,
     val initialAction: ImportAction,
-    val targetPath: String?
+    val targetPath: String?,
+    // [THE FIX] The analyzer, not the UI, is now the source of truth for which
+    // actions are valid for this specific item.
+    val availableActions: List<ImportActionType> = emptyList()
 )
 
 @Serializable

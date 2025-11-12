@@ -26,7 +26,7 @@ internal fun runImportAnalysis(
 ): JsonObject {
     // --- Pass 1: Initial Action Determination ---
     val sourceHolons = fileContents.mapNotNull { (path, content) ->
-        try { path to json.decodeFromString<Holon>(content) } catch (e: Exception) { null }
+        try { path to json.decodeFromString<Holon>(content).copy(rawContent = content) } catch (e: Exception) { null }
     }.toMap()
 
     val sourceParentMap = sourceHolons.values.flatMap { holon ->
@@ -42,10 +42,19 @@ internal fun runImportAnalysis(
 
         when {
             sourceHolon == null -> Quarantine("Malformed JSON")
-            kgState.holons.containsKey(holonId) -> Update(holonId)
+            kgState.holons.containsKey(holonId) -> {
+                // [THE FIX] If holon exists, check if content is identical.
+                val existingHolon = kgState.holons[holonId]!!
+                if (existingHolon.rawContent == sourceHolon.rawContent) {
+                    Ignore()
+                } else {
+                    Update(holonId)
+                }
+            }
             sourceHolon.header.type == "AI_Persona_Root" -> CreateRoot()
             sourceParentMap.containsKey(holonId) -> Integrate(sourceParentMap[holonId]!!)
-            else -> Quarantine("Unknown top-level holon.")
+            // [THE FIX] Use clearer wording for orphaned holons.
+            else -> Quarantine("Orphaned holon - parent not found in import set.")
         }
     }
 
@@ -64,10 +73,22 @@ internal fun runImportAnalysis(
     }
 
     val importItems = fileContents.keys.map { path ->
+        val action = finalActions[path]!!
+        // [THE FIX] Analyzer determines the available actions for the UI.
+        val availableActions = when(action) {
+            is Update -> listOf(ImportActionType.UPDATE, ImportActionType.IGNORE)
+            is Integrate -> listOf(ImportActionType.INTEGRATE, ImportActionType.ASSIGN_PARENT, ImportActionType.QUARANTINE, ImportActionType.IGNORE)
+            is Quarantine -> listOf(ImportActionType.QUARANTINE, ImportActionType.ASSIGN_PARENT, ImportActionType.IGNORE)
+            is CreateRoot -> listOf(ImportActionType.CREATE_ROOT, ImportActionType.IGNORE)
+            is Ignore -> listOf(ImportActionType.IGNORE, ImportActionType.UPDATE) // Allow overriding an ignore
+            else -> emptyList()
+        }
+
         ImportItem(
             sourcePath = path,
-            initialAction = finalActions[path]!!,
-            targetPath = (finalActions[path] as? Update)?.let { kgState.holons[it.targetHolonId]?.header?.filePath }
+            initialAction = action,
+            targetPath = (action as? Update)?.let { kgState.holons[it.targetHolonId]?.header?.filePath },
+            availableActions = availableActions
         )
     }
 
@@ -83,6 +104,7 @@ internal fun runImportAnalysis(
         put("contents", Json.encodeToJsonElement(fileContents))
     }
 }
+
 
 /**
  * [RE-ARCHITECTED] Executes the import plan as a transaction on structured Holon objects.
@@ -130,7 +152,8 @@ internal fun executeImportWrites(
                 val parentPath = kgState.holons[parentId]?.header?.filePath ?: determinePath(parentId)
                 if (parentPath == null) null else {
                     val parentDir = platformDependencies.getParentDirectory(parentPath)
-                    "$parentDir/$holonId/$holonId.json"
+                    // This check prevents the "null/" string concatenation.
+                    if (parentDir == null) null else "$parentDir/$holonId/$holonId.json"
                 }
             }
             else -> null

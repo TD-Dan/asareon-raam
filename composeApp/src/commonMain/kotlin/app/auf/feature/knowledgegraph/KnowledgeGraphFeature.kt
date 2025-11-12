@@ -306,6 +306,17 @@ class KnowledgeGraphFeature(
             }
             ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SetViewModePayload>(it) } ?: return currentFeatureState
+                // [THE FIX] Clear stale import data when returning to the inspector.
+                if (payload.mode == KnowledgeGraphViewMode.INSPECTOR) {
+                    return currentFeatureState.copy(
+                        viewMode = payload.mode,
+                        importItems = emptyList(),
+                        importSelectedActions = emptyMap(),
+                        importUserOverrides = emptyMap(),
+                        importFileContents = emptyMap(),
+                        pendingImportCorrelationId = null
+                    )
+                }
                 return currentFeatureState.copy(viewMode = payload.mode)
             }
             ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS -> {
