@@ -22,35 +22,14 @@ class KnowledgeGraphFeature(
     override val name: String = "knowledgegraph"
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
 
-    // --- Payloads for Type-Safe Decoding ---
-    @Serializable private data class LoadPersonaPayload(val personaId: String)
-    @Serializable private data class RequestContextPayload(val personaId: String, val correlationId: String)
-    @Serializable private data class SetViewPersonaPayload(val personaId: String?)
-    @Serializable private data class SetViewHolonPayload(val holonId: String?)
-    @Serializable private data class SetHolonToEditPayload(val holonId: String?)
-    @Serializable private data class SetHolonToRenamePayload(val holonId: String?)
-    @Serializable private data class SetViewModePayload(val mode: KnowledgeGraphViewMode)
-    @Serializable private data class SetTypeFiltersPayload(val types: Set<String>)
-    @Serializable private data class AnalysisCompletePayload(val items: List<ImportItem>, val selectedActions: Map<String, ImportAction>, val contents: Map<String, String>)
-    @Serializable private data class SetImportRecursivePayload(val recursive: Boolean)
-    @Serializable private data class UpdateImportActionPayload(val sourcePath: String, val action: ImportAction)
-    @Serializable private data class CreatePersonaPayload(val name: String)
-    @Serializable private data class DeletePersonaPayload(val personaId: String)
-    @Serializable private data class SetPersonaToDeletePayload(val personaId: String?)
-    @Serializable private data class SetCreatingPersonaPayload(val isCreating: Boolean)
-    @Serializable private data class UpdateHolonContentPayload(val holonId: String, val payload: JsonElement? = null, val execute: JsonElement? = null)
-    @Serializable private data class RenameHolonPayload(val holonId: String, val newName: String)
-    @Serializable private data class DeleteHolonPayload(val holonId: String)
-    @Serializable private data class SetHolonToDeletePayload(val holonId: String?)
-    @Serializable private data class FilesContentPayload(val correlationId: String?, val contents: Map<String, String>)
-    @Serializable private data class PersonaLoadedPayload(val holons: Map<String, Holon>)
-    @Serializable private data class SetPendingImportIdPayload(val id: String?)
-
+    @Serializable data class FilesContentPayload(val correlationId: String?, val contents: Map<String, String>)
+    @Serializable data class AnalysisCompletePayload(val items: List<ImportItem>, val selectedActions: Map<String, ImportAction>, val contents: Map<String, String>)
 
     override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val originator = action.originator ?: return
         val kgState = newState as? KnowledgeGraphState ?: return
         val prevKgState = previousState as? KnowledgeGraphState
+        val payload = action.payload
 
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
@@ -68,18 +47,19 @@ class KnowledgeGraphFeature(
                 }
             }
             ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<LoadPersonaPayload>(it) } ?: return
+                val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: return
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
-                    put("subpath", payload.personaId)
+                    put("subpath", personaId)
                     put("recursive", true)
                 }))
             }
             ActionNames.KNOWLEDGEGRAPH_REQUEST_CONTEXT -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<RequestContextPayload>(it) } ?: return
-                val contextMap = buildContextForPersona(payload.personaId, kgState)
+                val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: return
+                val correlationId = payload["correlationId"]?.jsonPrimitive?.content ?: return
+                val contextMap = buildContextForPersona(personaId, kgState)
                 val responsePayload = buildJsonObject {
-                    put("correlationId", payload.correlationId)
-                    put("personaId", payload.personaId)
+                    put("correlationId", correlationId)
+                    put("personaId", personaId)
                     put("context", Json.encodeToJsonElement(contextMap))
                 }
                 val responseEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, responsePayload)
@@ -120,14 +100,14 @@ class KnowledgeGraphFeature(
                 }
             }
             ActionNames.KNOWLEDGEGRAPH_CREATE_PERSONA -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<CreatePersonaPayload>(it) } ?: return
+                val name = payload?.get("name")?.jsonPrimitive?.content ?: return
                 val timestamp = platformDependencies.getSystemTimeMillis()
                 val isoTimestamp = platformDependencies.formatIsoTimestamp(timestamp)
                 val fileSafeTimestamp = isoTimestamp.replace(":", "").replace("-", "").replace("Z", "").replace("T", "T")
-                val newId = "${payload.name.lowercase().replace(" ", "-")}-${fileSafeTimestamp}"
+                val newId = "${name.lowercase().replace(" ", "-")}-${fileSafeTimestamp}"
 
                 val newHolonHeader = HolonHeader(
-                    id = newId, type = "AI_Persona_Root", name = payload.name,
+                    id = newId, type = "AI_Persona_Root", name = name,
                     summary = "A newly created Holon Knowledge Graph.", version = "1.0.0",
                     createdAt = isoTimestamp, modifiedAt = isoTimestamp
                 )
@@ -139,47 +119,42 @@ class KnowledgeGraphFeature(
                     put("subpath", destSubpath); put("content", fullContent)
                 }))
 
-                store.dispatch("ui.kgView", Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Created persona '${payload.name}'.") }))
+                store.dispatch("ui.kgView", Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Created persona '$name'.") }))
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
             }
             ActionNames.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<UpdateHolonContentPayload>(it) } ?: return
-                val holonToUpdate = kgState.holons[payload.holonId] ?: return
+                val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: return
+                val holonToUpdate = kgState.holons[holonId] ?: return
 
                 val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())
                 val updatedHeader = holonToUpdate.header.copy(modifiedAt = newTimestamp)
 
-                // Create an intermediate updated holon with the new payload/execute and timestamp
                 val intermediateHolon = holonToUpdate.copy(
                     header = updatedHeader,
-                    payload = payload.payload ?: holonToUpdate.payload,
-                    execute = payload.execute ?: holonToUpdate.execute
+                    payload = payload["payload"] ?: holonToUpdate.payload,
+                    execute = payload["execute"] ?: holonToUpdate.execute
                 )
 
-                // [THE FIX] Create the final, fully consistent holon by regenerating its rawContent cache.
                 val finalSyncedHolon = synchronizeRawContent(intermediateHolon)
 
-                // The reducer will handle updating the state. Here we just dispatch the write.
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                     put("subpath", finalSyncedHolon.header.filePath)
                     put("content", prepareHolonForWriting(finalSyncedHolon))
                 }))
 
-                // Dispatch a second action to update the in-memory state in the reducer
-                // For simplicity here, we'll reload, but a dedicated internal action would be better.
                 kgState.activePersonaIdForView?.let {
                     store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
                 }
             }
             ActionNames.KNOWLEDGEGRAPH_RENAME_HOLON -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<RenameHolonPayload>(it) } ?: return
-                val holonToUpdate = kgState.holons[payload.holonId] ?: return
+                val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: return
+                val newName = payload["newName"]?.jsonPrimitive?.content ?: return
+                val holonToUpdate = kgState.holons[holonId] ?: return
 
                 val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())
-                val updatedHeader = holonToUpdate.header.copy(name = payload.newName, modifiedAt = newTimestamp)
+                val updatedHeader = holonToUpdate.header.copy(name = newName, modifiedAt = newTimestamp)
                 val intermediateHolon = holonToUpdate.copy(header = updatedHeader)
 
-                // [THE FIX] Ensure consistency before writing
                 val finalSyncedHolon = synchronizeRawContent(intermediateHolon)
 
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
@@ -187,23 +162,22 @@ class KnowledgeGraphFeature(
                     put("content", prepareHolonForWriting(finalSyncedHolon))
                 }))
 
-                // Reload the persona to refresh the state with the synchronized data
                 kgState.activePersonaIdForView?.let {
                     store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
                 }
             }
             ActionNames.KNOWLEDGEGRAPH_DELETE_PERSONA -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<DeletePersonaPayload>(it) } ?: return
+                val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: return
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
-                    put("subpath", payload.personaId)
+                    put("subpath", personaId)
                 }))
                 store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA, buildJsonObject {
-                    put("personaId", payload.personaId)
+                    put("personaId", personaId)
                 }))
             }
             ActionNames.KNOWLEDGEGRAPH_DELETE_HOLON -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<DeleteHolonPayload>(it) } ?: return
-                val holonToDelete = kgState.holons[payload.holonId] ?: return
+                val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: return
+                val holonToDelete = kgState.holons[holonId] ?: return
                 val parentId = holonToDelete.header.parentId
                 val parentHolon = parentId?.let { kgState.holons[it] }
 
@@ -214,12 +188,11 @@ class KnowledgeGraphFeature(
                 }
 
                 if (parentHolon != null) {
-                    val updatedSubHolons = parentHolon.header.subHolons.filter { it.id != payload.holonId }
+                    val updatedSubHolons = parentHolon.header.subHolons.filter { it.id != holonId }
                     val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())
                     val updatedParentHeader = parentHolon.header.copy(subHolons = updatedSubHolons, modifiedAt = newTimestamp)
                     val intermediateParent = parentHolon.copy(header = updatedParentHeader)
 
-                    // [THE FIX] Ensure parent is consistent before writing
                     val finalSyncedParent = synchronizeRawContent(intermediateParent)
 
                     store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
@@ -228,7 +201,7 @@ class KnowledgeGraphFeature(
                     }))
                 }
                 store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_HOLON, buildJsonObject {
-                    put("holonId", payload.holonId)
+                    put("holonId", holonId)
                 }))
             }
         }
@@ -256,15 +229,16 @@ class KnowledgeGraphFeature(
 
     override fun reducer(state: FeatureState?, action: Action): FeatureState? {
         val currentFeatureState = state as? KnowledgeGraphState ?: KnowledgeGraphState()
+        val payload = action.payload
 
         when (action.name) {
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_SET_PENDING_IMPORT_ID -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<SetPendingImportIdPayload>(it) }
-                return currentFeatureState.copy(pendingImportCorrelationId = payload?.id)
+                val id = payload?.get("id")?.jsonPrimitive?.contentOrNull
+                return currentFeatureState.copy(pendingImportCorrelationId = id)
             }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<PersonaLoadedPayload>(it) } ?: return currentFeatureState
-                val newHolons = currentFeatureState.holons + payload.holons
+                val holons = payload?.get("holons")?.let { json.decodeFromJsonElement<Map<String, Holon>>(it) } ?: return currentFeatureState
+                val newHolons = currentFeatureState.holons + holons
                 val newRoots = newHolons.values
                     .filter { it.header.type == "AI_Persona_Root" }
                     .associate { it.header.name to it.header.id }
@@ -274,42 +248,42 @@ class KnowledgeGraphFeature(
                 return currentFeatureState.copy(isLoading = true, fatalError = null)
             }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED -> {
-                val error = action.payload?.get("error")?.jsonPrimitive?.content ?: "Unknown loading error."
+                val error = payload?.get("error")?.jsonPrimitive?.content ?: "Unknown loading error."
                 return currentFeatureState.copy(isLoading = false, fatalError = error)
             }
             ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_PERSONA -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<SetViewPersonaPayload>(it) } ?: return currentFeatureState
+                val personaId = payload?.get("personaId")?.jsonPrimitive?.contentOrNull
                 return currentFeatureState.copy(
-                    activePersonaIdForView = payload.personaId,
+                    activePersonaIdForView = personaId,
                     activeHolonIdForView = null,
                     activeTypeFilters = emptySet()
                 )
             }
             ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<SetViewHolonPayload>(it) } ?: return currentFeatureState
-                return currentFeatureState.copy(activeHolonIdForView = payload.holonId, holonIdToEdit = null)
+                val holonId = payload?.get("holonId")?.jsonPrimitive?.contentOrNull
+                return currentFeatureState.copy(activeHolonIdForView = holonId, holonIdToEdit = null)
             }
             ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<SetHolonToEditPayload>(it) } ?: return currentFeatureState
-                return currentFeatureState.copy(holonIdToEdit = payload.holonId)
+                val holonId = payload?.get("holonId")?.jsonPrimitive?.contentOrNull
+                return currentFeatureState.copy(holonIdToEdit = holonId)
             }
             ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_RENAME -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<SetHolonToRenamePayload>(it) } ?: return currentFeatureState
-                return currentFeatureState.copy(holonIdToRename = payload.holonId)
+                val holonId = payload?.get("holonId")?.jsonPrimitive?.contentOrNull
+                return currentFeatureState.copy(holonIdToRename = holonId)
             }
             ActionNames.KNOWLEDGEGRAPH_TOGGLE_SHOW_SUMMARIES -> {
                 return currentFeatureState.copy(showSummariesInTreeView = !currentFeatureState.showSummariesInTreeView)
             }
             ActionNames.KNOWLEDGEGRAPH_SET_TYPE_FILTERS -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<SetTypeFiltersPayload>(it) } ?: return currentFeatureState
-                return currentFeatureState.copy(activeTypeFilters = payload.types)
+                val types = payload?.get("types")?.let { json.decodeFromJsonElement<Set<String>>(it) } ?: return currentFeatureState
+                return currentFeatureState.copy(activeTypeFilters = types)
             }
             ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<SetViewModePayload>(it) } ?: return currentFeatureState
-                // [THE FIX] Clear stale import data when returning to the inspector.
-                if (payload.mode == KnowledgeGraphViewMode.INSPECTOR) {
+                val modeStr = payload?.get("mode")?.jsonPrimitive?.content ?: return currentFeatureState
+                val mode = KnowledgeGraphViewMode.valueOf(modeStr)
+                if (mode == KnowledgeGraphViewMode.INSPECTOR) {
                     return currentFeatureState.copy(
-                        viewMode = payload.mode,
+                        viewMode = mode,
                         importItems = emptyList(),
                         importSelectedActions = emptyMap(),
                         importUserOverrides = emptyMap(),
@@ -317,7 +291,7 @@ class KnowledgeGraphFeature(
                         pendingImportCorrelationId = null
                     )
                 }
-                return currentFeatureState.copy(viewMode = payload.mode)
+                return currentFeatureState.copy(viewMode = mode)
             }
             ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS -> {
                 return currentFeatureState.copy(
@@ -329,21 +303,23 @@ class KnowledgeGraphFeature(
                 )
             }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<AnalysisCompletePayload>(it) } ?: return currentFeatureState
+
+                val analysis = payload?.let { json.decodeFromJsonElement<AnalysisCompletePayload>(it) } ?: return currentFeatureState
                 return currentFeatureState.copy(
                     isLoading = false,
-                    importItems = payload.items,
-                    importSelectedActions = payload.selectedActions,
-                    importFileContents = payload.contents,
+                    importItems = analysis.items,
+                    importSelectedActions = analysis.selectedActions,
+                    importFileContents = analysis.contents,
                     pendingImportCorrelationId = null
                 )
             }
             ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<UpdateImportActionPayload>(it) } ?: return currentFeatureState
-                // [THE FIX] This reducer is now simple. It records the user's choice...
-                val newOverrides = currentFeatureState.importUserOverrides + (payload.sourcePath to payload.action)
-                // ...and then re-runs the master analysis function with the new override.
+                val sourcePath = payload?.get("sourcePath")?.jsonPrimitive?.content ?: return currentFeatureState
+                val actionObj = payload["action"]?.let { json.decodeFromJsonElement<ImportAction>(it) } ?: return currentFeatureState
+
+                val newOverrides = currentFeatureState.importUserOverrides + (sourcePath to actionObj)
                 val analysisPayload = runImportAnalysis(currentFeatureState.importFileContents, currentFeatureState, newOverrides, currentFeatureState.isImportRecursive, platformDependencies)
+
                 val newAnalysis = json.decodeFromJsonElement<AnalysisCompletePayload>(analysisPayload)
                 return currentFeatureState.copy(
                     importUserOverrides = newOverrides,
@@ -352,23 +328,23 @@ class KnowledgeGraphFeature(
                 )
             }
             ActionNames.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<SetImportRecursivePayload>(it) } ?: return currentFeatureState
-                return currentFeatureState.copy(isImportRecursive = payload.recursive, isLoading = true)
+                val recursive = payload?.get("recursive")?.jsonPrimitive?.booleanOrNull ?: return currentFeatureState
+                return currentFeatureState.copy(isImportRecursive = recursive, isLoading = true)
             }
             ActionNames.KNOWLEDGEGRAPH_TOGGLE_SHOW_ONLY_CHANGED -> {
                 return currentFeatureState.copy(showOnlyChangedImportItems = !currentFeatureState.showOnlyChangedImportItems)
             }
             ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<SetPersonaToDeletePayload>(it) } ?: return currentFeatureState
-                return currentFeatureState.copy(personaIdToDelete = payload.personaId)
+                val personaId = payload?.get("personaId")?.jsonPrimitive?.contentOrNull
+                return currentFeatureState.copy(personaIdToDelete = personaId)
             }
             ActionNames.KNOWLEDGEGRAPH_SET_CREATING_PERSONA -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<SetCreatingPersonaPayload>(it) } ?: return currentFeatureState
-                return currentFeatureState.copy(isCreatingPersona = payload.isCreating)
+                val isCreating = payload?.get("isCreating")?.jsonPrimitive?.booleanOrNull ?: return currentFeatureState
+                return currentFeatureState.copy(isCreatingPersona = isCreating)
             }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<DeletePersonaPayload>(it) } ?: return currentFeatureState
-                val rootHolon = currentFeatureState.holons[payload.personaId] ?: return currentFeatureState
+                val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: return currentFeatureState
+                val rootHolon = currentFeatureState.holons[personaId] ?: return currentFeatureState
                 val idsToDelete = mutableSetOf<String>()
                 val queue = mutableListOf(rootHolon)
                 while (queue.isNotEmpty()) {
@@ -379,22 +355,22 @@ class KnowledgeGraphFeature(
                     }
                 }
                 val newHolons = currentFeatureState.holons - idsToDelete
-                val newRoots = currentFeatureState.personaRoots.filterValues { it != payload.personaId }
+                val newRoots = currentFeatureState.personaRoots.filterValues { it != personaId }
                 return currentFeatureState.copy(
                     holons = newHolons,
                     personaRoots = newRoots,
-                    activePersonaIdForView = if (currentFeatureState.activePersonaIdForView == payload.personaId) null else currentFeatureState.activePersonaIdForView,
+                    activePersonaIdForView = if (currentFeatureState.activePersonaIdForView == personaId) null else currentFeatureState.activePersonaIdForView,
                     activeHolonIdForView = null,
                     personaIdToDelete = null
                 )
             }
             ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<SetHolonToDeletePayload>(it) } ?: return currentFeatureState
-                return currentFeatureState.copy(holonIdToDelete = payload.holonId)
+                val holonId = payload?.get("holonId")?.jsonPrimitive?.contentOrNull
+                return currentFeatureState.copy(holonIdToDelete = holonId)
             }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_HOLON -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<DeleteHolonPayload>(it) } ?: return currentFeatureState
-                val holonToDelete = currentFeatureState.holons[payload.holonId] ?: return currentFeatureState
+                val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: return currentFeatureState
+                val holonToDelete = currentFeatureState.holons[holonId] ?: return currentFeatureState
                 val idsToDelete = mutableSetOf<String>()
                 val queue = mutableListOf(holonToDelete)
                 while (queue.isNotEmpty()) {
@@ -407,7 +383,7 @@ class KnowledgeGraphFeature(
                 var newHolons = currentFeatureState.holons - idsToDelete
                 holonToDelete.header.parentId?.let { parentId ->
                     currentFeatureState.holons[parentId]?.let { parentHolon ->
-                        val updatedSubHolons = parentHolon.header.subHolons.filter { it.id != payload.holonId }
+                        val updatedSubHolons = parentHolon.header.subHolons.filter { it.id != holonId }
                         val updatedParent = parentHolon.copy(header = parentHolon.header.copy(subHolons = updatedSubHolons))
                         newHolons = newHolons + (parentId to updatedParent)
                     }
@@ -470,20 +446,16 @@ class KnowledgeGraphFeature(
 
         for ((path, rawContent) in fileData.contents) {
             try {
-                val holon = json.decodeFromString<Holon>(rawContent)
-                val expectedId = platformDependencies.getFileName(path).removeSuffix(".json")
-                if (holon.header.id != expectedId) {
-                    platformDependencies.log(LogLevel.ERROR, name, "ID mismatch in '$path': expected '$expectedId', found '${holon.header.id}'. Skipping.")
-                    hasErrors = true
-                    continue
-                }
-                // Store the holon with its filePath enriched and original content preserved.
-                holonsById[holon.header.id] = holon.copy(
-                    header = holon.header.copy(filePath = path),
-                    rawContent = rawContent
-                )
+                // [REFACTOR] Use the canonical gateway for holon creation and validation.
+                // This single call replaces manual JSON parsing and ID checking.
+                val holon = createHolonFromString(rawContent, path, platformDependencies)
+                holonsById[holon.header.id] = holon
+            } catch (e: HolonValidationException) {
+                platformDependencies.log(LogLevel.ERROR, name, "Failed to load holon at '$path': ${e.message}")
+                hasErrors = true
             } catch (e: Exception) {
-                platformDependencies.log(LogLevel.ERROR, name, "Failed to parse JSON for holon at '$path'", e)
+                // Catch any other unexpected errors.
+                platformDependencies.log(LogLevel.ERROR, name, "An unexpected error occurred parsing '$path'", e)
                 hasErrors = true
             }
         }
