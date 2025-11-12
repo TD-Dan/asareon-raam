@@ -26,7 +26,7 @@ internal fun addSubHolonRefToContent(parentContent: String, childRef: SubHolonRe
         val updatedSubHolons = parentHolon.header.subHolons + childRef
         val updatedHeader = parentHolon.header.copy(subHolons = updatedSubHolons)
         val updatedHolon = parentHolon.copy(header = updatedHeader)
-        json.encodeToString(Holon.serializer(), updatedHolon)
+        prepareHolonForWriting(updatedHolon)
     } catch (e: Exception) {
         // Fail gracefully if the parent content is not a valid Holon.
         // TODO: add error reporting. We cannot fail silently!
@@ -36,4 +36,18 @@ internal fun addSubHolonRefToContent(parentContent: String, childRef: SubHolonRe
     }
 }
 
-// TODO: Move to this file other holon specific operations, such as validations and checks!
+/**
+ * Takes an in-memory Holon object and prepares it for file system persistence.
+ * This function creates a 'clean' version of the holon by:
+ * 1. Retaining the enriched runtime metadata (`filePath`, `parentId`, `depth`).
+ * 2. Setting the `content` field to an empty string to prevent recursive serialization.
+ * This is the canonical function for serializing a holon before writing it to disk.
+ *
+ * @param holon The in-memory Holon object to prepare.
+ * @return A pretty-printed JSON string representation of the holon.
+ */
+internal fun prepareHolonForWriting(holon: Holon): String {
+    // Create a copy, explicitly clearing the content field before serialization.
+    val cleanHolon = holon.copy(content = "")
+    return json.encodeToString(Holon.serializer(), cleanHolon)
+}

@@ -132,7 +132,7 @@ class KnowledgeGraphFeature(
                     createdAt = isoTimestamp, modifiedAt = isoTimestamp
                 )
                 val newHolon = Holon(header = newHolonHeader, payload = buildJsonObject {})
-                val fullContent = json.encodeToString(Holon.serializer(), newHolon)
+                val fullContent = prepareHolonForWriting(newHolon)
 
                 val destSubpath = "$newId/$newId.json"
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
@@ -145,10 +145,28 @@ class KnowledgeGraphFeature(
             ActionNames.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<UpdateHolonContentPayload>(it) } ?: return
                 val holonToUpdate = kgState.holons[payload.holonId] ?: return
+
+                // [REFACTOR] We cannot just write the newContent string, as it might be malformed.
+                // We must parse it, update the in-memory holon, then re-serialize it.
+                val updatedHolon = try {
+                    val tempHolon = json.decodeFromString<Holon>(payload.newContent)
+                    holonToUpdate.copy(
+                        header = tempHolon.header,
+                        payload = tempHolon.payload,
+                        execute = tempHolon.execute,
+                        content = payload.newContent // Keep the raw string for the editor view
+                    )
+                } catch (e: Exception) {
+                    platformDependencies.log(LogLevel.ERROR, name, "Failed to parse updated holon content. Aborting write.", e)
+                    store.dispatch(name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Error: Invalid JSON format. Changes not saved.") }))
+                    return
+                }
+
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                     put("subpath", holonToUpdate.header.filePath)
-                    put("content", payload.newContent)
+                    put("content", prepareHolonForWriting(updatedHolon))
                 }))
+
                 holonToUpdate.header.parentId?.let { parentId ->
                     kgState.holons[parentId]?.let { parent ->
                         if (parent.header.type == "AI_Persona_Root") {
@@ -162,7 +180,7 @@ class KnowledgeGraphFeature(
                 val holonToUpdate = kgState.holons[payload.holonId] ?: return
                 val updatedHeader = holonToUpdate.header.copy(name = payload.newName)
                 val updatedHolon = holonToUpdate.copy(header = updatedHeader)
-                val newContent = json.encodeToString(Holon.serializer(), updatedHolon)
+                val newContent = prepareHolonForWriting(updatedHolon)
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                     put("subpath", holonToUpdate.header.filePath)
                     put("content", newContent)
@@ -196,7 +214,7 @@ class KnowledgeGraphFeature(
                     val updatedParent = parentHolon.copy(header = updatedParentHeader)
                     store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                         put("subpath", updatedParent.header.filePath)
-                        put("content", json.encodeToString(Holon.serializer(), updatedParent))
+                        put("content", prepareHolonForWriting(updatedParent))
                     }))
                 }
                 store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_HOLON, buildJsonObject {
