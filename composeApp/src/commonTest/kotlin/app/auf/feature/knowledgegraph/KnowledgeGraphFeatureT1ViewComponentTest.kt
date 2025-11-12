@@ -7,7 +7,13 @@ import app.auf.core.AppState
 import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
+import app.auf.test.TestEnvironment
+import app.auf.test.TestHarness
 import app.auf.ui.AppTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
@@ -28,112 +34,117 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
     @get:Rule
     val composeTestRule = createComposeRule()
 
-    private lateinit var fakePlatform: FakePlatformDependencies
-    private lateinit var fakeStore: FakeStore
-    private val json = Json { prettyPrint = true }
+    private lateinit var harness: TestHarness
+    private val platform = FakePlatformDependencies("test")
+    private val feature = KnowledgeGraphFeature(platform, CoroutineScope(Dispatchers.Unconfined))
 
-    @Before
-    fun setUp() {
-        fakePlatform = FakePlatformDependencies("test")
-        fakeStore = FakeStore(AppState(), fakePlatform, ActionNames.allActionNames)
-    }
-
-    private fun setViewState(state: KnowledgeGraphState) {
-        val appState = AppState(featureStates = mapOf("knowledgegraph" to state))
-        fakeStore.setState(appState)
+    private fun setupTestWithState(state: KnowledgeGraphState) {
+        harness = TestEnvironment.create()
+            .withFeature(feature)
+            .withInitialState("knowledgegraph", state)
+            .build(platform = platform)
 
         composeTestRule.setContent {
             AppTheme {
                 KnowledgeGraphView(
-                    store = fakeStore,
-                    platformDependencies = fakePlatform
+                    store = harness.store,
+                    platformDependencies = platform
                 )
             }
         }
     }
 
     @Test
-    fun `selecting a holon displays its rawContent`() {
+    fun `selecting a holon displays its rawContent`() = runTest {
         val h1Content = "This is the unique raw holon content."
         val h1 = Holon(HolonHeader(id = "h1", type = "Type_A", name = "Holon One"), buildJsonObject {}, rawContent = h1Content)
         val p1 = Holon(HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1", subHolons = listOf(SubHolonRef("h1", "Type_A", ""))), buildJsonObject {})
-        setViewState(KnowledgeGraphState(
+        setupTestWithState(KnowledgeGraphState(
             holons = mapOf("p1" to p1, "h1" to h1),
-            activePersonaIdForView = "p1"
-        ).copy(activeHolonIdForView = "h1"))
+            activePersonaIdForView = "p1",
+            activeHolonIdForView = "h1"
+        ))
+        composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithText(h1Content).assertExists()
     }
 
     @Test
-    fun `HolonEditView updates payload and dispatches correct action`() {
+    fun `HolonEditView updates payload and dispatches correct action`() = runTest {
         val initialPayload = buildJsonObject { put("key", "old") }
-        val h1 = Holon(
-            header = HolonHeader(id = "h1", type = "Type_A", name = "H1"),
-            payload = initialPayload,
-            execute = buildJsonObject {}
-        )
-        setViewState(KnowledgeGraphState(
-            holons = mapOf("h1" to h1),
-            holonIdToEdit = "h1"
-        ))
-        fakeStore.dispatchedActions.clear()
+        val h1 = Holon(header = HolonHeader(id = "h1", type = "Type_A", name = "H1"), payload = initialPayload, execute = buildJsonObject {})
+        val p1 = Holon(header = HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1"), payload = buildJsonObject {})
 
-        val newPayloadString = """{ "key": "new" }"""
-        composeTestRule.onNodeWithText("Payload").performTextInput(newPayloadString)
+        // [THE FIX] Provide a COMPLETE and logically valid state, including the active persona.
+        setupTestWithState(KnowledgeGraphState(
+            holons = mapOf("h1" to h1, "p1" to p1),
+            holonIdToEdit = "h1",
+            activePersonaIdForView = "p1"
+        ))
+        composeTestRule.waitForIdle()
+        harness.store.processedActions.clear()
+
+        val newPayloadString = """{"key":"new"}"""
+        composeTestRule.onNodeWithText("Payload").performTextReplacement(newPayloadString)
+
+        composeTestRule.waitForIdle()
+
         composeTestRule.onNodeWithText("Save Changes").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT }
+        composeTestRule.waitForIdle()
+
+        val action = harness.store.processedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT }
         assertNotNull(action)
         assertEquals("h1", action.payload?.get("holonId")?.toString()?.trim('"'))
         assertEquals(newPayloadString, action.payload?.get("payload")?.toString())
     }
 
     @Test
-    fun `HolonEditView with invalid JSON does not dispatch action and shows error`() {
+    fun `HolonEditView with invalid JSON does not dispatch action and shows error`() = runTest {
         val h1 = Holon(header = HolonHeader(id = "h1", type = "Type_A", name = "H1"), payload = buildJsonObject {})
-        setViewState(KnowledgeGraphState(holons = mapOf("h1" to h1), holonIdToEdit = "h1"))
-        fakeStore.dispatchedActions.clear()
+        val p1 = Holon(header = HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1"), payload = buildJsonObject {})
 
-        composeTestRule.onNodeWithText("Payload").performTextInput("{ \"key\": ") // Invalid JSON
+        // [THE FIX] Provide a COMPLETE and logically valid state, including the active persona.
+        setupTestWithState(KnowledgeGraphState(
+            holons = mapOf("h1" to h1, "p1" to p1),
+            holonIdToEdit = "h1",
+            activePersonaIdForView = "p1"
+        ))
+        composeTestRule.waitForIdle()
+        harness.store.processedActions.clear()
+
+        composeTestRule.onNodeWithText("Payload").performTextInput("{ \"key\": ")
+        composeTestRule.waitForIdle()
+
         composeTestRule.onNodeWithText("Save Changes").performClick()
+        composeTestRule.waitForIdle()
 
-        // Assert that NO action was dispatched
-        assertTrue(fakeStore.dispatchedActions.none { it.name == ActionNames.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT })
-
-        // Assert that an error message is shown
+        assertTrue(harness.store.processedActions.none { it.name == ActionNames.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT })
         composeTestRule.onNodeWithText("Invalid JSON format in payload.").assertExists()
     }
 
     @Test
-    fun `ImportPane ActionSelector should only show actions from the availableActions list`() {
-        // ARRANGE: Create a state where the analyzer has provided a limited set of actions.
+    fun `ImportPane ActionSelector should only show actions from the availableActions list`() = runTest {
         val importItem = ImportItem(
             sourcePath = "quarantined.json",
             initialAction = Quarantine("Test reason"),
             targetPath = null,
-            // The analyzer has determined only these 3 actions are valid for this item.
             availableActions = listOf(ImportActionType.QUARANTINE, ImportActionType.ASSIGN_PARENT, ImportActionType.IGNORE)
         )
-        setViewState(KnowledgeGraphState(
+        setupTestWithState(KnowledgeGraphState(
             viewMode = KnowledgeGraphViewMode.IMPORT,
             importItems = listOf(importItem),
             importSelectedActions = mapOf("quarantined.json" to importItem.initialAction),
             importFileContents = mapOf("quarantined.json" to "{}")
         ))
+        composeTestRule.waitForIdle()
 
-        // ACT: Find the dropdown for our item and open it.
-        // The "More" icon is the only way to open the menu for a ParentSelector.
         composeTestRule.onNodeWithContentDescription("Change Action Type").performClick()
+        composeTestRule.waitForIdle()
 
-        // ASSERT:
-        // Check that the valid options are present.
         composeTestRule.onNodeWithText("Quarantine (fix later)").assertIsDisplayed()
         composeTestRule.onNodeWithText("Orphan - select parent").assertIsDisplayed()
         composeTestRule.onNodeWithText("Ignore - Do nothing").assertIsDisplayed()
-
-        // Check that an INVALID option (which the old UI would show) is NOT present.
-        // This is the assertion we expect to FAIL.
         composeTestRule.onNodeWithText("Update existing holon").assertDoesNotExist()
     }
 }
