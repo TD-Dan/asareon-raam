@@ -6,28 +6,10 @@ import kotlinx.serialization.json.Json
 private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
 
 /**
- * A structured, type-safe representation of all possible validation failures that can occur
- * during the creation of a Holon from a source string. This allows for precise,
- * machine-readable error handling.
+ * A custom exception to signal a failure during the validation or creation of a Holon.
+ * This consolidates all potential parsing and validation errors into a single, specific type.
  */
-sealed class HolonValidationError {
-    /** The input string was not well-formed JSON or did not match the Holon schema. */
-    data class MalformedJson(val error: String) : HolonValidationError()
-    /** The `header.id` inside the JSON content does not match the file's name. */
-    data class MismatchedId(val path: String, val expectedId: String, val foundId: String) : HolonValidationError()
-    /** The ID (either from the filename or header) does not conform to the required format. */
-    data class InvalidIdFormat(val message: String): HolonValidationError()
-}
-
-/**
- * A custom, self-contained sealed class to represent the outcome of the
- * holon creation process. It can hold either a successful result or a structured,
- * typed error, unlike the standard `kotlin.Result` which requires a `Throwable`.
- */
-sealed class HolonCreationResult {
-    data class Success(val holon: Holon) : HolonCreationResult()
-    data class Failure(val error: HolonValidationError) : HolonCreationResult()
-}
+class HolonValidationException(message: String) : Exception(message)
 
 
 /**
@@ -42,7 +24,6 @@ sealed class HolonCreationResult {
 fun normalizeHolonId(id: String): String {
     val trimmedId = id.trim()
     val lastHyphenIndex = trimmedId.lastIndexOf('-')
-    // [THE FIX] Regex now expects an uppercase Z.
     val timestampRegex = Regex("^\\d{8}T\\d{6}Z$")
 
     // 1. Structural Validation: Must have a hyphen separating name and timestamp.
@@ -67,7 +48,6 @@ fun normalizeHolonId(id: String): String {
         throw IllegalArgumentException("Invalid holon ID: name part becomes empty after sanitization. Original: '$id'")
     }
 
-    // [THE FIX] Ensure the timestamp is uppercased for canonical format.
     return "$normalizedName-${timestampPart.uppercase()}"
 }
 
@@ -79,29 +59,29 @@ fun normalizeHolonId(id: String): String {
  * @param rawContent The raw JSON string content from a file.
  * @param sourcePath The file path from which the content was read, used for the ID match validation.
  * @param platformDependencies Required to extract the filename from the path.
- * @return A `HolonCreationResult` object containing either the successfully validated and normalized `Holon` or a specific `HolonValidationError`.
+ * @return A successfully validated and normalized `Holon` object.
+ * @throws HolonValidationException if the content is malformed, IDs do not match, or any ID format is invalid.
  */
 internal fun createHolonFromString(
     rawContent: String,
     sourcePath: String,
     platformDependencies: PlatformDependencies
-): HolonCreationResult {
+): Holon {
     // --- 1. Validation: Is it well-formed JSON? ---
     val holon = try {
         json.decodeFromString<Holon>(rawContent)
     } catch (e: Exception) {
-        return HolonCreationResult.Failure(HolonValidationError.MalformedJson(e.message ?: "Unknown parsing error."))
+        throw HolonValidationException("Malformed JSON in '$sourcePath': ${e.message}")
     }
 
     // --- 2. Validation: Does the internal ID match the filename? ---
     val expectedId = platformDependencies.getFileName(sourcePath).removeSuffix(".json")
     if (holon.header.id != expectedId) {
-        return HolonCreationResult.Failure(HolonValidationError.MismatchedId(sourcePath, expectedId, holon.header.id))
+        throw HolonValidationException("Mismatched ID in '$sourcePath': File name implies ID '$expectedId' but header contains '${holon.header.id}'.")
     }
 
     // --- 3. Normalization and Final Validation ---
     try {
-        // Use the now-local, hardened normalization function on all relevant IDs.
         val normalizedId = normalizeHolonId(holon.header.id)
         val normalizedHeader = holon.header.copy(
             id = normalizedId,
@@ -110,10 +90,9 @@ internal fun createHolonFromString(
             relationships = holon.header.relationships.map { it.copy(targetId = normalizeHolonId(it.targetId)) },
             subHolons = holon.header.subHolons.map { it.copy(id = normalizeHolonId(it.id)) }
         )
-        val normalizedHolon = holon.copy(header = normalizedHeader, rawContent = rawContent)
-        return HolonCreationResult.Success(normalizedHolon)
+        return holon.copy(header = normalizedHeader, rawContent = rawContent)
     } catch (e: IllegalArgumentException) {
-        return HolonCreationResult.Failure(HolonValidationError.InvalidIdFormat(e.message ?: "Invalid ID format."))
+        throw HolonValidationException("Invalid ID format in '$sourcePath': ${e.message}")
     }
 }
 
