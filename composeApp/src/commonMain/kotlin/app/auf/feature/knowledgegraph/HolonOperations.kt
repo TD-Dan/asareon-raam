@@ -88,7 +88,8 @@ internal fun createHolonFromString(
             name = holon.header.name.trim(),
             summary = holon.header.summary?.trim(),
             relationships = holon.header.relationships.map { it.copy(targetId = normalizeHolonId(it.targetId)) },
-            subHolons = holon.header.subHolons.map { it.copy(id = normalizeHolonId(it.id)) }
+            subHolons = holon.header.subHolons.map { it.copy(id = normalizeHolonId(it.id)) },
+            filePath = sourcePath
         )
         return holon.copy(header = normalizedHeader, rawContent = rawContent)
     } catch (e: IllegalArgumentException) {

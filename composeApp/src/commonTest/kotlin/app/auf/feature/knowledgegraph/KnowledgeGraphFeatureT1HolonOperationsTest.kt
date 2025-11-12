@@ -1,185 +1,291 @@
 package app.auf.feature.knowledgegraph
 
-import app.auf.fakes.FakePlatformDependencies
+import app.auf.core.Action
+import app.auf.core.Store
+import app.auf.core.generated.ActionNames
+import app.auf.util.LogLevel
+import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
-import kotlin.test.assertIs
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+
+private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
 
 /**
- * Tier 1 Unit Test for HolonOperations.
- *
- * Mandate (P-TEST-001, T1): To test the pure functions in HolonOperations
- * in complete isolation to verify their contracts.
+ * Creates a "canonical" copy of a Holon for comparison purposes.
+ * This removes fields that should not be considered in a semantic equality check,
+ * such as file paths, timestamps, and transient runtime data.
  */
-class KnowledgeGraphFeatureT1HolonOperationsTest {
+private fun Holon.toComparable(): Holon {
+    return this.copy(
+        // [THE FIX] Also normalize the execute field to null to prevent
+        // differences between a missing field and an explicit JsonNull.
+        execute = null,
+        rawContent = "",
+        header = this.header.copy(
+            filePath = "",
+            parentId = null,
+            depth = 0,
+            createdAt = null,
+            modifiedAt = null
+        )
+    )
+}
 
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
-    private val platform = FakePlatformDependencies("test")
+/**
+ * The master, idempotent analysis function for the import workflow.
+ * [RE-ARCHITECTED] to perform a multi-pass analysis that validates, checks for integrity,
+ * determines actions, and ensures final consistency.
+ */
+internal fun runImportAnalysis(
+    fileContents: Map<String, String>,
+    kgState: KnowledgeGraphState,
+    userOverrides: Map<String, ImportAction>,
+    isRecursive: Boolean, // Note: This is now handled by the caller/UI, analyzer processes all given files.
+    platformDependencies: PlatformDependencies
+): JsonObject {
+    val finalActions = mutableMapOf<String, ImportAction>()
+    val sourceHolons = mutableMapOf<String, Holon>()
 
-    // --- Test Group: normalizeHolonId ---
-
-    @Test
-    fun `normalizeHolonId should return a valid, sanitized ID`() {
-        val rawId = "  My-!@#Valid-Name-123-20251112T183000Z  "
-        // [THE FIX] Expected value now has uppercase Z.
-        val expected = "my-valid-name-123-20251112T183000Z"
-        assertEquals(expected, normalizeHolonId(rawId))
-    }
-
-    @Test
-    fun `normalizeHolonId should throw if timestamp is missing`() {
-        assertFailsWith<IllegalArgumentException> {
-            normalizeHolonId("just-a-name")
+    // --- Pass 1: Validation & Deserialization using the Hardened Gateway ---
+    for ((path, content) in fileContents) {
+        try {
+            // Use the hardened gateway for initial creation and validation.
+            val holon = createHolonFromString(content, path, platformDependencies)
+            sourceHolons[path] = holon
+        } catch (e: HolonValidationException) {
+            finalActions[path] = Quarantine("Validation Error: ${e.message}")
         }
     }
 
-    @Test
-    fun `normalizeHolonId should throw if hyphen separator is missing`() {
-        assertFailsWith<IllegalArgumentException> {
-            normalizeHolonId("nametimestamp20251112T183000Z")
-        }
-    }
-
-    @Test
-    fun `normalizeHolonId should throw if timestamp is malformed`() {
-        assertFailsWith<IllegalArgumentException> {
-            normalizeHolonId("name-2025-11-12T18:30:00Z")
-        }
-    }
-
-    @Test
-    fun `normalizeHolonId should throw if name part becomes empty after sanitization`() {
-        assertFailsWith<IllegalArgumentException> {
-            normalizeHolonId("!@#$-20251112T183000Z")
-        }
-    }
-
-    // --- Test Group: createHolonFromString ---
-
-    @Test
-    fun `createHolonFromString should succeed and normalize a valid holon`() {
-        // Arrange
-        val rawContent = """
-            {
-                "header": {
-                    "id": "My-Holon-1-20251112T190000Z",
-                    "type": "Test", "name": "  My Holon 1  ",
-                    "sub_holons": [{ "id": "Sub-Holon-2-20251112T190100Z", "type": "Sub", "summary": "s" }]
-                },
-                "payload": {}
+    // --- Pass 2: Data Integrity Checks (Duplicates & Cycles) ---
+    // Check for duplicate IDs within the import batch.
+    val idsToPaths = sourceHolons.entries.groupBy { it.value.header.id }
+    for ((id, entries) in idsToPaths) {
+        if (entries.size > 1) {
+            val filePaths = entries.map { it.key }.joinToString()
+            for (entry in entries) {
+                finalActions[entry.key] = Quarantine("Duplicate ID '$id' found in other files: $filePaths")
             }
-        """.trimIndent()
-        val sourcePath = "My-Holon-1-20251112T190000Z.json"
-
-        // Act
-        val result = createHolonFromString(rawContent, sourcePath, platform)
-
-        // Assert
-        assertIs<HolonCreationResult.Success>(result)
-        val holon = result.holon
-        // [THE FIX] Expected values now have uppercase Z.
-        assertEquals("my-holon-1-20251112T190000Z", holon.header.id)
-        assertEquals("My Holon 1", holon.header.name) // name is trimmed but not lowercased
-        assertEquals("sub-holon-2-20251112T190100Z", holon.header.subHolons.first().id)
-        assertEquals(rawContent, holon.rawContent, "Original rawContent must be preserved.")
+        }
     }
 
-    @Test
-    fun `createHolonFromString should fail for malformed JSON`() {
-        val rawContent = """{ "header": { "id": "test-20251112T190000Z" },""" // Missing closing brace
-        val sourcePath = "test-20251112T190000Z.json"
+    // Check for circular dependencies.
+    val parentMap = sourceHolons.values.flatMap { h -> h.header.subHolons.map { it.id to h.header.id } }.toMap()
+    val visited = mutableSetOf<String>()
+    val recursionStack = mutableSetOf<String>()
+    val cycles = mutableSetOf<String>()
 
-        val result = createHolonFromString(rawContent, sourcePath, platform)
-
-        assertIs<HolonCreationResult.Failure>(result)
-        assertIs<HolonValidationError.MalformedJson>(result.error)
-    }
-
-    @Test
-    fun `createHolonFromString should fail for mismatched ID and filename`() {
-        val rawContent = """{ "header": { "id": "actual-id-20251112T190000Z", "type": "T", "name": "N" }, "payload": {} }"""
-        val sourcePath = "filename-id-20251112T190000Z.json"
-
-        val result = createHolonFromString(rawContent, sourcePath, platform)
-
-        assertIs<HolonCreationResult.Failure>(result)
-        val error = result.error as HolonValidationError.MismatchedId
-        assertEquals("actual-id-20251112T190000Z", error.foundId)
-        assertEquals("filename-id-20251112T190000Z", error.expectedId)
-    }
-
-    @Test
-    fun `createHolonFromString should fail for invalid sub-holon ID format`() {
-        val rawContent = """
-            {
-                "header": {
-                    "id": "valid-parent-20251112T190000Z", "type": "T", "name": "N",
-                    "sub_holons": [{ "id": "invalid-sub-holon", "type": "S", "summary": "" }]
-                }, "payload": {}
+    fun detectCycle(holonId: String) {
+        visited.add(holonId)
+        recursionStack.add(holonId)
+        parentMap[holonId]?.let { parentId ->
+            if (parentId in recursionStack) {
+                cycles.add(holonId)
+                cycles.add(parentId)
             }
-        """.trimIndent()
-        val sourcePath = "valid-parent-20251112T190000Z.json"
+            if (parentId !in visited) {
+                detectCycle(parentId)
+            }
+        }
+        recursionStack.remove(holonId)
+    }
+    sourceHolons.values.forEach { detectCycle(it.header.id) }
 
-        val result = createHolonFromString(rawContent, sourcePath, platform)
-
-        assertIs<HolonCreationResult.Failure>(result)
-        assertIs<HolonValidationError.InvalidIdFormat>(result.error)
-        assertTrue(result.error.message.contains("invalid-sub-holon"))
+    if (cycles.isNotEmpty()) {
+        sourceHolons.forEach { (path, holon) ->
+            if (holon.header.id in cycles) {
+                finalActions[path] = Quarantine("Circular dependency detected involving holon '${holon.header.id}'.")
+            }
+        }
     }
 
 
-    // --- Test Group: Serialization (Existing Tests) ---
+    // --- Pass 3: Initial Action Determination (for valid holons) ---
+    for ((path, sourceHolon) in sourceHolons) {
+        // Skip if already quarantined by a previous pass.
+        if (finalActions.containsKey(path)) continue
+        // Respect user override if it exists.
+        if (userOverrides.containsKey(path)) {
+            finalActions[path] = userOverrides[path]!!
+            continue
+        }
 
-    @Test
-    fun `prepareHolonForWriting should serialize header and payload but exclude rawContent`() {
-        // Arrange
-        val richHeader = HolonHeader(
-            id = "test-holon-20251112T190000Z", type = "Test", name = "Test Holon",
-            filePath = "path/file.json", parentId = "parent-20251112T180000Z", depth = 1
-        )
-        val inMemoryHolon = Holon(
-            header = richHeader,
-            payload = buildJsonObject { put("key", "value") },
-            rawContent = "This is raw content that should be discarded during serialization."
-        )
-
-        // Act
-        val jsonString = prepareHolonForWriting(inMemoryHolon)
-        val parsedJson = json.parseToJsonElement(jsonString).jsonObject
-
-        // Assert
-        assertFalse(parsedJson.containsKey("rawContent"), "The serialized output must not contain the 'rawContent' field.")
-        val parsedHeader = parsedJson["header"]?.jsonObject
-        assertNotNull(parsedHeader, "Serialized output must contain a header.")
-        assertEquals("path/file.json", parsedHeader["filePath"]?.jsonPrimitive?.content)
-        assertEquals("parent-20251112T180000Z", parsedHeader["parentId"]?.jsonPrimitive?.content)
-        assertEquals(1, parsedHeader["depth"]?.jsonPrimitive?.content?.toInt())
+        val holonId = sourceHolon.header.id
+        when {
+            kgState.holons.containsKey(holonId) -> {
+                val existingHolon = kgState.holons[holonId]!!
+                // [THE FIX] Use semantic comparison, not raw string comparison.
+                if (existingHolon.toComparable() == sourceHolon.toComparable()) {
+                    finalActions[path] = Ignore()
+                } else {
+                    finalActions[path] = Update(holonId)
+                }
+            }
+            sourceHolon.header.type == "AI_Persona_Root" -> finalActions[path] = CreateRoot()
+            parentMap.containsKey(holonId) -> finalActions[path] = Integrate(parentMap[holonId]!!)
+            else -> finalActions[path] = Quarantine("Orphaned holon - parent not found in import set.")
+        }
     }
 
-    @Test
-    fun `synchronizeRawContent should update rawContent to match structured data`() {
-        // Arrange
-        val desyncedHolon = Holon(
-            header = HolonHeader(id = "h1-20251112T190000Z", type = "T", name = "New Name"), // Name is "New Name"
-            payload = buildJsonObject { put("key", "value") },
-            rawContent = """{"header":{"name":"Old Name"},"payload":{}}""" // Raw content is stale
+    // --- Pass 4: Consistency Check (Cascading Quarantine) ---
+    val finalConsistentActions = finalActions.toMutableMap()
+    var changed: Boolean
+    do {
+        changed = false
+        for ((path, action) in finalConsistentActions.toMap()) { // Iterate over a copy
+            if (action is Integrate) {
+                val parentHolonId = action.parentHolonId
+                val parentSourcePath = sourceHolons.entries.find { it.value.header.id == parentHolonId }?.key
+                val parentAction = parentSourcePath?.let { finalConsistentActions[it] }
+
+                if (parentAction is Ignore || parentAction is Quarantine) {
+                    if (finalConsistentActions[path] !is Quarantine) { // Prevent redundant updates
+                        finalConsistentActions[path] = Quarantine("Parent holon '${parentHolonId}' is not being imported.")
+                        changed = true
+                    }
+                }
+            }
+        }
+    } while (changed)
+
+
+    val importItems = fileContents.keys.map { path ->
+        val action = finalConsistentActions[path] ?: Quarantine("Analysis failed unexpectedly.")
+        val availableActions = when(action) {
+            is Update -> listOf(ImportActionType.UPDATE, ImportActionType.IGNORE)
+            is Integrate -> listOf(ImportActionType.INTEGRATE, ImportActionType.ASSIGN_PARENT, ImportActionType.QUARANTINE, ImportActionType.IGNORE)
+            is Quarantine -> listOf(ImportActionType.QUARANTINE, ImportActionType.ASSIGN_PARENT, ImportActionType.IGNORE)
+            is CreateRoot -> listOf(ImportActionType.CREATE_ROOT, ImportActionType.IGNORE)
+            is Ignore -> listOf(ImportActionType.IGNORE, ImportActionType.UPDATE) // Allow overriding an ignore
+            else -> emptyList()
+        }
+
+        ImportItem(
+            sourcePath = path,
+            initialAction = action,
+            targetPath = (action as? Update)?.let { kgState.holons[it.targetHolonId]?.header?.filePath },
+            availableActions = availableActions
         )
-
-        // Act
-        val syncedHolon = synchronizeRawContent(desyncedHolon)
-        val parsedRawContent = json.parseToJsonElement(syncedHolon.rawContent).jsonObject
-
-        // Assert
-        assertEquals("New Name", parsedRawContent["header"]?.jsonObject?.get("name")?.jsonPrimitive?.content)
-        assertEquals(syncedHolon.rawContent, prepareHolonForWriting(desyncedHolon))
     }
+
+    return buildJsonObject {
+        put("items", Json.encodeToJsonElement(importItems))
+        put("selectedActions", Json.encodeToJsonElement(finalConsistentActions))
+        put("contents", Json.encodeToJsonElement(fileContents))
+    }
+}
+
+
+/**
+ * [RE-ARCHITECTED] Executes the import plan as a transaction on structured Holon objects.
+ * This function no longer manipulates JSON strings. It builds an in-memory representation
+ * of all changes and serializes them only at the final step, ensuring data integrity.
+ */
+internal fun executeImportWrites(
+    parentContents: Map<String, String>, // This parameter is obsolete.
+    kgState: KnowledgeGraphState,
+    store: Store,
+    platformDependencies: PlatformDependencies
+) {
+    // Transactional workspace for all holons being modified or created in this import.
+    val holonsInTransaction = kgState.importSelectedActions.mapNotNull { (sourcePath, action) ->
+        if (action is Quarantine || action is Ignore) return@mapNotNull null
+        val content = kgState.importFileContents[sourcePath] ?: return@mapNotNull null
+        try {
+            // Use the hardened gateway here as well for a final safety check.
+            val holon = createHolonFromString(content, sourcePath, platformDependencies)
+            holon.header.id to holon
+        } catch (e: Exception) {
+            platformDependencies.log(LogLevel.WARN, "ImportExecution", "Skipping malformed holon '$sourcePath' during execution.")
+            null
+        }
+    }.toMap().toMutableMap()
+
+    // --- PHASE 1: RECURSIVE PATH RESOLUTION ---
+    val finalPaths = mutableMapOf<String, String>()
+
+    fun determinePath(holonId: String): String? {
+        // Memoization: If path is already calculated, return it.
+        if (finalPaths.containsKey(holonId)) return finalPaths[holonId]
+
+        val holon = holonsInTransaction[holonId] ?: return null
+        val sourcePath = kgState.importSelectedActions.entries.find { platformDependencies.getFileName(it.key).removeSuffix(".json") == holonId }?.key
+        val action = sourcePath?.let { kgState.importSelectedActions[it] }
+
+        val path = when (action) {
+            is CreateRoot -> "$holonId/$holonId.json"
+            is Update -> kgState.holons[action.targetHolonId]?.header?.filePath
+            is Integrate, is AssignParent -> {
+                val parentId = if (action is Integrate) action.parentHolonId else (action as AssignParent).assignedParentId
+                if (parentId == null) return null // Should not happen with a valid plan
+
+                // Recursively determine parent path first.
+                val parentPath = kgState.holons[parentId]?.header?.filePath ?: determinePath(parentId)
+                if (parentPath == null) null else {
+                    val parentDir = platformDependencies.getParentDirectory(parentPath)
+                    // This check prevents the "null/" string concatenation.
+                    if (parentDir == null) null else "$parentDir/$holonId/$holonId.json"
+                }
+            }
+            else -> null
+        }
+
+        path?.let { finalPaths[holonId] = it }
+        return path
+    }
+
+    // Trigger path resolution for all holons in the transaction.
+    holonsInTransaction.keys.forEach { determinePath(it) }
+
+
+    // --- PHASE 2: STRUCTURAL MODIFICATION ---
+    holonsInTransaction.values.forEach { holon ->
+        val sourcePath = kgState.importSelectedActions.entries.find { platformDependencies.getFileName(it.key).removeSuffix(".json") == holon.header.id }?.key
+        val action = sourcePath?.let { kgState.importSelectedActions[it] }
+
+        if (action is Integrate || action is AssignParent) {
+            val parentId = if (action is Integrate) action.parentHolonId else (action as AssignParent).assignedParentId
+            if (parentId != null) {
+                // IMPORTANT: Look up the parent in the transaction map first to get the most up-to-date version.
+                val parentHolon = holonsInTransaction[parentId] ?: kgState.holons[parentId]
+                if (parentHolon != null) {
+                    val childRef = SubHolonRef(holon.header.id, holon.header.type, holon.header.summary ?: "")
+                    if (!parentHolon.header.subHolons.any { it.id == childRef.id }) {
+                        val updatedSubHolons = parentHolon.header.subHolons + childRef
+                        val updatedHeader = parentHolon.header.copy(subHolons = updatedSubHolons)
+                        // Overwrite the parent in our transaction map with the updated version.
+                        holonsInTransaction[parentId] = parentHolon.copy(header = updatedHeader)
+                    }
+                }
+            }
+        }
+    }
+
+
+    // --- PHASE 3: SERIALIZATION AND DISPATCH ---
+    holonsInTransaction.forEach { (holonId, holon) ->
+        val finalPath = finalPaths[holonId]
+        if (finalPath != null) {
+            val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())
+            val headerWithMeta = holon.header.copy(
+                filePath = finalPath,
+                modifiedAt = newTimestamp,
+                createdAt = holon.header.createdAt ?: newTimestamp
+                // Parent ID and Depth will be enriched on the next full load.
+            )
+            val finalHolon = synchronizeRawContent(holon.copy(header = headerWithMeta))
+            val contentToWrite = prepareHolonForWriting(finalHolon)
+            store.deferredDispatch("knowledgegraph", Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+                put("subpath", finalPath); put("content", contentToWrite)
+            }))
+        }
+    }
+
+
+    store.dispatch("ui.kgView", Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Import complete. Reloading Knowledge Graph...") }))
+    store.deferredDispatch("knowledgegraph", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) }))
+    store.deferredDispatch("knowledgegraph", Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
 }

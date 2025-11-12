@@ -104,4 +104,36 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         // Assert that an error message is shown
         composeTestRule.onNodeWithText("Invalid JSON format in payload.").assertExists()
     }
+
+    @Test
+    fun `ImportPane ActionSelector should only show actions from the availableActions list`() {
+        // ARRANGE: Create a state where the analyzer has provided a limited set of actions.
+        val importItem = ImportItem(
+            sourcePath = "quarantined.json",
+            initialAction = Quarantine("Test reason"),
+            targetPath = null,
+            // The analyzer has determined only these 3 actions are valid for this item.
+            availableActions = listOf(ImportActionType.QUARANTINE, ImportActionType.ASSIGN_PARENT, ImportActionType.IGNORE)
+        )
+        setViewState(KnowledgeGraphState(
+            viewMode = KnowledgeGraphViewMode.IMPORT,
+            importItems = listOf(importItem),
+            importSelectedActions = mapOf("quarantined.json" to importItem.initialAction),
+            importFileContents = mapOf("quarantined.json" to "{}")
+        ))
+
+        // ACT: Find the dropdown for our item and open it.
+        // The "More" icon is the only way to open the menu for a ParentSelector.
+        composeTestRule.onNodeWithContentDescription("Change Action Type").performClick()
+
+        // ASSERT:
+        // Check that the valid options are present.
+        composeTestRule.onNodeWithText("Quarantine (fix later)").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Orphan - select parent").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Ignore - Do nothing").assertIsDisplayed()
+
+        // Check that an INVALID option (which the old UI would show) is NOT present.
+        // This is the assertion we expect to FAIL.
+        composeTestRule.onNodeWithText("Update existing holon").assertDoesNotExist()
+    }
 }

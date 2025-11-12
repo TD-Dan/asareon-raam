@@ -14,67 +14,141 @@ import kotlinx.serialization.json.put
 private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
 
 /**
+ * Creates a "canonical" copy of a Holon for comparison purposes.
+ * This removes fields that should not be considered in a semantic equality check,
+ * such as file paths, timestamps, and transient runtime data.
+ */
+private fun Holon.toComparable(): Holon {
+    return this.copy(
+        rawContent = "",
+        header = this.header.copy(
+            filePath = "",
+            parentId = null,
+            depth = 0,
+            createdAt = null,
+            modifiedAt = null
+        )
+    )
+}
+
+/**
  * The master, idempotent analysis function for the import workflow.
- * It performs a two-pass analysis to generate a complete and consistent import plan.
+ * [RE-ARCHITECTED] to perform a multi-pass analysis that validates, checks for integrity,
+ * determines actions, and ensures final consistency.
  */
 internal fun runImportAnalysis(
     fileContents: Map<String, String>,
     kgState: KnowledgeGraphState,
     userOverrides: Map<String, ImportAction>,
-    isRecursive: Boolean,
+    isRecursive: Boolean, // Note: This is now handled by the caller/UI, analyzer processes all given files.
     platformDependencies: PlatformDependencies
 ): JsonObject {
-    // --- Pass 1: Initial Action Determination ---
-    val sourceHolons = fileContents.mapNotNull { (path, content) ->
-        try { path to json.decodeFromString<Holon>(content).copy(rawContent = content) } catch (e: Exception) { null }
-    }.toMap()
+    val finalActions = mutableMapOf<String, ImportAction>()
+    val sourceHolons = mutableMapOf<String, Holon>()
 
-    val sourceParentMap = sourceHolons.values.flatMap { holon ->
-        holon.header.subHolons.map { child -> child.id to holon.header.id }
-    }.toMap()
+    // --- Pass 1: Validation & Deserialization using the Hardened Gateway ---
+    for ((path, content) in fileContents) {
+        try {
+            // Use the hardened gateway for initial creation and validation.
+            val holon = createHolonFromString(content, path, platformDependencies)
+            sourceHolons[path] = holon
+        } catch (e: HolonValidationException) {
+            finalActions[path] = Quarantine("Validation Error: ${e.message}")
+        }
+    }
 
-    val initialActions = fileContents.keys.associateWith { path ->
-        // Respect user override if it exists
-        if (userOverrides.containsKey(path)) return@associateWith userOverrides[path]!!
+    // --- Pass 2: Data Integrity Checks (Duplicates & Cycles) ---
+    // Check for duplicate IDs within the import batch.
+    val idsToPaths = sourceHolons.entries.groupBy { it.value.header.id }
+    for ((id, entries) in idsToPaths) {
+        if (entries.size > 1) {
+            val filePaths = entries.map { it.key }.joinToString()
+            for (entry in entries) {
+                finalActions[entry.key] = Quarantine("Duplicate ID '$id' found in other files: $filePaths")
+            }
+        }
+    }
 
-        val sourceHolon = sourceHolons[path]
-        val holonId = platformDependencies.getFileName(path).removeSuffix(".json")
+    // Check for circular dependencies.
+    val parentMap = sourceHolons.values.flatMap { h -> h.header.subHolons.map { it.id to h.header.id } }.toMap()
+    val visited = mutableSetOf<String>()
+    val recursionStack = mutableSetOf<String>()
+    val cycles = mutableSetOf<String>()
 
+    fun detectCycle(holonId: String) {
+        visited.add(holonId)
+        recursionStack.add(holonId)
+        parentMap[holonId]?.let { parentId ->
+            if (parentId in recursionStack) {
+                cycles.add(holonId)
+                cycles.add(parentId)
+            }
+            if (parentId !in visited) {
+                detectCycle(parentId)
+            }
+        }
+        recursionStack.remove(holonId)
+    }
+    sourceHolons.values.forEach { detectCycle(it.header.id) }
+
+    if (cycles.isNotEmpty()) {
+        sourceHolons.forEach { (path, holon) ->
+            if (holon.header.id in cycles) {
+                finalActions[path] = Quarantine("Circular dependency detected involving holon '${holon.header.id}'.")
+            }
+        }
+    }
+
+
+    // --- Pass 3: Initial Action Determination (for valid holons) ---
+    for ((path, sourceHolon) in sourceHolons) {
+        // Skip if already quarantined by a previous pass.
+        if (finalActions.containsKey(path)) continue
+        // Respect user override if it exists.
+        if (userOverrides.containsKey(path)) {
+            finalActions[path] = userOverrides[path]!!
+            continue
+        }
+
+        val holonId = sourceHolon.header.id
         when {
-            sourceHolon == null -> Quarantine("Malformed JSON")
             kgState.holons.containsKey(holonId) -> {
-                // [THE FIX] If holon exists, check if content is identical.
                 val existingHolon = kgState.holons[holonId]!!
-                if (existingHolon.rawContent == sourceHolon.rawContent) {
-                    Ignore()
+                // [THE FIX] Use semantic comparison, not raw string comparison.
+                if (existingHolon.toComparable() == sourceHolon.toComparable()) {
+                    finalActions[path] = Ignore()
                 } else {
-                    Update(holonId)
+                    finalActions[path] = Update(holonId)
                 }
             }
-            sourceHolon.header.type == "AI_Persona_Root" -> CreateRoot()
-            sourceParentMap.containsKey(holonId) -> Integrate(sourceParentMap[holonId]!!)
-            // [THE FIX] Use clearer wording for orphaned holons.
-            else -> Quarantine("Orphaned holon - parent not found in import set.")
+            sourceHolon.header.type == "AI_Persona_Root" -> finalActions[path] = CreateRoot()
+            parentMap.containsKey(holonId) -> finalActions[path] = Integrate(parentMap[holonId]!!)
+            else -> finalActions[path] = Quarantine("Orphaned holon - parent not found in import set.")
         }
     }
 
-    // --- Pass 2: Consistency Check (Cascading Demotion) ---
-    val finalActions = initialActions.toMutableMap()
-    for ((path, action) in initialActions) {
-        if (action is Integrate) {
-            val parentHolonId = action.parentHolonId
-            val parentSourcePath = sourceHolons.entries.find { it.value.header.id == parentHolonId }?.key
-            val parentAction = parentSourcePath?.let { finalActions[it] }
+    // --- Pass 4: Consistency Check (Cascading Quarantine) ---
+    val finalConsistentActions = finalActions.toMutableMap()
+    var changed: Boolean
+    do {
+        changed = false
+        for ((path, action) in finalConsistentActions) {
+            if (action is Integrate) {
+                val parentHolonId = action.parentHolonId
+                val parentSourcePath = sourceHolons.entries.find { it.value.header.id == parentHolonId }?.key
+                val parentAction = parentSourcePath?.let { finalConsistentActions[it] }
 
-            if (parentAction is Ignore || parentAction is Quarantine) {
-                finalActions[path] = Quarantine("Parent holon '${parentHolonId}' is not being imported.")
+                if (parentAction is Ignore || parentAction is Quarantine) {
+                    finalConsistentActions[path] = Quarantine("Parent holon '${parentHolonId}' is not being imported.")
+                    changed = true
+                }
             }
         }
-    }
+    } while (changed)
+
 
     val importItems = fileContents.keys.map { path ->
-        val action = finalActions[path]!!
-        // [THE FIX] Analyzer determines the available actions for the UI.
+        val action = finalConsistentActions[path] ?: Quarantine("Analysis failed unexpectedly.")
         val availableActions = when(action) {
             is Update -> listOf(ImportActionType.UPDATE, ImportActionType.IGNORE)
             is Integrate -> listOf(ImportActionType.INTEGRATE, ImportActionType.ASSIGN_PARENT, ImportActionType.QUARANTINE, ImportActionType.IGNORE)
@@ -92,15 +166,9 @@ internal fun runImportAnalysis(
         )
     }
 
-    val filteredItems = if (isRecursive) {
-        importItems
-    } else {
-        importItems.filter { !it.sourcePath.contains(platformDependencies.pathSeparator) }
-    }
-
     return buildJsonObject {
-        put("items", Json.encodeToJsonElement(filteredItems))
-        put("selectedActions", Json.encodeToJsonElement(finalActions))
+        put("items", Json.encodeToJsonElement(importItems))
+        put("selectedActions", Json.encodeToJsonElement(finalConsistentActions))
         put("contents", Json.encodeToJsonElement(fileContents))
     }
 }
@@ -112,7 +180,7 @@ internal fun runImportAnalysis(
  * of all changes and serializes them only at the final step, ensuring data integrity.
  */
 internal fun executeImportWrites(
-    parentContents: Map<String, String>, // This parameter is now obsolete and will be ignored.
+    parentContents: Map<String, String>, // This parameter is obsolete.
     kgState: KnowledgeGraphState,
     store: Store,
     platformDependencies: PlatformDependencies
@@ -122,8 +190,9 @@ internal fun executeImportWrites(
         if (action is Quarantine || action is Ignore) return@mapNotNull null
         val content = kgState.importFileContents[sourcePath] ?: return@mapNotNull null
         try {
-            val holon = json.decodeFromString<Holon>(content)
-            holon.header.id to holon.copy(rawContent = content)
+            // Use the hardened gateway here as well for a final safety check.
+            val holon = createHolonFromString(content, sourcePath, platformDependencies)
+            holon.header.id to holon
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.WARN, "ImportExecution", "Skipping malformed holon '$sourcePath' during execution.")
             null
