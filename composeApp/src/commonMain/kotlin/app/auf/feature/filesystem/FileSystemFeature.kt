@@ -48,6 +48,32 @@ class FileSystemFeature(
         return "$appZoneRoot${platformDependencies.pathSeparator}$safeOriginator"
     }
 
+    private fun filenameGuard(subpath: String, originator: String, operation: String): Boolean {
+        if (subpath.isBlank()) {
+            platformDependencies.log(LogLevel.ERROR, name, "Refused to $operation a blank filename for originator '$originator'.")
+            return false
+        }
+        if (subpath.contains("..")) {
+            platformDependencies.log(LogLevel.ERROR, name, "SECURITY: Refused path with directory traversal characters ('..') for originator '$originator' in operation '$operation': '$subpath'")
+            return false
+        }
+        val fileName = subpath.substringAfterLast(platformDependencies.pathSeparator)
+        if (!fileName.contains('.')) {
+            platformDependencies.log(LogLevel.ERROR, name, "Refused filename without a file extension for originator '$originator' in operation '$operation': '$subpath'")
+            return false
+        }
+        return true
+    }
+
+    private fun filepathGuard(subpath: String, originator: String, operation: String): Boolean {
+        if (subpath.contains("..")) {
+            platformDependencies.log(LogLevel.ERROR, name, "SECURITY: Refused path with directory traversal characters ('..') for originator '$originator' in operation '$operation': '$subpath'")
+            return false
+        }
+        return true
+    }
+
+
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
         val state = store.state.value.featureStates[name] as? FileSystemState ?: return
         when (envelope.type) {
@@ -255,12 +281,16 @@ class FileSystemFeature(
             }
             ActionNames.FILESYSTEM_SYSTEM_LIST -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<SystemListPayload>(it) } ?: SystemListPayload()
+                if (!filepathGuard(payload.subpath, originator, "list directory")) return
+
                 val sandboxPath = getSandboxPathFor(originator)
                 val fullPath = if (payload.subpath.isNotBlank()) "$sandboxPath${platformDependencies.pathSeparator}${payload.subpath}" else sandboxPath
                 try {
                     if (!platformDependencies.fileExists(fullPath)) platformDependencies.createDirectories(fullPath)
                     val absoluteListing = if (payload.recursive) platformDependencies.listDirectoryRecursive(fullPath) else platformDependencies.listDirectory(fullPath)
-                    val relativeListing = absoluteListing.map { it.copy(path = it.path.removePrefix(sandboxPath).removePrefix(platformDependencies.pathSeparator.toString())) }
+                    val relativeListing = absoluteListing
+                        .filter { it.path != fullPath }
+                        .map { it.copy(path = it.path.removePrefix(sandboxPath).removePrefix(platformDependencies.pathSeparator.toString())) }
                     val responsePayload = buildJsonObject {
                         put("listing", Json.encodeToJsonElement(relativeListing))
                         put("subpath", payload.subpath)
@@ -282,6 +312,7 @@ class FileSystemFeature(
                 val sandboxPath = getSandboxPathFor(originator)
                 val contentMap = mutableMapOf<String, String>()
                 payload.subpaths.forEach { subpath ->
+                    if (!filenameGuard(subpath, originator, "bulk read")) return@forEach
                     val fullPath = "$sandboxPath${platformDependencies.pathSeparator}$subpath"
                     try {
                         contentMap[subpath] = platformDependencies.readFileContent(fullPath)
@@ -298,6 +329,7 @@ class FileSystemFeature(
             }
             ActionNames.FILESYSTEM_SYSTEM_READ -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<SystemReadPayload>(it) } ?: return
+                if (!filenameGuard(payload.subpath, originator, "read")) return
                 val fullPath = "${getSandboxPathFor(originator)}${platformDependencies.pathSeparator}${payload.subpath}"
                 try {
                     val responsePayload = buildJsonObject {
@@ -318,6 +350,7 @@ class FileSystemFeature(
             }
             ActionNames.FILESYSTEM_SYSTEM_WRITE -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<SystemWritePayload>(it) } ?: return
+                if (!filenameGuard(payload.subpath, originator, "write")) return
                 val fullPath = "${getSandboxPathFor(originator)}${platformDependencies.pathSeparator}${payload.subpath}"
                 try {
                     platformDependencies.writeFileContent(fullPath, if (payload.encrypt) cryptoManager.encrypt(payload.content) else payload.content)
@@ -328,11 +361,13 @@ class FileSystemFeature(
             }
             ActionNames.FILESYSTEM_SYSTEM_DELETE -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<SystemDeletePayload>(it) } ?: return
+                if (!filenameGuard(payload.subpath, originator, "delete")) return
                 val fullPath = "${getSandboxPathFor(originator)}${platformDependencies.pathSeparator}${payload.subpath}"
                 if (platformDependencies.fileExists(fullPath)) platformDependencies.deleteFile(fullPath)
             }
             ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<SystemDeleteDirectoryPayload>(it) } ?: return
+                if (!filepathGuard(payload.subpath, originator, "delete directory")) return
                 val fullPath = "${getSandboxPathFor(originator)}${platformDependencies.pathSeparator}${payload.subpath}"
                 if (platformDependencies.fileExists(fullPath)) platformDependencies.deleteDirectory(fullPath)
             }

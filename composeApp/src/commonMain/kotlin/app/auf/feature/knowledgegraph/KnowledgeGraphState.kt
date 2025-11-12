@@ -76,11 +76,11 @@ data class Update(val targetHolonId: String, override val summary: String = "Upd
 @Serializable @SerialName("Integrate")
 data class Integrate(val parentHolonId: String, override val summary: String = "Integrate with known parent") : ImportAction
 @Serializable @SerialName("AssignParent")
-data class AssignParent(var assignedParentId: String? = null, override val summary: String = "New holon - requires parent") : ImportAction
+data class AssignParent(var assignedParentId: String? = null, override val summary: String = "Orphan - select parent") : ImportAction
 @Serializable @SerialName("Quarantine")
-data class Quarantine(val reason: String, override val summary: String = "Quarantine File") : ImportAction
+data class Quarantine(val reason: String, override val summary: String = "Quarantine (fix later)") : ImportAction
 @Serializable @SerialName("Ignore")
-data class Ignore(override val summary: String = "Do not import") : ImportAction
+data class Ignore(override val summary: String = "Ignore - Do nothing") : ImportAction
 @Serializable @SerialName("CreateRoot")
 data class CreateRoot(override val summary: String = "IMPORT AS NEW ROOT PERSONA") : ImportAction
 

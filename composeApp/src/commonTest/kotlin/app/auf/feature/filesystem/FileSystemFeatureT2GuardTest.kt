@@ -1,0 +1,103 @@
+package app.auf.feature.filesystem
+
+import app.auf.core.Action
+import app.auf.core.generated.ActionNames
+import app.auf.fakes.FakePlatformDependencies
+import app.auf.test.TestEnvironment
+import app.auf.util.BasePath
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+/**
+ * Tier 2 Core Test for the FileSystemFeature's security and path validation guards.
+ *
+ * Mandate (P-TEST-001, T2): To test that the feature's guards correctly intercept
+ * invalid requests *before* they can trigger side effects.
+ */
+class FileSystemFeatureT2GuardTest {
+    private val originator = "test-feature"
+
+    @Test
+    fun `filenameGuard rejects blank paths for write operations`() {
+        // Arrange
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val action = Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+            put("subpath", "  ") // Blank path
+            put("content", "some content")
+        })
+
+        harness.runAndLogOnFailure {
+            // Act
+            harness.store.dispatch(originator, action)
+            // Assert
+            assertTrue(harness.platform.writtenFiles.isEmpty(), "No file should have been written.")
+            val log = harness.platform.capturedLogs.find { it.message.contains("Refused to write a blank filename") }
+            assertNotNull(log, "A specific error should be logged for blank filenames.")
+        }
+    }
+
+    @Test
+    fun `filenameGuard rejects paths with directory traversal for read operations`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val action = Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+            put("subpath", "../secrets.json")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch(originator, action)
+
+            assertEquals(0, harness.deliveredPrivateData.size, "No private data should be delivered for a rejected read.")
+            val log = harness.platform.capturedLogs.find { it.message.contains("SECURITY: Refused path with directory traversal") }
+            assertNotNull(log, "A specific security error should be logged for '..' characters.")
+        }
+    }
+
+    @Test
+    fun `filenameGuard rejects paths without a file extension for delete operations`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val subpath = "some-folder/a-file-with-no-extension"
+        val action = Action(ActionNames.FILESYSTEM_SYSTEM_DELETE, buildJsonObject {
+            put("subpath", subpath)
+        })
+        val fullPath = "${platform.getBasePathFor(BasePath.APP_ZONE)}/$originator/$subpath"
+        platform.writeFileContent(fullPath, "content")
+
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch(originator, action)
+
+            assertTrue(platform.fileExists(fullPath), "The file should NOT have been deleted.")
+            val log = harness.platform.capturedLogs.find { it.message.contains("Refused filename without a file extension") }
+            assertNotNull(log, "A specific error should be logged for missing file extensions.")
+        }
+    }
+
+    @Test
+    fun `filepathGuard rejects paths with directory traversal for list operations`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val action = Action(ActionNames.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
+            put("subpath", "some/../../other/path")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch(originator, action)
+
+            assertEquals(0, harness.deliveredPrivateData.size, "No directory listing should be delivered.")
+            val log =
+                harness.platform.capturedLogs.find { it.message.contains("SECURITY: Refused path with directory traversal") }
+            assertNotNull(log, "A specific security error should be logged for '..' characters in directory operations.")
+        }
+    }
+}

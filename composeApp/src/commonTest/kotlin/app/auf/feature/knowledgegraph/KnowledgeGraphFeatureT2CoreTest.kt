@@ -162,7 +162,6 @@ class KnowledgeGraphFeatureT2CoreTest {
 
     @Test
     fun `import analysis workflow dispatches REQUEST_SCOPED_READ_UI with correlationId`() {
-        // Arrange
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         harness.runAndLogOnFailure {
             // Act
