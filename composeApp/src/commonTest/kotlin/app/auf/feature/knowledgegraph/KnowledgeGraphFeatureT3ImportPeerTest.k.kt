@@ -33,21 +33,22 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
 
     // --- Ground Truth Data ---
     private val existingPersonaContent = """
-        { "header": { "id": "p1", "type": "AI_Persona_Root", "name": "Existing Persona" }, "payload": {} }
+        { "header": { "id": "p1-20251112T190000Z", "type": "AI_Persona_Root", "name": "Existing Persona" }, "payload": {} }
     """.trimIndent()
     private val newHolonContent = """
-        { "header": { "id": "h2", "type": "New_Holon", "name": "Holon Two"}, "payload": {} }
+        { "header": { "id": "h2-20251112T190000Z", "type": "New_Holon", "name": "Holon Two"}, "payload": {} }
     """.trimIndent()
 
     @Test
     fun `execute INTEGRATE should write new holon and dispatch update for parent`() {
-        val existingPersona = json.decodeFromString<Holon>(existingPersonaContent).copy(
-            header = json.decodeFromString<Holon>(existingPersonaContent).header.copy(filePath = "p1/p1.json")
-        )
+        val existingPersonaFilePath = "p1/p1-20251112T190000Z.json"
+        val newHolonFilePath = "h2-20251112T190000Z.json"
+        val existingPersona = createHolonFromString(existingPersonaContent, existingPersonaFilePath, platform)
+
         val initialState = KnowledgeGraphState(
             holons = mapOf("p1" to existingPersona),
-            importFileContents = mapOf("h2.json" to newHolonContent),
-            importSelectedActions = mapOf("h2.json" to Integrate("p1"))
+            importFileContents = mapOf(newHolonFilePath to newHolonContent),
+            importSelectedActions = mapOf(newHolonFilePath to Integrate("p1"))
         )
         val harness = TestEnvironment.create()
             .withFeature(kgFeature)
@@ -66,16 +67,16 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
             // Assert new holon was written to correct sub-directory
             val newHolonWrite = writeActions.find { it.payload?.get("subpath")?.jsonPrimitive?.content?.contains("h2") == true }
             assertNotNull(newHolonWrite)
-            assertEquals("p1/h2/h2.json", newHolonWrite.payload?.get("subpath")?.jsonPrimitive?.content)
+            assertEquals("p1-20251112T190000Z/h2-20251112T190000Z/h2-20251112T190000Z.json", newHolonWrite.payload?.get("subpath")?.jsonPrimitive?.content)
 
             // Assert parent was updated with new sub_holon reference
-            val parentUpdateWrite = writeActions.find { it.payload?.get("subpath")?.jsonPrimitive?.content == "p1/p1.json" }
+            val parentUpdateWrite = writeActions.find { it.payload?.get("subpath")?.jsonPrimitive?.content == existingPersonaFilePath }
             assertNotNull(parentUpdateWrite)
             val finalParentContent = parentUpdateWrite.payload?.get("content")?.jsonPrimitive?.content
             assertNotNull(finalParentContent)
-            val finalParentHolon = json.decodeFromString<Holon>(finalParentContent)
+            val finalParentHolon = createHolonFromString(finalParentContent, existingPersonaFilePath, platform)
 
-            assertTrue(finalParentHolon.header.subHolons.any { it.id == "h2" }, "Parent holon file should be updated to include a reference to the new child.")
+            assertTrue(finalParentHolon.header.subHolons.any { it.id == "h2-20251112T190000Z" }, "Parent holon file should be updated to include a reference to the new child.")
         }
     }
 }

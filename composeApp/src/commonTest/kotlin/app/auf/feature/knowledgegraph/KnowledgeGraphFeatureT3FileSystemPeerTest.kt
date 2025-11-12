@@ -37,8 +37,8 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
     fun `holon modification round-trip should persist enriched header data correctly`() {
         // ARRANGE
         val initialTimestamp = "2025-01-01T12:00:00Z"
-        val holonId = "h1"
-        val personaId = "p1"
+        val holonId = "h1-20251112T190000Z"
+        val personaId = "p1-20251112T190000Z"
         val holonFilePath = "$personaId/$holonId/$holonId.json" // This is a subpath relative to the sandbox
 
         val initialInMemoryHolon = Holon(
@@ -72,7 +72,9 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
             assertNotNull(writeAction, "A SYSTEM_WRITE action for the correct file path should have been dispatched.")
 
             val writtenContent = writeAction.payload!!.jsonObject["content"]!!.jsonPrimitive.content
-            val persistedHolon = json.decodeFromString<Holon>(writtenContent)
+            // [REFACTOR] Use the canonical gateway to validate the written content,
+            // which also ensures the test is using the same validation logic as production.
+            val persistedHolon = createHolonFromString(writtenContent, holonFilePath, platform)
 
             assertEquals("New Name", persistedHolon.header.name)
             assertNotEquals(initialTimestamp, persistedHolon.header.modifiedAt)
@@ -89,8 +91,8 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
     @Test
     fun `full load-modify-save roundtrip should preserve payload and execute sections`() {
         // ARRANGE
-        val holonId = "h1"
-        val personaId = "p1"
+        val holonId = "h1-20251112T190000Z"
+        val personaId = "p1-20251112T190000Z"
 
         // [THE FIX] Construct the full, absolute paths that the FileSystemFeature will use.
         val sandboxRoot = "${platform.getBasePathFor(BasePath.APP_ZONE)}/knowledgegraph"
