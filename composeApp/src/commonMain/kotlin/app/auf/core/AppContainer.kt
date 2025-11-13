@@ -2,6 +2,7 @@ package app.auf.core
 
 import app.auf.core.generated.ActionNames
 import app.auf.feature.agent.AgentRuntimeFeature
+import app.auf.feature.commandbot.CommandBotFeature
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.feature.gateway.GatewayFeature
@@ -64,7 +65,8 @@ class AppContainer(
             SessionFeature(platformDependencies, resilientCoroutineScope),
             gatewayFeature,
             AgentRuntimeFeature(platformDependencies, resilientCoroutineScope),
-            KnowledgeGraphFeature(platformDependencies, resilientCoroutineScope)
+            KnowledgeGraphFeature(platformDependencies, resilientCoroutineScope),
+            CommandBotFeature(platformDependencies) // *** ADDED FEATURE ***
         ))
         allFeatures
     }

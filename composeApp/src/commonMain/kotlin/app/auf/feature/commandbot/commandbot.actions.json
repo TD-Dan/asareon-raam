@@ -1,0 +1,6 @@
+{
+  "feature_name": "commandbot",
+  "summary": "A headless, stateless agent that observes all session transcripts for command directives (`auf_` code blocks) and dispatches them as universal Actions, making the application universally scriptable.",
+  "listensFor": [],
+  "publishes": []
+}
