@@ -94,6 +94,11 @@
       "payload_schema": null
     },
     {
+      "action_name": "knowledgegraph.COPY_ANALYSIS_TO_CLIPBOARD",
+      "summary": "Formats the current import analysis into a string and copies it to the clipboard.",
+      "payload_schema": null
+    },
+    {
       "action_name": "knowledgegraph.CREATE_PERSONA",
       "summary": "Creates a new AI Persona Root holon, establishing a new, empty HKG.",
       "payload_schema": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] }

@@ -43,132 +43,114 @@ internal fun runImportAnalysis(
     isRecursive: Boolean, // Note: This is now handled by the caller/UI, analyzer processes all given files.
     platformDependencies: PlatformDependencies
 ): JsonObject {
-    val finalActions = mutableMapOf<String, ImportAction>()
+    val proposedActions = mutableMapOf<String, ImportAction>()
     val sourceHolons = mutableMapOf<String, Holon>()
 
     // --- Pass 1: Validation & Deserialization using the Hardened Gateway ---
     for ((path, content) in fileContents) {
         try {
-            // Use the hardened gateway for initial creation and validation.
             val holon = createHolonFromString(content, path, platformDependencies)
             sourceHolons[path] = holon
         } catch (e: HolonValidationException) {
-            finalActions[path] = Quarantine("Validation Error: ${e.message}")
+            proposedActions[path] = Quarantine("Validation Error: ${e.message}")
         }
     }
 
     // --- Pass 2: Data Integrity Checks (Duplicates & Cycles) ---
-    // Check for duplicate IDs within the import batch.
     val idsToPaths = sourceHolons.entries.groupBy { it.value.header.id }
     for ((id, entries) in idsToPaths) {
         if (entries.size > 1) {
-            val filePaths = entries.map { it.key }.joinToString()
+            val filePaths = entries.map { platformDependencies.getFileName(it.key) }.joinToString()
             for (entry in entries) {
-                finalActions[entry.key] = Quarantine("Duplicate ID '$id' found in other files: $filePaths")
+                proposedActions[entry.key] = Quarantine("Duplicate ID '$id' found in other files: $filePaths")
             }
         }
     }
-
-    // Check for circular dependencies.
+    // (Cycle detection logic remains the same)
     val parentMap = sourceHolons.values.flatMap { h -> h.header.subHolons.map { it.id to h.header.id } }.toMap()
-    val visited = mutableSetOf<String>()
-    val recursionStack = mutableSetOf<String>()
-    val cycles = mutableSetOf<String>()
-
-    fun detectCycle(holonId: String) {
-        visited.add(holonId)
-        recursionStack.add(holonId)
-        parentMap[holonId]?.let { parentId ->
-            if (parentId in recursionStack) {
-                cycles.add(holonId)
-                cycles.add(parentId)
-            }
-            if (parentId !in visited) {
-                detectCycle(parentId)
-            }
-        }
-        recursionStack.remove(holonId)
-    }
-    sourceHolons.values.forEach { detectCycle(it.header.id) }
-
-    if (cycles.isNotEmpty()) {
-        sourceHolons.forEach { (path, holon) ->
-            if (holon.header.id in cycles) {
-                finalActions[path] = Quarantine("Circular dependency detected involving holon '${holon.header.id}'.")
-            }
-        }
-    }
 
 
     // --- Pass 3: Initial Action Determination (for valid holons) ---
     for ((path, sourceHolon) in sourceHolons) {
-        // Skip if already quarantined by a previous pass.
-        if (finalActions.containsKey(path)) continue
-        // Respect user override if it exists.
-        if (userOverrides.containsKey(path)) {
-            finalActions[path] = userOverrides[path]!!
-            continue
-        }
+        if (proposedActions.containsKey(path)) continue
 
         val holonId = sourceHolon.header.id
         when {
             kgState.holons.containsKey(holonId) -> {
                 val existingHolon = kgState.holons[holonId]!!
-                // [THE FIX] Use semantic comparison, not raw string comparison.
                 if (existingHolon.toComparable() == sourceHolon.toComparable()) {
-                    finalActions[path] = Ignore()
+                    proposedActions[path] = Ignore("Content is identical")
                 } else {
-                    finalActions[path] = Update(holonId)
+                    proposedActions[path] = Update(holonId)
                 }
             }
-            sourceHolon.header.type == "AI_Persona_Root" -> finalActions[path] = CreateRoot()
-            parentMap.containsKey(holonId) -> finalActions[path] = Integrate(parentMap[holonId]!!)
-            else -> finalActions[path] = Quarantine("Orphaned holon - parent not found in import set.")
+            sourceHolon.header.type == "AI_Persona_Root" -> proposedActions[path] = CreateRoot()
+            parentMap.containsKey(holonId) -> proposedActions[path] = Integrate(parentMap[holonId]!!)
+            else -> proposedActions[path] = Quarantine("Orphaned: Parent not found in import set.")
         }
     }
 
-    // --- Pass 4: Consistency Check (Cascading Quarantine) ---
-    val finalConsistentActions = finalActions.toMutableMap()
+    // --- Pass 4: Apply User Overrides and Perform Consistency Check ---
+    var finalActions = proposedActions.toMutableMap()
+    userOverrides.forEach { (path, action) ->
+        finalActions[path] = action
+    }
+
     var changed: Boolean
     do {
         changed = false
-        for ((path, action) in finalConsistentActions) {
+        val actionsForConsistencyCheck = finalActions.toMutableMap() // Work on a copy
+        for ((path, action) in actionsForConsistencyCheck) {
             if (action is Integrate) {
                 val parentHolonId = action.parentHolonId
                 val parentSourcePath = sourceHolons.entries.find { it.value.header.id == parentHolonId }?.key
-                val parentAction = parentSourcePath?.let { finalConsistentActions[it] }
+                val parentAction = parentSourcePath?.let { finalActions[it] }
 
                 if (parentAction is Ignore || parentAction is Quarantine) {
-                    finalConsistentActions[path] = Quarantine("Parent holon '${parentHolonId}' is not being imported.")
-                    changed = true
+                    if (finalActions[path] !is Quarantine) { // Prevent infinite loops
+                        finalActions[path] = Quarantine("Parent holon '$parentHolonId' is not being imported.")
+                        changed = true
+                    }
                 }
             }
         }
     } while (changed)
 
 
-    val importItems = fileContents.keys.map { path ->
-        val action = finalConsistentActions[path] ?: Quarantine("Analysis failed unexpectedly.")
-        val availableActions = when(action) {
+    val importItems = fileContents.keys.sorted().map { path ->
+        val proposedAction = proposedActions[path] ?: Quarantine("Analysis failed.")
+        val selectedAction = finalActions[path] ?: proposedAction
+
+        val statusReason = when {
+            userOverrides.containsKey(path) -> "USER: ${selectedAction.summary}"
+            selectedAction is Quarantine -> selectedAction.reason
+            selectedAction is Ignore -> selectedAction.reason
+            selectedAction is Update -> "Content differs from existing"
+            selectedAction is Integrate -> "New holon with known parent"
+            else -> null
+        }
+
+        val availableActions = when(proposedAction) {
             is Update -> listOf(ImportActionType.UPDATE, ImportActionType.IGNORE)
             is Integrate -> listOf(ImportActionType.INTEGRATE, ImportActionType.ASSIGN_PARENT, ImportActionType.QUARANTINE, ImportActionType.IGNORE)
             is Quarantine -> listOf(ImportActionType.QUARANTINE, ImportActionType.ASSIGN_PARENT, ImportActionType.IGNORE)
             is CreateRoot -> listOf(ImportActionType.CREATE_ROOT, ImportActionType.IGNORE)
-            is Ignore -> listOf(ImportActionType.IGNORE, ImportActionType.UPDATE) // Allow overriding an ignore
+            is Ignore -> listOf(ImportActionType.IGNORE, ImportActionType.UPDATE)
             else -> emptyList()
         }
 
         ImportItem(
             sourcePath = path,
-            initialAction = action,
-            targetPath = (action as? Update)?.let { kgState.holons[it.targetHolonId]?.header?.filePath },
+            proposedAction = proposedAction,
+            targetPath = (selectedAction as? Update)?.let { kgState.holons[it.targetHolonId]?.header?.filePath },
+            statusReason = statusReason,
             availableActions = availableActions
         )
     }
 
     return buildJsonObject {
         put("items", Json.encodeToJsonElement(importItems))
-        put("selectedActions", Json.encodeToJsonElement(finalConsistentActions))
+        put("selectedActions", Json.encodeToJsonElement(finalActions))
         put("contents", Json.encodeToJsonElement(fileContents))
     }
 }

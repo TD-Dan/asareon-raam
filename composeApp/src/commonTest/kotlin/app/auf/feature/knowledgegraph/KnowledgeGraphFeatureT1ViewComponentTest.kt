@@ -18,6 +18,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.Before
 import org.junit.Rule
@@ -75,7 +76,6 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         val h1 = Holon(header = HolonHeader(id = "h1", type = "Type_A", name = "H1"), payload = initialPayload, execute = buildJsonObject {})
         val p1 = Holon(header = HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1"), payload = buildJsonObject {})
 
-        // [THE FIX] Provide a COMPLETE and logically valid state, including the active persona.
         setupTestWithState(KnowledgeGraphState(
             holons = mapOf("h1" to h1, "p1" to p1),
             holonIdToEdit = "h1",
@@ -104,7 +104,6 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         val h1 = Holon(header = HolonHeader(id = "h1", type = "Type_A", name = "H1"), payload = buildJsonObject {})
         val p1 = Holon(header = HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1"), payload = buildJsonObject {})
 
-        // [THE FIX] Provide a COMPLETE and logically valid state, including the active persona.
         setupTestWithState(KnowledgeGraphState(
             holons = mapOf("h1" to h1, "p1" to p1),
             holonIdToEdit = "h1",
@@ -125,16 +124,19 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
 
     @Test
     fun `ImportPane ActionSelector should only show actions from the availableActions list`() = runTest {
+        // [CORRECTED] Changed 'initialAction' to 'proposedAction' and added 'statusReason'.
+        val proposedAction = Quarantine("Test reason")
         val importItem = ImportItem(
             sourcePath = "quarantined.json",
-            initialAction = Quarantine("Test reason"),
+            proposedAction = proposedAction,
             targetPath = null,
+            statusReason = proposedAction.reason,
             availableActions = listOf(ImportActionType.QUARANTINE, ImportActionType.ASSIGN_PARENT, ImportActionType.IGNORE)
         )
         setupTestWithState(KnowledgeGraphState(
             viewMode = KnowledgeGraphViewMode.IMPORT,
             importItems = listOf(importItem),
-            importSelectedActions = mapOf("quarantined.json" to importItem.initialAction),
+            importSelectedActions = mapOf("quarantined.json" to importItem.proposedAction),
             importFileContents = mapOf("quarantined.json" to "{}")
         ))
         composeTestRule.waitForIdle()
@@ -146,5 +148,18 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         composeTestRule.onNodeWithText("Orphan - select parent").assertIsDisplayed()
         composeTestRule.onNodeWithText("Ignore - Do nothing").assertIsDisplayed()
         composeTestRule.onNodeWithText("Update existing holon").assertDoesNotExist()
+
+        // [CORRECTED] Test that the correct action instance is used to generate the menu item text.
+        // In this case, clicking an item in the dropdown should use the item's *proposed* action, not the
+        // currently selected one. This is a subtle but important detail for UI correctness.
+        // Find the "Ignore" option and click it.
+        composeTestRule.onNodeWithText("Ignore - Do nothing").performClick()
+        composeTestRule.waitForIdle()
+
+        // Verify that the correct action was dispatched
+        val action = harness.store.processedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION }
+        assertNotNull(action)
+        val actionPayload = action.payload!!.jsonObject["action"]!!.jsonObject
+        assertEquals("Ignore", actionPayload["type"]!!.jsonPrimitive.content)
     }
 }

@@ -99,6 +99,28 @@ class KnowledgeGraphFeature(
                     executeImportWrites(emptyMap(), kgState, store, platformDependencies)
                 }
             }
+            ActionNames.KNOWLEDGEGRAPH_COPY_ANALYSIS_TO_CLIPBOARD -> {
+                val report = buildString {
+                    appendLine("## HKG Import Analysis Report")
+                    appendLine("Found ${kgState.importItems.size} files.")
+                    appendLine()
+                    kgState.importItems.forEach { item ->
+                        val action = kgState.importSelectedActions[item.sourcePath]
+                        if (action != null) {
+                            val fileName = platformDependencies.getFileName(item.sourcePath)
+                            appendLine("- **$fileName**")
+                            appendLine("  - Action: `${action.summary}`")
+                            item.statusReason?.let { appendLine("  - Reason: $it") }
+                        }
+                    }
+                }
+                store.dispatch(this.name, Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject {
+                    put("text", report)
+                }))
+                store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
+                    put("message", "Analysis report copied to clipboard.")
+                }))
+            }
             ActionNames.KNOWLEDGEGRAPH_CREATE_PERSONA -> {
                 val name = payload?.get("name")?.jsonPrimitive?.content ?: return
                 val timestamp = platformDependencies.getSystemTimeMillis()

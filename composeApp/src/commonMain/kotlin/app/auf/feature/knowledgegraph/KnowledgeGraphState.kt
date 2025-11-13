@@ -50,10 +50,11 @@ enum class KnowledgeGraphViewMode { INSPECTOR, IMPORT, EXPORT }
 @Serializable
 data class ImportItem(
     val sourcePath: String,
-    val initialAction: ImportAction,
+    // [MODIFIED] Renamed from 'initialAction' for clarity. This is what the system first suggests.
+    val proposedAction: ImportAction,
     val targetPath: String?,
-    // [THE FIX] The analyzer, not the UI, is now the source of truth for which
-    // actions are valid for this specific item.
+    // [MODIFIED] Added a field to hold the human-readable reason for the final action.
+    val statusReason: String?,
     val availableActions: List<ImportActionType> = emptyList()
 )
 
@@ -87,7 +88,8 @@ data class AssignParent(var assignedParentId: String? = null, override val summa
 @Serializable @SerialName("Quarantine")
 data class Quarantine(val reason: String, override val summary: String = "Quarantine (fix later)") : ImportAction
 @Serializable @SerialName("Ignore")
-data class Ignore(override val summary: String = "Ignore - Do nothing") : ImportAction
+// [MODIFIED] Ignore now has an optional reason.
+data class Ignore(val reason: String? = null, override val summary: String = "Ignore - Do nothing") : ImportAction
 @Serializable @SerialName("CreateRoot")
 data class CreateRoot(override val summary: String = "IMPORT AS NEW ROOT PERSONA") : ImportAction
 

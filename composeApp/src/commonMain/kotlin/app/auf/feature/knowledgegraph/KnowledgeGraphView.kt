@@ -519,7 +519,11 @@ private fun ImportPane(
 ) {
     val filteredItems = remember(kgState.importItems, kgState.showOnlyChangedImportItems) {
         if (kgState.showOnlyChangedImportItems) {
-            kgState.importItems.filter { it.initialAction !is Ignore }
+            kgState.importItems.filter { item ->
+                val selectedAction = kgState.importSelectedActions[item.sourcePath]
+                // Show if the final action is not a simple Ignore with the default reason.
+                !(selectedAction is Ignore && selectedAction.reason == "Content is identical")
+            }
         } else {
             kgState.importItems
         }
@@ -559,7 +563,7 @@ private fun ImportPane(
                 items(filteredItems, key = { it.sourcePath }) { item ->
                     ImportItemRow(
                         item = item,
-                        selectedAction = kgState.importSelectedActions[item.sourcePath] ?: item.initialAction,
+                        selectedAction = kgState.importSelectedActions[item.sourcePath] ?: item.proposedAction,
                         onActionSelected = { newAction ->
                             store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION, buildJsonObject {
                                 put("sourcePath", item.sourcePath)
@@ -590,6 +594,13 @@ private fun ImportPane(
                     Spacer(modifier = Modifier.weight(1f))
                 }
 
+                // [ADDED] "Copy Report" button
+                OutlinedButton(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_COPY_ANALYSIS_TO_CLIPBOARD)) }) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy Report", modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Copy Report")
+                }
+                Spacer(modifier = Modifier.width(16.dp))
                 OutlinedButton(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) })) }) { Text("Cancel") }
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(
@@ -613,11 +624,17 @@ private fun ImportItemRow(
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
         Column(modifier = Modifier.weight(1f)) {
             Text(fileName, style = MaterialTheme.typography.bodyMedium)
-            if (selectedAction is Quarantine) {
+            // [MODIFIED] Display the new statusReason field.
+            item.statusReason?.let { reason ->
+                val color = when {
+                    reason.startsWith("USER:") -> MaterialTheme.colorScheme.tertiary
+                    selectedAction is Quarantine -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
                 Text(
-                    text = "Reason: ${selectedAction.reason}",
+                    text = reason,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error
+                    color = color
                 )
             }
         }
@@ -633,7 +650,6 @@ private fun ActionSelector(
     onActionSelected: (ImportAction) -> Unit,
     potentialParents: List<HolonHeader>
 ) {
-    // [THE FIX] The logic is simplified. The UI just checks if a specific action type is available.
     if (item.availableActions.contains(ImportActionType.ASSIGN_PARENT)) {
         ParentSelector(item, selectedAction as? AssignParent ?: AssignParent(), onActionSelected, potentialParents)
     } else {
@@ -673,10 +689,9 @@ private fun ParentSelector(
 
         IconButton(onClick = { actionMenuExpanded = true }) { Icon(Icons.Default.MoreVert, "Change Action Type") }
         DropdownMenu(expanded = actionMenuExpanded, onDismissRequest = { actionMenuExpanded = false }) {
-            // [THE FIX] The UI reads the available actions directly from the state object.
             item.availableActions.forEach { type ->
-                DropdownMenuItem(text = { Text(type.toInstance(item.initialAction).summary) }, onClick = {
-                    onActionSelected(type.toInstance(item.initialAction))
+                DropdownMenuItem(text = { Text(type.toInstance(item.proposedAction).summary) }, onClick = {
+                    onActionSelected(type.toInstance(item.proposedAction))
                     actionMenuExpanded = false
                 })
             }
@@ -700,11 +715,9 @@ private fun GenericActionSelector(
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            // [THE FIX] The UI is now "dumb" and simply renders the list of actions
-            // provided by the analyzer in the state.
             item.availableActions.forEach { type ->
-                DropdownMenuItem(text = { Text(type.toInstance(item.initialAction).summary) }, onClick = {
-                    onActionSelected(type.toInstance(item.initialAction))
+                DropdownMenuItem(text = { Text(type.toInstance(item.proposedAction).summary) }, onClick = {
+                    onActionSelected(type.toInstance(item.proposedAction))
                     expanded = false
                 })
             }
