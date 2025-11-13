@@ -37,13 +37,13 @@ class KnowledgeGraphFeatureT2CoreTest {
 
     private val persona1Content = """
         {
-            "header": { "id": "persona-1", "type": "AI_Persona_Root", "name": "Persona One", "sub_holons": [{"id": "holon-a", "type": "T", "summary": "S"}] },
+            "header": { "id": "persona-1-20251112T190000Z", "type": "AI_Persona_Root", "name": "Persona One", "sub_holons": [{"id": "holon-a-20251112T190000Z", "type": "T", "summary": "S"}] },
             "payload": {}, "execute": null
         }
     """.trimIndent()
     private val holonAContent = """
         {
-            "header": { "id": "holon-a", "type": "Test_Holon", "name": "Holon A" },
+            "header": { "id": "holon-a-20251112T190000Z", "type": "Test_Holon", "name": "Holon A" },
             "payload": {}, "execute": null
         }
     """.trimIndent()
@@ -53,32 +53,32 @@ class KnowledgeGraphFeatureT2CoreTest {
     fun `full load sequence correctly populates and synchronizes holons`() {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         harness.runAndLogOnFailure {
-            harness.store.dispatch("system", Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "persona-1") }))
+            harness.store.dispatch("system", Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "persona-1-20251112T190000Z") }))
             harness.store.deliverPrivateData("filesystem", "knowledgegraph", PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, buildJsonObject {
-                put("subpath", "persona-1")
+                put("subpath", "persona-1-20251112T190000Z")
                 put("listing", buildJsonArray {
-                    add(json.encodeToJsonElement(FileEntry("persona-1/persona-1.json", false)))
-                    add(json.encodeToJsonElement(FileEntry("persona-1/holon-a.json", false)))
+                    add(json.encodeToJsonElement(FileEntry("persona-1-20251112T190000Z/persona-1-20251112T190000Z.json", false)))
+                    add(json.encodeToJsonElement(FileEntry("persona-1-20251112T190000Z/holon-a-20251112T190000Z/holon-a-20251112T190000Z.json", false)))
                 })
             }))
             harness.store.deliverPrivateData("filesystem", "knowledgegraph", PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, buildJsonObject {
                 put("correlationId", JsonNull)
                 put("contents", buildJsonObject {
-                    put("persona-1/persona-1.json", persona1Content)
-                    put("persona-1/holon-a.json", holonAContent)
+                    put("persona-1-20251112T190000Z/persona-1-20251112T190000Z.json", persona1Content)
+                    put("persona-1-20251112T190000Z/holon-a-20251112T190000Z/holon-a-20251112T190000Z.json", holonAContent)
                 })
             }))
 
             val finalState = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
 
             // Assert enrichment
-            val loadedChild = finalState.holons["holon-a"]!!
+            val loadedChild = finalState.holons["holon-a-20251112T190000Z"]!!
             assertEquals(1, loadedChild.header.depth)
-            assertEquals("persona-1", loadedChild.header.parentId)
+            assertEquals("persona-1-20251112T190000Z", loadedChild.header.parentId)
 
             // Assert synchronization
             val parsedRawContent = json.parseToJsonElement(loadedChild.rawContent).jsonObject
-            assertEquals("persona-1", parsedRawContent["header"]!!.jsonObject["parentId"]!!.jsonPrimitive.content)
+            assertEquals("persona-1-20251112T190000Z", parsedRawContent["header"]!!.jsonObject["parentId"]!!.jsonPrimitive.content)
             assertEquals(1, parsedRawContent["header"]!!.jsonObject["depth"]!!.jsonPrimitive.content.toInt())
         }
     }

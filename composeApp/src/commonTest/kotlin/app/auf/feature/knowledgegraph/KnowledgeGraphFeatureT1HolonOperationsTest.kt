@@ -165,7 +165,7 @@ class KnowledgeGraphFeatureT1HolonOperationsTest {
     fun `synchronizeRawContent should update rawContent to match structured data`() {
         // Arrange
         val desyncedHolon = Holon(
-            header = HolonHeader(id = "h1-20251112T190000Z", type = "T", name = "New Name"), // Name is "New Name"
+            header = HolonHeader(id = "hl1-20251112T190000Z", type = "T", name = "New Name"), // Name is "New Name"
             payload = buildJsonObject { put("key", "value") },
             rawContent = """{"header":{"name":"Old Name"},"payload":{}}""" // Raw content is stale
         )
