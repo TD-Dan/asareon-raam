@@ -9,7 +9,6 @@
         "type": "object",
         "properties": { "mode": { "type": "string" } },
         "required": ["mode"]
-        "required": ["mode"]
       }
     },
     {
