@@ -68,7 +68,8 @@ class AgentRuntimeFeature(
                     knowledgeGraphId = payload["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull,
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: "gemini",
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: "gemini-pro",
-                    primarySessionId = payload["primarySessionId"]?.jsonPrimitive?.contentOrNull,
+                    // *** MODIFIED: Handle list of session IDs
+                    subscribedSessionIds = payload["subscribedSessionIds"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList(),
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: false,
                     autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: 5,
                     autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: 30
@@ -84,7 +85,8 @@ class AgentRuntimeFeature(
                     knowledgeGraphId = if ("knowledgeGraphId" in payload) payload["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull else agentToUpdate.knowledgeGraphId,
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelProvider,
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelName,
-                    primarySessionId = if ("primarySessionId" in payload) payload["primarySessionId"]?.jsonPrimitive?.contentOrNull else agentToUpdate.primarySessionId,
+                    // *** MODIFIED: Handle list of session IDs
+                    subscribedSessionIds = if ("subscribedSessionIds" in payload) payload["subscribedSessionIds"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList() else agentToUpdate.subscribedSessionIds,
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: agentToUpdate.automaticMode,
                     autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoWaitTimeSeconds,
                     autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoMaxWaitTimeSeconds
@@ -171,11 +173,19 @@ class AgentRuntimeFeature(
             }
             ActionNames.SESSION_PUBLISH_SESSION_DELETED -> {
                 val deletedSessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
-                val affectedAgentIds = currentFeatureState.agents.values.filter { it.primarySessionId == deletedSessionId }.map { it.id }.toSet()
-                if (affectedAgentIds.isEmpty()) return currentFeatureState
-                val newAgents = currentFeatureState.agents.mapValues { (_, agent) -> if (agent.id in affectedAgentIds) agent.copy(primarySessionId = null) else agent }
-                // Use agentsToPersist to trigger side-effect in onAction
-                return currentFeatureState.copy(agents = newAgents, agentsToPersist = affectedAgentIds)
+                // *** MODIFIED: Logic now handles a list of subscribed sessions
+                val agentsToUpdate = currentFeatureState.agents.values
+                    .filter { it.subscribedSessionIds.contains(deletedSessionId) }
+                if (agentsToUpdate.isEmpty()) return currentFeatureState
+
+                val newAgents = currentFeatureState.agents.mapValues { (_, agent) ->
+                    if (agentsToUpdate.any { it.id == agent.id }) {
+                        agent.copy(subscribedSessionIds = agent.subscribedSessionIds - deletedSessionId)
+                    } else {
+                        agent
+                    }
+                }
+                return currentFeatureState.copy(agents = newAgents, agentsToPersist = agentsToUpdate.map { it.id }.toSet())
             }
             ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED -> {
                 val decodedModels: Map<String, List<String>>? = try { action.payload?.let { json.decodeFromJsonElement(it) } } catch (e: Exception) { null }
@@ -239,7 +249,8 @@ class AgentRuntimeFeature(
         val sessionId = payload.sessionId; val senderId = entry["senderId"]?.jsonPrimitive?.contentOrNull
         val currentTime = platformDependencies.getSystemTimeMillis()
         val affectedAgents = currentFeatureState.agents.mapValues { (_, agent) ->
-            if (agent.primarySessionId == sessionId && agent.id != senderId) {
+            // *** MODIFIED: Logic now checks if the agent is subscribed to the session.
+            if (agent.subscribedSessionIds.contains(sessionId) && agent.id != senderId) {
                 agent.copy(
                     lastSeenMessageId = messageId, lastMessageReceivedTimestamp = currentTime,
                     waitingSinceTimestamp = agent.waitingSinceTimestamp ?: currentTime
@@ -271,7 +282,8 @@ class AgentRuntimeFeature(
             }
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
-                if (agent.primarySessionId != null) {
+                // *** MODIFIED: Logic checks the list
+                if (agent.subscribedSessionIds.isNotEmpty()) {
                     updateAgentAvatarCard(agent.id, AgentStatus.IDLE, null, store)
                 }
                 broadcastAgentNames(agentState, store)
@@ -289,7 +301,8 @@ class AgentRuntimeFeature(
                     agentToClone.knowledgeGraphId?.let { put("knowledgeGraphId", it) }
                     put("modelProvider", agentToClone.modelProvider)
                     put("modelName", agentToClone.modelName)
-                    agentToClone.primarySessionId?.let { put("primarySessionId", it) }
+                    // *** MODIFIED: Copy the list
+                    put("subscribedSessionIds", buildJsonArray { agentToClone.subscribedSessionIds.forEach { add(it) } })
                     put("automaticMode", agentToClone.automaticMode)
                     put("autoWaitTimeSeconds", agentToClone.autoWaitTimeSeconds)
                     put("autoMaxWaitTimeSeconds", agentToClone.autoMaxWaitTimeSeconds)
@@ -308,7 +321,8 @@ class AgentRuntimeFeature(
                 val newAgent = agentState.agents[agentId] ?: return
                 saveAgentConfig(newAgent, store)
                 broadcastAgentNames(agentState, store)
-                if (oldAgent != null && oldAgent.primarySessionId != newAgent.primarySessionId) {
+                // *** MODIFIED: Logic compares lists
+                if (oldAgent != null && oldAgent.subscribedSessionIds != newAgent.subscribedSessionIds) {
                     updateAgentAvatarCard(agentId, newAgent.status, null, store)
                 }
             }
@@ -334,7 +348,8 @@ class AgentRuntimeFeature(
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[agentId] ?: return
                 if (agent.status == AgentStatus.PROCESSING || !agent.isAgentActive) return
-                val sessionId = agent.primarySessionId ?: run {
+                // *** MODIFIED: Use the first subscribed session for now.
+                val sessionId = agent.subscribedSessionIds.firstOrNull() ?: run {
                     updateAgentAvatarCard(agentId, AgentStatus.ERROR, "Cannot start turn: Agent not subscribed to a session.", store)
                     return
                 }
@@ -414,7 +429,8 @@ class AgentRuntimeFeature(
                 val payload = action.payload?.let { json.decodeFromJsonElement<MessagePostedPayload>(it) } ?: return
                 if (isAvatarCard(payload)) return
                 agentState.agents.values.forEach { agent ->
-                    if (agent.primarySessionId == payload.sessionId && agent.id != payload.entry["senderId"]?.jsonPrimitive?.content) {
+                    // *** MODIFIED: Check if subscribed
+                    if (agent.subscribedSessionIds.contains(payload.sessionId) && agent.id != payload.entry["senderId"]?.jsonPrimitive?.content) {
                         if (agent.status == AgentStatus.IDLE) {
                             updateAgentAvatarCard(agent.id, AgentStatus.WAITING, null, store)
                         }
@@ -467,7 +483,6 @@ class AgentRuntimeFeature(
     }
 
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
-        // [INSTRUMENTATION] Added logging
         platformDependencies.log(LogLevel.DEBUG, name, "[INSTRUMENTATION] onPrivateData << ${envelope.type}")
         when (envelope.type) {
             ActionNames.Envelopes.GATEWAY_RESPONSE -> handleGatewayResponse(envelope.payload, store)
@@ -490,7 +505,8 @@ class AgentRuntimeFeature(
             "--- START OF FILE $holonId.json ---\n${content.jsonPrimitive.content}\n--- END OF FILE $holonId.json ---"
         } ?: ""
 
-        val sessionName = agentState.sessionNames[agent.primarySessionId] ?: "Unknown Session"
+        // *** MODIFIED: Use first session for name
+        val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.sessionNames[it] } ?: "Unknown Session"
         var systemPrompt = """
             --- SYSTEM BOOTSTRAP DIRECTIVES ---
             // You are an autonomous agent operating within the multi user and multi agent AUF App.
@@ -511,7 +527,7 @@ class AgentRuntimeFeature(
 
         """.trimIndent()
 
-        if (hkgContextContent != "") {
+        if (hkgContextContent.isNotEmpty()) {
             systemPrompt += """
             --- HOLON KNOWLEDGE GRAPH CONTEXT ---
             $hkgContextContent
@@ -566,14 +582,12 @@ class AgentRuntimeFeature(
     }
 
     private fun handleSessionLedgerResponse(payload: JsonObject, store: Store) {
-        // [INSTRUMENTATION] Added logging
         platformDependencies.log(LogLevel.DEBUG, name, "[INSTRUMENTATION] Entering handleSessionLedgerResponse.")
         val decoded = try {
             json.decodeFromJsonElement<LedgerResponsePayload>(payload)
         } catch (e: Exception) {
             val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
             val errorMessage = "FATAL: Failed to parse session ledger."
-            // [INSTRUMENTATION] Added logging
             platformDependencies.log(LogLevel.DEBUG, name, "[INSTRUMENTATION] Caught exception in handleSessionLedgerResponse. Calling updateAgentAvatarCard.")
             platformDependencies.log(LogLevel.ERROR, name, "$errorMessage for agent '$agentId'. Error: ${e.message}")
             if (agentId != null) {
@@ -655,15 +669,14 @@ class AgentRuntimeFeature(
 
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[decoded.correlationId] ?: return
-        val sessionId = agent.primarySessionId ?: return
+        // *** MODIFIED: Use first session
+        val sessionId = agent.subscribedSessionIds.firstOrNull() ?: return
         if (decoded.errorMessage != null) {
             updateAgentAvatarCard(agent.id, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}", store)
         } else {
-            // ADDITION: Sanitize the raw content before posting.
             var contentToPost = decoded.rawContent ?: ""
             val match = redundantHeaderRegex.find(contentToPost)
             if (match != null) {
-                // If the header is found, strip it and post a sentinel warning.
                 contentToPost = contentToPost.substring(match.range.last + 1).trimStart()
                 val warningMessage = """SYSTEM SENTINEL (llm-output-sanitizer): Warning for [${agent.name}]: Please do not include the standard system "name (id) @timestamp:" part in your output. This is added automatically by the application."""
                 store.deferredDispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
@@ -686,11 +699,11 @@ class AgentRuntimeFeature(
     }
 
     private fun updateAgentAvatarCard(agentId: String, status: AgentStatus, error: String? = null, store: Store) {
-        // [INSTRUMENTATION] Added logging
         platformDependencies.log(LogLevel.DEBUG, name, "[INSTRUMENTATION] Entering updateAgentAvatarCard for agent '$agentId', status: $status, error: $error")
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[agentId] ?: return
-        val newSessionId = agent.primarySessionId
+        // *** MODIFIED: Use first session
+        val newSessionId = agent.subscribedSessionIds.firstOrNull()
         agentState.agentAvatarCardIds[agentId]?.let { oldCardInfo ->
             store.deferredDispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                 put("session", oldCardInfo.sessionId); put("messageId", oldCardInfo.messageId)

@@ -122,12 +122,13 @@ class AgentRuntimeFeatureT2CoreTest {
     private fun createTestAgent(
         id: String = "agent-1",
         name: String = "Test Agent",
-        sessionId: String? = "session-1",
+        sessionIds: List<String> = listOf("session-1"), // *** MODIFIED
         status: AgentStatus = AgentStatus.IDLE,
         turnMode: TurnMode = TurnMode.DIRECT,
         kgId: String? = "p1"
     ): AgentInstance {
-        return AgentInstance(id = id, name = name, knowledgeGraphId = kgId, modelProvider = "mp1", modelName = "mn1", primarySessionId = sessionId, status = status, turnMode = turnMode)
+        // *** MODIFIED
+        return AgentInstance(id = id, name = name, knowledgeGraphId = kgId, modelProvider = "mp1", modelName = "mn1", subscribedSessionIds = sessionIds, status = status, turnMode = turnMode)
     }
 
     // TEST: New test for sentinel logic.

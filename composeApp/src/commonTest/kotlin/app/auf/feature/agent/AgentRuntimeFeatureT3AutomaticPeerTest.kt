@@ -46,7 +46,8 @@ class AgentRuntimeFeatureT3AutomaticPeerTest {
         platform = FakePlatformDependencies("test")
         val agentFeature = AgentRuntimeFeature(platform, testScope)
         val sessionFeature = SessionFeature(platform, testScope)
-        val sessions = agents.mapNotNull { it.primarySessionId }.distinct()
+        // *** MODIFIED: Logic handles lists
+        val sessions = agents.flatMap { it.subscribedSessionIds }.distinct()
             .associateWith { Session(it, "Session $it", emptyList(), 1L) }
 
         harness = TestEnvironment.create()
@@ -60,7 +61,8 @@ class AgentRuntimeFeatureT3AutomaticPeerTest {
 
     @Test
     fun `automatic agent should trigger after autoWaitTime debounce period`() = runTest {
-        val agent = AgentInstance("auto-agent-1", "Debouncer", "", "", "", "sid-A", automaticMode = true, autoWaitTimeSeconds = 5)
+        // *** MODIFIED: Use the new data model
+        val agent = AgentInstance("auto-agent-1", "Debouncer", "", "", "", subscribedSessionIds = listOf("sid-A"), automaticMode = true, autoWaitTimeSeconds = 5)
         setupHarness(agent)
 
         // ACT: A user message arrives.
@@ -84,7 +86,7 @@ class AgentRuntimeFeatureT3AutomaticPeerTest {
 
     @Test
     fun `debounce timer should reset when a new message arrives`() = runTest {
-        val agent = AgentInstance("auto-agent-1", "Debouncer", "", "", "", "sid-A", automaticMode = true, autoWaitTimeSeconds = 5)
+        val agent = AgentInstance("auto-agent-1", "Debouncer", "", "", "", subscribedSessionIds = listOf("sid-A"), automaticMode = true, autoWaitTimeSeconds = 5)
         setupHarness(agent)
 
         // ACT 1: First user message arrives.
@@ -116,7 +118,7 @@ class AgentRuntimeFeatureT3AutomaticPeerTest {
 
     @Test
     fun `automatic agent should trigger after autoMaxWaitTime even with continuous messages`() = runTest {
-        val agent = AgentInstance("auto-agent-1", "Timeout", "", "", "", "sid-A", automaticMode = true, autoWaitTimeSeconds = 10, autoMaxWaitTimeSeconds = 20)
+        val agent = AgentInstance("auto-agent-1", "Timeout", "", "", "", subscribedSessionIds = listOf("sid-A"), automaticMode = true, autoWaitTimeSeconds = 10, autoMaxWaitTimeSeconds = 20)
         setupHarness(agent)
 
         // ACT 1: First message starts the max-wait timer.
@@ -145,7 +147,7 @@ class AgentRuntimeFeatureT3AutomaticPeerTest {
 
     @Test
     fun `manual agent in WAITING state should NOT trigger automatically`() = runTest {
-        val agent = AgentInstance("manual-agent-1", "Manual", "", "", "", "sid-A", automaticMode = false, autoWaitTimeSeconds = 3)
+        val agent = AgentInstance("manual-agent-1", "Manual", "", "", "", subscribedSessionIds = listOf("sid-A"), automaticMode = false, autoWaitTimeSeconds = 3)
         setupHarness(agent)
 
         // ACT: A user message arrives, putting agent in WAITING.

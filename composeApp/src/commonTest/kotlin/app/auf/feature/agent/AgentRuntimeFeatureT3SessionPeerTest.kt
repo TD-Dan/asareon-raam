@@ -38,7 +38,8 @@ class AgentRuntimeFeatureT3SessionPeerTest {
     private val sessionFeature = SessionFeature(platform, scope)
 
     private val sessionA = Session("sid-A", "Session A", emptyList(), 1L)
-    private val agent1 = AgentInstance("aid-1", "Agent 1", "", "", "", primarySessionId = "sid-A")
+    // *** MODIFIED: Use new data model
+    private val agent1 = AgentInstance("aid-1", "Agent 1", "", "", "", subscribedSessionIds = listOf("sid-A"))
 
     @Test
     fun `when an agent is loaded it posts an IDLE card to the end of the ledger`() = runTest {

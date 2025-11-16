@@ -13,6 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -131,14 +133,14 @@ private fun AgentReadOnlyView(
     store: Store,
     platformDependencies: app.auf.util.PlatformDependencies
 ) {
-    val sessionName = agent.primarySessionId?.let { agentState.sessionNames[it] } ?: "Not Subscribed"
-    val hkgName = agent.knowledgeGraphId?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG" // NEW
+    val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.sessionNames[it] } ?: "Not Subscribed"
+    val hkgName = agent.knowledgeGraphId?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG"
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         AgentControlCard(agent, store, platformDependencies)
         SelectionContainer {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Session: $sessionName", style = MaterialTheme.typography.bodyMedium)
-                Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium) // NEW
+                Text("Subscribed: $sessionName" + if (agent.subscribedSessionIds.size > 1) " (+${agent.subscribedSessionIds.size - 1} more)" else "", style = MaterialTheme.typography.bodyMedium)
+                Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium)
                 Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
             }
         }
@@ -186,7 +188,7 @@ private fun AgentEditorView(
             maxItemsInEachRow = 2
         ) {
             Box(Modifier.weight(1f)) { SessionSelector(agent, agentState, store) }
-            Box(Modifier.weight(1f)) { KnowledgeGraphSelector(agent, agentState, store) } // NEW
+            Box(Modifier.weight(1f)) { KnowledgeGraphSelector(agent, agentState, store) }
             Box(Modifier.weight(1f)) { ProviderSelector(agent, agentState, store) }
             Box(Modifier.weight(1f)) { ModelSelector(agent, agentState, store) }
         }
@@ -242,7 +244,7 @@ private fun SessionSelector(agent: AgentInstance, agentState: AgentRuntimeState,
 
     ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
         OutlinedTextField(
-            value = agentState.sessionNames[agent.primarySessionId] ?: "Not Subscribed",
+            value = agent.subscribedSessionIds.firstOrNull()?.let { agentState.sessionNames[it] } ?: "Not Subscribed",
             onValueChange = {}, readOnly = true, label = { Text("Session") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth()
@@ -250,14 +252,18 @@ private fun SessionSelector(agent: AgentInstance, agentState: AgentRuntimeState,
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             DropdownMenuItem(text = { Text("None (Unsubscribe)") }, onClick = {
                 store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
-                    put("agentId", agent.id); put("primarySessionId", null as String?)
+                    put("agentId", agent.id)
+                    // *** FIX: Use put("key", buildJsonArray { ... })
+                    put("subscribedSessionIds", buildJsonArray {})
                 }))
                 isExpanded = false
             })
             availableSessions.forEach { (sessionId, sessionName) ->
                 DropdownMenuItem(text = { Text(sessionName) }, onClick = {
                     store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
-                        put("agentId", agent.id); put("primarySessionId", sessionId)
+                        put("agentId", agent.id)
+                        // *** FIX: Use put("key", buildJsonArray { ... })
+                        put("subscribedSessionIds", buildJsonArray { add(sessionId) })
                     }))
                     isExpanded = false
                 })

@@ -25,7 +25,8 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
     private lateinit var harness: app.auf.test.TestHarness
     private lateinit var feature: AgentRuntimeFeature
     private lateinit var platform: FakePlatformDependencies
-    private val agent = AgentInstance("agent-1", "Test", "", "test-provider", "test-model", "session-1")
+    // *** MODIFIED: Use new data model
+    private val agent = AgentInstance("agent-1", "Test", "", "test-provider", "test-model", subscribedSessionIds = listOf("session-1"))
 
     // FIX: A fake KnowledgeGraphFeature to unblock the cognitive cycle in tests.
     private object FakeKnowledgeGraphFeature : Feature {

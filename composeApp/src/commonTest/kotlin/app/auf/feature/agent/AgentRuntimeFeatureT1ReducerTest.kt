@@ -45,6 +45,7 @@ class AgentRuntimeFeatureT1ReducerTest {
 
     @Test
     fun `reducer on AGENT_TRIGGER_MANUAL_TURN should lock in the commitment frontier`() = runTest {
+        // *** MODIFIED: Use the new data model
         val agent = AgentInstance("agent-1", "Test", "", "", "", lastSeenMessageId = "msg-aware-frontier")
         val initialState = AgentRuntimeState(agents = mapOf(agent.id to agent))
         val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) })
@@ -76,7 +77,8 @@ class AgentRuntimeFeatureT1ReducerTest {
 
     @Test
     fun `reducer on MESSAGE_POSTED with avatar card should update avatar card ID map`() = runTest {
-        val agent = AgentInstance("agent-1", "Test", "", "", "", primarySessionId = "session-1")
+        // *** MODIFIED: Use the new data model
+        val agent = AgentInstance("agent-1", "Test", "", "", "", subscribedSessionIds = listOf("session-1"))
         val initialState = AgentRuntimeState(agents = mapOf(agent.id to agent))
         val validPayload = buildJsonObject {
             put("sessionId", "session-1")
@@ -101,7 +103,8 @@ class AgentRuntimeFeatureT1ReducerTest {
 
     @Test
     fun `onPrivateData with corrupted ledger should set agent to ERROR and log fatal error`() = runTest {
-        val agent = AgentInstance("agent-1", "Test", "", "", "", primarySessionId = "session-1")
+        // *** MODIFIED: Use the new data model
+        val agent = AgentInstance("agent-1", "Test", "", "", "", subscribedSessionIds = listOf("session-1"))
         harness = TestEnvironment.create()
             .withFeature(feature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
@@ -112,7 +115,6 @@ class AgentRuntimeFeatureT1ReducerTest {
         }
 
         val envelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, corruptedPayload)
-        // FIX: Use the architecturally correct store interface. The harness helper is no longer needed.
         harness.store.deliverPrivateData("session", "agent", envelope)
 
 
@@ -134,7 +136,8 @@ class AgentRuntimeFeatureT1ReducerTest {
     // CORRECTED TEST
     @Test
     fun `beginCognitiveCycle should atomically delete old card before creating a new one`() = runTest {
-        val agent = AgentInstance("agent-1", "Test", "", "", "", primarySessionId = "session-1")
+        // *** MODIFIED: Use the new data model
+        val agent = AgentInstance("agent-1", "Test", "", "", "", subscribedSessionIds = listOf("session-1"))
         val initialAvatarCards = mapOf("agent-1" to AgentRuntimeState.AvatarCardInfo("msg-idle-123", "session-1"))
         harness = TestEnvironment.create()
             .withFeature(feature)

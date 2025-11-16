@@ -45,7 +45,8 @@ fun AgentControlCard(
         }
     }
 
-    val canInitiateTurn = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING || agent.status == AgentStatus.ERROR) && agent.primarySessionId != null && agent.isAgentActive
+    // *** MODIFIED: Logic now checks if the session list is not empty.
+    val canInitiateTurn = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING || agent.status == AgentStatus.ERROR) && agent.subscribedSessionIds.isNotEmpty() && agent.isAgentActive
 
     val statusText = when (agent.status) {
         AgentStatus.PROCESSING -> {
