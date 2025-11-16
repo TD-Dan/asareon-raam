@@ -9,6 +9,7 @@
         "type": "object",
         "properties": { "mode": { "type": "string" } },
         "required": ["mode"]
+        "required": ["mode"]
       }
     },
     {
@@ -35,7 +36,7 @@
     },
     {
       "action_name": "knowledgegraph.RESERVE_HKG",
-      "summary": "An agent action to acquire an exclusive lock on an HKG, preventing modification by other agents or the UI.",
+      "summary": "An action to acquire an exclusive lock on an HKG, preventing modification by others.",
       "payload_schema": {
         "type": "object",
         "properties": { "personaId": { "type": "string" } },
@@ -44,7 +45,7 @@
     },
     {
       "action_name": "knowledgegraph.RELEASE_HKG",
-      "summary": "An agent action to release an exclusive lock on an HKG.",
+      "summary": "An action to release an exclusive lock on an HKG.",
       "payload_schema": {
         "type": "object",
         "properties": { "personaId": { "type": "string" } },

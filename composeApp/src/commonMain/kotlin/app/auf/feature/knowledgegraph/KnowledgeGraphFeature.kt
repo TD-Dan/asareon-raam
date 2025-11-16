@@ -47,7 +47,7 @@ class KnowledgeGraphFeature(
                 val errorMsg = "Blocked modification on reserved HKG '$rootId' by non-owner '$originator'."
                 platformDependencies.log(LogLevel.WARN, name, errorMsg)
                 store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
-                    put("message", "Action failed: Knowledge Graph is locked by another agent.")
+                    put("message", "Action failed: Knowledge Graph is locked by another user.")
                 }))
                 return true // Locked
             }
@@ -95,7 +95,7 @@ class KnowledgeGraphFeature(
                     val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: return
                     if (prevKgState?.reservations?.containsKey(personaId) == true) {
                         val owner = prevKgState.reservations[personaId]
-                        val errorMsg = "Agent '$originator' failed to reserve HKG '$personaId': already reserved by '$owner'."
+                        val errorMsg = "'$originator' failed to reserve HKG '$personaId': already reserved by '$owner'."
                         platformDependencies.log(LogLevel.WARN, name, errorMsg)
                         store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
                             put("message", "Failed to lock HKG: Already locked.")
