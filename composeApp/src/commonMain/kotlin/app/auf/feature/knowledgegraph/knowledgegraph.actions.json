@@ -52,14 +52,18 @@
       }
     },
     {
-      "action_name": "knowledgegraph.SET_ACTIVE_VIEW_PERSONA",
-      "summary": "A UI-facing action to set which HKG is currently being displayed in the Knowledge Graph view.",
-      "payload_schema": { "type": "object", "properties": { "personaId": { "type": ["string", "null"] } } }
-    },
-    {
       "action_name": "knowledgegraph.SET_ACTIVE_VIEW_HOLON",
       "summary": "A UI-facing action to select a specific holon for detailed inspection within the active view.",
       "payload_schema": { "type": "object", "properties": { "holonId": { "type": ["string", "null"] } } }
+    },
+    {
+      "action_name": "knowledgegraph.TOGGLE_HOLON_EXPANDED",
+      "summary": "Toggles the collapsed/expanded state of a single holon in the tree view.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "holonId": { "type": "string" } },
+        "required": ["holonId"]
+      }
     },
     {
       "action_name": "knowledgegraph.TOGGLE_SHOW_SUMMARIES",
@@ -177,18 +181,8 @@
       "action_name": "knowledgegraph.SET_HOLON_TO_RENAME",
       "summary": "A UI action to show or hide the holon rename dialog.",
       "payload_schema": { "type": "object", "properties": { "holonId": { "type": ["string", "null"] } } }
-    },
-    {
-      "action_name": "knowledgegraph.TOGGLE_HOLON_EXPANDED",
-      "summary": "Toggles the collapsed/expanded state of a single holon in the tree view.",
-      "payload_schema": {
-        "type": "object",
-        "properties": { "holonId": { "type": "string" } },
-        "required": ["holonId"]
-      }
     }
   ],
-
   "publishes": [
     {
       "action_name": "knowledgegraph.publish.AVAILABLE_PERSONAS_UPDATED",

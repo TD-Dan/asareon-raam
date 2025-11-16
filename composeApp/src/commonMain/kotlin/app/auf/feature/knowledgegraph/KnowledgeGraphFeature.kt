@@ -228,7 +228,7 @@ class KnowledgeGraphFeature(
                     put("subpath", finalSyncedHolon.header.filePath)
                     put("content", prepareHolonForWriting(finalSyncedHolon))
                 }))
-                kgState.activePersonaIdForView?.let {
+                findRootPersonaId(holonId, kgState)?.let {
                     store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
                 }
             }
@@ -246,7 +246,7 @@ class KnowledgeGraphFeature(
                     put("subpath", finalSyncedHolon.header.filePath)
                     put("content", prepareHolonForWriting(finalSyncedHolon))
                 }))
-                kgState.activePersonaIdForView?.let {
+                findRootPersonaId(holonId, kgState)?.let {
                     store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
                 }
             }
@@ -357,14 +357,6 @@ class KnowledgeGraphFeature(
                 val error = payload?.get("error")?.jsonPrimitive?.content ?: "Unknown loading error."
                 return currentFeatureState.copy(isLoading = false, fatalError = error)
             }
-            ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_PERSONA -> {
-                return currentFeatureState.copy(
-                    activePersonaIdForView = payload?.get("personaId")?.jsonPrimitive?.contentOrNull,
-                    activeHolonIdForView = null,
-                    activeTypeFilters = emptySet(),
-                    collapsedHolonIds = emptySet() // Reset collapsed state on persona change
-                )
-            }
             ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON -> {
                 val holonId = payload?.get("holonId")?.jsonPrimitive?.contentOrNull
                 return currentFeatureState.copy(activeHolonIdForView = holonId, holonIdToEdit = null)
@@ -474,7 +466,6 @@ class KnowledgeGraphFeature(
                 return currentFeatureState.copy(
                     holons = newHolons,
                     personaRoots = newRoots,
-                    activePersonaIdForView = if (currentFeatureState.activePersonaIdForView == personaId) null else currentFeatureState.activePersonaIdForView,
                     activeHolonIdForView = null,
                     personaIdToDelete = null
                 )

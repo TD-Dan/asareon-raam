@@ -125,7 +125,6 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
                                 modifier = Modifier.padding(horizontal = 8.dp)
                             )
                         }
-                        PersonaSelector(kgState, store)
                         IconButton(
                             onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.IMPORT.name) })) }
                         ) {
@@ -154,32 +153,16 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: Modifier = Modifier) {
-    val activePersonaRootId = kgState.activePersonaIdForView
     val selectedHolonId = kgState.activeHolonIdForView
     val holonToEditId = kgState.holonIdToEdit
     val selectedHolon = kgState.holons[selectedHolonId]
 
-    val allHolonsInView = remember(kgState.holons, activePersonaRootId) {
-        activePersonaRootId?.let { rootId ->
-            val holons = mutableListOf<Holon>()
-            val visited = mutableSetOf<String>()
-            fun traverse(holonId: String) {
-                if (visited.contains(holonId)) return
-                kgState.holons[holonId]?.let { holon ->
-                    holons.add(holon)
-                    visited.add(holonId)
-                    holon.header.subHolons.forEach { subRef -> traverse(subRef.id) }
-                }
-            }
-            traverse(rootId)
-            holons
-        } ?: emptyList()
+    val availableTypes = remember(kgState.holons) {
+        (listOf("All") + kgState.holons.values.map { it.header.type }.distinct().sorted()).toSet()
     }
 
-    val availableTypes = remember(allHolonsInView) { (listOf("All") + allHolonsInView.map { it.header.type }.distinct().sorted()).toSet() }
-
     Column(modifier = modifier.fillMaxSize()) {
-        if (activePersonaRootId != null) {
+        if (kgState.personaRoots.isNotEmpty()) {
             FlowRow(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 availableTypes.forEach { type ->
                     val isSelected = if (type == "All") kgState.activeTypeFilters.isEmpty() else kgState.activeTypeFilters.contains(type)
@@ -203,17 +186,16 @@ private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: 
         }
 
         Row(Modifier.fillMaxSize()) {
-            if (activePersonaRootId == null) {
+            if (kgState.personaRoots.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     when {
                         kgState.isLoading -> CircularProgressIndicator()
                         kgState.fatalError != null -> Text(kgState.fatalError, color = MaterialTheme.colorScheme.error)
-                        else -> Text("Select a Persona to display its Knowledge Graph.")
+                        else -> Text("No Knowledge Graphs found. Create or import a Persona to begin.")
                     }
                 }
             } else {
-                HolonTreeView(
-                    allHolonsInView = allHolonsInView,
+                MultiRootTreeView(
                     kgState = kgState,
                     store = store,
                     modifier = Modifier.width(400.dp)
@@ -246,34 +228,33 @@ private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: 
 }
 
 @Composable
-private fun HolonTreeView(allHolonsInView: List<Holon>, kgState: KnowledgeGraphState, store: Store, modifier: Modifier = Modifier) {
-    val rootHolon = kgState.activePersonaIdForView?.let { kgState.holons[it] }
-    val holonsById = remember(allHolonsInView) { allHolonsInView.associateBy { it.header.id } }
+private fun MultiRootTreeView(kgState: KnowledgeGraphState, store: Store, modifier: Modifier = Modifier) {
+    val treeHolons = remember(kgState.holons, kgState.personaRoots, kgState.activeTypeFilters, kgState.collapsedHolonIds) {
+        val visibleHolons = mutableListOf<Holon>()
+        val sortedRoots = kgState.personaRoots.values.mapNotNull { kgState.holons[it] }.sortedBy { it.header.name }
+
+        fun buildTreeList(holon: Holon) {
+            if (kgState.activeTypeFilters.isEmpty() || kgState.activeTypeFilters.contains(holon.header.type)) {
+                visibleHolons.add(holon)
+            }
+            if (!kgState.collapsedHolonIds.contains(holon.header.id)) {
+                holon.header.subHolons
+                    .mapNotNull { kgState.holons[it.id] }
+                    .sortedBy { it.header.name }
+                    .forEach { buildTreeList(it) }
+            }
+        }
+
+        sortedRoots.forEach { buildTreeList(it) }
+        visibleHolons
+    }
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(vertical = 8.dp)) {
-        if (rootHolon != null) {
-            val treeHolons = mutableListOf<Holon>()
-            fun buildTreeList(holon: Holon) {
-                if (kgState.activeTypeFilters.isEmpty() || kgState.activeTypeFilters.contains(holon.header.type)) {
-                    treeHolons.add(holon)
-                }
-                // [IMPLEMENTATION] Only traverse children if the parent is not collapsed.
-                if (!kgState.collapsedHolonIds.contains(holon.header.id)) {
-                    holon.header.subHolons
-                        .mapNotNull { subRef -> holonsById[subRef.id] }
-                        .sortedBy { childHolon -> childHolon.header.name }
-                        .forEach { sortedChildHolon -> buildTreeList(sortedChildHolon) }
-                }
-            }
-            buildTreeList(rootHolon)
-
-            items(treeHolons, key = { it.header.id }) { holon ->
-                HolonTreeItem(holon, kgState, store)
-            }
+        items(treeHolons, key = { it.header.id }) { holon ->
+            HolonTreeItem(holon, kgState, store)
         }
     }
 }
-
 
 @Composable
 private fun HolonTreeItem(holon: Holon, kgState: KnowledgeGraphState, store: Store) {
@@ -356,7 +337,12 @@ private fun HolonDetailView(holon: Holon?, store: Store, modifier: Modifier = Mo
                 actions = {
                     Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT, buildJsonObject { put("holonId", holon.header.id) })) }) { Text("Edit") }
                     Spacer(Modifier.width(8.dp))
-                    if (holon.header.type != "AI_Persona_Root") {
+                    if (holon.header.type == "AI_Persona_Root") {
+                        Button(
+                            onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", holon.header.id) })) },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) { Text("Delete Persona") }
+                    } else {
                         OutlinedButton(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_RENAME, buildJsonObject { put("holonId", holon.header.id) })) }) { Text("Rename") }
                         Spacer(Modifier.width(8.dp))
                         Button(
@@ -497,64 +483,6 @@ private fun RenameHolonDialog(holon: Holon?, onDismiss: () -> Unit, onRename: (S
         },
         dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } }
     )
-}
-
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun PersonaSelector(kgState: KnowledgeGraphState?, store: Store) {
-    if (kgState == null) return
-    var isExpanded by remember { mutableStateOf(false) }
-    var menuExpanded by remember { mutableStateOf(false) }
-    val activePersonaName = kgState.personaRoots.entries.find { it.value == kgState.activePersonaIdForView }?.key ?: "Select Persona"
-
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
-            OutlinedTextField(
-                value = activePersonaName,
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Selected Persona") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
-                modifier = Modifier.menuAnchor().width(250.dp)
-            )
-            ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
-                kgState.personaRoots.entries.sortedBy { it.key }.forEach { (name, id) ->
-                    DropdownMenuItem(
-                        text = { Text(name) },
-                        onClick = {
-                            store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_PERSONA, buildJsonObject { put("personaId", id) }))
-                            store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", id) }))
-                            isExpanded = false
-                        }
-                    )
-                }
-            }
-        }
-        Box {
-            IconButton(
-                onClick = { menuExpanded = true },
-                enabled = kgState.activePersonaIdForView != null
-            ) {
-                Icon(Icons.Default.MoreVert, contentDescription = "More options")
-            }
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false }
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Delete Persona") },
-                    onClick = {
-                        kgState.activePersonaIdForView?.let {
-                            store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", it) }))
-                        }
-                        menuExpanded = false
-                    },
-                    leadingIcon = { Icon(Icons.Default.Delete, null) }
-                )
-            }
-        }
-    }
 }
 
 @Composable

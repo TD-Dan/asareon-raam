@@ -102,7 +102,6 @@ data class KnowledgeGraphState(
     val reservations: Map<String, String> = emptyMap(),
 
     // --- UI State ---
-    val activePersonaIdForView: String? = null,
     val activeHolonIdForView: String? = null,
     val viewMode: KnowledgeGraphViewMode = KnowledgeGraphViewMode.INSPECTOR,
     val showSummariesInTreeView: Boolean = true,
