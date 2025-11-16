@@ -188,12 +188,9 @@ private fun AgentEditorView(
             maxItemsInEachRow = 2
         ) {
             Box(Modifier.weight(1f)) {
-                // *** NEW: Conditional UI based on agent type ***
                 if (agent.knowledgeGraphId == null) {
-                    // Vanilla Agent: Single-select session
                     SingleSessionSelector(agent, agentState, store)
                 } else {
-                    // Sovereign Agent: Multi-select session
                     MultiSessionSelector(agent, agentState, store)
                 }
             }
@@ -246,8 +243,9 @@ private fun AgentEditorView(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SingleSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
+    // *** NEW: Filter out private cognitive sessions ***
     val availableSessions = remember(agentState.sessionNames) {
-        agentState.sessionNames.entries.toList()
+        agentState.sessionNames.entries.toList().filter { !it.value.startsWith("p-cognition:") }
     }
     var isExpanded by remember { mutableStateOf(false) }
 
@@ -282,8 +280,9 @@ private fun SingleSessionSelector(agent: AgentInstance, agentState: AgentRuntime
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MultiSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
+    // *** NEW: Filter out private cognitive sessions ***
     val availableSessions = remember(agentState.sessionNames) {
-        agentState.sessionNames.entries.toList()
+        agentState.sessionNames.entries.toList().filter { !it.value.startsWith("p-cognition:") }
     }
     var isExpanded by remember { mutableStateOf(false) }
 
@@ -302,7 +301,6 @@ private fun MultiSessionSelector(agent: AgentInstance, agentState: AgentRuntimeS
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth()
         )
-        // Menu that does not close on item click
         DropdownMenu(
             expanded = isExpanded,
             onDismissRequest = { isExpanded = false },
@@ -330,7 +328,6 @@ private fun MultiSessionSelector(agent: AgentInstance, agentState: AgentRuntimeS
                                 newSelection.forEach { add(it) }
                             })
                         }))
-                        // NOTE: We do not set isExpanded = false here to allow multiple selections.
                     }
                 )
             }

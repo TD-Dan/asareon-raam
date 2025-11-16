@@ -79,13 +79,24 @@ class AgentRuntimeFeature(
                 val payload = action.payload ?: return currentFeatureState
                 val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
                 val agentToUpdate = currentFeatureState.agents[agentId] ?: return currentFeatureState
+
+                // *** NEW: Reducer-level guardrail to enforce subscription privacy ***
+                val newSubscribedSessionIds = if ("subscribedSessionIds" in payload) {
+                    payload["subscribedSessionIds"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
+                } else {
+                    agentToUpdate.subscribedSessionIds
+                }
+                val filteredSubscribedSessionIds = newSubscribedSessionIds.filter { sessionId ->
+                    currentFeatureState.sessionNames[sessionId]?.startsWith("p-cognition:") == false
+                }
+
                 val updatedAgent = agentToUpdate.copy(
                     name = payload["name"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.name,
                     knowledgeGraphId = if ("knowledgeGraphId" in payload) payload["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull else agentToUpdate.knowledgeGraphId,
                     privateSessionId = if ("privateSessionId" in payload) payload["privateSessionId"]?.jsonPrimitive?.contentOrNull else agentToUpdate.privateSessionId,
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelProvider,
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelName,
-                    subscribedSessionIds = if ("subscribedSessionIds" in payload) payload["subscribedSessionIds"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList() else agentToUpdate.subscribedSessionIds,
+                    subscribedSessionIds = filteredSubscribedSessionIds, // Use the filtered list
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: agentToUpdate.automaticMode,
                     autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoWaitTimeSeconds,
                     autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoMaxWaitTimeSeconds
@@ -141,7 +152,7 @@ class AgentRuntimeFeature(
                 val updatedAgent = agent.copy(
                     processingFrontierMessageId = agent.lastSeenMessageId,
                     turnMode = if (payload.preview) TurnMode.PREVIEW else TurnMode.DIRECT,
-                    stagedTurnContext = null // Clear any stale context
+                    stagedTurnContext = null
                 )
                 return currentFeatureState.copy(agents = currentFeatureState.agents + (agent.id to updatedAgent))
             }
@@ -224,7 +235,6 @@ class AgentRuntimeFeature(
         val isStartingProcessing = newStatus == AgentStatus.PROCESSING && agentToUpdate.status != AgentStatus.PROCESSING
         val isStoppingProcessing = newStatus != AgentStatus.PROCESSING && agentToUpdate.status == AgentStatus.PROCESSING
 
-        // Clear staged context when processing ends
         val shouldClearContext = isStoppingProcessing || newStatus == AgentStatus.IDLE || newStatus == AgentStatus.ERROR
 
         val updatedAgent = agentToUpdate.copy(
@@ -237,7 +247,6 @@ class AgentRuntimeFeature(
             processingStep = if (isStoppingProcessing) null else agentToUpdate.processingStep,
             stagedTurnContext = if(shouldClearContext) null else agentToUpdate.stagedTurnContext
         )
-        // Reset agentsToPersist after use
         return currentFeatureState.copy(
             agents = currentFeatureState.agents + (agentId to updatedAgent),
             agentsToPersist = null
@@ -256,7 +265,6 @@ class AgentRuntimeFeature(
                     waitingSinceTimestamp = agent.waitingSinceTimestamp ?: currentTime
                 )
             } else if (agent.id == senderId && !isAvatarCard(payload)) {
-                // An agent's own text response should advance its own lastSeenMessageId frontier
                 agent.copy(lastSeenMessageId = messageId)
             } else {
                 agent
@@ -318,7 +326,6 @@ class AgentRuntimeFeature(
                 val oldAgent = (previousState as? AgentRuntimeState)?.agents?.get(agentId)
                 val newAgent = agentState.agents[agentId] ?: return
 
-                // *** INTEGRATION POINT ***
                 SovereignAgentLogic.handleSovereignAssignment(store, oldAgent, newAgent)
                 SovereignAgentLogic.handleSovereignRevocation(store, oldAgent, newAgent)
 
@@ -350,7 +357,6 @@ class AgentRuntimeFeature(
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[agentId] ?: return
                 if (agent.status == AgentStatus.PROCESSING || !agent.isAgentActive) return
-                // The turn's context always comes from a single, primary public session.
                 val contextSessionId = agent.subscribedSessionIds.firstOrNull() ?: run {
                     updateAgentAvatarCard(agentId, AgentStatus.ERROR, "Cannot start turn: Agent not subscribed to a session.", store)
                     return
@@ -403,7 +409,7 @@ class AgentRuntimeFeature(
                     put("modelName", previewData.agnosticRequest.modelName)
                     put("correlationId", previewData.agnosticRequest.correlationId)
                     put("contents", json.encodeToJsonElement(previewData.agnosticRequest.contents))
-                    previewData.agnosticRequest.systemPrompt?.let { put("systemPrompt", it) } // Pass the system prompt
+                    previewData.agnosticRequest.systemPrompt?.let { put("systemPrompt", it) }
                 }))
                 store.deferredDispatch(this.name, Action(ActionNames.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId) }))
                 store.dispatch("ui.agent", Action(ActionNames.CORE_SHOW_DEFAULT_VIEW))
@@ -586,7 +592,7 @@ class AgentRuntimeFeature(
 
 
     private fun handleGatewayPreviewResponse(payload: JsonObject, store: Store) {
-        val decoded = try { json.decodeFromJsonElement<GatewayPreviewResponsePayload>(payload) } catch (e: Exception) { return } //TODO: THIS IS A VIOLATION! NO SILENT FAILURES ALLOWED!
+        val decoded = try { json.decodeFromJsonElement<GatewayPreviewResponsePayload>(payload) } catch (e: Exception) { return }
         val agent = (store.state.value.featureStates[name] as? AgentRuntimeState)?.agents?.get(decoded.correlationId) ?: return
 
         store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PREVIEW_DATA, buildJsonObject {
@@ -627,10 +633,10 @@ class AgentRuntimeFeature(
                 val user = agentState.userIdentities.find { it.id == senderId }
 
                 val (senderName, role) = when {
-                    senderId == actingAgentId -> agent.name to "model" // This is me, the acting agent.
-                    agentState.agents.containsKey(senderId) -> agentState.agents[senderId]!!.name to "user" // This is another agent, treated as a user.
-                    user != null -> user.name to "user" // This is a known human user.
-                    else -> "Unknown" to "user" // This is an unknown participant, default to user.
+                    senderId == actingAgentId -> agent.name to "model"
+                    agentState.agents.containsKey(senderId) -> agentState.agents[senderId]!!.name to "user"
+                    user != null -> user.name to "user"
+                    else -> "Unknown" to "user"
                 }
 
                 GatewayMessage(role, rawContent, senderId, senderName, timestamp)
@@ -688,7 +694,6 @@ class AgentRuntimeFeature(
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[decoded.correlationId] ?: return
 
-        // *** NEW: Conditional Output Routing ***
         val targetSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull()
 
         if (targetSessionId == null) {
