@@ -20,7 +20,8 @@ object SovereignAgentLogic {
     /**
      * This function is the canonical gate for an agent's transition to sovereignty.
      * It observes a state change and, if an agent has just been assigned an HKG for
-     * the first time, it orchestrates the creation of its mandatory private session.
+     * the first time, it orchestrates the creation of its mandatory private session and
+     * the reservation of its Knowledge Graph.
      */
     fun handleSovereignAssignment(
         store: Store,
@@ -28,8 +29,7 @@ object SovereignAgentLogic {
         newAgent: AgentInstance
     ) {
         val justBecameSovereign = newAgent.knowledgeGraphId != null &&
-                oldAgent?.knowledgeGraphId == null &&
-                newAgent.privateSessionId == null
+                oldAgent?.knowledgeGraphId == null
 
         if (justBecameSovereign) {
             // The session name is deliberately made unique to avoid collisions if agents are renamed.
@@ -41,16 +41,20 @@ object SovereignAgentLogic {
                 }
             ))
 
-            // Future-proofing: This is where we would also dispatch an action
-            // to acquire the HKG reservation/lock.
-            // e.g., store.dispatch("...", Action(ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG, ...))
+            // A Sovereign agent must acquire an exclusive lock on its HKG.
+            store.dispatch("SovereignAgentLogic", Action(
+                name = ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG,
+                payload = buildJsonObject {
+                    put("personaId", newAgent.knowledgeGraphId)
+                }
+            ))
         }
     }
 
     /**
      * This function is the canonical gate for an agent's de-transition from sovereignty.
      * It observes a state change and, if an agent has just had its HKG unassigned,
-     * it orchestrates the cleanup of its state to conform to Vanilla agent constraints.
+     * it orchestrates the cleanup of its state and the release of its Knowledge Graph reservation.
      */
     fun handleSovereignRevocation(
         store: Store,
@@ -75,9 +79,14 @@ object SovereignAgentLogic {
                 }
             ))
 
-            // Future-proofing: This is where we would also dispatch an action
-            // to release the HKG reservation/lock.
-            // e.g., store.dispatch("...", Action(ActionNames.KNOWLEDGEGRAPH_RELEASE_HKG, ...))
+            // The agent must release its exclusive lock on the HKG.
+            store.dispatch("SovereignAgentLogic", Action(
+                name = ActionNames.KNOWLEDGEGRAPH_RELEASE_HKG,
+                payload = buildJsonObject {
+                    // Use the oldAgent's ID, as the newAgent's is now null.
+                    put("personaId", oldAgent.knowledgeGraphId)
+                }
+            ))
         }
     }
 }

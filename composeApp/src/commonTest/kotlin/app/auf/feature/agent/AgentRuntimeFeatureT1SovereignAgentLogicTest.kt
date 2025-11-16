@@ -37,13 +37,31 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
         SovereignAgentLogic.handleSovereignAssignment(fakeStore, oldAgent, newAgent)
 
         // ASSERT
-        val dispatchedAction = fakeStore.dispatchedActions.firstOrNull()
-        assertNotNull(dispatchedAction, "An action should have been dispatched.")
+        val dispatchedAction = fakeStore.dispatchedActions.find { it.name == ActionNames.SESSION_CREATE }
+        assertNotNull(dispatchedAction, "A session CREATE action should have been dispatched.")
         assertEquals(ActionNames.SESSION_CREATE, dispatchedAction.name)
 
         val payload = dispatchedAction.payload
         assertNotNull(payload)
         assertEquals("p-cognition: Test Agent (a1)", payload["name"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `handleSovereignAssignment should dispatch KNOWLEDGEGRAPH_RESERVE_HKG when KG is newly assigned`() {
+        // ARRANGE: An agent transitions from Vanilla to Sovereign
+        val oldAgent = AgentInstance("a1", "Test Agent", null, "p", "m")
+        val newAgent = oldAgent.copy(knowledgeGraphId = "kg1")
+
+        // ACT
+        SovereignAgentLogic.handleSovereignAssignment(fakeStore, oldAgent, newAgent)
+
+        // ASSERT
+        val dispatchedAction = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG }
+        assertNotNull(dispatchedAction, "A KNOWLEDGEGRAPH_RESERVE_HKG action should have been dispatched.")
+
+        val payload = dispatchedAction.payload
+        assertNotNull(payload)
+        assertEquals("kg1", payload["personaId"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -86,9 +104,8 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
         SovereignAgentLogic.handleSovereignRevocation(fakeStore, oldAgent, newAgent)
 
         // ASSERT
-        val dispatchedAction = fakeStore.dispatchedActions.firstOrNull()
-        assertNotNull(dispatchedAction, "An action should have been dispatched.")
-        assertEquals(ActionNames.AGENT_UPDATE_CONFIG, dispatchedAction.name)
+        val dispatchedAction = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_UPDATE_CONFIG }
+        assertNotNull(dispatchedAction, "An UPDATE_CONFIG action should have been dispatched.")
 
         val payload = dispatchedAction.payload
         assertNotNull(payload)
@@ -100,6 +117,24 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
         assertNotNull(updatedSubs)
         assertEquals(1, updatedSubs.size, "Subscribed sessions should be truncated to one.")
         assertEquals("s1", updatedSubs.first().jsonPrimitive.content)
+    }
+
+    @Test
+    fun `handleSovereignRevocation should dispatch KNOWLEDGEGRAPH_RELEASE_HKG when KG is unassigned`() {
+        // ARRANGE: A Sovereign agent is de-transitioned.
+        val oldAgent = AgentInstance("a1", "Test Agent", "kg1", "p", "m", privateSessionId = "ps1")
+        val newAgent = oldAgent.copy(knowledgeGraphId = null)
+
+        // ACT
+        SovereignAgentLogic.handleSovereignRevocation(fakeStore, oldAgent, newAgent)
+
+        // ASSERT
+        val dispatchedAction = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_RELEASE_HKG }
+        assertNotNull(dispatchedAction, "A KNOWLEDGEGRAPH_RELEASE_HKG action should have been dispatched.")
+
+        val payload = dispatchedAction.payload
+        assertNotNull(payload)
+        assertEquals("kg1", payload["personaId"]?.jsonPrimitive?.content)
     }
 
     @Test
