@@ -91,6 +91,41 @@ class KnowledgeGraphFeatureT1ReducerTest {
         assertEquals("Test error", newState.fatalError)
     }
 
+    // --- Reducer - Reservation Logic ---
+
+    @Test
+    fun `RESERVE_HKG should add a persona to agent mapping to the reservations map`() {
+        val initialState = KnowledgeGraphState(reservations = emptyMap())
+        val action = Action(
+            name = ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG,
+            originator = "agent-alpha",
+            payload = buildJsonObject { put("personaId", "persona-1") }
+        )
+
+        val newState = feature.reducer(initialState, action) as KnowledgeGraphState
+
+        assertEquals(1, newState.reservations.size)
+        assertEquals("agent-alpha", newState.reservations["persona-1"])
+    }
+
+    @Test
+    fun `RELEASE_HKG should remove a persona mapping from the reservations map`() {
+        val initialState = KnowledgeGraphState(
+            reservations = mapOf("persona-1" to "agent-alpha", "persona-2" to "agent-beta")
+        )
+        val action = Action(
+            name = ActionNames.KNOWLEDGEGRAPH_RELEASE_HKG,
+            payload = buildJsonObject { put("personaId", "persona-1") }
+        )
+
+        val newState = feature.reducer(initialState, action) as KnowledgeGraphState
+
+        assertEquals(1, newState.reservations.size)
+        assertFalse(newState.reservations.containsKey("persona-1"))
+        assertEquals("agent-beta", newState.reservations["persona-2"])
+    }
+
+
     // --- Reducer - UI State Management ---
 
     @Test
