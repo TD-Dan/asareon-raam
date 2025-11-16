@@ -62,12 +62,28 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         val p1 = Holon(HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1", subHolons = listOf(SubHolonRef("h1", "Type_A", ""))), buildJsonObject {})
         setupTestWithState(KnowledgeGraphState(
             holons = mapOf("p1" to p1, "h1" to h1),
+            personaRoots = mapOf("P1" to "p1"),
             activePersonaIdForView = "p1",
             activeHolonIdForView = "h1"
         ))
         composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithText(h1Content).assertExists()
+    }
+
+    @Test
+    fun `persona root item should display reservation status when reserved`() {
+        val p1 = Holon(HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1"), buildJsonObject {})
+        setupTestWithState(KnowledgeGraphState(
+            holons = mapOf("p1" to p1),
+            personaRoots = mapOf("P1" to "p1"),
+            activePersonaIdForView = "p1",
+            reservations = mapOf("p1" to "agent-alpha")
+        ))
+        composeTestRule.waitForIdle()
+
+        // Assert that the UI clearly indicates the reservation status and owner.
+        composeTestRule.onNodeWithText("Reserved by: agent-alpha", substring = true).assertIsDisplayed()
     }
 
     @Test
@@ -78,6 +94,7 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
 
         setupTestWithState(KnowledgeGraphState(
             holons = mapOf("h1" to h1, "p1" to p1),
+            personaRoots = mapOf("P1" to "p1"),
             holonIdToEdit = "h1",
             activePersonaIdForView = "p1"
         ))
@@ -106,6 +123,7 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
 
         setupTestWithState(KnowledgeGraphState(
             holons = mapOf("h1" to h1, "p1" to p1),
+            personaRoots = mapOf("P1" to "p1"),
             holonIdToEdit = "h1",
             activePersonaIdForView = "p1"
         ))

@@ -263,7 +263,7 @@ private fun HolonTreeView(allHolonsInView: List<Holon>, kgState: KnowledgeGraphS
             buildTreeList(rootHolon)
 
             items(treeHolons, key = { it.header.id }) { holon ->
-                HolonTreeItem(holon, kgState.activeHolonIdForView, kgState.showSummariesInTreeView, store)
+                HolonTreeItem(holon, kgState, store)
             }
         }
     }
@@ -271,15 +271,37 @@ private fun HolonTreeView(allHolonsInView: List<Holon>, kgState: KnowledgeGraphS
 
 
 @Composable
-private fun HolonTreeItem(holon: Holon, selectedHolonId: String?, showSummary: Boolean, store: Store) {
+private fun HolonTreeItem(holon: Holon, kgState: KnowledgeGraphState, store: Store) {
     val header = holon.header
+    val selectedHolonId = kgState.activeHolonIdForView
+    val showSummary = kgState.showSummariesInTreeView
+    val reservationOwner = if (header.type == "AI_Persona_Root") kgState.reservations[header.id] else null
+
     ListItem(
         headlineContent = {
             Text(header.name, maxLines = 1, style = MaterialTheme.typography.titleSmall, fontWeight = if (header.id == selectedHolonId) FontWeight.Bold else FontWeight.Normal)
         },
         supportingContent = {
-            if (showSummary) {
-                Text(header.summary ?: header.type, maxLines = 1, style = MaterialTheme.typography.bodySmall)
+            Column {
+                if (showSummary) {
+                    Text(header.summary ?: header.type, maxLines = 1, style = MaterialTheme.typography.bodySmall)
+                }
+                if (reservationOwner != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = "Reserved",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.tertiary
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "Reserved by: $reservationOwner",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                }
             }
         },
         modifier = Modifier
