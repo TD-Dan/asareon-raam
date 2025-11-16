@@ -44,6 +44,7 @@ class AgentRuntimeFeature(
     private val agentConfigFILENAME = "agent.json"
     private val activeTurnJobs = mutableMapOf<String, Job>()
     private val redundantHeaderRegex = Regex("""^.+? \([^)]+\) @ \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z:\s*""")
+    private var agentLoadCount = 0
 
     override fun init(store: Store) {
         coroutineScope.launch {
@@ -293,6 +294,12 @@ class AgentRuntimeFeature(
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
                 store.deferredDispatch(this.name, Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
             }
+            ActionNames.AGENT_INTERNAL_AGENTS_LOADED -> {
+                store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_VALIDATE_SOVEREIGN_STATE))
+            }
+            ActionNames.AGENT_INTERNAL_VALIDATE_SOVEREIGN_STATE -> {
+                SovereignAgentLogic.validateAndCorrectStartupState(store, agentState)
+            }
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
                 if (agent.subscribedSessionIds.isNotEmpty()) {
@@ -379,25 +386,8 @@ class AgentRuntimeFeature(
             ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[agentId] ?: return
-                val kgId = agent.knowledgeGraphId
-                val kgFeatureExists = store.features.any { it.name == "knowledgegraph" }
-
-                if (kgId != null && kgFeatureExists) {
-                    store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
-                        put("agentId", agent.id); put("step", "Requesting HKG")
-                    }))
-                    val requestEnvelope = PrivateDataEnvelope(
-                        type = ActionNames.Envelopes.AGENT_REQUEST_CONTEXT,
-                        payload = buildJsonObject {
-                            put("correlationId", agent.id)
-                            put("knowledgeGraphId", kgId)
-                        }
-                    )
-                    store.deliverPrivateData(this.name, "knowledgegraph", requestEnvelope)
-                } else {
-                    if (kgId != null && !kgFeatureExists) {
-                        platformDependencies.log(LogLevel.WARN, name, "Agent '${agent.id}' has an HKG configured, but KnowledgeGraphFeature not found. Proceeding without HKG context.")
-                    }
+                val wasHandledBySovereign = SovereignAgentLogic.requestContextIfSovereign(store, agent)
+                if (!wasHandledBySovereign) {
                     val ledgerContext = agent.stagedTurnContext ?: emptyList()
                     assemblePromptAndRequestGeneration(agent, ledgerContext, null, agentState, store)
                 }
@@ -467,22 +457,7 @@ class AgentRuntimeFeature(
                 }
             }
             ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
-                val agentAwaitingSession = agentState.agents.values.find {
-                    it.knowledgeGraphId != null && it.privateSessionId == null
-                } ?: return
-
-                val expectedSessionName = "p-cognition: ${agentAwaitingSession.name} (${agentAwaitingSession.id})"
-                val privateSession = agentState.sessionNames.entries.find { (_, name) ->
-                    name == expectedSessionName
-                } ?: return
-
-                store.deferredDispatch(this.name, Action(
-                    name = ActionNames.AGENT_UPDATE_CONFIG,
-                    payload = buildJsonObject {
-                        put("agentId", agentAwaitingSession.id)
-                        put("privateSessionId", privateSession.key)
-                    }
-                ))
+                SovereignAgentLogic.linkPrivateSessionOnCreation(store, agentState)
             }
         }
     }
@@ -659,11 +634,16 @@ class AgentRuntimeFeature(
 
     private fun handleFileSystemListResponse(payload: JsonObject, store: Store) {
         val fileList = payload["listing"]?.jsonArray?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
-        fileList.forEach { entry ->
-            if (entry.isDirectory) {
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
-                    put("subpath", "${platformDependencies.getFileName(entry.path)}/$agentConfigFILENAME")
-                }))
+        agentLoadCount = fileList.count { it.isDirectory }
+        if (agentLoadCount == 0) {
+            store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
+        } else {
+            fileList.forEach { entry ->
+                if (entry.isDirectory) {
+                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+                        put("subpath", "${platformDependencies.getFileName(entry.path)}/$agentConfigFILENAME")
+                    }))
+                }
             }
         }
     }
@@ -675,6 +655,11 @@ class AgentRuntimeFeature(
             store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, name, "Failed to parse agent config from file: ${payload["subpath"]}. Error: ${e.message}")
+        } finally {
+            agentLoadCount--
+            if (agentLoadCount <= 0) {
+                store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
+            }
         }
     }
 

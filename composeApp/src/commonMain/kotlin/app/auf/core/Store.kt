@@ -44,7 +44,7 @@ private fun parseActionName(name: String): ParsedActionName {
 open class Store(
     initialState: AppState,
     val features: List<Feature>,
-    private val platformDependencies: PlatformDependencies,
+    val platformDependencies: PlatformDependencies,
     private val validActionNames: Set<String>
 ) {
 

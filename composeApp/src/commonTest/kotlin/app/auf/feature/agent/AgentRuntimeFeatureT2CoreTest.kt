@@ -10,7 +10,6 @@ import app.auf.feature.session.SessionState
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
 import app.auf.util.LogLevel
-import io.ktor.http.content.Version
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
@@ -20,6 +19,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.Test
@@ -395,6 +395,37 @@ class AgentRuntimeFeatureT2CoreTest {
             val log =
                 harness.platform.capturedLogs.find { it.level == LogLevel.WARN && it.message.contains("KnowledgeGraphFeature not found") }
             assertNotNull(log, "An info log should indicate the graceful fallback.")
+        }
+    }
+
+    @Test
+    fun `startup validation should trigger for sovereign agents`() = runTest {
+        val sovereignAgent = AgentInstance("agent-1", "Sovereign Agent", "kg-1", "p", "m", privateSessionId = null)
+        val harness = TestEnvironment.create()
+            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
+            .withFeature(FakeSessionFeature)
+            .withFeature(FakeKnowledgeGraphFeature)
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to sovereignAgent)))
+            .build()
+
+        // ACT: Simulate the final step of loading agents from disk
+        harness.store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
+
+        // ASSERT
+        harness.runAndLogOnFailure {
+            val validationAction = harness.processedActions.find { it.name == ActionNames.AGENT_INTERNAL_VALIDATE_SOVEREIGN_STATE }
+            assertNotNull(validationAction, "AGENTS_LOADED should trigger a VALIDATE_SOVEREIGN_STATE action.")
+
+            // ACT 2: Now, run the validation logic itself.
+            harness.store.dispatch("agent", validationAction)
+
+            val reserveAction = harness.processedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG }
+            assertNotNull(reserveAction, "A KNOWLEDGEGRAPH_RESERVE_HKG action should have been dispatched for the sovereign agent.")
+            assertEquals("kg-1", reserveAction.payload?.get("personaId")?.jsonPrimitive?.content)
+
+            val createSessionAction = harness.processedActions.find { it.name == ActionNames.SESSION_CREATE }
+            assertNotNull(createSessionAction, "A SESSION_CREATE action should have been dispatched to create the missing private session.")
+            assertTrue(createSessionAction.payload?.get("name")?.jsonPrimitive?.content?.startsWith("p-cognition:") == true)
         }
     }
 }

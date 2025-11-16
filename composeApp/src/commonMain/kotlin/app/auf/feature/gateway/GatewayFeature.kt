@@ -10,7 +10,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
-class GatewayFeature(
+open class GatewayFeature(
     private val platformDependencies: PlatformDependencies,
     private val coroutineScope: CoroutineScope,
     // All available providers are injected here at the composition root (e.g., in AppContainer).

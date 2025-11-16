@@ -1,8 +1,10 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
+import app.auf.core.PrivateDataEnvelope
 import app.auf.core.Store
 import app.auf.core.generated.ActionNames
+import app.auf.util.LogLevel
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
@@ -13,7 +15,7 @@ import kotlinx.serialization.json.put
  * ## Mandate
  * To provide pure, testable, static functions for the specialized business logic
  * of Sovereign (HKG-backed) agents. This isolates complex state transition logic
- * from the orchestration and side effect management of the AgentRuntimeFeature.
+ * from the orchestration and side-effect management of the AgentRuntimeFeature.
  */
 object SovereignAgentLogic {
 
@@ -34,7 +36,7 @@ object SovereignAgentLogic {
         if (justBecameSovereign) {
             // The session name is deliberately made unique to avoid collisions if agents are renamed.
             val privateSessionName = "p-cognition: ${newAgent.name} (${newAgent.id})"
-            store.dispatch("SovereignAgentLogic", Action(
+            store.dispatch("agent", Action(
                 name = ActionNames.SESSION_CREATE,
                 payload = buildJsonObject {
                     put("name", privateSessionName)
@@ -42,7 +44,7 @@ object SovereignAgentLogic {
             ))
 
             // A Sovereign agent must acquire an exclusive lock on its HKG.
-            store.dispatch("SovereignAgentLogic", Action(
+            store.dispatch("agent", Action(
                 name = ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG,
                 payload = buildJsonObject {
                     put("personaId", newAgent.knowledgeGraphId)
@@ -66,7 +68,7 @@ object SovereignAgentLogic {
         if (justBecameVanilla) {
             val truncatedSubscriptions = oldAgent.subscribedSessionIds.take(1)
 
-            store.dispatch("SovereignAgentLogic", Action(
+            store.dispatch("agent", Action(
                 name = ActionNames.AGENT_UPDATE_CONFIG,
                 payload = buildJsonObject {
                     put("agentId", newAgent.id)
@@ -80,7 +82,7 @@ object SovereignAgentLogic {
             ))
 
             // The agent must release its exclusive lock on the HKG.
-            store.dispatch("SovereignAgentLogic", Action(
+            store.dispatch("agent", Action(
                 name = ActionNames.KNOWLEDGEGRAPH_RELEASE_HKG,
                 payload = buildJsonObject {
                     // Use the oldAgent's ID, as the newAgent's is now null.
@@ -89,4 +91,87 @@ object SovereignAgentLogic {
             ))
         }
     }
+
+    /**
+     * [NEW] Validates that all sovereign agents in the state meet their startup requirements.
+     * It checks for HKG reservations and private sessions, creating them if they are missing.
+     */
+    fun validateAndCorrectStartupState(store: Store, agentState: AgentRuntimeState) {
+        agentState.agents.values.forEach { agent ->
+            if (agent.knowledgeGraphId != null) {
+                // Validate Reservation
+                if (!agentState.hkgReservedIds.contains(agent.knowledgeGraphId)) {
+                    store.dispatch("agent", Action(ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject {
+                        put("personaId", agent.knowledgeGraphId)
+                    }))
+                }
+                // Validate Private Session
+                val expectedSessionName = "p-cognition: ${agent.name} (${agent.id})"
+                val sessionExists = agentState.sessionNames.any { it.value == expectedSessionName }
+                if (!sessionExists) {
+                    store.dispatch("agent", Action(ActionNames.SESSION_CREATE, buildJsonObject {
+                        put("name", expectedSessionName)
+                    }))
+                }
+            }
+        }
+    }
+
+    /**
+     * [NEW] Connects a newly created private session to a sovereign agent that is waiting for it.
+     */
+    fun linkPrivateSessionOnCreation(store: Store, agentState: AgentRuntimeState) {
+        val agentAwaitingSession = agentState.agents.values.find {
+            it.knowledgeGraphId != null && it.privateSessionId == null
+        } ?: return
+
+        val expectedSessionName = "p-cognition: ${agentAwaitingSession.name} (${agentAwaitingSession.id})"
+        val privateSession = agentState.sessionNames.entries.find { (_, name) ->
+            name == expectedSessionName
+        } ?: return
+
+        store.dispatch("agent", Action(
+            name = ActionNames.AGENT_UPDATE_CONFIG,
+            payload = buildJsonObject {
+                put("agentId", agentAwaitingSession.id)
+                put("privateSessionId", privateSession.key)
+            }
+        ))
+    }
+
+    /**
+     * [NEW] If the agent is sovereign, requests its HKG context. Otherwise, does nothing.
+     * @return `true` if the context was requested (halting the normal flow), `false` otherwise.
+     */
+    fun requestContextIfSovereign(store: Store, agent: AgentInstance): Boolean {
+        val kgId = agent.knowledgeGraphId
+        val kgFeatureExists = store.features.any { it.name == "knowledgegraph" }
+
+        if (kgId != null && kgFeatureExists) {
+            store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+                put("agentId", agent.id); put("step", "Requesting HKG")
+            }))
+            val requestEnvelope = PrivateDataEnvelope(
+                type = ActionNames.Envelopes.AGENT_REQUEST_CONTEXT,
+                payload = buildJsonObject {
+                    put("correlationId", agent.id)
+                    put("knowledgeGraphId", kgId)
+                }
+            )
+            store.deliverPrivateData("agent", "knowledgegraph", requestEnvelope)
+            return true // Context was requested, so the caller should wait.
+        }
+
+        if (kgId != null && !kgFeatureExists) {
+            // Log the warning, but proceed without context.
+            store.platformDependencies.log(
+                LogLevel.WARN,
+                "agent",
+                "Agent '${agent.id}' has an HKG configured, but KnowledgeGraphFeature not found. Proceeding without HKG context."
+            )
+        }
+        return false // No context requested, caller can proceed.
+    }
+
+
 }
