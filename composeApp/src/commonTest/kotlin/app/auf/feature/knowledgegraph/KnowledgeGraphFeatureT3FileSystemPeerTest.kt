@@ -1,17 +1,14 @@
 package app.auf.feature.knowledgegraph
 
 import app.auf.core.Action
-import app.auf.core.PrivateDataEnvelope
 import app.auf.core.generated.ActionNames
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
 import app.auf.util.BasePath
-import app.auf.util.FileEntry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -55,8 +52,7 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
             .withFeature(kgFeature)
             .withFeature(fsFeature)
             .withInitialState("knowledgegraph", KnowledgeGraphState(
-                holons = mapOf(holonId to initialInMemoryHolon),
-                activePersonaIdForView = personaId
+                holons = mapOf(holonId to initialInMemoryHolon)
             ))
             .build(platform = platform)
 

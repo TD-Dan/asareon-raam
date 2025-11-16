@@ -3,24 +3,18 @@ package app.auf.feature.knowledgegraph
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import app.auf.core.Action
-import app.auf.core.AppState
 import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
-import app.auf.fakes.FakeStore
 import app.auf.test.TestEnvironment
 import app.auf.test.TestHarness
 import app.auf.ui.AppTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -56,14 +50,13 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
     }
 
     @Test
-    fun `selecting a holon displays its rawContent`() = runTest {
+    fun `selecting a holon displays its rawContent`() {
         val h1Content = "This is the unique raw holon content."
         val h1 = Holon(HolonHeader(id = "h1", type = "Type_A", name = "Holon One"), buildJsonObject {}, rawContent = h1Content)
         val p1 = Holon(HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1", subHolons = listOf(SubHolonRef("h1", "Type_A", ""))), buildJsonObject {})
         setupTestWithState(KnowledgeGraphState(
             holons = mapOf("p1" to p1, "h1" to h1),
             personaRoots = mapOf("P1" to "p1"),
-            activePersonaIdForView = "p1",
             activeHolonIdForView = "h1"
         ))
         composeTestRule.waitForIdle()
@@ -77,7 +70,6 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         setupTestWithState(KnowledgeGraphState(
             holons = mapOf("p1" to p1),
             personaRoots = mapOf("P1" to "p1"),
-            activePersonaIdForView = "p1",
             reservations = mapOf("p1" to "agent-alpha")
         ))
         composeTestRule.waitForIdle()
@@ -87,7 +79,7 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
     }
 
     @Test
-    fun `HolonEditView updates payload and dispatches correct action`() = runTest {
+    fun `HolonEditView updates payload and dispatches correct action`() {
         val initialPayload = buildJsonObject { put("key", "old") }
         val h1 = Holon(header = HolonHeader(id = "h1", type = "Type_A", name = "H1"), payload = initialPayload, execute = buildJsonObject {})
         val p1 = Holon(header = HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1"), payload = buildJsonObject {})
@@ -95,8 +87,7 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         setupTestWithState(KnowledgeGraphState(
             holons = mapOf("h1" to h1, "p1" to p1),
             personaRoots = mapOf("P1" to "p1"),
-            holonIdToEdit = "h1",
-            activePersonaIdForView = "p1"
+            holonIdToEdit = "h1"
         ))
         composeTestRule.waitForIdle()
         harness.store.processedActions.clear()
@@ -117,15 +108,14 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
     }
 
     @Test
-    fun `HolonEditView with invalid JSON does not dispatch action and shows error`() = runTest {
+    fun `HolonEditView with invalid JSON does not dispatch action and shows error`() {
         val h1 = Holon(header = HolonHeader(id = "h1", type = "Type_A", name = "H1"), payload = buildJsonObject {})
         val p1 = Holon(header = HolonHeader(id = "p1", type = "AI_Persona_Root", name = "P1"), payload = buildJsonObject {})
 
         setupTestWithState(KnowledgeGraphState(
             holons = mapOf("h1" to h1, "p1" to p1),
             personaRoots = mapOf("P1" to "p1"),
-            holonIdToEdit = "h1",
-            activePersonaIdForView = "p1"
+            holonIdToEdit = "h1"
         ))
         composeTestRule.waitForIdle()
         harness.store.processedActions.clear()
@@ -141,7 +131,7 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
     }
 
     @Test
-    fun `ImportPane ActionSelector should only show actions from the availableActions list`() = runTest {
+    fun `ImportPane ActionSelector should only show actions from the availableActions list`() {
         // [CORRECTED] Changed 'initialAction' to 'proposedAction' and added 'statusReason'.
         val proposedAction = Quarantine("Test reason")
         val importItem = ImportItem(

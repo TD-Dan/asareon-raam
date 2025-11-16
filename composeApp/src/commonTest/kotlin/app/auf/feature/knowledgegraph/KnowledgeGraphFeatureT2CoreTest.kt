@@ -3,8 +3,6 @@ package app.auf.feature.knowledgegraph
 import app.auf.core.Action
 import app.auf.core.PrivateDataEnvelope
 import app.auf.core.generated.ActionNames
-import app.auf.feature.core.AppLifecycle
-import app.auf.feature.core.CoreState
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
 import app.auf.util.FileEntry
@@ -13,7 +11,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
@@ -21,7 +18,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import kotlinx.serialization.serializer
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -94,7 +90,7 @@ class KnowledgeGraphFeatureT2CoreTest {
         )
         val harness = TestEnvironment.create()
             .withFeature(feature)
-            .withInitialState("knowledgegraph", KnowledgeGraphState(holons = mapOf("h1" to holonToRename), activePersonaIdForView = "p1"))
+            .withInitialState("knowledgegraph", KnowledgeGraphState(holons = mapOf("h1" to holonToRename)))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {

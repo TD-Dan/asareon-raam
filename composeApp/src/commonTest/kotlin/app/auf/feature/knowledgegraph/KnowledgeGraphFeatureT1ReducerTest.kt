@@ -1,11 +1,8 @@
 package app.auf.feature.knowledgegraph
 
 import app.auf.core.Action
-import app.auf.core.AppState
-import app.auf.core.FeatureState
 import app.auf.core.generated.ActionNames
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
@@ -13,7 +10,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -30,19 +26,6 @@ class KnowledgeGraphFeatureT1ReducerTest {
         platformDependencies = app.auf.fakes.FakePlatformDependencies("test"),
         coroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)
     )
-    private val featureName = feature.name
-
-    private val samplePersonaContent = """
-        {
-            "header": { "id": "persona-1", "type": "AI_Persona_Root", "name": "Persona One" }, "payload": {}
-        }
-    """.trimIndent()
-    private val sampleHolonContent = """
-        {
-            "header": { "id": "holon-a", "type": "Test_Holon", "name": "Holon A" }, "payload": {}
-        }
-    """.trimIndent()
-
 
     // --- Reducer - Loading & State Hydration (Hardened Protocol) ---
 
@@ -139,22 +122,6 @@ class KnowledgeGraphFeatureT1ReducerTest {
     }
 
     @Test
-    fun `on SET_ACTIVE_VIEW_PERSONA should set active persona, clear active holon, and clear filters`() {
-        val initialState = KnowledgeGraphState(
-            activePersonaIdForView = "old-persona",
-            activeHolonIdForView = "old-holon",
-            activeTypeFilters = setOf("Test")
-        )
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_PERSONA, buildJsonObject { put("personaId", "new-persona") })
-
-        val newState = feature.reducer(initialState, action) as KnowledgeGraphState
-
-        assertEquals("new-persona", newState.activePersonaIdForView)
-        assertNull(newState.activeHolonIdForView, "Active holon should be cleared when persona changes.")
-        assertTrue(newState.activeTypeFilters.isEmpty(), "Filters should be reset on persona change.")
-    }
-
-    @Test
     fun `on SET_ACTIVE_VIEW_HOLON should set active holon and clear edit mode`() {
         val initialState = KnowledgeGraphState(holonIdToEdit = "h1")
         val action = Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON, buildJsonObject { put("holonId", "h2") })
@@ -207,8 +174,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
 
         val initialState = KnowledgeGraphState(
             holons = mapOf("p1" to p1, "h1" to h1, "h2" to h2, "p2" to p2),
-            personaRoots = mapOf("P1" to "p1", "P2" to "p2"),
-            activePersonaIdForView = "p1"
+            personaRoots = mapOf("P1" to "p1", "P2" to "p2")
         )
         val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA, buildJsonObject { put("personaId", "p1") })
 
@@ -220,7 +186,6 @@ class KnowledgeGraphFeatureT1ReducerTest {
         assertTrue(newState.holons.containsKey("p2"))
         assertFalse(newState.personaRoots.containsKey("P1"))
         assertTrue(newState.personaRoots.containsKey("P2"))
-        assertNull(newState.activePersonaIdForView, "Active view should be cleared if the deleted persona was active.")
     }
 
     // --- Reducer - Import Workflow ---
