@@ -99,6 +99,8 @@ data class KnowledgeGraphState(
     val holons: Map<String, Holon> = emptyMap(),
     val personaRoots: Map<String, String> = emptyMap(),
 
+    val reservations: Map<String, String> = emptyMap(),
+
     // --- UI State ---
     val activePersonaIdForView: String? = null,
     val activeHolonIdForView: String? = null,

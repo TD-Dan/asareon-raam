@@ -34,6 +34,24 @@
       }
     },
     {
+      "action_name": "knowledgegraph.RESERVE_HKG",
+      "summary": "An agent action to acquire an exclusive lock on an HKG, preventing modification by other agents or the UI.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "personaId": { "type": "string" } },
+        "required": ["personaId"]
+      }
+    },
+    {
+      "action_name": "knowledgegraph.RELEASE_HKG",
+      "summary": "An agent action to release an exclusive lock on an HKG.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "personaId": { "type": "string" } },
+        "required": ["personaId"]
+      }
+    },
+    {
       "action_name": "knowledgegraph.SET_ACTIVE_VIEW_PERSONA",
       "summary": "A UI-facing action to set which HKG is currently being displayed in the Knowledge Graph view.",
       "payload_schema": { "type": "object", "properties": { "personaId": { "type": ["string", "null"] } } }
@@ -166,6 +184,15 @@
       "action_name": "knowledgegraph.publish.AVAILABLE_PERSONAS_UPDATED",
       "summary": "Broadcasts the list of all discovered, valid AI_Persona_Root holon headers, allowing other features (like the UI) to know which HKGs are available.",
       "payload_schema": { "type": "object", "properties": { "names": { "type": "object" } }, "required": ["names"] }
+    },
+    {
+      "action_name": "knowledgegraph.publish.RESERVATIONS_UPDATED",
+      "summary": "Broadcasts the set of all currently reserved persona IDs.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "reservedIds": { "type": "array", "items": { "type": "string" } } },
+        "required": ["reservedIds"]
+      }
     },
     {
       "action_name": "knowledgegraph.internal.SET_PENDING_IMPORT_ID",
