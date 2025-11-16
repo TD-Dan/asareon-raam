@@ -126,6 +126,15 @@
         "type":"object",
         "properties":{ "agentId":{ "type":[ "string", "null" ] } }
       }
+    },
+    {
+      "action_name": "knowledgegraph.publish.RESERVATIONS_UPDATED",
+      "summary": "Listens for updates to the set of reserved HKGs to prevent UI conflicts.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "reservedIds": { "type": "array", "items": { "type": "string" } } },
+        "required": ["reservedIds"]
+      }
     }
   ],
   "publishes":[
@@ -143,6 +152,16 @@
       "action_name":"agent.internal.AGENT_LOADED",
       "summary":"[INTERNAL] Dispatched after an agent's configuration has been read from its sandbox. Used to populate the feature's state.",
       "payload_schema":{ "type":"object", "description":"A single AgentInstance object." }
+    },
+    {
+      "action_name":"agent.internal.AGENTS_LOADED",
+      "summary":"[INTERNAL] Dispatched after all agent configurations have been read from disk. Triggers post-load validation.",
+      "payload_schema":null
+    },
+    {
+      "action_name":"agent.internal.VALIDATE_SOVEREIGN_STATE",
+      "summary":"[INTERNAL] Triggers the validation of sovereign agent requirements (reservations, private sessions) on startup.",
+      "payload_schema":null
     },
     {
       "action_name": "agent.internal.CHECK_AUTOMATIC_TRIGGERS",

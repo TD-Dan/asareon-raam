@@ -114,8 +114,6 @@ class KnowledgeGraphFeatureT2CoreTest {
         }
     }
 
-    // --- NEW TESTS for Slice 2.4.5 ---
-
     @Test
     fun `onAction RESERVE_HKG should broadcast the updated reservations list`() {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)

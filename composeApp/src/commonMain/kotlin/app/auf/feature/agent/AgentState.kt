@@ -89,6 +89,10 @@ data class AgentRuntimeState(
     @Transient
     val userIdentities: List<Identity> = emptyList(),
 
+    // [NEW] Caches the set of HKG IDs that are currently reserved by any agent.
+    @Transient
+    val hkgReservedIds: Set<String> = emptySet(),
+
     @Transient
     val editingAgentId: String? = null,
 

@@ -13,7 +13,7 @@ import kotlinx.serialization.json.put
  * ## Mandate
  * To provide pure, testable, static functions for the specialized business logic
  * of Sovereign (HKG-backed) agents. This isolates complex state transition logic
- * from the orchestration and side-effect management of the AgentRuntimeFeature.
+ * from the orchestration and side effect management of the AgentRuntimeFeature.
  */
 object SovereignAgentLogic {
 

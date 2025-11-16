@@ -28,6 +28,7 @@ class AgentRuntimeFeature(
 
     @Serializable private data class SessionNamesPayload(val names: Map<String, String>)
     @Serializable private data class GraphNamesPayload(val names: Map<String, String>)
+    @Serializable private data class ReservedIdsPayload(val reservedIds: Set<String>)
     @Serializable private data class GatewayResponsePayload(val correlationId: String, val rawContent: String? = null, val errorMessage: String? = null)
     @Serializable private data class LedgerResponsePayload(val correlationId: String, val messages: List<JsonObject>) // Generic JsonObject representing LedgerEntry
     @Serializable private data class MessagePostedPayload(val sessionId: String, val entry: JsonObject)
@@ -210,6 +211,10 @@ class AgentRuntimeFeature(
             ActionNames.KNOWLEDGEGRAPH_PUBLISH_AVAILABLE_PERSONAS_UPDATED -> {
                 val decoded = try { action.payload?.let { json.decodeFromJsonElement<GraphNamesPayload>(it) } } catch(e: Exception) { null }
                 return if (decoded != null) currentFeatureState.copy(knowledgeGraphNames = decoded.names) else currentFeatureState
+            }
+            ActionNames.KNOWLEDGEGRAPH_PUBLISH_RESERVATIONS_UPDATED -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<ReservedIdsPayload>(it) }
+                return if (payload != null) currentFeatureState.copy(hkgReservedIds = payload.reservedIds) else currentFeatureState
             }
             ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<IdentitiesUpdatedPayload>(it) }

@@ -117,4 +117,51 @@ class AgentRuntimeFeatureT1ViewComponentTest {
         assertEquals("agent-1", payload["agentId"].toString().trim('"'))
         assertEquals("p2", payload["knowledgeGraphId"].toString().trim('"'))
     }
+
+    @Test
+    fun `knowledge graph dropdown should NOT show options reserved by other agents`() {
+        // --- ARRANGE ---
+        val agent = AgentInstance("agent-1", "Test Agent", null, "p", "m")
+        val state = AgentRuntimeState(
+            agents = mapOf("agent-1" to agent),
+            knowledgeGraphNames = mapOf(
+                "kg-free" to "Free HKG",
+                "kg-reserved" to "Reserved HKG"
+            ),
+            hkgReservedIds = setOf("kg-reserved"), // "kg-reserved" is locked
+            editingAgentId = "agent-1"
+        )
+        setViewState(state)
+
+        // --- ACT ---
+        composeTestRule.onNodeWithText("Knowledge Graph").performClick()
+        composeTestRule.waitForIdle()
+
+        // --- ASSERT ---
+        composeTestRule.onNodeWithText("Free HKG").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Reserved HKG").assertDoesNotExist()
+    }
+
+    @Test
+    fun `knowledge graph dropdown SHOULD show an option that is reserved by the agent being edited`() {
+        // --- ARRANGE ---
+        val agent = AgentInstance("agent-1", "Test Agent", "kg-self-reserved", "p", "m")
+        val state = AgentRuntimeState(
+            agents = mapOf("agent-1" to agent),
+            knowledgeGraphNames = mapOf(
+                "kg-self-reserved" to "My Own HKG"
+            ),
+            hkgReservedIds = setOf("kg-self-reserved"), // Reserved by our agent
+            editingAgentId = "agent-1"
+        )
+        setViewState(state)
+
+        // --- ACT ---
+        composeTestRule.onNodeWithText("Knowledge Graph").performClick()
+        composeTestRule.waitForIdle()
+
+        // --- ASSERT ---
+        // We assert count is 2 because one is the selected text and the other is in the dropdown.
+        composeTestRule.onAllNodesWithText("My Own HKG").assertCountEquals(2)
+    }
 }

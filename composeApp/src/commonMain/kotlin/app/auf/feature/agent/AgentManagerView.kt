@@ -338,8 +338,10 @@ private fun MultiSessionSelector(agent: AgentInstance, agentState: AgentRuntimeS
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun KnowledgeGraphSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
-    val availableGraphs = remember(agentState.knowledgeGraphNames) {
-        agentState.knowledgeGraphNames.entries.toList()
+    val availableGraphs = remember(agentState.knowledgeGraphNames, agentState.hkgReservedIds, agent.knowledgeGraphId) {
+        agentState.knowledgeGraphNames.entries.filter { (id, _) ->
+            !agentState.hkgReservedIds.contains(id) || id == agent.knowledgeGraphId
+        }
     }
     var isExpanded by remember { mutableStateOf(false) }
 
