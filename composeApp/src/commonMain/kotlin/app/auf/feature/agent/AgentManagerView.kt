@@ -187,7 +187,16 @@ private fun AgentEditorView(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             maxItemsInEachRow = 2
         ) {
-            Box(Modifier.weight(1f)) { SessionSelector(agent, agentState, store) }
+            Box(Modifier.weight(1f)) {
+                // *** NEW: Conditional UI based on agent type ***
+                if (agent.knowledgeGraphId == null) {
+                    // Vanilla Agent: Single-select session
+                    SingleSessionSelector(agent, agentState, store)
+                } else {
+                    // Sovereign Agent: Multi-select session
+                    MultiSessionSelector(agent, agentState, store)
+                }
+            }
             Box(Modifier.weight(1f)) { KnowledgeGraphSelector(agent, agentState, store) }
             Box(Modifier.weight(1f)) { ProviderSelector(agent, agentState, store) }
             Box(Modifier.weight(1f)) { ModelSelector(agent, agentState, store) }
@@ -236,7 +245,7 @@ private fun AgentEditorView(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
+private fun SingleSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
     val availableSessions = remember(agentState.sessionNames) {
         agentState.sessionNames.entries.toList()
     }
@@ -253,7 +262,6 @@ private fun SessionSelector(agent: AgentInstance, agentState: AgentRuntimeState,
             DropdownMenuItem(text = { Text("None (Unsubscribe)") }, onClick = {
                 store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
                     put("agentId", agent.id)
-                    // *** FIX: Use put("key", buildJsonArray { ... })
                     put("subscribedSessionIds", buildJsonArray {})
                 }))
                 isExpanded = false
@@ -262,11 +270,69 @@ private fun SessionSelector(agent: AgentInstance, agentState: AgentRuntimeState,
                 DropdownMenuItem(text = { Text(sessionName) }, onClick = {
                     store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
                         put("agentId", agent.id)
-                        // *** FIX: Use put("key", buildJsonArray { ... })
                         put("subscribedSessionIds", buildJsonArray { add(sessionId) })
                     }))
                     isExpanded = false
                 })
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MultiSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
+    val availableSessions = remember(agentState.sessionNames) {
+        agentState.sessionNames.entries.toList()
+    }
+    var isExpanded by remember { mutableStateOf(false) }
+
+    val selectionText = when (agent.subscribedSessionIds.size) {
+        0 -> "Not Subscribed"
+        1 -> agentState.sessionNames[agent.subscribedSessionIds.first()] ?: "1 Session"
+        else -> "${agent.subscribedSessionIds.size} Sessions"
+    }
+
+    ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
+        OutlinedTextField(
+            value = selectionText,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Subscriptions") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth()
+        )
+        // Menu that does not close on item click
+        DropdownMenu(
+            expanded = isExpanded,
+            onDismissRequest = { isExpanded = false },
+            modifier = Modifier.exposedDropdownSize(true)
+        ) {
+            availableSessions.forEach { (sessionId, sessionName) ->
+                val isSelected = agent.subscribedSessionIds.contains(sessionId)
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = isSelected, onCheckedChange = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(sessionName)
+                        }
+                    },
+                    onClick = {
+                        val newSelection = if (isSelected) {
+                            agent.subscribedSessionIds - sessionId
+                        } else {
+                            agent.subscribedSessionIds + sessionId
+                        }
+                        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
+                            put("agentId", agent.id)
+                            put("subscribedSessionIds", buildJsonArray {
+                                newSelection.forEach { add(it) }
+                            })
+                        }))
+                        // NOTE: We do not set isExpanded = false here to allow multiple selections.
+                    }
+                )
             }
         }
     }
