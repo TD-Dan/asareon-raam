@@ -229,6 +229,18 @@
         },
         "required": [ "agentId" ]
       }
+    },
+    {
+      "action_name": "agent.internal.SET_HKG_CONTEXT",
+      "summary": "[INTERNAL] Caches the fetched HKG context for the duration of a single cognitive turn.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string" },
+          "context": { "type": "object" }
+        },
+        "required": ["agentId", "context"]
+      }
     }
   ],
   "private_envelopes": [

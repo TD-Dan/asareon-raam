@@ -4,6 +4,7 @@ import app.auf.core.FeatureState
 import app.auf.core.Identity
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 enum class AgentStatus { IDLE, WAITING, PROCESSING, ERROR }
@@ -75,7 +76,10 @@ data class AgentInstance(
     @Transient
     val stagedPreviewData: StagedPreviewData? = null,
     @Transient
-    val stagedTurnContext: List<GatewayMessage>? = null
+    val stagedTurnContext: List<GatewayMessage>? = null,
+    // *** NEW: A transient field to hold the HKG content for a single turn.
+    @Transient
+    val transientHkgContext: JsonObject? = null
 )
 
 @Serializable

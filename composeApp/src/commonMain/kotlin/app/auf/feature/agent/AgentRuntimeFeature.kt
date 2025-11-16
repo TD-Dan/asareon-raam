@@ -38,6 +38,8 @@ class AgentRuntimeFeature(
     @Serializable private data class GatewayPreviewResponsePayload(val correlationId: String, val agnosticRequest: GatewayRequest, val rawRequestJson: String)
     @Serializable private data class IdentitiesUpdatedPayload(val identities: List<Identity>, val activeId: String?)
     @Serializable private data class StageTurnContextPayload(val agentId: String, val messages: List<GatewayMessage>)
+    // *** NEW: Payload for the new internal action to cache HKG context.
+    @Serializable private data class SetHkgContextPayload(val agentId: String, val context: JsonObject)
 
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
@@ -141,6 +143,13 @@ class AgentRuntimeFeature(
                 val payload = action.payload?.let { json.decodeFromJsonElement<StageTurnContextPayload>(it) } ?: return currentFeatureState
                 val agent = currentFeatureState.agents[payload.agentId] ?: return currentFeatureState
                 val updatedAgent = agent.copy(stagedTurnContext = payload.messages)
+                return currentFeatureState.copy(agents = currentFeatureState.agents + (agent.id to updatedAgent))
+            }
+            // *** NEW: Reducer case to handle caching the HKG context.
+            ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<SetHkgContextPayload>(it) } ?: return currentFeatureState
+                val agent = currentFeatureState.agents[payload.agentId] ?: return currentFeatureState
+                val updatedAgent = agent.copy(transientHkgContext = payload.context)
                 return currentFeatureState.copy(agents = currentFeatureState.agents + (agent.id to updatedAgent))
             }
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
@@ -251,7 +260,9 @@ class AgentRuntimeFeature(
             processingSinceTimestamp = if (isStartingProcessing) platformDependencies.getSystemTimeMillis() else if (isStoppingProcessing) null else agentToUpdate.processingSinceTimestamp,
             processingFrontierMessageId = if (isStoppingProcessing) null else agentToUpdate.processingFrontierMessageId,
             processingStep = if (isStoppingProcessing) null else agentToUpdate.processingStep,
-            stagedTurnContext = if(shouldClearContext) null else agentToUpdate.stagedTurnContext
+            stagedTurnContext = if(shouldClearContext) null else agentToUpdate.stagedTurnContext,
+            // *** NEW: Clear the transient HKG context when the turn is over.
+            transientHkgContext = if (shouldClearContext) null else agentToUpdate.transientHkgContext
         )
         return currentFeatureState.copy(
             agents = currentFeatureState.agents + (agentId to updatedAgent),
@@ -369,7 +380,8 @@ class AgentRuntimeFeature(
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[agentId] ?: return
                 if (agent.status == AgentStatus.PROCESSING || !agent.isAgentActive) return
-                val contextSessionId = agent.subscribedSessionIds.firstOrNull() ?: run {
+                // *** MODIFIED: Logic now uses private session for context if available, otherwise first subscribed.
+                val contextSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
                     updateAgentAvatarCard(agentId, AgentStatus.ERROR, "Cannot start turn: Agent not subscribed to a session.", store)
                     return
                 }
@@ -383,15 +395,8 @@ class AgentRuntimeFeature(
                     put("sessionId", contextSessionId); put("correlationId", agentId)
                 }))
             }
-            ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
-                val agent = agentState.agents[agentId] ?: return
-                val wasHandledBySovereign = SovereignAgentLogic.requestContextIfSovereign(store, agent)
-                if (!wasHandledBySovereign) {
-                    val ledgerContext = agent.stagedTurnContext ?: emptyList()
-                    assemblePromptAndRequestGeneration(agent, ledgerContext, null, agentState, store)
-                }
-            }
+            // *** DELETED: This logic is now handled by onPrivateData for SESSION_RESPONSE_LEDGER.
+            // ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT -> { ... }
             ActionNames.AGENT_EXECUTE_PREVIEWED_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[agentId] ?: return
@@ -506,6 +511,7 @@ class AgentRuntimeFeature(
         agentState: AgentRuntimeState,
         store: Store
     ) {
+        // *** MODIFIED: Now formats the received hkgContext JsonObject.
         val hkgContextContent = hkgContext?.entries?.joinToString("\n\n---\n\n") { (holonId, content) ->
             "--- START OF FILE $holonId.json ---\n${content.jsonPrimitive.content}\n--- END OF FILE $holonId.json ---"
         } ?: ""
@@ -565,9 +571,19 @@ class AgentRuntimeFeature(
             updateAgentAvatarCard(agentId, AgentStatus.ERROR, "Internal Error: Staged context lost.", store)
             return
         }
-
         val hkgContext = payload["context"]?.jsonObject
-        assemblePromptAndRequestGeneration(agent, ledgerContext, hkgContext, agentState, store)
+
+        // *** NEW: Dispatch an action to store the hkgContext in the state before proceeding.
+        store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT, buildJsonObject {
+            put("agentId", agentId)
+            put("context", hkgContext ?: buildJsonObject {})
+        }))
+
+        // Refresh the agent state from the store *after* dispatching to get the updated version.
+        val updatedAgentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+        val updatedAgent = updatedAgentState.agents[agentId] ?: return
+
+        assemblePromptAndRequestGeneration(updatedAgent, ledgerContext, updatedAgent.transientHkgContext, updatedAgentState, store)
     }
 
 
@@ -626,10 +642,19 @@ class AgentRuntimeFeature(
             }
         }
 
-        store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
+        // *** MODIFIED: Logic now splits the cognitive cycle.
+        // Step 1: Stage the ledger context.
+        store.dispatch(this.name, Action(ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
             put("agentId", agent.id)
             put("messages", json.encodeToJsonElement(enrichedMessages))
         }))
+
+        // Step 2: Request HKG context if sovereign, otherwise proceed directly.
+        val wasHandledBySovereign = SovereignAgentLogic.requestContextIfSovereign(store, agent)
+        if (!wasHandledBySovereign) {
+            // This path is for Vanilla agents.
+            assemblePromptAndRequestGeneration(agent, enrichedMessages, null, agentState, store)
+        }
     }
 
     private fun handleFileSystemListResponse(payload: JsonObject, store: Store) {
@@ -684,6 +709,7 @@ class AgentRuntimeFeature(
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[decoded.correlationId] ?: return
 
+        // *** MODIFIED: Prioritize private session for sovereign agents.
         val targetSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull()
 
         if (targetSessionId == null) {
