@@ -42,10 +42,11 @@ data class StagedPreviewData(
 data class AgentInstance(
     val id: String,
     val name: String,
-    val knowledgeGraphId: String? = null, // REPLACED personaId
+    val knowledgeGraphId: String? = null,
     val modelProvider: String,
     val modelName: String,
-    val primarySessionId: String? = null,
+    val subscribedSessionIds: List<String> = emptyList(), // *** MODIFIED: Renamed from primarySessionId and changed to List
+    val privateSessionId: String? = null, // *** MODIFIED: Now nullable
     // Configuration
     val automaticMode: Boolean = false,
     val autoWaitTimeSeconds: Int = 5,
@@ -74,7 +75,7 @@ data class AgentInstance(
     @Transient
     val stagedPreviewData: StagedPreviewData? = null,
     @Transient
-    val stagedTurnContext: List<GatewayMessage>? = null // NEW: For multi-step turn assembly
+    val stagedTurnContext: List<GatewayMessage>? = null
 )
 
 @Serializable
@@ -82,7 +83,7 @@ data class AgentRuntimeState(
     val agents: Map<String, AgentInstance> = emptyMap(),
     val sessionNames: Map<String, String> = emptyMap(),
     val availableModels: Map<String, List<String>> = emptyMap(),
-    val knowledgeGraphNames: Map<String, String> = emptyMap(), // NEW
+    val knowledgeGraphNames: Map<String, String> = emptyMap(),
 
     // Cache the full list of user identities, not just the active one.
     @Transient
@@ -100,9 +101,14 @@ data class AgentRuntimeState(
 
     /** A transient field to indicate which agent's context is being viewed in the preview screen. */
     @Transient
-    val viewingContextForAgentId: String? = null
+    val viewingContextForAgentId: String? = null,
 
-) : FeatureState {
+    /** [NEW] A transient field to track the round-robin index for the staggered automatic trigger. */
+    @Transient
+    val lastAutoTriggerAgentIndex: Int = 0,
+
+
+    ) : FeatureState {
     @Serializable
     data class AvatarCardInfo(val messageId: String, val sessionId: String)
 }

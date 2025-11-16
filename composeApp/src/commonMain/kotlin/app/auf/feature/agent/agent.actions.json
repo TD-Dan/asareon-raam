@@ -12,7 +12,7 @@
           "knowledgeGraphId":{ "type":[ "string", "null" ] },
           "modelProvider":{ "type":"string" },
           "modelName":{ "type":"string" },
-          "primarySessionId":{ "type":[ "string", "null" ], "description":"The session this agent will post its responses to." },
+          "subscribedSessionIds":{ "type": "array", "items": { "type": "string" }, "description":"The sessions this agent will post its responses to." },
           "automaticMode":{ "type":"boolean", "default":false },
           "autoWaitTimeSeconds": { "type": "integer" },
           "autoMaxWaitTimeSeconds": { "type": "integer" }
@@ -40,7 +40,7 @@
           "knowledgeGraphId":{ "type":[ "string", "null" ] },
           "modelProvider":{ "type":"string" },
           "modelName":{ "type":"string" },
-          "primarySessionId":{ "type":[ "string", "null" ] },
+          "subscribedSessionIds":{ "type": "array", "items": { "type": "string" } },
           "automaticMode":{ "type":"boolean" },
           "autoWaitTimeSeconds": { "type": "integer" },
           "autoMaxWaitTimeSeconds": { "type": "integer" }
@@ -147,6 +147,13 @@
       "action_name": "agent.internal.CHECK_AUTOMATIC_TRIGGERS",
       "summary": "[INTERNAL] Dispatched by a timer to check if any automatic agents should start their cognitive cycle.",
       "payload_schema": null
+    },
+    {
+      "action_name": "agent.internal.UPDATE_AUTO_TRIGGER_INDEX",
+      "summary": "[INTERNAL] Updates the index for the round-robin automatic trigger.",
+      "payload_schema": {
+        "type": "object", "properties": { "index": { "type": "integer" } }, "required": ["index"]
+      }
     },
     {
       "action_name": "agent.internal.STAGE_TURN_CONTEXT",
