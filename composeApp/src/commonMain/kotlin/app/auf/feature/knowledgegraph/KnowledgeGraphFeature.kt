@@ -358,11 +358,11 @@ class KnowledgeGraphFeature(
                 return currentFeatureState.copy(isLoading = false, fatalError = error)
             }
             ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_PERSONA -> {
-                val personaId = payload?.get("personaId")?.jsonPrimitive?.contentOrNull
                 return currentFeatureState.copy(
-                    activePersonaIdForView = personaId,
+                    activePersonaIdForView = payload?.get("personaId")?.jsonPrimitive?.contentOrNull,
                     activeHolonIdForView = null,
-                    activeTypeFilters = emptySet()
+                    activeTypeFilters = emptySet(),
+                    collapsedHolonIds = emptySet() // Reset collapsed state on persona change
                 )
             }
             ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON -> {
@@ -376,6 +376,15 @@ class KnowledgeGraphFeature(
             ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_RENAME -> {
                 val holonId = payload?.get("holonId")?.jsonPrimitive?.contentOrNull
                 return currentFeatureState.copy(holonIdToRename = holonId)
+            }
+            ActionNames.KNOWLEDGEGRAPH_TOGGLE_HOLON_EXPANDED -> {
+                val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: return currentFeatureState
+                val newSet = if (currentFeatureState.collapsedHolonIds.contains(holonId)) {
+                    currentFeatureState.collapsedHolonIds - holonId
+                } else {
+                    currentFeatureState.collapsedHolonIds + holonId
+                }
+                return currentFeatureState.copy(collapsedHolonIds = newSet)
             }
             ActionNames.KNOWLEDGEGRAPH_TOGGLE_SHOW_SUMMARIES -> {
                 return currentFeatureState.copy(showSummariesInTreeView = !currentFeatureState.showSummariesInTreeView)

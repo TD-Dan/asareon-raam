@@ -1,5 +1,6 @@
 package app.auf.feature.knowledgegraph
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -255,10 +257,13 @@ private fun HolonTreeView(allHolonsInView: List<Holon>, kgState: KnowledgeGraphS
                 if (kgState.activeTypeFilters.isEmpty() || kgState.activeTypeFilters.contains(holon.header.type)) {
                     treeHolons.add(holon)
                 }
-                holon.header.subHolons
-                    .mapNotNull { subRef -> holonsById[subRef.id] }
-                    .sortedBy { childHolon -> childHolon.header.name }
-                    .forEach { sortedChildHolon -> buildTreeList(sortedChildHolon) }
+                // [IMPLEMENTATION] Only traverse children if the parent is not collapsed.
+                if (!kgState.collapsedHolonIds.contains(holon.header.id)) {
+                    holon.header.subHolons
+                        .mapNotNull { subRef -> holonsById[subRef.id] }
+                        .sortedBy { childHolon -> childHolon.header.name }
+                        .forEach { sortedChildHolon -> buildTreeList(sortedChildHolon) }
+                }
             }
             buildTreeList(rootHolon)
 
@@ -276,6 +281,10 @@ private fun HolonTreeItem(holon: Holon, kgState: KnowledgeGraphState, store: Sto
     val selectedHolonId = kgState.activeHolonIdForView
     val showSummary = kgState.showSummariesInTreeView
     val reservationOwner = if (header.type == "AI_Persona_Root") kgState.reservations[header.id] else null
+    val isCollapsed = kgState.collapsedHolonIds.contains(header.id)
+    val hasChildren = header.subHolons.isNotEmpty()
+
+    val rotationAngle by animateFloatAsState(if (isCollapsed) 0f else 90f)
 
     ListItem(
         headlineContent = {
@@ -304,11 +313,27 @@ private fun HolonTreeItem(holon: Holon, kgState: KnowledgeGraphState, store: Sto
                 }
             }
         },
+        leadingContent = {
+            if (hasChildren) {
+                IconButton(
+                    onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_TOGGLE_HOLON_EXPANDED, buildJsonObject { put("holonId", header.id) })) },
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = "Toggle expand ${header.name}",
+                        modifier = Modifier.rotate(rotationAngle)
+                    )
+                }
+            } else {
+                Spacer(Modifier.width(24.dp)) // Maintain alignment for items without children
+            }
+        },
         modifier = Modifier
             .fillMaxWidth()
             .clickable { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON, buildJsonObject { put("holonId", header.id) })) }
             .background(if (header.id == selectedHolonId) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
-            .padding(start = (header.depth * 24).dp)
+            .padding(start = (header.depth * 12).dp) // Reduced padding to accommodate icon
     )
     HorizontalDivider()
 }

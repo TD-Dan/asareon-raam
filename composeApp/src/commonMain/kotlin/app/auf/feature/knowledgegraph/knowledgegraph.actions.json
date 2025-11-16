@@ -177,8 +177,18 @@
       "action_name": "knowledgegraph.SET_HOLON_TO_RENAME",
       "summary": "A UI action to show or hide the holon rename dialog.",
       "payload_schema": { "type": "object", "properties": { "holonId": { "type": ["string", "null"] } } }
+    },
+    {
+      "action_name": "knowledgegraph.TOGGLE_HOLON_EXPANDED",
+      "summary": "Toggles the collapsed/expanded state of a single holon in the tree view.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "holonId": { "type": "string" } },
+        "required": ["holonId"]
+      }
     }
   ],
+
   "publishes": [
     {
       "action_name": "knowledgegraph.publish.AVAILABLE_PERSONAS_UPDATED",

@@ -119,6 +119,7 @@ data class KnowledgeGraphState(
     val showOnlyChangedImportItems: Boolean = false,
 
     // --- Transient State for UI Interactions ---
+    @Transient val collapsedHolonIds: Set<String> = emptySet(),
     @Transient val personaIdToDelete: String? = null,
     @Transient val isCreatingPersona: Boolean = false,
     @Transient val holonIdToDelete: String? = null,
