@@ -2,14 +2,7 @@ package app.auf.feature.agent
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Autorenew
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PowerSettingsNew
-import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,17 +11,102 @@ import androidx.compose.ui.unit.dp
 import app.auf.core.Action
 import app.auf.core.Store
 import app.auf.core.generated.ActionNames
+import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.delay
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.time.Duration.Companion.milliseconds
+
+/**
+ * ## Mandate
+ * To provide the Composable UI for an agent's "avatar card" and the pure, testable
+ * logic for managing its presence within the public session ledger.
+ */
+
+// --- Logic ---
+
+object AgentAvatarLogic {
+    fun touchAgentAvatarCard(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
+        val cardInfo = agentState.agentAvatarCardIds[agent.id] ?: return
+        store.dispatch("agent", Action(
+            name = ActionNames.SESSION_UPDATE_MESSAGE,
+            payload = buildJsonObject {
+                put("session", cardInfo.sessionId)
+                put("messageId", cardInfo.messageId)
+            }
+        ))
+    }
+
+    fun updateAgentAvatarCard(agentId: String, status: AgentStatus, error: String? = null, store: Store) {
+        val agentState = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
+        val agent = agentState.agents[agentId] ?: return
+        val platformDependencies = store.platformDependencies
+
+        // Determine the session to post in. A sovereign agent's avatar is in its private session.
+        val targetSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull()
+
+        // 1. Atomically delete the old card
+        agentState.agentAvatarCardIds[agentId]?.let { oldCardInfo ->
+            store.dispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+                put("session", oldCardInfo.sessionId); put("messageId", oldCardInfo.messageId)
+            }))
+        }
+
+        // 2. Set the agent's new status
+        store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
+            put("agentId", agentId); put("status", status.name); error?.let { put("error", it) }
+        }))
+
+        // 3. If there's no session to post to, we're done.
+        if (targetSessionId == null) return
+
+        // 4. Re-fetch the state *after* the status change to get the latest frontiers.
+        val latestAgentState = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
+        val latestAgent = latestAgentState.agents[agentId] ?: return
+
+        // 5. Determine where in the ledger the new card should be placed.
+        val afterMessageId = when (status) {
+            AgentStatus.PROCESSING -> latestAgent.processingFrontierMessageId
+            else -> latestAgent.lastSeenMessageId
+        }
+
+        // 6. Post the new card.
+        val messageId = platformDependencies.generateUUID()
+        val metadata = buildJsonObject {
+            put("render_as_partial", true); put("is_transient", true); put("agentStatus", status.name)
+            error?.let { put("errorMessage", it) }
+        }
+        store.dispatch("agent", Action(ActionNames.SESSION_POST, buildJsonObject {
+            put("session", targetSessionId); put("senderId", agentId); put("messageId", messageId)
+            put("metadata", metadata); afterMessageId?.let { put("afterMessageId", it) }
+        }))
+    }
+}
+
+
+// --- Composables ---
+
+@Composable
+fun AgentAvatarCard(
+    agent: AgentInstance,
+    store: Store,
+    platformDependencies: PlatformDependencies
+) {
+    OutlinedCard(
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        AgentControlCard(agent, store, platformDependencies)
+    }
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AgentControlCard(
     agent: AgentInstance,
     store: Store,
-    platformDependencies: app.auf.util.PlatformDependencies
+    platformDependencies: PlatformDependencies
 ) {
     var processingTime by remember { mutableStateOf("00:00") }
     var menuExpanded by remember { mutableStateOf(false) }
@@ -45,8 +123,7 @@ fun AgentControlCard(
         }
     }
 
-    // *** MODIFIED: Logic now checks if the session list is not empty.
-    val canInitiateTurn = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING || agent.status == AgentStatus.ERROR) && agent.subscribedSessionIds.isNotEmpty() && agent.isAgentActive
+    val canInitiateTurn = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING || agent.status == AgentStatus.ERROR) && (agent.subscribedSessionIds.isNotEmpty() || agent.privateSessionId != null) && agent.isAgentActive
 
     val statusText = when (agent.status) {
         AgentStatus.PROCESSING -> {
