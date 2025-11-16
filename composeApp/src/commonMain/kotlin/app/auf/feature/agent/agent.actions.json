@@ -38,6 +38,7 @@
           "agentId":{ "type":"string" },
           "name":{ "type":"string" },
           "knowledgeGraphId":{ "type":[ "string", "null" ] },
+          "privateSessionId": { "type": [ "string", "null" ] },
           "modelProvider":{ "type":"string" },
           "modelName":{ "type":"string" },
           "subscribedSessionIds":{ "type": "array", "items": { "type": "string" } },

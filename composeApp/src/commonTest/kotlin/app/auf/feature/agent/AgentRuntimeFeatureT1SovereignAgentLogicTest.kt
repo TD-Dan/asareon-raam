@@ -5,11 +5,15 @@ import app.auf.core.AppState
 import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Tier 1 Unit Test for SovereignAgentLogic.
@@ -22,6 +26,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
     private val platform = FakePlatformDependencies("test")
     private val fakeStore = FakeStore(AppState(), platform, ActionNames.allActionNames)
 
+    // --- BECOMING SOVEREIGN ---
     @Test
     fun `handleSovereignAssignment should dispatch session CREATE when KG is newly assigned`() {
         // ARRANGE: An agent transitions from Vanilla to Sovereign
@@ -38,7 +43,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
 
         val payload = dispatchedAction.payload
         assertNotNull(payload)
-        assertEquals("p-cognition: Test Agent", payload["name"]?.jsonPrimitive?.content)
+        assertEquals("p-cognition: Test Agent (a1)", payload["name"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -51,7 +56,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
         SovereignAgentLogic.handleSovereignAssignment(fakeStore, oldAgent, newAgent)
 
         // ASSERT
-        assertEquals(0, fakeStore.dispatchedActions.size, "No actions should be dispatched for a simple name change.")
+        assertTrue(fakeStore.dispatchedActions.isEmpty(), "No actions should be dispatched for a simple name change.")
     }
 
     @Test
@@ -64,19 +69,49 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
         SovereignAgentLogic.handleSovereignAssignment(fakeStore, oldAgent, newAgent)
 
         // ASSERT
-        assertEquals(0, fakeStore.dispatchedActions.size, "No actions should be dispatched for a stateless agent update.")
+        assertTrue(fakeStore.dispatchedActions.isEmpty(), "No actions should be dispatched for a stateless agent update.")
+    }
+
+    // --- BECOMING VANILLA (DE-TRANSITION) ---
+    @Test
+    fun `handleSovereignRevocation should dispatch UPDATE_CONFIG to clean up agent state`() {
+        // ARRANGE: A Sovereign agent with multiple subscriptions is de-transitioned.
+        val oldAgent = AgentInstance("a1", "Test Agent", "kg1", "p", "m",
+            privateSessionId = "ps1",
+            subscribedSessionIds = listOf("s1", "s2", "s3")
+        )
+        val newAgent = oldAgent.copy(knowledgeGraphId = null) // The de-transition event
+
+        // ACT
+        SovereignAgentLogic.handleSovereignRevocation(fakeStore, oldAgent, newAgent)
+
+        // ASSERT
+        val dispatchedAction = fakeStore.dispatchedActions.firstOrNull()
+        assertNotNull(dispatchedAction, "An action should have been dispatched.")
+        assertEquals(ActionNames.AGENT_UPDATE_CONFIG, dispatchedAction.name)
+
+        val payload = dispatchedAction.payload
+        assertNotNull(payload)
+        assertEquals("a1", payload["agentId"]?.jsonPrimitive?.content)
+        // Verify private session is detached
+        assertTrue(payload.containsKey("privateSessionId") && payload["privateSessionId"] is JsonNull, "privateSessionId should be explicitly set to null.")
+        // Verify subscriptions are truncated
+        val updatedSubs = payload["subscribedSessionIds"]?.jsonArray
+        assertNotNull(updatedSubs)
+        assertEquals(1, updatedSubs.size, "Subscribed sessions should be truncated to one.")
+        assertEquals("s1", updatedSubs.first().jsonPrimitive.content)
     }
 
     @Test
-    fun `handleSovereignAssignment should do nothing if KG is unassigned`() {
-        // ARRANGE: An agent transitions from Sovereign back to Vanilla.
-        val oldAgent = AgentInstance("a1", "Test Agent", "kg1", "p", "m", privateSessionId = "ps1")
-        val newAgent = oldAgent.copy(knowledgeGraphId = null)
+    fun `handleSovereignRevocation should do nothing if agent was already stateless`() {
+        // ARRANGE
+        val oldAgent = AgentInstance("a1", "Vanilla Agent", null, "p", "m")
+        val newAgent = oldAgent.copy(name = "Vanilla Agent Updated")
 
         // ACT
-        SovereignAgentLogic.handleSovereignAssignment(fakeStore, oldAgent, newAgent)
+        SovereignAgentLogic.handleSovereignRevocation(fakeStore, oldAgent, newAgent)
 
         // ASSERT
-        assertEquals(0, fakeStore.dispatchedActions.size, "No actions should be dispatched when an agent becomes stateless.")
+        assertTrue(fakeStore.dispatchedActions.isEmpty(), "No actions should be dispatched.")
     }
 }
