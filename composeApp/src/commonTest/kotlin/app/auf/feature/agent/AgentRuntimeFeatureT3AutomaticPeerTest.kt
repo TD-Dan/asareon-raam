@@ -59,24 +59,91 @@ class AgentRuntimeFeatureT3AutomaticPeerTest {
         val agent = AgentInstance("auto-agent-1", "Debouncer", "", "", "", subscribedSessionIds = listOf("sid-A"), automaticMode = true, autoWaitTimeSeconds = 5)
         setupHarness(agent)
 
-        // ACT: A user message arrives.
-        harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
-            put("session", "sid-A"); put("senderId", "user"); put("message", "Hello")
-        }))
-        runCurrent()
+        harness.runAndLogOnFailure {
+            // ACT: A user message arrives.
+            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
+                put("session", "sid-A"); put("senderId", "user"); put("message", "Hello")
+            }))
+            runCurrent()
 
-        val stateAfterPost = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-        // ASSERT: Check separate status map
-        assertEquals(AgentStatus.WAITING, stateAfterPost.agentStatuses[agent.id]?.status)
-        assertNull(harness.processedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN })
+            val stateAfterPost = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            // ASSERT: Check the new status map
+            assertEquals(AgentStatus.WAITING, stateAfterPost.agentStatuses[agent.id]?.status)
+            assertNull(harness.processedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN })
 
-        // ACT: Advance time just past the debounce period
-        advanceTimeAndRun(5001)
+            // ACT: Advance time just past the debounce period
+            advanceTimeAndRun(5001)
 
-        // ASSERT
-        val triggerAction = harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }
-        assertNotNull(triggerAction, "Agent should have triggered its turn after the debounce period.")
-        assertEquals(agent.id, triggerAction.payload?.get("agentId")?.jsonPrimitive?.content)
+            // ASSERT
+            val triggerAction = harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }
+            assertNotNull(triggerAction, "Agent should have triggered its turn after the debounce period.")
+            assertEquals(agent.id, triggerAction.payload?.get("agentId")?.jsonPrimitive?.content)
+        }
+    }
+
+    @Test
+    fun `debounce timer should reset when a new message arrives`() = runTest {
+        val agent = AgentInstance("auto-agent-1", "Debouncer", "", "", "", subscribedSessionIds = listOf("sid-A"), automaticMode = true, autoWaitTimeSeconds = 5)
+        setupHarness(agent)
+
+        harness.runAndLogOnFailure {
+            // ACT 1: First user message arrives.
+            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
+                put("session", "sid-A"); put("senderId", "user"); put("message", "First part")
+            }))
+            runCurrent()
+
+            // ACT 2: Advance time, but not enough to trigger.
+            advanceTimeAndRun(3000)
+            assertNull(harness.processedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent should not have triggered yet.")
+
+            // ACT 3: A second message arrives, resetting the timer (handled by handleMessagePosted logic).
+            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
+                put("session", "sid-A"); put("senderId", "user"); put("message", "Second part")
+            }))
+            runCurrent()
+
+            // ACT 4: Advance time again. If timer didn't reset, it would have triggered by now (3000+3000 > 5000).
+            advanceTimeAndRun(3000)
+            assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent should not have triggered as timer should have reset.")
+
+            // ACT 5: Advance past the reset timer's deadline.
+            advanceTimeAndRun(2001)
+
+            // ASSERT
+            assertNotNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent should have triggered after the second message's debounce period.")
+        }
+    }
+
+    @Test
+    fun `automatic agent should trigger after autoMaxWaitTime even with continuous messages`() = runTest {
+        val agent = AgentInstance("auto-agent-1", "Timeout", "", "", "", subscribedSessionIds = listOf("sid-A"), automaticMode = true, autoWaitTimeSeconds = 10, autoMaxWaitTimeSeconds = 20)
+        setupHarness(agent)
+
+        harness.runAndLogOnFailure {
+            // ACT 1: First message starts the max-wait timer.
+            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
+                put("session", "sid-A"); put("senderId", "user"); put("message", "Message 1")
+            }))
+            runCurrent() // T=0
+
+            // ACT 2: Send messages every 8 seconds, preventing the 10s debounce from ever completing.
+            advanceTimeAndRun(8000) // T=8s
+            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject { put("session", "sid-A"); put("senderId", "user"); put("message", "Message 2") }))
+            runCurrent()
+            assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Should not trigger at T=8s.")
+
+            advanceTimeAndRun(8000) // T=16s
+            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject { put("session", "sid-A"); put("senderId", "user"); put("message", "Message 3") }))
+            runCurrent()
+            assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Should not trigger at T=16s.")
+
+            // ACT 3: Advance past the 20s max-wait time.
+            advanceTimeAndRun(5000) // T=21s
+
+            // ASSERT
+            assertNotNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent must trigger after max wait time is exceeded.")
+        }
     }
 
     @Test
@@ -84,20 +151,21 @@ class AgentRuntimeFeatureT3AutomaticPeerTest {
         val agent = AgentInstance("manual-agent-1", "Manual", "", "", "", subscribedSessionIds = listOf("sid-A"), automaticMode = false, autoWaitTimeSeconds = 3)
         setupHarness(agent)
 
-        // ACT: A user message arrives, putting agent in WAITING.
-        harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
-            put("session", "sid-A"); put("senderId", "user"); put("message", "Hello")
-        }))
-        runCurrent()
-        val stateAfterPost = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-        assertEquals(AgentStatus.WAITING, stateAfterPost.agentStatuses[agent.id]?.status)
+        harness.runAndLogOnFailure {
+            // ACT: A user message arrives, putting agent in WAITING.
+            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
+                put("session", "sid-A"); put("senderId", "user"); put("message", "Hello")
+            }))
+            runCurrent()
+            val stateAfterPost = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            // ASSERT: Check the new status map
+            assertEquals(AgentStatus.WAITING, stateAfterPost.agentStatuses[agent.id]?.status)
 
-        // ACT: Advance time well past any timers.
-        advanceTimeAndRun(5000)
+            // ACT: Advance time well past any timers.
+            advanceTimeAndRun(5000)
 
-        // ASSERT
-        assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Manual agent should never trigger automatically.")
+            // ASSERT
+            assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Manual agent should never trigger automatically.")
+        }
     }
-
-    // Note: Other debounce tests follow exact same pattern, updating assertion location.
 }

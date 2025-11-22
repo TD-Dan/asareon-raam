@@ -132,11 +132,11 @@ class AgentRuntimeFeatureT2CoreTest {
         }
         val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewayResponsePayload)
 
-        // ACT
-        (harness.store.features.find { it.name == "agent" } as AgentRuntimeFeature).onPrivateData(envelope, harness.store)
-
-        // ASSERT
         harness.runAndLogOnFailure {
+            // ACT
+            (harness.store.features.find { it.name == "agent" } as AgentRuntimeFeature).onPrivateData(envelope, harness.store)
+
+            // ASSERT
             val sentinelAction =
                 harness.processedActions.find { it.name == ActionNames.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.content == "system" }
             assertNotNull(sentinelAction, "A sentinel warning should have been posted.")
@@ -161,16 +161,19 @@ class AgentRuntimeFeatureT2CoreTest {
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to createTestAgentConfig())))
             .build()
-        val action = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
-            put("agentId", "agent-1")
-            put("preview", false)
-        })
 
-        harness.store.dispatch("ui", action)
+        harness.runAndLogOnFailure {
+            val action = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+                put("agentId", "agent-1")
+                put("preview", false)
+            })
 
-        val ledgerRequest = harness.processedActions.find { it.name == ActionNames.SESSION_REQUEST_LEDGER_CONTENT }
-        assertNotNull(ledgerRequest)
-        assertEquals("agent-1", ledgerRequest.payload?.get("correlationId")?.jsonPrimitive?.content)
+            harness.store.dispatch("ui", action)
+
+            val ledgerRequest = harness.processedActions.find { it.name == ActionNames.SESSION_REQUEST_LEDGER_CONTENT }
+            assertNotNull(ledgerRequest)
+            assertEquals("agent-1", ledgerRequest.payload?.get("correlationId")?.jsonPrimitive?.content)
+        }
     }
 
     @Test
@@ -188,10 +191,12 @@ class AgentRuntimeFeatureT2CoreTest {
             ))
             .build()
 
-        harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", "agent-1"); put("preview", false) }))
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", "agent-1"); put("preview", false) }))
 
-        val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
-        assertNotNull(gatewayRequest)
+            val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
+            assertNotNull(gatewayRequest)
+        }
     }
 
     @Test
@@ -207,25 +212,27 @@ class AgentRuntimeFeatureT2CoreTest {
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .build()
 
-        // Populate cache
-        val identitiesBroadcast = Action(ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
-            put("identities", Json.encodeToJsonElement(listOf(user)))
-            put("activeId", "user-id-1")
-        })
-        harness.store.dispatch("core", identitiesBroadcast)
+        harness.runAndLogOnFailure {
+            // Populate cache
+            val identitiesBroadcast = Action(ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
+                put("identities", Json.encodeToJsonElement(listOf(user)))
+                put("activeId", "user-id-1")
+            })
+            harness.store.dispatch("core", identitiesBroadcast)
 
-        val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
-            put("agentId", "agent-1")
-            put("preview", false)
-        })
-        harness.store.dispatch("ui", triggerAction)
+            val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+                put("agentId", "agent-1")
+                put("preview", false)
+            })
+            harness.store.dispatch("ui", triggerAction)
 
-        val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
-        assertNotNull(gatewayRequest)
+            val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
+            assertNotNull(gatewayRequest)
 
-        val contents = gatewayRequest.payload?.get("contents")?.let { json.decodeFromJsonElement<List<GatewayMessage>>(it) }
-        assertNotNull(contents)
-        assertEquals("User Alpha", contents[0].senderName)
+            val contents = gatewayRequest.payload?.get("contents")?.let { json.decodeFromJsonElement<List<GatewayMessage>>(it) }
+            assertNotNull(contents)
+            assertEquals("User Alpha", contents[0].senderName)
+        }
     }
 
     @Test
@@ -239,27 +246,29 @@ class AgentRuntimeFeatureT2CoreTest {
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .build()
 
-        // 1. Initiate preview
-        harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
-            put("agentId", "agent-1")
-            put("preview", true)
-        }))
+        harness.runAndLogOnFailure {
+            // 1. Initiate preview
+            harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+                put("agentId", "agent-1")
+                put("preview", true)
+            }))
 
-        // Verify state after preview is prepared
-        val stateAfterPreview = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-        val agentStatus = stateAfterPreview.agentStatuses["agent-1"]
-        assertNotNull(agentStatus?.stagedPreviewData)
-        assertEquals("{\"key\":\"value\"}", agentStatus.stagedPreviewData?.rawRequestJson)
-        assertEquals("agent-1", stateAfterPreview.viewingContextForAgentId)
+            // Verify state after preview is prepared
+            val stateAfterPreview = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            val agentStatus = stateAfterPreview.agentStatuses["agent-1"]
+            assertNotNull(agentStatus?.stagedPreviewData)
+            assertEquals("{\"key\":\"value\"}", agentStatus.stagedPreviewData?.rawRequestJson)
+            assertEquals("agent-1", stateAfterPreview.viewingContextForAgentId)
 
-        // 2. Execute the staged turn
-        harness.store.dispatch("ui", Action(ActionNames.AGENT_EXECUTE_PREVIEWED_TURN, buildJsonObject { put("agentId", "agent-1") }))
+            // 2. Execute the staged turn
+            harness.store.dispatch("ui", Action(ActionNames.AGENT_EXECUTE_PREVIEWED_TURN, buildJsonObject { put("agentId", "agent-1") }))
 
-        // Verify final execution
-        val generateAction = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
-        assertNotNull(generateAction)
+            // Verify final execution
+            val generateAction = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
+            assertNotNull(generateAction)
 
-        val stateAfterExecute = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-        assertNull(stateAfterExecute.agentStatuses["agent-1"]?.stagedPreviewData)
+            val stateAfterExecute = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            assertNull(stateAfterExecute.agentStatuses["agent-1"]?.stagedPreviewData)
+        }
     }
 }

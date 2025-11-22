@@ -47,21 +47,23 @@ class AgentRuntimeFeatureT3SessionPeerTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
-        // ACT: User posts a new message
-        val userPostAction = Action(ActionNames.SESSION_POST, buildJsonObject {
-            put("session", "sid-A"); put("senderId", "user"); put("message", "New user message")
-        })
-        harness.store.dispatch("ui", userPostAction)
+        harness.runAndLogOnFailure {
+            // ACT: User posts a new message
+            val userPostAction = Action(ActionNames.SESSION_POST, buildJsonObject {
+                put("session", "sid-A"); put("senderId", "user"); put("message", "New user message")
+            })
+            harness.store.dispatch("ui", userPostAction)
 
-        // ASSERT (Agent State)
-        val finalAgentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-        // *** MODIFIED: Use agentStatuses
-        assertEquals(AgentStatus.WAITING, finalAgentState.agentStatuses[agent1.id]?.status)
+            // ASSERT (Agent State)
+            val finalAgentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            // *** MODIFIED: Use agentStatuses
+            assertEquals(AgentStatus.WAITING, finalAgentState.agentStatuses[agent1.id]?.status)
 
-        // Verify awareness frontier
-        val finalSessionState = harness.store.state.value.featureStates["session"] as SessionState
-        val userMessageId = finalSessionState.sessions["sid-A"]?.ledger?.find { it.senderId == "user" }?.id
-        assertEquals(userMessageId, finalAgentState.agentStatuses[agent1.id]?.lastSeenMessageId)
+            // Verify awareness frontier
+            val finalSessionState = harness.store.state.value.featureStates["session"] as SessionState
+            val userMessageId = finalSessionState.sessions["sid-A"]?.ledger?.find { it.senderId == "user" }?.id
+            assertEquals(userMessageId, finalAgentState.agentStatuses[agent1.id]?.lastSeenMessageId)
+        }
     }
 
     @Test
@@ -84,14 +86,16 @@ class AgentRuntimeFeatureT3SessionPeerTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
-        // ACT: Trigger the agent's turn
-        val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agentConfig.id) })
-        harness.store.dispatch("ui", triggerAction)
+        harness.runAndLogOnFailure {
+            // ACT: Trigger the agent's turn
+            val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agentConfig.id) })
+            harness.store.dispatch("ui", triggerAction)
 
-        // ASSERT (Agent State)
-        val finalAgentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-        assertEquals(AgentStatus.PROCESSING, finalAgentState.agentStatuses[agentConfig.id]?.status)
-        // Check commitment frontier
-        assertEquals("msg-user-1", finalAgentState.agentStatuses[agentConfig.id]?.processingFrontierMessageId)
+            // ASSERT (Agent State)
+            val finalAgentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            assertEquals(AgentStatus.PROCESSING, finalAgentState.agentStatuses[agentConfig.id]?.status)
+            // Check the commitment frontier
+            assertEquals("msg-user-1", finalAgentState.agentStatuses[agentConfig.id]?.processingFrontierMessageId)
+        }
     }
 }

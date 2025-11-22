@@ -41,39 +41,43 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
 
     @Test
     fun `full cognitive cycle completes and sets agent to IDLE on success`() = runTest {
-        val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) })
-        harness.store.dispatch("ui", triggerAction)
+        harness.runAndLogOnFailure {
+            val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) })
+            harness.store.dispatch("ui", triggerAction)
 
-        val stateAfterTrigger = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-        // ASSERT status
-        assertEquals(AgentStatus.PROCESSING, stateAfterTrigger.agentStatuses[agent.id]?.status)
+            val stateAfterTrigger = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            // ASSERT status
+            assertEquals(AgentStatus.PROCESSING, stateAfterTrigger.agentStatuses[agent.id]?.status)
 
-        // Mock response sequence...
-        val ledgerEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, buildJsonObject {
-            put("correlationId", agent.id); put("messages", buildJsonArray { })
-        })
-        feature.onPrivateData(ledgerEnvelope, harness.store)
+            // Mock response sequence...
+            val ledgerEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, buildJsonObject {
+                put("correlationId", agent.id); put("messages", buildJsonArray { })
+            })
+            feature.onPrivateData(ledgerEnvelope, harness.store)
 
-        val gatewayEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, buildJsonObject {
-            put("correlationId", agent.id); put("rawContent", "Success")
-        })
-        feature.onPrivateData(gatewayEnvelope, harness.store)
+            val gatewayEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, buildJsonObject {
+                put("correlationId", agent.id); put("rawContent", "Success")
+            })
+            feature.onPrivateData(gatewayEnvelope, harness.store)
 
-        val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-        // ASSERT final status
-        assertEquals(AgentStatus.IDLE, finalState.agentStatuses[agent.id]?.status)
+            val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            // ASSERT final status
+            assertEquals(AgentStatus.IDLE, finalState.agentStatuses[agent.id]?.status)
+        }
     }
 
     @Test
     fun `full cognitive cycle transitions agent to ERROR on gateway failure`() = runTest {
-        harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) }))
-        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, buildJsonObject {
-            put("correlationId", agent.id); put("errorMessage", "Fail")
-        })
-        feature.onPrivateData(envelope, harness.store)
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) }))
+            val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, buildJsonObject {
+                put("correlationId", agent.id); put("errorMessage", "Fail")
+            })
+            feature.onPrivateData(envelope, harness.store)
 
-        val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-        assertEquals(AgentStatus.ERROR, finalState.agentStatuses[agent.id]?.status)
-        assertEquals("[AGENT ERROR] Generation failed: Fail", finalState.agentStatuses[agent.id]?.errorMessage)
+            val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            assertEquals(AgentStatus.ERROR, finalState.agentStatuses[agent.id]?.status)
+            assertEquals("[AGENT ERROR] Generation failed: Fail", finalState.agentStatuses[agent.id]?.errorMessage)
+        }
     }
 }

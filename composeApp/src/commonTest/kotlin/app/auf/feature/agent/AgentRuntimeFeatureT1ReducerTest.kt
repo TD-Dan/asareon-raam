@@ -8,13 +8,12 @@ import app.auf.feature.core.CoreState
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
 import app.auf.test.TestHarness
-import app.auf.util.LogLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.*
 
@@ -44,66 +43,66 @@ class AgentRuntimeFeatureT1ReducerTest {
 
     @Test
     fun `reducer on AGENT_INITIATE_TURN should lock in the commitment frontier`() = runTest {
-        val agent = AgentInstance("agent-1", "Test", "", "", "")
-        // SETUP: Agent has an awareness frontier in its status
-        val initialStatus = AgentStatusInfo(lastSeenMessageId = "msg-aware-frontier", status = AgentStatus.IDLE)
-        val initialState = AgentRuntimeState(
-            agents = mapOf(agent.id to agent),
-            agentStatuses = mapOf(agent.id to initialStatus)
-        )
-        val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id); put("preview", false) })
+        harness.runAndLogOnFailure {
+            val agent = AgentInstance("agent-1", "Test", "", "", "")
+            // SETUP: Agent has an awareness frontier in its status
+            val initialStatus = AgentStatusInfo(lastSeenMessageId = "msg-aware-frontier", status = AgentStatus.IDLE)
+            val initialState = AgentRuntimeState(
+                agents = mapOf(agent.id to agent),
+                agentStatuses = mapOf(agent.id to initialStatus)
+            )
+            val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id); put("preview", false) })
 
-        val newState = feature.reducer(initialState, triggerAction) as? AgentRuntimeState
-        val updatedStatus = newState?.agentStatuses?.get("agent-1")
+            val newState = feature.reducer(initialState, triggerAction) as? AgentRuntimeState
+            val updatedStatus = newState?.agentStatuses?.get("agent-1")
 
-        assertNotNull(updatedStatus)
-        // ASSERT: Processing frontier (commitment) matches the last seen (awareness)
-        assertEquals("msg-aware-frontier", updatedStatus.processingFrontierMessageId, "The commitment frontier should be set from the awareness frontier.")
-        assertEquals(TurnMode.DIRECT, updatedStatus.turnMode)
+            assertNotNull(updatedStatus)
+            // ASSERT: Processing frontier (commitment) matches the last seen (awareness)
+            assertEquals("msg-aware-frontier", updatedStatus.processingFrontierMessageId, "The commitment frontier should be set from the awareness frontier.")
+            assertEquals(TurnMode.DIRECT, updatedStatus.turnMode)
+        }
     }
 
 
     @Test
     fun `reducer should log error and not change state on invalid status string in SET_STATUS`() = runTest {
-        val agent = AgentInstance("agent-1", "Test", "", "", "")
-        val initialState = AgentRuntimeState(agents = mapOf(agent.id to agent))
-        val invalidAction = Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
-            put("agentId", agent.id)
-            put("status", "proccessing") // Deliberate typo
-        })
+        harness.runAndLogOnFailure {
+            val agent = AgentInstance("agent-1", "Test", "", "", "")
+            val initialState = AgentRuntimeState(agents = mapOf(agent.id to agent))
+            val invalidAction = Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
+                put("agentId", agent.id)
+                put("status", "proccessing") // Deliberate typo
+            })
 
-        val newState = feature.reducer(initialState, invalidAction)
+            val newState = feature.reducer(initialState, invalidAction)
 
-        assertEquals(initialState, newState, "State should not be modified on a parsing failure.")
-        // Note: Reducer is pure, so it can't log directly unless injected.
-        // In the new architecture, validation might happen before dispatch or fail silently in reducer.
-        // Looking at code: `try { AgentStatus.valueOf... } catch ... return currentFeatureState`.
-        // It returns without logging in the pure reducer.
-        // The logging assumption in the previous test might have been for side-effects or a different implementation.
-        // We will assert state did not change.
+            assertEquals(initialState, newState, "State should not be modified on a parsing failure.")
+        }
     }
 
     @Test
     fun `reducer on MESSAGE_POSTED with avatar card should update avatar card ID map`() = runTest {
-        val agent = AgentInstance("agent-1", "Test", "", "", "", subscribedSessionIds = listOf("session-1"))
-        val initialState = AgentRuntimeState(agents = mapOf(agent.id to agent))
-        val validPayload = buildJsonObject {
-            put("sessionId", "session-1")
-            put("entry", buildJsonObject {
-                put("senderId", "agent-1")
-                put("id", "msg-new-card-1")
-                put("metadata", buildJsonObject {
-                    put("render_as_partial", true)
-                    put("agentStatus", "IDLE")
+        harness.runAndLogOnFailure {
+            val agent = AgentInstance("agent-1", "Test", "", "", "", subscribedSessionIds = listOf("session-1"))
+            val initialState = AgentRuntimeState(agents = mapOf(agent.id to agent))
+            val validPayload = buildJsonObject {
+                put("sessionId", "session-1")
+                put("entry", buildJsonObject {
+                    put("senderId", "agent-1")
+                    put("id", "msg-new-card-1")
+                    put("metadata", buildJsonObject {
+                        put("render_as_partial", true)
+                        put("agentStatus", "IDLE")
+                    })
                 })
-            })
+            }
+            val validAction = Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, validPayload)
+
+            val newState = feature.reducer(initialState, validAction) as? AgentRuntimeState
+
+            assertNotNull(newState)
+            assertEquals("msg-new-card-1", newState.agentAvatarCardIds["agent-1"]?.messageId)
         }
-        val validAction = Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, validPayload)
-
-        val newState = feature.reducer(initialState, validAction) as? AgentRuntimeState
-
-        assertNotNull(newState)
-        assertEquals("msg-new-card-1", newState.agentAvatarCardIds["agent-1"]?.messageId)
     }
 
     // --- Deadlock & Side-Effect Tests ---
@@ -115,22 +114,23 @@ class AgentRuntimeFeatureT1ReducerTest {
             .withFeature(feature)
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
             .build(platform = platform)
-        val corruptedPayload = buildJsonObject {
-            put("correlationId", "agent-1")
-            put("messages", "this-should-be-an-array-not-a-string")
+
+        harness.runAndLogOnFailure {
+            val corruptedPayload = buildJsonObject {
+                put("correlationId", "agent-1")
+                put("messages", "this-should-be-an-array-not-a-string")
+            }
+
+            val envelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, corruptedPayload)
+
+            // ACT
+            feature.onPrivateData(envelope, harness.store)
+
+            val setStatusAction = harness.processedActions.find { it.name == ActionNames.AGENT_INTERNAL_SET_STATUS }
+            assertNotNull(setStatusAction, "Should have dispatched an action to set the status.")
+            assertEquals("ERROR", setStatusAction.payload?.get("status")?.jsonPrimitive?.content)
+            assertEquals("Failed to parse ledger.", setStatusAction.payload?.get("error")?.jsonPrimitive?.content)
         }
-
-        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, corruptedPayload)
-
-        // ACT
-        // Note: AgentCognitivePipeline handles this now, which calls AgentAvatarLogic.updateAgentAvatarCard
-        feature.onPrivateData(envelope, harness.store)
-
-
-        val setStatusAction = harness.processedActions.find { it.name == ActionNames.AGENT_INTERNAL_SET_STATUS }
-        assertNotNull(setStatusAction, "Should have dispatched an action to set the status.")
-        assertEquals("ERROR", setStatusAction.payload?.get("status")?.jsonPrimitive?.content)
-        assertEquals("Failed to parse ledger.", setStatusAction.payload?.get("error")?.jsonPrimitive?.content)
     }
 
     @Test
@@ -150,28 +150,28 @@ class AgentRuntimeFeatureT1ReducerTest {
             ))
             .build(platform = platform)
 
-        // ACT: Trigger a turn
-        val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", "agent-1"); put("preview", false) })
-        harness.store.dispatch("ui", triggerAction)
+        harness.runAndLogOnFailure {
+            // ACT: Trigger a turn
+            val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", "agent-1"); put("preview", false) })
+            harness.store.dispatch("ui", triggerAction)
 
-        // ASSERT
-        // This triggers AgentCognitivePipeline.startCognitiveCycle -> AgentAvatarLogic.updateAgentAvatarCard(PROCESSING)
+            // ASSERT
+            val deleteAction = harness.processedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
+            assertNotNull(deleteAction, "A delete action for the old card must be dispatched.")
+            assertEquals("msg-idle-123", deleteAction.payload?.get("messageId")?.jsonPrimitive?.content)
 
-        val deleteAction = harness.processedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
-        assertNotNull(deleteAction, "A delete action for the old card must be dispatched.")
-        assertEquals("msg-idle-123", deleteAction.payload?.get("messageId")?.jsonPrimitive?.content)
+            val postAction = harness.processedActions.find { it.name == ActionNames.SESSION_POST }
+            assertNotNull(postAction, "A post action for the new card must be dispatched.")
+            val metadata = postAction.payload?.get("metadata")?.jsonObject
+            assertEquals("PROCESSING", metadata?.get("agentStatus")?.jsonPrimitive?.content)
 
-        val postAction = harness.processedActions.find { it.name == ActionNames.SESSION_POST }
-        assertNotNull(postAction, "A post action for the new card must be dispatched.")
-        val metadata = postAction.payload?.get("metadata")?.jsonObject // metadata is a string or object? In logic it's put as object.
-        assertEquals("PROCESSING", metadata?.get("agentStatus")?.jsonPrimitive?.content)
+            // Verify the order of operations is correct for atomicity
+            val deleteIndex = harness.processedActions.indexOf(deleteAction)
+            val setStatusIndex = harness.processedActions.indexOfFirst { it.name == ActionNames.AGENT_INTERNAL_SET_STATUS }
+            val postIndex = harness.processedActions.indexOf(postAction)
 
-        // Verify the order of operations is correct for atomicity
-        val deleteIndex = harness.processedActions.indexOf(deleteAction)
-        val setStatusIndex = harness.processedActions.indexOfFirst { it.name == ActionNames.AGENT_INTERNAL_SET_STATUS }
-        val postIndex = harness.processedActions.indexOf(postAction)
-
-        assertTrue(deleteIndex < setStatusIndex, "DELETE must happen before SET_STATUS.")
-        assertTrue(setStatusIndex < postIndex, "SET_STATUS must happen before POST.")
+            assertTrue(deleteIndex < setStatusIndex, "DELETE must happen before SET_STATUS.")
+            assertTrue(setStatusIndex < postIndex, "SET_STATUS must happen before POST.")
+        }
     }
 }
