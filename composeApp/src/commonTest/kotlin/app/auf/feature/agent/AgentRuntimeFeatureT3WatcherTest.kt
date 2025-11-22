@@ -24,7 +24,7 @@ import kotlin.test.*
  * Tier 3 Peer Test for Agent Automatic Triggering Logic.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-class AgentRuntimeFeatureT3AutomaticPeerTest {
+class AgentRuntimeFeatureT3WatcherTest {
 
     private lateinit var testScope: TestScope
     private lateinit var platform: FakePlatformDependencies

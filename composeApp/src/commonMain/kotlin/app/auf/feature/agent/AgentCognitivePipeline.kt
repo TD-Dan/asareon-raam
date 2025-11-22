@@ -8,7 +8,7 @@ import app.auf.util.abbreviate
 import kotlinx.serialization.json.*
 
 /**
- * ## Slice 4: The Thinker (Consolidated)
+ * ## Slice 4: The Thinker (Consolidated & Hardened)
  * The central orchestrator for the Agent's cognitive cycle.
  * It manages the asynchronous flow of:
  * 1. Starting a cycle (Status -> Processing)
@@ -76,7 +76,7 @@ object AgentCognitivePipeline {
         val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
         val agent = state.agents[agentId] ?: return
 
-        // 2. Enrich Messages (Map raw JSON to GatewayMessage)
+        // 2. Enrich Messages
         val enrichedMessages = decoded.messages.mapNotNull { element ->
             try {
                 val entryJson = element.jsonObject
@@ -87,7 +87,7 @@ object AgentCognitivePipeline {
                 val user = state.userIdentities.find { it.id == senderId }
                 val (senderName, role) = when {
                     senderId == agent.id -> agent.name to "model"
-                    state.agents.containsKey(senderId) -> state.agents[senderId]!!.name to "user" // Treat other agents as users for now
+                    state.agents.containsKey(senderId) -> state.agents[senderId]!!.name to "user"
                     user != null -> user.name to "user"
                     else -> "Unknown" to "user"
                 }
@@ -97,29 +97,58 @@ object AgentCognitivePipeline {
             }
         }
 
-        // 3. Update State (Stage the context)
+        // 3. Dispatch Action to Update State
+        // BUG FIX: Race Condition. We DO NOT proceed to next step here.
+        // We dispatch the action to update state. The onAction handler in Feature will call evaluateTurnContext.
         store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
             put("agentId", agent.id)
             put("messages", json.encodeToJsonElement(enrichedMessages))
         }))
+    }
+
+    /**
+     * [NEW] Called by AgentRuntimeFeature.onAction when AGENT_INTERNAL_STAGE_TURN_CONTEXT is processed.
+     * This ensures state is consistent before making decisions.
+     */
+    fun evaluateTurnContext(agentId: String, store: Store) {
+        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
+        val agent = state.agents[agentId] ?: return
+        val statusInfo = state.agentStatuses[agentId] ?: return
+
+        // Guard: Ensure context exists
+        if (statusInfo.stagedTurnContext == null) return
 
         // 4. Determine Next Step (Sovereign vs Vanilla)
         val isSovereign = SovereignAgentLogic.requestContextIfSovereign(store, agent)
 
         if (!isSovereign) {
             // Vanilla: Execute immediately
-            executeTurn(agent, enrichedMessages, null, store)
+            executeTurn(agent, statusInfo.stagedTurnContext, null, state, store)
         }
-        // If Sovereign, SovereignAgentLogic has already dispatched the HKG request. We wait for handleHkgContextResponse.
+        // If Sovereign, requestContextIfSovereign has dispatched the request.
+        // We wait for handleHkgContextResponse -> AGENT_INTERNAL_SET_HKG_CONTEXT -> evaluateHkgContext
     }
 
     private fun handleHkgContextResponse(payload: JsonObject, store: Store) {
         val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
+        val hkgContext = payload["context"]?.jsonObject
+
+        // Dispatch action to update state
+        store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT, buildJsonObject {
+            put("agentId", agentId)
+            put("context", hkgContext ?: buildJsonObject {})
+        }))
+    }
+
+    /**
+     * [NEW] Called by AgentRuntimeFeature.onAction when AGENT_INTERNAL_SET_HKG_CONTEXT is processed.
+     */
+    fun evaluateHkgContext(agentId: String, store: Store) {
         val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
         val agent = state.agents[agentId] ?: return
-        val statusInfo = state.agentStatuses[agentId] ?: AgentStatusInfo()
+        val statusInfo = state.agentStatuses[agentId] ?: return
 
-        // 1. Validation: Ensure we have the prerequisite ledger context
+        // Validation: Ensure we have the prerequisite ledger context
         val ledgerContext = statusInfo.stagedTurnContext
         if (ledgerContext == null) {
             store.platformDependencies.log(LogLevel.ERROR, "agent", "HKG context received for '$agentId' without staged ledger context. Aborting.")
@@ -127,40 +156,28 @@ object AgentCognitivePipeline {
             return
         }
 
-        // 2. Update State (Cache HKG context)
-        val hkgContext = payload["context"]?.jsonObject
-        store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT, buildJsonObject {
-            put("agentId", agentId)
-            put("context", hkgContext ?: buildJsonObject {})
-        }))
-
-        // 3. Execute
-        executeTurn(agent, ledgerContext, hkgContext, store)
+        // Execute
+        executeTurn(agent, ledgerContext, statusInfo.transientHkgContext, state, store)
     }
 
     private fun executeTurn(
         agent: AgentInstance,
         ledgerContext: List<GatewayMessage>,
         hkgContext: JsonObject?,
+        agentState: AgentRuntimeState,
         store: Store
     ) {
-        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
-        val statusInfo = state.agentStatuses[agent.id] ?: AgentStatusInfo()
-
+        val statusInfo = agentState.agentStatuses[agent.id] ?: AgentStatusInfo()
         assemblePromptAndRequestGeneration(
             agent = agent,
             statusInfo = statusInfo,
             ledgerContext = ledgerContext,
             hkgContext = hkgContext,
-            agentState = state,
+            agentState = agentState,
             store = store
         )
     }
 
-    /**
-     * Logic integrated from AgentCognitiveLogic.
-     * Assembles the prompt and dispatches the Gateway request.
-     */
     private fun assemblePromptAndRequestGeneration(
         agent: AgentInstance,
         statusInfo: AgentStatusInfo,

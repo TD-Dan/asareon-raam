@@ -20,13 +20,12 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
 /**
- * ## Slice 5: The Executor (Simplified)
- * The Feature class is now a lean orchestrator.
- * It delegates:
- * - CRUD -> AgentCrudLogic
- * - UI -> AgentAvatarLogic
+ * ## The Executor (Refined)
+ * A pure switchboard feature.
+ * - Config/Persistence -> AgentCrudLogic
+ * - Runtime State -> AgentRuntimeReducer
  * - Cognition -> AgentCognitivePipeline
- * - Auto-Triggers -> AgentAutoTriggerLogic
+ * - Side Effects -> AgentAvatarLogic / Self
  */
 class AgentRuntimeFeature(
     private val platformDependencies: PlatformDependencies,
@@ -44,7 +43,6 @@ class AgentRuntimeFeature(
         coroutineScope.launch {
             while (true) {
                 delay(1000)
-                // Delegate auto-trigger check to the Watcher
                 val state = store.state.value.featureStates[name] as? AgentRuntimeState
                 if (state != null) {
                     AgentAutoTriggerLogic.checkAndDispatchTriggers(store, state, platformDependencies, name)
@@ -56,177 +54,20 @@ class AgentRuntimeFeature(
     override fun reducer(state: FeatureState?, action: Action): FeatureState? {
         val currentFeatureState = state as? AgentRuntimeState ?: AgentRuntimeState()
 
-        // 1. CRUD Logic
+        // 1. CRUD Logic (Persistence)
         val crudState = AgentCrudLogic.reduce(currentFeatureState, action, platformDependencies)
         if (crudState !== currentFeatureState) {
             return crudState
         }
 
-        // 2. Runtime State Updates
-        when (action.name) {
-            ActionNames.AGENT_INTERNAL_SET_STATUS -> return handleSetStatus(action, currentFeatureState)
-            ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP -> {
-                val payload = action.payload ?: return currentFeatureState
-                val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
-                val currentStatus = currentFeatureState.agentStatuses[agentId] ?: AgentStatusInfo()
-                val step = payload["step"]?.jsonPrimitive?.contentOrNull
-                val updatedStatus = currentStatus.copy(processingStep = step)
-                return currentFeatureState.copy(agentStatuses = currentFeatureState.agentStatuses + (agentId to updatedStatus))
-            }
-            ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<StageTurnContextPayload>(it) } ?: return currentFeatureState
-                val currentStatus = currentFeatureState.agentStatuses[payload.agentId] ?: AgentStatusInfo()
-                val updatedStatus = currentStatus.copy(stagedTurnContext = payload.messages)
-                return currentFeatureState.copy(agentStatuses = currentFeatureState.agentStatuses + (payload.agentId to updatedStatus))
-            }
-            ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<SetHkgContextPayload>(it) } ?: return currentFeatureState
-                val currentStatus = currentFeatureState.agentStatuses[payload.agentId] ?: AgentStatusInfo()
-                val updatedStatus = currentStatus.copy(transientHkgContext = payload.context)
-                return currentFeatureState.copy(agentStatuses = currentFeatureState.agentStatuses + (payload.agentId to updatedStatus))
-            }
-            ActionNames.AGENT_INITIATE_TURN -> {
-                // Reducer only handles the state transition for 'INITIATE_TURN' (setting mode).
-                val payload = action.payload?.let { json.decodeFromJsonElement<InitiateTurnPayload>(it) } ?: return currentFeatureState
-                val agentId = payload.agentId
-                val currentStatus = currentFeatureState.agentStatuses[agentId] ?: AgentStatusInfo()
-
-                if (currentStatus.status == AgentStatus.PROCESSING) return currentFeatureState
-
-                val updatedStatus = currentStatus.copy(
-                    processingFrontierMessageId = currentStatus.lastSeenMessageId,
-                    turnMode = if (payload.preview) TurnMode.PREVIEW else TurnMode.DIRECT,
-                    stagedTurnContext = null,
-                    transientHkgContext = null
-                )
-                return currentFeatureState.copy(agentStatuses = currentFeatureState.agentStatuses + (agentId to updatedStatus))
-            }
-            ActionNames.AGENT_DISCARD_PREVIEW -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
-                val currentStatus = currentFeatureState.agentStatuses[agentId] ?: AgentStatusInfo()
-                val updatedStatus = currentStatus.copy(stagedPreviewData = null, processingStep = null)
-                return currentFeatureState.copy(
-                    agentStatuses = currentFeatureState.agentStatuses + (agentId to updatedStatus),
-                    viewingContextForAgentId = null
-                )
-            }
-            ActionNames.AGENT_INTERNAL_SET_PREVIEW_DATA -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<SetPreviewDataPayload>(it) } ?: return currentFeatureState
-                val agentId = payload.agentId
-                val currentStatus = currentFeatureState.agentStatuses[agentId] ?: AgentStatusInfo()
-                val previewData = StagedPreviewData(payload.agnosticRequest, payload.rawRequestJson)
-                val updatedStatus = currentStatus.copy(stagedPreviewData = previewData)
-                return currentFeatureState.copy(
-                    agentStatuses = currentFeatureState.agentStatuses + (agentId to updatedStatus),
-                    viewingContextForAgentId = agentId
-                )
-            }
-            ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> return handleMessagePosted(action, currentFeatureState)
-            ActionNames.SESSION_PUBLISH_MESSAGE_DELETED -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<MessageDeletedPayload>(it) } ?: return currentFeatureState
-                val agentId = currentFeatureState.agentAvatarCardIds.entries.find { it.value.messageId == payload.messageId }?.key ?: return currentFeatureState
-                return currentFeatureState.copy(agentAvatarCardIds = currentFeatureState.agentAvatarCardIds - agentId)
-            }
-            ActionNames.SESSION_PUBLISH_SESSION_DELETED -> {
-                val deletedSessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
-                val agentsToUpdate = currentFeatureState.agents.values
-                    .filter { it.subscribedSessionIds.contains(deletedSessionId) || it.privateSessionId == deletedSessionId }
-                if (agentsToUpdate.isEmpty()) return currentFeatureState
-
-                val newAgents = currentFeatureState.agents.mapValues { (_, agent) ->
-                    if (agentsToUpdate.any { it.id == agent.id }) {
-                        agent.copy(
-                            subscribedSessionIds = agent.subscribedSessionIds - deletedSessionId,
-                            privateSessionId = if (agent.privateSessionId == deletedSessionId) null else agent.privateSessionId
-                        )
-                    } else {
-                        agent
-                    }
-                }
-                return currentFeatureState.copy(agents = newAgents, agentsToPersist = agentsToUpdate.map { it.id }.toSet())
-            }
-            ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED -> {
-                val decodedModels: Map<String, List<String>>? = try { action.payload?.let { json.decodeFromJsonElement(it) } } catch (e: Exception) { null }
-                return currentFeatureState.copy(availableModels = decodedModels ?: emptyMap())
-            }
-            ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
-                val decoded = try { action.payload?.let { json.decodeFromJsonElement<SessionNamesPayload>(it) } } catch(e: Exception) { null }
-                return if (decoded != null) currentFeatureState.copy(sessionNames = decoded.names) else currentFeatureState
-            }
-            ActionNames.KNOWLEDGEGRAPH_PUBLISH_AVAILABLE_PERSONAS_UPDATED -> {
-                val decoded = try { action.payload?.let { json.decodeFromJsonElement<GraphNamesPayload>(it) } } catch(e: Exception) { null }
-                return if (decoded != null) currentFeatureState.copy(knowledgeGraphNames = decoded.names) else currentFeatureState
-            }
-            ActionNames.KNOWLEDGEGRAPH_PUBLISH_RESERVATIONS_UPDATED -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<ReservedIdsPayload>(it) }
-                return if (payload != null) currentFeatureState.copy(hkgReservedIds = payload.reservedIds) else currentFeatureState
-            }
-            ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<IdentitiesUpdatedPayload>(it) }
-                return if (payload != null) currentFeatureState.copy(userIdentities = payload.identities) else currentFeatureState
-            }
-            else -> return currentFeatureState
-        }
-    }
-
-    private fun handleSetStatus(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState {
-        val payload = action.payload ?: return currentFeatureState
-        val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
-        val currentStatus = currentFeatureState.agentStatuses[agentId] ?: AgentStatusInfo()
-
-        val newStatusString = payload["status"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
-        val newStatus = try { AgentStatus.valueOf(newStatusString) } catch (e: Exception) { return currentFeatureState }
-        val newErrorMessage = if (newStatus == AgentStatus.ERROR) payload["error"]?.jsonPrimitive?.contentOrNull else null
-
-        val clearTimers = currentStatus.status == AgentStatus.WAITING && newStatus != AgentStatus.WAITING
-        val isStartingProcessing = newStatus == AgentStatus.PROCESSING && currentStatus.status != AgentStatus.PROCESSING
-        val isStoppingProcessing = newStatus != AgentStatus.PROCESSING && currentStatus.status == AgentStatus.PROCESSING
-        val shouldClearContext = isStoppingProcessing || newStatus == AgentStatus.IDLE || newStatus == AgentStatus.ERROR
-
-        val updatedStatus = currentStatus.copy(
-            status = newStatus,
-            errorMessage = newErrorMessage,
-            waitingSinceTimestamp = if (clearTimers) null else currentStatus.waitingSinceTimestamp,
-            lastMessageReceivedTimestamp = if (clearTimers) null else currentStatus.lastMessageReceivedTimestamp,
-            processingSinceTimestamp = if (isStartingProcessing) platformDependencies.getSystemTimeMillis() else if (isStoppingProcessing) null else currentStatus.processingSinceTimestamp,
-            processingFrontierMessageId = if (isStoppingProcessing) null else currentStatus.processingFrontierMessageId,
-            processingStep = if (isStoppingProcessing) null else currentStatus.processingStep,
-            stagedTurnContext = if(shouldClearContext) null else currentStatus.stagedTurnContext,
-            transientHkgContext = if (shouldClearContext) null else currentStatus.transientHkgContext
-        )
-        return currentFeatureState.copy(agentStatuses = currentFeatureState.agentStatuses + (agentId to updatedStatus), agentsToPersist = null)
-    }
-
-    private fun handleMessagePosted(action: Action, currentFeatureState: AgentRuntimeState): AgentRuntimeState {
-        val payload = action.payload?.let { json.decodeFromJsonElement<MessagePostedPayload>(it) } ?: return currentFeatureState
-        val entry = payload.entry; val messageId = entry["id"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
-        val sessionId = payload.sessionId; val senderId = entry["senderId"]?.jsonPrimitive?.contentOrNull
-        val currentTime = platformDependencies.getSystemTimeMillis()
-
-        val updatedStatuses = currentFeatureState.agentStatuses.toMutableMap()
-        currentFeatureState.agents.values.forEach { agent ->
-            val currentStatus = updatedStatuses[agent.id] ?: AgentStatusInfo()
-            if ((agent.subscribedSessionIds.contains(sessionId) || agent.privateSessionId == sessionId) && agent.id != senderId) {
-                updatedStatuses[agent.id] = currentStatus.copy(lastSeenMessageId = messageId, lastMessageReceivedTimestamp = currentTime, waitingSinceTimestamp = currentStatus.waitingSinceTimestamp ?: currentTime)
-            } else if (agent.id == senderId) {
-                updatedStatuses[agent.id] = currentStatus.copy(lastSeenMessageId = messageId)
-            }
-        }
-        var newCardMap = currentFeatureState.agentAvatarCardIds
-        val metadata = entry["metadata"]?.jsonObject
-        val isAvatar = metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
-        if (isAvatar) {
-            val agentId = entry["senderId"]?.jsonPrimitive?.contentOrNull
-            if (agentId != null && currentFeatureState.agents.containsKey(agentId)) {
-                newCardMap = newCardMap + (agentId to AgentRuntimeState.AvatarCardInfo(messageId = messageId, sessionId = sessionId))
-            }
-        }
-        return currentFeatureState.copy(agentStatuses = updatedStatuses, agentAvatarCardIds = newCardMap)
+        // 2. Runtime Logic (Ephemeral)
+        return AgentRuntimeReducer.reduce(currentFeatureState, action, platformDependencies)
     }
 
     override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val agentState = newState as? AgentRuntimeState ?: return
         when (action.name) {
+            // --- Startup ---
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
                 store.deferredDispatch(this.name, Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
@@ -245,6 +86,8 @@ class AgentRuntimeFeature(
                 }
                 broadcastAgentNames(agentState, store)
             }
+
+            // --- CRUD Side Effects ---
             ActionNames.AGENT_CREATE -> {
                 val agentToSave = agentState.agents.values.lastOrNull() ?: return
                 saveAgentConfig(agentToSave, store)
@@ -300,10 +143,22 @@ class AgentRuntimeFeature(
                 store.deferredDispatch(this.name, Action(ActionNames.AGENT_PUBLISH_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
                 broadcastAgentNames(agentState, store)
             }
+
+            // --- Cognitive Pipeline Entry Points ---
             ActionNames.AGENT_INITIATE_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
-                // Delegate immediately to the Pipeline
                 AgentCognitivePipeline.startCognitiveCycle(agentId, store)
+            }
+            ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT -> {
+                // BUG FIX: Race condition resolution.
+                // This logic now runs AFTER the reducer has updated the state.
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                AgentCognitivePipeline.evaluateTurnContext(agentId, store)
+            }
+            ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT -> {
+                // As above, run logic after state update.
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                AgentCognitivePipeline.evaluateHkgContext(agentId, store)
             }
             ActionNames.AGENT_EXECUTE_PREVIEWED_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
@@ -342,15 +197,26 @@ class AgentRuntimeFeature(
                 activeTurnJobs.remove(agentId)
                 AgentAvatarLogic.updateAgentAvatarCard(agentId, AgentStatus.IDLE, "Turn cancelled by user.", store)
             }
+
+            // --- Peer Updates ---
             ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> {
+                // Note: Reducer handles the state updates (waiting time, etc.)
+                // We only need to check if we need to update the UI card to "WAITING" visually.
                 val payload = action.payload?.let { json.decodeFromJsonElement<MessagePostedPayload>(it) } ?: return
                 val entry = payload.entry
+                val senderId = entry["senderId"]?.jsonPrimitive?.contentOrNull
+
+                // If Sentinel system message, ignore.
+                if (senderId == "system") return
+
                 val metadata = entry["metadata"]?.jsonObject
                 val isAvatar = metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
                 if (isAvatar) return
 
                 agentState.agents.values.forEach { agent ->
-                    if ((agent.subscribedSessionIds.contains(payload.sessionId) || agent.privateSessionId == payload.sessionId) && agent.id != payload.entry["senderId"]?.jsonPrimitive?.content) {
+                    // Logic for "Do we need to update the avatar card to show 'WAITING'?"
+                    // This duplicates some reducer logic but is necessary to trigger the Side Effect (updateAgentAvatarCard)
+                    if ((agent.subscribedSessionIds.contains(payload.sessionId) || agent.privateSessionId == payload.sessionId) && agent.id != senderId) {
                         val status = agentState.agentStatuses[agent.id]?.status ?: AgentStatus.IDLE
                         if (status == AgentStatus.IDLE) {
                             AgentAvatarLogic.updateAgentAvatarCard(agent.id, AgentStatus.WAITING, null, store)
@@ -382,7 +248,6 @@ class AgentRuntimeFeature(
     }
 
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
-        platformDependencies.log(LogLevel.DEBUG, name, "[INSTRUMENTATION] onPrivateData << ${envelope.type}")
         when (envelope.type) {
             ActionNames.Envelopes.SESSION_RESPONSE_LEDGER,
             ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT -> {
