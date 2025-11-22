@@ -46,72 +46,14 @@ class AgentRuntimeFeature(
     override fun reducer(state: FeatureState?, action: Action): FeatureState? {
         val currentFeatureState = state as? AgentRuntimeState ?: AgentRuntimeState()
 
+        // SLICE 0: Delegate to isolated CRUD logic first
+        val crudState = AgentCrudLogic.reduce(currentFeatureState, action, platformDependencies)
+        if (crudState !== currentFeatureState) {
+            return crudState
+        }
+
+        // Handle remaining runtime/async logic
         when (action.name) {
-            ActionNames.AGENT_CREATE -> {
-                val payload = action.payload ?: return currentFeatureState
-                val newAgent = AgentInstance(
-                    id = platformDependencies.generateUUID(),
-                    name = payload["name"]?.jsonPrimitive?.contentOrNull ?: "New Agent",
-                    knowledgeGraphId = payload["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull,
-                    modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: "gemini",
-                    modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: "gemini-pro",
-                    subscribedSessionIds = payload["subscribedSessionIds"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList(),
-                    automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: false,
-                    autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: 5,
-                    autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: 30
-                )
-                return currentFeatureState.copy(agents = currentFeatureState.agents + (newAgent.id to newAgent), editingAgentId = newAgent.id)
-            }
-            ActionNames.AGENT_UPDATE_CONFIG -> {
-                val payload = action.payload ?: return currentFeatureState
-                val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
-                val agentToUpdate = currentFeatureState.agents[agentId] ?: return currentFeatureState
-
-                val newSubscribedSessionIds = if ("subscribedSessionIds" in payload) {
-                    payload["subscribedSessionIds"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
-                } else {
-                    agentToUpdate.subscribedSessionIds
-                }
-                val filteredSubscribedSessionIds = newSubscribedSessionIds.filter { sessionId ->
-                    currentFeatureState.sessionNames[sessionId]?.startsWith("p-cognition:") == false
-                }
-
-                val updatedAgent = agentToUpdate.copy(
-                    name = payload["name"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.name,
-                    knowledgeGraphId = if ("knowledgeGraphId" in payload) payload["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull else agentToUpdate.knowledgeGraphId,
-                    privateSessionId = if ("privateSessionId" in payload) payload["privateSessionId"]?.jsonPrimitive?.contentOrNull else agentToUpdate.privateSessionId,
-                    modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelProvider,
-                    modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelName,
-                    subscribedSessionIds = filteredSubscribedSessionIds,
-                    automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: agentToUpdate.automaticMode,
-                    autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoWaitTimeSeconds,
-                    autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoMaxWaitTimeSeconds
-                )
-                return currentFeatureState.copy(agents = currentFeatureState.agents + (agentId to updatedAgent))
-            }
-            ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
-                val agentToUpdate = currentFeatureState.agents[agentId] ?: return currentFeatureState
-                val updatedAgent = agentToUpdate.copy(automaticMode = !agentToUpdate.automaticMode)
-                return currentFeatureState.copy(agents = currentFeatureState.agents + (agentId to updatedAgent))
-            }
-            ActionNames.AGENT_TOGGLE_ACTIVE -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
-                val agentToUpdate = currentFeatureState.agents[agentId] ?: return currentFeatureState
-                val updatedAgent = agentToUpdate.copy(isAgentActive = !agentToUpdate.isAgentActive)
-                return currentFeatureState.copy(agents = currentFeatureState.agents + (agentId to updatedAgent))
-            }
-            ActionNames.AGENT_SET_EDITING -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull
-                return currentFeatureState.copy(editingAgentId = if (agentId == currentFeatureState.editingAgentId) null else agentId)
-            }
-            ActionNames.AGENT_INTERNAL_CONFIRM_DELETE -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
-                return currentFeatureState.copy(
-                    agents = currentFeatureState.agents - agentId,
-                    agentAvatarCardIds = currentFeatureState.agentAvatarCardIds - agentId
-                )
-            }
             ActionNames.AGENT_INTERNAL_SET_STATUS -> return handleSetStatus(action, currentFeatureState)
             ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP -> {
                 val payload = action.payload ?: return currentFeatureState
@@ -132,10 +74,6 @@ class AgentRuntimeFeature(
                 val agent = currentFeatureState.agents[payload.agentId] ?: return currentFeatureState
                 val updatedAgent = agent.copy(transientHkgContext = payload.context)
                 return currentFeatureState.copy(agents = currentFeatureState.agents + (agent.id to updatedAgent))
-            }
-            ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
-                val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return currentFeatureState
-                return if (!currentFeatureState.agents.containsKey(agent.id)) currentFeatureState.copy(agents = currentFeatureState.agents + (agent.id to agent)) else currentFeatureState
             }
             ActionNames.AGENT_INITIATE_TURN -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<InitiateTurnPayload>(it) } ?: return currentFeatureState
