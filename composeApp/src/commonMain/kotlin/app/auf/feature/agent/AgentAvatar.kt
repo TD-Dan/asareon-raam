@@ -13,7 +13,6 @@ import app.auf.core.Store
 import app.auf.core.generated.ActionNames
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.delay
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.time.Duration.Companion.milliseconds
@@ -63,12 +62,12 @@ object AgentAvatarLogic {
 
         // 4. Re-fetch the state *after* the status change to get the latest frontiers.
         val latestAgentState = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
-        val latestAgent = latestAgentState.agents[agentId] ?: return
+        val latestStatus = latestAgentState.agentStatuses[agentId] ?: AgentStatusInfo()
 
         // 5. Determine where in the ledger the new card should be placed.
         val afterMessageId = when (status) {
-            AgentStatus.PROCESSING -> latestAgent.processingFrontierMessageId
-            else -> latestAgent.lastSeenMessageId
+            AgentStatus.PROCESSING -> latestStatus.processingFrontierMessageId
+            else -> latestStatus.lastSeenMessageId
         }
 
         // 6. Post the new card.
@@ -93,10 +92,15 @@ fun AgentAvatarCard(
     store: Store,
     platformDependencies: PlatformDependencies
 ) {
+    val appState by store.state.collectAsState()
+    val agentState = appState.featureStates["agent"] as? AgentRuntimeState
+    // REF: Slice 3 - Resolve status
+    val statusInfo = agentState?.agentStatuses?.get(agent.id) ?: AgentStatusInfo()
+
     OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
-        AgentControlCard(agent, store, platformDependencies)
+        AgentControlCard(agent, statusInfo, store, platformDependencies)
     }
 }
 
@@ -105,16 +109,17 @@ fun AgentAvatarCard(
 @Composable
 fun AgentControlCard(
     agent: AgentInstance,
+    statusInfo: AgentStatusInfo = AgentStatusInfo(),
     store: Store,
     platformDependencies: PlatformDependencies
 ) {
     var processingTime by remember { mutableStateOf("00:00") }
     var menuExpanded by remember { mutableStateOf(false) }
 
-    LaunchedEffect(agent.status, agent.processingSinceTimestamp) {
-        if (agent.status == AgentStatus.PROCESSING && agent.processingSinceTimestamp != null) {
+    LaunchedEffect(statusInfo.status, statusInfo.processingSinceTimestamp) {
+        if (statusInfo.status == AgentStatus.PROCESSING && statusInfo.processingSinceTimestamp != null) {
             while (true) {
-                val elapsed = platformDependencies.getSystemTimeMillis() - agent.processingSinceTimestamp
+                val elapsed = platformDependencies.getSystemTimeMillis() - statusInfo.processingSinceTimestamp
                 processingTime = elapsed.milliseconds.toComponents { minutes, seconds, _ ->
                     "${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
                 }
@@ -123,14 +128,14 @@ fun AgentControlCard(
         }
     }
 
-    val canInitiateTurn = (agent.status == AgentStatus.IDLE || agent.status == AgentStatus.WAITING || agent.status == AgentStatus.ERROR) && (agent.subscribedSessionIds.isNotEmpty() || agent.privateSessionId != null) && agent.isAgentActive
+    val canInitiateTurn = (statusInfo.status == AgentStatus.IDLE || statusInfo.status == AgentStatus.WAITING || statusInfo.status == AgentStatus.ERROR) && (agent.subscribedSessionIds.isNotEmpty() || agent.privateSessionId != null) && agent.isAgentActive
 
-    val statusText = when (agent.status) {
+    val statusText = when (statusInfo.status) {
         AgentStatus.PROCESSING -> {
-            val step = agent.processingStep ?: "Processing..."
+            val step = statusInfo.processingStep ?: "Processing..."
             "$step ($processingTime)"
         }
-        else -> agent.status.name
+        else -> statusInfo.status.name
     }
 
     Row(
@@ -148,9 +153,9 @@ fun AgentControlCard(
         Column(modifier = Modifier.weight(1f)) {
             Text(agent.name, style = MaterialTheme.typography.titleMedium)
             Text("Status: $statusText", style = MaterialTheme.typography.bodyMedium)
-            if (agent.status == AgentStatus.ERROR && agent.errorMessage != null) {
+            if (statusInfo.status == AgentStatus.ERROR && statusInfo.errorMessage != null) {
                 Text(
-                    text = agent.errorMessage,
+                    text = statusInfo.errorMessage,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(top = 4.dp)
@@ -229,7 +234,7 @@ fun AgentControlCard(
                 }
             }
 
-            if (agent.status == AgentStatus.PROCESSING) {
+            if (statusInfo.status == AgentStatus.PROCESSING) {
                 Button(
                     onClick = { store.dispatch("ui.controls", Action(ActionNames.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agent.id) })) },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)

@@ -135,8 +135,12 @@ private fun AgentReadOnlyView(
 ) {
     val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.sessionNames[it] } ?: "Not Subscribed"
     val hkgName = agent.knowledgeGraphId?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG"
+
+    // REF: Slice 3 - Resolve status info
+    val statusInfo = agentState.agentStatuses[agent.id] ?: AgentStatusInfo()
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        AgentControlCard(agent, store, platformDependencies)
+        AgentControlCard(agent, statusInfo, store, platformDependencies)
         SelectionContainer {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Subscribed: $sessionName" + if (agent.subscribedSessionIds.size > 1) " (+${agent.subscribedSessionIds.size - 1} more)" else "", style = MaterialTheme.typography.bodyMedium)
@@ -243,7 +247,6 @@ private fun AgentEditorView(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SingleSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
-    // *** NEW: Filter out private cognitive sessions ***
     val availableSessions = remember(agentState.sessionNames) {
         agentState.sessionNames.entries.toList().filter { !it.value.startsWith("p-cognition:") }
     }
@@ -280,7 +283,6 @@ private fun SingleSessionSelector(agent: AgentInstance, agentState: AgentRuntime
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MultiSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
-    // *** NEW: Filter out private cognitive sessions ***
     val availableSessions = remember(agentState.sessionNames) {
         agentState.sessionNames.entries.toList().filter { !it.value.startsWith("p-cognition:") }
     }

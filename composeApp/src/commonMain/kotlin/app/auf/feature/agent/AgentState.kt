@@ -12,7 +12,6 @@ enum class AgentStatus { IDLE, WAITING, PROCESSING, ERROR }
 @Serializable
 enum class TurnMode { DIRECT, PREVIEW }
 
-
 @Serializable
 data class GatewayMessage(
     val role: String,
@@ -39,6 +38,11 @@ data class StagedPreviewData(
     val rawRequestJson: String
 )
 
+/**
+ * [PURE CONFIGURATION]
+ * Defines the persistent identity and settings of an agent.
+ * Contains NO runtime state.
+ */
 @Serializable
 data class AgentInstance(
     val id: String,
@@ -46,45 +50,44 @@ data class AgentInstance(
     val knowledgeGraphId: String? = null,
     val modelProvider: String,
     val modelName: String,
-    val subscribedSessionIds: List<String> = emptyList(), // *** MODIFIED: Renamed from primarySessionId and changed to List
-    val privateSessionId: String? = null, // *** MODIFIED: Now nullable
+    val subscribedSessionIds: List<String> = emptyList(),
+    val privateSessionId: String? = null,
     // Configuration
     val automaticMode: Boolean = false,
     val autoWaitTimeSeconds: Int = 5,
     val autoMaxWaitTimeSeconds: Int = 30,
-    val isAgentActive: Boolean = true,
+    val isAgentActive: Boolean = true
+)
 
-    // Transient State
-    @Transient
+/**
+ * [RUNTIME STATE]
+ * Ephemeral state for an active agent.
+ * This is never persisted to disk.
+ */
+data class AgentStatusInfo(
     val status: AgentStatus = AgentStatus.IDLE,
-    @Transient
     val errorMessage: String? = null,
-    @Transient
     val lastSeenMessageId: String? = null,
-    @Transient
     val processingFrontierMessageId: String? = null,
-    @Transient
     val waitingSinceTimestamp: Long? = null,
-    @Transient
     val lastMessageReceivedTimestamp: Long? = null,
-    @Transient
     val processingSinceTimestamp: Long? = null,
-    @Transient
     val processingStep: String? = null,
-    @Transient
     val turnMode: TurnMode = TurnMode.DIRECT,
-    @Transient
     val stagedPreviewData: StagedPreviewData? = null,
-    @Transient
     val stagedTurnContext: List<GatewayMessage>? = null,
-    // *** NEW: A transient field to hold the HKG content for a single turn.
-    @Transient
+    // A transient field to hold the HKG content for a single turn.
     val transientHkgContext: JsonObject? = null
 )
 
 @Serializable
 data class AgentRuntimeState(
     val agents: Map<String, AgentInstance> = emptyMap(),
+
+    // [NEW] The separate map for runtime status. Keys match agent IDs.
+    @Transient
+    val agentStatuses: Map<String, AgentStatusInfo> = emptyMap(),
+
     val sessionNames: Map<String, String> = emptyMap(),
     val availableModels: Map<String, List<String>> = emptyMap(),
     val knowledgeGraphNames: Map<String, String> = emptyMap(),
@@ -114,7 +117,6 @@ data class AgentRuntimeState(
     /** [NEW] A transient field to track the round-robin index for the staggered automatic trigger. */
     @Transient
     val lastAutoTriggerAgentIndex: Int = 0,
-
 
     ) : FeatureState {
     @Serializable

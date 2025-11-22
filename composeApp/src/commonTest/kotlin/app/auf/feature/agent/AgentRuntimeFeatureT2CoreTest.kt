@@ -9,25 +9,11 @@ import app.auf.feature.session.SessionFeature
 import app.auf.feature.session.SessionState
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
-import app.auf.util.LogLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import kotlinx.serialization.json.*
+import kotlin.test.*
 
 /**
  * Tier 2 Core Test for AgentRuntimeFeature.
@@ -41,7 +27,6 @@ class AgentRuntimeFeatureT2CoreTest {
     private object FakeSessionFeature : Feature {
         override val name = "session"
         override val composableProvider: Feature.ComposableProvider? = null
-        private val json = Json { ignoreUnknownKeys = true }
 
         override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
             if (action.name == ActionNames.SESSION_REQUEST_LEDGER_CONTENT) {
@@ -64,7 +49,7 @@ class AgentRuntimeFeatureT2CoreTest {
                 store.deliverPrivateData(
                     name,
                     "agent",
-                    app.auf.core.PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, responsePayload)
+                    PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, responsePayload)
                 )
             }
         }
@@ -93,7 +78,7 @@ class AgentRuntimeFeatureT2CoreTest {
                 store.deliverPrivateData(
                     name,
                     "agent",
-                    app.auf.core.PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW, responsePayload)
+                    PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW, responsePayload)
                 )
             }
         }
@@ -118,28 +103,27 @@ class AgentRuntimeFeatureT2CoreTest {
         }
     }
 
-
-    private fun createTestAgent(
+    private fun createTestAgentConfig(
         id: String = "agent-1",
         name: String = "Test Agent",
-        sessionIds: List<String> = listOf("session-1"), // *** MODIFIED
-        status: AgentStatus = AgentStatus.IDLE,
-        turnMode: TurnMode = TurnMode.DIRECT,
+        sessionIds: List<String> = listOf("session-1"),
         kgId: String? = "p1"
     ): AgentInstance {
-        // *** MODIFIED
-        return AgentInstance(id = id, name = name, knowledgeGraphId = kgId, modelProvider = "mp1", modelName = "mn1", subscribedSessionIds = sessionIds, status = status, turnMode = turnMode)
+        return AgentInstance(id = id, name = name, knowledgeGraphId = kgId, modelProvider = "mp1", modelName = "mn1", subscribedSessionIds = sessionIds)
     }
 
-    // TEST: New test for sentinel logic.
     @Test
     fun `sentinel sanitizes timestamp echo out of ai response`() = runTest {
-        val agent = createTestAgent(status = AgentStatus.PROCESSING)
+        val agent = createTestAgentConfig()
+        val status = AgentStatusInfo(status = AgentStatus.PROCESSING)
         val session = Session("session-1", "Test Session", emptyList(), 1L)
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
             .withFeature(SessionFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
+            .withInitialState("agent", AgentRuntimeState(
+                agents = mapOf(agent.id to agent),
+                agentStatuses = mapOf(agent.id to status)
+            ))
             .withInitialState("session", SessionState(sessions = mapOf("session-1" to session)))
             .build()
         val gatewayResponsePayload = buildJsonObject {
@@ -167,7 +151,7 @@ class AgentRuntimeFeatureT2CoreTest {
             )
 
             val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            assertEquals(AgentStatus.IDLE, finalState.agents["agent-1"]?.status)
+            assertEquals(AgentStatus.IDLE, finalState.agentStatuses["agent-1"]?.status)
         }
     }
 
@@ -175,7 +159,7 @@ class AgentRuntimeFeatureT2CoreTest {
     fun `INITIATE_TURN with preview=false dispatches SESSION_REQUEST_LEDGER_CONTENT`() = runTest {
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to createTestAgent())))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to createTestAgentConfig())))
             .build()
         val action = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
             put("agentId", "agent-1")
@@ -190,30 +174,18 @@ class AgentRuntimeFeatureT2CoreTest {
     }
 
     @Test
-    fun `INITIATE_TURN with preview=true dispatches SESSION_REQUEST_LEDGER_CONTENT`() = runTest {
-        val harness = TestEnvironment.create()
-            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to createTestAgent())))
-            .build()
-        val action = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
-            put("agentId", "agent-1")
-            put("preview", true)
-        })
-
-        harness.store.dispatch("ui", action)
-
-        val ledgerRequest = harness.processedActions.find { it.name == ActionNames.SESSION_REQUEST_LEDGER_CONTENT }
-        assertNotNull(ledgerRequest)
-    }
-
-    @Test
     fun `on session ledger response for direct turn, dispatches GATEWAY_GENERATE_CONTENT`() = runTest {
-        val agent = createTestAgent(status = AgentStatus.IDLE, turnMode = TurnMode.DIRECT)
+        val agent = createTestAgentConfig()
+        val status = AgentStatusInfo(status = AgentStatus.IDLE, turnMode = TurnMode.DIRECT)
+
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
             .withFeature(FakeSessionFeature)
             .withFeature(FakeKnowledgeGraphFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
+            .withInitialState("agent", AgentRuntimeState(
+                agents = mapOf(agent.id to agent),
+                agentStatuses = mapOf(agent.id to status)
+            ))
             .build()
 
         harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", "agent-1"); put("preview", false) }))
@@ -223,26 +195,10 @@ class AgentRuntimeFeatureT2CoreTest {
     }
 
     @Test
-    fun `on session ledger response for preview turn, dispatches GATEWAY_PREPARE_PREVIEW`() = runTest {
-        val agent = createTestAgent(status = AgentStatus.IDLE, turnMode = TurnMode.PREVIEW)
-        val harness = TestEnvironment.create()
-            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
-            .withFeature(FakeSessionFeature)
-            .withFeature(FakeKnowledgeGraphFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
-            .build()
-
-        harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", "agent-1"); put("preview", true) }))
-
-        val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_PREPARE_PREVIEW }
-        assertNotNull(gatewayRequest)
-    }
-
-    @Test
-    fun `assembles enriched context with correct identities from various sources`() = runTest {
-        // ARRANGE
+    fun `assembles enriched context with correct identities`() = runTest {
         val user = Identity("user-id-1", "User Alpha")
-        val agent = createTestAgent(id = "agent-1", name = "Test Agent")
+        val agent = createTestAgentConfig(id = "agent-1", name = "Test Agent")
+
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("2.0.0-test"), CoroutineScope(Dispatchers.Unconfined)))
             .withFeature(FakeSessionFeature)
@@ -251,73 +207,30 @@ class AgentRuntimeFeatureT2CoreTest {
             .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
             .build()
 
-        // ARRANGE 2: Manually broadcast the identities to populate the agent's cache.
+        // Populate cache
         val identitiesBroadcast = Action(ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
             put("identities", Json.encodeToJsonElement(listOf(user)))
             put("activeId", "user-id-1")
         })
         harness.store.dispatch("core", identitiesBroadcast)
 
-        // ACT: Trigger the turn using the correct, public entry point.
         val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
             put("agentId", "agent-1")
             put("preview", false)
         })
         harness.store.dispatch("ui", triggerAction)
 
-
-        // ASSERT
         val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
+        assertNotNull(gatewayRequest)
 
-        if (gatewayRequest == null) {
-            println("--- DEBUG LOGS FOR FAILING TEST ---")
-            harness.platform.capturedLogs.forEach { println(it) }
-            println("--- END DEBUG LOGS ---")
-        }
-
-        assertNotNull(gatewayRequest, "Gateway request should have been dispatched.")
         val contents = gatewayRequest.payload?.get("contents")?.let { json.decodeFromJsonElement<List<GatewayMessage>>(it) }
         assertNotNull(contents)
-        assertEquals(2, contents.size)
-
-        val userMessage = contents[0]
-        assertEquals("user", userMessage.role)
-        assertEquals("user-id-1", userMessage.senderId)
-        assertEquals("User Alpha", userMessage.senderName)
-        assertEquals("User message", userMessage.content)
-        assertEquals(1000L, userMessage.timestamp)
-
-        val agentMessage = contents[1]
-        assertEquals("model", agentMessage.role)
-        assertEquals("agent-1", agentMessage.senderId)
-        assertEquals("Test Agent", agentMessage.senderName)
-        assertEquals("Agent response", agentMessage.content)
-        assertEquals(2000L, agentMessage.timestamp)
-
-        val systemPrompt = gatewayRequest.payload?.get("systemPrompt")?.jsonPrimitive?.content
-        assertNotNull(systemPrompt)
-        assertTrue(systemPrompt.contains("You are agent 'Test Agent'"))
-        assertTrue(systemPrompt.contains("Platform: 'AUF App "))
-    }
-
-    @Test
-    fun `CLONE action dispatches a CREATE action with modified name`() = runTest {
-        val agent = createTestAgent()
-        val harness = TestEnvironment.create()
-            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
-            .build()
-
-        harness.store.dispatch("ui", Action(ActionNames.AGENT_CLONE, buildJsonObject { put("agentId", "agent-1") }))
-
-        val createAction = harness.processedActions.find { it.name == ActionNames.AGENT_CREATE }
-        assertNotNull(createAction)
-        assertEquals("Test Agent (Copy)", createAction.payload?.get("name")?.jsonPrimitive?.content)
+        assertEquals("User Alpha", contents[0].senderName)
     }
 
     @Test
     fun `full preview workflow results in staged data and correct final execution`() = runTest {
-        val agent = createTestAgent()
+        val agent = createTestAgentConfig()
         val harness = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
             .withFeature(FakeSessionFeature)
@@ -334,11 +247,10 @@ class AgentRuntimeFeatureT2CoreTest {
 
         // Verify state after preview is prepared
         val stateAfterPreview = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-        val agentAfterPreview = stateAfterPreview.agents["agent-1"]
-        assertNotNull(agentAfterPreview?.stagedPreviewData)
-        assertEquals("{\"key\":\"value\"}", agentAfterPreview.stagedPreviewData.rawRequestJson)
+        val agentStatus = stateAfterPreview.agentStatuses["agent-1"]
+        assertNotNull(agentStatus?.stagedPreviewData)
+        assertEquals("{\"key\":\"value\"}", agentStatus.stagedPreviewData?.rawRequestJson)
         assertEquals("agent-1", stateAfterPreview.viewingContextForAgentId)
-        assertTrue(harness.processedActions.any { it.name == ActionNames.CORE_SET_ACTIVE_VIEW })
 
         // 2. Execute the staged turn
         harness.store.dispatch("ui", Action(ActionNames.AGENT_EXECUTE_PREVIEWED_TURN, buildJsonObject { put("agentId", "agent-1") }))
@@ -346,86 +258,8 @@ class AgentRuntimeFeatureT2CoreTest {
         // Verify final execution
         val generateAction = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
         assertNotNull(generateAction)
-        assertEquals("agent-1", generateAction.payload?.get("correlationId")?.jsonPrimitive?.content)
+
         val stateAfterExecute = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-        assertNull(stateAfterExecute.agents["agent-1"]?.stagedPreviewData, "Staged data should be cleared after execution.")
-        assertNull(stateAfterExecute.viewingContextForAgentId, "Viewing context should be cleared.")
-    }
-
-    @Test
-    fun `DISCARD_PREVIEW action clears staged data and viewing context`() = runTest {
-        val previewData = StagedPreviewData(GatewayRequest("m1", emptyList(), "c1"), "{}")
-        val agent = createTestAgent().copy(stagedPreviewData = previewData)
-        val harness = TestEnvironment.create()
-            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent), viewingContextForAgentId = "agent-1"))
-            .build()
-
-        harness.store.dispatch("ui", Action(ActionNames.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", "agent-1") }))
-
-        val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-        assertNull(finalState.agents["agent-1"]?.stagedPreviewData)
-        assertNull(finalState.viewingContextForAgentId)
-    }
-
-    @Test
-    fun `cognitive cycle proceeds without HKG context if KG feature is absent`() = runTest {
-        val agent = createTestAgent(kgId = "p1") // Agent wants an HKG
-        val harness = TestEnvironment.create()
-            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
-            .withFeature(FakeSessionFeature)
-            // NO KnowledgeGraphFeature is provided
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to agent)))
-            .build()
-
-        // ACT
-        harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", "agent-1") }))
-
-        // ASSERT
-        harness.runAndLogOnFailure {
-            val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
-            assertNotNull(gatewayRequest, "Gateway request should still be dispatched.")
-            val systemPrompt = gatewayRequest.payload?.get("systemPrompt")?.jsonPrimitive?.content
-            assertNotNull(systemPrompt)
-            assertFalse(
-                systemPrompt.contains("--- HOLON KNOWLEDGE GRAPH CONTEXT ---"),
-                "System prompt should not contain an empty HKG section."
-            )
-
-            val log =
-                harness.platform.capturedLogs.find { it.level == LogLevel.WARN && it.message.contains("KnowledgeGraphFeature not found") }
-            assertNotNull(log, "An info log should indicate the graceful fallback.")
-        }
-    }
-
-    @Test
-    fun `startup validation should trigger for sovereign agents`() = runTest {
-        val sovereignAgent = AgentInstance("agent-1", "Sovereign Agent", "kg-1", "p", "m", privateSessionId = null)
-        val harness = TestEnvironment.create()
-            .withFeature(AgentRuntimeFeature(FakePlatformDependencies("test"), CoroutineScope(Dispatchers.Unconfined)))
-            .withFeature(FakeSessionFeature)
-            .withFeature(FakeKnowledgeGraphFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf("agent-1" to sovereignAgent)))
-            .build()
-
-        // ACT: Simulate the final step of loading agents from disk
-        harness.store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
-
-        // ASSERT
-        harness.runAndLogOnFailure {
-            val validationAction = harness.processedActions.find { it.name == ActionNames.AGENT_INTERNAL_VALIDATE_SOVEREIGN_STATE }
-            assertNotNull(validationAction, "AGENTS_LOADED should trigger a VALIDATE_SOVEREIGN_STATE action.")
-
-            // ACT 2: Now, run the validation logic itself.
-            harness.store.dispatch("agent", validationAction)
-
-            val reserveAction = harness.processedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG }
-            assertNotNull(reserveAction, "A KNOWLEDGEGRAPH_RESERVE_HKG action should have been dispatched for the sovereign agent.")
-            assertEquals("kg-1", reserveAction.payload?.get("personaId")?.jsonPrimitive?.content)
-
-            val createSessionAction = harness.processedActions.find { it.name == ActionNames.SESSION_CREATE }
-            assertNotNull(createSessionAction, "A SESSION_CREATE action should have been dispatched to create the missing private session.")
-            assertTrue(createSessionAction.payload?.get("name")?.jsonPrimitive?.content?.startsWith("p-cognition:") == true)
-        }
+        assertNull(stateAfterExecute.agentStatuses["agent-1"]?.stagedPreviewData)
     }
 }

@@ -26,15 +26,18 @@ object AgentAutoTriggerLogic {
         val currentTime = platformDependencies.getSystemTimeMillis()
 
         state.agents.values.forEach { agent ->
+            // REF: Slice 3 - Access runtime status from `agentStatuses`
+            val statusInfo = state.agentStatuses[agent.id] ?: AgentStatusInfo()
+
             // Condition: Must be Automatic, Active, Waiting, and have valid timestamps
             if (agent.automaticMode &&
                 agent.isAgentActive &&
-                agent.status == AgentStatus.WAITING &&
-                agent.waitingSinceTimestamp != null &&
-                agent.lastMessageReceivedTimestamp != null
+                statusInfo.status == AgentStatus.WAITING &&
+                statusInfo.waitingSinceTimestamp != null &&
+                statusInfo.lastMessageReceivedTimestamp != null
             ) {
-                val waitedFor = (currentTime - agent.lastMessageReceivedTimestamp) / 1000
-                val totalWait = (currentTime - agent.waitingSinceTimestamp) / 1000
+                val waitedFor = (currentTime - statusInfo.lastMessageReceivedTimestamp) / 1000
+                val totalWait = (currentTime - statusInfo.waitingSinceTimestamp) / 1000
 
                 val debounceTrigger = waitedFor >= agent.autoWaitTimeSeconds
                 val timeoutTrigger = totalWait >= agent.autoMaxWaitTimeSeconds

@@ -31,7 +31,11 @@ fun AgentContextView(store: Store) {
     val agentState = appState.featureStates["agent"] as? AgentRuntimeState
     val agent = agentState?.viewingContextForAgentId?.let { agentState.agents[it] }
 
-    if (agent == null || agent.stagedPreviewData == null) {
+    // REF: Slice 3 - Get preview data from StatusInfo
+    val statusInfo = agentState?.viewingContextForAgentId?.let { agentState.agentStatuses[it] }
+    val previewData = statusInfo?.stagedPreviewData
+
+    if (agent == null || previewData == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("No preview data available for agent.")
         }
@@ -84,8 +88,8 @@ fun AgentContextView(store: Store) {
             }
 
             when (selectedTab) {
-                0 -> LogicalContextPane(agent.stagedPreviewData, store)
-                1 -> RawJsonPane(agent.stagedPreviewData, store)
+                0 -> LogicalContextPane(previewData, store)
+                1 -> RawJsonPane(previewData, store)
             }
         }
     }
