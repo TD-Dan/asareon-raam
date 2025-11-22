@@ -363,21 +363,7 @@ class AgentRuntimeFeature(
                 }
             }
             ActionNames.AGENT_INTERNAL_CHECK_AUTOMATIC_TRIGGERS -> {
-                val currentTime = platformDependencies.getSystemTimeMillis()
-                agentState.agents.values.forEach { agent ->
-                    if (agent.automaticMode && agent.isAgentActive && agent.status == AgentStatus.WAITING && agent.waitingSinceTimestamp != null && agent.lastMessageReceivedTimestamp != null) {
-                        val waitedFor = (currentTime - agent.lastMessageReceivedTimestamp) / 1000
-                        val totalWait = (currentTime - agent.waitingSinceTimestamp) / 1000
-                        val debounceTrigger = waitedFor >= agent.autoWaitTimeSeconds
-                        val timeoutTrigger = totalWait >= agent.autoMaxWaitTimeSeconds
-                        if (debounceTrigger || timeoutTrigger) {
-                            store.deferredDispatch(this.name, Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
-                                put("agentId", agent.id)
-                                put("preview", false)
-                            }))
-                        }
-                    }
-                }
+                AgentAutoTriggerLogic.checkAndDispatchTriggers(store, agentState, platformDependencies, name)
             }
             ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
                 SovereignAgentLogic.linkPrivateSessionOnCreation(store, agentState)
