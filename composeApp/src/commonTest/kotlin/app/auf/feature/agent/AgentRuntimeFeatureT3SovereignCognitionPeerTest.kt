@@ -7,6 +7,7 @@ import app.auf.core.Store
 import app.auf.core.generated.ActionNames
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
+import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.feature.gateway.GatewayFeature
 import app.auf.feature.gateway.GatewayState
 import app.auf.feature.gateway.UniversalGatewayProvider
@@ -105,6 +106,7 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
             .withFeature(AgentRuntimeFeature(platform, scope))
             .withFeature(KnowledgeGraphFeature(platform, scope))
             .withFeature(SessionFeature(platform, scope))
+            .withFeature(FileSystemFeature(platform))
             .withFeature(FakeGatewayFeature(platform, scope))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(philosopherAgent.id to philosopherAgent)))
@@ -124,8 +126,9 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
         val harness = setupTestEnvironment()
         harness.runAndLogOnFailure {
             // --- ACT 1: Load the HKG ---
-            // This simulates the app startup process where all personas are loaded.
-            harness.store.dispatch("system", Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
+            // CRITICAL FIX: Dispatch as "knowledgegraph" so the response routes back to it.
+            // The KG feature needs the file list to load the persona.
+            harness.store.dispatch("knowledgegraph", Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
             runCurrent() // Allow file listing and reading to complete.
 
             // --- ACT 2: Trigger the Agent's Cognitive Cycle ---
