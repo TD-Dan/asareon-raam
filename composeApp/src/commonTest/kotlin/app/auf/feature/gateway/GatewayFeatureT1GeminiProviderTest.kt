@@ -161,4 +161,20 @@ class GatewayFeatureT1GeminiProviderTest {
         assertNotNull(log, "An error should be logged for the unrecognized response.")
         assertTrue(log.message.contains(responseBody))
     }
+
+    @Test
+    fun `generatePreview returns a pretty-printed JSON string`() = kotlinx.coroutines.test.runTest {
+        val request = GatewayRequest(
+            modelName = "gemini-pro",
+            contents = listOf(GatewayMessage("user", "Hello", "u1", "User", 1000L)),
+            correlationId = "123"
+        )
+
+        val preview = provider.generatePreview(request, emptyMap())
+
+        // We verify structural integrity rather than exact whitespace matching
+        assertTrue(preview.contains("\"contents\": ["), "Should contain contents array")
+        assertTrue(preview.contains("\"parts\": ["), "Should contain parts array")
+        assertTrue(preview.contains("User (u1) @"), "Should contain enriched content")
+    }
 }

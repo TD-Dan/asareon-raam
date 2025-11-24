@@ -35,6 +35,9 @@
                 "content"
               ]
             }
+          },
+          "systemPrompt": {
+            "type": "string"
           }
         },
         "required":[
@@ -78,6 +81,9 @@
                 "content"
               ]
             }
+          },
+          "systemPrompt": {
+            "type": "string"
           }
         },
         "required":[
@@ -174,11 +180,26 @@
           "models"
         ]
       }
+    },
+    {
+      "action_name":"gateway.internal.REQUEST_COMPLETED",
+      "summary":"[INTERNAL] Dispatched when a generation job completes (success, failure, or cancellation). Used to safely clean up the active job map.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "correlationId":{
+            "type":"string"
+          }
+        },
+        "required":[
+          "correlationId"
+        ]
+      }
     }
   ],
   "private_envelopes":[
     {
-      "type_name":"gateway.response",
+      "type_name":"gateway.response.RESPONSE",
       "summary":"The standard response envelope from the GatewayFeature, containing either generated content or an error.",
       "payload_schema":{
         "type":"object",
@@ -205,7 +226,7 @@
       }
     },
     {
-      "type_name":"gateway.response.preview",
+      "type_name":"gateway.response.PREVIEW",
       "summary":"The response envelope containing the data for a turn preview.",
       "payload_schema":{
         "type":"object",

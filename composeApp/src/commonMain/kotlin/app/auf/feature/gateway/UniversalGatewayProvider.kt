@@ -58,6 +58,16 @@ interface UniversalGatewayProvider {
     suspend fun generateContent(request: GatewayRequest, settings: Map<String, String>): GatewayResponse
 
     /**
+     * Generates a preview of the provider-specific payload that WOULD be sent to the API.
+     * This allows users to inspect the exact data structure before execution.
+     *
+     * @param request The generic request data.
+     * @param settings A map of all current application settings.
+     * @return A formatted string representation of the request payload (e.g., pretty-printed JSON).
+     */
+    suspend fun generatePreview(request: GatewayRequest, settings: Map<String, String>): String
+
+    /**
      * Fetches the list of available model names from the provider's API.
      * @param settings A map of all current application settings.
      * @return A list of model name strings, or an empty list on failure.

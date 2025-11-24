@@ -65,7 +65,7 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
                 store.deliverPrivateData(
                     this.name,
                     "agent",
-                    PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, responsePayload)
+                    PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE, responsePayload)
                 )
             }
         }

@@ -22,9 +22,9 @@ open class GatewayFeature(
     private val providerMap = providers.associateBy { it.id }
     private val providerApiKeys = providers.map { "gateway.${it.id}.apiKey" }.toSet()
     private val json = Json { ignoreUnknownKeys = true }
-    private val prettyJson = Json { ignoreUnknownKeys = true; prettyPrint = true }
+    // private val prettyJson = Json { ignoreUnknownKeys = true; prettyPrint = true } // Removed: Provider handles formatting now
 
-    // REFACTOR: A map to track active generation jobs for cancellation.
+    // REFACTOR: A map to track active generation jobs. Now mutated ONLY via onAction.
     private val activeRequests = mutableMapOf<String, Job>()
 
     override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
@@ -63,11 +63,16 @@ open class GatewayFeature(
             }
 
             ActionNames.GATEWAY_PREPARE_PREVIEW -> {
-                handlePreparePreview(action, store)
+                handlePreparePreview(action, gatewayState, store)
             }
 
             ActionNames.GATEWAY_CANCEL_REQUEST -> {
                 handleCancelRequest(action)
+            }
+
+            // NEW: Safe concurrency handler
+            ActionNames.GATEWAY_INTERNAL_REQUEST_COMPLETED -> {
+                handleRequestCompleted(action)
             }
         }
     }
@@ -78,15 +83,31 @@ open class GatewayFeature(
         if (job != null) {
             platformDependencies.log(LogLevel.INFO, name, "Cancelling gateway request with correlationId: $correlationId")
             job.cancel()
-            activeRequests.remove(correlationId) // Proactive removal, though invokeOnCompletion also handles it.
+            // We do NOT remove from map here. The job cancellation will trigger the completion handler,
+            // which dispatches REQUEST_COMPLETED, which removes it safely.
         } else {
             platformDependencies.log(LogLevel.WARN, name, "Received CANCEL_REQUEST for unknown or completed correlationId: $correlationId")
         }
     }
 
+    private fun handleRequestCompleted(action: Action) {
+        val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull ?: return
+        if (activeRequests.containsKey(correlationId)) {
+            // platformDependencies.log(LogLevel.DEBUG, name, "Cleaning up completed request: $correlationId")
+            activeRequests.remove(correlationId)
+        }
+    }
+
     private fun handleGenerateContent(action: Action, gatewayState: GatewayState, store: Store) {
         val payload = action.payload ?: return
-        val originator = action.originator ?: return
+
+        // SAFETY: Check for missing originator (Silent Drop Prevention)
+        val originator = action.originator
+        if (originator == null) {
+            platformDependencies.log(LogLevel.ERROR, name, "DROPPED REQUEST: GENERATE_CONTENT received without an originator. Cannot reply.")
+            return
+        }
+
         val providerId = payload["providerId"]?.jsonPrimitive?.contentOrNull ?: return
         val modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: return
         val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
@@ -101,6 +122,9 @@ open class GatewayFeature(
             platformDependencies.log(LogLevel.ERROR, name, "GENERATE_CONTENT request for unknown provider '$providerId'. Ignoring.")
             return
         }
+
+        // AUDIT: Log the request intention
+        platformDependencies.log(LogLevel.INFO, name, "Generating content via $providerId ($modelName). CorrelationId: $correlationId. SystemPrompt: ${systemPrompt != null}")
 
         val job = coroutineScope.launch {
             val request = GatewayRequest(modelName, contents, correlationId, systemPrompt)
@@ -123,18 +147,29 @@ open class GatewayFeature(
             }
 
             val envelope = PrivateDataEnvelope(
-                type = ActionNames.Envelopes.GATEWAY_RESPONSE,
+                type = ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE, // Updated Name
                 payload = responsePayload
             )
             store.deliverPrivateData(this@GatewayFeature.name, originator, envelope)
         }
+
+        // CONCURRENCY: Register job and setup safe cleanup
         activeRequests[correlationId] = job
-        job.invokeOnCompletion { activeRequests.remove(correlationId) }
+        job.invokeOnCompletion {
+            // Dispatch internal action to mutate map on the main thread
+            val cleanupPayload = buildJsonObject { put("correlationId", correlationId) }
+            store.dispatch(this@GatewayFeature.name, Action(ActionNames.GATEWAY_INTERNAL_REQUEST_COMPLETED, cleanupPayload))
+        }
     }
 
-    private fun handlePreparePreview(action: Action, store: Store) {
+    private fun handlePreparePreview(action: Action, gatewayState: GatewayState, store: Store) {
         val payload = action.payload ?: return
-        val originator = action.originator ?: return
+        val originator = action.originator
+        if (originator == null) {
+            platformDependencies.log(LogLevel.ERROR, name, "DROPPED REQUEST: PREPARE_PREVIEW received without an originator.")
+            return
+        }
+
         val providerId = payload["providerId"]?.jsonPrimitive?.contentOrNull ?: return
         val modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: return
         val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
@@ -143,30 +178,34 @@ open class GatewayFeature(
 
         val provider = providerMap[providerId]
         if (provider == null) {
-            // Handle error by sending back a failure envelope
+            platformDependencies.log(LogLevel.ERROR, name, "PREPARE_PREVIEW request for unknown provider '$providerId'.")
             return
         }
 
         val agnosticRequest = GatewayRequest(modelName, contents, correlationId, systemPrompt)
 
-        val rawJsonElement = when(provider) {
-            is app.auf.feature.gateway.gemini.GeminiProvider -> provider.buildRequestPayload(agnosticRequest)
-            is app.auf.feature.gateway.openai.OpenAIProvider -> provider.buildRequestPayload(agnosticRequest)
-            else -> JsonObject(emptyMap()) // Fallback for unknown providers
-        }
-        val rawRequestJson = prettyJson.encodeToString(rawJsonElement)
+        // ARCHITECTURE: Use the polymorphic interface (Provider is the Translator)
+        // We launch a coroutine because generatePreview is suspendable
+        coroutineScope.launch {
+            val rawRequestJson = try {
+                provider.generatePreview(agnosticRequest, gatewayState.apiKeys)
+            } catch (e: Exception) {
+                platformDependencies.log(LogLevel.ERROR, name, "Failed to generate preview: ${e.message}")
+                "Error generating preview: ${e.message}"
+            }
 
-        val responsePayload = buildJsonObject {
-            put("correlationId", correlationId)
-            put("agnosticRequest", Json.encodeToJsonElement(agnosticRequest))
-            put("rawRequestJson", rawRequestJson)
-        }
+            val responsePayload = buildJsonObject {
+                put("correlationId", correlationId)
+                put("agnosticRequest", Json.encodeToJsonElement(agnosticRequest))
+                put("rawRequestJson", rawRequestJson)
+            }
 
-        val envelope = PrivateDataEnvelope(
-            type = ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW,
-            payload = responsePayload
-        )
-        store.deliverPrivateData(this.name, originator, envelope)
+            val envelope = PrivateDataEnvelope(
+                type = ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW, // Updated Name
+                payload = responsePayload
+            )
+            store.deliverPrivateData(this@GatewayFeature.name, originator, envelope)
+        }
     }
 
 

@@ -60,7 +60,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
             })
             feature.onPrivateData(ledgerEnvelope, harness.store)
 
-            val gatewayEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, buildJsonObject {
+            val gatewayEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE, buildJsonObject {
                 put("correlationId", agent.id); put("rawContent", "Success")
             })
             feature.onPrivateData(gatewayEnvelope, harness.store)
@@ -75,7 +75,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
     fun `full cognitive cycle transitions agent to ERROR on gateway failure`() = runTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) }))
-            val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, buildJsonObject {
+            val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE, buildJsonObject {
                 put("correlationId", agent.id); put("errorMessage", "Fail")
             })
             feature.onPrivateData(envelope, harness.store)
@@ -104,7 +104,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
             // Simulate LLM hallucinating the header
             put("rawContent", "Test (agent-1) @ 2025-10-27T12:34:56Z: This is the actual response.")
         }
-        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewayResponsePayload)
+        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE, gatewayResponsePayload)
 
         harness.runAndLogOnFailure {
             // ACT: Deliver the response

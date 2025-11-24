@@ -13,6 +13,7 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -55,6 +56,9 @@ class GeminiProvider(
     private val API_HOST = "generativelanguage.googleapis.com"
 
     private val json = Json { ignoreUnknownKeys = true }
+    // NEW: Used for preview formatting
+    private val prettyJson = Json { ignoreUnknownKeys = true; prettyPrint = true }
+
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
         install(HttpTimeout) { requestTimeoutMillis = 240_000 }
@@ -77,7 +81,7 @@ class GeminiProvider(
                 })
             }
         }
-        // THE FIX: Construct the system_instruction block first to improve audit legibility.
+        // Construct the system_instruction block first to improve audit legibility.
         return buildJsonObject {
             request.systemPrompt?.let {
                 putJsonObject("system_instruction") {
@@ -154,6 +158,13 @@ class GeminiProvider(
             platformDependencies.log(LogLevel.WARN, id, "Failed to fetch Gemini models: ${e.message}")
             emptyList()
         }
+    }
+
+    // IMPLEMENTATION: New generatePreview method
+    override suspend fun generatePreview(request: GatewayRequest, settings: Map<String, String>): String {
+        // For preview, we don't need the API key, just the payload logic.
+        val payload = buildRequestPayload(request)
+        return prettyJson.encodeToString(payload)
     }
 
     override suspend fun generateContent(request: GatewayRequest, settings: Map<String, String>): GatewayResponse {

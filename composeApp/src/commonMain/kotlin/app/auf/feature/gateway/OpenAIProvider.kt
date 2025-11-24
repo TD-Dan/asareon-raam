@@ -13,6 +13,7 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -46,6 +47,8 @@ class OpenAIProvider(
     private val API_HOST = "api.openai.com"
 
     private val json = Json { ignoreUnknownKeys = true }
+    private val prettyJson = Json { ignoreUnknownKeys = true; prettyPrint = true }
+
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
         install(HttpTimeout) { requestTimeoutMillis = 240_000 }
@@ -56,7 +59,7 @@ class OpenAIProvider(
     /** Builds the provider-specific JSON payload from a universal request. */
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         val openAiMessages = buildJsonArray {
-            // NEW: Add the system prompt if it exists.
+            // Add the system prompt if it exists.
             request.systemPrompt?.let {
                 add(buildJsonObject {
                     put("role", "system")
@@ -136,6 +139,12 @@ class OpenAIProvider(
             platformDependencies.log(LogLevel.WARN, id, "Failed to fetch OpenAI models: ${e.message}")
             emptyList()
         }
+    }
+
+    // IMPLEMENTATION: New generatePreview method
+    override suspend fun generatePreview(request: GatewayRequest, settings: Map<String, String>): String {
+        val payload = buildRequestPayload(request)
+        return prettyJson.encodeToString(payload)
     }
 
     override suspend fun generateContent(request: GatewayRequest, settings: Map<String, String>): GatewayResponse {

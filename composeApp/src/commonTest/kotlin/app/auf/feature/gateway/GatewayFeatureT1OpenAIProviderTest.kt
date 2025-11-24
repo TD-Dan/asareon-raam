@@ -127,4 +127,18 @@ class GatewayFeatureT1OpenAIProviderTest {
         assertNotNull(log, "An error should be logged for the unrecognized response.")
         assertTrue(log.message.contains(responseBody))
     }
+    @Test
+    fun `generatePreview returns a pretty-printed JSON string`() = kotlinx.coroutines.test.runTest {
+        val request = GatewayRequest(
+            modelName = "gpt-4o",
+            contents = listOf(GatewayMessage("user", "Hello", "u1", "User", 1000L)),
+            correlationId = "123"
+        )
+
+        val preview = provider.generatePreview(request, emptyMap())
+
+        assertTrue(preview.contains("\"model\": \"gpt-4o\""), "Should contain model name")
+        assertTrue(preview.contains("\"messages\": ["), "Should contain messages array")
+        assertTrue(preview.contains("\"role\": \"user\""), "Should contain user role")
+    }
 }
