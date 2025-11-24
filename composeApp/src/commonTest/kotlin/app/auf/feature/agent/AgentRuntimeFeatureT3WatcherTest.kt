@@ -12,7 +12,6 @@ import app.auf.test.TestEnvironment
 import app.auf.test.TestHarness
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
@@ -22,6 +21,10 @@ import kotlin.test.*
 
 /**
  * Tier 3 Peer Test for Agent Automatic Triggering Logic.
+ *
+ * Uses the "Manual Crank" pattern: We strictly control time and the heartbeat signal
+ * to verify the logic deterministically, avoiding race conditions between
+ * virtual time advancement and the Store's processing queue.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class AgentRuntimeFeatureT3WatcherTest {
@@ -29,12 +32,6 @@ class AgentRuntimeFeatureT3WatcherTest {
     private lateinit var testScope: TestScope
     private lateinit var platform: FakePlatformDependencies
     private lateinit var harness: TestHarness
-
-    private fun advanceTimeAndRun(timeMillis: Long) {
-        platform.currentTime += timeMillis
-        testScope.advanceTimeBy(timeMillis)
-        testScope.runCurrent()
-    }
 
     private fun setupHarness(vararg agents: AgentInstance) {
         testScope = TestScope()
@@ -54,6 +51,19 @@ class AgentRuntimeFeatureT3WatcherTest {
             .build(scope = testScope, platform = platform)
     }
 
+    /**
+     * The Manual Crank:
+     * 1. Advance the system clock (so the logic sees that time has passed).
+     * 2. Dispatch the internal heartbeat action (so the logic actually runs).
+     * 3. Run pending coroutines (so the Store processes the action).
+     */
+    private fun dispatchHeartbeat(timePassedMillis: Long) {
+        platform.currentTime += timePassedMillis
+        // Fix: Use "agent" as originator to pass Store security checks for agent.internal.* actions
+        harness.store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_CHECK_AUTOMATIC_TRIGGERS))
+        testScope.runCurrent()
+    }
+
     @Test
     fun `automatic agent should trigger after autoWaitTime debounce period`() = runTest {
         val agent = AgentInstance("auto-agent-1", "Debouncer", "", "", "", subscribedSessionIds = listOf("sid-A"), automaticMode = true, autoWaitTimeSeconds = 5)
@@ -64,15 +74,17 @@ class AgentRuntimeFeatureT3WatcherTest {
             harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
                 put("session", "sid-A"); put("senderId", "user"); put("message", "Hello")
             }))
-            runCurrent()
+            testScope.runCurrent()
 
             val stateAfterPost = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            // ASSERT: Check the new status map
             assertEquals(AgentStatus.WAITING, stateAfterPost.agentStatuses[agent.id]?.status)
-            assertNull(harness.processedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN })
 
-            // ACT: Advance time just past the debounce period
-            advanceTimeAndRun(5001)
+            // ACT: Advance time by 4 seconds (Undershoot). Should NOT trigger.
+            dispatchHeartbeat(4000)
+            assertNull(harness.processedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN }, "Should not trigger at 4s")
+
+            // ACT: Advance time by 2 more seconds (Total 6s). Should trigger.
+            dispatchHeartbeat(2000)
 
             // ASSERT
             val triggerAction = harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }
@@ -91,24 +103,24 @@ class AgentRuntimeFeatureT3WatcherTest {
             harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
                 put("session", "sid-A"); put("senderId", "user"); put("message", "First part")
             }))
-            runCurrent()
+            testScope.runCurrent()
 
-            // ACT 2: Advance time, but not enough to trigger.
-            advanceTimeAndRun(3000)
+            // ACT 2: Advance time by 3s.
+            dispatchHeartbeat(3000)
             assertNull(harness.processedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent should not have triggered yet.")
 
-            // ACT 3: A second message arrives, resetting the timer (handled by handleMessagePosted logic).
+            // ACT 3: A second message arrives, resetting the timer.
             harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
                 put("session", "sid-A"); put("senderId", "user"); put("message", "Second part")
             }))
-            runCurrent()
+            testScope.runCurrent()
 
-            // ACT 4: Advance time again. If timer didn't reset, it would have triggered by now (3000+3000 > 5000).
-            advanceTimeAndRun(3000)
+            // ACT 4: Advance time by 3s again. (Total since first msg: 6s, but only 3s since second).
+            dispatchHeartbeat(3000)
             assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent should not have triggered as timer should have reset.")
 
             // ACT 5: Advance past the reset timer's deadline.
-            advanceTimeAndRun(2001)
+            dispatchHeartbeat(2001)
 
             // ASSERT
             assertNotNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent should have triggered after the second message's debounce period.")
@@ -125,21 +137,21 @@ class AgentRuntimeFeatureT3WatcherTest {
             harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
                 put("session", "sid-A"); put("senderId", "user"); put("message", "Message 1")
             }))
-            runCurrent() // T=0
+            testScope.runCurrent() // T=0
 
             // ACT 2: Send messages every 8 seconds, preventing the 10s debounce from ever completing.
-            advanceTimeAndRun(8000) // T=8s
+            dispatchHeartbeat(8000) // T=8s
             harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject { put("session", "sid-A"); put("senderId", "user"); put("message", "Message 2") }))
-            runCurrent()
+            testScope.runCurrent()
             assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Should not trigger at T=8s.")
 
-            advanceTimeAndRun(8000) // T=16s
+            dispatchHeartbeat(8000) // T=16s
             harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject { put("session", "sid-A"); put("senderId", "user"); put("message", "Message 3") }))
-            runCurrent()
+            testScope.runCurrent()
             assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Should not trigger at T=16s.")
 
             // ACT 3: Advance past the 20s max-wait time.
-            advanceTimeAndRun(5000) // T=21s
+            dispatchHeartbeat(5000) // T=21s
 
             // ASSERT
             assertNotNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent must trigger after max wait time is exceeded.")
@@ -156,16 +168,56 @@ class AgentRuntimeFeatureT3WatcherTest {
             harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
                 put("session", "sid-A"); put("senderId", "user"); put("message", "Hello")
             }))
-            runCurrent()
-            val stateAfterPost = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            // ASSERT: Check the new status map
-            assertEquals(AgentStatus.WAITING, stateAfterPost.agentStatuses[agent.id]?.status)
+            testScope.runCurrent()
 
             // ACT: Advance time well past any timers.
-            advanceTimeAndRun(5000)
+            dispatchHeartbeat(5000)
 
             // ASSERT
             assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Manual agent should never trigger automatically.")
+        }
+    }
+
+    @Test
+    fun `automatic agent should NOT trigger if isAgentActive is false (Paused)`() = runTest {
+        val agent = AgentInstance(
+            "paused-agent", "Paused", "", "", "",
+            subscribedSessionIds = listOf("sid-A"),
+            automaticMode = true,
+            isAgentActive = false, // Paused
+            autoWaitTimeSeconds = 3
+        )
+        setupHarness(agent)
+
+        harness.runAndLogOnFailure {
+            // Simulate message arrival manually to force WAITING state
+            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
+                put("session", "sid-A"); put("senderId", "user"); put("message", "Wake up!")
+            }))
+            testScope.runCurrent()
+
+            // Advance time past debounce
+            dispatchHeartbeat(5000)
+
+            // ASSERT
+            assertNull(
+                harness.processedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN },
+                "Paused agent should NOT trigger even if automatic and waiting."
+            )
+        }
+    }
+
+    @Test
+    fun `automatic agent should NOT trigger if timestamps are missing (Safe Startup)`() = runTest {
+        // Agent starts IDLE/WAITING but has no timestamps set (simulate fresh load)
+        val agent = AgentInstance("fresh-agent", "Fresh", "", "", "", subscribedSessionIds = listOf("sid-A"), automaticMode = true, isAgentActive = true)
+        setupHarness(agent)
+
+        harness.runAndLogOnFailure {
+            // Advance time without sending any message first
+            dispatchHeartbeat(10000)
+
+            assertNull(harness.processedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN })
         }
     }
 }

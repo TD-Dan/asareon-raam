@@ -2,6 +2,7 @@ package app.auf.fakes
 
 import app.auf.core.Action
 import app.auf.core.AppState
+import app.auf.core.Feature
 import app.auf.core.Store
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,8 +15,10 @@ import kotlinx.coroutines.flow.asStateFlow
 class FakeStore(
     initialState: AppState,
     platformDependencies: PlatformDependencies,
-    validActionNames: Set<String> = emptySet()
-) : Store(initialState, emptyList(), platformDependencies, validActionNames) {
+    validActionNames: Set<String> = emptySet(),
+    // [FIX] Allow injecting features to support logic that checks store.features
+    features: List<Feature> = emptyList()
+) : Store(initialState, features, platformDependencies, validActionNames) {
     val dispatchedActions = mutableListOf<Action>()
     private val _fakeState = MutableStateFlow(initialState)
     override val state = _fakeState.asStateFlow()
@@ -24,7 +27,7 @@ class FakeStore(
      * Captures the dispatched action after stamping it with the originator,
      * mimicking the behavior of the real Store for accurate testing.
      * This fake implementation bypasses the registry check, as its purpose
-     * is to test UI interactions and side-effect dispatching, not the store's guards.
+     * is to test UI interactions and side effect dispatching, not the store's guards.
      */
     override fun dispatch(originator: String, action: Action) {
         // To make the fake more realistic, we stamp the action just like the real store.

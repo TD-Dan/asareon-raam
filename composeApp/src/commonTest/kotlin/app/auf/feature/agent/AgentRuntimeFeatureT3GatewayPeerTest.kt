@@ -14,10 +14,17 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.*
-import app.auf.core.Feature
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
+/**
+ * Tier 3 Peer Test for Agent <-> Gateway interaction.
+ *
+ * Verifies:
+ * 1. Successful generation flow (Processing -> Idle).
+ * 2. Error handling flow (Processing -> Error).
+ * 3. Output sanitization (Sentinel) logic.
+ */
 class AgentRuntimeFeatureT3GatewayPeerTest {
 
     private val scope = CoroutineScope(Dispatchers.Unconfined)
@@ -25,8 +32,6 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
     private lateinit var feature: AgentRuntimeFeature
     private lateinit var platform: FakePlatformDependencies
     private val agent = AgentInstance("agent-1", "Test", "", "test-provider", "test-model", subscribedSessionIds = listOf("session-1"))
-
-    // Fake KnowledgeGraphFeature omitted for brevity (same as T2)
 
     @BeforeTest
     fun setup() {
@@ -78,6 +83,59 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
             val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
             assertEquals(AgentStatus.ERROR, finalState.agentStatuses[agent.id]?.status)
             assertEquals("[AGENT ERROR] Generation failed: Fail", finalState.agentStatuses[agent.id]?.errorMessage)
+        }
+    }
+
+    @Test
+    fun `sentinel sanitizes timestamp echo out of ai response`() = runTest {
+        // Setup specific state for this test (Agent is PROCESSING)
+        val status = AgentStatusInfo(status = AgentStatus.PROCESSING)
+        // Re-build harness to inject specific status
+        harness = TestEnvironment.create()
+            .withFeature(feature)
+            .withInitialState("agent", AgentRuntimeState(
+                agents = mapOf(agent.id to agent),
+                agentStatuses = mapOf(agent.id to status)
+            ))
+            .build(platform = platform)
+
+        val gatewayResponsePayload = buildJsonObject {
+            put("correlationId", agent.id)
+            // Simulate LLM hallucinating the header
+            put("rawContent", "Test (agent-1) @ 2025-10-27T12:34:56Z: This is the actual response.")
+        }
+        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE, gatewayResponsePayload)
+
+        harness.runAndLogOnFailure {
+            // ACT: Deliver the response
+            feature.onPrivateData(envelope, harness.store)
+
+            // ASSERT 1: Sentinel Warning Posted
+            val sentinelAction = harness.processedActions.find {
+                it.name == ActionNames.SESSION_POST &&
+                        it.payload?.get("senderId")?.jsonPrimitive?.content == "system"
+            }
+            assertNotNull(sentinelAction, "A sentinel warning should have been posted by 'system'.")
+            assertTrue(
+                sentinelAction.payload?.get("message")?.jsonPrimitive?.content?.contains("Warning for [Test]") == true,
+                "Warning message should reference the agent name."
+            )
+
+            // ASSERT 2: Cleaned Response Posted
+            val agentResponseAction = harness.processedActions.find {
+                it.name == ActionNames.SESSION_POST &&
+                        it.payload?.get("senderId")?.jsonPrimitive?.content == agent.id
+            }
+            assertNotNull(agentResponseAction, "The agent's own response should have been posted.")
+            assertEquals(
+                "This is the actual response.",
+                agentResponseAction.payload?.get("message")?.jsonPrimitive?.contentOrNull,
+                "The timestamp header should be stripped."
+            )
+
+            // ASSERT 3: Agent reset to IDLE
+            val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            assertEquals(AgentStatus.IDLE, finalState.agentStatuses[agent.id]?.status)
         }
     }
 }

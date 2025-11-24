@@ -3,8 +3,10 @@ package app.auf.feature.agent
 import app.auf.core.Action
 import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
 import kotlin.test.*
 
@@ -15,6 +17,9 @@ import kotlin.test.*
 class AgentRuntimeFeatureT1RuntimeReducerTest {
 
     private val platform = FakePlatformDependencies("test")
+    private val json = Json { ignoreUnknownKeys = true }
+
+    // ... [Previous Tests Kept Intact] ...
 
     @Test
     fun `SET_STATUS should update status and timestamps correctly`() {
@@ -103,5 +108,101 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
 
         // Assert state is unchanged
         assertEquals("msg-old", status?.lastSeenMessageId)
+    }
+
+    // --- NEW TESTS START HERE ---
+
+    @Test
+    fun `INITIATE_TURN should set mode and clear old context`() {
+        val agentId = "agent-1"
+        val initialStatus = AgentStatusInfo(
+            status = AgentStatus.IDLE,
+            stagedTurnContext = listOf(GatewayMessage("user", "old", "u", "U", 0L))
+        )
+        val state = AgentRuntimeState(agentStatuses = mapOf(agentId to initialStatus))
+
+        val action = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+            put("agentId", agentId)
+            put("preview", true)
+        })
+
+        val newState = AgentRuntimeReducer.reduce(state, action, platform)
+        val newStatus = newState.agentStatuses[agentId]!!
+
+        assertEquals(TurnMode.PREVIEW, newStatus.turnMode)
+        assertNull(newStatus.stagedTurnContext)
+    }
+
+    @Test
+    fun `INTERNAL_STAGE_TURN_CONTEXT should update staged context`() {
+        val agentId = "agent-1"
+        val messages = listOf(GatewayMessage("user", "Hello", "u1", "User", 100L))
+        val state = AgentRuntimeState(agentStatuses = mapOf(agentId to AgentStatusInfo()))
+
+        val action = Action(ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
+            put("agentId", agentId)
+            put("messages", json.encodeToJsonElement(messages))
+        })
+
+        val newState = AgentRuntimeReducer.reduce(state, action, platform)
+        val updatedStatus = newState.agentStatuses[agentId]!!
+
+        assertEquals(1, updatedStatus.stagedTurnContext?.size)
+        assertEquals("Hello", updatedStatus.stagedTurnContext?.first()?.content)
+    }
+
+    @Test
+    fun `SET_PREVIEW_DATA should update status and set active viewing context`() {
+        val agentId = "agent-1"
+        val request = GatewayRequest("model", emptyList(), agentId)
+        val rawJson = "{}"
+        val state = AgentRuntimeState(agentStatuses = mapOf(agentId to AgentStatusInfo()))
+
+        val action = Action(ActionNames.AGENT_INTERNAL_SET_PREVIEW_DATA, buildJsonObject {
+            put("agentId", agentId)
+            put("agnosticRequest", json.encodeToJsonElement(request))
+            put("rawRequestJson", rawJson)
+        })
+
+        val newState = AgentRuntimeReducer.reduce(state, action, platform)
+
+        assertNotNull(newState.agentStatuses[agentId]?.stagedPreviewData)
+        assertEquals(agentId, newState.viewingContextForAgentId)
+    }
+
+    @Test
+    fun `DISCARD_PREVIEW should clear preview data and viewing context`() {
+        val agentId = "agent-1"
+        val previewData = StagedPreviewData(GatewayRequest("m", emptyList(), "id"), "{}")
+        val state = AgentRuntimeState(
+            agentStatuses = mapOf(agentId to AgentStatusInfo(stagedPreviewData = previewData)),
+            viewingContextForAgentId = agentId
+        )
+
+        val action = Action(ActionNames.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId) })
+
+        val newState = AgentRuntimeReducer.reduce(state, action, platform)
+
+        assertNull(newState.agentStatuses[agentId]?.stagedPreviewData)
+        assertNull(newState.viewingContextForAgentId)
+    }
+
+    @Test
+    fun `SESSION_DELETED should remove session from agent subscriptions and trigger persistence`() {
+        // ARRANGE
+        val agent = AgentInstance("a1", "Test", null, "p", "m", subscribedSessionIds = listOf("s1", "s2"))
+        val state = AgentRuntimeState(agents = mapOf("a1" to agent))
+
+        // ACT
+        val action = Action(ActionNames.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject {
+            put("sessionId", "s1")
+        })
+        val newState = AgentRuntimeReducer.reduce(state, action, platform)
+
+        // ASSERT
+        val updatedAgent = newState.agents["a1"]!!
+        assertEquals(1, updatedAgent.subscribedSessionIds.size)
+        assertEquals("s2", updatedAgent.subscribedSessionIds.first())
+        assertTrue(newState.agentsToPersist?.contains("a1") == true)
     }
 }

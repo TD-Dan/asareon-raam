@@ -104,4 +104,95 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             assertEquals(AgentStatus.IDLE, status)
         }
     }
+    /* ADD TO: commonTest\kotlin\app\auf\feature\agent\AgentRuntimeFeatureT2T3ThinkerTest.kt */
+
+    @Test
+    fun `startCognitiveCycle should fail gracefully and set ERROR status if agent has no sessions`() = runTest {
+        // ARRANGE
+        val orphanAgent = AgentInstance("orphan-1", "Orphan", "", "p", "m", subscribedSessionIds = emptyList(), privateSessionId = null)
+        val harness = TestEnvironment.create()
+            .withFeature(feature)
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(orphanAgent.id to orphanAgent)))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            // ACT
+            harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+                put("agentId", orphanAgent.id)
+            }))
+
+            // ASSERT
+            val state = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            val status = state.agentStatuses[orphanAgent.id]
+
+            // Should be ERROR status
+            assertEquals(AgentStatus.ERROR, status?.status)
+            // Should have descriptive error message
+            assertTrue(status?.errorMessage?.contains("no session") == true)
+            // Should NOT have dispatched a ledger request
+            assertNull(harness.processedActions.find { it.name == ActionNames.SESSION_REQUEST_LEDGER_CONTENT })
+        }
+    }
+
+    @Test
+    fun `handleLedgerResponse should handle malformed JSON gracefully`() = runTest {
+        // ARRANGE
+        val harness = TestEnvironment.create()
+            .withFeature(feature)
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            // ACT: Send malformed payload in envelope
+            val malformedResponse = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, buildJsonObject {
+                put("correlationId", agent.id)
+                // Missing "messages" array, or other schema violation
+                put("invalid_key", "invalid_value")
+            })
+
+            feature.onPrivateData(malformedResponse, harness.store)
+
+            // ASSERT
+            val state = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            val status = state.agentStatuses[agent.id]
+
+            // Should transition to ERROR
+            assertEquals(AgentStatus.ERROR, status?.status)
+            assertTrue(status?.errorMessage?.contains("Failed to parse ledger") == true)
+        }
+    }
+
+    @Test
+    fun `evaluateHkgContext should abort if staged ledger context is missing (State Integrity)`() = runTest {
+        // ARRANGE
+        // Status has NO stagedTurnContext, simulating a desync or cancellation
+        val status = AgentStatusInfo(status = AgentStatus.PROCESSING, stagedTurnContext = null)
+        val harness = TestEnvironment.create()
+            .withFeature(feature)
+            .withInitialState("agent", AgentRuntimeState(
+                agents = mapOf(agent.id to agent),
+                agentStatuses = mapOf(agent.id to status)
+            ))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            // ACT: Trigger the HKG context arrival manually
+            val hkgResponse = PrivateDataEnvelope(ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, buildJsonObject {
+                put("correlationId", agent.id)
+                put("context", buildJsonObject { put("some", "data") })
+            })
+            feature.onPrivateData(hkgResponse, harness.store)
+
+            // ASSERT
+            val state = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            val finalStatus = state.agentStatuses[agent.id]
+
+            // Should abort and set ERROR
+            assertEquals(AgentStatus.ERROR, finalStatus?.status)
+            assertTrue(finalStatus?.errorMessage?.contains("Context assembly failed") == true)
+
+            // Should NOT proceed to Gateway
+            assertNull(harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT })
+        }
+    }
 }
