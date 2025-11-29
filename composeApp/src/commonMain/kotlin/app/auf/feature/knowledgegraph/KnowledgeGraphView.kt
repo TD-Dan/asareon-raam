@@ -227,31 +227,57 @@ private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: 
     }
 }
 
+// [FIX] New data class to hold the unique key for the lazy list.
+private data class UiTreeNode(
+    val holon: Holon,
+    val uniqueKey: String
+)
+
 @Composable
 private fun MultiRootTreeView(kgState: KnowledgeGraphState, store: Store, modifier: Modifier = Modifier) {
-    val treeHolons = remember(kgState.holons, kgState.personaRoots, kgState.activeTypeFilters, kgState.collapsedHolonIds) {
-        val visibleHolons = mutableListOf<Holon>()
+    // [FIX] Strict Key Deduplication Logic
+    // We maintain a set of seen keys during the tree traversal. If a key is duplicated,
+    // we append a counter to ensure uniqueness. This prevents LazyColumn crashes.
+    val treeNodes = remember(kgState.holons, kgState.personaRoots, kgState.activeTypeFilters, kgState.collapsedHolonIds) {
+        val visibleNodes = mutableListOf<UiTreeNode>()
         val sortedRoots = kgState.personaRoots.values.mapNotNull { kgState.holons[it] }.sortedBy { it.header.name }
 
-        fun buildTreeList(holon: Holon) {
-            if (kgState.activeTypeFilters.isEmpty() || kgState.activeTypeFilters.contains(holon.header.type)) {
-                visibleHolons.add(holon)
+        val seenKeys = mutableSetOf<String>()
+
+        fun getUniqueKey(baseKey: String): String {
+            var key = baseKey
+            var counter = 1
+            while (seenKeys.contains(key)) {
+                key = "$baseKey#${counter++}"
             }
+            seenKeys.add(key)
+            return key
+        }
+
+        fun buildTreeList(holon: Holon, parentPath: String) {
+            val baseKey = "$parentPath>${holon.header.id}"
+            val uniqueKey = getUniqueKey(baseKey)
+
+            if (kgState.activeTypeFilters.isEmpty() || kgState.activeTypeFilters.contains(holon.header.type)) {
+                visibleNodes.add(UiTreeNode(holon, uniqueKey))
+            }
+
             if (!kgState.collapsedHolonIds.contains(holon.header.id)) {
                 holon.header.subHolons
                     .mapNotNull { kgState.holons[it.id] }
                     .sortedBy { it.header.name }
-                    .forEach { buildTreeList(it) }
+                    .forEach { buildTreeList(it, uniqueKey) } // Pass the unique parent key down
             }
         }
 
-        sortedRoots.forEach { buildTreeList(it) }
-        visibleHolons
+        sortedRoots.forEach { buildTreeList(it, "root") }
+        visibleNodes
     }
 
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(vertical = 8.dp)) {
-        items(treeHolons, key = { it.header.id }) { holon ->
-            HolonTreeItem(holon, kgState, store)
+        // [FIX] Use the guaranteed uniqueKey.
+        items(treeNodes, key = { it.uniqueKey }) { node ->
+            HolonTreeItem(node.holon, kgState, store)
         }
     }
 }
