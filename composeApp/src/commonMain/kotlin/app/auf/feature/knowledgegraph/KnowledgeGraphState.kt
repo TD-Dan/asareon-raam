@@ -12,9 +12,6 @@ data class Holon(
     val header: HolonHeader,
     val payload: JsonElement,
     val execute: JsonElement? = null,
-    // [REFACTOR] Renamed for clarity per our plan. This field holds the original,
-    // unprocessed string content from the file, used primarily as a cache for the UI.
-    // The canonical source of truth is the structured data above.
     val rawContent: String = ""
 )
 
@@ -29,8 +26,6 @@ data class HolonHeader(
     @SerialName("modified_at") val modifiedAt: String? = null,
     val relationships: List<Relationship> = emptyList(),
     @SerialName("sub_holons") val subHolons: List<SubHolonRef> = emptyList(),
-    // These fields are essential runtime metadata, not transient UI state.
-    // They are enriched at load time and persisted back to the file on any modification.
     val filePath: String = "",
     val parentId: String? = null,
     val depth: Int = 0
@@ -50,10 +45,8 @@ enum class KnowledgeGraphViewMode { INSPECTOR, IMPORT, EXPORT }
 @Serializable
 data class ImportItem(
     val sourcePath: String,
-    // [MODIFIED] Renamed from 'initialAction' for clarity. This is what the system first suggests.
     val proposedAction: ImportAction,
     val targetPath: String?,
-    // [MODIFIED] Added a field to hold the human-readable reason for the final action.
     val statusReason: String?,
     val availableActions: List<ImportActionType> = emptyList()
 )
@@ -88,7 +81,6 @@ data class AssignParent(var assignedParentId: String? = null, override val summa
 @Serializable @SerialName("Quarantine")
 data class Quarantine(val reason: String, override val summary: String = "Quarantine (fix later)") : ImportAction
 @Serializable @SerialName("Ignore")
-// [MODIFIED] Ignore now has an optional reason.
 data class Ignore(val reason: String? = null, override val summary: String = "Ignore - Do nothing") : ImportAction
 @Serializable @SerialName("CreateRoot")
 data class CreateRoot(override val summary: String = "IMPORT AS NEW ROOT PERSONA") : ImportAction
@@ -109,9 +101,7 @@ data class KnowledgeGraphState(
 
     // --- Import State ---
     val importItems: List<ImportItem> = emptyList(),
-    /** The final, calculated set of actions for the import plan after consistency checks. */
     val importSelectedActions: Map<String, ImportAction> = emptyMap(),
-    /** A map of user-explicit choices that override the initial analysis. */
     val importUserOverrides: Map<String, ImportAction> = emptyMap(),
     val importFileContents: Map<String, String> = emptyMap(),
     val isImportRecursive: Boolean = true,
@@ -125,6 +115,8 @@ data class KnowledgeGraphState(
     @Transient val holonIdToEdit: String? = null,
     @Transient val holonIdToRename: String? = null,
     @Transient val pendingImportCorrelationId: String? = null,
+    // [ADDED] Flag to track if we are waiting for parent content during import execution
+    @Transient val isExecutingImport: Boolean = false,
 
     // --- Loading & Error State ---
     val isLoading: Boolean = false,

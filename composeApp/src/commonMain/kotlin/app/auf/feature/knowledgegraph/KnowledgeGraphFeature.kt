@@ -25,12 +25,6 @@ class KnowledgeGraphFeature(
     @Serializable data class FilesContentPayload(val correlationId: String?, val contents: Map<String, String>)
     @Serializable data class AnalysisCompletePayload(val items: List<ImportItem>, val selectedActions: Map<String, ImportAction>, val contents: Map<String, String>)
 
-    /**
-     * [GUARDRAIL] The canonical gate for all modification actions. It checks if a holon
-     * or persona is part of a reserved HKG and if the action's originator is not the owner.
-     *
-     * @return True if the action should be blocked, false otherwise.
-     */
     private fun isModificationLocked(
         holonId: String? = null,
         personaId: String? = null,
@@ -38,7 +32,6 @@ class KnowledgeGraphFeature(
         kgState: KnowledgeGraphState,
         store: Store
     ): Boolean {
-        // Find the root persona ID for the targeted entity.
         val rootId = personaId ?: holonId?.let { findRootPersonaId(it, kgState) }
 
         if (rootId != null && kgState.reservations.containsKey(rootId)) {
@@ -49,10 +42,10 @@ class KnowledgeGraphFeature(
                 store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
                     put("message", "Action failed: Knowledge Graph is locked by another user.")
                 }))
-                return true // Locked
+                return true
             }
         }
-        return false // Not locked
+        return false
     }
 
     private fun findRootPersonaId(holonId: String, kgState: KnowledgeGraphState): String? {
@@ -88,9 +81,7 @@ class KnowledgeGraphFeature(
                     ))
                 }
             }
-            // [FIX] Consolidated logic into a single block.
             ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG, ActionNames.KNOWLEDGEGRAPH_RELEASE_HKG -> {
-                // First, handle the guardrail specifically for RESERVE_HKG.
                 if (action.name == ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG) {
                     val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: return
                     if (prevKgState?.reservations?.containsKey(personaId) == true) {
@@ -103,7 +94,6 @@ class KnowledgeGraphFeature(
                     }
                 }
 
-                // Then, for both actions, broadcast if the state has changed.
                 if (prevKgState?.reservations != kgState.reservations) {
                     store.deferredDispatch(this.name, Action(
                         name = ActionNames.KNOWLEDGEGRAPH_PUBLISH_RESERVATIONS_UPDATED,
@@ -159,6 +149,8 @@ class KnowledgeGraphFeature(
                 val parentHolonFilePaths = parentHolonIdsToRead.mapNotNull { kgState.holons[it]?.header?.filePath }
 
                 if (parentHolonFilePaths.isNotEmpty()) {
+                    // [FIX] Explicitly signal that the next read response is for execution context.
+                    store.dispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_SET_IMPORT_EXECUTION_STATUS, buildJsonObject { put("isExecuting", true) }))
                     store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
                         put("subpaths", Json.encodeToJsonElement(parentHolonFilePaths))
                     }))
@@ -318,14 +310,17 @@ class KnowledgeGraphFeature(
         val payload = action.payload
 
         when (action.name) {
+            // [FIX] Handle the new action to toggle the execution flag.
+            ActionNames.KNOWLEDGEGRAPH_INTERNAL_SET_IMPORT_EXECUTION_STATUS -> {
+                val isExecuting = payload?.get("isExecuting")?.jsonPrimitive?.booleanOrNull ?: false
+                return currentFeatureState.copy(isExecutingImport = isExecuting)
+            }
             ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG -> {
                 val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: return currentFeatureState
                 val originator = action.originator ?: return currentFeatureState
 
-                // [FIX] Guardrail logic moved to the reducer to prevent invalid state changes.
                 if (currentFeatureState.reservations.containsKey(personaId)) {
-                    // Log/toast is handled by onAction which can see the previous state.
-                    return currentFeatureState // Return original state, blocking the change.
+                    return currentFeatureState
                 }
 
                 return currentFeatureState.copy(
@@ -395,7 +390,8 @@ class KnowledgeGraphFeature(
                         importSelectedActions = emptyMap(),
                         importUserOverrides = emptyMap(),
                         importFileContents = emptyMap(),
-                        pendingImportCorrelationId = null
+                        pendingImportCorrelationId = null,
+                        isExecutingImport = false // Reset execution flag on view switch
                     )
                 }
                 return currentFeatureState.copy(viewMode = mode)
@@ -518,7 +514,6 @@ class KnowledgeGraphFeature(
                             put("subpaths", Json.encodeToJsonElement(fileSubpaths))
                         }))
                     } else {
-                        // [FIX] Handle empty directory to prevent isLoading hang.
                         store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
                             put("error", "No holon files found in persona directory.")
                         }))
@@ -533,7 +528,15 @@ class KnowledgeGraphFeature(
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
                 try {
                     val fileData = json.decodeFromJsonElement<FilesContentPayload>(envelope.payload)
-                    if (fileData.correlationId != null && fileData.correlationId == kgState?.pendingImportCorrelationId) {
+
+                    // [FIX] Explicit check for the execution state flag.
+                    if (kgState?.isExecutingImport == true) {
+                        // We received parent content for import execution.
+                        // Reset the flag immediately.
+                        store.dispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_SET_IMPORT_EXECUTION_STATUS, buildJsonObject { put("isExecuting", false) }))
+                        // Call execution with the fresh parent content.
+                        executeImportWrites(fileData.contents, kgState, store, platformDependencies)
+                    } else if (fileData.correlationId != null && fileData.correlationId == kgState?.pendingImportCorrelationId) {
                         val analysisPayload = runImportAnalysis(fileData.contents, kgState, kgState.importUserOverrides, kgState.isImportRecursive, platformDependencies)
                         store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
                     } else {
@@ -557,15 +560,12 @@ class KnowledgeGraphFeature(
 
         for ((path, rawContent) in fileData.contents) {
             try {
-                // [REFACTOR] Use the canonical gateway for holon creation and validation.
-                // This single call replaces manual JSON parsing and ID checking.
                 val holon = createHolonFromString(rawContent, path, platformDependencies)
                 holonsById[holon.header.id] = holon
             } catch (e: HolonValidationException) {
                 platformDependencies.log(LogLevel.ERROR, name, "Failed to load holon at '$path': ${e.message}")
                 hasErrors = true
             } catch (e: Exception) {
-                // Catch any other unexpected errors.
                 platformDependencies.log(LogLevel.ERROR, name, "An unexpected error occurred parsing '$path'", e)
                 hasErrors = true
             }
@@ -593,8 +593,6 @@ class KnowledgeGraphFeature(
         fun enrichRecursively(holon: Holon, parentId: String?, depth: Int) {
             val enrichedHeader = holon.header.copy(parentId = parentId, depth = depth)
             var enrichedHolon = holon.copy(header = enrichedHeader)
-
-            // [THE FIX] After enriching, immediately synchronize the rawContent cache.
             enrichedHolon = synchronizeRawContent(enrichedHolon)
 
             enrichedHolons[holon.header.id] = enrichedHolon

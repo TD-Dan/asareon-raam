@@ -207,6 +207,15 @@
       }
     },
     {
+      "action_name": "knowledgegraph.internal.SET_IMPORT_EXECUTION_STATUS",
+      "summary": "[INTERNAL] Sets a flag indicating that the feature is waiting for parent file content to execute an import.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "isExecuting": { "type": "boolean" } },
+        "required": ["isExecuting"]
+      }
+    },
+    {
       "action_name": "knowledgegraph.internal.PERSONA_LOADED",
       "summary": "[INTERNAL] Dispatched after a full persona HKG has been constructed in memory. Atomically merges the new/updated holons into the main state.",
       "payload_schema": {

@@ -13,11 +13,6 @@ import kotlinx.serialization.json.put
 
 private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
 
-/**
- * Creates a "canonical" copy of a Holon for comparison purposes.
- * This removes fields that should not be considered in a semantic equality check,
- * such as file paths, timestamps, and transient runtime data.
- */
 private fun Holon.toComparable(): Holon {
     return this.copy(
         rawContent = "",
@@ -31,22 +26,16 @@ private fun Holon.toComparable(): Holon {
     )
 }
 
-/**
- * The master, idempotent analysis function for the import workflow.
- * [RE-ARCHITECTED] to perform a multi-pass analysis that validates, checks for integrity,
- * determines actions, and ensures final consistency.
- */
 internal fun runImportAnalysis(
     fileContents: Map<String, String>,
     kgState: KnowledgeGraphState,
     userOverrides: Map<String, ImportAction>,
-    isRecursive: Boolean, // Note: This is now handled by the caller/UI, analyzer processes all given files.
+    isRecursive: Boolean,
     platformDependencies: PlatformDependencies
 ): JsonObject {
     val proposedActions = mutableMapOf<String, ImportAction>()
     val sourceHolons = mutableMapOf<String, Holon>()
 
-    // --- Pass 1: Validation & Deserialization using the Hardened Gateway ---
     for ((path, content) in fileContents) {
         try {
             val holon = createHolonFromString(content, path, platformDependencies)
@@ -56,7 +45,6 @@ internal fun runImportAnalysis(
         }
     }
 
-    // --- Pass 2: Data Integrity Checks (Duplicates & Cycles) ---
     val idsToPaths = sourceHolons.entries.groupBy { it.value.header.id }
     for ((id, entries) in idsToPaths) {
         if (entries.size > 1) {
@@ -66,11 +54,9 @@ internal fun runImportAnalysis(
             }
         }
     }
-    // (Cycle detection logic remains the same)
     val parentMap = sourceHolons.values.flatMap { h -> h.header.subHolons.map { it.id to h.header.id } }.toMap()
 
 
-    // --- Pass 3: Initial Action Determination (for valid holons) ---
     for ((path, sourceHolon) in sourceHolons) {
         if (proposedActions.containsKey(path)) continue
 
@@ -90,7 +76,6 @@ internal fun runImportAnalysis(
         }
     }
 
-    // --- Pass 4: Apply User Overrides and Perform Consistency Check ---
     var finalActions = proposedActions.toMutableMap()
     userOverrides.forEach { (path, action) ->
         finalActions[path] = action
@@ -99,7 +84,7 @@ internal fun runImportAnalysis(
     var changed: Boolean
     do {
         changed = false
-        val actionsForConsistencyCheck = finalActions.toMutableMap() // Work on a copy
+        val actionsForConsistencyCheck = finalActions.toMutableMap()
         for ((path, action) in actionsForConsistencyCheck) {
             if (action is Integrate) {
                 val parentHolonId = action.parentHolonId
@@ -107,7 +92,7 @@ internal fun runImportAnalysis(
                 val parentAction = parentSourcePath?.let { finalActions[it] }
 
                 if (parentAction is Ignore || parentAction is Quarantine) {
-                    if (finalActions[path] !is Quarantine) { // Prevent infinite loops
+                    if (finalActions[path] !is Quarantine) {
                         finalActions[path] = Quarantine("Parent holon '$parentHolonId' is not being imported.")
                         changed = true
                     }
@@ -156,23 +141,28 @@ internal fun runImportAnalysis(
 }
 
 
-/**
- * [RE-ARCHITECTED] Executes the import plan as a transaction on structured Holon objects.
- * This function no longer manipulates JSON strings. It builds an in-memory representation
- * of all changes and serializes them only at the final step, ensuring data integrity.
- */
 internal fun executeImportWrites(
-    parentContents: Map<String, String>, // This parameter is obsolete.
+    parentContents: Map<String, String>,
     kgState: KnowledgeGraphState,
     store: Store,
     platformDependencies: PlatformDependencies
 ) {
-    // Transactional workspace for all holons being modified or created in this import.
+    // [FIX] Pre-process parent contents into Holon objects for the transaction.
+    // This allows us to work with the fresh state of parents read from disk.
+    val loadedParents = parentContents.mapNotNull { (path, content) ->
+        try {
+            val holon = createHolonFromString(content, path, platformDependencies)
+            holon.header.id to holon
+        } catch (e: Exception) {
+            platformDependencies.log(LogLevel.WARN, "ImportExecution", "Failed to parse parent content for '$path': ${e.message}")
+            null
+        }
+    }.toMap()
+
     val holonsInTransaction = kgState.importSelectedActions.mapNotNull { (sourcePath, action) ->
         if (action is Quarantine || action is Ignore) return@mapNotNull null
         val content = kgState.importFileContents[sourcePath] ?: return@mapNotNull null
         try {
-            // Use the hardened gateway here as well for a final safety check.
             val holon = createHolonFromString(content, sourcePath, platformDependencies)
             holon.header.id to holon
         } catch (e: Exception) {
@@ -181,29 +171,40 @@ internal fun executeImportWrites(
         }
     }.toMap().toMutableMap()
 
+    // [FIX] Merge loaded parents into the transaction context.
+    // We prioritize the `holonsInTransaction` (imports) but fallback to `loadedParents`.
+    // We do NOT modify `kgState.holons` directly here; we work on a transient set.
+    val transactionContext = (loadedParents + holonsInTransaction).toMutableMap()
+
+
     // --- PHASE 1: RECURSIVE PATH RESOLUTION ---
     val finalPaths = mutableMapOf<String, String>()
 
     fun determinePath(holonId: String): String? {
-        // Memoization: If path is already calculated, return it.
         if (finalPaths.containsKey(holonId)) return finalPaths[holonId]
 
-        val holon = holonsInTransaction[holonId] ?: return null
+        val holon = transactionContext[holonId] ?: kgState.holons[holonId] ?: return null
+        // Check if this holon is being imported to find its action
         val sourcePath = kgState.importSelectedActions.entries.find { platformDependencies.getFileName(it.key).removeSuffix(".json") == holonId }?.key
         val action = sourcePath?.let { kgState.importSelectedActions[it] }
+
+        // If no import action, it's an existing holon. Use its existing path.
+        if (action == null) {
+            val path = kgState.holons[holonId]?.header?.filePath ?: loadedParents[holonId]?.header?.filePath
+            path?.let { finalPaths[holonId] = it }
+            return path
+        }
 
         val path = when (action) {
             is CreateRoot -> "$holonId/$holonId.json"
             is Update -> kgState.holons[action.targetHolonId]?.header?.filePath
             is Integrate, is AssignParent -> {
                 val parentId = if (action is Integrate) action.parentHolonId else (action as AssignParent).assignedParentId
-                if (parentId == null) return null // Should not happen with a valid plan
+                if (parentId == null) return null
 
-                // Recursively determine parent path first.
-                val parentPath = kgState.holons[parentId]?.header?.filePath ?: determinePath(parentId)
+                val parentPath = determinePath(parentId)
                 if (parentPath == null) null else {
                     val parentDir = platformDependencies.getParentDirectory(parentPath)
-                    // This check prevents the "null/" string concatenation.
                     if (parentDir == null) null else "$parentDir/$holonId/$holonId.json"
                 }
             }
@@ -214,11 +215,11 @@ internal fun executeImportWrites(
         return path
     }
 
-    // Trigger path resolution for all holons in the transaction.
     holonsInTransaction.keys.forEach { determinePath(it) }
 
 
     // --- PHASE 2: STRUCTURAL MODIFICATION ---
+    // Iterate over imported holons to link them to parents
     holonsInTransaction.values.forEach { holon ->
         val sourcePath = kgState.importSelectedActions.entries.find { platformDependencies.getFileName(it.key).removeSuffix(".json") == holon.header.id }?.key
         val action = sourcePath?.let { kgState.importSelectedActions[it] }
@@ -226,15 +227,19 @@ internal fun executeImportWrites(
         if (action is Integrate || action is AssignParent) {
             val parentId = if (action is Integrate) action.parentHolonId else (action as AssignParent).assignedParentId
             if (parentId != null) {
-                // IMPORTANT: Look up the parent in the transaction map first to get the most up-to-date version.
-                val parentHolon = holonsInTransaction[parentId] ?: kgState.holons[parentId]
+                // [FIX] Use transactionContext to find and modify the parent.
+                val parentHolon = transactionContext[parentId] ?: kgState.holons[parentId]
                 if (parentHolon != null) {
                     val childRef = SubHolonRef(holon.header.id, holon.header.type, holon.header.summary ?: "")
                     if (!parentHolon.header.subHolons.any { it.id == childRef.id }) {
                         val updatedSubHolons = parentHolon.header.subHolons + childRef
                         val updatedHeader = parentHolon.header.copy(subHolons = updatedSubHolons)
-                        // Overwrite the parent in our transaction map with the updated version.
-                        holonsInTransaction[parentId] = parentHolon.copy(header = updatedHeader)
+
+                        // Update the context. If the parent was an existing holon not in transaction, it is now effectively in transaction.
+                        // We also add it to `holonsInTransaction` so it gets written out in Phase 3.
+                        val updatedParent = parentHolon.copy(header = updatedHeader)
+                        transactionContext[parentId] = updatedParent
+                        holonsInTransaction[parentId] = updatedParent
                     }
                 }
             }
@@ -244,14 +249,15 @@ internal fun executeImportWrites(
 
     // --- PHASE 3: SERIALIZATION AND DISPATCH ---
     holonsInTransaction.forEach { (holonId, holon) ->
-        val finalPath = finalPaths[holonId]
+        // Recalculate path one last time to be sure, or use cache
+        val finalPath = finalPaths[holonId] ?: determinePath(holonId)
+
         if (finalPath != null) {
             val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())
             val headerWithMeta = holon.header.copy(
                 filePath = finalPath,
                 modifiedAt = newTimestamp,
                 createdAt = holon.header.createdAt ?: newTimestamp
-                // Parent ID and Depth will be enriched on the next full load.
             )
             val finalHolon = synchronizeRawContent(holon.copy(header = headerWithMeta))
             val contentToWrite = prepareHolonForWriting(finalHolon)

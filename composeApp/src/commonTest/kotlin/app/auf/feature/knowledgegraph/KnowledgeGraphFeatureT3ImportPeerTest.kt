@@ -42,14 +42,14 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
 
     @Test
     fun `execute INTEGRATE should write new holon and dispatch update for parent`() {
-        val existingPersonaFilePath = "pl1/pl1-20251112T190000Z.json"
+        val existingPersonaFilePath = "pl1-20251112T190000Z/pl1-20251112T190000Z.json"
         val newHolonFilePath = "hl1-20251112T190000Z.json"
 
         // [FIX] Write the existing parent to the fake disk.
         // FileSystemFeature reads from the sandbox root, so we must populate it.
         // We ensure the directory structure exists and the file content is present.
         val sandboxRoot = "${platform.getBasePathFor(BasePath.APP_ZONE)}/knowledgegraph"
-        platform.createDirectories("$sandboxRoot/pl1")
+        platform.createDirectories("$sandboxRoot/pl1-20251112T190000Z")
         platform.writeFileContent("$sandboxRoot/$existingPersonaFilePath", existingPersonaContent)
 
         // We simulate the persona already existing in memory (loaded)
