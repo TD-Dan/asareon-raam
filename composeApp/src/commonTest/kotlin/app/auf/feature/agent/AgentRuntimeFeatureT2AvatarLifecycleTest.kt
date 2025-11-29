@@ -51,36 +51,38 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
-        // ACT
-        // Simulate rapid-fire messages.
-        // Current Bug: Logic reacts to EACH message by dispatching a new POST because state update is deferred.
-        val msg1 = Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", session1)
-            put("entry", buildJsonObject {
-                put("id", "msg-1"); put("senderId", "user"); put("timestamp", 1000L)
+        harness.runAndLogOnFailure {
+            // ACT
+            // Simulate rapid-fire messages.
+            // Current Bug: Logic reacts to EACH message by dispatching a new POST because state update is deferred.
+            val msg1 = Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+                put("sessionId", session1)
+                put("entry", buildJsonObject {
+                    put("id", "msg-1"); put("senderId", "user"); put("timestamp", 1000L)
+                })
             })
-        })
 
-        val msg2 = Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", session1)
-            put("entry", buildJsonObject {
-                put("id", "msg-2"); put("senderId", "user"); put("timestamp", 1001L)
+            val msg2 = Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+                put("sessionId", session1)
+                put("entry", buildJsonObject {
+                    put("id", "msg-2"); put("senderId", "user"); put("timestamp", 1001L)
+                })
             })
-        })
 
-        // Dispatch synchronously to force the race
-        harness.store.dispatch("session", msg1)
-        harness.store.dispatch("session", msg2)
+            // Dispatch synchronously to force the race
+            harness.store.dispatch("session", msg1)
+            harness.store.dispatch("session", msg2)
 
-        // ASSERT
-        val avatarPostActions = harness.processedActions.filter {
-            it.name == ActionNames.SESSION_POST &&
-                    it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.id
+            // ASSERT
+            val avatarPostActions = harness.processedActions.filter {
+                it.name == ActionNames.SESSION_POST &&
+                        it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.id
+            }
+
+            // Expected: 1 (The second trigger should see the first update or be debounced)
+            // Actual (Bug): 2
+            assertEquals(1, avatarPostActions.size, "Race condition detected! Duplicate avatar cards were posted.")
         }
-
-        // Expected: 1 (The second trigger should see the first update or be debounced)
-        // Actual (Bug): 2
-        assertEquals(1, avatarPostActions.size, "Race condition detected! Duplicate avatar cards were posted.")
     }
 
     @Test
@@ -102,25 +104,27 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
-        // ACT
-        // Trigger the agent in Session 1
-        harness.store.dispatch("session", Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", session1)
-            put("entry", buildJsonObject {
-                put("id", "msg-trigger"); put("senderId", "user"); put("timestamp", 1000L)
-            })
-        }))
+        harness.runAndLogOnFailure {
+            // ACT
+            // Trigger the agent in Session 1
+            harness.store.dispatch("session", Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+                put("sessionId", session1)
+                put("entry", buildJsonObject {
+                    put("id", "msg-trigger"); put("senderId", "user"); put("timestamp", 1000L)
+                })
+            }))
 
-        // ASSERT
-        // We expect avatar cards posted to BOTH session-1 and session-2
-        val postedSessions = harness.processedActions
-            .filter { it.name == ActionNames.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.id }
-            .mapNotNull { it.payload?.get("session")?.jsonPrimitive?.contentOrNull }
-            .toSet()
+            // ASSERT
+            // We expect avatar cards posted to BOTH session-1 and session-2
+            val postedSessions = harness.processedActions
+                .filter { it.name == ActionNames.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.id }
+                .mapNotNull { it.payload?.get("session")?.jsonPrimitive?.contentOrNull }
+                .toSet()
 
-        assertTrue(postedSessions.contains(session1), "Should have posted avatar to session 1")
-        assertTrue(postedSessions.contains(session2), "Should have posted avatar to session 2")
-        assertEquals(2, postedSessions.size, "Should have posted exactly 2 avatar cards")
+            assertTrue(postedSessions.contains(session1), "Should have posted avatar to session 1")
+            assertTrue(postedSessions.contains(session2), "Should have posted avatar to session 2")
+            assertEquals(2, postedSessions.size, "Should have posted exactly 2 avatar cards")
+        }
     }
 
     @Test
@@ -145,25 +149,27 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
-        // ACT
-        // Trigger via public message
-        harness.store.dispatch("session", Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", publicSession)
-            put("entry", buildJsonObject {
-                put("id", "msg-pub")
-                put("senderId", "user")
-                put("timestamp", 1000L)
-            })
-        }))
+        harness.runAndLogOnFailure {
+            // ACT
+            // Trigger the agent in public message
+            harness.store.dispatch("session", Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+                put("sessionId", publicSession)
+                put("entry", buildJsonObject {
+                    put("id", "msg-pub")
+                    put("senderId", "user")
+                    put("timestamp", 1000L)
+                })
+            }))
 
-        // ASSERT
-        val postedSessions = harness.processedActions
-            .filter { it.name == ActionNames.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.id }
-            .mapNotNull { it.payload?.get("session")?.jsonPrimitive?.contentOrNull }
-            .toSet()
+            // ASSERT
+            val postedSessions = harness.processedActions
+                .filter { it.name == ActionNames.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.id }
+                .mapNotNull { it.payload?.get("session")?.jsonPrimitive?.contentOrNull }
+                .toSet()
 
-        assertTrue(postedSessions.contains(publicSession), "Sovereign agent must have avatar in public session")
-        assertTrue(postedSessions.contains(privateSession), "Sovereign agent must have avatar in private session")
-        assertEquals(2, postedSessions.size, "Sovereign agent should be present in both contexts")
+            assertTrue(postedSessions.contains(publicSession), "Sovereign agent must have avatar in public session")
+            assertTrue(postedSessions.contains(privateSession), "Sovereign agent must have avatar in private session")
+            assertEquals(2, postedSessions.size, "Sovereign agent should be present in both contexts")
+        }
     }
 }

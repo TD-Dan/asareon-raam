@@ -237,8 +237,6 @@ object AgentRuntimeReducer {
 
             if (isRelevant && agent.id != senderId) {
                 // NEW: Auto-Waiting Logic (Synchronous)
-                // If the agent is IDLE and sees a relevant message, it automatically transitions to WAITING.
-                // This eliminates the race condition where multiple messages would trigger multiple "SET_STATUS" actions.
                 val newStatus = if (currentStatus.status == AgentStatus.IDLE) AgentStatus.WAITING else currentStatus.status
 
                 updatedStatuses[agent.id] = currentStatus.copy(

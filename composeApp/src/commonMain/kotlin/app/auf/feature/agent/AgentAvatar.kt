@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import app.auf.core.Action
 import app.auf.core.Store
 import app.auf.core.generated.ActionNames
+import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.buildJsonObject
@@ -42,18 +43,13 @@ object AgentAvatarLogic {
 
     /**
      * Reconciles the agent's visual presence in the ledger with its current configuration and state.
-     * This function is the "Side Effect Driver" that ensures:
-     * 1. Old cards are deleted.
-     * 2. Zombies (unsubscribed sessions) are cleaned up.
-     * 3. New cards are posted to all valid sessions (Subscribed + Private).
-     *
-     * @param newStatus Optional. If provided, updates the agent's status before reconciling.
      */
     fun updateAgentAvatars(
         agentId: String,
         store: Store,
         newStatus: AgentStatus? = null,
-        newError: String? = null
+        newError: String? = null,
+        optimisticCache: MutableMap<String, String>? = null
     ) {
         // 1. Dispatch Status Change (if requested)
         if (newStatus != null) {
@@ -71,11 +67,9 @@ object AgentAvatarLogic {
         val statusInfo = agentState.agentStatuses[agentId] ?: AgentStatusInfo()
 
         // 3. Determine Target Sessions
-        // Sovereign Requirement: Presence in ALL subscribed public sessions + Private session.
         val targetSessions = (agent.subscribedSessionIds + listOfNotNull(agent.privateSessionId)).distinct()
 
         // 4. Determine Position
-        // If PROCESSING, stick to processingFrontier. If IDLE/WAITING/ERROR, stick to lastSeen.
         val afterMessageId = when (statusInfo.status) {
             AgentStatus.PROCESSING -> statusInfo.processingFrontierMessageId
             else -> statusInfo.lastSeenMessageId
@@ -83,6 +77,11 @@ object AgentAvatarLogic {
 
         val platformDependencies = store.platformDependencies
         val currentCards = agentState.agentAvatarCardIds[agentId] ?: emptyMap()
+
+        // DIAGNOSTIC LOG
+        platformDependencies.log(
+            LogLevel.INFO, "agent-avatar",
+            "Updating avatars for ${agent.name}. Targets: $targetSessions. CurrentCards: $currentCards. AfterMsg: $afterMessageId")
 
         // 5. Cleanup Zombies (Sessions we are no longer subscribed to)
         val zombies = currentCards.keys - targetSessions.toSet()
@@ -93,22 +92,36 @@ object AgentAvatarLogic {
                     put("session", sessionId)
                     put("messageId", messageId)
                 }))
+                // Clear from cache if present
+                optimisticCache?.remove("$agentId/$sessionId")
             }
         }
 
         // 6. Update/Post Target Sessions
         targetSessions.forEach { sessionId ->
-            // A. Delete Old Card (Atomically move by Delete + Post)
-            val oldMessageId = currentCards[sessionId]
+            // A. Resolve Old Card ID (Optimistic Overlay)
+            // If the cache has an ID, it is newer than the state. Use it.
+            val cacheKey = "$agentId/$sessionId"
+            val cachedId = optimisticCache?.get(cacheKey)
+            val stateId = currentCards[sessionId]
+            val oldMessageId = cachedId ?: stateId
+
+            // B. Delete Old Card (Atomically move by Delete + Post)
             if (oldMessageId != null) {
                 store.dispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                     put("session", sessionId)
                     put("messageId", oldMessageId)
                 }))
+            } else {
+                platformDependencies.log(LogLevel.INFO, "agent-avatar", "No old card found for session $sessionId. Posting new.")
             }
 
             // B. Post New Card
             val newMessageId = platformDependencies.generateUUID()
+
+            // Update Optimistic Cache immediately
+            optimisticCache?.put(cacheKey, newMessageId)
+
             val metadata = buildJsonObject {
                 put("render_as_partial", true)
                 put("is_transient", true)
@@ -126,7 +139,6 @@ object AgentAvatarLogic {
         }
     }
 }
-
 
 // --- Composables ---
 
