@@ -8,6 +8,7 @@ import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -29,12 +30,12 @@ import kotlin.test.assertTrue
 class AgentRuntimeFeatureT2AvatarLifecycleTest {
 
     private val platform = FakePlatformDependencies("test")
-    private val scope = CoroutineScope(Dispatchers.Unconfined)
-    private val agentFeature = AgentRuntimeFeature(platform, scope)
 
     @Test
     fun `Rapid incoming messages should not create duplicate avatar cards`() = runTest {
         // ARRANGE
+        // [FIX] Use the TestScope's backgroundScope so that delays are controllable by advanceTimeBy
+        val agentFeature = AgentRuntimeFeature(platform, this.backgroundScope)
         val session1 = "session-1"
         val agent = AgentInstance(
             id = "agent-1",
@@ -54,7 +55,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
         harness.runAndLogOnFailure {
             // ACT
             // Simulate rapid-fire messages.
-            // Current Bug: Logic reacts to EACH message by dispatching a new POST because state update is deferred.
+            // Current Logic: Debounced by 50ms.
             val msg1 = Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
                 put("sessionId", session1)
                 put("entry", buildJsonObject {
@@ -69,9 +70,12 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
                 })
             })
 
-            // Dispatch synchronously to force the race
+            // Dispatch synchronously
             harness.store.dispatch("session", msg1)
             harness.store.dispatch("session", msg2)
+
+            // [FIX] Advance time to allow the debounce job to run
+            this.advanceTimeBy(100)
 
             // ASSERT
             val avatarPostActions = harness.processedActions.filter {
@@ -79,8 +83,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
                         it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.id
             }
 
-            // Expected: 1 (The second trigger should see the first update or be debounced)
-            // Actual (Bug): 2
+            // Expected: 1 (The first trigger is cancelled, only second runs)
             assertEquals(1, avatarPostActions.size, "Race condition detected! Duplicate avatar cards were posted.")
         }
     }
@@ -88,6 +91,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
     @Test
     fun `Avatar should appear in all subscribed sessions`() = runTest {
         // ARRANGE
+        val agentFeature = AgentRuntimeFeature(platform, this.backgroundScope)
         val session1 = "session-1"
         val session2 = "session-2"
         val agent = AgentInstance(
@@ -114,6 +118,8 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
                 })
             }))
 
+            this.advanceTimeBy(100)
+
             // ASSERT
             // We expect avatar cards posted to BOTH session-1 and session-2
             val postedSessions = harness.processedActions
@@ -130,6 +136,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
     @Test
     fun `Sovereign avatar should appear in private AND subscribed sessions`() = runTest {
         // ARRANGE
+        val agentFeature = AgentRuntimeFeature(platform, this.backgroundScope)
         val privateSession = "p-cognition: Sovereign (sov-1)"
         val publicSession = "public-session"
 
@@ -160,6 +167,8 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
                     put("timestamp", 1000L)
                 })
             }))
+
+            this.advanceTimeBy(100)
 
             // ASSERT
             val postedSessions = harness.processedActions

@@ -38,6 +38,8 @@ class AgentRuntimeFeature(
     private val activeTurnJobs = mutableMapOf<String, Job>()
     // [RACE FIX] Tracks the most recently dispatched avatar card IDs (agentId/sessionId -> messageId).
     private val optimisticAvatarCache = mutableMapOf<String, String>()
+    // [DEBOUNCE] Tracks active avatar update jobs to coalesce rapid changes.
+    private val avatarUpdateJobs = mutableMapOf<String, Job>()
 
     private val redundantHeaderRegex = Regex("""^.+? \([^)]+\) @ \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z:\s*""")
     private var agentLoadCount = 0
@@ -199,7 +201,6 @@ class AgentRuntimeFeature(
             ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> {
                 val prevAgentState = previousState as? AgentRuntimeState ?: return
                 agentState.agents.keys.forEach { agentId ->
-                    // FIX: Default to IDLE if prevStatus is missing
                     val prevStatus = prevAgentState.agentStatuses[agentId] ?: AgentStatusInfo()
                     val newStatus = agentState.agentStatuses[agentId] ?: AgentStatusInfo()
 
@@ -209,8 +210,12 @@ class AgentRuntimeFeature(
                     if (statusChanged || frontierMoved) {
                         platformDependencies.log(LogLevel.INFO, name,
                             "Avatar Update Triggered for $agentId. StatusChanged: $statusChanged. FrontierMoved: $frontierMoved")
-                        // [FIX] PASS CACHE
-                        AgentAvatarLogic.updateAgentAvatars(agentId, store, optimisticCache = optimisticAvatarCache)
+                        // [FIX] Debounce the update to prevent rapid-fire network calls and race conditions
+                        avatarUpdateJobs[agentId]?.cancel()
+                        avatarUpdateJobs[agentId] = coroutineScope.launch {
+                            delay(50)
+                            AgentAvatarLogic.updateAgentAvatars(agentId, store, optimisticCache = optimisticAvatarCache)
+                        }
                     }
                 }
             }

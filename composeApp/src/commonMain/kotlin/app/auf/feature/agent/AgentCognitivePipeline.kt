@@ -98,9 +98,8 @@ object AgentCognitivePipeline {
         }
 
         // 3. Dispatch Action to Update State
-        // BUG FIX: Race Condition. We DO NOT proceed to next step here.
-        // We dispatch the action to update state. The onAction handler in Feature will call evaluateTurnContext.
-        store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
+        // [FIX] Use deferredDispatch to avoid re-entrancy warnings during Private Data handling
+        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
             put("agentId", agent.id)
             put("messages", json.encodeToJsonElement(enrichedMessages))
         }))
@@ -134,7 +133,8 @@ object AgentCognitivePipeline {
         val hkgContext = payload["context"]?.jsonObject
 
         // Dispatch action to update state
-        store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT, buildJsonObject {
+        // [FIX] Use deferredDispatch
+        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT, buildJsonObject {
             put("agentId", agentId)
             put("context", hkgContext ?: buildJsonObject {})
         }))
@@ -224,11 +224,13 @@ object AgentCognitivePipeline {
         val requestActionName = if (statusInfo.turnMode == TurnMode.PREVIEW) ActionNames.GATEWAY_PREPARE_PREVIEW else ActionNames.GATEWAY_GENERATE_CONTENT
         val step = if (statusInfo.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"
 
-        store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+        // [FIX] Use deferredDispatch
+        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
             put("agentId", agent.id); put("step", step)
         }))
 
-        store.dispatch("agent", Action(requestActionName, buildJsonObject {
+        // [FIX] Use deferredDispatch
+        store.deferredDispatch("agent", Action(requestActionName, buildJsonObject {
             put("providerId", agent.modelProvider)
             put("modelName", agent.modelName)
             put("correlationId", agent.id)

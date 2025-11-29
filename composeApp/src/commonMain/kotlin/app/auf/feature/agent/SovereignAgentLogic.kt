@@ -36,7 +36,8 @@ object SovereignAgentLogic {
         if (justBecameSovereign) {
             // The session name is deliberately made unique to avoid collisions if agents are renamed.
             val privateSessionName = "p-cognition: ${newAgent.name} (${newAgent.id})"
-            store.dispatch("agent", Action(
+            // [FIX] Use deferredDispatch
+            store.deferredDispatch("agent", Action(
                 name = ActionNames.SESSION_CREATE,
                 payload = buildJsonObject {
                     put("name", privateSessionName)
@@ -44,7 +45,8 @@ object SovereignAgentLogic {
             ))
 
             // A Sovereign agent must acquire an exclusive lock on its HKG.
-            store.dispatch("agent", Action(
+            // [FIX] Use deferredDispatch
+            store.deferredDispatch("agent", Action(
                 name = ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG,
                 payload = buildJsonObject {
                     put("personaId", newAgent.knowledgeGraphId)
@@ -68,7 +70,8 @@ object SovereignAgentLogic {
         if (justBecameVanilla) {
             val truncatedSubscriptions = oldAgent.subscribedSessionIds.take(1)
 
-            store.dispatch("agent", Action(
+            // [FIX] Use deferredDispatch
+            store.deferredDispatch("agent", Action(
                 name = ActionNames.AGENT_UPDATE_CONFIG,
                 payload = buildJsonObject {
                     put("agentId", newAgent.id)
@@ -82,7 +85,8 @@ object SovereignAgentLogic {
             ))
 
             // The agent must release its exclusive lock on the HKG.
-            store.dispatch("agent", Action(
+            // [FIX] Use deferredDispatch
+            store.deferredDispatch("agent", Action(
                 name = ActionNames.KNOWLEDGEGRAPH_RELEASE_HKG,
                 payload = buildJsonObject {
                     // Use the oldAgent's ID, as the newAgent's is now null.
@@ -101,7 +105,8 @@ object SovereignAgentLogic {
             if (agent.knowledgeGraphId != null) {
                 // Validate Reservation
                 if (!agentState.hkgReservedIds.contains(agent.knowledgeGraphId)) {
-                    store.dispatch("agent", Action(ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject {
+                    // [FIX] Use deferredDispatch
+                    store.deferredDispatch("agent", Action(ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject {
                         put("personaId", agent.knowledgeGraphId)
                     }))
                 }
@@ -109,7 +114,8 @@ object SovereignAgentLogic {
                 val expectedSessionName = "p-cognition: ${agent.name} (${agent.id})"
                 val sessionExists = agentState.sessionNames.any { it.value == expectedSessionName }
                 if (!sessionExists) {
-                    store.dispatch("agent", Action(ActionNames.SESSION_CREATE, buildJsonObject {
+                    // [FIX] Use deferredDispatch
+                    store.deferredDispatch("agent", Action(ActionNames.SESSION_CREATE, buildJsonObject {
                         put("name", expectedSessionName)
                     }))
                 }
@@ -130,7 +136,8 @@ object SovereignAgentLogic {
             name == expectedSessionName
         } ?: return
 
-        store.dispatch("agent", Action(
+        // [FIX] Use deferredDispatch
+        store.deferredDispatch("agent", Action(
             name = ActionNames.AGENT_UPDATE_CONFIG,
             payload = buildJsonObject {
                 put("agentId", agentAwaitingSession.id)
@@ -148,7 +155,8 @@ object SovereignAgentLogic {
         val kgFeatureExists = store.features.any { it.name == "knowledgegraph" }
 
         if (kgId != null && kgFeatureExists) {
-            store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+            // [FIX] Use deferredDispatch
+            store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
                 put("agentId", agent.id); put("step", "Requesting HKG")
             }))
             val requestEnvelope = PrivateDataEnvelope(
@@ -172,6 +180,4 @@ object SovereignAgentLogic {
         }
         return false // No context requested, caller can proceed.
     }
-
-
 }
