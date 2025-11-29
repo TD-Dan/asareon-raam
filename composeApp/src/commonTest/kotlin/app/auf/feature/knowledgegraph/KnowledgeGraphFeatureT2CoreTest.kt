@@ -109,8 +109,9 @@ class KnowledgeGraphFeatureT2CoreTest {
     @Test
     fun `REQUEST_CONTEXT should return full holon context via private data`() {
         // Arrange: Populate state with a persona and child holon
-        val p1 = createHolonFromString(persona1Content, "p1.json", platform)
-        val h1 = createHolonFromString(holonAContent, "h1.json", platform)
+        // [FIX] Ensure the source filenames match the IDs to pass createHolonFromString validation
+        val p1 = createHolonFromString(persona1Content, "persona-1-20251112T190000Z.json", platform)
+        val h1 = createHolonFromString(holonAContent, "holon-a-20251112T190000Z.json", platform)
         val h1Enriched = h1.copy(header = h1.header.copy(parentId = p1.header.id)) // Simplified enrichment
 
         val initialState = KnowledgeGraphState(
@@ -149,14 +150,24 @@ class KnowledgeGraphFeatureT2CoreTest {
 
     @Test
     fun `RENAME_HOLON should update name, timestamp, and synchronize rawContent before writing`() {
+        // [FIX] Create a parent root holon in the state.
+        // This is necessary because KnowledgeGraphFeature.kt checks `findRootPersonaId`
+        // before dispatching the LOAD_PERSONA action that this test implicitly relies on.
+        val rootId = "p1-20250101T000000Z"
+        val parentRoot = Holon(
+            header = HolonHeader(id = rootId, type = "AI_Persona_Root", name = "Root"),
+            payload = buildJsonObject { },
+            rawContent = "{}"
+        )
+
         val holonToRename = Holon(
-            header = HolonHeader(id = "h1", type="TestHolon", name = "Old Name", filePath = "p1/h1.json"),
+            header = HolonHeader(id = "h1", type="TestHolon", name = "Old Name", filePath = "p1/h1.json", parentId = rootId),
             payload = buildJsonObject{},
             rawContent = "stale"
         )
         val harness = TestEnvironment.create()
             .withFeature(feature)
-            .withInitialState("knowledgegraph", KnowledgeGraphState(holons = mapOf("h1" to holonToRename)))
+            .withInitialState("knowledgegraph", KnowledgeGraphState(holons = mapOf("h1" to holonToRename, rootId to parentRoot)))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {

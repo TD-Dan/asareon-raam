@@ -5,6 +5,7 @@ import app.auf.core.generated.ActionNames
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
+import app.auf.util.BasePath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
@@ -43,6 +44,14 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
     fun `execute INTEGRATE should write new holon and dispatch update for parent`() {
         val existingPersonaFilePath = "pl1/pl1-20251112T190000Z.json"
         val newHolonFilePath = "hl1-20251112T190000Z.json"
+
+        // [FIX] Write the existing parent to the fake disk.
+        // FileSystemFeature reads from the sandbox root, so we must populate it.
+        // We ensure the directory structure exists and the file content is present.
+        val sandboxRoot = "${platform.getBasePathFor(BasePath.APP_ZONE)}/knowledgegraph"
+        platform.createDirectories("$sandboxRoot/pl1")
+        platform.writeFileContent("$sandboxRoot/$existingPersonaFilePath", existingPersonaContent)
+
         // We simulate the persona already existing in memory (loaded)
         val existingPersona = createHolonFromString(existingPersonaContent, existingPersonaFilePath, platform)
 
@@ -75,6 +84,7 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
             assertNotNull(parentUpdateWrite)
             val finalParentContent = parentUpdateWrite.payload?.get("content")?.jsonPrimitive?.content
             assertNotNull(finalParentContent)
+            // Use canonical gateway for verification, assuming file path matches expectation
             val finalParentHolon = createHolonFromString(finalParentContent, existingPersonaFilePath, platform)
 
             assertTrue(finalParentHolon.header.subHolons.any { it.id == "hl1-20251112T190000Z" }, "Parent holon file should be updated to include a reference to the new child.")
@@ -84,12 +94,16 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
     @Test
     fun `execute DEEP IMPORT should recursively resolve paths for new hierarchy`() {
         // Scenario: Importing a tree of 3 NEW files (Root -> Mid -> Leaf)
-        // This tests the "Recursive Path Resolution" logic where intermediate parents
-        // do not yet exist on disk or in the main state.
+        // [FIX] Update file map keys to be the full ID + .json.
+        // This is critical because createHolonFromString validates that the filename matches the ID in the header.
 
         val rootId = "root-20250101T000000Z"
         val midId = "mid-20250101T000000Z"
         val leafId = "leaf-20250101T000000Z"
+
+        val rootFile = "$rootId.json"
+        val midFile = "$midId.json"
+        val leafFile = "$leafId.json"
 
         val rootContent = """{ "header": { "id": "$rootId", "type": "AI_Persona_Root", "name": "Root" }, "payload": {} }"""
         val midContent = """{ "header": { "id": "$midId", "type": "T", "name": "Mid" }, "payload": {} }"""
@@ -97,14 +111,14 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
 
         val initialState = KnowledgeGraphState(
             importFileContents = mapOf(
-                "root.json" to rootContent,
-                "mid.json" to midContent,
-                "leaf.json" to leafContent
+                rootFile to rootContent,
+                midFile to midContent,
+                leafFile to leafContent
             ),
             importSelectedActions = mapOf(
-                "root.json" to CreateRoot(),
-                "mid.json" to Integrate(rootId),
-                "leaf.json" to Integrate(midId)
+                rootFile to CreateRoot(),
+                midFile to Integrate(rootId),
+                leafFile to Integrate(midId)
             )
         )
 

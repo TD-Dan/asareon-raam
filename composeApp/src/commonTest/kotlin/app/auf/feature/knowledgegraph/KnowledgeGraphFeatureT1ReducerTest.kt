@@ -191,30 +191,37 @@ class KnowledgeGraphFeatureT1ReducerTest {
     // --- Reducer - Import Workflow ---
     @Test
     fun `UPDATE_IMPORT_ACTION should trigger cascading demotion of children`() {
-        val parentContent = """{ "header": { "id": "parent", "type": "T", "name": "P", "sub_holons": [{"id": "child", "type": "T", "summary": "S"}] }, "payload": {} }"""
-        val childContent = """{ "header": { "id": "child", "type": "T", "name": "C" }, "payload": {} }"""
+        // [FIX] Use valid timestamped IDs to pass strict validation in runImportAnalysis
+        val parentId = "parent-20251112T100000Z"
+        val childId = "child-20251112T100000Z"
+        val parentFile = "$parentId.json"
+        val childFile = "$childId.json"
+
+        val parentContent = """{ "header": { "id": "$parentId", "type": "T", "name": "P", "sub_holons": [{"id": "$childId", "type": "T", "summary": "S"}] }, "payload": {} }"""
+        val childContent = """{ "header": { "id": "$childId", "type": "T", "name": "C" }, "payload": {} }"""
 
         val initialState = KnowledgeGraphState(
-            importFileContents = mapOf("parent.json" to parentContent, "child.json" to childContent),
+            importFileContents = mapOf(parentFile to parentContent, childFile to childContent),
             importSelectedActions = mapOf(
-                "parent.json" to Integrate("root"),
-                "child.json" to Integrate("parent")
+                parentFile to Integrate("root-20251112T000000Z"),
+                childFile to Integrate(parentId)
             )
         )
 
         // User ignores the parent
+        // [FIX] Explicitly serialize as ImportAction to include class discriminator for polymorphic deserialization
         val action = Action(ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION, buildJsonObject {
-            put("sourcePath", "parent.json")
-            put("action", Json.encodeToJsonElement(Ignore()))
+            put("sourcePath", parentFile)
+            put("action", json.encodeToJsonElement<ImportAction>(Ignore()))
         })
 
         val newState = feature.reducer(initialState, action) as KnowledgeGraphState
 
         // Assert the user's override was respected
-        assertIs<Ignore>(newState.importUserOverrides["parent.json"])
+        assertIs<Ignore>(newState.importUserOverrides[parentFile])
         // Assert the child was automatically quarantined
-        val childAction = newState.importSelectedActions["child.json"]
+        val childAction = newState.importSelectedActions[childFile]
         assertIs<Quarantine>(childAction)
-        assertEquals("Parent holon 'parent' is not being imported.", childAction.reason)
+        assertEquals("Parent holon '$parentId' is not being imported.", childAction.reason)
     }
 }
