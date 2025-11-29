@@ -517,6 +517,11 @@ class KnowledgeGraphFeature(
                         store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
                             put("subpaths", Json.encodeToJsonElement(fileSubpaths))
                         }))
+                    } else {
+                        // [FIX] Handle empty directory to prevent isLoading hang.
+                        store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
+                            put("error", "No holon files found in persona directory.")
+                        }))
                     }
                 } else {
                     listing.filter { it.isDirectory }.forEach { dir ->

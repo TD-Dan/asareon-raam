@@ -20,6 +20,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -78,6 +79,30 @@ class KnowledgeGraphFeatureT2CoreTest {
             val parsedRawContent = json.parseToJsonElement(loadedChild.rawContent).jsonObject
             assertEquals("persona-1-20251112T190000Z", parsedRawContent["header"]!!.jsonObject["parentId"]!!.jsonPrimitive.content)
             assertEquals(1, parsedRawContent["header"]!!.jsonObject["depth"]!!.jsonPrimitive.content.toInt())
+        }
+    }
+
+    @Test
+    fun `full load sequence handles empty directory gracefully`() {
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        harness.runAndLogOnFailure {
+            // ACT 1: Initiate load
+            harness.store.dispatch("system", Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "empty-persona") }))
+
+            // ACT 2: Simulate empty recursive listing response from FileSystem
+            harness.store.deliverPrivateData("filesystem", "knowledgegraph", PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, buildJsonObject {
+                put("subpath", "empty-persona")
+                put("listing", buildJsonArray { }) // Empty list
+            }))
+
+            // ASSERT
+            val finalState = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
+
+            // Ensure we are NOT still loading
+            assertFalse(finalState.isLoading, "Loading state should be cleared when directory is empty.")
+
+            // Ensure the error was captured
+            assertEquals("No holon files found in persona directory.", finalState.fatalError)
         }
     }
 
