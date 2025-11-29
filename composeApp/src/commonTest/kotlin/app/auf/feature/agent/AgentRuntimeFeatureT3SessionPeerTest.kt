@@ -13,13 +13,7 @@ import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.*
 
@@ -38,7 +32,9 @@ class AgentRuntimeFeatureT3SessionPeerTest {
 
     @Test
     fun `when a new message arrives an IDLE agent transitions to WAITING and moves its card`() = runTest {
-        val initialAvatarCards = mapOf(agent1.id to AgentRuntimeState.AvatarCardInfo("card-1", "sid-A"))
+        // REFACTOR FIX: Use Map<SessionId, MessageId> instead of AvatarCardInfo
+        val initialAvatarCards = mapOf(agent1.id to mapOf("sid-A" to "card-1"))
+
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(sessionFeature)
@@ -56,7 +52,7 @@ class AgentRuntimeFeatureT3SessionPeerTest {
 
             // ASSERT (Agent State)
             val finalAgentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            // *** MODIFIED: Use agentStatuses
+
             assertEquals(AgentStatus.WAITING, finalAgentState.agentStatuses[agent1.id]?.status)
 
             // Verify awareness frontier
@@ -72,7 +68,8 @@ class AgentRuntimeFeatureT3SessionPeerTest {
         val agentConfig = agent1
         // START STATE: Waiting
         val status = AgentStatusInfo(status = AgentStatus.WAITING, lastSeenMessageId = "msg-user-1")
-        val initialAvatarCards = mapOf(agentConfig.id to AgentRuntimeState.AvatarCardInfo("card-waiting", "sid-A"))
+        // REFACTOR FIX: Use Map<SessionId, MessageId> instead of AvatarCardInfo
+        val initialAvatarCards = mapOf(agentConfig.id to mapOf("sid-A" to "card-waiting"))
 
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)

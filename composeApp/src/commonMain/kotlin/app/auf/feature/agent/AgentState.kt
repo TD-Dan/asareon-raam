@@ -103,8 +103,12 @@ data class AgentRuntimeState(
     @Transient
     val editingAgentId: String? = null,
 
+    /**
+     * [REFACTORED] Tracks the message IDs of the agent's avatar cards across multiple sessions.
+     * Structure: AgentId -> (SessionId -> MessageId)
+     */
     @Transient
-    val agentAvatarCardIds: Map<String, AvatarCardInfo> = emptyMap(),
+    val agentAvatarCardIds: Map<String, Map<String, String>> = emptyMap(),
 
     /** A transient field to reliably pass the IDs of agents who need their config persisted from the reducer to the onAction handler. */
     @Transient
@@ -118,7 +122,4 @@ data class AgentRuntimeState(
     @Transient
     val lastAutoTriggerAgentIndex: Int = 0,
 
-    ) : FeatureState {
-    @Serializable
-    data class AvatarCardInfo(val messageId: String, val sessionId: String)
-}
+    ) : FeatureState

@@ -97,15 +97,32 @@ object AgentRuntimeReducer {
 
             ActionNames.SESSION_PUBLISH_MESSAGE_DELETED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<MessageDeletedPayload>(it) } ?: return state
-                val agentId = state.agentAvatarCardIds.entries.find { it.value.messageId == payload.messageId }?.key ?: return state
-                state.copy(agentAvatarCardIds = state.agentAvatarCardIds - agentId)
+                // REFACTORED: Iterate Map<AgentId, Map<SessionId, MessageId>>
+                var newAvatarCards = state.agentAvatarCardIds
+                state.agentAvatarCardIds.forEach { (agentId, sessionMap) ->
+                    val sessionEntry = sessionMap.entries.find { it.value == payload.messageId }
+                    if (sessionEntry != null) {
+                        val newSessionMap = sessionMap - sessionEntry.key
+                        newAvatarCards = newAvatarCards + (agentId to newSessionMap)
+                    }
+                }
+                state.copy(agentAvatarCardIds = newAvatarCards)
             }
 
             ActionNames.SESSION_PUBLISH_SESSION_DELETED -> {
                 val deletedSessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return state
                 val agentsToUpdate = state.agents.values
                     .filter { it.subscribedSessionIds.contains(deletedSessionId) || it.privateSessionId == deletedSessionId }
-                if (agentsToUpdate.isEmpty()) return state
+
+                // Cleanup deleted session from avatar map
+                var newAvatarCards = state.agentAvatarCardIds
+                state.agentAvatarCardIds.forEach { (agentId, sessionMap) ->
+                    if (sessionMap.containsKey(deletedSessionId)) {
+                        newAvatarCards = newAvatarCards + (agentId to (sessionMap - deletedSessionId))
+                    }
+                }
+
+                if (agentsToUpdate.isEmpty()) return state.copy(agentAvatarCardIds = newAvatarCards)
 
                 val newAgents = state.agents.mapValues { (_, agent) ->
                     if (agentsToUpdate.any { it.id == agent.id }) {
@@ -118,7 +135,15 @@ object AgentRuntimeReducer {
                     }
                 }
                 // Note: We set agentsToPersist so the Feature knows to save these changes
-                state.copy(agents = newAgents, agentsToPersist = agentsToUpdate.map { it.id }.toSet())
+                state.copy(agents = newAgents, agentAvatarCardIds = newAvatarCards, agentsToPersist = agentsToUpdate.map { it.id }.toSet())
+            }
+
+            ActionNames.AGENT_INTERNAL_CONFIRM_DELETE -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
+                state.copy(
+                    agents = state.agents - agentId,
+                    agentAvatarCardIds = state.agentAvatarCardIds - agentId
+                )
             }
 
             ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED -> {
@@ -192,16 +217,17 @@ object AgentRuntimeReducer {
         val metadata = entry["metadata"]?.jsonObject
         val isAvatar = metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
         if (isAvatar) {
-            // Track avatar cards
+            // Track avatar cards: Map<AgentId, Map<SessionId, MessageId>>
             val avatarAgentId = entry["senderId"]?.jsonPrimitive?.contentOrNull
             if (avatarAgentId != null && state.agents.containsKey(avatarAgentId)) {
-                return state.copy(agentAvatarCardIds = state.agentAvatarCardIds + (avatarAgentId to AgentRuntimeState.AvatarCardInfo(messageId = messageId, sessionId = sessionId)))
+                val currentSessionMap = state.agentAvatarCardIds[avatarAgentId] ?: emptyMap()
+                val newSessionMap = currentSessionMap + (sessionId to messageId)
+                return state.copy(agentAvatarCardIds = state.agentAvatarCardIds + (avatarAgentId to newSessionMap))
             }
             return state
         }
 
-        // BUG FIX: Sentinel Trigger
-        // Do NOT transition agent state if the sender is "system".
+        // Sentinel Guard: Do NOT transition agent state if the sender is "system".
         if (senderId == "system") return state
 
         val updatedStatuses = state.agentStatuses.toMutableMap()
@@ -210,8 +236,13 @@ object AgentRuntimeReducer {
             val isRelevant = (agent.subscribedSessionIds.contains(sessionId) || agent.privateSessionId == sessionId)
 
             if (isRelevant && agent.id != senderId) {
-                // Update awareness frontier
+                // NEW: Auto-Waiting Logic (Synchronous)
+                // If the agent is IDLE and sees a relevant message, it automatically transitions to WAITING.
+                // This eliminates the race condition where multiple messages would trigger multiple "SET_STATUS" actions.
+                val newStatus = if (currentStatus.status == AgentStatus.IDLE) AgentStatus.WAITING else currentStatus.status
+
                 updatedStatuses[agent.id] = currentStatus.copy(
+                    status = newStatus,
                     lastSeenMessageId = messageId,
                     lastMessageReceivedTimestamp = currentTime,
                     // Only set waiting timestamp if not already waiting

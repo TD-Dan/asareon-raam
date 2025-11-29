@@ -32,13 +32,13 @@ object AgentCognitivePipeline {
         if (statusInfo.status == AgentStatus.PROCESSING && agent.isAgentActive) return
 
         val contextSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
-            AgentAvatarLogic.updateAgentAvatarCard(agentId, AgentStatus.ERROR, "Cannot start turn: Agent has no session for context.", store)
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, "Cannot start turn: Agent has no session for context.")
             return
         }
 
         // UI Update: Set status to PROCESSING (if Direct mode)
         if (statusInfo.turnMode == TurnMode.DIRECT) {
-            AgentAvatarLogic.updateAgentAvatarCard(agentId, AgentStatus.PROCESSING, null, store)
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.PROCESSING)
         }
 
         // Step 1: Request Ledger Content (Always the first step)
@@ -68,7 +68,7 @@ object AgentCognitivePipeline {
             json.decodeFromJsonElement<LedgerResponsePayload>(payload)
         } catch (e: Exception) {
             val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
-            if (agentId != null) AgentAvatarLogic.updateAgentAvatarCard(agentId, AgentStatus.ERROR, "Failed to parse ledger.", store)
+            if (agentId != null) AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, "Failed to parse ledger.")
             return
         }
 
@@ -152,7 +152,7 @@ object AgentCognitivePipeline {
         val ledgerContext = statusInfo.stagedTurnContext
         if (ledgerContext == null) {
             store.platformDependencies.log(LogLevel.ERROR, "agent", "HKG context received for '$agentId' without staged ledger context. Aborting.")
-            AgentAvatarLogic.updateAgentAvatarCard(agentId, AgentStatus.ERROR, "Context assembly failed.", store)
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, "Context assembly failed.")
             return
         }
 

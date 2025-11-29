@@ -78,9 +78,10 @@ class AgentRuntimeFeatureT1CrudLogicTest {
     @Test
     fun `DELETE (internal confirm) should remove agent and avatar card info`() {
         val agent = AgentInstance("a1", "Test", null, "p", "m")
+        // REFACTOR FIX: Use Map<SessionId, MessageId> instead of AvatarCardInfo
         val state = AgentRuntimeState(
             agents = mapOf("a1" to agent),
-            agentAvatarCardIds = mapOf("a1" to AgentRuntimeState.AvatarCardInfo("msg-1", "s-1"))
+            agentAvatarCardIds = mapOf("a1" to mapOf("s-1" to "msg-1"))
         )
 
         val action = Action(ActionNames.AGENT_INTERNAL_CONFIRM_DELETE, buildJsonObject { put("agentId", "a1") })

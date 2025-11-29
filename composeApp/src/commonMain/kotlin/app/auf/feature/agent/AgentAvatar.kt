@@ -26,60 +26,104 @@ import kotlin.time.Duration.Companion.milliseconds
 // --- Logic ---
 
 object AgentAvatarLogic {
+
     fun touchAgentAvatarCard(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
-        val cardInfo = agentState.agentAvatarCardIds[agent.id] ?: return
-        store.dispatch("agent", Action(
-            name = ActionNames.SESSION_UPDATE_MESSAGE,
-            payload = buildJsonObject {
-                put("session", cardInfo.sessionId)
-                put("messageId", cardInfo.messageId)
-            }
-        ))
+        val sessionMap = agentState.agentAvatarCardIds[agent.id] ?: return
+        sessionMap.forEach { (sessionId, messageId) ->
+            store.dispatch("agent", Action(
+                name = ActionNames.SESSION_UPDATE_MESSAGE,
+                payload = buildJsonObject {
+                    put("session", sessionId)
+                    put("messageId", messageId)
+                }
+            ))
+        }
     }
 
-    fun updateAgentAvatarCard(agentId: String, status: AgentStatus, error: String? = null, store: Store) {
-        val agentState = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
-        val agent = agentState.agents[agentId] ?: return
-        val platformDependencies = store.platformDependencies
-
-        // Determine the session to post in. A sovereign agent's avatar is in its private session.
-        val targetSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull()
-
-        // 1. Atomically delete the old card
-        agentState.agentAvatarCardIds[agentId]?.let { oldCardInfo ->
-            store.dispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
-                put("session", oldCardInfo.sessionId); put("messageId", oldCardInfo.messageId)
+    /**
+     * Reconciles the agent's visual presence in the ledger with its current configuration and state.
+     * This function is the "Side Effect Driver" that ensures:
+     * 1. Old cards are deleted.
+     * 2. Zombies (unsubscribed sessions) are cleaned up.
+     * 3. New cards are posted to all valid sessions (Subscribed + Private).
+     *
+     * @param newStatus Optional. If provided, updates the agent's status before reconciling.
+     */
+    fun updateAgentAvatars(
+        agentId: String,
+        store: Store,
+        newStatus: AgentStatus? = null,
+        newError: String? = null
+    ) {
+        // 1. Dispatch Status Change (if requested)
+        if (newStatus != null) {
+            store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
+                put("agentId", agentId)
+                put("status", newStatus.name)
+                newError?.let { put("error", it) }
             }))
         }
 
-        // 2. Set the agent's new status
-        store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
-            put("agentId", agentId); put("status", status.name); error?.let { put("error", it) }
-        }))
+        // 2. Fetch Latest State (Needed to get updated frontiers/status)
+        val appState = store.state.value
+        val agentState = appState.featureStates["agent"] as? AgentRuntimeState ?: return
+        val agent = agentState.agents[agentId] ?: return
+        val statusInfo = agentState.agentStatuses[agentId] ?: AgentStatusInfo()
 
-        // 3. If there's no session to post to, we're done.
-        if (targetSessionId == null) return
+        // 3. Determine Target Sessions
+        // Sovereign Requirement: Presence in ALL subscribed public sessions + Private session.
+        val targetSessions = (agent.subscribedSessionIds + listOfNotNull(agent.privateSessionId)).distinct()
 
-        // 4. Re-fetch the state *after* the status change to get the latest frontiers.
-        val latestAgentState = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
-        val latestStatus = latestAgentState.agentStatuses[agentId] ?: AgentStatusInfo()
-
-        // 5. Determine where in the ledger the new card should be placed.
-        val afterMessageId = when (status) {
-            AgentStatus.PROCESSING -> latestStatus.processingFrontierMessageId
-            else -> latestStatus.lastSeenMessageId
+        // 4. Determine Position
+        // If PROCESSING, stick to processingFrontier. If IDLE/WAITING/ERROR, stick to lastSeen.
+        val afterMessageId = when (statusInfo.status) {
+            AgentStatus.PROCESSING -> statusInfo.processingFrontierMessageId
+            else -> statusInfo.lastSeenMessageId
         }
 
-        // 6. Post the new card.
-        val messageId = platformDependencies.generateUUID()
-        val metadata = buildJsonObject {
-            put("render_as_partial", true); put("is_transient", true); put("agentStatus", status.name)
-            error?.let { put("errorMessage", it) }
+        val platformDependencies = store.platformDependencies
+        val currentCards = agentState.agentAvatarCardIds[agentId] ?: emptyMap()
+
+        // 5. Cleanup Zombies (Sessions we are no longer subscribed to)
+        val zombies = currentCards.keys - targetSessions.toSet()
+        zombies.forEach { sessionId ->
+            val messageId = currentCards[sessionId]
+            if (messageId != null) {
+                store.dispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+                    put("session", sessionId)
+                    put("messageId", messageId)
+                }))
+            }
         }
-        store.dispatch("agent", Action(ActionNames.SESSION_POST, buildJsonObject {
-            put("session", targetSessionId); put("senderId", agentId); put("messageId", messageId)
-            put("metadata", metadata); afterMessageId?.let { put("afterMessageId", it) }
-        }))
+
+        // 6. Update/Post Target Sessions
+        targetSessions.forEach { sessionId ->
+            // A. Delete Old Card (Atomically move by Delete + Post)
+            val oldMessageId = currentCards[sessionId]
+            if (oldMessageId != null) {
+                store.dispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+                    put("session", sessionId)
+                    put("messageId", oldMessageId)
+                }))
+            }
+
+            // B. Post New Card
+            val newMessageId = platformDependencies.generateUUID()
+            val metadata = buildJsonObject {
+                put("render_as_partial", true)
+                put("is_transient", true)
+                put("agentStatus", statusInfo.status.name)
+                statusInfo.errorMessage?.let { put("errorMessage", it) }
+            }
+
+            store.dispatch("agent", Action(ActionNames.SESSION_POST, buildJsonObject {
+                put("session", sessionId)
+                put("senderId", agentId)
+                put("messageId", newMessageId)
+                put("metadata", metadata)
+                afterMessageId?.let { put("afterMessageId", it) }
+            }))
+        }
     }
 }
 

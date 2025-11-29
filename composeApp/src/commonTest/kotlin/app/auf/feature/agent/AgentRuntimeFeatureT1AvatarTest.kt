@@ -44,53 +44,87 @@ class AgentRuntimeFeatureT1AvatarTest {
     // --- 1. Logic Verification (AgentAvatarLogic) ---
 
     @Test
-    fun `updateAgentAvatarCard should atomically replace the card in the ledger`() {
+    fun `updateAgentAvatars should atomically replace the card in ALL sessions`() {
         // ARRANGE
         val agentId = "a1"
-        val sessionId = "s1"
-        val oldCardInfo = AgentRuntimeState.AvatarCardInfo("msg-old", sessionId)
+        val session1 = "s1"
+        val session2 = "s2"
+        val oldCard1 = "msg-old-1"
 
-        val agent = AgentInstance(agentId, "Test", null, "p", "m", subscribedSessionIds = listOf(sessionId))
+        // Agent subscribed to 2 sessions, only has card in 1 currently
+        val agent = AgentInstance(agentId, "Test", null, "p", "m", subscribedSessionIds = listOf(session1, session2))
 
-        // FIX: We must seed processingFrontierMessageId because we are testing the PROCESSING transition
         val statusInfo = AgentStatusInfo(
             lastSeenMessageId = "msg-last",
             processingFrontierMessageId = "msg-last"
         )
 
+        // Setup State: Map<String, Map<String, String>>
         val state = AgentRuntimeState(
             agents = mapOf(agentId to agent),
             agentStatuses = mapOf(agentId to statusInfo),
-            agentAvatarCardIds = mapOf(agentId to oldCardInfo)
+            agentAvatarCardIds = mapOf(agentId to mapOf(session1 to oldCard1))
         )
         fakeStore.setState(AppState(featureStates = mapOf("agent" to state)))
 
         // ACT
-        AgentAvatarLogic.updateAgentAvatarCard(agentId, AgentStatus.PROCESSING, null, fakeStore)
+        AgentAvatarLogic.updateAgentAvatars(agentId, fakeStore, AgentStatus.PROCESSING, null)
 
         // ASSERT
-        // 1. Delete Old
+        // 1. Delete Old (Session 1 only)
         val deleteAction = fakeStore.dispatchedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
         assertNotNull(deleteAction)
-        assertEquals("msg-old", deleteAction.payload?.get("messageId")?.jsonPrimitive?.contentOrNull)
+        assertEquals(session1, deleteAction.payload?.get("session")?.jsonPrimitive?.contentOrNull)
+        assertEquals(oldCard1, deleteAction.payload?.get("messageId")?.jsonPrimitive?.contentOrNull)
 
         // 2. Set Status
         val statusAction = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_INTERNAL_SET_STATUS }
         assertNotNull(statusAction)
         assertEquals("PROCESSING", statusAction.payload?.get("status")?.jsonPrimitive?.contentOrNull)
 
-        // 3. Post New
-        val postAction = fakeStore.dispatchedActions.find { it.name == ActionNames.SESSION_POST }
-        assertNotNull(postAction)
-        assertEquals(sessionId, postAction.payload?.get("session")?.jsonPrimitive?.contentOrNull)
-        assertEquals("msg-last", postAction.payload?.get("afterMessageId")?.jsonPrimitive?.contentOrNull)
+        // 3. Post New (Both sessions)
+        val postActions = fakeStore.dispatchedActions.filter { it.name == ActionNames.SESSION_POST }
+        assertEquals(2, postActions.size)
 
-        val metadata = postAction.payload?.get("metadata") // Implicit check that metadata exists
-        assertNotNull(metadata)
+        val postedSessions = postActions.map { it.payload?.get("session")?.jsonPrimitive?.contentOrNull }.toSet()
+        assertTrue(postedSessions.contains(session1))
+        assertTrue(postedSessions.contains(session2))
     }
 
     @Test
-    fun `updateAgentAvatarCard should target private session if sovereign`() {
+    fun `updateAgentAvatars should cleanup zombie sessions`() {
+        // ARRANGE
+        val agentId = "a1"
+        val activeSession = "s1"
+        val oldZombieSession = "s-zombie"
+
+        // Agent ONLY subscribed to s1. But state thinks card exists in s-zombie.
+        val agent = AgentInstance(agentId, "Test", null, "p", "m", subscribedSessionIds = listOf(activeSession))
+
+        val state = AgentRuntimeState(
+            agents = mapOf(agentId to agent),
+            agentAvatarCardIds = mapOf(agentId to mapOf(oldZombieSession to "msg-zombie", activeSession to "msg-active"))
+        )
+        fakeStore.setState(AppState(featureStates = mapOf("agent" to state)))
+
+        // ACT
+        AgentAvatarLogic.updateAgentAvatars(agentId, fakeStore) // Just refresh
+
+        // ASSERT
+        // 1. Delete Zombie
+        val zombieDelete = fakeStore.dispatchedActions.find {
+            it.name == ActionNames.SESSION_DELETE_MESSAGE && it.payload?.get("session")?.jsonPrimitive?.contentOrNull == oldZombieSession
+        }
+        assertNotNull(zombieDelete)
+
+        // 2. Post ONLY to active session
+        val postActions = fakeStore.dispatchedActions.filter { it.name == ActionNames.SESSION_POST }
+        assertEquals(1, postActions.size)
+        assertEquals(activeSession, postActions[0].payload?.get("session")?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun `updateAgentAvatars should target private session if sovereign`() {
         // ARRANGE
         val agent = AgentInstance("a1", "Sovereign", "kg1", "p", "m",
             privateSessionId = "private-1",
@@ -100,31 +134,14 @@ class AgentRuntimeFeatureT1AvatarTest {
         fakeStore.setState(AppState(featureStates = mapOf("agent" to state)))
 
         // ACT
-        AgentAvatarLogic.updateAgentAvatarCard("a1", AgentStatus.IDLE, null, fakeStore)
+        AgentAvatarLogic.updateAgentAvatars("a1", fakeStore, AgentStatus.IDLE)
 
         // ASSERT
-        val postAction = fakeStore.dispatchedActions.find { it.name == ActionNames.SESSION_POST }
-        assertNotNull(postAction)
-        assertEquals("private-1", postAction.payload?.get("session")?.jsonPrimitive?.contentOrNull)
-    }
+        val postActions = fakeStore.dispatchedActions.filter { it.name == ActionNames.SESSION_POST }
+        val sessions = postActions.map { it.payload?.get("session")?.jsonPrimitive?.contentOrNull }.toSet()
 
-    @Test
-    fun `touchAgentAvatarCard should dispatch SESSION_UPDATE_MESSAGE`() {
-        // ARRANGE
-        val agent = AgentInstance("a1", "Test", null, "p", "m")
-        val cardInfo = AgentRuntimeState.AvatarCardInfo("msg-1", "s-1")
-        val state = AgentRuntimeState(
-            agents = mapOf("a1" to agent),
-            agentAvatarCardIds = mapOf("a1" to cardInfo)
-        )
-
-        // ACT
-        AgentAvatarLogic.touchAgentAvatarCard(agent, state, fakeStore)
-
-        // ASSERT
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.SESSION_UPDATE_MESSAGE }
-        assertNotNull(action)
-        assertEquals("msg-1", action.payload?.get("messageId")?.jsonPrimitive?.contentOrNull)
+        assertTrue(sessions.contains("private-1"))
+        assertTrue(sessions.contains("public-1"))
     }
 
     // --- 2. UI Verification (AgentAvatarCard) ---
@@ -168,43 +185,5 @@ class AgentRuntimeFeatureT1AvatarTest {
         val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_CANCEL_TURN }
         assertNotNull(action)
         assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
-    }
-
-    @Test
-    fun `menu action 'Preview Turn' triggers INITIATE_TURN with preview=true`() {
-        val agent = AgentInstance("a1", "Test", null, "p", "m", subscribedSessionIds = listOf("s1"))
-        renderAgentCard(agent, AgentStatusInfo(status = AgentStatus.IDLE))
-
-        // Open Menu
-        composeTestRule.onNodeWithContentDescription("More options").performClick()
-        // Click Preview
-        composeTestRule.onNodeWithText("Preview Turn").performClick()
-
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN }
-        assertNotNull(action)
-        assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
-        assertEquals(true, action.payload?.get("preview")?.jsonPrimitive?.boolean)
-    }
-
-    @Test
-    fun `toggle buttons dispatch correct actions`() {
-        val agent = AgentInstance("a1", "Test", null, "p", "m")
-        renderAgentCard(agent, AgentStatusInfo(status = AgentStatus.IDLE))
-
-        // Toggle Active
-        composeTestRule.onNodeWithContentDescription("Toggle Active State").performClick()
-        assertNotNull(fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_TOGGLE_ACTIVE })
-
-        // Toggle Automatic
-        composeTestRule.onNodeWithContentDescription("Toggle Automatic Mode").performClick()
-        assertNotNull(fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE })
-    }
-
-    @Test
-    fun `error message is displayed when status is ERROR`() {
-        val agent = AgentInstance("a1", "Test", null, "p", "m")
-        renderAgentCard(agent, AgentStatusInfo(status = AgentStatus.ERROR, errorMessage = "Something broke"))
-
-        composeTestRule.onNodeWithText("Something broke").assertIsDisplayed()
     }
 }

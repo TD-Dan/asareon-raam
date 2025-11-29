@@ -80,10 +80,8 @@ class AgentRuntimeFeature(
             }
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
-                val targetSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull()
-                if (targetSessionId != null) {
-                    AgentAvatarLogic.updateAgentAvatarCard(agent.id, AgentStatus.IDLE, null, store)
-                }
+                // On load, refresh avatar presence (posts to private+subscribed)
+                AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE)
                 broadcastAgentNames(agentState, store)
             }
 
@@ -125,19 +123,20 @@ class AgentRuntimeFeature(
                 saveAgentConfig(newAgent, store)
                 broadcastAgentNames(agentState, store)
 
-                val currentStatus = agentState.agentStatuses[agentId]?.status ?: AgentStatus.IDLE
-                if (oldAgent != null && (oldAgent.subscribedSessionIds != newAgent.subscribedSessionIds || oldAgent.privateSessionId != newAgent.privateSessionId)) {
-                    AgentAvatarLogic.updateAgentAvatarCard(agentId, currentStatus, null, store)
-                }
+                // Refresh avatars to reflect potentially new subscriptions
+                AgentAvatarLogic.updateAgentAvatars(agentId, store)
             }
             ActionNames.AGENT_DELETE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
-                agentState.agentAvatarCardIds[agentId]?.let { cardInfo ->
+
+                // Cleanup ALL avatar cards for this agent
+                agentState.agentAvatarCardIds[agentId]?.forEach { (sessionId, messageId) ->
                     store.deferredDispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
-                        put("session", cardInfo.sessionId)
-                        put("messageId", cardInfo.messageId)
+                        put("session", sessionId)
+                        put("messageId", messageId)
                     }))
                 }
+
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject { put("subpath", agentId) }))
                 store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_CONFIRM_DELETE, buildJsonObject { put("agentId", agentId) }))
                 store.deferredDispatch(this.name, Action(ActionNames.AGENT_PUBLISH_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
@@ -150,13 +149,10 @@ class AgentRuntimeFeature(
                 AgentCognitivePipeline.startCognitiveCycle(agentId, store)
             }
             ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT -> {
-                // BUG FIX: Race condition resolution.
-                // This logic now runs AFTER the reducer has updated the state.
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 AgentCognitivePipeline.evaluateTurnContext(agentId, store)
             }
             ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT -> {
-                // As above, run logic after state update.
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 AgentCognitivePipeline.evaluateHkgContext(agentId, store)
             }
@@ -166,7 +162,7 @@ class AgentRuntimeFeature(
                 val statusInfo = agentState.agentStatuses[agentId]
                 val previewData = statusInfo?.stagedPreviewData ?: return
 
-                AgentAvatarLogic.updateAgentAvatarCard(agentId, AgentStatus.PROCESSING, null, store)
+                AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.PROCESSING)
 
                 store.deferredDispatch(this.name, Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
                     put("providerId", agent.modelProvider)
@@ -195,32 +191,29 @@ class AgentRuntimeFeature(
                 }))
                 activeTurnJobs[agentId]?.cancel()
                 activeTurnJobs.remove(agentId)
-                AgentAvatarLogic.updateAgentAvatarCard(agentId, AgentStatus.IDLE, "Turn cancelled by user.", store)
+                AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.IDLE, "Turn cancelled by user.")
             }
 
             // --- Peer Updates ---
             ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> {
-                // Note: Reducer handles the state updates (waiting time, etc.)
-                // We only need to check if we need to update the UI card to "WAITING" visually.
-                val payload = action.payload?.let { json.decodeFromJsonElement<MessagePostedPayload>(it) } ?: return
-                val entry = payload.entry
-                val senderId = entry["senderId"]?.jsonPrimitive?.contentOrNull
+                // The reducer has already performed the "Auto-Waiting" transition if necessary.
+                // We now check if we need to refresh the avatar cards (side effect).
+                // Conditions:
+                // 1. Status changed (IDLE -> WAITING)
+                // 2. Last seen message changed (we need to move the card to the bottom)
 
-                // If Sentinel system message, ignore.
-                if (senderId == "system") return
+                val prevAgentState = previousState as? AgentRuntimeState ?: return
+                agentState.agents.keys.forEach { agentId ->
+                    val prevStatus = prevAgentState.agentStatuses[agentId]
+                    val newStatus = agentState.agentStatuses[agentId]
 
-                val metadata = entry["metadata"]?.jsonObject
-                val isAvatar = metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
-                if (isAvatar) return
+                    if (prevStatus == null || newStatus == null) return@forEach
 
-                agentState.agents.values.forEach { agent ->
-                    // Logic for "Do we need to update the avatar card to show 'WAITING'?"
-                    // This duplicates some reducer logic but is necessary to trigger the Side Effect (updateAgentAvatarCard)
-                    if ((agent.subscribedSessionIds.contains(payload.sessionId) || agent.privateSessionId == payload.sessionId) && agent.id != senderId) {
-                        val status = agentState.agentStatuses[agent.id]?.status ?: AgentStatus.IDLE
-                        if (status == AgentStatus.IDLE) {
-                            AgentAvatarLogic.updateAgentAvatarCard(agent.id, AgentStatus.WAITING, null, store)
-                        }
+                    val statusChanged = prevStatus.status != newStatus.status
+                    val frontierMoved = prevStatus.lastSeenMessageId != newStatus.lastSeenMessageId
+
+                    if (statusChanged || frontierMoved) {
+                        AgentAvatarLogic.updateAgentAvatars(agentId, store)
                     }
                 }
             }
@@ -317,22 +310,28 @@ class AgentRuntimeFeature(
             json.decodeFromJsonElement<GatewayResponsePayload>(payload)
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, name, "FATAL: Failed to parse gateway response. Error: ${e.message}")
-            AgentAvatarLogic.updateAgentAvatarCard(agentId, AgentStatus.ERROR, "FATAL: Could not parse gateway response.", store)
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, "FATAL: Could not parse gateway response.")
             return
         }
 
         val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
         val agent = agentState.agents[decoded.correlationId] ?: return
 
+        // Note: The Avatar Logic now handles posting to ALL sessions, so we can just grab the target logic there.
+        // But for the RESPONSE message, we still need to know where to post.
+        // The standard is to post response to subscribed + private.
+        // Actually, the original logic posted to ONE target session.
+        // "val targetSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull()"
+        // We should stick to that for the TEXT response.
         val targetSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull()
 
         if (targetSessionId == null) {
-            AgentAvatarLogic.updateAgentAvatarCard(agent.id, AgentStatus.ERROR, "No session to post response.", store)
+            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.ERROR, "No session to post response.")
             return
         }
 
         if (decoded.errorMessage != null) {
-            AgentAvatarLogic.updateAgentAvatarCard(agent.id, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}", store)
+            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
         } else {
             var contentToPost = decoded.rawContent ?: ""
             val match = redundantHeaderRegex.find(contentToPost)
@@ -349,7 +348,7 @@ class AgentRuntimeFeature(
             store.deferredDispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
                 put("session", targetSessionId); put("senderId", agent.id); put("message", contentToPost)
             }))
-            AgentAvatarLogic.updateAgentAvatarCard(agent.id, AgentStatus.IDLE, null, store)
+            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE)
         }
     }
 
