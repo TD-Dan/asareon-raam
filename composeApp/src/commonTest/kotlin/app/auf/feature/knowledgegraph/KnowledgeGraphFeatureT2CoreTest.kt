@@ -107,6 +107,47 @@ class KnowledgeGraphFeatureT2CoreTest {
     }
 
     @Test
+    fun `REQUEST_CONTEXT should return full holon context via private data`() {
+        // Arrange: Populate state with a persona and child holon
+        val p1 = createHolonFromString(persona1Content, "p1.json", platform)
+        val h1 = createHolonFromString(holonAContent, "h1.json", platform)
+        val h1Enriched = h1.copy(header = h1.header.copy(parentId = p1.header.id)) // Simplified enrichment
+
+        val initialState = KnowledgeGraphState(
+            holons = mapOf(p1.header.id to p1, h1Enriched.header.id to h1Enriched),
+            personaRoots = mapOf(p1.header.name to p1.header.id)
+        )
+        val harness = TestEnvironment.create()
+            .withFeature(feature)
+            .withInitialState("knowledgegraph", initialState)
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            // ACT
+            harness.store.dispatch("agent-alpha", Action(ActionNames.KNOWLEDGEGRAPH_REQUEST_CONTEXT, buildJsonObject {
+                put("personaId", p1.header.id)
+                put("correlationId", "req-123")
+            }))
+
+            // ASSERT
+            val delivery = harness.store.deliveredPrivateData.find {
+                it.recipient == "agent-alpha" && it.envelope.type == ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT
+            }
+            assertNotNull(delivery, "A private response should be delivered to the agent.")
+
+            val payload = delivery.envelope.payload
+            assertEquals("req-123", payload["correlationId"]?.jsonPrimitive?.content)
+            assertEquals(p1.header.id, payload["personaId"]?.jsonPrimitive?.content)
+
+            val contextMap = payload["context"]?.jsonObject
+            assertNotNull(contextMap)
+            // Should contain both the root and the child because the root links to the child
+            assertTrue(contextMap.containsKey(p1.header.id))
+            assertTrue(contextMap.containsKey(h1.header.id))
+        }
+    }
+
+    @Test
     fun `RENAME_HOLON should update name, timestamp, and synchronize rawContent before writing`() {
         val holonToRename = Holon(
             header = HolonHeader(id = "h1", type="TestHolon", name = "Old Name", filePath = "p1/h1.json"),
@@ -153,7 +194,6 @@ class KnowledgeGraphFeatureT2CoreTest {
             assertNotNull(broadcastAction, "A RESERVATIONS_UPDATED broadcast should have been dispatched.")
 
             val payload = broadcastAction.payload!!.jsonObject
-            // [FIX] Correctly assert against the `reservedIds` array as per the contract.
             val reservedIds = payload["reservedIds"]?.jsonArray
             assertNotNull(reservedIds)
             assertEquals(1, reservedIds.size)

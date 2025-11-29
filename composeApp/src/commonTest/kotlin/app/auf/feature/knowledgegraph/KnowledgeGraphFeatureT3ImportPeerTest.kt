@@ -8,7 +8,10 @@ import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -16,6 +19,9 @@ import kotlin.test.assertTrue
 
 /**
  * Tier 3 Peer Test for the KnowledgeGraphFeature Import workflow.
+ *
+ * Verifies the interaction between KnowledgeGraphFeature and FileSystemFeature
+ * during the complex Import Execution phase.
  */
 class KnowledgeGraphFeatureT3ImportPeerTest {
 
@@ -37,6 +43,7 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
     fun `execute INTEGRATE should write new holon and dispatch update for parent`() {
         val existingPersonaFilePath = "pl1/pl1-20251112T190000Z.json"
         val newHolonFilePath = "hl1-20251112T190000Z.json"
+        // We simulate the persona already existing in memory (loaded)
         val existingPersona = createHolonFromString(existingPersonaContent, existingPersonaFilePath, platform)
 
         val initialState = KnowledgeGraphState(
@@ -71,6 +78,74 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
             val finalParentHolon = createHolonFromString(finalParentContent, existingPersonaFilePath, platform)
 
             assertTrue(finalParentHolon.header.subHolons.any { it.id == "hl1-20251112T190000Z" }, "Parent holon file should be updated to include a reference to the new child.")
+        }
+    }
+
+    @Test
+    fun `execute DEEP IMPORT should recursively resolve paths for new hierarchy`() {
+        // Scenario: Importing a tree of 3 NEW files (Root -> Mid -> Leaf)
+        // This tests the "Recursive Path Resolution" logic where intermediate parents
+        // do not yet exist on disk or in the main state.
+
+        val rootId = "root-20250101T000000Z"
+        val midId = "mid-20250101T000000Z"
+        val leafId = "leaf-20250101T000000Z"
+
+        val rootContent = """{ "header": { "id": "$rootId", "type": "AI_Persona_Root", "name": "Root" }, "payload": {} }"""
+        val midContent = """{ "header": { "id": "$midId", "type": "T", "name": "Mid" }, "payload": {} }"""
+        val leafContent = """{ "header": { "id": "$leafId", "type": "T", "name": "Leaf" }, "payload": {} }"""
+
+        val initialState = KnowledgeGraphState(
+            importFileContents = mapOf(
+                "root.json" to rootContent,
+                "mid.json" to midContent,
+                "leaf.json" to leafContent
+            ),
+            importSelectedActions = mapOf(
+                "root.json" to CreateRoot(),
+                "mid.json" to Integrate(rootId),
+                "leaf.json" to Integrate(midId)
+            )
+        )
+
+        val harness = TestEnvironment.create()
+            .withFeature(kgFeature)
+            .withFeature(fsFeature)
+            .withInitialState("knowledgegraph", initialState)
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            // ACT
+            harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
+
+            // ASSERT
+            val writeActions = harness.processedActions.filter { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
+            assertEquals(3, writeActions.size, "Expected 3 writes (Root, Mid, Leaf).")
+
+            // Verify Root Path
+            val rootWrite = writeActions.find { it.payload?.get("subpath")?.jsonPrimitive?.content?.contains(rootId) == true && it.payload?.get("subpath")?.jsonPrimitive?.content?.endsWith(rootId + ".json") == true }
+            assertNotNull(rootWrite)
+            assertEquals("$rootId/$rootId.json", rootWrite.payload?.get("subpath")?.jsonPrimitive?.content)
+
+            // Verify Mid Path (Should be inside Root)
+            val midWrite = writeActions.find { it.payload?.get("subpath")?.jsonPrimitive?.content?.contains(midId) == true }
+            assertNotNull(midWrite)
+            assertEquals("$rootId/$midId/$midId.json", midWrite.payload?.get("subpath")?.jsonPrimitive?.content)
+
+            // Verify Leaf Path (Should be inside Mid)
+            val leafWrite = writeActions.find { it.payload?.get("subpath")?.jsonPrimitive?.content?.contains(leafId) == true }
+            assertNotNull(leafWrite)
+            assertEquals("$rootId/$midId/$leafId/$leafId.json", leafWrite.payload?.get("subpath")?.jsonPrimitive?.content)
+
+            // Verify Content Linkage (Mid should contain Leaf ref)
+            val writtenMidContent = midWrite.payload?.get("content")?.jsonPrimitive?.content!!
+            val parsedMid = createHolonFromString(writtenMidContent, "$rootId/$midId/$midId.json", platform)
+            assertTrue(parsedMid.header.subHolons.any { it.id == leafId }, "Mid holon must contain reference to Leaf.")
+
+            // Verify Content Linkage (Root should contain Mid ref)
+            val writtenRootContent = rootWrite.payload?.get("content")?.jsonPrimitive?.content!!
+            val parsedRoot = createHolonFromString(writtenRootContent, "$rootId/$rootId.json", platform)
+            assertTrue(parsedRoot.header.subHolons.any { it.id == midId }, "Root holon must contain reference to Mid.")
         }
     }
 }
