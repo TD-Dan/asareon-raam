@@ -32,7 +32,7 @@ private fun parseActionName(name: String): ParsedActionName {
         featureName == "system" -> ParsedActionName.ActionType.SYSTEM
         parts.getOrNull(1) == "internal" -> ParsedActionName.ActionType.INTERNAL
         parts.getOrNull(1) == "publish" -> ParsedActionName.ActionType.PUBLISH
-        else -> ParsedActionName.ActionType.PUBLIC
+        else -> ParsedActionName.ActionType.PUBLIC // Default to PUBLIC logic if unclear, but validation catches this.
     }
     return ParsedActionName(featureName, actionType)
 }
@@ -73,9 +73,6 @@ open class Store(
      * Securely delivers a private data payload to a single target feature, bypassing the
      * public action bus. This is a privileged operation. The act of delivery is logged
      * for audibility, but the payload content is NOT.
-     *
-     * [REFACTOR] This method now triggers the processing loop to handle any actions
-     * that were deferred by the `onPrivateData` handler.
      */
     open fun deliverPrivateData(originator: String, recipient: String, envelope: PrivateDataEnvelope) {
         platformDependencies.log(
@@ -103,9 +100,12 @@ open class Store(
     }
 
     /**
-     * Enqueues an action to be dispatched only after the currently executing action cycle
-     * has fully completed.
-     * [REFACTOR] Open to allow FakeStore to capture these intents.
+     * Enqueues an action to be dispatched.
+     * This is the preferred method for actions triggered inside `onAction` to avoid re-entrancy issues.
+     *
+     * ARCHITECTURAL NOTE: This method is functionally distinct from [dispatch] to avoid
+     * double-recording issues in inheritance-based test spies. It replicates the queuing logic
+     * but skips the re-entrancy warning, as deferral is the correct solution for re-entrancy.
      */
     open fun deferredDispatch(originator: String, action: Action) {
         val stampedAction = action.copy(originator = originator)
@@ -115,13 +115,16 @@ open class Store(
             message = "Deferring: $stampedAction"
         )
         deferredActionQueue.add(stampedAction)
+        ensureProcessingLoop()
     }
 
 
     /**
      * The single, generic entry point for all state changes and side effects.
-     * [REFACTOR] This method is now simpler. It adds an action to the queue and
-     * ensures the master processing loop is running.
+     *
+     * ARCHITECTURAL NOTE: This method does NOT delegate to [deferredDispatch].
+     * It adds to the queue directly. This is deliberate to ensure that a TestStore
+     * overriding both methods does not record the same action twice (once in dispatch, once in deferredDispatch).
      */
     open fun dispatch(originator: String, action: Action) {
         val stampedAction = action.copy(originator = originator)
@@ -129,7 +132,7 @@ open class Store(
             platformDependencies.log(
                 level = LogLevel.WARN,
                 tag = "Store",
-                message = "Re-entrant dispatch detected for $stampedAction. Auto-deferring."
+                message = "Re-entrant dispatch detected for $stampedAction. This relies on the queue safety net. Prefer 'deferredDispatch' for internal chaining."
             )
         }
         deferredActionQueue.add(stampedAction)
@@ -210,9 +213,10 @@ open class Store(
             return
         }
 
+        // T2 Hook: Capture the processed action.
         onDispatch?.invoke(action)
 
-        // --- [REFACTOR] PHASE 2 & 3 Combined into a single, safe block ---
+        // --- PHASE 2 & 3 Combined into a single, safe block ---
         try {
             // --- PHASE 2: ROUTE, REDUCE, UPDATE ---
             val previousState = _state.value

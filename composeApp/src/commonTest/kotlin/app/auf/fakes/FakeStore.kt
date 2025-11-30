@@ -24,20 +24,19 @@ class FakeStore(
     override val state = _fakeState.asStateFlow()
 
     /**
-     * Captures the dispatched action after stamping it with the originator,
-     * mimicking the behavior of the real Store for accurate testing.
-     * This fake implementation bypasses the registry check, as its purpose
-     * is to test UI interactions and side effect dispatching, not the store's guards.
+     * Captures the dispatched action.
+     * Note: We do NOT call super.dispatch() because FakeStore is a logic sink.
      */
     override fun dispatch(originator: String, action: Action) {
-        // To make the fake more realistic, we stamp the action just like the real store.
         val stampedAction = action.copy(originator = originator)
         dispatchedActions.add(stampedAction)
     }
 
     /**
-     * [FIX] Capture deferred dispatches too, treating them as immediate intents
-     * for T1 testing purposes. This makes hidden async actions visible to assertions.
+     * Captures deferred dispatches.
+     * Note: We do NOT call super.deferredDispatch().
+     * This ensures that T1 tests verify the *intent* to dispatch, regardless of
+     * whether the production code uses dispatch() or deferredDispatch().
      */
     override fun deferredDispatch(originator: String, action: Action) {
         val stampedAction = action.copy(originator = originator)
