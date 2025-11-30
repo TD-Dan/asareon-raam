@@ -19,20 +19,32 @@ import kotlinx.serialization.json.*
 object AgentCognitivePipeline {
 
     private val json = Json { ignoreUnknownKeys = true }
+    private const val LOG_TAG = "AgentCognitivePipeline"
 
     /**
      * Entry point: Initiates the cognitive cycle for an agent.
      */
     fun startCognitiveCycle(agentId: String, store: Store) {
-        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
-        val agent = state.agents[agentId] ?: return
+        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: run {
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "startCognitiveCycle: Agent state missing.")
+            return
+        }
+        val agent = state.agents[agentId] ?: run {
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "startCognitiveCycle: Agent '$agentId' not found.")
+            return
+        }
         val statusInfo = state.agentStatuses[agentId] ?: AgentStatusInfo()
 
         // Guard: Prevent double-triggering
-        if (statusInfo.status == AgentStatus.PROCESSING && agent.isAgentActive) return
+        if (statusInfo.status == AgentStatus.PROCESSING && agent.isAgentActive) {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "startCognitiveCycle: Agent '$agentId' is already processing. Ignoring trigger.")
+            return
+        }
 
         val contextSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
-            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, "Cannot start turn: Agent has no session for context.")
+            val msg = "Cannot start turn: Agent has no session for context."
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, msg)
             return
         }
 
@@ -64,17 +76,26 @@ object AgentCognitivePipeline {
 
     private fun handleLedgerResponse(payload: JsonObject, store: Store) {
         // 1. Decode & Validate
-        val decoded = try {
-            json.decodeFromJsonElement<LedgerResponsePayload>(payload)
-        } catch (e: Exception) {
-            val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
-            if (agentId != null) AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, "Failed to parse ledger.")
+        val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
+        if (agentId == null) {
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleLedgerResponse: Missing correlationId.")
             return
         }
 
-        val agentId = decoded.correlationId
+        val decoded = try {
+            json.decodeFromJsonElement<LedgerResponsePayload>(payload)
+        } catch (e: Exception) {
+            val msg = "Failed to parse ledger response: ${e.message}"
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, msg)
+            return
+        }
+
         val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
-        val agent = state.agents[agentId] ?: return
+        val agent = state.agents[agentId] ?: run {
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleLedgerResponse: Agent '$agentId' not found in state.")
+            return
+        }
 
         // 2. Enrich Messages
         val enrichedMessages = decoded.messages.mapNotNull { element ->
@@ -111,11 +132,19 @@ object AgentCognitivePipeline {
      */
     fun evaluateTurnContext(agentId: String, store: Store) {
         val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
-        val agent = state.agents[agentId] ?: return
+        val agent = state.agents[agentId] ?: run {
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "evaluateTurnContext: Agent '$agentId' not found.")
+            return
+        }
         val statusInfo = state.agentStatuses[agentId] ?: return
 
         // Guard: Ensure context exists
-        if (statusInfo.stagedTurnContext == null) return
+        if (statusInfo.stagedTurnContext == null) {
+            val msg = "Turn Context Missing for '$agentId'. Aborting."
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, msg)
+            return
+        }
 
         // 4. Determine Next Step (Sovereign vs Vanilla)
         val isSovereign = SovereignAgentLogic.requestContextIfSovereign(store, agent)
@@ -151,7 +180,8 @@ object AgentCognitivePipeline {
         // Validation: Ensure we have the prerequisite ledger context
         val ledgerContext = statusInfo.stagedTurnContext
         if (ledgerContext == null) {
-            store.platformDependencies.log(LogLevel.ERROR, "agent", "HKG context received for '$agentId' without staged ledger context. Aborting.")
+            val msg = "HKG context received for '$agentId' without staged ledger context. Aborting."
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
             AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, "Context assembly failed.")
             return
         }
@@ -187,6 +217,13 @@ object AgentCognitivePipeline {
         store: Store
     ) {
         val platformDependencies = store.platformDependencies
+
+        // [DEBUG] Explicitly log the size of the HKG context to diagnose assembly failures
+        if (hkgContext != null) {
+            platformDependencies.log(LogLevel.INFO, LOG_TAG, "Assembling prompt for '${agent.id}' with ${hkgContext.size} HKG holons.")
+        } else {
+            platformDependencies.log(LogLevel.INFO, LOG_TAG, "Assembling prompt for '${agent.id}' (Vanilla/No HKG).")
+        }
 
         val hkgContextContent = hkgContext?.entries?.joinToString("\n\n---\n\n") { (holonId, content) ->
             "--- START OF FILE $holonId.json ---\n${content.jsonPrimitive.content}\n--- END OF FILE $holonId.json ---"

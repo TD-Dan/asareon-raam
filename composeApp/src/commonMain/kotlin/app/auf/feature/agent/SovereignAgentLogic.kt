@@ -159,14 +159,17 @@ object SovereignAgentLogic {
             store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
                 put("agentId", agent.id); put("step", "Requesting HKG")
             }))
-            val requestEnvelope = PrivateDataEnvelope(
-                type = ActionNames.Envelopes.AGENT_REQUEST_CONTEXT,
+
+            // [CRITICAL FIX] Use Public Action instead of Private Envelope.
+            // The KnowledgeGraphFeature listens for the public `KNOWLEDGEGRAPH_REQUEST_CONTEXT` action.
+            // Sending a private envelope here was an architectural violation and caused the request to be ignored.
+            store.deferredDispatch("agent", Action(
+                name = ActionNames.KNOWLEDGEGRAPH_REQUEST_CONTEXT,
                 payload = buildJsonObject {
                     put("correlationId", agent.id)
-                    put("knowledgeGraphId", kgId)
+                    put("personaId", kgId)
                 }
-            )
-            store.deliverPrivateData("agent", "knowledgegraph", requestEnvelope)
+            ))
             return true // Context was requested, so the caller should wait.
         }
 

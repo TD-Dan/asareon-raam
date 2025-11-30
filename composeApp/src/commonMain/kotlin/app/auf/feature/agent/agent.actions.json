@@ -255,19 +255,5 @@
         "required": ["agentId", "sessionId", "messageId"]
       }
     }
-  ],
-  "private_envelopes": [
-    {
-      "type_name": "agent.request.context",
-      "summary": "A request envelope sent to the KnowledgeGraphFeature to ask for the context of a specific HKG.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "correlationId": { "type": "string" },
-          "knowledgeGraphId": { "type": "string" }
-        },
-        "required": ["correlationId", "knowledgeGraphId"]
-      }
-    }
   ]
 }

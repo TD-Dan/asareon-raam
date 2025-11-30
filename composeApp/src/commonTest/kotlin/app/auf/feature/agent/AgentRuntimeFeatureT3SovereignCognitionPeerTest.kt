@@ -74,6 +74,11 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
     private fun setupTestEnvironment(): TestHarness {
         // --- ARRANGE: File System State ---
         val personaId = "philosopher-20251116T000000Z"
+        // [FIX] Use an empty relative path for the persona root to align with
+        // KnowledgeGraphFeature's expectation of finding the persona folder
+        // in the root of the "files" directory during SYSTEM_LIST.
+        val personaDir = "$personaId"
+
         val hkgContent = """
             {
                 "header": {
@@ -85,8 +90,9 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
                 "payload": {}
             }
         """.trimIndent()
-        platform.createDirectories("/fake/.auf/test/$personaId")
-        platform.writeFileContent("/fake/.auf/test/$personaId/$personaId.json", hkgContent)
+
+        platform.createDirectories(personaDir)
+        platform.writeFileContent("$personaDir/$personaId.json", hkgContent)
 
         // --- ARRANGE: Feature States ---
         val privateSession = Session("private-session-1", "p-cognition: Philosopher", emptyList(), 1L)
@@ -145,7 +151,7 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
             assertNotNull(systemPrompt, "The Gateway request should have a system prompt.")
             assertTrue(
                 systemPrompt.contains("Axiom: The unexamined life is not worth programming."),
-                "The system prompt must contain the unique axiom from the agent's HKG."
+                "The system prompt must contain the unique axiom from the agent's HKG.\nPrompt was: $systemPrompt"
             )
 
             // 2. Assert Correct Routing: A new message was posted to the agent's private session.
