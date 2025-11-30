@@ -52,6 +52,14 @@ object AgentRuntimeReducer {
                 state.copy(agentStatuses = state.agentStatuses + (payload.agentId to updatedStatus))
             }
 
+            // [NEW] Atomic commit of avatar position
+            ActionNames.AGENT_INTERNAL_AVATAR_MOVED -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<AvatarMovedPayload>(it) } ?: return state
+                val currentSessionMap = state.agentAvatarCardIds[payload.agentId] ?: emptyMap()
+                val newSessionMap = currentSessionMap + (payload.sessionId to payload.messageId)
+                state.copy(agentAvatarCardIds = state.agentAvatarCardIds + (payload.agentId to newSessionMap))
+            }
+
             // --- Turn Lifecycle ---
             ActionNames.AGENT_INITIATE_TURN -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<InitiateTurnPayload>(it) } ?: return state

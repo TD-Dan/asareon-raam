@@ -1,7 +1,7 @@
 {
   "feature_name":"agent",
   "summary":"Hosts and manages the lifecycle of autonomous, HKG-driven AI agents.",
-  "listensFor":[
+  "listensFor": [
     {
       "action_name":"agent.CREATE",
       "summary":"Creates a new agent instance with the specified configuration.",
@@ -240,6 +240,19 @@
           "context": { "type": "object" }
         },
         "required": ["agentId", "context"]
+      }
+    },
+    {
+      "action_name": "agent.internal.AVATAR_MOVED",
+      "summary": "[INTERNAL] Updates the feature state to reflect that an avatar card has been (or is being) moved to a new message ID.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string" },
+          "sessionId": { "type": "string" },
+          "messageId": { "type": "string" }
+        },
+        "required": ["agentId", "sessionId", "messageId"]
       }
     }
   ],

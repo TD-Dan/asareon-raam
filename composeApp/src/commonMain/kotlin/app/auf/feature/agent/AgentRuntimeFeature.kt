@@ -36,9 +36,8 @@ class AgentRuntimeFeature(
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val agentConfigFILENAME = "agent.json"
     private val activeTurnJobs = mutableMapOf<String, Job>()
-    // [RACE FIX] Tracks the most recently dispatched avatar card IDs (agentId/sessionId -> messageId).
-    private val optimisticAvatarCache = mutableMapOf<String, String>()
-    // [DEBOUNCE] Tracks active avatar update jobs to coalesce rapid changes.
+
+    // [CLEANUP] Optimistic cache removed. Logic is now sovereign in AgentAvatarLogic.
     private val avatarUpdateJobs = mutableMapOf<String, Job>()
 
     private val redundantHeaderRegex = Regex("""^.+? \([^)]+\) @ \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z:\s*""")
@@ -80,8 +79,7 @@ class AgentRuntimeFeature(
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
                 // On load, refresh avatar presence (posts to private+subscribed)
-                // [FIX] Pass cache
-                AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE, optimisticCache = optimisticAvatarCache)
+                AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE)
                 broadcastAgentNames(agentState, store)
             }
 
@@ -124,8 +122,7 @@ class AgentRuntimeFeature(
                 broadcastAgentNames(agentState, store)
 
                 // Refresh avatars to reflect potentially new subscriptions
-                // [FIX] Pass cache
-                AgentAvatarLogic.updateAgentAvatars(agentId, store, optimisticCache = optimisticAvatarCache)
+                AgentAvatarLogic.updateAgentAvatars(agentId, store)
             }
             ActionNames.AGENT_DELETE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
@@ -136,8 +133,6 @@ class AgentRuntimeFeature(
                         put("session", sessionId)
                         put("messageId", messageId)
                     }))
-                    // Clear cache
-                    optimisticAvatarCache.remove("$agentId/$sessionId")
                 }
 
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject { put("subpath", agentId) }))
@@ -165,7 +160,7 @@ class AgentRuntimeFeature(
                 val statusInfo = agentState.agentStatuses[agentId]
                 val previewData = statusInfo?.stagedPreviewData ?: return
 
-                AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.PROCESSING, optimisticCache = optimisticAvatarCache)
+                AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.PROCESSING)
 
                 store.deferredDispatch(this.name, Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
                     put("providerId", agent.modelProvider)
@@ -194,7 +189,7 @@ class AgentRuntimeFeature(
                 }))
                 activeTurnJobs[agentId]?.cancel()
                 activeTurnJobs.remove(agentId)
-                AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.IDLE, "Turn cancelled by user.", optimisticCache = optimisticAvatarCache)
+                AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.IDLE, "Turn cancelled by user.")
             }
 
             // --- Peer Updates ---
@@ -210,11 +205,11 @@ class AgentRuntimeFeature(
                     if (statusChanged || frontierMoved) {
                         platformDependencies.log(LogLevel.INFO, name,
                             "Avatar Update Triggered for $agentId. StatusChanged: $statusChanged. FrontierMoved: $frontierMoved")
-                        // [FIX] Debounce the update to prevent rapid-fire network calls and race conditions
+                        // [DEBOUNCE] Still valid to prevent rapid UI churn, but now safer due to sovereign ID commit.
                         avatarUpdateJobs[agentId]?.cancel()
                         avatarUpdateJobs[agentId] = coroutineScope.launch {
                             delay(50)
-                            AgentAvatarLogic.updateAgentAvatars(agentId, store, optimisticCache = optimisticAvatarCache)
+                            AgentAvatarLogic.updateAgentAvatars(agentId, store)
                         }
                     }
                 }
@@ -306,7 +301,7 @@ class AgentRuntimeFeature(
         val targetSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: return
 
         if (decoded.errorMessage != null) {
-            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}", optimisticCache = optimisticAvatarCache)
+            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
         } else {
             var contentToPost = decoded.rawContent ?: ""
             val match = redundantHeaderRegex.find(contentToPost)
@@ -321,7 +316,7 @@ class AgentRuntimeFeature(
             store.deferredDispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
                 put("session", targetSessionId); put("senderId", agent.id); put("message", contentToPost)
             }))
-            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE, optimisticCache = optimisticAvatarCache)
+            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE)
         }
     }
 

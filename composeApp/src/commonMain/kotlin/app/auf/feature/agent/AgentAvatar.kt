@@ -43,13 +43,13 @@ object AgentAvatarLogic {
 
     /**
      * Reconciles the agent's visual presence in the ledger with its current configuration and state.
+     * Uses the "Sovereign Avatar" pattern: Commit intention to state FIRST, then execute side effects.
      */
     fun updateAgentAvatars(
         agentId: String,
         store: Store,
         newStatus: AgentStatus? = null,
-        newError: String? = null,
-        optimisticCache: MutableMap<String, String>? = null
+        newError: String? = null
     ) {
         // 1. Dispatch Status Change (if requested)
         if (newStatus != null) {
@@ -64,7 +64,6 @@ object AgentAvatarLogic {
         val appState = store.state.value
         val agentState = appState.featureStates["agent"] as? AgentRuntimeState ?: return
         val agent = agentState.agents[agentId] ?: return
-        // [FIX] Revert to simple state lookup. The synchronous dispatch ensures this is reasonably fresh.
         val statusInfo = agentState.agentStatuses[agentId] ?: AgentStatusInfo()
 
         // 3. Determine Target Sessions
@@ -93,36 +92,32 @@ object AgentAvatarLogic {
                     put("session", sessionId)
                     put("messageId", messageId)
                 }))
-                // Clear from cache if present
-                optimisticCache?.remove("$agentId/$sessionId")
+                // [CLEANUP] We don't need to explicitly clean state here; the Reducer reacts to SESSION_DELETE_MESSAGE
             }
         }
 
         // 6. Update/Post Target Sessions
         targetSessions.forEach { sessionId ->
-            // A. Resolve Old Card ID (Optimistic Overlay)
-            // If the cache has an ID, it is newer than the state. Use it.
-            val cacheKey = "$agentId/$sessionId"
-            val cachedId = optimisticCache?.get(cacheKey)
-            val stateId = currentCards[sessionId]
-            val oldMessageId = cachedId ?: stateId
+            val oldMessageId = currentCards[sessionId]
 
-            // B. Delete Old Card (Atomically move by Delete + Post)
+            // A. Generate New ID and Commit Intention (Sovereign Update)
+            val newMessageId = platformDependencies.generateUUID()
+
+            store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_AVATAR_MOVED, buildJsonObject {
+                put("agentId", agentId)
+                put("sessionId", sessionId)
+                put("messageId", newMessageId)
+            }))
+
+            // B. Delete Old (if exists)
             if (oldMessageId != null) {
                 store.dispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                     put("session", sessionId)
                     put("messageId", oldMessageId)
                 }))
-            } else {
-                platformDependencies.log(LogLevel.INFO, "agent-avatar", "No old card found for session $sessionId. Posting new.")
             }
 
-            // B. Post New Card
-            val newMessageId = platformDependencies.generateUUID()
-
-            // Update Optimistic Cache immediately
-            optimisticCache?.put(cacheKey, newMessageId)
-
+            // C. Post New Card (Side Effect)
             val metadata = buildJsonObject {
                 put("render_as_partial", true)
                 put("is_transient", true)

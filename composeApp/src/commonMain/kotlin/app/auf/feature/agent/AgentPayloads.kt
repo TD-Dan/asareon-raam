@@ -24,3 +24,4 @@ import kotlinx.serialization.json.JsonObject
 @Serializable internal data class IdentitiesUpdatedPayload(val identities: List<Identity>, val activeId: String?)
 @Serializable internal data class StageTurnContextPayload(val agentId: String, val messages: List<GatewayMessage>)
 @Serializable internal data class SetHkgContextPayload(val agentId: String, val context: JsonObject)
+@Serializable internal data class AvatarMovedPayload(val agentId: String, val sessionId: String, val messageId: String)
