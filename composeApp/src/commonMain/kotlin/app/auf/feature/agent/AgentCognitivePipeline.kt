@@ -7,23 +7,11 @@ import app.auf.core.Version
 import app.auf.util.abbreviate
 import kotlinx.serialization.json.*
 
-/**
- * ## Slice 4: The Thinker (Consolidated & Hardened)
- * The central orchestrator for the Agent's cognitive cycle.
- * It manages the asynchronous flow of:
- * 1. Starting a cycle (Status -> Processing)
- * 2. Gathering Context (Ledger -> HKG)
- * 3. Assembling the Prompt (System + HKG + Ledger)
- * 4. Dispatching to Gateway (Generate or Preview)
- */
 object AgentCognitivePipeline {
 
     private val json = Json { ignoreUnknownKeys = true }
     private const val LOG_TAG = "AgentCognitivePipeline"
 
-    /**
-     * Entry point: Initiates the cognitive cycle for an agent.
-     */
     fun startCognitiveCycle(agentId: String, store: Store) {
         val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: run {
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "startCognitiveCycle: Agent state missing.")
@@ -35,9 +23,8 @@ object AgentCognitivePipeline {
         }
         val statusInfo = state.agentStatuses[agentId] ?: AgentStatusInfo()
 
-        // Guard: Prevent double-triggering
         if (statusInfo.status == AgentStatus.PROCESSING && agent.isAgentActive) {
-            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "startCognitiveCycle: Agent '$agentId' is already processing. Ignoring trigger.")
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "startCognitiveCycle: Agent '$agentId' is already processing. Ignoring.")
             return
         }
 
@@ -48,36 +35,27 @@ object AgentCognitivePipeline {
             return
         }
 
-        // UI Update: Set status to PROCESSING (if Direct mode)
         if (statusInfo.turnMode == TurnMode.DIRECT) {
             AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.PROCESSING)
         }
 
-        // Step 1: Request Ledger Content (Always the first step)
         store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
             put("agentId", agentId); put("step", "Requesting Ledger")
         }))
-
         store.deferredDispatch("agent", Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject {
             put("sessionId", contextSessionId); put("correlationId", agentId)
         }))
     }
 
-    /**
-     * Handles all private data envelopes related to the cognitive cycle.
-     */
     fun handlePrivateData(envelope: PrivateDataEnvelope, store: Store) {
         when (envelope.type) {
             ActionNames.Envelopes.SESSION_RESPONSE_LEDGER -> handleLedgerResponse(envelope.payload, store)
             ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT -> handleHkgContextResponse(envelope.payload, store)
-            // Gateway responses are handled by the Feature because they might trigger Session posts directly
         }
     }
 
     private fun handleLedgerResponse(payload: JsonObject, store: Store) {
-        // 1. Decode & Validate
-        val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
-        if (agentId == null) {
+        val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: run {
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleLedgerResponse: Missing correlationId.")
             return
         }
@@ -92,12 +70,8 @@ object AgentCognitivePipeline {
         }
 
         val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
-        val agent = state.agents[agentId] ?: run {
-            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleLedgerResponse: Agent '$agentId' not found in state.")
-            return
-        }
+        val agent = state.agents[agentId] ?: return
 
-        // 2. Enrich Messages
         val enrichedMessages = decoded.messages.mapNotNull { element ->
             try {
                 val entryJson = element.jsonObject
@@ -113,23 +87,15 @@ object AgentCognitivePipeline {
                     else -> "Unknown" to "user"
                 }
                 GatewayMessage(role, rawContent, senderId, senderName, timestamp)
-            } catch (e: Exception) {
-                null
-            }
+            } catch (e: Exception) { null }
         }
 
-        // 3. Dispatch Action to Update State
-        // [FIX] Use deferredDispatch to avoid re-entrancy warnings during Private Data handling
         store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
             put("agentId", agent.id)
             put("messages", json.encodeToJsonElement(enrichedMessages))
         }))
     }
 
-    /**
-     * [NEW] Called by AgentRuntimeFeature.onAction when AGENT_INTERNAL_STAGE_TURN_CONTEXT is processed.
-     * This ensures state is consistent before making decisions.
-     */
     fun evaluateTurnContext(agentId: String, store: Store) {
         val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
         val agent = state.agents[agentId] ?: run {
@@ -138,7 +104,6 @@ object AgentCognitivePipeline {
         }
         val statusInfo = state.agentStatuses[agentId] ?: return
 
-        // Guard: Ensure context exists
         if (statusInfo.stagedTurnContext == null) {
             val msg = "Turn Context Missing for '$agentId'. Aborting."
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
@@ -146,39 +111,28 @@ object AgentCognitivePipeline {
             return
         }
 
-        // 4. Determine Next Step (Sovereign vs Vanilla)
         val isSovereign = SovereignAgentLogic.requestContextIfSovereign(store, agent)
-
         if (!isSovereign) {
-            // Vanilla: Execute immediately
             executeTurn(agent, statusInfo.stagedTurnContext, null, state, store)
         }
-        // If Sovereign, requestContextIfSovereign has dispatched the request.
-        // We wait for handleHkgContextResponse -> AGENT_INTERNAL_SET_HKG_CONTEXT -> evaluateHkgContext
     }
 
     private fun handleHkgContextResponse(payload: JsonObject, store: Store) {
         val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
         val hkgContext = payload["context"]?.jsonObject
 
-        // Dispatch action to update state
-        // [FIX] Use deferredDispatch
         store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT, buildJsonObject {
             put("agentId", agentId)
             put("context", hkgContext ?: buildJsonObject {})
         }))
     }
 
-    /**
-     * [NEW] Called by AgentRuntimeFeature.onAction when AGENT_INTERNAL_SET_HKG_CONTEXT is processed.
-     */
     fun evaluateHkgContext(agentId: String, store: Store) {
         val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
         val agent = state.agents[agentId] ?: return
         val statusInfo = state.agentStatuses[agentId] ?: return
-
-        // Validation: Ensure we have the prerequisite ledger context
         val ledgerContext = statusInfo.stagedTurnContext
+
         if (ledgerContext == null) {
             val msg = "HKG context received for '$agentId' without staged ledger context. Aborting."
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
@@ -186,7 +140,6 @@ object AgentCognitivePipeline {
             return
         }
 
-        // Execute
         executeTurn(agent, ledgerContext, statusInfo.transientHkgContext, state, store)
     }
 
@@ -198,31 +151,13 @@ object AgentCognitivePipeline {
         store: Store
     ) {
         val statusInfo = agentState.agentStatuses[agent.id] ?: AgentStatusInfo()
-        assemblePromptAndRequestGeneration(
-            agent = agent,
-            statusInfo = statusInfo,
-            ledgerContext = ledgerContext,
-            hkgContext = hkgContext,
-            agentState = agentState,
-            store = store
-        )
-    }
-
-    private fun assemblePromptAndRequestGeneration(
-        agent: AgentInstance,
-        statusInfo: AgentStatusInfo,
-        ledgerContext: List<GatewayMessage>,
-        hkgContext: JsonObject?,
-        agentState: AgentRuntimeState,
-        store: Store
-    ) {
         val platformDependencies = store.platformDependencies
 
-        // [DEBUG] Explicitly log the size of the HKG context to diagnose assembly failures
+        // [DEBUG LOGGING]
         if (hkgContext != null) {
             platformDependencies.log(LogLevel.INFO, LOG_TAG, "Assembling prompt for '${agent.id}' with ${hkgContext.size} HKG holons.")
         } else {
-            platformDependencies.log(LogLevel.INFO, LOG_TAG, "Assembling prompt for '${agent.id}' (Vanilla/No HKG).")
+            platformDependencies.log(LogLevel.INFO, LOG_TAG, "Assembling prompt for '${agent.id}' (Vanilla).")
         }
 
         val hkgContextContent = hkgContext?.entries?.joinToString("\n\n---\n\n") { (holonId, content) ->
@@ -261,12 +196,10 @@ object AgentCognitivePipeline {
         val requestActionName = if (statusInfo.turnMode == TurnMode.PREVIEW) ActionNames.GATEWAY_PREPARE_PREVIEW else ActionNames.GATEWAY_GENERATE_CONTENT
         val step = if (statusInfo.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"
 
-        // [FIX] Use deferredDispatch
         store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
             put("agentId", agent.id); put("step", step)
         }))
 
-        // [FIX] Use deferredDispatch
         store.deferredDispatch("agent", Action(requestActionName, buildJsonObject {
             put("providerId", agent.modelProvider)
             put("modelName", agent.modelName)
