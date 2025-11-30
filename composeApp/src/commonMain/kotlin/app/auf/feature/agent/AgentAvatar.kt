@@ -31,8 +31,7 @@ object AgentAvatarLogic {
     fun touchAgentAvatarCard(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
         val sessionMap = agentState.agentAvatarCardIds[agent.id] ?: return
         sessionMap.forEach { (sessionId, messageId) ->
-            // [ARCH FIX] Use deferredDispatch to prevent re-entrancy warnings
-            store.deferredDispatch("agent", Action(
+            store.dispatch("agent", Action(
                 name = ActionNames.SESSION_UPDATE_MESSAGE,
                 payload = buildJsonObject {
                     put("session", sessionId)
@@ -54,32 +53,27 @@ object AgentAvatarLogic {
     ) {
         // 1. Dispatch Status Change (if requested)
         if (newStatus != null) {
-            // [ARCH FIX] Use deferredDispatch
-            store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
+            store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
                 put("agentId", agentId)
                 put("status", newStatus.name)
                 newError?.let { put("error", it) }
             }))
         }
 
-        // 2. Fetch Latest State
+        // 2. Fetch Latest State (Needed to get updated frontiers/status)
         val appState = store.state.value
         val agentState = appState.featureStates["agent"] as? AgentRuntimeState ?: return
         val agent = agentState.agents[agentId] ?: return
-        val currentStatusInfo = agentState.agentStatuses[agentId] ?: AgentStatusInfo()
-
-        // [LOGIC FIX] Use the intended new status if provided, otherwise fall back to current state.
-        // This prevents the "Stale Read" bug where deferredDispatch hasn't updated the store yet.
-        val effectiveStatus = newStatus ?: currentStatusInfo.status
-        val effectiveErrorMessage = if (newStatus != null) newError else currentStatusInfo.errorMessage
+        // [FIX] Revert to simple state lookup. The synchronous dispatch ensures this is reasonably fresh.
+        val statusInfo = agentState.agentStatuses[agentId] ?: AgentStatusInfo()
 
         // 3. Determine Target Sessions
         val targetSessions = (agent.subscribedSessionIds + listOfNotNull(agent.privateSessionId)).distinct()
 
-        // 4. Determine Position using EFFECTIVE status
-        val afterMessageId = when (effectiveStatus) {
-            AgentStatus.PROCESSING -> currentStatusInfo.processingFrontierMessageId
-            else -> currentStatusInfo.lastSeenMessageId
+        // 4. Determine Position
+        val afterMessageId = when (statusInfo.status) {
+            AgentStatus.PROCESSING -> statusInfo.processingFrontierMessageId
+            else -> statusInfo.lastSeenMessageId
         }
 
         val platformDependencies = store.platformDependencies
@@ -88,14 +82,14 @@ object AgentAvatarLogic {
         // DIAGNOSTIC LOG
         platformDependencies.log(
             LogLevel.INFO, "agent-avatar",
-            "Updating avatars for ${agent.name}. Targets: $targetSessions. CurrentCards: $currentCards. AfterMsg: $afterMessageId. Status: $effectiveStatus")
+            "Updating avatars for ${agent.name}. Targets: $targetSessions. CurrentCards: $currentCards. AfterMsg: $afterMessageId")
 
         // 5. Cleanup Zombies (Sessions we are no longer subscribed to)
         val zombies = currentCards.keys - targetSessions.toSet()
         zombies.forEach { sessionId ->
             val messageId = currentCards[sessionId]
             if (messageId != null) {
-                store.deferredDispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+                store.dispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                     put("session", sessionId)
                     put("messageId", messageId)
                 }))
@@ -115,7 +109,7 @@ object AgentAvatarLogic {
 
             // B. Delete Old Card (Atomically move by Delete + Post)
             if (oldMessageId != null) {
-                store.deferredDispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+                store.dispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                     put("session", sessionId)
                     put("messageId", oldMessageId)
                 }))
@@ -132,11 +126,11 @@ object AgentAvatarLogic {
             val metadata = buildJsonObject {
                 put("render_as_partial", true)
                 put("is_transient", true)
-                put("agentStatus", effectiveStatus.name)
-                effectiveErrorMessage?.let { put("errorMessage", it) }
+                put("agentStatus", statusInfo.status.name)
+                statusInfo.errorMessage?.let { put("errorMessage", it) }
             }
 
-            store.deferredDispatch("agent", Action(ActionNames.SESSION_POST, buildJsonObject {
+            store.dispatch("agent", Action(ActionNames.SESSION_POST, buildJsonObject {
                 put("session", sessionId)
                 put("senderId", agentId)
                 put("messageId", newMessageId)
