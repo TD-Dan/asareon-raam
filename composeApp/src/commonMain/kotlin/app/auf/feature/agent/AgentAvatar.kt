@@ -31,7 +31,7 @@ object AgentAvatarLogic {
     fun touchAgentAvatarCard(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
         val sessionMap = agentState.agentAvatarCardIds[agent.id] ?: return
         sessionMap.forEach { (sessionId, messageId) ->
-            store.dispatch("agent", Action(
+            store.deferredDispatch("agent", Action(
                 name = ActionNames.SESSION_UPDATE_MESSAGE,
                 payload = buildJsonObject {
                     put("session", sessionId)
@@ -53,7 +53,7 @@ object AgentAvatarLogic {
     ) {
         // 1. Dispatch Status Change (if requested)
         if (newStatus != null) {
-            store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
                 put("agentId", agentId)
                 put("status", newStatus.name)
                 newError?.let { put("error", it) }
@@ -88,11 +88,12 @@ object AgentAvatarLogic {
         zombies.forEach { sessionId ->
             val messageId = currentCards[sessionId]
             if (messageId != null) {
-                store.dispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+                // [CLEANUP] We don't need to explicitly clean state here; the Reducer reacts to SESSION_DELETE_MESSAGE
+                // We just send the command to the ledger.
+                store.deferredDispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                     put("session", sessionId)
                     put("messageId", messageId)
                 }))
-                // [CLEANUP] We don't need to explicitly clean state here; the Reducer reacts to SESSION_DELETE_MESSAGE
             }
         }
 
@@ -103,7 +104,7 @@ object AgentAvatarLogic {
             // A. Generate New ID and Commit Intention (Sovereign Update)
             val newMessageId = platformDependencies.generateUUID()
 
-            store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_AVATAR_MOVED, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_AVATAR_MOVED, buildJsonObject {
                 put("agentId", agentId)
                 put("sessionId", sessionId)
                 put("messageId", newMessageId)
@@ -111,7 +112,7 @@ object AgentAvatarLogic {
 
             // B. Delete Old (if exists)
             if (oldMessageId != null) {
-                store.dispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+                store.deferredDispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                     put("session", sessionId)
                     put("messageId", oldMessageId)
                 }))
@@ -125,7 +126,7 @@ object AgentAvatarLogic {
                 statusInfo.errorMessage?.let { put("errorMessage", it) }
             }
 
-            store.dispatch("agent", Action(ActionNames.SESSION_POST, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionNames.SESSION_POST, buildJsonObject {
                 put("session", sessionId)
                 put("senderId", agentId)
                 put("messageId", newMessageId)
