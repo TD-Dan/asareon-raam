@@ -105,8 +105,9 @@ open class Store(
     /**
      * Enqueues an action to be dispatched only after the currently executing action cycle
      * has fully completed.
+     * [REFACTOR] Open to allow FakeStore to capture these intents.
      */
-    fun deferredDispatch(originator: String, action: Action) {
+    open fun deferredDispatch(originator: String, action: Action) {
         val stampedAction = action.copy(originator = originator)
         platformDependencies.log(
             level = LogLevel.INFO,

@@ -35,6 +35,15 @@ class FakeStore(
         dispatchedActions.add(stampedAction)
     }
 
+    /**
+     * [FIX] Capture deferred dispatches too, treating them as immediate intents
+     * for T1 testing purposes. This makes hidden async actions visible to assertions.
+     */
+    override fun deferredDispatch(originator: String, action: Action) {
+        val stampedAction = action.copy(originator = originator)
+        dispatchedActions.add(stampedAction)
+    }
+
     fun setState(newState: AppState) {
         _fakeState.value = newState
     }
