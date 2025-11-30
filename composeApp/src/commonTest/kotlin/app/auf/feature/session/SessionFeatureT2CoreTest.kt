@@ -16,7 +16,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
 import kotlin.test.*
-import kotlinx.coroutines.test.advanceUntilIdle
 
 /**
  * Tier 2 Core Tests for SessionFeature.
