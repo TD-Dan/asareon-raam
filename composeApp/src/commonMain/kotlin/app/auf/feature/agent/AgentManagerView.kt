@@ -281,6 +281,10 @@ private fun AgentEditorView(
             Box(Modifier.weight(1f)) { KnowledgeGraphSelector(agent, agentState, store) }
             Box(Modifier.weight(1f)) { ProviderSelector(agent, agentState, store) }
             Box(Modifier.weight(1f)) { ModelSelector(agent, agentState, store) }
+            // [NEW] Added Strategy Selector
+            Box(Modifier.weight(1f)) { StrategySelector(agent, store) }
+            // Spacer for alignment if odd number of items
+            Box(Modifier.weight(1f))
         }
 
         Row(
@@ -721,6 +725,33 @@ private fun ModelSelector(agent: AgentInstance, agentState: AgentRuntimeState, s
                 DropdownMenuItem(text = { Text(modelName) }, onClick = {
                     store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
                         put("agentId", agent.id); put("modelName", modelName)
+                    }))
+                    isExpanded = false
+                })
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StrategySelector(agent: AgentInstance, store: Store) {
+    val strategies = remember { CognitiveStrategyRegistry.getAll() }
+    var isExpanded by remember { mutableStateOf(false) }
+    val currentStrategy = strategies.find { it.id == agent.cognitiveStrategyId }
+
+    ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
+        OutlinedTextField(
+            value = currentStrategy?.displayName ?: agent.cognitiveStrategyId,
+            onValueChange = {}, readOnly = true, label = { Text("Strategy") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth()
+        )
+        ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
+            strategies.forEach { strategy ->
+                DropdownMenuItem(text = { Text(strategy.displayName) }, onClick = {
+                    store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
+                        put("agentId", agent.id); put("cognitiveStrategyId", strategy.id)
                     }))
                     isExpanded = false
                 })
