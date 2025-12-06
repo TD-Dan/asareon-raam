@@ -235,7 +235,6 @@ class AgentRuntimeFeature(
             ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
             ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE,
             ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW -> {
-                // [META-ANALYSIS FIX] Unified routing. All cognitive responses go to the Pipeline.
                 AgentCognitivePipeline.handlePrivateData(envelope, store)
             }
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> handleFileSystemListResponse(envelope.payload, store)

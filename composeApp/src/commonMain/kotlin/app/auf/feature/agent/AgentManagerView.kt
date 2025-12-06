@@ -1,5 +1,10 @@
 package app.auf.feature.agent
 
+import app.auf.ui.components.CodeEditor
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,6 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
+import app.auf.ui.components.CodeEditor
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -125,7 +133,6 @@ private fun AgentCard(
         }
     }
 }
-
 @Composable
 private fun AgentReadOnlyView(
     agent: AgentInstance,
@@ -135,21 +142,62 @@ private fun AgentReadOnlyView(
 ) {
     val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.sessionNames[it] } ?: "Not Subscribed"
     val hkgName = agent.knowledgeGraphId?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG"
-
-    // REF: Slice 3 - Resolve status info
     val statusInfo = agentState.agentStatuses[agent.id] ?: AgentStatusInfo()
+
+    // [NEW] Local state for expanding diagnostics
+    var showInternals by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         AgentControlCard(agent, statusInfo, store, platformDependencies)
+
         SelectionContainer {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Subscribed: $sessionName" + if (agent.subscribedSessionIds.size > 1) " (+${agent.subscribedSessionIds.size - 1} more)" else "", style = MaterialTheme.typography.bodyMedium)
                 Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium)
                 Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
+
+                // [NEW] Strategy Info
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Strategy: ${agent.cognitiveStrategyId}", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(
+                        onClick = { showInternals = !showInternals },
+                        modifier = Modifier.size(20.dp)
+                    ) {
+                        Icon(
+                            if (showInternals) Icons.Default.ExpandLess else Icons.Default.Info,
+                            contentDescription = "Inspect State",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+        }
+
+        // [NEW] NVRAM Inspector
+        if (showInternals) {
+            val prettyJson = remember(agent.cognitiveState) {
+                val json = Json { prettyPrint = true }
+                json.encodeToString(agent.cognitiveState)
+            }
+
+            Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Text(
+                    "Cognitive State (NVRAM)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                CodeEditor(
+                    value = prettyJson,
+                    onValueChange = {},
+                    readOnly = true,
+                    modifier = Modifier.height(150.dp) // Constrain height
+                )
             }
         }
     }
 }
+
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

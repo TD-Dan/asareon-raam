@@ -249,4 +249,30 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         composeTestRule.onNodeWithText("Knowledge Graph").performClick()
         composeTestRule.onAllNodesWithText("My Own HKG").assertCountEquals(2)
     }
+    @Test
+    fun `clicking 'Inspect State' displays formatted cognitive state JSON`() {
+        val stateJson = buildJsonObject {
+            put("phase", "BOOTING")
+            put("sentinel_check", "PENDING")
+        }
+        val agent = AgentInstance(
+            id = "a1",
+            name = "Sovereign Agent",
+            modelProvider = "p",
+            modelName = "m",
+            cognitiveStrategyId = "sovereign_v1",
+            cognitiveState = stateJson
+        )
+        setViewState(AgentRuntimeState(agents = mapOf("a1" to agent)))
+
+        // 1. Initially, the internals should be hidden to reduce clutter
+        composeTestRule.onNodeWithText("phase", substring = true).assertDoesNotExist()
+
+        // 2. Click the expand/inspect button (Icon: Info or Text: Inspect State)
+        composeTestRule.onNodeWithContentDescription("Inspect State").performClick()
+
+        // 3. Verify the JSON content is rendered (likely in the CodeEditor)
+        composeTestRule.onNodeWithText("BOOTING", substring = true).assertIsDisplayed()
+        composeTestRule.onNodeWithText("sentinel_check", substring = true).assertIsDisplayed()
+    }
 }
