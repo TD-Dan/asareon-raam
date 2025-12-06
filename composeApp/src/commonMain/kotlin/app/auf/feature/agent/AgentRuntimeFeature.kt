@@ -124,6 +124,13 @@ class AgentRuntimeFeature(
                 // Refresh avatars to reflect potentially new subscriptions
                 AgentAvatarLogic.updateAgentAvatars(agentId, store)
             }
+            // [NEW] Persist NVRAM updates (Sovereign State Transitions)
+            ActionNames.AGENT_INTERNAL_UPDATE_COGNITIVE_STATE -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agent = agentState.agents[agentId] ?: return
+                saveAgentConfig(agent, store)
+            }
+
             ActionNames.AGENT_DELETE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
 
