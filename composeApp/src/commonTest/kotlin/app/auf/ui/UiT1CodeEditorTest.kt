@@ -1,20 +1,36 @@
 package app.auf.ui
 
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createComposeRule
+import app.auf.core.AppState
+import app.auf.core.generated.ActionNames
+import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
 import app.auf.ui.components.CodeEditor
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
+import org.junit.Rule
+import org.junit.Test
 import kotlin.test.assertEquals
 
 /**
- * T1 Component Test for SimpleCodeEditor.
+ * T1 Component Test for CodeEditor.
  * Verifies rendering, text input, and read-only mode.
  */
 class UiT1CodeEditorTest {
 
+    @get:Rule
+    val composeTestRule = createComposeRule()
+
+    // Fix: Instantiate FakeStore with required arguments
+    private val platform = FakePlatformDependencies("test")
+    private val store = FakeStore(
+        initialState = AppState(),
+        platformDependencies = platform,
+        validActionNames = ActionNames.allActionNames
+    )
+
     @Test
-    fun `should render initial content`() = runTest {
+    fun should_render_initial_content() = runTest {
         val content = "function hello() {\n  return 'world';\n}"
 
         composeTestRule.setContent {
@@ -30,7 +46,7 @@ class UiT1CodeEditorTest {
     }
 
     @Test
-    fun `should dispatch changes on edit`() = runTest {
+    fun should_dispatch_changes_on_edit() = runTest {
         var capturedValue = ""
         val initialContent = "Start"
 
@@ -43,15 +59,14 @@ class UiT1CodeEditorTest {
         }
 
         // Perform text input
-        composeTestRule.onNodeWithText("Start").performTextClearance()
-        composeTestRule.onNodeWithTag("code_editor_input").performTextInput("End")
+        composeTestRule.onNodeWithTag("code_editor_input").performTextReplacement("End")
 
         // Verify callback
         assertEquals("End", capturedValue)
     }
 
     @Test
-    fun `should respect read only mode`() = runTest {
+    fun should_respect_read_only_mode() = runTest {
         var callbackInvoked = false
 
         composeTestRule.setContent {
@@ -62,18 +77,13 @@ class UiT1CodeEditorTest {
             )
         }
 
-        // Try to input text (should be ignored or not trigger change in a way that invokes callback for new val)
-        // Note: In Compose tests, performTextInput on a read-only field usually doesn't crash but doesn't update.
-        // We verify semantics mostly.
-
+        // Try to input text
+        // In read-only mode, the input should essentially be ignored or the callback not fired.
+        // We verify the node exists and is displayed.
         composeTestRule.onNodeWithText("ReadOnly").assertExists()
-
-        // We can check if it has the semantics of a text field
         composeTestRule.onNodeWithTag("code_editor_input").assertIsDisplayed()
-    }
 
-    // Test Harness Setup
-    private val store = FakeStore()
-    @get:Rule
-    val composeTestRule = createComposeRule()
+        // Ensure no crash on interaction
+        composeTestRule.onNodeWithTag("code_editor_input").performClick()
+    }
 }
