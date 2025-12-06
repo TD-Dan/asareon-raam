@@ -16,7 +16,7 @@ import kotlinx.serialization.json.put
  * of Sovereign (HKG-backed) agents. This isolates complex state transition logic
  * from the orchestration and side effect management of the AgentRuntimeFeature.
  */
-object SovereignAgentLogic {
+object AgentResourceLogic {
 
     fun handleSovereignAssignment(store: Store, oldAgent: AgentInstance?, newAgent: AgentInstance) {
         val justBecameSovereign = newAgent.knowledgeGraphId != null && oldAgent?.knowledgeGraphId == null

@@ -7,6 +7,14 @@ import app.auf.core.Version
 import app.auf.util.abbreviate
 import kotlinx.serialization.json.*
 
+/**
+ * ## Mandate
+ * To orchestrate the "Think" phase of the Agent's lifecycle.
+ * It is the canonical handler for:
+ * 1. Gathering Context (Ledger + HKG)
+ * 2. Formulating the Prompt (via Strategy)
+ * 3. Processing the Response (via Strategy)
+ */
 object AgentCognitivePipeline {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -54,6 +62,7 @@ object AgentCognitivePipeline {
             ActionNames.Envelopes.SESSION_RESPONSE_LEDGER -> handleLedgerResponse(envelope.payload, store)
             ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT -> handleHkgContextResponse(envelope.payload, store)
             ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE -> handleGatewayResponse(envelope.payload, store)
+            ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW -> handleGatewayPreviewResponse(envelope.payload, store)
         }
     }
 
@@ -114,7 +123,7 @@ object AgentCognitivePipeline {
             return
         }
 
-        val isSovereign = SovereignAgentLogic.requestContextIfSovereign(store, agent)
+        val isSovereign = AgentResourceLogic.requestContextIfSovereign(store, agent)
         if (!isSovereign) {
             executeTurn(agent, statusInfo.stagedTurnContext, null, state, store)
         }
@@ -156,9 +165,7 @@ object AgentCognitivePipeline {
         val statusInfo = agentState.agentStatuses[agent.id] ?: AgentStatusInfo()
         val platformDependencies = store.platformDependencies
 
-        // [NEW] Cognitive Strategy Strategy Resolution
         val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
-        // FIX: Check for JsonNull explicitly, as it is a singleton object, not null reference
         val cognitiveState = if (agent.cognitiveState !is JsonNull) agent.cognitiveState else strategy.getInitialState()
 
         platformDependencies.log(LogLevel.INFO, LOG_TAG,
@@ -204,6 +211,21 @@ object AgentCognitivePipeline {
         }))
     }
 
+    // [MOVED from Feature]
+    private fun handleGatewayPreviewResponse(payload: JsonObject, store: Store) {
+        val decoded = try { json.decodeFromJsonElement<GatewayPreviewResponsePayload>(payload) } catch (e: Exception) { return }
+        val agentId = decoded.correlationId
+        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
+        val agent = state.agents[agentId] ?: return
+
+        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PREVIEW_DATA, buildJsonObject {
+            put("agentId", agent.id)
+            put("agnosticRequest", json.encodeToJsonElement(decoded.agnosticRequest))
+            put("rawRequestJson", decoded.rawRequestJson)
+        }))
+        store.dispatch("ui.agent", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.context_viewer") }))
+    }
+
     private fun handleGatewayResponse(payload: JsonObject, store: Store) {
         val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
         if (agentId == null) return
@@ -219,9 +241,8 @@ object AgentCognitivePipeline {
 
         val rawContent = decoded.rawContent ?: ""
 
-        // [NEW] Cognitive Strategy Post-Processing
+        // Cognitive Strategy Post-Processing
         val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
-        // FIX: Check for JsonNull explicitly
         val cognitiveState = if (agent.cognitiveState !is JsonNull) agent.cognitiveState else strategy.getInitialState()
 
         val result = strategy.postProcessResponse(rawContent, cognitiveState)

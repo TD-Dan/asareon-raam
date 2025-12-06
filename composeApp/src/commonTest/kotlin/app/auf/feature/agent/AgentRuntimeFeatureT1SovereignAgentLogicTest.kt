@@ -1,6 +1,5 @@
 package app.auf.feature.agent
 
-import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.Feature
 import app.auf.core.generated.ActionNames
@@ -9,7 +8,6 @@ import app.auf.fakes.FakeStore
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -30,7 +28,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
         val oldAgent = AgentInstance("a1", "Test Agent", null, "p", "m")
         val newAgent = oldAgent.copy(knowledgeGraphId = "kg1")
 
-        SovereignAgentLogic.handleSovereignAssignment(fakeStore, oldAgent, newAgent)
+        AgentResourceLogic.handleSovereignAssignment(fakeStore, oldAgent, newAgent)
 
         val dispatchedAction = fakeStore.dispatchedActions.find { it.name == ActionNames.SESSION_CREATE }
         assertNotNull(dispatchedAction)
@@ -42,7 +40,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
         val oldAgent = AgentInstance("a1", "Test Agent", null, "p", "m")
         val newAgent = oldAgent.copy(knowledgeGraphId = "kg1")
 
-        SovereignAgentLogic.handleSovereignAssignment(fakeStore, oldAgent, newAgent)
+        AgentResourceLogic.handleSovereignAssignment(fakeStore, oldAgent, newAgent)
 
         val dispatchedAction = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG }
         assertNotNull(dispatchedAction)
@@ -54,7 +52,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
         val oldAgent = AgentInstance("a1", "Test Agent", "kg1", "p", "m", privateSessionId = "ps1")
         val newAgent = oldAgent.copy(name = "Test Agent Updated")
 
-        SovereignAgentLogic.handleSovereignAssignment(fakeStore, oldAgent, newAgent)
+        AgentResourceLogic.handleSovereignAssignment(fakeStore, oldAgent, newAgent)
 
         assertTrue(fakeStore.dispatchedActions.isEmpty())
     }
@@ -64,7 +62,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
         val oldAgent = AgentInstance("a1", "Vanilla Agent", null, "p", "m")
         val newAgent = oldAgent.copy(name = "Vanilla Agent Updated")
 
-        SovereignAgentLogic.handleSovereignAssignment(fakeStore, oldAgent, newAgent)
+        AgentResourceLogic.handleSovereignAssignment(fakeStore, oldAgent, newAgent)
 
         assertTrue(fakeStore.dispatchedActions.isEmpty())
     }
@@ -77,7 +75,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
         )
         val newAgent = oldAgent.copy(knowledgeGraphId = null)
 
-        SovereignAgentLogic.handleSovereignRevocation(fakeStore, oldAgent, newAgent)
+        AgentResourceLogic.handleSovereignRevocation(fakeStore, oldAgent, newAgent)
 
         val dispatchedAction = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_UPDATE_CONFIG }
         assertNotNull(dispatchedAction)
@@ -90,7 +88,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
         val oldAgent = AgentInstance("a1", "Test Agent", "kg1", "p", "m", privateSessionId = "ps1")
         val newAgent = oldAgent.copy(knowledgeGraphId = null)
 
-        SovereignAgentLogic.handleSovereignRevocation(fakeStore, oldAgent, newAgent)
+        AgentResourceLogic.handleSovereignRevocation(fakeStore, oldAgent, newAgent)
 
         val dispatchedAction = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_RELEASE_HKG }
         assertNotNull(dispatchedAction)
@@ -102,7 +100,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
         val oldAgent = AgentInstance("a1", "Vanilla Agent", null, "p", "m")
         val newAgent = oldAgent.copy(name = "Vanilla Agent Updated")
 
-        SovereignAgentLogic.handleSovereignRevocation(fakeStore, oldAgent, newAgent)
+        AgentResourceLogic.handleSovereignRevocation(fakeStore, oldAgent, newAgent)
 
         assertTrue(fakeStore.dispatchedActions.isEmpty())
     }
@@ -113,7 +111,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
         val agent = AgentInstance("a1", "Sovereign", "kg1", "p", "m") // Sovereign but stateless
         val state = AgentRuntimeState(agents = mapOf("a1" to agent)) // Empty reservations, empty sessions
 
-        SovereignAgentLogic.validateAndCorrectStartupState(fakeStore, state)
+        AgentResourceLogic.validateAndCorrectStartupState(fakeStore, state)
 
         // Check for Reservation Dispatch
         val reserveAction = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG }
@@ -136,7 +134,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
             sessionNames = mapOf("s1" to "p-cognition: Sovereign (a1)")
         )
 
-        SovereignAgentLogic.validateAndCorrectStartupState(fakeStore, state)
+        AgentResourceLogic.validateAndCorrectStartupState(fakeStore, state)
 
         assertTrue(fakeStore.dispatchedActions.isEmpty())
     }
@@ -150,7 +148,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
             sessionNames = mapOf("s-new" to "p-cognition: Sovereign (a1)") // Match found
         )
 
-        SovereignAgentLogic.linkPrivateSessionOnCreation(fakeStore, state)
+        AgentResourceLogic.linkPrivateSessionOnCreation(fakeStore, state)
 
         val updateAction = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_UPDATE_CONFIG }
         assertNotNull(updateAction)
@@ -166,7 +164,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
 
         val agent = AgentInstance("a1", "Sovereign", "kg1", "p", "m")
 
-        val result = SovereignAgentLogic.requestContextIfSovereign(localFakeStore, agent)
+        val result = AgentResourceLogic.requestContextIfSovereign(localFakeStore, agent)
 
         assertTrue(result, "Function should return true when KG feature exists.")
         // Note: FakeStore typically records dispatched actions, but deliverPrivateData might behave differently depending on base class logic.

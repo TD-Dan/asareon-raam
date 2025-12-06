@@ -70,7 +70,7 @@ class AgentRuntimeFeature(
                 store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_VALIDATE_SOVEREIGN_STATE))
             }
             ActionNames.AGENT_INTERNAL_VALIDATE_SOVEREIGN_STATE -> {
-                SovereignAgentLogic.validateAndCorrectStartupState(store, agentState)
+                AgentResourceLogic.validateAndCorrectStartupState(store, agentState)
             }
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
@@ -110,8 +110,8 @@ class AgentRuntimeFeature(
                 val oldAgent = (previousState as? AgentRuntimeState)?.agents?.get(agentId)
                 val newAgent = agentState.agents[agentId] ?: return
 
-                SovereignAgentLogic.handleSovereignAssignment(store, oldAgent, newAgent)
-                SovereignAgentLogic.handleSovereignRevocation(store, oldAgent, newAgent)
+                AgentResourceLogic.handleSovereignAssignment(store, oldAgent, newAgent)
+                AgentResourceLogic.handleSovereignRevocation(store, oldAgent, newAgent)
 
                 saveAgentConfig(newAgent, store)
                 broadcastAgentNames(agentState, store)
@@ -210,7 +210,7 @@ class AgentRuntimeFeature(
                 AgentAutoTriggerLogic.checkAndDispatchTriggers(store, agentState, platformDependencies, name)
             }
             ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
-                SovereignAgentLogic.linkPrivateSessionOnCreation(store, agentState)
+                AgentResourceLogic.linkPrivateSessionOnCreation(store, agentState)
             }
         }
     }
@@ -233,25 +233,14 @@ class AgentRuntimeFeature(
         when (envelope.type) {
             ActionNames.Envelopes.SESSION_RESPONSE_LEDGER,
             ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
-            ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE -> {
-                // FIXED: Route all cognitive private data to the pipeline
+            ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE,
+            ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW -> {
+                // [META-ANALYSIS FIX] Unified routing. All cognitive responses go to the Pipeline.
                 AgentCognitivePipeline.handlePrivateData(envelope, store)
             }
-            ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW -> handleGatewayPreviewResponse(envelope.payload, store)
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> handleFileSystemListResponse(envelope.payload, store)
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> handleFileSystemReadResponse(envelope.payload, store)
         }
-    }
-
-    private fun handleGatewayPreviewResponse(payload: JsonObject, store: Store) {
-        val decoded = try { json.decodeFromJsonElement<GatewayPreviewResponsePayload>(payload) } catch (e: Exception) { return }
-        val agent = (store.state.value.featureStates[name] as? AgentRuntimeState)?.agents?.get(decoded.correlationId) ?: return
-        store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_SET_PREVIEW_DATA, buildJsonObject {
-            put("agentId", agent.id)
-            put("agnosticRequest", json.encodeToJsonElement(decoded.agnosticRequest))
-            put("rawRequestJson", decoded.rawRequestJson)
-        }))
-        store.dispatch("ui.agent", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.context_viewer") }))
     }
 
     private fun handleFileSystemListResponse(payload: JsonObject, store: Store) {
