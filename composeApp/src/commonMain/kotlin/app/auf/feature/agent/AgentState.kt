@@ -4,6 +4,8 @@ import app.auf.core.FeatureState
 import app.auf.core.Identity
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 
 @Serializable
@@ -16,10 +18,8 @@ enum class TurnMode { DIRECT, PREVIEW }
 data class GatewayMessage(
     val role: String,
     val content: String,
-    // Enriched with sender identity
     val senderId: String,
     val senderName: String,
-    // Enriched with timestamp
     val timestamp: Long
 )
 
@@ -28,7 +28,6 @@ data class GatewayRequest(
     val modelName: String,
     val contents: List<GatewayMessage>,
     val correlationId: String,
-    // NEW: The system prompt for behavioral control.
     val systemPrompt: String? = null
 )
 
@@ -41,7 +40,6 @@ data class StagedPreviewData(
 /**
  * [PURE CONFIGURATION]
  * Defines the persistent identity and settings of an agent.
- * Contains NO runtime state.
  */
 @Serializable
 data class AgentInstance(
@@ -52,6 +50,17 @@ data class AgentInstance(
     val modelName: String,
     val subscribedSessionIds: List<String> = emptyList(),
     val privateSessionId: String? = null,
+
+    // Cognitive Architecture
+    val cognitiveStrategyId: String = "vanilla_v1",
+
+    // The "NVRAM" / Control Registers
+    // Persisted, so the agent remembers its state across restarts.
+    val cognitiveState: JsonElement = JsonNull,
+
+    // Resource Links (for Sovereign Strategy)
+    val resources: Map<String, String> = emptyMap(),
+
     // Configuration
     val automaticMode: Boolean = false,
     val autoWaitTimeSeconds: Int = 5,
@@ -62,7 +71,6 @@ data class AgentInstance(
 /**
  * [RUNTIME STATE]
  * Ephemeral state for an active agent.
- * This is never persisted to disk.
  */
 data class AgentStatusInfo(
     val status: AgentStatus = AgentStatus.IDLE,
@@ -76,50 +84,29 @@ data class AgentStatusInfo(
     val turnMode: TurnMode = TurnMode.DIRECT,
     val stagedPreviewData: StagedPreviewData? = null,
     val stagedTurnContext: List<GatewayMessage>? = null,
-    // A transient field to hold the HKG content for a single turn.
     val transientHkgContext: JsonObject? = null
 )
 
 @Serializable
 data class AgentRuntimeState(
     val agents: Map<String, AgentInstance> = emptyMap(),
-
-    // [NEW] The separate map for runtime status. Keys match agent IDs.
     @Transient
     val agentStatuses: Map<String, AgentStatusInfo> = emptyMap(),
-
     val sessionNames: Map<String, String> = emptyMap(),
     val availableModels: Map<String, List<String>> = emptyMap(),
     val knowledgeGraphNames: Map<String, String> = emptyMap(),
-
-    // Cache the full list of user identities, not just the active one.
     @Transient
     val userIdentities: List<Identity> = emptyList(),
-
-    // [NEW] Caches the set of HKG IDs that are currently reserved by any agent.
     @Transient
     val hkgReservedIds: Set<String> = emptySet(),
-
     @Transient
     val editingAgentId: String? = null,
-
-    /**
-     * [REFACTORED] Tracks the message IDs of the agent's avatar cards across multiple sessions.
-     * Structure: AgentId -> (SessionId -> MessageId)
-     */
     @Transient
     val agentAvatarCardIds: Map<String, Map<String, String>> = emptyMap(),
-
-    /** A transient field to reliably pass the IDs of agents who need their config persisted from the reducer to the onAction handler. */
     @Transient
     val agentsToPersist: Set<String>? = null,
-
-    /** A transient field to indicate which agent's context is being viewed in the preview screen. */
     @Transient
     val viewingContextForAgentId: String? = null,
-
-    /** [NEW] A transient field to track the round-robin index for the staggered automatic trigger. */
     @Transient
     val lastAutoTriggerAgentIndex: Int = 0,
-
-    ) : FeatureState
+) : FeatureState
