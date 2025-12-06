@@ -7,7 +7,7 @@ import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class AgentConfigSerializationTest {
+class AgentRuntimeFeatureT1ConfigSerializationTest {
 
     private val json = Json { prettyPrint = true }
 

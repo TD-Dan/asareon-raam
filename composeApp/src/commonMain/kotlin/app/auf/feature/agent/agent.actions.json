@@ -1,23 +1,23 @@
 {
-  "feature_name":"agent",
-  "summary":"Hosts and manages the lifecycle of autonomous, HKG-driven AI agents.",
+  "feature_name": "agent",
+  "summary": "Hosts and manages the lifecycle of autonomous, HKG-driven AI agents.",
   "listensFor": [
     {
-      "action_name":"agent.CREATE",
-      "summary":"Creates a new agent instance with the specified configuration.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "name":{ "type":"string" },
-          "knowledgeGraphId":{ "type":[ "string", "null" ] },
-          "modelProvider":{ "type":"string" },
-          "modelName":{ "type":"string" },
-          "subscribedSessionIds":{ "type": "array", "items": { "type": "string" }, "description":"The sessions this agent will post its responses to." },
-          "automaticMode":{ "type":"boolean", "default":false },
+      "action_name": "agent.CREATE",
+      "summary": "Creates a new agent instance with the specified configuration.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "knowledgeGraphId": { "type": [ "string", "null" ] },
+          "modelProvider": { "type": "string" },
+          "modelName": { "type": "string" },
+          "subscribedSessionIds": { "type": "array", "items": { "type": "string" } },
+          "automaticMode": { "type": "boolean", "default": false },
           "autoWaitTimeSeconds": { "type": "integer" },
           "autoMaxWaitTimeSeconds": { "type": "integer" }
         },
-        "required":[ "name" ]
+        "required": [ "name" ]
       }
     },
     {
@@ -30,41 +30,41 @@
       }
     },
     {
-      "action_name":"agent.UPDATE_CONFIG",
-      "summary":"Updates the configuration of an existing agent instance. All payload properties are optional.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "agentId":{ "type":"string" },
-          "name":{ "type":"string" },
-          "knowledgeGraphId":{ "type":[ "string", "null" ] },
+      "action_name": "agent.UPDATE_CONFIG",
+      "summary": "Updates the configuration of an existing agent instance. All payload properties are optional.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string" },
+          "name": { "type": "string" },
+          "knowledgeGraphId": { "type": [ "string", "null" ] },
           "privateSessionId": { "type": [ "string", "null" ] },
-          "modelProvider":{ "type":"string" },
-          "modelName":{ "type":"string" },
-          "subscribedSessionIds":{ "type": "array", "items": { "type": "string" } },
-          "automaticMode":{ "type":"boolean" },
+          "modelProvider": { "type": "string" },
+          "modelName": { "type": "string" },
+          "subscribedSessionIds": { "type": "array", "items": { "type": "string" } },
+          "automaticMode": { "type": "boolean" },
           "autoWaitTimeSeconds": { "type": "integer" },
           "autoMaxWaitTimeSeconds": { "type": "integer" }
         },
-        "required":[ "agentId" ]
+        "required": [ "agentId" ]
       }
     },
     {
-      "action_name":"agent.DELETE",
-      "summary":"Deletes an agent instance.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{ "agentId":{ "type":"string" } },
-        "required":[ "agentId" ]
+      "action_name": "agent.DELETE",
+      "summary": "Deletes an agent instance.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "agentId": { "type": "string" } },
+        "required": [ "agentId" ]
       }
     },
     {
-      "action_name":"agent.TOGGLE_AUTOMATIC_MODE",
-      "summary":"Toggles the automatic processing mode for a specific agent.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{ "agentId":{ "type":"string" } },
-        "required":[ "agentId" ]
+      "action_name": "agent.TOGGLE_AUTOMATIC_MODE",
+      "summary": "Toggles the automatic processing mode for a specific agent.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "agentId": { "type": "string" } },
+        "required": [ "agentId" ]
       }
     },
     {
@@ -85,8 +85,7 @@
           "agentId": { "type": "string" },
           "preview": {
             "type": "boolean",
-            "default": false,
-            "description": "If true, the turn context will be staged for user review before execution."
+            "default": false
           }
         },
         "required": [ "agentId" ]
@@ -111,20 +110,20 @@
       }
     },
     {
-      "action_name":"agent.CANCEL_TURN",
-      "summary":"Cancels an agent's currently in-flight, processing turn.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{ "agentId":{ "type":"string" } },
-        "required":[ "agentId" ]
+      "action_name": "agent.CANCEL_TURN",
+      "summary": "Cancels an agent's currently in-flight, processing turn.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "agentId": { "type": "string" } },
+        "required": [ "agentId" ]
       }
     },
     {
-      "action_name":"agent.SET_EDITING",
-      "summary":"Sets which agent is currently being edited in the UI.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{ "agentId":{ "type":[ "string", "null" ] } }
+      "action_name": "agent.SET_EDITING",
+      "summary": "Sets which agent is currently being edited in the UI.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "agentId": { "type": [ "string", "null" ] } }
       }
     },
     {
@@ -137,31 +136,31 @@
       }
     }
   ],
-  "publishes":[
+  "publishes": [
     {
-      "action_name":"agent.publish.AGENT_NAMES_UPDATED",
-      "summary":"Broadcasts the verified map of agent IDs to their names.",
-      "payload_schema":{ "type":"object", "properties":{ "names":{ "type":"object", "description":"A map where the key is the agent ID and the value is the agent's name." } }, "required":[ "names" ] }
+      "action_name": "agent.publish.AGENT_NAMES_UPDATED",
+      "summary": "Broadcasts the verified map of agent IDs to their names.",
+      "payload_schema": { "type": "object", "properties": { "names": { "type": "object" } }, "required": [ "names" ] }
     },
     {
-      "action_name":"agent.publish.AGENT_DELETED",
-      "summary":"Broadcasts that an agent has been deleted, so other features can clean up their state.",
-      "payload_schema":{ "type":"object", "properties":{ "agentId":{ "type":"string" } }, "required":[ "agentId" ] }
+      "action_name": "agent.publish.AGENT_DELETED",
+      "summary": "Broadcasts that an agent has been deleted, so other features can clean up their state.",
+      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" } }, "required": [ "agentId" ] }
     },
     {
-      "action_name":"agent.internal.AGENT_LOADED",
-      "summary":"[INTERNAL] Dispatched after an agent's configuration has been read from its sandbox. Used to populate the feature's state.",
-      "payload_schema":{ "type":"object", "description":"A single AgentInstance object." }
+      "action_name": "agent.internal.AGENT_LOADED",
+      "summary": "[INTERNAL] Dispatched after an agent's configuration has been read from its sandbox.",
+      "payload_schema": { "type": "object" }
     },
     {
-      "action_name":"agent.internal.AGENTS_LOADED",
-      "summary":"[INTERNAL] Dispatched after all agent configurations have been read from disk. Triggers post-load validation.",
-      "payload_schema":null
+      "action_name": "agent.internal.AGENTS_LOADED",
+      "summary": "[INTERNAL] Dispatched after all agent configurations have been read from disk.",
+      "payload_schema": null
     },
     {
-      "action_name":"agent.internal.VALIDATE_SOVEREIGN_STATE",
-      "summary":"[INTERNAL] Triggers the validation of sovereign agent requirements (reservations, private sessions) on startup.",
-      "payload_schema":null
+      "action_name": "agent.internal.VALIDATE_SOVEREIGN_STATE",
+      "summary": "[INTERNAL] Triggers the validation of sovereign agent requirements on startup.",
+      "payload_schema": null
     },
     {
       "action_name": "agent.internal.CHECK_AUTOMATIC_TRIGGERS",
@@ -171,88 +170,53 @@
     {
       "action_name": "agent.internal.UPDATE_AUTO_TRIGGER_INDEX",
       "summary": "[INTERNAL] Updates the index for the round-robin automatic trigger.",
-      "payload_schema": {
-        "type": "object", "properties": { "index": { "type": "integer" } }, "required": ["index"]
-      }
+      "payload_schema": { "type": "object", "properties": { "index": { "type": "integer" } }, "required": ["index"] }
     },
     {
       "action_name": "agent.internal.STAGE_TURN_CONTEXT",
       "summary": "[INTERNAL] Caches the ledger messages while the HKG context is being fetched.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "agentId": { "type": "string" },
-          "messages": { "type": "array", "items": { "type": "object" } }
-        },
-        "required": ["agentId", "messages"]
-      }
+      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" }, "messages": { "type": "array" } }, "required": ["agentId", "messages"] }
     },
     {
       "action_name": "agent.internal.SET_PREVIEW_DATA",
-      "summary": "[INTERNAL] Saves the complete preview data (agnostic and raw) received from the Gateway.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "agentId": { "type": "string" },
-          "agnosticRequest": { "type": "object" },
-          "rawRequestJson": { "type": "string" }
-        },
-        "required": [ "agentId", "agnosticRequest", "rawRequestJson" ]
-      }
+      "summary": "[INTERNAL] Saves the complete preview data.",
+      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" }, "agnosticRequest": { "type": "object" }, "rawRequestJson": { "type": "string" } }, "required": [ "agentId", "agnosticRequest", "rawRequestJson" ] }
     },
     {
-      "action_name":"agent.internal.CONFIRM_DELETE",
-      "summary":"[INTERNAL] Dispatched after cleanup side effects are complete to commit the deletion to the state.",
-      "payload_schema":{ "type":"object", "properties":{ "agentId":{ "type":"string" } }, "required":[ "agentId" ] }
+      "action_name": "agent.internal.CONFIRM_DELETE",
+      "summary": "[INTERNAL] Dispatched after cleanup side effects are complete.",
+      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" } }, "required": [ "agentId" ] }
     },
     {
-      "action_name":"agent.internal.SET_STATUS",
-      "summary":"[INTERNAL] Updates the transient status and optional error message for an agent.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "agentId":{ "type":"string" },
-          "status":{ "type":"string", "enum":[ "IDLE", "WAITING", "PROCESSING", "ERROR" ] },
-          "error":{ "type":[ "string", "null" ] }
-        },
-        "required":[ "agentId", "status" ]
-      }
+      "action_name": "agent.internal.SET_STATUS",
+      "summary": "[INTERNAL] Updates the transient status and optional error message.",
+      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" }, "status": { "type": "string" }, "error": { "type": [ "string", "null" ] } }, "required": [ "agentId", "status" ] }
     },
     {
       "action_name": "agent.internal.SET_PROCESSING_STEP",
       "summary": "[INTERNAL] Updates the human-readable description of the agent's current processing activity.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "agentId": { "type": "string" },
-          "step": { "type": [ "string", "null" ] }
-        },
-        "required": [ "agentId" ]
-      }
+      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" }, "step": { "type": [ "string", "null" ] } }, "required": [ "agentId" ] }
     },
     {
       "action_name": "agent.internal.SET_HKG_CONTEXT",
-      "summary": "[INTERNAL] Caches the fetched HKG context for the duration of a single cognitive turn.",
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "agentId": { "type": "string" },
-          "context": { "type": "object" }
-        },
-        "required": ["agentId", "context"]
-      }
+      "summary": "[INTERNAL] Caches the fetched HKG context.",
+      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" }, "context": { "type": "object" } }, "required": ["agentId", "context"] }
     },
     {
       "action_name": "agent.internal.AVATAR_MOVED",
-      "summary": "[INTERNAL] Updates the feature state to reflect that an avatar card has been (or is being) moved to a new message ID.",
+      "summary": "[INTERNAL] Updates the feature state to reflect that an avatar card has been moved.",
+      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" }, "sessionId": { "type": "string" }, "messageId": { "type": "string" } }, "required": ["agentId", "sessionId", "messageId"] }
+    },
+    {
+      "action_name": "agent.internal.UPDATE_COGNITIVE_STATE",
+      "summary": "[INTERNAL] Updates the persisted cognitive state (NVRAM) of an agent.",
       "payload_schema": {
         "type": "object",
         "properties": {
           "agentId": { "type": "string" },
-          "sessionId": { "type": "string" },
-          "messageId": { "type": "string" }
+          "state": { "type": "object" }
         },
-        "required": ["agentId", "sessionId", "messageId"]
+        "required": ["agentId", "state"]
       }
     }
   ]
