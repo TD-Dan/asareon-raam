@@ -134,6 +134,56 @@
         "properties": { "reservedIds": { "type": "array", "items": { "type": "string" } } },
         "required": ["reservedIds"]
       }
+    },
+    {
+      "action_name": "agent.SET_MANAGER_TAB",
+      "summary": "Switches the active tab in the Agent Manager View.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "tabIndex": { "type": "integer" } },
+        "required": ["tabIndex"]
+      }
+    },
+    {
+      "action_name": "agent.SELECT_RESOURCE",
+      "summary": "Selects a system resource for viewing/editing.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "resourceId": { "type": [ "string", "null" ] } }
+      }
+    },
+    {
+      "action_name": "agent.SAVE_RESOURCE",
+      "summary": "Saves changes to a system resource.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "resourceId": { "type": "string" },
+          "content": { "type": "string" }
+        },
+        "required": ["resourceId", "content"]
+      }
+    },
+    {
+      "action_name": "agent.CREATE_RESOURCE",
+      "summary": "Creates a new user-defined system resource.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "type": { "type": "string" }
+        },
+        "required": ["name", "type"]
+      }
+    },
+    {
+      "action_name": "agent.DELETE_RESOURCE",
+      "summary": "Deletes a user-defined system resource.",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "resourceId": { "type": "string" } },
+        "required": ["resourceId"]
+      }
     }
   ],
   "publishes": [

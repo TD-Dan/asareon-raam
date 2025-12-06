@@ -15,6 +15,23 @@ enum class AgentStatus { IDLE, WAITING, PROCESSING, ERROR }
 enum class TurnMode { DIRECT, PREVIEW }
 
 @Serializable
+enum class AgentResourceType {
+    CONSTITUTION,
+    BOOTLOADER,
+    SYSTEM_INSTRUCTION
+}
+
+@Serializable
+data class AgentResource(
+    val id: String,         // Internal ID or filename
+    val type: AgentResourceType,
+    val name: String,       // Display Name
+    val content: String,    // Text content
+    val isBuiltIn: Boolean = false,
+    val path: String? = null // Relative path if user-defined
+)
+
+@Serializable
 data class GatewayMessage(
     val role: String,
     val content: String,
@@ -58,7 +75,7 @@ data class AgentInstance(
     // Persisted, so the agent remembers its state across restarts.
     val cognitiveState: JsonElement = JsonNull,
 
-    // Resource Links (for Sovereign Strategy)
+    // Resource Links (Maps Slot ID -> Resource ID)
     val resources: Map<String, String> = emptyMap(),
 
     // Configuration
@@ -95,12 +112,20 @@ data class AgentRuntimeState(
     val sessionNames: Map<String, String> = emptyMap(),
     val availableModels: Map<String, List<String>> = emptyMap(),
     val knowledgeGraphNames: Map<String, String> = emptyMap(),
+
+    // Shared System Resources
+    val resources: List<AgentResource> = emptyList(),
+
     @Transient
     val userIdentities: List<Identity> = emptyList(),
     @Transient
     val hkgReservedIds: Set<String> = emptySet(),
     @Transient
     val editingAgentId: String? = null,
+    @Transient
+    val editingResourceId: String? = null,
+    @Transient
+    val activeManagerTab: Int = 0, // 0 = Agents, 1 = Resources
     @Transient
     val agentAvatarCardIds: Map<String, Map<String, String>> = emptyMap(),
     @Transient

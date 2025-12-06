@@ -1,10 +1,7 @@
 package app.auf.feature.agent
 
-import app.auf.ui.components.CodeEditor
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,18 +10,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
 import app.auf.ui.components.CodeEditor
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import kotlinx.serialization.json.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,12 +30,55 @@ fun AgentManagerView(store: Store, platformDependencies: app.auf.util.PlatformDe
     val agentState = remember(appState.featureStates) {
         appState.featureStates["agent"] as? AgentRuntimeState
     }
-    var agentToDelete by remember { mutableStateOf<AgentInstance?>(null) }
-    val editingAgentId = agentState?.editingAgentId
 
     LaunchedEffect(Unit) {
         store.dispatch("ui.agentManager", Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
     }
+
+    Scaffold(
+        topBar = {
+            Column {
+                TopAppBar(title = { Text("Agent Manager") })
+                TabRow(selectedTabIndex = agentState?.activeManagerTab ?: 0) {
+                    Tab(
+                        selected = agentState?.activeManagerTab == 0,
+                        onClick = { store.dispatch("ui.agentManager", Action(ActionNames.AGENT_SET_MANAGER_TAB, buildJsonObject { put("tabIndex", 0) })) },
+                        text = { Text("Agents") },
+                        icon = { Icon(Icons.Default.Group, "Agents") }
+                    )
+                    Tab(
+                        selected = agentState?.activeManagerTab == 1,
+                        onClick = { store.dispatch("ui.agentManager", Action(ActionNames.AGENT_SET_MANAGER_TAB, buildJsonObject { put("tabIndex", 1) })) },
+                        text = { Text("System Resources") },
+                        icon = { Icon(Icons.Default.SettingsSystemDaydream, "Resources") }
+                    )
+                }
+            }
+        }
+    ) { paddingValues ->
+        Box(Modifier.padding(paddingValues).fillMaxSize()) {
+            if (agentState == null) {
+                Box(Modifier.fillMaxSize(), Alignment.Center) { Text("Loading...") }
+            } else {
+                when (agentState.activeManagerTab) {
+                    0 -> AgentListView(agentState, store, platformDependencies)
+                    1 -> AgentResourcesView(agentState, store)
+                }
+            }
+        }
+    }
+}
+
+// --- TAB 1: Agent List (Original Functionality) ---
+
+@Composable
+private fun AgentListView(
+    agentState: AgentRuntimeState,
+    store: Store,
+    platformDependencies: app.auf.util.PlatformDependencies
+) {
+    var agentToDelete by remember { mutableStateOf<AgentInstance?>(null) }
+    val editingAgentId = agentState.editingAgentId
 
     agentToDelete?.let { agent ->
         AlertDialog(
@@ -58,27 +98,22 @@ fun AgentManagerView(store: Store, platformDependencies: app.auf.util.PlatformDe
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Agent Manager") },
-                actions = {
-                    Button(onClick = {
-                        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_CREATE, buildJsonObject {
-                            put("name", "New Agent")
-                        }))
-                    }) {
-                        Icon(Icons.Default.Add, "Create New Agent"); Spacer(Modifier.width(8.dp)); Text("New Agent")
-                    }
-                }
-            )
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), Arrangement.End) {
+            Button(onClick = {
+                store.dispatch("ui.agentManager", Action(ActionNames.AGENT_CREATE, buildJsonObject {
+                    put("name", "New Agent")
+                }))
+            }) {
+                Icon(Icons.Default.Add, "Create"); Spacer(Modifier.width(8.dp)); Text("New Agent")
+            }
         }
-    ) { paddingValues ->
-        if (agentState == null || agentState.agents.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(paddingValues), Alignment.Center) { Text("No agents configured.") }
+
+        if (agentState.agents.isEmpty()) {
+            Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No agents configured.") }
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(paddingValues),
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -133,6 +168,7 @@ private fun AgentCard(
         }
     }
 }
+
 @Composable
 private fun AgentReadOnlyView(
     agent: AgentInstance,
@@ -144,7 +180,6 @@ private fun AgentReadOnlyView(
     val hkgName = agent.knowledgeGraphId?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG"
     val statusInfo = agentState.agentStatuses[agent.id] ?: AgentStatusInfo()
 
-    // [NEW] Local state for expanding diagnostics
     var showInternals by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -156,7 +191,6 @@ private fun AgentReadOnlyView(
                 Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium)
                 Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
 
-                // [NEW] Strategy Info
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Strategy: ${agent.cognitiveStrategyId}", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.width(8.dp))
@@ -174,7 +208,6 @@ private fun AgentReadOnlyView(
             }
         }
 
-        // [NEW] NVRAM Inspector
         if (showInternals) {
             val prettyJson = remember(agent.cognitiveState) {
                 val json = Json { prettyPrint = true }
@@ -191,13 +224,12 @@ private fun AgentReadOnlyView(
                     value = prettyJson,
                     onValueChange = {},
                     readOnly = true,
-                    modifier = Modifier.height(150.dp) // Constrain height
+                    modifier = Modifier.height(150.dp)
                 )
             }
         }
     }
 }
-
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -291,6 +323,224 @@ private fun AgentEditorView(
         }
     }
 }
+
+// --- TAB 2: System Resources (New) ---
+
+@Composable
+private fun AgentResourcesView(
+    agentState: AgentRuntimeState,
+    store: Store
+) {
+    var showCreateDialog by remember { mutableStateOf(false) }
+
+    Row(Modifier.fillMaxSize()) {
+        // Left Pane: Resource List
+        Column(
+            modifier = Modifier
+                .weight(0.3f)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Resources", style = MaterialTheme.typography.titleMedium)
+                IconButton(onClick = { showCreateDialog = true }) {
+                    Icon(Icons.Default.Add, "New Resource")
+                }
+            }
+
+            HorizontalDivider()
+
+            // Group resources by type
+            val grouped = agentState.resources.groupBy { it.type }
+
+            LazyColumn(Modifier.fillMaxSize()) {
+                AgentResourceType.entries.forEach { type ->
+                    val resources = grouped[type] ?: emptyList()
+                    if (resources.isNotEmpty() || type == AgentResourceType.SYSTEM_INSTRUCTION) {
+                        item {
+                            Text(
+                                text = type.name,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(start = 12.dp, top = 16.dp, bottom = 4.dp)
+                            )
+                        }
+                        items(resources) { res ->
+                            ResourceListItem(
+                                resource = res,
+                                isSelected = res.id == agentState.editingResourceId,
+                                onClick = { store.dispatch("ui.resources", Action(ActionNames.AGENT_SELECT_RESOURCE, buildJsonObject { put("resourceId", res.id) })) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        VerticalDivider()
+
+        // Right Pane: Editor
+        Box(Modifier.weight(0.7f).fillMaxHeight()) {
+            val selectedResource = agentState.resources.find { it.id == agentState.editingResourceId }
+            if (selectedResource != null) {
+                ResourceEditor(selectedResource, store)
+            } else {
+                Box(Modifier.fillMaxSize(), Alignment.Center) {
+                    Text("Select a resource to edit.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+
+    if (showCreateDialog) {
+        CreateResourceDialog(
+            onDismiss = { showCreateDialog = false },
+            onConfirm = { name, type ->
+                store.dispatch("ui.resources", Action(ActionNames.AGENT_CREATE_RESOURCE, buildJsonObject {
+                    put("name", name)
+                    put("type", type.name)
+                }))
+                showCreateDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun ResourceListItem(resource: AgentResource, isSelected: Boolean, onClick: () -> Unit) {
+    val bgColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .background(bgColor)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column {
+            Text(
+                resource.name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+            )
+            if (resource.isBuiltIn) {
+                Text("Built-in", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResourceEditor(resource: AgentResource, store: Store) {
+    var content by remember(resource.id) { mutableStateOf(resource.content) }
+    // [FIX] Changed 'var' to 'val' because derivedStateOf returns a read-only State.
+    val hasChanges by remember(resource.id, resource.content) { derivedStateOf { content != resource.content } }
+
+    // Warn user if editing built-in is read-only logic logic (Usually we'd clone, but for simplicity we treat built-ins as readonly)
+
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+            Column {
+                Text(resource.name, style = MaterialTheme.typography.titleMedium)
+                Text(resource.id, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Row {
+                if (!resource.isBuiltIn) {
+                    Button(
+                        onClick = { store.dispatch("ui.resources", Action(ActionNames.AGENT_DELETE_RESOURCE, buildJsonObject { put("resourceId", resource.id) })) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Default.Delete, "Delete")
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = { store.dispatch("ui.resources", Action(ActionNames.AGENT_SAVE_RESOURCE, buildJsonObject {
+                            put("resourceId", resource.id)
+                            put("content", content)
+                        })) },
+                        enabled = hasChanges
+                    ) {
+                        Icon(Icons.Default.Save, "Save")
+                        Spacer(Modifier.width(4.dp))
+                        Text("Save")
+                    }
+                } else {
+                    FilledTonalButton(onClick = { /* TODO: Clone Logic */ }) {
+                        Icon(Icons.Default.CopyAll, "Clone to Edit")
+                        Spacer(Modifier.width(4.dp))
+                        Text("Clone")
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        CodeEditor(
+            value = content,
+            onValueChange = { content = it },
+            readOnly = resource.isBuiltIn,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun CreateResourceDialog(onDismiss: () -> Unit, onConfirm: (String, AgentResourceType) -> Unit) {
+    // [FIX] Use explicit MutableState<T> without delegation to resolve compiler error
+    val nameState = remember { mutableStateOf("") }
+    val typeState = remember { mutableStateOf(AgentResourceType.SYSTEM_INSTRUCTION) }
+    val expandedState = remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Create Resource") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                OutlinedTextField(
+                    value = nameState.value,
+                    onValueChange = { nameState.value = it },
+                    label = { Text("Resource Name") },
+                    singleLine = true
+                )
+
+                Box {
+                    OutlinedTextField(
+                        value = typeState.value.name,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Type") },
+                        trailingIcon = { IconButton(onClick = { expandedState.value = true }) { Icon(Icons.Default.ArrowDropDown, "Select Type") } },
+                        modifier = Modifier.fillMaxWidth().clickable { expandedState.value = true }
+                    )
+                    DropdownMenu(expanded = expandedState.value, onDismissRequest = { expandedState.value = false }) {
+                        AgentResourceType.entries.forEach { t ->
+                            DropdownMenuItem(
+                                text = { Text(t.name) },
+                                onClick = { typeState.value = t; expandedState.value = false }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(nameState.value, typeState.value) }, enabled = nameState.value.isNotBlank()) {
+                Text("Create")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+// --- Sub-Composables for AgentEditorView (Kept from previous) ---
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -420,7 +670,6 @@ private fun KnowledgeGraphSelector(agent: AgentInstance, agentState: AgentRuntim
         }
     }
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

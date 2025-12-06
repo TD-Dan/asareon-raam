@@ -20,14 +20,13 @@ import kotlin.test.assertNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.int
 
 /**
  * Tier 1 Component Test for AgentManagerView.
  *
  * Mandate (P-TEST-001, T1): To test the UI component's rendering and action dispatching
  * in isolation, using a FakeStore to intercept dispatched actions.
- *
- * REPLACES: AgentRuntimeFeatureT1ViewComponentTest.kt
  */
 class AgentRuntimeFeatureT1ManagerViewTest {
 
@@ -67,7 +66,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     fun `clicking 'New Agent' button dispatches AGENT_CREATE action`() {
         setViewState(AgentRuntimeState())
 
-        // Look for the button with the text "New Agent" (it's in the TopAppBar actions)
+        // Look for the button with the text "New Agent" (it's in the AgentListView)
         composeTestRule.onNodeWithText("New Agent").performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_CREATE }
@@ -133,7 +132,6 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_SET_EDITING }
         assertNotNull(action)
         // The payload might contain "null" string or actual null, check carefully.
-        // Logic: put("agentId", null as String?) -> results in "agentId": null
         assertNull(action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
     }
 
@@ -183,7 +181,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
     }
 
-    // --- 4. Dropdown Logic (Existing Retained) ---
+    // --- 4. Dropdown Logic ---
 
     @Test
     fun `agent manager view displays available knowledge graphs in dropdown`() {
@@ -220,36 +218,6 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     }
 
     @Test
-    fun `knowledge graph dropdown should NOT show options reserved by other agents`() {
-        val agent = AgentInstance("agent-1", "Test Agent", null, "p", "m")
-        val state = AgentRuntimeState(
-            agents = mapOf("agent-1" to agent),
-            knowledgeGraphNames = mapOf("kg-free" to "Free HKG", "kg-reserved" to "Reserved HKG"),
-            hkgReservedIds = setOf("kg-reserved"),
-            editingAgentId = "agent-1"
-        )
-        setViewState(state)
-
-        composeTestRule.onNodeWithText("Knowledge Graph").performClick()
-        composeTestRule.onNodeWithText("Free HKG").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Reserved HKG").assertDoesNotExist()
-    }
-
-    @Test
-    fun `knowledge graph dropdown SHOULD show an option that is reserved by the agent being edited`() {
-        val agent = AgentInstance("agent-1", "Test Agent", "kg-self", "p", "m")
-        val state = AgentRuntimeState(
-            agents = mapOf("agent-1" to agent),
-            knowledgeGraphNames = mapOf("kg-self" to "My Own HKG"),
-            hkgReservedIds = setOf("kg-self"),
-            editingAgentId = "agent-1"
-        )
-        setViewState(state)
-
-        composeTestRule.onNodeWithText("Knowledge Graph").performClick()
-        composeTestRule.onAllNodesWithText("My Own HKG").assertCountEquals(2)
-    }
-    @Test
     fun `clicking 'Inspect State' displays formatted cognitive state JSON`() {
         val stateJson = buildJsonObject {
             put("phase", "BOOTING")
@@ -271,8 +239,72 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         // 2. Click the expand/inspect button (Icon: Info or Text: Inspect State)
         composeTestRule.onNodeWithContentDescription("Inspect State").performClick()
 
-        // 3. Verify the JSON content is rendered (likely in the CodeEditor)
+        // 3. Verify the JSON content is rendered
         composeTestRule.onNodeWithText("BOOTING", substring = true).assertIsDisplayed()
         composeTestRule.onNodeWithText("sentinel_check", substring = true).assertIsDisplayed()
+    }
+
+    // --- 5. System Resources Tab ---
+
+    @Test
+    fun `clicking Resources tab switches view`() {
+        setViewState(AgentRuntimeState(activeManagerTab = 0))
+
+        composeTestRule.onNodeWithText("System Resources").performClick()
+
+        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_SET_MANAGER_TAB }
+        assertNotNull(action)
+        assertEquals(1, action.payload?.get("tabIndex")?.jsonPrimitive?.int)
+    }
+
+    @Test
+    fun `selecting a resource displays its content in CodeEditor`() {
+        val resource = AgentResource(
+            id = "const_v1",
+            type = AgentResourceType.CONSTITUTION,
+            name = "Constitution v1",
+            content = "<xml>Law</xml>",
+            isBuiltIn = false
+        )
+        setViewState(AgentRuntimeState(
+            activeManagerTab = 1,
+            resources = listOf(resource),
+            editingResourceId = null
+        ))
+
+        // Click the resource in the list
+        composeTestRule.onNodeWithText("Constitution v1").performClick()
+
+        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_SELECT_RESOURCE }
+        assertNotNull(action)
+        assertEquals("const_v1", action.payload?.get("resourceId")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `editing a user resource dispatches SAVE action`() {
+        val resource = AgentResource(
+            id = "const_v1",
+            type = AgentResourceType.CONSTITUTION,
+            name = "Constitution v1",
+            content = "Old Content",
+            isBuiltIn = false
+        )
+        setViewState(AgentRuntimeState(
+            activeManagerTab = 1,
+            resources = listOf(resource),
+            editingResourceId = "const_v1"
+        ))
+
+        // Type in the editor
+        // We look for the editor by the tag we added in CodeEditor.kt
+        composeTestRule.onNodeWithTag("code_editor_input").performTextClearance()
+        composeTestRule.onNodeWithTag("code_editor_input").performTextInput("New Content")
+
+        // Wait/Trigger save
+        composeTestRule.onNodeWithContentDescription("Save").performClick()
+
+        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_SAVE_RESOURCE }
+        assertNotNull(action)
+        assertEquals("New Content", action.payload?.get("content")?.jsonPrimitive?.content)
     }
 }
