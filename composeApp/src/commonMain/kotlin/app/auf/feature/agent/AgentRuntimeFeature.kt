@@ -36,11 +36,7 @@ class AgentRuntimeFeature(
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val agentConfigFILENAME = "agent.json"
     private val activeTurnJobs = mutableMapOf<String, Job>()
-
-    // [CLEANUP] Optimistic cache removed. Logic is now sovereign in AgentAvatarLogic.
     private val avatarUpdateJobs = mutableMapOf<String, Job>()
-
-    private val redundantHeaderRegex = Regex("""^.+? \([^)]+\) @ \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z:\s*""")
     private var agentLoadCount = 0
 
     override fun init(store: Store) {
@@ -78,7 +74,6 @@ class AgentRuntimeFeature(
             }
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
-                // On load, refresh avatar presence (posts to private+subscribed)
                 AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE)
                 broadcastAgentNames(agentState, store)
             }
@@ -120,28 +115,21 @@ class AgentRuntimeFeature(
 
                 saveAgentConfig(newAgent, store)
                 broadcastAgentNames(agentState, store)
-
-                // Refresh avatars to reflect potentially new subscriptions
                 AgentAvatarLogic.updateAgentAvatars(agentId, store)
             }
-            // [NEW] Persist NVRAM updates (Sovereign State Transitions)
             ActionNames.AGENT_INTERNAL_UPDATE_COGNITIVE_STATE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[agentId] ?: return
                 saveAgentConfig(agent, store)
             }
-
             ActionNames.AGENT_DELETE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
-
-                // Cleanup ALL avatar cards for this agent
                 agentState.agentAvatarCardIds[agentId]?.forEach { (sessionId, messageId) ->
                     store.deferredDispatch(this.name, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                         put("session", sessionId)
                         put("messageId", messageId)
                     }))
                 }
-
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject { put("subpath", agentId) }))
                 store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_CONFIRM_DELETE, buildJsonObject { put("agentId", agentId) }))
                 store.deferredDispatch(this.name, Action(ActionNames.AGENT_PUBLISH_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
@@ -210,9 +198,6 @@ class AgentRuntimeFeature(
                     val frontierMoved = prevStatus.lastSeenMessageId != newStatus.lastSeenMessageId
 
                     if (statusChanged || frontierMoved) {
-                        platformDependencies.log(LogLevel.INFO, name,
-                            "Avatar Update Triggered for $agentId. StatusChanged: $statusChanged. FrontierMoved: $frontierMoved")
-                        // [DEBOUNCE] Still valid to prevent rapid UI churn, but now safer due to sovereign ID commit.
                         avatarUpdateJobs[agentId]?.cancel()
                         avatarUpdateJobs[agentId] = coroutineScope.launch {
                             delay(50)
@@ -247,10 +232,11 @@ class AgentRuntimeFeature(
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
         when (envelope.type) {
             ActionNames.Envelopes.SESSION_RESPONSE_LEDGER,
-            ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT -> {
+            ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+            ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE -> {
+                // FIXED: Route all cognitive private data to the pipeline
                 AgentCognitivePipeline.handlePrivateData(envelope, store)
             }
-            ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE -> handleGatewayResponse(envelope.payload, store)
             ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW -> handleGatewayPreviewResponse(envelope.payload, store)
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> handleFileSystemListResponse(envelope.payload, store)
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> handleFileSystemReadResponse(envelope.payload, store)
@@ -296,34 +282,6 @@ class AgentRuntimeFeature(
             if (agentLoadCount <= 0) {
                 store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
             }
-        }
-    }
-
-    private fun handleGatewayResponse(payload: JsonObject, store: Store) {
-        val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
-        if (agentId == null) return
-        val decoded = try { json.decodeFromJsonElement<GatewayResponsePayload>(payload) } catch (e: Exception) { return }
-        val agentState = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
-        val agent = agentState.agents[decoded.correlationId] ?: return
-        val targetSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: return
-
-        if (decoded.errorMessage != null) {
-            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
-        } else {
-            var contentToPost = decoded.rawContent ?: ""
-            val match = redundantHeaderRegex.find(contentToPost)
-            if (match != null) {
-                contentToPost = contentToPost.substring(match.range.last + 1).trimStart()
-                store.deferredDispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
-                    put("session", targetSessionId)
-                    put("senderId", "system")
-                    put("message", """SYSTEM SENTINEL (llm-output-sanitizer): Warning for [${agent.name}]: Please do not include the standard system "name (id) @timestamp:" part in your output.""")
-                }))
-            }
-            store.deferredDispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
-                put("session", targetSessionId); put("senderId", agent.id); put("message", contentToPost)
-            }))
-            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE)
         }
     }
 

@@ -158,22 +158,20 @@ object AgentCognitivePipeline {
 
         // [NEW] Cognitive Strategy Strategy Resolution
         val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
-        val cognitiveState = agent.cognitiveState ?: strategy.getInitialState()
+        // FIX: Check for JsonNull explicitly, as it is a singleton object, not null reference
+        val cognitiveState = if (agent.cognitiveState !is JsonNull) agent.cognitiveState else strategy.getInitialState()
 
         platformDependencies.log(LogLevel.INFO, LOG_TAG,
             "Assembling prompt for '${agent.id}' using strategy '${strategy.id}' (State: ${abbreviate(cognitiveState.toString(),30)}).")
 
-        // Construct Context Map for the Strategy
         val contextMap = mutableMapOf<String, String>()
 
-        // Add HKG Context if available
         if (hkgContext != null) {
             contextMap["HOLON_KNOWLEDGE_GRAPH"] = hkgContext.entries.joinToString("\n\n---\n\n") { (holonId, content) ->
                 "--- START OF FILE $holonId.json ---\n${content.jsonPrimitive.content}\n--- END OF FILE $holonId.json ---"
             }
         }
 
-        // Add Session Metadata
         val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.sessionNames[it] } ?: "Unknown Session"
         contextMap["SESSION_METADATA"] = """
             Platform: 'AUF App ${Version.APP_VERSION}'
@@ -182,10 +180,9 @@ object AgentCognitivePipeline {
             Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())}
         """.trimIndent()
 
-        // Prepare System Prompt via Strategy
         val context = AgentTurnContext(
             agentName = agent.name,
-            systemInstructions = "", // In future, this comes from a "Goal" field
+            systemInstructions = "",
             gatheredContexts = contextMap
         )
 
@@ -222,9 +219,10 @@ object AgentCognitivePipeline {
 
         val rawContent = decoded.rawContent ?: ""
 
-        // [NEW] Cognitive Strategy Post-Processing (Sentinel Check)
+        // [NEW] Cognitive Strategy Post-Processing
         val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
-        val cognitiveState = agent.cognitiveState ?: strategy.getInitialState()
+        // FIX: Check for JsonNull explicitly
+        val cognitiveState = if (agent.cognitiveState !is JsonNull) agent.cognitiveState else strategy.getInitialState()
 
         val result = strategy.postProcessResponse(rawContent, cognitiveState)
 
@@ -236,7 +234,7 @@ object AgentCognitivePipeline {
             }))
         }
 
-        // 2. Handle Sentinel Actions (Halt or Proceed)
+        // 2. Handle Sentinel Actions
         if (result.action == SentinelAction.HALT_AND_SILENCE) {
             store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "Agent '${agent.id}' halted by Cognitive Strategy (Sentinel Action).")
             AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE, "Halted by Internal Sentinel.")
@@ -245,8 +243,6 @@ object AgentCognitivePipeline {
 
         // 3. Proceed to Post
         var contentToPost = rawContent
-
-        // Clean redundant headers (Legacy Logic)
         val match = redundantHeaderRegex.find(contentToPost)
         if (match != null) {
             contentToPost = contentToPost.substring(match.range.last + 1).trimStart()

@@ -67,19 +67,11 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
             }
         """.trimIndent()
 
-        // [ROBUSTNESS FIX] Write to multiple likely paths to ensure discovery by FileSystemFeature.
-        // FakePlatformDependencies might map root to "" or "/" depending on impl details.
-        // KnowledgeGraphFeature scans the root.
-        val paths = listOf(
-            "$personaId",           // Relative root
-            "/$personaId",          // Absolute root
-            ".auf/v2/$personaId"    // Default App Sandbox
-        )
-
-        paths.forEach { path ->
-            platform.createDirectories(path)
-            platform.writeFileContent("$path/$personaId.json", hkgContent)
-        }
+        // [ROBUSTNESS FIX] Write specifically to the relative root so FakePlatformDependencies
+        // listing logic (which likely defaults to listing ".") finds it.
+        val path = "$personaId/$personaId.json"
+        platform.createDirectories(personaId)
+        platform.writeFileContent(path, hkgContent)
 
         val privateSession = Session("private-session-1", "p-cognition: Philosopher", emptyList(), 1L)
         val publicSession = Session("public-session-1", "Public Discussion", emptyList(), 2L)
@@ -101,7 +93,6 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
             .withFeature(FileSystemFeature(platform))
             .withFeature(FakeGatewayFeature(platform, scope))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
-            // [FIX] Initialize session names so "Unknown Session" doesn't appear in prompt
             .withInitialState("agent", AgentRuntimeState(
                 agents = mapOf(philosopherAgent.id to philosopherAgent),
                 sessionNames = mapOf(
