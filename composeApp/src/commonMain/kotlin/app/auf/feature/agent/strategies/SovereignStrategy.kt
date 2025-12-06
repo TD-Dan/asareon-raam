@@ -33,7 +33,6 @@ object SovereignStrategy : CognitiveStrategy {
 
         return buildString {
             // 1. The Constitution (Law)
-            // In a full implementation, we'd load this from context.resources["constitution"]
             appendLine(SovereignDefaults.DEFAULT_CONSTITUTION_XML)
             appendLine()
 
@@ -64,13 +63,12 @@ object SovereignStrategy : CognitiveStrategy {
 
         if (phase == PHASE_BOOTING) {
             // Sentinel Check Logic
-            if (response.contains("[FAILURE_CODE]")) {
+            // [ROBUSTNESS FIX] Now checks for the bare token "FAILURE_CODE"
+            if (response.contains(SovereignDefaults.SENTINEL_FAILURE_TOKEN)) {
                 return PostProcessResult(currentState, SentinelAction.HALT_AND_SILENCE)
             }
 
-            // Note: In a real system, we might look for a specific Success Code.
-            // For now, absence of Failure implies Success in this simplified logic.
-            // We transition to AWAKE.
+            // Success Transition -> AWAKE
             val newState = buildJsonObject {
                 put(KEY_PHASE, PHASE_AWAKE)
             }

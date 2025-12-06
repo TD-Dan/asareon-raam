@@ -6,6 +6,9 @@ package app.auf.feature.agent.strategies
  */
 object SovereignDefaults {
 
+    // [ROBUSTNESS FIX] Removed brackets to make the check less brittle to formatting.
+    const val SENTINEL_FAILURE_TOKEN = "FAILURE_CODE"
+
     // The "BIOS" of the agent. Runs only in the BOOTING phase.
     val BOOT_SENTINEL_XML = """
         <boot_sentinel_protocol>
@@ -24,7 +27,6 @@ object SovereignDefaults {
     """.trimIndent()
 
     // The "Law" of the agent. Always present in AWAKE phase.
-    // In a real implementation, this might be loaded from a file, but we define a minimal default here.
     val DEFAULT_CONSTITUTION_XML = """
         <constitution>
         # **The Ai User Framework Constitution**
