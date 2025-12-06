@@ -9,12 +9,6 @@ import kotlinx.serialization.json.*
  * ## Mandate
  * To provide pure, testable reducer logic for the **ephemeral runtime state**
  * of the AgentRuntimeFeature.
- *
- * Responsibilities:
- * - Status transitions (IDLE -> PROCESSING)
- * - Context staging (HKG, Ledger, Preview)
- * - Avatar card tracking
- * - External event reaction (Session updates, Identity updates)
  */
 object AgentRuntimeReducer {
 
@@ -27,6 +21,22 @@ object AgentRuntimeReducer {
     ): AgentRuntimeState {
         return when (action.name) {
             // --- Internal State Setters ---
+
+            // [NEW] Persist Cognitive State Updates (NVRAM)
+            ActionNames.AGENT_INTERNAL_UPDATE_COGNITIVE_STATE -> {
+                val payload = action.payload ?: return state
+                val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
+                val newStateJson = payload["state"] ?: return state
+
+                val currentAgent = state.agents[agentId] ?: return state
+
+                val updatedAgent = currentAgent.copy(cognitiveState = newStateJson)
+
+                state.copy(
+                    agents = state.agents + (agentId to updatedAgent),
+                    agentsToPersist = (state.agentsToPersist ?: emptySet()) + agentId
+                )
+            }
             ActionNames.AGENT_INTERNAL_SET_STATUS -> handleSetStatus(action, state, platformDependencies)
 
             ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP -> {

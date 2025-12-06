@@ -12,6 +12,8 @@ object AgentCognitivePipeline {
     private val json = Json { ignoreUnknownKeys = true }
     private const val LOG_TAG = "AgentCognitivePipeline"
 
+    private val redundantHeaderRegex = Regex("""^.+? \([^)]+\) @ \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z:\s*""")
+
     fun startCognitiveCycle(agentId: String, store: Store) {
         val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: run {
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "startCognitiveCycle: Agent state missing.")
@@ -51,6 +53,7 @@ object AgentCognitivePipeline {
         when (envelope.type) {
             ActionNames.Envelopes.SESSION_RESPONSE_LEDGER -> handleLedgerResponse(envelope.payload, store)
             ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT -> handleHkgContextResponse(envelope.payload, store)
+            ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE -> handleGatewayResponse(envelope.payload, store)
         }
     }
 
@@ -153,45 +156,40 @@ object AgentCognitivePipeline {
         val statusInfo = agentState.agentStatuses[agent.id] ?: AgentStatusInfo()
         val platformDependencies = store.platformDependencies
 
-        // [DEBUG LOGGING]
+        // [NEW] Cognitive Strategy Strategy Resolution
+        val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
+        val cognitiveState = agent.cognitiveState ?: strategy.getInitialState()
+
+        platformDependencies.log(LogLevel.INFO, LOG_TAG,
+            "Assembling prompt for '${agent.id}' using strategy '${strategy.id}' (State: ${abbreviate(cognitiveState.toString(),30)}).")
+
+        // Construct Context Map for the Strategy
+        val contextMap = mutableMapOf<String, String>()
+
+        // Add HKG Context if available
         if (hkgContext != null) {
-            platformDependencies.log(LogLevel.INFO, LOG_TAG, "Assembling prompt for '${agent.id}' with ${hkgContext.size} HKG holons.")
-        } else {
-            platformDependencies.log(LogLevel.INFO, LOG_TAG, "Assembling prompt for '${agent.id}' (Vanilla).")
+            contextMap["HOLON_KNOWLEDGE_GRAPH"] = hkgContext.entries.joinToString("\n\n---\n\n") { (holonId, content) ->
+                "--- START OF FILE $holonId.json ---\n${content.jsonPrimitive.content}\n--- END OF FILE $holonId.json ---"
+            }
         }
 
-        val hkgContextContent = hkgContext?.entries?.joinToString("\n\n---\n\n") { (holonId, content) ->
-            "--- START OF FILE $holonId.json ---\n${content.jsonPrimitive.content}\n--- END OF FILE $holonId.json ---"
-        } ?: ""
-
+        // Add Session Metadata
         val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.sessionNames[it] } ?: "Unknown Session"
-        var systemPrompt = """
-            --- SYSTEM BOOTSTRAP DIRECTIVES ---
-            // You are an autonomous agent operating within the multi user and multi agent AUF App.
-            // The following directives and context are provided for this turn.
-
-            **OPERATIONAL DIRECTIVES:**
-            *   **IDENTITY:** You are agent '${abbreviate(agent.name, 64)}' (ID: ${agent.id}).
-            *   **FORMATTING:** Your response MUST be your direct reply only. DO NOT include prefixes (names, IDs, timestamps). The application handles all formatting.
-            *   **DISCIPLINE:** You MUST NOT speak for or impersonate any other participant. Generate content only from your own perspective as "${abbreviate(agent.name, 64)}".
-
-            **SITUATIONAL AWARENESS:**
-            *   Platform: 'AUF App ${Version.APP_VERSION}'
-            *   Host LLM: '${agent.modelProvider}'
-            *   Host Model: '${agent.modelName}'
-            *   Session: '${abbreviate(sessionName, 64)}'
-            *   Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())}
-
-
+        contextMap["SESSION_METADATA"] = """
+            Platform: 'AUF App ${Version.APP_VERSION}'
+            Host LLM: '${agent.modelProvider}' / '${agent.modelName}'
+            Session: '${sessionName}'
+            Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())}
         """.trimIndent()
 
-        if (hkgContextContent.isNotEmpty()) {
-            systemPrompt += """
-            --- HOLON KNOWLEDGE GRAPH CONTEXT ---
-            $hkgContextContent
-            
-            """.trimIndent()
-        }
+        // Prepare System Prompt via Strategy
+        val context = AgentTurnContext(
+            agentName = agent.name,
+            systemInstructions = "", // In future, this comes from a "Goal" field
+            gatheredContexts = contextMap
+        )
+
+        val systemPrompt = strategy.prepareSystemPrompt(context, cognitiveState)
 
         val requestActionName = if (statusInfo.turnMode == TurnMode.PREVIEW) ActionNames.GATEWAY_PREPARE_PREVIEW else ActionNames.GATEWAY_GENERATE_CONTENT
         val step = if (statusInfo.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"
@@ -207,5 +205,61 @@ object AgentCognitivePipeline {
             put("contents", json.encodeToJsonElement(ledgerContext))
             put("systemPrompt", systemPrompt)
         }))
+    }
+
+    private fun handleGatewayResponse(payload: JsonObject, store: Store) {
+        val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
+        if (agentId == null) return
+        val decoded = try { json.decodeFromJsonElement<GatewayResponsePayload>(payload) } catch (e: Exception) { return }
+        val agentState = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
+        val agent = agentState.agents[decoded.correlationId] ?: return
+        val targetSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: return
+
+        if (decoded.errorMessage != null) {
+            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
+            return
+        }
+
+        val rawContent = decoded.rawContent ?: ""
+
+        // [NEW] Cognitive Strategy Post-Processing (Sentinel Check)
+        val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
+        val cognitiveState = agent.cognitiveState ?: strategy.getInitialState()
+
+        val result = strategy.postProcessResponse(rawContent, cognitiveState)
+
+        // 1. Handle State Updates
+        if (result.newState != cognitiveState) {
+            store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_UPDATE_COGNITIVE_STATE, buildJsonObject {
+                put("agentId", agentId)
+                put("state", result.newState)
+            }))
+        }
+
+        // 2. Handle Sentinel Actions (Halt or Proceed)
+        if (result.action == SentinelAction.HALT_AND_SILENCE) {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "Agent '${agent.id}' halted by Cognitive Strategy (Sentinel Action).")
+            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE, "Halted by Internal Sentinel.")
+            return
+        }
+
+        // 3. Proceed to Post
+        var contentToPost = rawContent
+
+        // Clean redundant headers (Legacy Logic)
+        val match = redundantHeaderRegex.find(contentToPost)
+        if (match != null) {
+            contentToPost = contentToPost.substring(match.range.last + 1).trimStart()
+            store.deferredDispatch("agent", Action(ActionNames.SESSION_POST, buildJsonObject {
+                put("session", targetSessionId)
+                put("senderId", "system")
+                put("message", """SYSTEM SENTINEL (llm-output-sanitizer): Warning for [${agent.name}]: Please do not include the standard system "name (id) @timestamp:" part in your output.""")
+            }))
+        }
+
+        store.deferredDispatch("agent", Action(ActionNames.SESSION_POST, buildJsonObject {
+            put("session", targetSessionId); put("senderId", agent.id); put("message", contentToPost)
+        }))
+        AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE)
     }
 }
