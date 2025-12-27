@@ -106,12 +106,12 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
     }
 
     @Test
-    fun `validateAndCorrectStartupState should dispatch checks for missing reservations and sessions`() {
+    fun `ensureSovereignSessions should dispatch CREATE if session missing`() {
         fakeStore.dispatchedActions.clear()
         val agent = AgentInstance("a1", "Sovereign", "kg1", "p", "m") // Sovereign but stateless
         val state = AgentRuntimeState(agents = mapOf("a1" to agent)) // Empty reservations, empty sessions
 
-        SovereignHKGResourceLogic.validateAndCorrectStartupState(fakeStore, state)
+        SovereignHKGResourceLogic.ensureSovereignSessions(fakeStore, state)
 
         // Check for Reservation Dispatch
         val reserveAction = fakeStore.dispatchedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG }
@@ -125,7 +125,24 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
     }
 
     @Test
-    fun `validateAndCorrectStartupState should do nothing if state is healthy`() {
+    fun `ensureSovereignSessions should dispatch UPDATE if session exists but unlinked`() {
+        fakeStore.dispatchedActions.clear()
+        val agent = AgentInstance("a1", "Sovereign", "kg1", "p", "m", privateSessionId = null) // Waiting for session
+        val state = AgentRuntimeState(
+            agents = mapOf("a1" to agent),
+            sessionNames = mapOf("s-new" to "p-cognition: Sovereign (a1)") // Match found
+        )
+
+        SovereignHKGResourceLogic.ensureSovereignSessions(fakeStore, state)
+
+        val updateAction = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_UPDATE_CONFIG }
+        assertNotNull(updateAction)
+        assertEquals("a1", updateAction.payload?.get("agentId")?.jsonPrimitive?.content)
+        assertEquals("s-new", updateAction.payload?.get("privateSessionId")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `ensureSovereignSessions should do nothing if state is healthy`() {
         fakeStore.dispatchedActions.clear()
         val agent = AgentInstance("a1", "Sovereign", "kg1", "p", "m", privateSessionId = "s1")
         val state = AgentRuntimeState(
@@ -134,26 +151,34 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
             sessionNames = mapOf("s1" to "p-cognition: Sovereign (a1)")
         )
 
-        SovereignHKGResourceLogic.validateAndCorrectStartupState(fakeStore, state)
+        SovereignHKGResourceLogic.ensureSovereignSessions(fakeStore, state)
 
         assertTrue(fakeStore.dispatchedActions.isEmpty())
     }
 
     @Test
-    fun `linkPrivateSessionOnCreation should dispatch UPDATE_CONFIG when matching session is found`() {
+    fun `ensureSovereignSessions should be idempotent (Race Condition Check)`() {
+        // SCENARIO: Agent is loaded, Session list is EMPTY.
         fakeStore.dispatchedActions.clear()
-        val agent = AgentInstance("a1", "Sovereign", "kg1", "p", "m", privateSessionId = null) // Waiting for session
-        val state = AgentRuntimeState(
-            agents = mapOf("a1" to agent),
-            sessionNames = mapOf("s-new" to "p-cognition: Sovereign (a1)") // Match found
-        )
+        val agent = AgentInstance("a1", "Sovereign", "kg1", "p", "m")
+        val state = AgentRuntimeState(agents = mapOf("a1" to agent), sessionNames = emptyMap())
 
-        SovereignHKGResourceLogic.linkPrivateSessionOnCreation(fakeStore, state)
+        // Pass 1: Should dispatch CREATE
+        SovereignHKGResourceLogic.ensureSovereignSessions(fakeStore, state)
+        val createCountAfterPass1 = fakeStore.dispatchedActions.count { it.name == ActionNames.SESSION_CREATE }
+        assertEquals(1, createCountAfterPass1)
 
-        val updateAction = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_UPDATE_CONFIG }
-        assertNotNull(updateAction)
-        assertEquals("a1", updateAction.payload?.get("agentId")?.jsonPrimitive?.content)
-        assertEquals("s-new", updateAction.payload?.get("privateSessionId")?.jsonPrimitive?.content)
+
+        val stateWithSession = state.copy(sessionNames = mapOf("s1" to "p-cognition: Sovereign (a1)"))
+        fakeStore.dispatchedActions.clear()
+
+        SovereignHKGResourceLogic.ensureSovereignSessions(fakeStore, stateWithSession)
+
+        val createCountAfterPass2 = fakeStore.dispatchedActions.count { it.name == ActionNames.SESSION_CREATE }
+        assertEquals(0, createCountAfterPass2, "Should NOT create if session exists")
+
+        val updateCount = fakeStore.dispatchedActions.count { it.name == ActionNames.AGENT_UPDATE_CONFIG }
+        assertEquals(1, updateCount, "Should link if session exists")
     }
 
     @Test

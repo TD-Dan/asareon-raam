@@ -194,7 +194,7 @@ private fun AgentReadOnlyView(
                 Text("Subscribed: $sessionName" + if (agent.subscribedSessionIds.size > 1) " (+${agent.subscribedSessionIds.size - 1} more)" else "", style = MaterialTheme.typography.bodyMedium)
                 Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium)
                 // [UPDATED] Display Private Session
-                Text("Private Session: $privateSessionName", style = MaterialTheme.typography.bodyMedium)
+                Text("Private Session: ${agent.privateSessionId}: $privateSessionName", style = MaterialTheme.typography.bodyMedium)
 
                 Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
 

@@ -70,10 +70,14 @@ class AgentRuntimeFeature(
                 store.deferredDispatch(this.name, Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
             }
             ActionNames.AGENT_INTERNAL_AGENTS_LOADED -> {
-                store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_VALIDATE_SOVEREIGN_STATE))
+                // [FIX] Validate immediately ONLY if we already have session names (e.g. SessionFeature loaded first).
+                // Otherwise, wait for SESSION_PUBLISH_SESSION_NAMES_UPDATED to avoid race condition creating duplicates.
+                if (agentState.sessionNames.isNotEmpty()) {
+                    SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+                }
             }
             ActionNames.AGENT_INTERNAL_VALIDATE_SOVEREIGN_STATE -> {
-                SovereignHKGResourceLogic.validateAndCorrectStartupState(store, agentState)
+                SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
             }
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
@@ -238,7 +242,8 @@ class AgentRuntimeFeature(
                 AgentAutoTriggerLogic.checkAndDispatchTriggers(store, agentState, platformDependencies, name)
             }
             ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
-                SovereignHKGResourceLogic.linkPrivateSessionOnCreation(store, agentState)
+                // [FIX] Trigger idempotent check when session names update.
+                SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
             }
         }
     }

@@ -87,6 +87,15 @@ object SovereignHKGResourceLogic {
         }
     }
 
+    // Deprecated helpers maintained for compatibility during refactor, but can be removed if unused.
+    fun validateAndCorrectStartupState(store: Store, agentState: AgentRuntimeState) {
+        ensureSovereignSessions(store, agentState)
+    }
+
+    fun linkPrivateSessionOnCreation(store: Store, agentState: AgentRuntimeState) {
+        ensureSovereignSessions(store, agentState)
+    }
+
     /**
      * [CRITICAL FIX] switched from PrivateDataEnvelope (invalid) to Public Action (valid).
      */
