@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
+import app.auf.feature.agent.strategies.VanillaStrategy
 import app.auf.ui.components.CodeEditor
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
@@ -178,13 +179,12 @@ private fun AgentReadOnlyView(
 ) {
     val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.sessionNames[it] } ?: "Not Subscribed"
     val hkgName = agent.knowledgeGraphId?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG"
-
-    // [UPDATED] Resolve Private Session Name
     val privateSessionName = agent.privateSessionId?.let { agentState.sessionNames[it] } ?: agent.privateSessionId ?: "None"
-
     val statusInfo = agentState.agentStatuses[agent.id] ?: AgentStatusInfo()
 
     var showInternals by remember { mutableStateOf(false) }
+    // Only consider Sovereign if HKG is assigned.
+    val isSovereign = agent.knowledgeGraphId != null
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         AgentControlCard(agent, statusInfo, store, platformDependencies)
@@ -192,9 +192,12 @@ private fun AgentReadOnlyView(
         SelectionContainer {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Subscribed: $sessionName" + if (agent.subscribedSessionIds.size > 1) " (+${agent.subscribedSessionIds.size - 1} more)" else "", style = MaterialTheme.typography.bodyMedium)
-                Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium)
-                // [UPDATED] Display Private Session
-                Text("Private Session: ${agent.privateSessionId}: $privateSessionName", style = MaterialTheme.typography.bodyMedium)
+
+                // [LOGIC] Only show Sovereign details if actually Sovereign (has HKG)
+                if (isSovereign) {
+                    Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium)
+                    Text("Private Session: ${agent.privateSessionId ?: "None"} ($privateSessionName)", style = MaterialTheme.typography.bodyMedium)
+                }
 
                 Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
 
@@ -249,6 +252,9 @@ private fun AgentEditorView(
     var autoWaitTimeInput by remember(agent.id) { mutableStateOf(agent.autoWaitTimeSeconds.toString()) }
     var autoMaxWaitTimeInput by remember(agent.id) { mutableStateOf(agent.autoMaxWaitTimeSeconds.toString()) }
 
+    // [LOGIC] Determine if we should show Sovereign options
+    val isVanilla = agent.cognitiveStrategyId == VanillaStrategy.id
+
     val onSave = {
         store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
             put("agentId", agent.id)
@@ -263,35 +269,44 @@ private fun AgentEditorView(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+
+        // --- ROW 1: Identity (Name + Strategy) ---
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = agentNameInput,
                 onValueChange = { agentNameInput = it },
                 label = { Text("Agent Name") },
                 modifier = Modifier.weight(1f)
             )
+            Box(Modifier.weight(1f)) {
+                StrategySelector(agent, store)
+            }
         }
 
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            maxItemsInEachRow = 2
-        ) {
-            Box(Modifier.weight(1f)) {
-                if (agent.knowledgeGraphId == null) {
-                    SingleSessionSelector(agent, agentState, store)
-                } else {
-                    MultiSessionSelector(agent, agentState, store)
-                }
-            }
-            Box(Modifier.weight(1f)) { KnowledgeGraphSelector(agent, agentState, store) }
+        // --- ROW 2: Compute (Provider + Model) ---
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.weight(1f)) { ProviderSelector(agent, agentState, store) }
             Box(Modifier.weight(1f)) { ModelSelector(agent, agentState, store) }
-            Box(Modifier.weight(1f)) { StrategySelector(agent, store) }
-            Box(Modifier.weight(1f))
         }
 
+        // --- ROW 3: Context (Subscriptions) ---
+        Row(Modifier.fillMaxWidth()) {
+            if (agent.knowledgeGraphId == null) {
+                SingleSessionSelector(agent, agentState, store)
+            } else {
+                MultiSessionSelector(agent, agentState, store)
+            }
+        }
+
+        // --- ROW 4: Sovereign Specifics (Knowledge Graph) ---
+        // [LOGIC] Only show if Strategy is NOT Vanilla
+        if (!isVanilla) {
+            Row(Modifier.fillMaxWidth()) {
+                KnowledgeGraphSelector(agent, agentState, store)
+            }
+        }
+
+        // --- ROW 5: Auto Mode ---
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -322,6 +337,7 @@ private fun AgentEditorView(
                 modifier = Modifier.weight(1f)
             )
         }
+
         Row (
             Modifier.fillMaxWidth(),
             Arrangement.End,
@@ -545,8 +561,7 @@ private fun CreateResourceDialog(onDismiss: () -> Unit, onConfirm: (String, Agen
     )
 }
 
-// --- Sub-Composables for AgentEditorView (Kept from previous) ---
-// (Re-declaring unchanged helper composables to ensure file is complete)
+// --- Sub-Composables for AgentEditorView ---
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -752,8 +767,17 @@ private fun StrategySelector(agent: AgentInstance, store: Store) {
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             strategies.forEach { strategy ->
                 DropdownMenuItem(text = { Text(strategy.displayName) }, onClick = {
+                    // [LOGIC] If switching to Vanilla, enforce HKG cleansing side-effect
+                    val extraUpdates = if (strategy.id == VanillaStrategy.id) {
+                        mapOf("knowledgeGraphId" to null)
+                    } else {
+                        emptyMap()
+                    }
+
                     store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
-                        put("agentId", agent.id); put("cognitiveStrategyId", strategy.id)
+                        put("agentId", agent.id)
+                        put("cognitiveStrategyId", strategy.id)
+                        extraUpdates.forEach { (k, v) -> put(k, v as String?) }
                     }))
                     isExpanded = false
                 })

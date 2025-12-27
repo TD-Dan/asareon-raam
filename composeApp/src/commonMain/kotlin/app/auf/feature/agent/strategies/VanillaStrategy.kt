@@ -13,7 +13,7 @@ import kotlinx.serialization.json.JsonNull
  */
 object VanillaStrategy : CognitiveStrategy {
     override val id: String = "vanilla_v1"
-    override val displayName: String = "Vanilla (Standard)"
+    override val displayName: String = "Vanilla (Simple)"
 
     override fun getInitialState(): JsonElement = JsonNull
 

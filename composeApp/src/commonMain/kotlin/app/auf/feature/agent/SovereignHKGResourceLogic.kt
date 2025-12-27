@@ -10,19 +10,15 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-/**
- * ## Mandate
- * To provide pure, testable, static functions for the specialized business logic
- * of Sovereign (HKG-backed) agents. This isolates complex state transition logic
- * from the orchestration and side effect management of the AgentRuntimeFeature.
- */
 object SovereignHKGResourceLogic {
 
+    // ... [Previous handlers for Assignment/Revocation remain the same] ...
     fun handleSovereignAssignment(store: Store, oldAgent: AgentInstance?, newAgent: AgentInstance) {
         val justBecameSovereign = newAgent.knowledgeGraphId != null && oldAgent?.knowledgeGraphId == null
         if (justBecameSovereign) {
-            val privateSessionName = "p-cognition: ${newAgent.name} (${newAgent.id})"
-            store.deferredDispatch("agent", Action(ActionNames.SESSION_CREATE, buildJsonObject { put("name", privateSessionName) }))
+            // We do NOT create session here. We let the ensureSovereignSessions logic handle it
+            // naturally in the next loop or immediate check to keep logic centralized.
+            // However, ensuring reservation is still good practice here.
             store.deferredDispatch("agent", Action(ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject { put("personaId", newAgent.knowledgeGraphId) }))
         }
     }
@@ -43,62 +39,51 @@ object SovereignHKGResourceLogic {
     }
 
     /**
-     * Ensures that every Sovereign Agent has a linked Private Session.
-     * This function is idempotent and robust to race conditions.
-     * It should be called when Agents are loaded AND when Session Names are updated.
+     * Implements the "Trust or Bootstrap" protocol.
+     *
+     * RULE 1: If ID exists, Trust it (Return).
+     * RULE 2: If ID is null, Bootstrap it (Find or Create).
      */
     fun ensureSovereignSessions(store: Store, agentState: AgentRuntimeState) {
-        // 1. HKG Reservation Check
+        // 1. HKG Reservation (Always ensure reservation for Sovereigns)
         agentState.agents.values.forEach { agent ->
             if (agent.knowledgeGraphId != null && !agentState.hkgReservedIds.contains(agent.knowledgeGraphId)) {
                 store.deferredDispatch("agent", Action(ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject { put("personaId", agent.knowledgeGraphId) }))
             }
         }
 
-        // 2. Private Session Check & Creation/Linking
+        // 2. Session Linking (Trust or Bootstrap)
         agentState.agents.values.filter { it.knowledgeGraphId != null }.forEach { agent ->
-            val expectedSessionName = "p-cognition: ${agent.name} (${agent.id})"
 
-            // Check if the currently linked session (if any) is valid (exists in known sessions)
-            val currentSessionId = agent.privateSessionId
-            val isLinkedSessionValid = currentSessionId != null && agentState.sessionNames.containsKey(currentSessionId)
-
-            if (isLinkedSessionValid) {
-                // Agent is correctly linked. Do nothing.
+            // [RULE 1] The Existing Pointer Boundary
+            if (agent.privateSessionId != null) {
+                // We trust the ID. We do not check if it exists.
+                // We do not check if it matches the name.
+                // If it is broken, the user must clear it to trigger Rule 2.
                 return@forEach
             }
 
-            // Agent is unlinked OR points to a dead session ID (Stale).
-            // Attempt to find the session by name.
+            // [RULE 2] The Void (Bootstrap)
+            val expectedSessionName = "p-cognition: ${agent.name} (${agent.id})"
+
+            // A. Check for Name Match (To link an existing but unlinked session)
             val existingSessionEntry = agentState.sessionNames.entries.find { it.value == expectedSessionName }
 
             if (existingSessionEntry != null) {
-                // The session exists but isn't linked (or ID mismatch). Link it.
+                // FOUND: Link it.
                 store.deferredDispatch("agent", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
                     put("agentId", agent.id)
                     put("privateSessionId", existingSessionEntry.key)
                 }))
             } else {
-                // The session does not exist. Create it.
-                // NOTE: This relies on SessionFeature eventually publishing the new name,
-                // which will trigger this function again to perform the link.
+                // NOT FOUND: Create it.
+                // This will trigger SESSION_NAMES_UPDATED later, which will hit case A.
                 store.deferredDispatch("agent", Action(ActionNames.SESSION_CREATE, buildJsonObject { put("name", expectedSessionName) }))
             }
         }
     }
 
-    // Deprecated helpers maintained for compatibility during refactor, but can be removed if unused.
-    fun validateAndCorrectStartupState(store: Store, agentState: AgentRuntimeState) {
-        ensureSovereignSessions(store, agentState)
-    }
-
-    fun linkPrivateSessionOnCreation(store: Store, agentState: AgentRuntimeState) {
-        ensureSovereignSessions(store, agentState)
-    }
-
-    /**
-     * [CRITICAL FIX] switched from PrivateDataEnvelope (invalid) to Public Action (valid).
-     */
+    // ... [requestContextIfSovereign remains the same] ...
     fun requestContextIfSovereign(store: Store, agent: AgentInstance): Boolean {
         val kgId = agent.knowledgeGraphId
         val kgFeatureExists = store.features.any { it.name == "knowledgegraph" }
