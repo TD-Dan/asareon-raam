@@ -12,7 +12,6 @@ import kotlinx.serialization.json.put
 
 object SovereignHKGResourceLogic {
 
-    // ... [Previous handlers for Assignment/Revocation remain the same] ...
     fun handleSovereignAssignment(store: Store, oldAgent: AgentInstance?, newAgent: AgentInstance) {
         val justBecameSovereign = newAgent.knowledgeGraphId != null && oldAgent?.knowledgeGraphId == null
         if (justBecameSovereign) {
@@ -83,7 +82,6 @@ object SovereignHKGResourceLogic {
         }
     }
 
-    // ... [requestContextIfSovereign remains the same] ...
     fun requestContextIfSovereign(store: Store, agent: AgentInstance): Boolean {
         val kgId = agent.knowledgeGraphId
         val kgFeatureExists = store.features.any { it.name == "knowledgegraph" }

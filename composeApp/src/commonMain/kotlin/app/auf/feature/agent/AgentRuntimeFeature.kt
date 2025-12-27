@@ -248,7 +248,6 @@ class AgentRuntimeFeature(
                 AgentAutoTriggerLogic.checkAndDispatchTriggers(store, agentState, platformDependencies, name)
             }
             ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
-                // [FIX] Trigger idempotent check when session names update.
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
             }
         }
@@ -291,7 +290,7 @@ class AgentRuntimeFeature(
     }
 
     private fun handleFileSystemListResponse(payload: JsonObject, store: Store) {
-        val path = payload["path"]?.jsonPrimitive?.contentOrNull ?: ""
+        val path = payload["path"]?.jsonPrimitive?.contentOrNull ?: "" // <- this is not working at all as expected
         val listing = payload["listing"]?.jsonArray
 
         if (path == "" || path == ".") {
@@ -302,7 +301,7 @@ class AgentRuntimeFeature(
                 store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
             } else {
                 fileList.forEach { entry ->
-                    if (entry.isDirectory) {
+                    if (entry.isDirectory && entry.path != "resources") {
                         store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
                             put("subpath", "${platformDependencies.getFileName(entry.path)}/$agentConfigFILENAME")
                         }))
@@ -310,7 +309,8 @@ class AgentRuntimeFeature(
                 }
             }
         } else if (path == "resources") {
-            // Resources Listing
+            // Resource Listing
+            // NOTE from debugger session: This branch is actually never reached! The path variable is always "" for all observed calls during startup!
             listing?.forEach { element ->
                 val entry = json.decodeFromJsonElement<FileEntry>(element)
                 if (!entry.isDirectory && entry.path.endsWith(".json")) {
