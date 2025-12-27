@@ -210,6 +210,11 @@
       "payload_schema": null
     },
     {
+      "action_name": "agent.internal.RESOURCE_LOADED",
+      "summary": "[INTERNAL] Dispatched after a user-defined resource has been read from disk.",
+      "payload_schema": { "type": "object" }
+    },
+    {
       "action_name": "agent.internal.VALIDATE_SOVEREIGN_STATE",
       "summary": "[INTERNAL] Triggers the validation of sovereign agent requirements on startup.",
       "payload_schema": null

@@ -42,28 +42,49 @@ object SovereignHKGResourceLogic {
         }
     }
 
-    fun validateAndCorrectStartupState(store: Store, agentState: AgentRuntimeState) {
+    /**
+     * Ensures that every Sovereign Agent has a linked Private Session.
+     * This function is idempotent and robust to race conditions.
+     * It should be called when Agents are loaded AND when Session Names are updated.
+     */
+    fun ensureSovereignSessions(store: Store, agentState: AgentRuntimeState) {
+        // 1. HKG Reservation Check
         agentState.agents.values.forEach { agent ->
-            if (agent.knowledgeGraphId != null) {
-                if (!agentState.hkgReservedIds.contains(agent.knowledgeGraphId)) {
-                    store.deferredDispatch("agent", Action(ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject { put("personaId", agent.knowledgeGraphId) }))
-                }
-                val expectedSessionName = "p-cognition: ${agent.name} (${agent.id})"
-                if (agentState.sessionNames.none { it.value == expectedSessionName }) {
-                    store.deferredDispatch("agent", Action(ActionNames.SESSION_CREATE, buildJsonObject { put("name", expectedSessionName) }))
-                }
+            if (agent.knowledgeGraphId != null && !agentState.hkgReservedIds.contains(agent.knowledgeGraphId)) {
+                store.deferredDispatch("agent", Action(ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject { put("personaId", agent.knowledgeGraphId) }))
             }
         }
-    }
 
-    fun linkPrivateSessionOnCreation(store: Store, agentState: AgentRuntimeState) {
-        val agent = agentState.agents.values.find { it.knowledgeGraphId != null && it.privateSessionId == null } ?: return
-        val expectedName = "p-cognition: ${agent.name} (${agent.id})"
-        val session = agentState.sessionNames.entries.find { it.value == expectedName } ?: return
-        store.deferredDispatch("agent", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
-            put("agentId", agent.id)
-            put("privateSessionId", session.key)
-        }))
+        // 2. Private Session Check & Creation/Linking
+        agentState.agents.values.filter { it.knowledgeGraphId != null }.forEach { agent ->
+            val expectedSessionName = "p-cognition: ${agent.name} (${agent.id})"
+
+            // Check if the currently linked session (if any) is valid (exists in known sessions)
+            val currentSessionId = agent.privateSessionId
+            val isLinkedSessionValid = currentSessionId != null && agentState.sessionNames.containsKey(currentSessionId)
+
+            if (isLinkedSessionValid) {
+                // Agent is correctly linked. Do nothing.
+                return@forEach
+            }
+
+            // Agent is unlinked OR points to a dead session ID (Stale).
+            // Attempt to find the session by name.
+            val existingSessionEntry = agentState.sessionNames.entries.find { it.value == expectedSessionName }
+
+            if (existingSessionEntry != null) {
+                // The session exists but isn't linked (or ID mismatch). Link it.
+                store.deferredDispatch("agent", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
+                    put("agentId", agent.id)
+                    put("privateSessionId", existingSessionEntry.key)
+                }))
+            } else {
+                // The session does not exist. Create it.
+                // NOTE: This relies on SessionFeature eventually publishing the new name,
+                // which will trigger this function again to perform the link.
+                store.deferredDispatch("agent", Action(ActionNames.SESSION_CREATE, buildJsonObject { put("name", expectedSessionName) }))
+            }
+        }
     }
 
     /**
@@ -78,7 +99,6 @@ object SovereignHKGResourceLogic {
                 put("agentId", agent.id); put("step", "Requesting HKG")
             }))
 
-            // FIX: Use the public action that KnowledgeGraphFeature listens for.
             store.deferredDispatch("agent", Action(
                 name = ActionNames.KNOWLEDGEGRAPH_REQUEST_CONTEXT,
                 payload = buildJsonObject {

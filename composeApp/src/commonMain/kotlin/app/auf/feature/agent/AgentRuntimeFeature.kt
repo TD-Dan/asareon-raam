@@ -64,6 +64,9 @@ class AgentRuntimeFeature(
             // --- Startup ---
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
+                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
+                    put("subpath", "resources")
+                }))
                 store.deferredDispatch(this.name, Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
             }
             ActionNames.AGENT_INTERNAL_AGENTS_LOADED -> {
@@ -76,6 +79,9 @@ class AgentRuntimeFeature(
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
                 AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE)
                 broadcastAgentNames(agentState, store)
+            }
+            ActionNames.AGENT_INTERNAL_RESOURCE_LOADED -> {
+                // No side effects needed, pure reducer handles state merge
             }
 
             // --- Agent CRUD Side Effects ---
@@ -274,15 +280,31 @@ class AgentRuntimeFeature(
     }
 
     private fun handleFileSystemListResponse(payload: JsonObject, store: Store) {
-        val fileList = payload["listing"]?.jsonArray?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
-        agentLoadCount = fileList.count { it.isDirectory }
-        if (agentLoadCount == 0) {
-            store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
-        } else {
-            fileList.forEach { entry ->
-                if (entry.isDirectory) {
+        val path = payload["path"]?.jsonPrimitive?.contentOrNull ?: ""
+        val listing = payload["listing"]?.jsonArray
+
+        if (path == "" || path == ".") {
+            // Root Listing (Agents)
+            val fileList = listing?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
+            agentLoadCount = fileList.count { it.isDirectory }
+            if (agentLoadCount == 0) {
+                store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
+            } else {
+                fileList.forEach { entry ->
+                    if (entry.isDirectory) {
+                        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+                            put("subpath", "${platformDependencies.getFileName(entry.path)}/$agentConfigFILENAME")
+                        }))
+                    }
+                }
+            }
+        } else if (path == "resources") {
+            // Resources Listing
+            listing?.forEach { element ->
+                val entry = json.decodeFromJsonElement<FileEntry>(element)
+                if (!entry.isDirectory && entry.path.endsWith(".json")) {
                     store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
-                        put("subpath", "${platformDependencies.getFileName(entry.path)}/$agentConfigFILENAME")
+                        put("subpath", "resources/${entry.path}")
                     }))
                 }
             }
@@ -290,16 +312,30 @@ class AgentRuntimeFeature(
     }
 
     private fun handleFileSystemReadResponse(payload: JsonObject, store: Store) {
+        val subpath = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
         val content = payload["content"]?.jsonPrimitive?.contentOrNull ?: return
-        try {
-            val agent = json.decodeFromString<AgentInstance>(content)
-            store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
-        } catch (e: Exception) {
-            platformDependencies.log(LogLevel.ERROR, name, "Failed to parse agent config from file: ${payload["subpath"]}. Error: ${e.message}")
-        } finally {
-            agentLoadCount--
-            if (agentLoadCount <= 0) {
-                store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
+
+        if (subpath.startsWith("resources/")) {
+            // Parse Resource
+            try {
+                val resource = json.decodeFromString<AgentResource>(content)
+                val resWithPath = resource.copy(path = subpath)
+                store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_RESOURCE_LOADED, json.encodeToJsonElement(resWithPath) as JsonObject))
+            } catch (e: Exception) {
+                platformDependencies.log(LogLevel.ERROR, name, "Failed to parse resource: $subpath. Error: ${e.message}")
+            }
+        } else {
+            // Parse Agent Config
+            try {
+                val agent = json.decodeFromString<AgentInstance>(content)
+                store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
+            } catch (e: Exception) {
+                platformDependencies.log(LogLevel.ERROR, name, "Failed to parse agent config from file: $subpath. Error: ${e.message}")
+            } finally {
+                agentLoadCount--
+                if (agentLoadCount <= 0) {
+                    store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
+                }
             }
         }
     }

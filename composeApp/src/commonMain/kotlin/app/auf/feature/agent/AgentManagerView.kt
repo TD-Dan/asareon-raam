@@ -178,6 +178,10 @@ private fun AgentReadOnlyView(
 ) {
     val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.sessionNames[it] } ?: "Not Subscribed"
     val hkgName = agent.knowledgeGraphId?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG"
+
+    // [UPDATED] Resolve Private Session Name
+    val privateSessionName = agent.privateSessionId?.let { agentState.sessionNames[it] } ?: agent.privateSessionId ?: "None"
+
     val statusInfo = agentState.agentStatuses[agent.id] ?: AgentStatusInfo()
 
     var showInternals by remember { mutableStateOf(false) }
@@ -189,6 +193,9 @@ private fun AgentReadOnlyView(
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Subscribed: $sessionName" + if (agent.subscribedSessionIds.size > 1) " (+${agent.subscribedSessionIds.size - 1} more)" else "", style = MaterialTheme.typography.bodyMedium)
                 Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium)
+                // [UPDATED] Display Private Session
+                Text("Private Session: $privateSessionName", style = MaterialTheme.typography.bodyMedium)
+
                 Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -281,9 +288,7 @@ private fun AgentEditorView(
             Box(Modifier.weight(1f)) { KnowledgeGraphSelector(agent, agentState, store) }
             Box(Modifier.weight(1f)) { ProviderSelector(agent, agentState, store) }
             Box(Modifier.weight(1f)) { ModelSelector(agent, agentState, store) }
-            // [NEW] Added Strategy Selector
             Box(Modifier.weight(1f)) { StrategySelector(agent, store) }
-            // Spacer for alignment if odd number of items
             Box(Modifier.weight(1f))
         }
 
@@ -328,7 +333,7 @@ private fun AgentEditorView(
     }
 }
 
-// --- TAB 2: System Resources (New) ---
+// --- TAB 2: System Resources ---
 
 @Composable
 private fun AgentResourcesView(
@@ -441,10 +446,7 @@ private fun ResourceListItem(resource: AgentResource, isSelected: Boolean, onCli
 @Composable
 private fun ResourceEditor(resource: AgentResource, store: Store) {
     var content by remember(resource.id) { mutableStateOf(resource.content) }
-    // [FIX] Changed 'var' to 'val' because derivedStateOf returns a read-only State.
-    val hasChanges by remember(resource.id, resource.content) { derivedStateOf { content != resource.content } }
-
-    // Warn user if editing built-in is read-only logic logic (Usually we'd clone, but for simplicity we treat built-ins as readonly)
+    val hasChanges by remember(resource.id, content) { derivedStateOf { content != resource.content } }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
@@ -496,7 +498,6 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
 
 @Composable
 private fun CreateResourceDialog(onDismiss: () -> Unit, onConfirm: (String, AgentResourceType) -> Unit) {
-    // [FIX] Use explicit MutableState<T> without delegation to resolve compiler error
     val nameState = remember { mutableStateOf("") }
     val typeState = remember { mutableStateOf(AgentResourceType.SYSTEM_INSTRUCTION) }
     val expandedState = remember { mutableStateOf(false) }
@@ -545,6 +546,7 @@ private fun CreateResourceDialog(onDismiss: () -> Unit, onConfirm: (String, Agen
 }
 
 // --- Sub-Composables for AgentEditorView (Kept from previous) ---
+// (Re-declaring unchanged helper composables to ensure file is complete)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

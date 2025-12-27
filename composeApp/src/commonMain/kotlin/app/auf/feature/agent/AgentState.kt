@@ -2,6 +2,7 @@ package app.auf.feature.agent
 
 import app.auf.core.FeatureState
 import app.auf.core.Identity
+import app.auf.feature.agent.strategies.SovereignDefaults
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
@@ -30,6 +31,25 @@ data class AgentResource(
     val isBuiltIn: Boolean = false,
     val path: String? = null // Relative path if user-defined
 )
+
+object AgentDefaults {
+    val builtInResources: List<AgentResource> = listOf(
+        AgentResource(
+            id = "res-sovereign-constitution-v1",
+            type = AgentResourceType.CONSTITUTION,
+            name = "Sovereign Constitution (v5.9)",
+            content = SovereignDefaults.DEFAULT_CONSTITUTION_XML,
+            isBuiltIn = true
+        ),
+        AgentResource(
+            id = "res-boot-sentinel-v1",
+            type = AgentResourceType.BOOTLOADER,
+            name = "Boot Sentinel (v1.0)",
+            content = SovereignDefaults.BOOT_SENTINEL_XML,
+            isBuiltIn = true
+        )
+    )
+}
 
 @Serializable
 data class GatewayMessage(
@@ -113,8 +133,8 @@ data class AgentRuntimeState(
     val availableModels: Map<String, List<String>> = emptyMap(),
     val knowledgeGraphNames: Map<String, String> = emptyMap(),
 
-    // Shared System Resources
-    val resources: List<AgentResource> = emptyList(),
+    // Shared System Resources (Initialized with Built-ins)
+    val resources: List<AgentResource> = AgentDefaults.builtInResources,
 
     @Transient
     val userIdentities: List<Identity> = emptyList(),

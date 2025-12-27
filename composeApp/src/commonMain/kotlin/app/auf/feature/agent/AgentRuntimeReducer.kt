@@ -69,6 +69,14 @@ object AgentRuntimeReducer {
                 val newSessionMap = currentSessionMap + (payload.sessionId to payload.messageId)
                 state.copy(agentAvatarCardIds = state.agentAvatarCardIds + (payload.agentId to newSessionMap))
             }
+            // [NEW] Resource Loaded from Disk
+            ActionNames.AGENT_INTERNAL_RESOURCE_LOADED -> {
+                val payload = action.payload ?: return state
+                val loadedResource = json.decodeFromJsonElement<AgentResource>(payload)
+                // Append or replace if ID collision (prefer loaded state)
+                val otherResources = state.resources.filter { it.id != loadedResource.id }
+                state.copy(resources = otherResources + loadedResource)
+            }
 
             // --- Turn Lifecycle ---
             ActionNames.AGENT_INITIATE_TURN -> {
