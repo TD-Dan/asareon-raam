@@ -123,7 +123,7 @@ object AgentCognitivePipeline {
             return
         }
 
-        val isSovereign = AgentResourceLogic.requestContextIfSovereign(store, agent)
+        val isSovereign = SovereignHKGResourceLogic.requestContextIfSovereign(store, agent)
         if (!isSovereign) {
             executeTurn(agent, statusInfo.stagedTurnContext, null, state, store)
         }

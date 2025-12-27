@@ -70,7 +70,7 @@ class AgentRuntimeFeature(
                 store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_VALIDATE_SOVEREIGN_STATE))
             }
             ActionNames.AGENT_INTERNAL_VALIDATE_SOVEREIGN_STATE -> {
-                AgentResourceLogic.validateAndCorrectStartupState(store, agentState)
+                SovereignHKGResourceLogic.validateAndCorrectStartupState(store, agentState)
             }
             ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
@@ -78,7 +78,7 @@ class AgentRuntimeFeature(
                 broadcastAgentNames(agentState, store)
             }
 
-            // --- CRUD Side Effects ---
+            // --- Agent CRUD Side Effects ---
             ActionNames.AGENT_CREATE -> {
                 val agentToSave = agentState.agents.values.lastOrNull() ?: return
                 saveAgentConfig(agentToSave, store)
@@ -110,8 +110,8 @@ class AgentRuntimeFeature(
                 val oldAgent = (previousState as? AgentRuntimeState)?.agents?.get(agentId)
                 val newAgent = agentState.agents[agentId] ?: return
 
-                AgentResourceLogic.handleSovereignAssignment(store, oldAgent, newAgent)
-                AgentResourceLogic.handleSovereignRevocation(store, oldAgent, newAgent)
+                SovereignHKGResourceLogic.handleSovereignAssignment(store, oldAgent, newAgent)
+                SovereignHKGResourceLogic.handleSovereignRevocation(store, oldAgent, newAgent)
 
                 saveAgentConfig(newAgent, store)
                 broadcastAgentNames(agentState, store)
@@ -136,7 +136,29 @@ class AgentRuntimeFeature(
                 broadcastAgentNames(agentState, store)
             }
 
-            // --- Cognitive Pipeline Entry Points ---
+            // --- NEW: Resource CRUD Side Effects ---
+            ActionNames.AGENT_CREATE_RESOURCE -> {
+                val newResource = agentState.resources.lastOrNull() ?: return
+                saveResourceConfig(newResource, store)
+            }
+            ActionNames.AGENT_SAVE_RESOURCE -> {
+                val resourceId = action.payload?.get("resourceId")?.jsonPrimitive?.contentOrNull ?: return
+                val resourceToSave = agentState.resources.find { it.id == resourceId } ?: return
+                saveResourceConfig(resourceToSave, store)
+            }
+            ActionNames.AGENT_DELETE_RESOURCE -> {
+                val resourceId = action.payload?.get("resourceId")?.jsonPrimitive?.contentOrNull ?: return
+                val resourceToDelete = (previousState as? AgentRuntimeState)?.resources?.find { it.id == resourceId } ?: return
+                resourceToDelete.path?.let { path ->
+                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE, buildJsonObject {
+                        put("subpath", path)
+                    }))
+                }
+                store.deferredDispatch(this.name, Action(ActionNames.AGENT_SELECT_RESOURCE, buildJsonObject { put("resourceId", null as String?) }))
+            }
+            // --- END NEW: Resource CRUD Side Effects ---
+
+            // --- Cognitive Pipeline Entry Points (omitted for brevity) ---
             ActionNames.AGENT_INITIATE_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 AgentCognitivePipeline.startCognitiveCycle(agentId, store)
@@ -187,7 +209,7 @@ class AgentRuntimeFeature(
                 AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.IDLE, "Turn cancelled by user.")
             }
 
-            // --- Peer Updates ---
+            // --- Peer Updates (omitted for brevity) ---
             ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> {
                 val prevAgentState = previousState as? AgentRuntimeState ?: return
                 agentState.agents.keys.forEach { agentId ->
@@ -210,7 +232,7 @@ class AgentRuntimeFeature(
                 AgentAutoTriggerLogic.checkAndDispatchTriggers(store, agentState, platformDependencies, name)
             }
             ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
-                AgentResourceLogic.linkPrivateSessionOnCreation(store, agentState)
+                SovereignHKGResourceLogic.linkPrivateSessionOnCreation(store, agentState)
             }
         }
     }
@@ -220,6 +242,15 @@ class AgentRuntimeFeature(
             put("subpath", "${agent.id}/$agentConfigFILENAME")
             put("content", json.encodeToString(agent))
         }))
+    }
+
+    private fun saveResourceConfig(resource: AgentResource, store: Store) {
+        resource.path?.let { path ->
+            store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+                put("subpath", path)
+                put("content", resource.content)
+            }))
+        }
     }
 
     private fun broadcastAgentNames(state: AgentRuntimeState, store: Store) {

@@ -23,7 +23,7 @@ object VanillaStrategy : CognitiveStrategy {
             appendLine(context.systemInstructions)
 
             if (context.gatheredContexts.isNotEmpty()) {
-                appendLine("\n--- CONTEXT ---")
+                appendLine("\n--- CONTEXT ---\n")
                 context.gatheredContexts.forEach { (source, content) ->
                     appendLine("[$source]: $content")
                 }
