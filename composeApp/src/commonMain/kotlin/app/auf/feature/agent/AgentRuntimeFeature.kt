@@ -93,6 +93,8 @@ class AgentRuntimeFeature(
                 val agentToSave = agentState.agents.values.lastOrNull() ?: return
                 saveAgentConfig(agentToSave, store)
                 broadcastAgentNames(agentState, store)
+                // [FIX] Ensure sovereign sessions are bootstrapped immediately upon creation
+                SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
             }
             ActionNames.AGENT_CLONE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
@@ -126,6 +128,10 @@ class AgentRuntimeFeature(
                 saveAgentConfig(newAgent, store)
                 broadcastAgentNames(agentState, store)
                 AgentAvatarLogic.updateAgentAvatars(agentId, store)
+
+                // [FIX] Ensure sovereign sessions are bootstrapped immediately upon config change
+                // This covers Rule 2 (Null Pointer -> Bootstrap) when user assigns a HKG
+                SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
             }
             ActionNames.AGENT_INTERNAL_UPDATE_COGNITIVE_STATE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
