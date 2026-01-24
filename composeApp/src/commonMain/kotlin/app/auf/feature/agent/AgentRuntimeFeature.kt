@@ -70,8 +70,6 @@ class AgentRuntimeFeature(
                 store.deferredDispatch(this.name, Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
             }
             ActionNames.AGENT_INTERNAL_AGENTS_LOADED -> {
-                // [FIX] Validate immediately ONLY if we already have session names (e.g. SessionFeature loaded first).
-                // Otherwise, wait for SESSION_PUBLISH_SESSION_NAMES_UPDATED to avoid race condition creating duplicates.
                 if (agentState.sessionNames.isNotEmpty()) {
                     SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
                 }
@@ -93,7 +91,6 @@ class AgentRuntimeFeature(
                 val agentToSave = agentState.agents.values.lastOrNull() ?: return
                 saveAgentConfig(agentToSave, store)
                 broadcastAgentNames(agentState, store)
-                // [FIX] Ensure sovereign sessions are bootstrapped immediately upon creation
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
             }
             ActionNames.AGENT_CLONE -> {
@@ -128,9 +125,6 @@ class AgentRuntimeFeature(
                 saveAgentConfig(newAgent, store)
                 broadcastAgentNames(agentState, store)
                 AgentAvatarLogic.updateAgentAvatars(agentId, store)
-
-                // [FIX] Ensure sovereign sessions are bootstrapped immediately upon config change
-                // This covers Rule 2 (Null Pointer -> Bootstrap) when user assigns a HKG
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
             }
             ActionNames.AGENT_INTERNAL_UPDATE_COGNITIVE_STATE -> {
@@ -152,7 +146,7 @@ class AgentRuntimeFeature(
                 broadcastAgentNames(agentState, store)
             }
 
-            // --- NEW: Resource CRUD Side Effects ---
+            // --- Resource CRUD Side Effects ---
             ActionNames.AGENT_CREATE_RESOURCE -> {
                 val newResource = agentState.resources.lastOrNull() ?: return
                 saveResourceConfig(newResource, store)
@@ -172,9 +166,8 @@ class AgentRuntimeFeature(
                 }
                 store.deferredDispatch(this.name, Action(ActionNames.AGENT_SELECT_RESOURCE, buildJsonObject { put("resourceId", null as String?) }))
             }
-            // --- END NEW: Resource CRUD Side Effects ---
 
-            // --- Cognitive Pipeline Entry Points (omitted for brevity) ---
+            // --- Cognitive Pipeline & Peer Updates (Delegated) ---
             ActionNames.AGENT_INITIATE_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 AgentCognitivePipeline.startCognitiveCycle(agentId, store)
@@ -224,8 +217,6 @@ class AgentRuntimeFeature(
                 activeTurnJobs.remove(agentId)
                 AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.IDLE, "Turn cancelled by user.")
             }
-
-            // --- Peer Updates (omitted for brevity) ---
             ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> {
                 val prevAgentState = previousState as? AgentRuntimeState ?: return
                 agentState.agents.keys.forEach { agentId ->
@@ -290,13 +281,13 @@ class AgentRuntimeFeature(
     }
 
     private fun handleFileSystemListResponse(payload: JsonObject, store: Store) {
-        val path = payload["path"]?.jsonPrimitive?.contentOrNull ?: "" // <- this is not working at all as expected
+        val path = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
         val listing = payload["listing"]?.jsonArray
 
         if (path == "" || path == ".") {
-            // Root Listing (Agents)
             val fileList = listing?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
-            agentLoadCount = fileList.count { it.isDirectory }
+            agentLoadCount = fileList.count { it.isDirectory && it.path != "resources" }
+
             if (agentLoadCount == 0) {
                 store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
             } else {
@@ -309,13 +300,16 @@ class AgentRuntimeFeature(
                 }
             }
         } else if (path == "resources") {
-            // Resource Listing
-            // NOTE from debugger session: This branch is actually never reached! The path variable is always "" for all observed calls during startup!
             listing?.forEach { element ->
                 val entry = json.decodeFromJsonElement<FileEntry>(element)
                 if (!entry.isDirectory && entry.path.endsWith(".json")) {
                     store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
-                        put("subpath", "resources/${entry.path}")
+                        // [FIXED] Canonical Path Construction
+                        // We extract the filename regardless of whether it's "resources\file.json" or "file.json"
+                        // and strictly prepend the internal canonical directory "resources/".
+                        val fileName = platformDependencies.getFileName(entry.path)
+                        val canonicalPath = "resources/$fileName"
+                        put("subpath", canonicalPath)
                     }))
                 }
             }
@@ -323,20 +317,21 @@ class AgentRuntimeFeature(
     }
 
     private fun handleFileSystemReadResponse(payload: JsonObject, store: Store) {
-        val subpath = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
+        // [FIXED] Normalize separators to '/' to ensure cross-platform matching logic
+        val subpath = (payload["subpath"]?.jsonPrimitive?.contentOrNull ?: "").replace("\\", "/")
         val content = payload["content"]?.jsonPrimitive?.contentOrNull ?: return
 
+        // Check against the canonical prefix
         if (subpath.startsWith("resources/")) {
-            // Parse Resource
             try {
                 val resource = json.decodeFromString<AgentResource>(content)
+                // Ensure the in-memory resource also has the normalized path
                 val resWithPath = resource.copy(path = subpath)
                 store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_RESOURCE_LOADED, json.encodeToJsonElement(resWithPath) as JsonObject))
             } catch (e: Exception) {
                 platformDependencies.log(LogLevel.ERROR, name, "Failed to parse resource: $subpath. Error: ${e.message}")
             }
         } else {
-            // Parse Agent Config
             try {
                 val agent = json.decodeFromString<AgentInstance>(content)
                 store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
