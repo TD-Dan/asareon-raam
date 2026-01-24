@@ -424,10 +424,11 @@ private fun AgentResourcesView(
     if (showCreateDialog) {
         CreateResourceDialog(
             onDismiss = { showCreateDialog = false },
-            onConfirm = { name, type ->
+            onConfirm = { name, type, content ->
                 store.dispatch("ui.resources", Action(ActionNames.AGENT_CREATE_RESOURCE, buildJsonObject {
                     put("name", name)
                     put("type", type.name)
+                    if (content != null) put("initialContent", content)
                 }))
                 showCreateDialog = false
             }
@@ -464,6 +465,9 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
     var content by remember(resource.id) { mutableStateOf(resource.content) }
     val hasChanges by remember(resource.id, content) { derivedStateOf { content != resource.content } }
 
+    // State for Clone Dialog
+    var showCloneDialog by remember { mutableStateOf(false) }
+
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
             Column {
@@ -492,7 +496,8 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
                         Text("Save")
                     }
                 } else {
-                    FilledTonalButton(onClick = { /* TODO: Clone Logic */ }) {
+                    // [UPDATED] Clone Workflow
+                    FilledTonalButton(onClick = { showCloneDialog = true }) {
                         Icon(Icons.Default.CopyAll, "Clone to Edit")
                         Spacer(Modifier.width(4.dp))
                         Text("Clone")
@@ -510,17 +515,40 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
             modifier = Modifier.weight(1f)
         )
     }
+
+    if (showCloneDialog) {
+        CreateResourceDialog(
+            onDismiss = { showCloneDialog = false },
+            initialName = "${resource.name} (Copy)",
+            initialType = resource.type,
+            lockType = true,
+            onConfirm = { name, type, _ ->
+                store.dispatch("ui.resources", Action(ActionNames.AGENT_CREATE_RESOURCE, buildJsonObject {
+                    put("name", name)
+                    put("type", type.name)
+                    put("initialContent", resource.content) // Pass built-in content to new resource
+                }))
+                showCloneDialog = false
+            }
+        )
+    }
 }
 
 @Composable
-private fun CreateResourceDialog(onDismiss: () -> Unit, onConfirm: (String, AgentResourceType) -> Unit) {
-    val nameState = remember { mutableStateOf("") }
-    val typeState = remember { mutableStateOf(AgentResourceType.SYSTEM_INSTRUCTION) }
+private fun CreateResourceDialog(
+    onDismiss: () -> Unit,
+    initialName: String = "",
+    initialType: AgentResourceType = AgentResourceType.SYSTEM_INSTRUCTION,
+    lockType: Boolean = false,
+    onConfirm: (String, AgentResourceType, String?) -> Unit
+) {
+    val nameState = remember { mutableStateOf(initialName) }
+    val typeState = remember { mutableStateOf(initialType) }
     val expandedState = remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create Resource") },
+        title = { Text(if (lockType) "Clone Resource" else "Create Resource") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 OutlinedTextField(
@@ -536,23 +564,28 @@ private fun CreateResourceDialog(onDismiss: () -> Unit, onConfirm: (String, Agen
                         onValueChange = {},
                         readOnly = true,
                         label = { Text("Type") },
-                        trailingIcon = { IconButton(onClick = { expandedState.value = true }) { Icon(Icons.Default.ArrowDropDown, "Select Type") } },
-                        modifier = Modifier.fillMaxWidth().clickable { expandedState.value = true }
+                        trailingIcon = if (!lockType) {
+                            { IconButton(onClick = { expandedState.value = true }) { Icon(Icons.Default.ArrowDropDown, "Select Type") } }
+                        } else null,
+                        modifier = Modifier.fillMaxWidth().clickable(enabled = !lockType) { expandedState.value = true },
+                        enabled = !lockType
                     )
-                    DropdownMenu(expanded = expandedState.value, onDismissRequest = { expandedState.value = false }) {
-                        AgentResourceType.entries.forEach { t ->
-                            DropdownMenuItem(
-                                text = { Text(t.name) },
-                                onClick = { typeState.value = t; expandedState.value = false }
-                            )
+                    if (!lockType) {
+                        DropdownMenu(expanded = expandedState.value, onDismissRequest = { expandedState.value = false }) {
+                            AgentResourceType.entries.forEach { t ->
+                                DropdownMenuItem(
+                                    text = { Text(t.name) },
+                                    onClick = { typeState.value = t; expandedState.value = false }
+                                )
+                            }
                         }
                     }
                 }
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(nameState.value, typeState.value) }, enabled = nameState.value.isNotBlank()) {
-                Text("Create")
+            Button(onClick = { onConfirm(nameState.value, typeState.value, null) }, enabled = nameState.value.isNotBlank()) {
+                Text(if (lockType) "Clone" else "Create")
             }
         },
         dismissButton = {

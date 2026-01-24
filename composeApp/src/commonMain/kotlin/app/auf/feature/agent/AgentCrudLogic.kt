@@ -59,7 +59,6 @@ object AgentCrudLogic {
                     privateSessionId = if ("privateSessionId" in payload) payload["privateSessionId"]?.jsonPrimitive?.contentOrNull else agentToUpdate.privateSessionId,
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelProvider,
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelName,
-                    // [UPDATED] Update the strategy ID
                     cognitiveStrategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.cognitiveStrategyId,
                     subscribedSessionIds = filteredSubscribedSessionIds,
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: agentToUpdate.automaticMode,
@@ -99,6 +98,14 @@ object AgentCrudLogic {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return state
                 if (!state.agents.containsKey(agent.id)) state.copy(agents = state.agents + (agent.id to agent)) else state
             }
+            // [NEW] Handle loading resources from disk
+            ActionNames.AGENT_INTERNAL_RESOURCE_LOADED -> {
+                val resource = action.payload?.let { json.decodeFromJsonElement<AgentResource>(it) } ?: return state
+                // Merge logic: Add if new, replace if exists (unless built-in override logic is needed later)
+                // Filter out existing resource with same ID to allow replacement
+                val updatedResources = state.resources.filter { it.id != resource.id } + resource
+                state.copy(resources = updatedResources)
+            }
             ActionNames.AGENT_SELECT_RESOURCE -> {
                 val resourceId = action.payload?.get("resourceId")?.jsonPrimitive?.contentOrNull
                 state.copy(editingResourceId = resourceId)
@@ -108,12 +115,14 @@ object AgentCrudLogic {
                 val name = payload["name"]?.jsonPrimitive?.contentOrNull ?: return state
                 val typeString = payload["type"]?.jsonPrimitive?.contentOrNull ?: return state
                 val type = AgentResourceType.entries.find { it.name == typeString } ?: return state
+                // [UPDATED] Support initial content for cloning
+                val initialContent = payload["initialContent"]?.jsonPrimitive?.contentOrNull
 
                 val newResource = AgentResource(
                     id = platformDependencies.generateUUID(),
                     type = type,
                     name = name,
-                    content = if (type == AgentResourceType.CONSTITUTION) SovereignDefaults.DEFAULT_CONSTITUTION_XML else "",
+                    content = initialContent ?: if (type == AgentResourceType.CONSTITUTION) SovereignDefaults.DEFAULT_CONSTITUTION_XML else "",
                     isBuiltIn = false,
                     path = "resources/${platformDependencies.generateUUID()}.json" // Consistent file naming
                 )
