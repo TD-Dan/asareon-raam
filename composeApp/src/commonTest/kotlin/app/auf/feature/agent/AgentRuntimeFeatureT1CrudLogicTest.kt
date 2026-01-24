@@ -37,7 +37,6 @@ class AgentRuntimeFeatureT1CrudLogicTest {
 
     @Test
     fun `UPDATE_CONFIG should filter out private sessions from subscriptions`() {
-        // ARRANGE: Agent subscribed to a public session
         val agent = AgentInstance("a1", "Test", null, "p", "m", subscribedSessionIds = listOf("public-1"))
         val state = AgentRuntimeState(
             agents = mapOf("a1" to agent),
@@ -47,19 +46,17 @@ class AgentRuntimeFeatureT1CrudLogicTest {
             )
         )
 
-        // ACT: Try to subscribe to a private session via update
         val action = Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
             put("agentId", "a1")
             put("subscribedSessionIds", buildJsonArray {
                 add("public-1")
-                add("private-1") // Should be filtered
+                add("private-1")
             })
         })
 
         val newState = AgentCrudLogic.reduce(state, action, platform)
         val updatedAgent = newState.agents["a1"]!!
 
-        // ASSERT
         assertEquals(1, updatedAgent.subscribedSessionIds.size)
         assertEquals("public-1", updatedAgent.subscribedSessionIds.first())
     }
@@ -78,7 +75,6 @@ class AgentRuntimeFeatureT1CrudLogicTest {
     @Test
     fun `DELETE (internal confirm) should remove agent and avatar card info`() {
         val agent = AgentInstance("a1", "Test", null, "p", "m")
-        // REFACTOR FIX: Use Map<SessionId, MessageId> instead of AvatarCardInfo
         val state = AgentRuntimeState(
             agents = mapOf("a1" to agent),
             agentAvatarCardIds = mapOf("a1" to mapOf("s-1" to "msg-1"))
@@ -89,5 +85,99 @@ class AgentRuntimeFeatureT1CrudLogicTest {
 
         assertNull(newState.agents["a1"])
         assertNull(newState.agentAvatarCardIds["a1"])
+    }
+
+    // --- NEW: Resource CRUD Tests ---
+
+    @Test
+    fun `CREATE_RESOURCE adds a new resource`() {
+        val initialState = AgentRuntimeState()
+        val action = Action(ActionNames.AGENT_CREATE_RESOURCE, buildJsonObject {
+            put("name", "Test Const")
+            put("type", "CONSTITUTION")
+        })
+
+        val newState = AgentCrudLogic.reduce(initialState, action, platform)
+
+        // Assert: built-ins (2) + 1 new
+        assertEquals(3, newState.resources.size)
+        val created = newState.resources.last()
+        assertEquals("Test Const", created.name)
+        assertEquals(AgentResourceType.CONSTITUTION, created.type)
+        assertEquals(newState.editingResourceId, created.id)
+    }
+
+    @Test
+    fun `CREATE_RESOURCE supports cloning via initialContent`() {
+        val initialState = AgentRuntimeState()
+        val content = "CLONED CONTENT"
+        val action = Action(ActionNames.AGENT_CREATE_RESOURCE, buildJsonObject {
+            put("name", "Cloned Const")
+            put("type", "CONSTITUTION")
+            put("initialContent", content)
+        })
+
+        val newState = AgentCrudLogic.reduce(initialState, action, platform)
+        val created = newState.resources.last()
+        assertEquals(content, created.content)
+    }
+
+    @Test
+    fun `SAVE_RESOURCE updates content of custom resource`() {
+        // Setup: Create a resource first
+        val initialState = AgentRuntimeState()
+        val createAction = Action(ActionNames.AGENT_CREATE_RESOURCE, buildJsonObject {
+            put("name", "Editable")
+            put("type", "BOOTLOADER")
+        })
+        val stateWithResource = AgentCrudLogic.reduce(initialState, createAction, platform)
+        val resourceId = stateWithResource.resources.last().id
+
+        // Execute: Save
+        val saveAction = Action(ActionNames.AGENT_SAVE_RESOURCE, buildJsonObject {
+            put("resourceId", resourceId)
+            put("content", "Updated Content")
+        })
+        val finalState = AgentCrudLogic.reduce(stateWithResource, saveAction, platform)
+
+        // Assert
+        assertEquals("Updated Content", finalState.resources.last().content)
+    }
+
+    @Test
+    fun `SAVE_RESOURCE is ignored for built-in resources`() {
+        val initialState = AgentRuntimeState()
+        val builtInId = AgentDefaults.builtInResources.first().id
+        val action = Action(ActionNames.AGENT_SAVE_RESOURCE, buildJsonObject {
+            put("resourceId", builtInId)
+            put("content", "Hacked Content")
+        })
+
+        val newState = AgentCrudLogic.reduce(initialState, action, platform)
+
+        // Assert: Content unchanged
+        assertEquals(AgentDefaults.builtInResources.first().content, newState.resources.first().content)
+    }
+
+    @Test
+    fun `RENAME_RESOURCE updates name`() {
+        // Setup
+        val initialState = AgentRuntimeState()
+        val createAction = Action(ActionNames.AGENT_CREATE_RESOURCE, buildJsonObject {
+            put("name", "Old Name")
+            put("type", "BOOTLOADER")
+        })
+        val stateWithResource = AgentCrudLogic.reduce(initialState, createAction, platform)
+        val resourceId = stateWithResource.resources.last().id
+
+        // Execute: Rename
+        val renameAction = Action(ActionNames.AGENT_RENAME_RESOURCE, buildJsonObject {
+            put("resourceId", resourceId)
+            put("newName", "New Name")
+        })
+        val finalState = AgentCrudLogic.reduce(stateWithResource, renameAction, platform)
+
+        // Assert
+        assertEquals("New Name", finalState.resources.last().name)
     }
 }

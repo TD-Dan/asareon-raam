@@ -70,7 +70,7 @@ fun AgentManagerView(store: Store, platformDependencies: app.auf.util.PlatformDe
     }
 }
 
-// --- TAB 1: Agent List (Original Functionality) ---
+// --- TAB 1: Agent List ---
 
 @Composable
 private fun AgentListView(
@@ -465,13 +465,22 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
     var content by remember(resource.id) { mutableStateOf(resource.content) }
     val hasChanges by remember(resource.id, content) { derivedStateOf { content != resource.content } }
 
-    // State for Clone Dialog
     var showCloneDialog by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
             Column {
-                Text(resource.name, style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(resource.name, style = MaterialTheme.typography.titleMedium)
+                    // [NEW] Rename Icon for non-built-ins
+                    if (!resource.isBuiltIn) {
+                        Spacer(Modifier.width(8.dp))
+                        IconButton(onClick = { showRenameDialog = true }, modifier = Modifier.size(20.dp)) {
+                            Icon(Icons.Default.Edit, "Rename", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
                 Text(resource.id, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
@@ -496,7 +505,7 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
                         Text("Save")
                     }
                 } else {
-                    // [UPDATED] Clone Workflow
+                    // [NEW] Clone Button for Built-ins
                     FilledTonalButton(onClick = { showCloneDialog = true }) {
                         Icon(Icons.Default.CopyAll, "Clone to Edit")
                         Spacer(Modifier.width(4.dp))
@@ -526,12 +535,42 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
                 store.dispatch("ui.resources", Action(ActionNames.AGENT_CREATE_RESOURCE, buildJsonObject {
                     put("name", name)
                     put("type", type.name)
-                    put("initialContent", resource.content) // Pass built-in content to new resource
+                    put("initialContent", resource.content)
                 }))
                 showCloneDialog = false
             }
         )
     }
+
+    if (showRenameDialog) {
+        RenameResourceDialog(
+            currentName = resource.name,
+            onDismiss = { showRenameDialog = false },
+            onConfirm = { newName ->
+                store.dispatch("ui.resources", Action(ActionNames.AGENT_RENAME_RESOURCE, buildJsonObject {
+                    put("resourceId", resource.id)
+                    put("newName", newName)
+                }))
+                showRenameDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun RenameResourceDialog(currentName: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var name by remember { mutableStateOf(currentName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename Resource") },
+        text = {
+            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true)
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(name) }, enabled = name.isNotBlank()) { Text("Rename") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable
@@ -594,7 +633,7 @@ private fun CreateResourceDialog(
     )
 }
 
-// --- Sub-Composables for AgentEditorView ---
+// ... [Remainder of file remains unchanged] ...
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

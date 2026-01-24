@@ -101,8 +101,7 @@ object AgentCrudLogic {
             // [NEW] Handle loading resources from disk
             ActionNames.AGENT_INTERNAL_RESOURCE_LOADED -> {
                 val resource = action.payload?.let { json.decodeFromJsonElement<AgentResource>(it) } ?: return state
-                // Merge logic: Add if new, replace if exists (unless built-in override logic is needed later)
-                // Filter out existing resource with same ID to allow replacement
+                // Merge logic: Add if new, replace if exists
                 val updatedResources = state.resources.filter { it.id != resource.id } + resource
                 state.copy(resources = updatedResources)
             }
@@ -115,7 +114,7 @@ object AgentCrudLogic {
                 val name = payload["name"]?.jsonPrimitive?.contentOrNull ?: return state
                 val typeString = payload["type"]?.jsonPrimitive?.contentOrNull ?: return state
                 val type = AgentResourceType.entries.find { it.name == typeString } ?: return state
-                // [UPDATED] Support initial content for cloning
+                // [NEW] Support initial content for cloning
                 val initialContent = payload["initialContent"]?.jsonPrimitive?.contentOrNull
 
                 val newResource = AgentResource(
@@ -141,10 +140,20 @@ object AgentCrudLogic {
                     if (res.id == resourceId) res.copy(content = content) else res
                 }
 
-                // If the resource being edited is a built-in, a new instance should be created and saved instead.
                 val resourceToSave = updatedResources.find { it.id == resourceId }
                 if (resourceToSave?.isBuiltIn == true) return state // UI should handle clone before save
 
+                state.copy(resources = updatedResources)
+            }
+            // [NEW] Rename Logic
+            ActionNames.AGENT_RENAME_RESOURCE -> {
+                val payload = action.payload ?: return state
+                val resourceId = payload["resourceId"]?.jsonPrimitive?.contentOrNull ?: return state
+                val newName = payload["newName"]?.jsonPrimitive?.contentOrNull ?: return state
+
+                val updatedResources = state.resources.map { res ->
+                    if (res.id == resourceId && !res.isBuiltIn) res.copy(name = newName) else res
+                }
                 state.copy(resources = updatedResources)
             }
             ActionNames.AGENT_DELETE_RESOURCE -> {

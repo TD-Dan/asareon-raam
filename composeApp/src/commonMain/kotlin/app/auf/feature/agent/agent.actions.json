@@ -173,9 +173,22 @@
         "type": "object",
         "properties": {
           "name": { "type": "string" },
-          "type": { "type": "string" }
+          "type": { "type": "string" },
+          "initialContent": { "type": ["string", "null"] }
         },
         "required": ["name", "type"]
+      }
+    },
+    {
+      "action_name": "agent.RENAME_RESOURCE",
+      "summary": "Renames a user-defined system resource.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "resourceId": { "type": "string" },
+          "newName": { "type": "string" }
+        },
+        "required": ["resourceId", "newName"]
       }
     },
     {
