@@ -63,6 +63,14 @@ class AgentRuntimeFeature(
         when (action.name) {
             // --- Startup ---
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
+                // Inject built-in resources FIRST (ensures they're always available)
+                AgentDefaults.builtInResources.forEach { resource ->
+                    store.deferredDispatch(this.name, Action(
+                        ActionNames.AGENT_INTERNAL_RESOURCE_LOADED,
+                        json.encodeToJsonElement(resource) as JsonObject
+                    ))
+                }
+                // Then load user-defined resources from disk
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
                 store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
                     put("subpath", "resources")

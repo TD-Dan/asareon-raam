@@ -133,8 +133,8 @@ data class AgentRuntimeState(
     val availableModels: Map<String, List<String>> = emptyMap(),
     val knowledgeGraphNames: Map<String, String> = emptyMap(),
 
-    // Shared System Resources (Initialized with Built-ins)
-    val resources: List<AgentResource> = AgentDefaults.builtInResources,
+    // Shared System Resources (Loaded at startup)
+    val resources: List<AgentResource> = emptyList(),
 
     @Transient
     val userIdentities: List<Identity> = emptyList(),
