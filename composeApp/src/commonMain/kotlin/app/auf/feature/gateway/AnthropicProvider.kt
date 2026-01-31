@@ -48,6 +48,22 @@ private data class ApiError(
     val message: String
 )
 
+@Serializable
+private data class ModelsResponse(
+    val data: List<ModelInfo>? = null,
+    val error: ApiError? = null
+)
+
+@Serializable
+private data class ModelInfo(
+    val id: String,
+    val type: String,
+    @kotlinx.serialization.SerialName("created_at")
+    val createdAt: String? = null,
+    @kotlinx.serialization.SerialName("display_name")
+    val displayName: String? = null
+)
+
 /**
  * A concrete implementation of the UniversalGatewayProvider for the Anthropic (Claude) API.
  * Implements the Messages API: https://docs.anthropic.com/en/api/messages
@@ -78,7 +94,7 @@ class AnthropicProvider(
             request.contents.forEach { message ->
                 val formattedTimestamp = platformDependencies.formatIsoTimestamp(message.timestamp)
                 val enrichedContent = "${message.senderName} (${message.senderId}) @ ${formattedTimestamp}: ${message.content}"
-                
+
                 add(buildJsonObject {
                     // Map roles: "model" -> "assistant", everything else -> "user"
                     put("role", if (message.role == "model") "assistant" else "user")
@@ -91,7 +107,7 @@ class AnthropicProvider(
             put("model", request.modelName)
             put("max_tokens", 8192) // Anthropic requires this field
             put("messages", anthropicMessages)
-            
+
             // System prompt goes at root level for Anthropic
             request.systemPrompt?.let {
                 put("system", it)
@@ -138,15 +154,57 @@ class AnthropicProvider(
     }
 
     override suspend fun listAvailableModels(settings: Map<String, String>): List<String> {
-        // Anthropic doesn't provide a models list endpoint
-        // Return the known Claude models as of January 2026
-        return listOf(
-            "claude-3-5-sonnet-20241022",
-            "claude-3-5-haiku-20241022", 
-            "claude-3-opus-20240229",
-            "claude-3-sonnet-20240229",
-            "claude-3-haiku-20240307"
-        )
+        val apiKey = settings[apiKeySettingKey].orEmpty()
+        if (apiKey.isBlank()) {
+            platformDependencies.log(
+                LogLevel.WARN,
+                id,
+                "Cannot list models: Anthropic API Key is not configured."
+            )
+            // Return fallback list if no API key is configured
+            return listOf(
+                "<no api key available>"
+            )
+        }
+
+        return try {
+            val apiUrl = "https://$apiHost/v1/models"
+            val responseBody: String = client.get(apiUrl) {
+                header("x-api-key", apiKey)
+                header("anthropic-version", apiVersion)
+            }.body()
+
+            val response = json.decodeFromString<ModelsResponse>(responseBody)
+
+            // Check for API errors
+            response.error?.let {
+                platformDependencies.log(
+                    LogLevel.ERROR,
+                    id,
+                    "Failed to fetch models from Anthropic API: ${it.message}"
+                )
+                throw Exception("API Error: ${it.message}")
+            }
+
+            // Extract model IDs from the response
+            response.data?.map { it.id } ?: emptyList()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            platformDependencies.log(
+                LogLevel.ERROR,
+                id,
+                "Failed to list models: ${e.stackTraceToString()}"
+            )
+            // Return fallback list on error
+            listOf(
+                "claude-3-5-sonnet-20241022",
+                "claude-3-5-haiku-20241022",
+                "claude-3-opus-20240229",
+                "claude-3-sonnet-20240229",
+                "claude-3-haiku-20240307"
+            )
+        }
     }
 
     override suspend fun generatePreview(request: GatewayRequest, settings: Map<String, String>): String {

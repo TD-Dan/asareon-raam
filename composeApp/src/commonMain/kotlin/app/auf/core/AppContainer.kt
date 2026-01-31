@@ -8,6 +8,7 @@ import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.feature.gateway.GatewayFeature
 import app.auf.feature.gateway.gemini.GeminiProvider
 import app.auf.feature.gateway.openai.OpenAIProvider
+import app.auf.feature.gateway.anthropic.AnthropicProvider
 import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.feature.settings.SettingsFeature
 import app.auf.feature.session.SessionFeature
@@ -53,7 +54,8 @@ class AppContainer(
             resilientCoroutineScope, // Pass the new, resilient scope to features
             providers = listOf(
                 GeminiProvider(platformDependencies),
-                OpenAIProvider(platformDependencies)
+                OpenAIProvider(platformDependencies),
+                AnthropicProvider(platformDependencies)
             )
         )
 

@@ -44,7 +44,7 @@ class OpenAIProvider(
 ) : UniversalGatewayProvider {
     override val id: String = "openai"
     private val apiKeySettingKey = "gateway.openai.apiKey"
-    private val API_HOST = "api.openai.com"
+    private val apiHost = "api.openai.com"
 
     private val json = Json { ignoreUnknownKeys = true }
     private val prettyJson = Json { ignoreUnknownKeys = true; prettyPrint = true }
@@ -128,7 +128,7 @@ class OpenAIProvider(
         if (apiKey.isBlank()) return emptyList()
 
         return try {
-            val response: ListModelsResponse = client.get("https://$API_HOST/v1/models") {
+            val response: ListModelsResponse = client.get("https://$apiHost/v1/models") {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
             }.body()
             response.data
@@ -155,7 +155,7 @@ class OpenAIProvider(
 
         return try {
             val apiRequest = buildRequestPayload(request)
-            val apiUrl = "https://$API_HOST/v1/chat/completions"
+            val apiUrl = "https://$apiHost/v1/chat/completions"
 
             val responseBody: String = client.post(apiUrl) {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
