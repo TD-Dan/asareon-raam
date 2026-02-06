@@ -241,6 +241,11 @@ private fun AgentReadOnlyView(
     }
 }
 
+// =============================================================================
+// Agent Editor — Draft Pattern
+// All changes are local until Save. Cancel discards.
+// =============================================================================
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AgentEditorView(
@@ -248,19 +253,29 @@ private fun AgentEditorView(
     agentState: AgentRuntimeState,
     store: Store
 ) {
+    // Draft state: a local copy of the agent. Selectors mutate the draft, not the store.
+    var draftAgent by remember(agent.id) { mutableStateOf(agent) }
     var agentNameInput by remember(agent.id) { mutableStateOf(agent.name) }
     var autoWaitTimeInput by remember(agent.id) { mutableStateOf(agent.autoWaitTimeSeconds.toString()) }
     var autoMaxWaitTimeInput by remember(agent.id) { mutableStateOf(agent.autoMaxWaitTimeSeconds.toString()) }
 
-    // [LOGIC] Determine if we should show Sovereign options
-    val isVanilla = agent.cognitiveStrategyId == VanillaStrategy.id
+    val isVanilla = draftAgent.cognitiveStrategyId == VanillaStrategy.id
+    val onDraftChanged: (AgentInstance) -> Unit = { draftAgent = it }
 
     val onSave = {
         store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
             put("agentId", agent.id)
             put("name", agentNameInput)
+            put("cognitiveStrategyId", draftAgent.cognitiveStrategyId)
+            put("modelProvider", draftAgent.modelProvider)
+            put("modelName", draftAgent.modelName)
+            put("subscribedSessionIds", buildJsonArray { draftAgent.subscribedSessionIds.forEach { add(it) } })
+            if (draftAgent.knowledgeGraphId != null) put("knowledgeGraphId", draftAgent.knowledgeGraphId)
+            else put("knowledgeGraphId", null as String?)
+            put("automaticMode", draftAgent.automaticMode)
             autoWaitTimeInput.toIntOrNull()?.let { put("autoWaitTimeSeconds", it) }
             autoMaxWaitTimeInput.toIntOrNull()?.let { put("autoMaxWaitTimeSeconds", it) }
+            put("resources", Json.encodeToJsonElement(draftAgent.resources))
         }))
         store.dispatch("ui.agentManager", Action(ActionNames.AGENT_SET_EDITING, buildJsonObject { put("agentId", null as String?) }))
     }
@@ -279,34 +294,68 @@ private fun AgentEditorView(
                 modifier = Modifier.weight(1f)
             )
             Box(Modifier.weight(1f)) {
-                StrategySelector(agent, store)
+                StrategySelector(draftAgent, onDraftChanged)
             }
         }
 
         // --- ROW 2: Compute (Provider + Model) ---
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.weight(1f)) { ProviderSelector(agent, agentState, store) }
-            Box(Modifier.weight(1f)) { ModelSelector(agent, agentState, store) }
+            Box(Modifier.weight(1f)) { ProviderSelector(draftAgent, agentState, onDraftChanged) }
+            Box(Modifier.weight(1f)) { ModelSelector(draftAgent, agentState, onDraftChanged) }
         }
 
         // --- ROW 3: Context (Subscriptions) ---
         Row(Modifier.fillMaxWidth()) {
-            if (agent.knowledgeGraphId == null) {
-                SingleSessionSelector(agent, agentState, store)
+            if (draftAgent.knowledgeGraphId == null) {
+                SingleSessionSelector(draftAgent, agentState, onDraftChanged)
             } else {
-                MultiSessionSelector(agent, agentState, store)
+                MultiSessionSelector(draftAgent, agentState, onDraftChanged)
             }
         }
 
         // --- ROW 4: Sovereign Specifics (Knowledge Graph) ---
-        // [LOGIC] Only show if Strategy is NOT Vanilla
         if (!isVanilla) {
             Row(Modifier.fillMaxWidth()) {
-                KnowledgeGraphSelector(agent, agentState, store)
+                KnowledgeGraphSelector(draftAgent, agentState, onDraftChanged)
             }
         }
 
-        // --- ROW 5: Auto Mode ---
+        // --- ROW 5: Resource Slots ---
+        if (isVanilla) {
+            ResourceSlotSelector(
+                label = "System Instruction",
+                slotKey = AgentResourceType.SYSTEM_INSTRUCTION.name,
+                resourceType = AgentResourceType.SYSTEM_INSTRUCTION,
+                agentState = agentState,
+                agent = draftAgent,
+                onUpdate = onDraftChanged
+            )
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.weight(1f)) {
+                    ResourceSlotSelector(
+                        label = "Constitution",
+                        slotKey = AgentResourceType.CONSTITUTION.name,
+                        resourceType = AgentResourceType.CONSTITUTION,
+                        agentState = agentState,
+                        agent = draftAgent,
+                        onUpdate = onDraftChanged
+                    )
+                }
+                Box(Modifier.weight(1f)) {
+                    ResourceSlotSelector(
+                        label = "Bootloader",
+                        slotKey = AgentResourceType.BOOTLOADER.name,
+                        resourceType = AgentResourceType.BOOTLOADER,
+                        agentState = agentState,
+                        agent = draftAgent,
+                        onUpdate = onDraftChanged
+                    )
+                }
+            }
+        }
+
+        // --- ROW 6: Auto Mode ---
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -314,12 +363,8 @@ private fun AgentEditorView(
         ) {
             Text("Automatic Mode", style = MaterialTheme.typography.bodyLarge)
             Switch(
-                checked = agent.automaticMode,
-                onCheckedChange = {
-                    store.dispatch("ui.agentManager", Action(ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject {
-                        put("agentId", agent.id)
-                    }))
-                }
+                checked = draftAgent.automaticMode,
+                onCheckedChange = { draftAgent = draftAgent.copy(automaticMode = it) }
             )
         }
 
@@ -338,13 +383,13 @@ private fun AgentEditorView(
             )
         }
 
-        Row (
+        Row(
             Modifier.fillMaxWidth(),
             Arrangement.End,
             Alignment.CenterVertically
-        ){
+        ) {
             IconButton(onClick = onCancel) { Icon(Icons.Default.Cancel, "Cancel Edit") }
-            IconButton(onClick = onSave, enabled = agentNameInput.isNotBlank()) { Icon(Icons.Default.Save, "Save Name") }
+            IconButton(onClick = onSave, enabled = agentNameInput.isNotBlank()) { Icon(Icons.Default.Save, "Save") }
         }
     }
 }
@@ -473,7 +518,7 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(resource.name, style = MaterialTheme.typography.titleMedium)
-                    // [NEW] Rename Icon for non-built-ins
+                    // Rename Icon for non-built-ins
                     if (!resource.isBuiltIn) {
                         Spacer(Modifier.width(8.dp))
                         IconButton(onClick = { showRenameDialog = true }, modifier = Modifier.size(20.dp)) {
@@ -505,7 +550,7 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
                         Text("Save")
                     }
                 } else {
-                    // [NEW] Clone Button for Built-ins
+                    // Clone Button for Built-ins
                     FilledTonalButton(onClick = { showCloneDialog = true }) {
                         Icon(Icons.Default.CopyAll, "Clone to Edit")
                         Spacer(Modifier.width(4.dp))
@@ -633,11 +678,13 @@ private fun CreateResourceDialog(
     )
 }
 
-// ... [Remainder of file remains unchanged] ...
+// =============================================================================
+// Selectors — Draft-Based (no direct store dispatch)
+// =============================================================================
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SingleSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
+private fun SingleSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, onUpdate: (AgentInstance) -> Unit) {
     val availableSessions = remember(agentState.sessionNames) {
         agentState.sessionNames.entries.toList().filter { !it.value.startsWith("p-cognition:") }
     }
@@ -652,18 +699,12 @@ private fun SingleSessionSelector(agent: AgentInstance, agentState: AgentRuntime
         )
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             DropdownMenuItem(text = { Text("None (Unsubscribe)") }, onClick = {
-                store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
-                    put("agentId", agent.id)
-                    put("subscribedSessionIds", buildJsonArray {})
-                }))
+                onUpdate(agent.copy(subscribedSessionIds = emptyList()))
                 isExpanded = false
             })
             availableSessions.forEach { (sessionId, sessionName) ->
                 DropdownMenuItem(text = { Text(sessionName) }, onClick = {
-                    store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
-                        put("agentId", agent.id)
-                        put("subscribedSessionIds", buildJsonArray { add(sessionId) })
-                    }))
+                    onUpdate(agent.copy(subscribedSessionIds = listOf(sessionId)))
                     isExpanded = false
                 })
             }
@@ -673,7 +714,7 @@ private fun SingleSessionSelector(agent: AgentInstance, agentState: AgentRuntime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MultiSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
+private fun MultiSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, onUpdate: (AgentInstance) -> Unit) {
     val availableSessions = remember(agentState.sessionNames) {
         agentState.sessionNames.entries.toList().filter { !it.value.startsWith("p-cognition:") }
     }
@@ -715,12 +756,7 @@ private fun MultiSessionSelector(agent: AgentInstance, agentState: AgentRuntimeS
                         } else {
                             agent.subscribedSessionIds + sessionId
                         }
-                        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
-                            put("agentId", agent.id)
-                            put("subscribedSessionIds", buildJsonArray {
-                                newSelection.forEach { add(it) }
-                            })
-                        }))
+                        onUpdate(agent.copy(subscribedSessionIds = newSelection))
                     }
                 )
             }
@@ -730,7 +766,7 @@ private fun MultiSessionSelector(agent: AgentInstance, agentState: AgentRuntimeS
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun KnowledgeGraphSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
+private fun KnowledgeGraphSelector(agent: AgentInstance, agentState: AgentRuntimeState, onUpdate: (AgentInstance) -> Unit) {
     val availableGraphs = remember(agentState.knowledgeGraphNames, agentState.hkgReservedIds, agent.knowledgeGraphId) {
         agentState.knowledgeGraphNames.entries.filter { (id, _) ->
             !agentState.hkgReservedIds.contains(id) || id == agent.knowledgeGraphId
@@ -747,16 +783,12 @@ private fun KnowledgeGraphSelector(agent: AgentInstance, agentState: AgentRuntim
         )
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             DropdownMenuItem(text = { Text("None") }, onClick = {
-                store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
-                    put("agentId", agent.id); put("knowledgeGraphId", null as String?)
-                }))
+                onUpdate(agent.copy(knowledgeGraphId = null))
                 isExpanded = false
             })
             availableGraphs.forEach { (graphId, graphName) ->
                 DropdownMenuItem(text = { Text(graphName) }, onClick = {
-                    store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
-                        put("agentId", agent.id); put("knowledgeGraphId", graphId)
-                    }))
+                    onUpdate(agent.copy(knowledgeGraphId = graphId))
                     isExpanded = false
                 })
             }
@@ -766,7 +798,7 @@ private fun KnowledgeGraphSelector(agent: AgentInstance, agentState: AgentRuntim
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProviderSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
+private fun ProviderSelector(agent: AgentInstance, agentState: AgentRuntimeState, onUpdate: (AgentInstance) -> Unit) {
     val availableProviders = remember(agentState.availableModels) { agentState.availableModels.keys.toList() }
     var isExpanded by remember { mutableStateOf(false) }
 
@@ -781,11 +813,10 @@ private fun ProviderSelector(agent: AgentInstance, agentState: AgentRuntimeState
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             availableProviders.forEach { providerId ->
                 DropdownMenuItem(text = { Text(providerId) }, onClick = {
-                    store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
-                        put("agentId", agent.id)
-                        put("modelProvider", providerId)
-                        put("modelName", agentState.availableModels[providerId]?.firstOrNull())
-                    }))
+                    onUpdate(agent.copy(
+                        modelProvider = providerId,
+                        modelName = agentState.availableModels[providerId]?.firstOrNull() ?: agent.modelName
+                    ))
                     isExpanded = false
                 })
             }
@@ -795,7 +826,7 @@ private fun ProviderSelector(agent: AgentInstance, agentState: AgentRuntimeState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ModelSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
+private fun ModelSelector(agent: AgentInstance, agentState: AgentRuntimeState, onUpdate: (AgentInstance) -> Unit) {
     val availableModels = remember(agentState.availableModels, agent.modelProvider) {
         agentState.availableModels[agent.modelProvider] ?: emptyList()
     }
@@ -812,9 +843,7 @@ private fun ModelSelector(agent: AgentInstance, agentState: AgentRuntimeState, s
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             availableModels.forEach { modelName ->
                 DropdownMenuItem(text = { Text(modelName) }, onClick = {
-                    store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
-                        put("agentId", agent.id); put("modelName", modelName)
-                    }))
+                    onUpdate(agent.copy(modelName = modelName))
                     isExpanded = false
                 })
             }
@@ -824,7 +853,7 @@ private fun ModelSelector(agent: AgentInstance, agentState: AgentRuntimeState, s
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun StrategySelector(agent: AgentInstance, store: Store) {
+private fun StrategySelector(agent: AgentInstance, onUpdate: (AgentInstance) -> Unit) {
     val strategies = remember { CognitiveStrategyRegistry.getAll() }
     var isExpanded by remember { mutableStateOf(false) }
     val currentStrategy = strategies.find { it.id == agent.cognitiveStrategyId }
@@ -839,18 +868,55 @@ private fun StrategySelector(agent: AgentInstance, store: Store) {
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             strategies.forEach { strategy ->
                 DropdownMenuItem(text = { Text(strategy.displayName) }, onClick = {
-                    // [LOGIC] If switching to Vanilla, enforce HKG cleansing side-effect
-                    val extraUpdates = if (strategy.id == VanillaStrategy.id) {
-                        mapOf("knowledgeGraphId" to null)
-                    } else {
-                        emptyMap()
+                    var updated = agent.copy(cognitiveStrategyId = strategy.id)
+                    // If switching to Vanilla, clear HKG
+                    if (strategy.id == VanillaStrategy.id) {
+                        updated = updated.copy(knowledgeGraphId = null)
                     }
+                    onUpdate(updated)
+                    isExpanded = false
+                })
+            }
+        }
+    }
+}
 
-                    store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
-                        put("agentId", agent.id)
-                        put("cognitiveStrategyId", strategy.id)
-                        extraUpdates.forEach { (k, v) -> put(k, v as String?) }
-                    }))
+// =============================================================================
+// Resource Slot Selector — Connects an Agent config slot to a System Resource
+// =============================================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ResourceSlotSelector(
+    label: String,
+    slotKey: String,
+    resourceType: AgentResourceType,
+    agentState: AgentRuntimeState,
+    agent: AgentInstance,
+    onUpdate: (AgentInstance) -> Unit
+) {
+    val filteredResources = remember(agentState.resources, resourceType) {
+        agentState.resources.filter { it.type == resourceType }
+    }
+    val selectedId = agent.resources[slotKey]
+    val selectedName = filteredResources.find { it.id == selectedId }?.name ?: "None"
+    var isExpanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
+        OutlinedTextField(
+            value = selectedName,
+            onValueChange = {}, readOnly = true, label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth()
+        )
+        ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
+            DropdownMenuItem(text = { Text("None") }, onClick = {
+                onUpdate(agent.copy(resources = agent.resources - slotKey))
+                isExpanded = false
+            })
+            filteredResources.forEach { resource ->
+                DropdownMenuItem(text = { Text(resource.name) }, onClick = {
+                    onUpdate(agent.copy(resources = agent.resources + (slotKey to resource.id)))
                     isExpanded = false
                 })
             }

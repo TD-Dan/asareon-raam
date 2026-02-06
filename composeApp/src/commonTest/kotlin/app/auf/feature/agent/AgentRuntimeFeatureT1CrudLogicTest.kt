@@ -160,6 +160,44 @@ class AgentRuntimeFeatureT1CrudLogicTest {
     }
 
     @Test
+    fun `UPDATE_CONFIG should update resources map`() {
+        val agent = AgentInstance("a1", "Test", null, "p", "m", resources = emptyMap())
+        val state = AgentRuntimeState(agents = mapOf("a1" to agent))
+
+        val action = Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
+            put("agentId", "a1")
+            put("resources", buildJsonObject {
+                put("CONSTITUTION", "res-123")
+                put("BOOTLOADER", "res-456")
+            })
+        })
+
+        val newState = AgentCrudLogic.reduce(state, action, platform)
+        val updatedAgent = newState.agents["a1"]!!
+
+        assertEquals(2, updatedAgent.resources.size)
+        assertEquals("res-123", updatedAgent.resources["CONSTITUTION"])
+        assertEquals("res-456", updatedAgent.resources["BOOTLOADER"])
+    }
+
+    @Test
+    fun `UPDATE_CONFIG without resources field preserves existing resources`() {
+        val agent = AgentInstance("a1", "Test", null, "p", "m", resources = mapOf("CONSTITUTION" to "res-existing"))
+        val state = AgentRuntimeState(agents = mapOf("a1" to agent))
+
+        val action = Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
+            put("agentId", "a1")
+            put("name", "Renamed")
+        })
+
+        val newState = AgentCrudLogic.reduce(state, action, platform)
+        val updatedAgent = newState.agents["a1"]!!
+
+        assertEquals("Renamed", updatedAgent.name)
+        assertEquals("res-existing", updatedAgent.resources["CONSTITUTION"])
+    }
+
+    @Test
     fun `RENAME_RESOURCE updates name`() {
         // Setup
         val initialState = AgentRuntimeState()

@@ -8,6 +8,7 @@ import app.auf.test.TestEnvironment
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -111,6 +112,176 @@ class AgentRuntimeFeatureT2StartupTest {
 
             assertNotNull(loadedResource, "Resource should be present in state after loading")
             assertEquals("Test Constitution", loadedResource.name)
+        }
+    }
+
+    @Test
+    fun `should load existing agent config from disk via explicit filename routing`() {
+        // 1. Setup: An agent config file living at "agent-uuid/agent.json"
+        val agentId = "agent-abc"
+        val agentConfigJson = """
+            {
+                "id": "$agentId",
+                "name": "Restored Agent",
+                "modelProvider": "gemini",
+                "modelName": "gemini-1.5-pro"
+            }
+        """.trimIndent()
+
+        val environment = TestEnvironment.create()
+            .withFeature(AgentRuntimeFeature(app.auf.fakes.FakePlatformDependencies("1.0"), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+        val harness = environment.build()
+
+        harness.platform.writtenFiles["$agentId/agent.json"] = agentConfigJson
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
+
+            // Simulate root listing: one agent directory
+            val listPayload = kotlinx.serialization.json.buildJsonObject {
+                put("subpath", kotlinx.serialization.json.JsonPrimitive(""))
+                put("listing", kotlinx.serialization.json.buildJsonArray {
+                    add(kotlinx.serialization.json.buildJsonObject {
+                        put("path", kotlinx.serialization.json.JsonPrimitive(agentId))
+                        put("isDirectory", kotlinx.serialization.json.JsonPrimitive(true))
+                    })
+                    add(kotlinx.serialization.json.buildJsonObject {
+                        put("path", kotlinx.serialization.json.JsonPrimitive("resources"))
+                        put("isDirectory", kotlinx.serialization.json.JsonPrimitive(true))
+                    })
+                })
+            }
+
+            harness.store.deliverPrivateData(
+                originator = "filesystem",
+                recipient = "agent",
+                envelope = app.auf.core.PrivateDataEnvelope(
+                    type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST,
+                    payload = listPayload
+                )
+            )
+
+            // Verify the feature dispatched a READ for "agent-abc/agent.json"
+            val readAction = harness.processedActions.find {
+                it.name == ActionNames.FILESYSTEM_SYSTEM_READ &&
+                        it.payload?.get("subpath")?.toString()?.contains("agent.json") == true
+            }
+            assertNotNull(readAction, "Should have dispatched READ for agent.json")
+
+            // Simulate READ response
+            val readPayload = kotlinx.serialization.json.buildJsonObject {
+                put("subpath", kotlinx.serialization.json.JsonPrimitive("$agentId/agent.json"))
+                put("content", kotlinx.serialization.json.JsonPrimitive(agentConfigJson))
+            }
+
+            harness.store.deliverPrivateData(
+                originator = "filesystem",
+                recipient = "agent",
+                envelope = app.auf.core.PrivateDataEnvelope(
+                    type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ,
+                    payload = readPayload
+                )
+            )
+
+            // Assert: Agent loaded into state
+            val agentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            val loadedAgent = agentState.agents[agentId]
+            assertNotNull(loadedAgent, "Agent should be present in state after loading")
+            assertEquals("Restored Agent", loadedAgent.name)
+
+            // Assert: AGENTS_LOADED fired (agentLoadCount reached 0)
+            val agentsLoadedAction = harness.processedActions.find {
+                it.name == ActionNames.AGENT_INTERNAL_AGENTS_LOADED
+            }
+            assertNotNull(agentsLoadedAction, "AGENTS_LOADED should fire after all agents are read")
+        }
+    }
+
+    @Test
+    fun `unknown file path should be ignored without corrupting agent load tracking`() {
+        // Setup: The feature expects one agent config. We deliver an unknown file first,
+        // then the real agent config. The unknown file should NOT decrement agentLoadCount.
+        val agentId = "agent-xyz"
+        val agentConfigJson = """{"id":"$agentId","name":"Real Agent","modelProvider":"p","modelName":"m"}"""
+
+        val environment = TestEnvironment.create()
+            .withFeature(AgentRuntimeFeature(app.auf.fakes.FakePlatformDependencies("1.0"), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+        val harness = environment.build()
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
+
+            // Root listing: one agent directory
+            val listPayload = kotlinx.serialization.json.buildJsonObject {
+                put("subpath", kotlinx.serialization.json.JsonPrimitive(""))
+                put("listing", kotlinx.serialization.json.buildJsonArray {
+                    add(kotlinx.serialization.json.buildJsonObject {
+                        put("path", kotlinx.serialization.json.JsonPrimitive(agentId))
+                        put("isDirectory", kotlinx.serialization.json.JsonPrimitive(true))
+                    })
+                    add(kotlinx.serialization.json.buildJsonObject {
+                        put("path", kotlinx.serialization.json.JsonPrimitive("resources"))
+                        put("isDirectory", kotlinx.serialization.json.JsonPrimitive(true))
+                    })
+                })
+            }
+
+            harness.store.deliverPrivateData(
+                originator = "filesystem",
+                recipient = "agent",
+                envelope = app.auf.core.PrivateDataEnvelope(
+                    type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST,
+                    payload = listPayload
+                )
+            )
+
+            // Deliver an UNKNOWN file read response (e.g. a stale log file)
+            val unknownPayload = kotlinx.serialization.json.buildJsonObject {
+                put("subpath", kotlinx.serialization.json.JsonPrimitive("some/stale-file.txt"))
+                put("content", kotlinx.serialization.json.JsonPrimitive("garbage data"))
+            }
+
+            harness.store.deliverPrivateData(
+                originator = "filesystem",
+                recipient = "agent",
+                envelope = app.auf.core.PrivateDataEnvelope(
+                    type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ,
+                    payload = unknownPayload
+                )
+            )
+
+            // AGENTS_LOADED should NOT have fired (agentLoadCount is still 1)
+            val prematureLoaded = harness.processedActions.find {
+                it.name == ActionNames.AGENT_INTERNAL_AGENTS_LOADED
+            }
+            assertNull(prematureLoaded, "Unknown file should not decrement agentLoadCount")
+
+            // Now deliver the real agent config
+            val realPayload = kotlinx.serialization.json.buildJsonObject {
+                put("subpath", kotlinx.serialization.json.JsonPrimitive("$agentId/agent.json"))
+                put("content", kotlinx.serialization.json.JsonPrimitive(agentConfigJson))
+            }
+
+            harness.store.deliverPrivateData(
+                originator = "filesystem",
+                recipient = "agent",
+                envelope = app.auf.core.PrivateDataEnvelope(
+                    type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ,
+                    payload = realPayload
+                )
+            )
+
+            // NOW AGENTS_LOADED should fire
+            val agentsLoaded = harness.processedActions.find {
+                it.name == ActionNames.AGENT_INTERNAL_AGENTS_LOADED
+            }
+            assertNotNull(agentsLoaded, "AGENTS_LOADED should fire after the real agent config is loaded")
+
+            // Agent should be loaded
+            val agentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            assertNotNull(agentState.agents[agentId])
         }
     }
 }

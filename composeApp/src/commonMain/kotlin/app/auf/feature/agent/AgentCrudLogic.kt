@@ -53,6 +53,12 @@ object AgentCrudLogic {
                     state.sessionNames[sessionId]?.startsWith("p-cognition:") == false
                 }
 
+                val updatedResources = if ("resources" in payload) {
+                    payload["resources"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content } ?: agentToUpdate.resources
+                } else {
+                    agentToUpdate.resources
+                }
+
                 val updatedAgent = agentToUpdate.copy(
                     name = payload["name"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.name,
                     knowledgeGraphId = if ("knowledgeGraphId" in payload) payload["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull else agentToUpdate.knowledgeGraphId,
@@ -63,7 +69,8 @@ object AgentCrudLogic {
                     subscribedSessionIds = filteredSubscribedSessionIds,
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: agentToUpdate.automaticMode,
                     autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoWaitTimeSeconds,
-                    autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoMaxWaitTimeSeconds
+                    autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoMaxWaitTimeSeconds,
+                    resources = updatedResources
                 )
                 state.copy(agents = state.agents + (agentId to updatedAgent))
             }
