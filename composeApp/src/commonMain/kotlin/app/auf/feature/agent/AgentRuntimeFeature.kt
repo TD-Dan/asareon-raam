@@ -263,7 +263,7 @@ class AgentRuntimeFeature(
         resource.path?.let { path ->
             store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                 put("subpath", path)
-                put("content", resource.content)
+                put("content", json.encodeToString(resource))
             }))
         }
     }
@@ -325,31 +325,39 @@ class AgentRuntimeFeature(
     }
 
     private fun handleFileSystemReadResponse(payload: JsonObject, store: Store) {
-        // [FIXED] Normalize separators to '/' to ensure cross-platform matching logic
+        // Normalize separators to '/' to ensure cross-platform matching logic
         val subpath = (payload["subpath"]?.jsonPrimitive?.contentOrNull ?: "").replace("\\", "/")
         val content = payload["content"]?.jsonPrimitive?.contentOrNull ?: return
 
-        // Check against the canonical prefix
-        if (subpath.startsWith("resources/")) {
-            try {
-                val resource = json.decodeFromString<AgentResource>(content)
-                // Ensure the in-memory resource also has the normalized path
-                val resWithPath = resource.copy(path = subpath)
-                store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_RESOURCE_LOADED, json.encodeToJsonElement(resWithPath) as JsonObject))
-            } catch (e: Exception) {
-                platformDependencies.log(LogLevel.ERROR, name, "Failed to parse resource: $subpath. Error: ${e.message}")
-            }
-        } else {
-            try {
-                val agent = json.decodeFromString<AgentInstance>(content)
-                store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
-            } catch (e: Exception) {
-                platformDependencies.log(LogLevel.ERROR, name, "Failed to parse agent config from file: $subpath. Error: ${e.message}")
-            } finally {
-                agentLoadCount--
-                if (agentLoadCount <= 0) {
-                    store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
+        when {
+            // Shared Resource files live under the "resources/" directory
+            subpath.startsWith("resources/") -> {
+                try {
+                    val resource = json.decodeFromString<AgentResource>(content)
+                    // Ensure the in-memory resource has the normalized path
+                    val resWithPath = resource.copy(path = subpath)
+                    store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_RESOURCE_LOADED, json.encodeToJsonElement(resWithPath) as JsonObject))
+                } catch (e: Exception) {
+                    platformDependencies.log(LogLevel.ERROR, name, "Failed to parse resource: $subpath. Error: ${e.message}")
                 }
+            }
+            // Agent config files are identified by their canonical filename
+            subpath.endsWith("/$agentConfigFILENAME") -> {
+                try {
+                    val agent = json.decodeFromString<AgentInstance>(content)
+                    store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
+                } catch (e: Exception) {
+                    platformDependencies.log(LogLevel.ERROR, name, "Failed to parse agent config from file: $subpath. Error: ${e.message}")
+                } finally {
+                    agentLoadCount--
+                    if (agentLoadCount <= 0) {
+                        store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
+                    }
+                }
+            }
+            // Unknown file — log and ignore, don't corrupt agent load tracking
+            else -> {
+                platformDependencies.log(LogLevel.WARN, name, "Received unexpected file read response for: $subpath. Ignoring.")
             }
         }
     }
