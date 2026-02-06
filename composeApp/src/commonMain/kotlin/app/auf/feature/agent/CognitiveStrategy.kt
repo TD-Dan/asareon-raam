@@ -3,6 +3,18 @@ package app.auf.feature.agent
 import kotlinx.serialization.json.JsonElement
 
 /**
+ * Declares a resource slot that a strategy requires.
+ * Used by the UI to render slot selectors and by the Pipeline to validate/resolve resources.
+ */
+data class ResourceSlot(
+    val slotId: String,              // e.g., "constitution", "bootloader", "system_instruction"
+    val type: AgentResourceType,
+    val displayName: String,
+    val description: String,
+    val isRequired: Boolean = true
+)
+
+/**
  * Defines the cognitive architecture of an Agent.
  *
  * This strategy pattern allows the AUF App to host diverse forms of agency
@@ -27,8 +39,14 @@ interface CognitiveStrategy {
     val displayName: String
 
     /**
+     * Declares the resource slots this strategy uses.
+     * Used by the UI for slot selectors and by the Pipeline for validation.
+     */
+    fun getResourceSlots(): List<ResourceSlot>
+
+    /**
      * Returns the initial "NVRAM" state for a freshly created agent.
-     * e.g., { "phase": "BOOT", "rigor": "STANDARD" }
+     * e.g., { "phase": "BOOTING", "rigor": "STANDARD" }
      */
     fun getInitialState(): JsonElement
 
@@ -87,6 +105,6 @@ enum class SentinelAction {
  */
 data class AgentTurnContext(
     val agentName: String,
-    val systemInstructions: String, // From config
-    val gatheredContexts: Map<String, String> // Source -> Content
+    val resolvedResources: Map<String, String>, // slotId → content
+    val gatheredContexts: Map<String, String>   // source → content
 )

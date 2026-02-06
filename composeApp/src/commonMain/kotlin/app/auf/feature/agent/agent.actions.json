@@ -8,17 +8,44 @@
       "payload_schema": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "knowledgeGraphId": { "type": [ "string", "null" ] },
-          "modelProvider": { "type": "string" },
-          "modelName": { "type": "string" },
-          "cognitiveStrategyId": { "type": "string" },
-          "subscribedSessionIds": { "type": "array", "items": { "type": "string" } },
-          "automaticMode": { "type": "boolean", "default": false },
-          "autoWaitTimeSeconds": { "type": "integer" },
-          "autoMaxWaitTimeSeconds": { "type": "integer" }
+          "name": {
+            "type": "string"
+          },
+          "knowledgeGraphId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "modelProvider": {
+            "type": "string"
+          },
+          "modelName": {
+            "type": "string"
+          },
+          "cognitiveStrategyId": {
+            "type": "string"
+          },
+          "subscribedSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "automaticMode": {
+            "type": "boolean",
+            "default": false
+          },
+          "autoWaitTimeSeconds": {
+            "type": "integer"
+          },
+          "autoMaxWaitTimeSeconds": {
+            "type": "integer"
+          }
         },
-        "required": [ "name" ]
+        "required": [
+          "name"
+        ]
       }
     },
     {
@@ -26,8 +53,14 @@
       "summary": "Creates a new agent instance by cloning an existing one.",
       "payload_schema": {
         "type": "object",
-        "properties": { "agentId": { "type": "string" } },
-        "required": [ "agentId" ]
+        "properties": {
+          "agentId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
       }
     },
     {
@@ -36,19 +69,52 @@
       "payload_schema": {
         "type": "object",
         "properties": {
-          "agentId": { "type": "string" },
-          "name": { "type": "string" },
-          "knowledgeGraphId": { "type": [ "string", "null" ] },
-          "privateSessionId": { "type": [ "string", "null" ] },
-          "modelProvider": { "type": "string" },
-          "modelName": { "type": "string" },
-          "cognitiveStrategyId": { "type": "string" },
-          "subscribedSessionIds": { "type": "array", "items": { "type": "string" } },
-          "automaticMode": { "type": "boolean" },
-          "autoWaitTimeSeconds": { "type": "integer" },
-          "autoMaxWaitTimeSeconds": { "type": "integer" }
+          "agentId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "knowledgeGraphId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "privateSessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "modelProvider": {
+            "type": "string"
+          },
+          "modelName": {
+            "type": "string"
+          },
+          "cognitiveStrategyId": {
+            "type": "string"
+          },
+          "subscribedSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "automaticMode": {
+            "type": "boolean"
+          },
+          "autoWaitTimeSeconds": {
+            "type": "integer"
+          },
+          "autoMaxWaitTimeSeconds": {
+            "type": "integer"
+          }
         },
-        "required": [ "agentId" ]
+        "required": [
+          "agentId"
+        ]
       }
     },
     {
@@ -56,8 +122,14 @@
       "summary": "Deletes an agent instance.",
       "payload_schema": {
         "type": "object",
-        "properties": { "agentId": { "type": "string" } },
-        "required": [ "agentId" ]
+        "properties": {
+          "agentId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
       }
     },
     {
@@ -65,8 +137,14 @@
       "summary": "Toggles the automatic processing mode for a specific agent.",
       "payload_schema": {
         "type": "object",
-        "properties": { "agentId": { "type": "string" } },
-        "required": [ "agentId" ]
+        "properties": {
+          "agentId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
       }
     },
     {
@@ -74,8 +152,14 @@
       "summary": "Toggles the master active/paused state for a specific agent.",
       "payload_schema": {
         "type": "object",
-        "properties": { "agentId": { "type": "string" } },
-        "required": [ "agentId" ]
+        "properties": {
+          "agentId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
       }
     },
     {
@@ -84,13 +168,17 @@
       "payload_schema": {
         "type": "object",
         "properties": {
-          "agentId": { "type": "string" },
+          "agentId": {
+            "type": "string"
+          },
           "preview": {
             "type": "boolean",
             "default": false
           }
         },
-        "required": [ "agentId" ]
+        "required": [
+          "agentId"
+        ]
       }
     },
     {
@@ -98,8 +186,14 @@
       "summary": "Executes the turn that was previously staged for preview.",
       "payload_schema": {
         "type": "object",
-        "properties": { "agentId": { "type": "string" } },
-        "required": [ "agentId" ]
+        "properties": {
+          "agentId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
       }
     },
     {
@@ -107,8 +201,14 @@
       "summary": "Discards a turn that was staged for preview and navigates back.",
       "payload_schema": {
         "type": "object",
-        "properties": { "agentId": { "type": "string" } },
-        "required": [ "agentId" ]
+        "properties": {
+          "agentId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
       }
     },
     {
@@ -116,8 +216,14 @@
       "summary": "Cancels an agent's currently in-flight, processing turn.",
       "payload_schema": {
         "type": "object",
-        "properties": { "agentId": { "type": "string" } },
-        "required": [ "agentId" ]
+        "properties": {
+          "agentId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
       }
     },
     {
@@ -125,7 +231,14 @@
       "summary": "Sets which agent is currently being edited in the UI.",
       "payload_schema": {
         "type": "object",
-        "properties": { "agentId": { "type": [ "string", "null" ] } }
+        "properties": {
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       }
     },
     {
@@ -133,8 +246,17 @@
       "summary": "Listens for updates to the set of reserved HKGs to prevent UI conflicts.",
       "payload_schema": {
         "type": "object",
-        "properties": { "reservedIds": { "type": "array", "items": { "type": "string" } } },
-        "required": ["reservedIds"]
+        "properties": {
+          "reservedIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "reservedIds"
+        ]
       }
     },
     {
@@ -142,8 +264,14 @@
       "summary": "Switches the active tab in the Agent Manager View.",
       "payload_schema": {
         "type": "object",
-        "properties": { "tabIndex": { "type": "integer" } },
-        "required": ["tabIndex"]
+        "properties": {
+          "tabIndex": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tabIndex"
+        ]
       }
     },
     {
@@ -151,7 +279,14 @@
       "summary": "Selects a system resource for viewing/editing.",
       "payload_schema": {
         "type": "object",
-        "properties": { "resourceId": { "type": [ "string", "null" ] } }
+        "properties": {
+          "resourceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       }
     },
     {
@@ -160,10 +295,17 @@
       "payload_schema": {
         "type": "object",
         "properties": {
-          "resourceId": { "type": "string" },
-          "content": { "type": "string" }
+          "resourceId": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
         },
-        "required": ["resourceId", "content"]
+        "required": [
+          "resourceId",
+          "content"
+        ]
       }
     },
     {
@@ -172,11 +314,23 @@
       "payload_schema": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "type": { "type": "string" },
-          "initialContent": { "type": ["string", "null"] }
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "initialContent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         },
-        "required": ["name", "type"]
+        "required": [
+          "name",
+          "type"
+        ]
       }
     },
     {
@@ -185,10 +339,17 @@
       "payload_schema": {
         "type": "object",
         "properties": {
-          "resourceId": { "type": "string" },
-          "newName": { "type": "string" }
+          "resourceId": {
+            "type": "string"
+          },
+          "newName": {
+            "type": "string"
+          }
         },
-        "required": ["resourceId", "newName"]
+        "required": [
+          "resourceId",
+          "newName"
+        ]
       }
     },
     {
@@ -196,8 +357,34 @@
       "summary": "Deletes a user-defined system resource.",
       "payload_schema": {
         "type": "object",
-        "properties": { "resourceId": { "type": "string" } },
-        "required": ["resourceId"]
+        "properties": {
+          "resourceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "resourceId"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.UPDATE_NVRAM",
+      "summary": "Updates the agent's cognitive state (NVRAM). Can be dispatched by the agent itself via CommandBot or by users. Updates are merged into existing state.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "updates": {
+            "type": "object",
+            "description": "Key-value pairs to merge into the agent's cognitive state JSON."
+          }
+        },
+        "required": [
+          "agentId",
+          "updates"
+        ]
       }
     }
   ],
@@ -205,17 +392,39 @@
     {
       "action_name": "agent.publish.AGENT_NAMES_UPDATED",
       "summary": "Broadcasts the verified map of agent IDs to their names.",
-      "payload_schema": { "type": "object", "properties": { "names": { "type": "object" } }, "required": [ "names" ] }
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "names": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "names"
+        ]
+      }
     },
     {
       "action_name": "agent.publish.AGENT_DELETED",
       "summary": "Broadcasts that an agent has been deleted, so other features can clean up their state.",
-      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" } }, "required": [ "agentId" ] }
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      }
     },
     {
       "action_name": "agent.internal.AGENT_LOADED",
       "summary": "[INTERNAL] Dispatched after an agent's configuration has been read from its sandbox.",
-      "payload_schema": { "type": "object" }
+      "payload_schema": {
+        "type": "object"
+      }
     },
     {
       "action_name": "agent.internal.AGENTS_LOADED",
@@ -225,7 +434,9 @@
     {
       "action_name": "agent.internal.RESOURCE_LOADED",
       "summary": "[INTERNAL] Dispatched after a user-defined resource has been read from disk.",
-      "payload_schema": { "type": "object" }
+      "payload_schema": {
+        "type": "object"
+      }
     },
     {
       "action_name": "agent.internal.VALIDATE_SOVEREIGN_STATE",
@@ -240,42 +451,162 @@
     {
       "action_name": "agent.internal.UPDATE_AUTO_TRIGGER_INDEX",
       "summary": "[INTERNAL] Updates the index for the round-robin automatic trigger.",
-      "payload_schema": { "type": "object", "properties": { "index": { "type": "integer" } }, "required": ["index"] }
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index"
+        ]
+      }
     },
     {
       "action_name": "agent.internal.STAGE_TURN_CONTEXT",
       "summary": "[INTERNAL] Caches the ledger messages while the HKG context is being fetched.",
-      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" }, "messages": { "type": "array" } }, "required": ["agentId", "messages"] }
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "messages": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "agentId",
+          "messages"
+        ]
+      }
     },
     {
       "action_name": "agent.internal.SET_PREVIEW_DATA",
       "summary": "[INTERNAL] Saves the complete preview data.",
-      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" }, "agnosticRequest": { "type": "object" }, "rawRequestJson": { "type": "string" } }, "required": [ "agentId", "agnosticRequest", "rawRequestJson" ] }
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "agnosticRequest": {
+            "type": "object"
+          },
+          "rawRequestJson": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "agnosticRequest",
+          "rawRequestJson"
+        ]
+      }
     },
     {
       "action_name": "agent.internal.CONFIRM_DELETE",
       "summary": "[INTERNAL] Dispatched after cleanup side effects are complete.",
-      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" } }, "required": [ "agentId" ] }
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      }
     },
     {
       "action_name": "agent.internal.SET_STATUS",
       "summary": "[INTERNAL] Updates the transient status and optional error message.",
-      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" }, "status": { "type": "string" }, "error": { "type": [ "string", "null" ] } }, "required": [ "agentId", "status" ] }
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "agentId",
+          "status"
+        ]
+      }
     },
     {
       "action_name": "agent.internal.SET_PROCESSING_STEP",
       "summary": "[INTERNAL] Updates the human-readable description of the agent's current processing activity.",
-      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" }, "step": { "type": [ "string", "null" ] } }, "required": [ "agentId" ] }
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "step": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      }
     },
     {
       "action_name": "agent.internal.SET_HKG_CONTEXT",
       "summary": "[INTERNAL] Caches the fetched HKG context.",
-      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" }, "context": { "type": "object" } }, "required": ["agentId", "context"] }
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "context": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "agentId",
+          "context"
+        ]
+      }
     },
     {
       "action_name": "agent.internal.AVATAR_MOVED",
       "summary": "[INTERNAL] Updates the feature state to reflect that an avatar card has been moved.",
-      "payload_schema": { "type": "object", "properties": { "agentId": { "type": "string" }, "sessionId": { "type": "string" }, "messageId": { "type": "string" } }, "required": ["agentId", "sessionId", "messageId"] }
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionId",
+          "messageId"
+        ]
+      }
     },
     {
       "action_name": "agent.internal.UPDATE_COGNITIVE_STATE",
@@ -283,10 +614,17 @@
       "payload_schema": {
         "type": "object",
         "properties": {
-          "agentId": { "type": "string" },
-          "state": { "type": "object" }
+          "agentId": {
+            "type": "string"
+          },
+          "state": {
+            "type": "object"
+          }
         },
-        "required": ["agentId", "state"]
+        "required": [
+          "agentId",
+          "state"
+        ]
       }
     }
   ]

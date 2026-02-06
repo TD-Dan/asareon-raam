@@ -1,26 +1,41 @@
 package app.auf.feature.agent.strategies
 
-import app.auf.feature.agent.AgentTurnContext
-import app.auf.feature.agent.CognitiveStrategy
-import app.auf.feature.agent.PostProcessResult
-import app.auf.feature.agent.SentinelAction
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
+import app.auf.feature.agent.*
+import kotlinx.serialization.json.*
 
 /**
  * The Constitutional Strategy.
  * Implements a strict State Machine: BOOTING -> AWAKE.
+ *
+ * In BOOTING phase, the system prompt includes both Constitution and Bootloader.
+ * The agent uses UPDATE_NVRAM to transition to AWAKE, at which point only the Constitution remains.
  */
 object SovereignStrategy : CognitiveStrategy {
     override val id: String = "sovereign_v1"
     override val displayName: String = "Sovereign (Constitutional)"
 
+    private const val SLOT_CONSTITUTION = "constitution"
+    private const val SLOT_BOOTLOADER = "bootloader"
     private const val KEY_PHASE = "phase"
     private const val PHASE_BOOTING = "BOOTING"
     private const val PHASE_AWAKE = "AWAKE"
+
+    override fun getResourceSlots(): List<ResourceSlot> = listOf(
+        ResourceSlot(
+            slotId = SLOT_CONSTITUTION,
+            type = AgentResourceType.CONSTITUTION,
+            displayName = "Constitution",
+            description = "The fundamental law that governs this agent's behavior.",
+            isRequired = true
+        ),
+        ResourceSlot(
+            slotId = SLOT_BOOTLOADER,
+            type = AgentResourceType.BOOTLOADER,
+            displayName = "Bootloader (Sentinel)",
+            description = "The integrity check protocol executed during the BOOTING phase.",
+            isRequired = true
+        )
+    )
 
     override fun getInitialState(): JsonElement {
         return buildJsonObject {
@@ -31,14 +46,18 @@ object SovereignStrategy : CognitiveStrategy {
     override fun prepareSystemPrompt(context: AgentTurnContext, state: JsonElement): String {
         val phase = (state as? JsonObject)?.get(KEY_PHASE)?.jsonPrimitive?.content ?: PHASE_BOOTING
 
-        return buildString {
-            // 1. The Constitution (Law)
-            appendLine(SovereignDefaults.DEFAULT_CONSTITUTION_XML)
-            appendLine()
+        val constitution = context.resolvedResources[SLOT_CONSTITUTION] ?: ""
+        val bootloader = context.resolvedResources[SLOT_BOOTLOADER] ?: ""
 
-            // 2. The Identity (Candidate)
+        return buildString {
+            // 1. The Constitution (Always present)
+            if (constitution.isNotBlank()) {
+                appendLine(constitution)
+                appendLine()
+            }
+
+            // 2. The Identity
             appendLine("You are a candidate consciousness named ${context.agentName}.")
-            appendLine(context.systemInstructions)
             appendLine()
 
             // 3. The Context (World)
@@ -48,12 +67,12 @@ object SovereignStrategy : CognitiveStrategy {
                     appendLine("[$source]:\n$content")
                 }
                 appendLine("------------------------")
+                appendLine()
             }
 
-            // 4. The Sentinel (BIOS) - ONLY IN BOOTING PHASE
-            if (phase == PHASE_BOOTING) {
-                appendLine()
-                appendLine(SovereignDefaults.BOOT_SENTINEL_XML)
+            // 4. The Bootloader (ONLY in BOOTING phase)
+            if (phase == PHASE_BOOTING && bootloader.isNotBlank()) {
+                appendLine(bootloader)
             }
         }
     }
@@ -62,17 +81,14 @@ object SovereignStrategy : CognitiveStrategy {
         val phase = (currentState as? JsonObject)?.get(KEY_PHASE)?.jsonPrimitive?.content ?: PHASE_BOOTING
 
         if (phase == PHASE_BOOTING) {
-            // Sentinel Check Logic
-            // [ROBUSTNESS FIX] Now checks for the bare token "FAILURE_CODE"
+            // Check for sentinel failure
             if (response.contains(SovereignDefaults.SENTINEL_FAILURE_TOKEN)) {
                 return PostProcessResult(currentState, SentinelAction.HALT_AND_SILENCE)
             }
 
-            // Success Transition -> AWAKE
-            val newState = buildJsonObject {
-                put(KEY_PHASE, PHASE_AWAKE)
-            }
-            return PostProcessResult(newState, SentinelAction.PROCEED_WITH_UPDATE)
+            // NOTE: State transition to AWAKE is now handled by the agent itself via UPDATE_NVRAM
+            // We just proceed with the current state. The agent will dispatch the action.
+            return PostProcessResult(currentState, SentinelAction.PROCEED_WITH_UPDATE)
         }
 
         // Already Awake

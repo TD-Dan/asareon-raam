@@ -4,6 +4,7 @@ import app.auf.core.*
 import app.auf.core.generated.ActionNames
 import app.auf.util.LogLevel
 import app.auf.core.Version
+import app.auf.util.PlatformDependencies
 import app.auf.util.abbreviate
 import kotlinx.serialization.json.*
 
@@ -12,7 +13,7 @@ import kotlinx.serialization.json.*
  * To orchestrate the "Think" phase of the Agent's lifecycle.
  * It is the canonical handler for:
  * 1. Gathering Context (Ledger + HKG)
- * 2. Formulating the Prompt (via Strategy)
+ * 2. Formulating the Prompt (via Strategy + Resolved Resources)
  * 3. Processing the Response (via Strategy)
  */
 object AgentCognitivePipeline {
@@ -163,14 +164,22 @@ object AgentCognitivePipeline {
         store: Store
     ) {
         val statusInfo = agentState.agentStatuses[agent.id] ?: AgentStatusInfo()
-        val platformDependencies = store.platformDependencies
+        val platformDeps = store.platformDependencies
 
         val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
         val cognitiveState = if (agent.cognitiveState !is JsonNull) agent.cognitiveState else strategy.getInitialState()
 
-        platformDependencies.log(LogLevel.INFO, LOG_TAG,
+        // === RESOURCE RESOLUTION ===
+        val resolvedResources = resolveAgentResources(agent, agentState.resources, strategy, platformDeps, store)
+        if (resolvedResources == null) {
+            // Error already logged and status updated
+            return
+        }
+
+        platformDeps.log(LogLevel.INFO, LOG_TAG,
             "Assembling prompt for '${agent.id}' using strategy '${strategy.id}' (State: ${abbreviate(cognitiveState.toString(),30)}).")
 
+        // Context assembly
         val contextMap = mutableMapOf<String, String>()
 
         if (hkgContext != null) {
@@ -184,12 +193,12 @@ object AgentCognitivePipeline {
             Platform: 'AUF App ${Version.APP_VERSION}'
             Host LLM: '${agent.modelProvider}' / '${agent.modelName}'
             Session: '${sessionName}'
-            Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())}
+            Request Time: ${platformDeps.formatIsoTimestamp(platformDeps.getSystemTimeMillis())}
         """.trimIndent()
 
         val context = AgentTurnContext(
             agentName = agent.name,
-            systemInstructions = "",
+            resolvedResources = resolvedResources,
             gatheredContexts = contextMap
         )
 
@@ -209,6 +218,55 @@ object AgentCognitivePipeline {
             put("contents", json.encodeToJsonElement(ledgerContext))
             put("systemPrompt", systemPrompt)
         }))
+    }
+
+    /**
+     * Resolves agent.resources map (slotId → resourceId) to actual content.
+     * Validates that all required resources are present.
+     * Returns null on validation failure (error already reported).
+     */
+    private fun resolveAgentResources(
+        agent: AgentInstance,
+        loadedResources: List<AgentResource>,
+        strategy: CognitiveStrategy,
+        platformDeps: PlatformDependencies,
+        store: Store
+    ): Map<String, String>? {
+        val resolved = mutableMapOf<String, String>()
+        val missingRequired = mutableListOf<String>()
+
+        for (slot in strategy.getResourceSlots()) {
+            val resourceId = agent.resources[slot.slotId]
+
+            if (resourceId.isNullOrBlank()) {
+                if (slot.isRequired) {
+                    missingRequired.add(slot.displayName)
+                }
+                continue
+            }
+
+            val resource = loadedResources.find { it.id == resourceId }
+            if (resource == null) {
+                platformDeps.log(LogLevel.ERROR, LOG_TAG,
+                    "Agent '${agent.id}' references unknown resource '$resourceId' for slot '${slot.slotId}'.")
+                missingRequired.add("${slot.displayName} (broken reference: $resourceId)")
+                continue
+            }
+
+            resolved[slot.slotId] = resource.content
+        }
+
+        if (missingRequired.isNotEmpty()) {
+            val errorMsg = "Missing required resources: ${missingRequired.joinToString(", ")}"
+            platformDeps.log(LogLevel.ERROR, LOG_TAG, "Agent '${agent.id}': $errorMsg")
+            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.ERROR, errorMsg)
+            store.dispatch("agent", Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
+                put("message", "Agent '${agent.name}': $errorMsg")
+            }))
+            return null
+        }
+
+        return resolved
     }
 
     // [MOVED from Feature]
