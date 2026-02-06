@@ -232,6 +232,7 @@ private fun RawContentView(rawContent: String) {
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         shape = MaterialTheme.shapes.medium
     ) {
+        //TODO: change this to a monospace font
         Text(
             text = rawContent,
             style = MaterialTheme.typography.bodySmall,
