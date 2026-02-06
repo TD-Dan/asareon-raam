@@ -1,9 +1,12 @@
 package app.auf.feature.session
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -11,10 +14,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
 import app.auf.util.PlatformDependencies
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -35,6 +43,60 @@ private fun deriveOrderedSessionsForManager(
     return if (hideHidden) all.filter { !it.isHidden } else all
 }
 
+// =====================================================================
+// Drag-to-reorder state holder
+// =====================================================================
+
+private class DragReorderState(
+    private val lazyListState: androidx.compose.foundation.lazy.LazyListState,
+    private val onMove: (fromIndex: Int, toIndex: Int) -> Unit,
+    private val onDragEnd: () -> Unit
+) {
+    var draggedIndex by mutableStateOf<Int?>(null)
+        private set
+    var dragOffset by mutableStateOf(0f)
+        private set
+
+    fun onDragStart(offset: Float) {
+        val item = lazyListState.layoutInfo.visibleItemsInfo
+            .firstOrNull { offset.toInt() in it.offset..(it.offset + it.size) }
+            ?: return
+        draggedIndex = item.index
+        dragOffset = 0f
+    }
+
+    fun onDrag(change: Float) {
+        val currentIndex = draggedIndex ?: return
+        dragOffset += change
+
+        val currentItem = lazyListState.layoutInfo.visibleItemsInfo
+            .firstOrNull { it.index == currentIndex } ?: return
+        val currentCenter = currentItem.offset + currentItem.size / 2 + dragOffset.toInt()
+
+        val targetItem = lazyListState.layoutInfo.visibleItemsInfo
+            .filterNot { it.index == currentIndex }
+            .firstOrNull { currentCenter in it.offset..(it.offset + it.size) }
+
+        if (targetItem != null) {
+            onMove(currentIndex, targetItem.index)
+            draggedIndex = targetItem.index
+            // Adjust offset so the card follows the finger smoothly after the swap
+            dragOffset += (currentItem.offset - targetItem.offset)
+        }
+    }
+
+    fun onDragEnd() {
+        draggedIndex = null
+        dragOffset = 0f
+        onDragEnd.invoke()
+    }
+
+    fun onDragCancel() {
+        draggedIndex = null
+        dragOffset = 0f
+    }
+}
+
 @Composable
 fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies) {
     val appState by store.state.collectAsState()
@@ -48,6 +110,60 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
         )
     }
     val editingSessionId = sessionState?.editingSessionId
+
+    // Mutable snapshot of the list for in-flight drag reordering
+    var reorderableList by remember(sessions) { mutableStateOf(sessions) }
+
+    // Confirmation dialog state
+    var sessionToDelete by remember { mutableStateOf<Session?>(null) }
+    var sessionToClear by remember { mutableStateOf<Session?>(null) }
+
+    // --- Confirmation Dialogs ---
+
+    sessionToDelete?.let { session ->
+        AlertDialog(
+            onDismissRequest = { sessionToDelete = null },
+            title = { Text("Delete Session?") },
+            text = { Text("Are you sure you want to permanently delete '${session.name}'? This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        store.dispatch("session.ui", Action(ActionNames.SESSION_DELETE, buildJsonObject { put("session", session.id) }))
+                        sessionToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = { Button(onClick = { sessionToDelete = null }) { Text("Cancel") } }
+        )
+    }
+
+    sessionToClear?.let { session ->
+        val lockedCount = session.ledger.count { it.isLocked }
+        val unlocked = session.ledger.size - lockedCount
+        val detail = if (lockedCount > 0) {
+            "$unlocked unlocked message(s) will be removed. $lockedCount locked message(s) will be preserved."
+        } else {
+            "All ${session.ledger.size} message(s) will be removed."
+        }
+        AlertDialog(
+            onDismissRequest = { sessionToClear = null },
+            title = { Text("Clear Session?") },
+            text = { Text("Clear '${session.name}'? $detail") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        store.dispatch("session.ui", Action(ActionNames.SESSION_CLEAR, buildJsonObject { put("session", session.id) }))
+                        sessionToClear = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Clear") }
+            },
+            dismissButton = { Button(onClick = { sessionToClear = null }) { Text("Cancel") } }
+        )
+    }
+
+    // --- Layout ---
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         // --- Header ---
@@ -75,27 +191,90 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
         HorizontalDivider()
 
         // --- Session List ---
-        if (sessions.isEmpty()) {
+        if (reorderableList.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("No sessions found. Create one to begin.")
             }
         } else {
+            val lazyListState = rememberLazyListState()
+            val coroutineScope = rememberCoroutineScope()
+
+            val dragState = remember(reorderableList) {
+                DragReorderState(
+                    lazyListState = lazyListState,
+                    onMove = { from, to ->
+                        reorderableList = reorderableList.toMutableList().apply {
+                            add(to, removeAt(from))
+                        }
+                    },
+                    onDragEnd = {
+                        // Commit the final ordering to the store
+                        reorderableList.forEachIndexed { index, session ->
+                            store.dispatch("session.ui", Action(ActionNames.SESSION_REORDER, buildJsonObject {
+                                put("sessionId", session.id); put("toIndex", index)
+                            }))
+                        }
+                    }
+                )
+            }
+
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                state = lazyListState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(reorderableList) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { offset ->
+                                dragState.onDragStart(offset.y + lazyListState.firstVisibleItemScrollOffset)
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                dragState.onDrag(dragAmount.y)
+
+                                // Auto-scroll when near edges
+                                val viewportHeight = lazyListState.layoutInfo.viewportSize.height
+                                val dragY = change.position.y
+                                coroutineScope.launch {
+                                    when {
+                                        dragY < viewportHeight * 0.1f -> lazyListState.scrollToItem(
+                                            (lazyListState.firstVisibleItemIndex - 1).coerceAtLeast(0)
+                                        )
+                                        dragY > viewportHeight * 0.9f -> lazyListState.scrollToItem(
+                                            lazyListState.firstVisibleItemIndex + 1
+                                        )
+                                    }
+                                }
+                            },
+                            onDragEnd = { dragState.onDragEnd() },
+                            onDragCancel = { dragState.onDragCancel() }
+                        )
+                    },
                 contentPadding = PaddingValues(vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                itemsIndexed(sessions, key = { _, session -> session.id }) { index, session ->
-                    if (session.id == editingSessionId) {
-                        SessionManagerCardEditor(session, store)
-                    } else {
-                        SessionManagerCard(
-                            session = session,
-                            store = store,
-                            index = index,
-                            totalCount = sessions.size,
-                            platformDependencies = platformDependencies
-                        )
+                itemsIndexed(reorderableList, key = { _, session -> session.id }) { index, session ->
+                    val isDragging = dragState.draggedIndex == index
+                    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
+
+                    Box(
+                        modifier = Modifier
+                            .zIndex(if (isDragging) 1f else 0f)
+                            .graphicsLayer {
+                                translationY = if (isDragging) dragState.dragOffset else 0f
+                            }
+                            .shadow(elevation, shape = MaterialTheme.shapes.medium)
+                    ) {
+                        if (session.id == editingSessionId) {
+                            SessionManagerCardEditor(session, store)
+                        } else {
+                            SessionManagerCard(
+                                session = session,
+                                store = store,
+                                platformDependencies = platformDependencies,
+                                onDeleteRequest = { sessionToDelete = it },
+                                onClearRequest = { sessionToClear = it }
+                            )
+                        }
                     }
                 }
             }
@@ -107,12 +286,13 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
 private fun SessionManagerCard(
     session: Session,
     store: Store,
-    index: Int,
-    totalCount: Int,
-    platformDependencies: PlatformDependencies
+    platformDependencies: PlatformDependencies,
+    onDeleteRequest: (Session) -> Unit,
+    onClearRequest: (Session) -> Unit
 ) {
     // Dim hidden sessions
     val cardAlpha = if (session.isHidden) 0.6f else 1f
+    var menuExpanded by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth().alpha(cardAlpha),
@@ -122,40 +302,19 @@ private fun SessionManagerCard(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Reorder buttons (drag handle substitute)
-            Column(
-                modifier = Modifier.padding(end = 4.dp),
-                verticalArrangement = Arrangement.Center
-            ) {
-                IconButton(
-                    onClick = {
-                        store.dispatch("session.ui", Action(ActionNames.SESSION_REORDER, buildJsonObject {
-                            put("sessionId", session.id); put("toIndex", index - 1)
-                        }))
-                    },
-                    modifier = Modifier.size(24.dp),
-                    enabled = index > 0
-                ) {
-                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move Up", modifier = Modifier.size(18.dp))
-                }
-                IconButton(
-                    onClick = {
-                        store.dispatch("session.ui", Action(ActionNames.SESSION_REORDER, buildJsonObject {
-                            put("sessionId", session.id); put("toIndex", index + 1)
-                        }))
-                    },
-                    modifier = Modifier.size(24.dp),
-                    enabled = index < totalCount - 1
-                ) {
-                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move Down", modifier = Modifier.size(18.dp))
-                }
-            }
+            // Drag handle
+            Icon(
+                imageVector = Icons.Default.DragHandle,
+                contentDescription = "Long-press to reorder",
+                modifier = Modifier.padding(end = 8.dp).size(24.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-            // Lightning bolt icon for hidden (agent/p-cognition) sessions
-            if (session.isHidden) {
+            // Lightning bolt icon for agent-private (p-cognition) sessions
+            if (session.isAgentPrivate) {
                 Icon(
                     imageVector = Icons.Default.FlashOn,
-                    contentDescription = "Hidden Session",
+                    contentDescription = "Agent Private Session",
                     modifier = Modifier.size(20.dp).padding(end = 4.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -189,24 +348,48 @@ private fun SessionManagerCard(
             }) {
                 Icon(Icons.Default.Edit, contentDescription = "Edit Session Name")
             }
-            // Clone Button
-            IconButton(onClick = {
-                store.dispatch("session.ui", Action(ActionNames.SESSION_CLONE, buildJsonObject { put("session", session.id) }))
-            }) {
-                Icon(Icons.Default.ContentCopy, contentDescription = "Clone Session")
-            }
-            // Clear Button
-            IconButton(onClick = {
-                store.dispatch("session.ui", Action(ActionNames.SESSION_CLEAR, buildJsonObject { put("session", session.id) }))
-            }) {
-                Icon(Icons.Default.ClearAll, contentDescription = "Clear Session (preserves locked messages)")
-            }
-            // Delete Button
-            IconButton(onClick = {
-                val payload = buildJsonObject { put("session", session.id) }
-                store.dispatch("session.ui", Action(ActionNames.SESSION_DELETE, payload))
-            }) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete Session")
+            // Kebab Menu — Clone, Clear, Delete
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Clone") },
+                        onClick = {
+                            store.dispatch("session.ui", Action(ActionNames.SESSION_CLONE, buildJsonObject { put("session", session.id) }))
+                            menuExpanded = false
+                        },
+                        leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Clear") },
+                        onClick = {
+                            onClearRequest(session)
+                            menuExpanded = false
+                        },
+                        leadingIcon = { Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    DropdownMenuItem(
+                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            onDeleteRequest(session)
+                            menuExpanded = false
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    )
+                }
             }
         }
     }

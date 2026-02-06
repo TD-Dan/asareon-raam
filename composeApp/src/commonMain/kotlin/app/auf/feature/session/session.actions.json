@@ -15,6 +15,10 @@
           "isHidden":{
             "type":"boolean",
             "description":"If true, the session is created in a hidden state (e.g., for agent p-cognition). Defaults to false."
+          },
+          "isAgentPrivate":{
+            "type":"boolean",
+            "description":"If true, the session is marked as an agent's private cognition session. Defaults to false."
           }
         }
       }

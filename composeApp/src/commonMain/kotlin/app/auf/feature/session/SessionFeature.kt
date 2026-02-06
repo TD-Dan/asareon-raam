@@ -22,7 +22,7 @@ class SessionFeature(
     override val name: String = "session"
 
     // --- Private, serializable data classes for decoding action payloads safely. ---
-    @Serializable private data class CreatePayload(val name: String? = null, val isHidden: Boolean = false)
+    @Serializable private data class CreatePayload(val name: String? = null, val isHidden: Boolean = false, val isAgentPrivate: Boolean = false)
     @Serializable private data class ClonePayload(val session: String)
     @Serializable private data class UpdateConfigPayload(val session: String, val name: String)
     @Serializable private data class SessionTargetPayload(val session: String)
@@ -335,7 +335,8 @@ class SessionFeature(
                     name = findUniqueName(desiredName, currentFeatureState),
                     ledger = emptyList(),
                     createdAt = platformDependencies.getSystemTimeMillis(),
-                    isHidden = decoded.isHidden
+                    isHidden = decoded.isHidden,
+                    isAgentPrivate = decoded.isAgentPrivate
                 )
                 currentFeatureState.copy(
                     sessions = currentFeatureState.sessions + (newSession.id to newSession),
@@ -351,7 +352,8 @@ class SessionFeature(
                     id = platformDependencies.generateUUID(),
                     name = newName,
                     createdAt = platformDependencies.getSystemTimeMillis(),
-                    isHidden = false // Clones are always non-hidden
+                    isHidden = false, // Clones are always non-hidden
+                    isAgentPrivate = false // Clones are always non-private
                 )
                 currentFeatureState.copy(
                     sessions = currentFeatureState.sessions + (newSession.id to newSession),

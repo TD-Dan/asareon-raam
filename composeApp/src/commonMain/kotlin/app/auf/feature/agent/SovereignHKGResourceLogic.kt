@@ -77,7 +77,11 @@ object SovereignHKGResourceLogic {
             } else {
                 // NOT FOUND: Create it.
                 // This will trigger SESSION_NAMES_UPDATED later, which will hit case A.
-                store.deferredDispatch("agent", Action(ActionNames.SESSION_CREATE, buildJsonObject { put("name", expectedSessionName) }))
+                store.deferredDispatch("agent", Action(ActionNames.SESSION_CREATE, buildJsonObject {
+                    put("name", expectedSessionName)
+                    put("isHidden", true)
+                    put("isAgentPrivate", true)
+                }))
             }
         }
     }

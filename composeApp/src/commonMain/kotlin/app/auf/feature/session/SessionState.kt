@@ -59,7 +59,9 @@ data class Session(
     /** A map of message IDs to their persistent UI state. */
     val messageUiState: Map<String, MessageUiState> = emptyMap(),
     /** When true, this session is hidden from the default view in both the tab bar and manager. */
-    val isHidden: Boolean = false
+    val isHidden: Boolean = false,
+    /** When true, this session is an agent's private cognition session (shown with a lightning bolt icon). */
+    val isAgentPrivate: Boolean = false
 )
 
 /**
