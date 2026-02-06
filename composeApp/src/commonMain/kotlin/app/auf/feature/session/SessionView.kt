@@ -79,7 +79,7 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
                 Icon(
                     imageVector = if (hideHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                     contentDescription = if (hideHidden) "Show Hidden Sessions" else "Hide Hidden Sessions",
-                    tint = if (hideHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = if (hideHidden) MaterialTheme.colorScheme.inverseOnSurface else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             IconButton(onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_CREATE)) }) {
