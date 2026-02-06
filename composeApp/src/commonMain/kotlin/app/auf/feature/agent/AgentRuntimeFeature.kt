@@ -334,7 +334,7 @@ class AgentRuntimeFeature(
             subpath.startsWith("resources/") -> {
                 try {
                     val resource = json.decodeFromString<AgentResource>(content)
-                    // Ensure the in-memory resource has the normalized path
+                    // Ensure the in-memory resource has a normalized path
                     val resWithPath = resource.copy(path = subpath)
                     store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_RESOURCE_LOADED, json.encodeToJsonElement(resWithPath) as JsonObject))
                 } catch (e: Exception) {
@@ -365,7 +365,7 @@ class AgentRuntimeFeature(
     override val composableProvider: ComposableProvider = object : ComposableProvider {
         override val stageViews: Map<String, @Composable (Store, List<Feature>) -> Unit> =
             mapOf(
-                "feature.agent.manager" to { store, _, -> AgentManagerView(store, platformDependencies) },
+                "feature.agent.manager" to { store, _ -> AgentManagerView(store, platformDependencies) },
                 "feature.agent.context_viewer" to { store, _ -> AgentContextView(store) }
             )
         @Composable

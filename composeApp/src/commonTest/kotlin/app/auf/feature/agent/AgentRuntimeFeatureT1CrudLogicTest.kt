@@ -3,7 +3,6 @@ package app.auf.feature.agent
 import app.auf.core.Action
 import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject

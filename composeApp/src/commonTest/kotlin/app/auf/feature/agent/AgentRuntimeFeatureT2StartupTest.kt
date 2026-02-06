@@ -9,12 +9,11 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /**
  * ## Mandate
  * T2 Integration Test verifying the startup sequence of the AgentRuntimeFeature.
- * Specifically targets the loading of Agents and Shared Resources (Constitutions) from disk.
+ * Specifically, targets the loading of Agents and Shared Resources (Constitutions) from disk.
  */
 class AgentRuntimeFeatureT2StartupTest {
 
@@ -37,7 +36,7 @@ class AgentRuntimeFeatureT2StartupTest {
             .withFeature(AgentRuntimeFeature(app.auf.fakes.FakePlatformDependencies("1.0"), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
 
-        // Access the harness to inject files BEFORE build (if supported) or use platform directly
+        // Access the harness to inject files BEFORE build (if supported) or use the platform directly
         // Since we build first, we use the harness platform.
         val harness = environment.build()
 
