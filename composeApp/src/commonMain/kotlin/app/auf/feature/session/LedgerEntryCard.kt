@@ -37,7 +37,6 @@ fun LedgerEntryCard(
     }
     var showMenu by remember { mutableStateOf(false) }
 
-    // THE FIX: Simplified and robust coloring logic
     val cardColors = if (isCurrentUserMessage) {
         CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     } else {
@@ -71,7 +70,7 @@ fun LedgerEntryCard(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.secondary
                     )
-                    // ADDITION: Display the formatted timestamp
+                    // Display the formatted timestamp
                     Text(
                         text = platformDependencies.formatDisplayTimestamp(entry.timestamp),
                         style = MaterialTheme.typography.labelSmall,
@@ -236,7 +235,6 @@ private fun RawContentView(rawContent: String) {
         Text(
             text = rawContent,
             style = MaterialTheme.typography.bodySmall,
-            fontStyle = FontStyle.Italic,
             modifier = Modifier.padding(8.dp)
         )
     }
