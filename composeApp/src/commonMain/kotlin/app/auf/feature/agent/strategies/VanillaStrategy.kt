@@ -34,13 +34,17 @@ object VanillaStrategy : CognitiveStrategy {
         val instructions = context.resolvedResources[SLOT_SYSTEM_INSTRUCTION] ?: ""
 
         return buildString {
+            appendLine("\n\n--- YOUR IDENTITY AND ROLE ---\n\n")
             appendLine("You are ${context.agentName}.")
+            appendLine("You are a participant in a multi-user, multi-session agent environment named AUF-App.")
+
             if (instructions.isNotBlank()) {
+                appendLine("\n\n--- SYSTEM INSTRUCTIONS ---\n\n")
                 appendLine(instructions)
             }
 
             if (context.gatheredContexts.isNotEmpty()) {
-                appendLine("\n--- CONTEXT ---")
+                appendLine("\n\n--- CONTEXT ---\n\n")
                 context.gatheredContexts.forEach { (source, content) ->
                     appendLine("[$source]: $content")
                 }

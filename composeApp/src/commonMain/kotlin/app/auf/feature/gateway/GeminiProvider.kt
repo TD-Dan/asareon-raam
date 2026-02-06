@@ -70,13 +70,10 @@ class GeminiProvider(
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         val apiContents = buildJsonArray {
             request.contents.forEach { message ->
-                // Use the high-clarity, timestamp-aware format.
-                val formattedTimestamp = platformDependencies.formatIsoTimestamp(message.timestamp)
-                val enrichedContent = "${message.senderName} (${message.senderId}) @ ${formattedTimestamp}: ${message.content}"
                 add(buildJsonObject {
                     put("role", message.role)
                     put("parts", buildJsonArray {
-                        add(buildJsonObject { put("text", enrichedContent) })
+                        add(buildJsonObject { put("text", message.content) })
                     })
                 })
             }

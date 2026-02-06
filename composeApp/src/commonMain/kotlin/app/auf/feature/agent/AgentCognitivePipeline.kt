@@ -169,7 +169,7 @@ object AgentCognitivePipeline {
         val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
         val cognitiveState = if (agent.cognitiveState !is JsonNull) agent.cognitiveState else strategy.getInitialState()
 
-        platformDependencies.log(LogLevel.INFO, LOG_TAG,
+        platformDependencies.log(LogLevel.DEBUG, LOG_TAG,
             "Assembling prompt for '${agent.id}' using strategy '${strategy.id}' (State: ${abbreviate(cognitiveState.toString(),30)}).")
 
         // === RESOURCE RESOLUTION ===
@@ -189,11 +189,52 @@ object AgentCognitivePipeline {
 
         val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.sessionNames[it] } ?: "Unknown Session"
         contextMap["SESSION_METADATA"] = """
-            Platform: 'AUF App ${Version.APP_VERSION}'
-            Host LLM: '${agent.modelProvider}' / '${agent.modelName}'
-            Session: '${sessionName}'
+            This data is provided for you to reason about your running environment and is updated on the moment of latest request to you.
+            
+            You are running on platform: 'AUF App ${Version.APP_VERSION} (Windows), a multi-agent, multi-session agent/chat platform.'
+            Your Host LLM (API connection): '${agent.modelProvider}' / '${agent.modelName}'
+            You are currently participating in a multi-party chat session: '${sessionName}'
+            Your chat id is: '${agent.id}
             Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())}
         """.trimIndent()
+
+        // ============================================================
+        // Format messages with sender context for multi-agent clarity
+        // ============================================================
+        val formattedMessages = ledgerContext.map { msg ->
+            val formattedTimestamp = platformDependencies.formatIsoTimestamp(msg.timestamp)
+            val formattedContent = "${msg.senderName} (${msg.senderId}) @ $formattedTimestamp: ${msg.content}"
+            msg.copy(content = formattedContent)
+        }
+
+        // ============================================================
+        // Build multi-agent context for system prompt
+        // ============================================================
+        val participants = ledgerContext
+            .map { it.senderId to it.senderName }
+            .distinct()
+
+        if (participants.size > 2) {
+            val multiAgentContext = buildString {
+                appendLine("\n--- MULTI-AGENT ENVIRONMENT ---")
+                appendLine("This is a multi-agent conversation with the following participants:")
+                participants.forEach { (id, name) ->
+                    val type = when {
+                        id == agent.id -> "YOU (this agent)"
+                        agentState.agents.containsKey(id) -> "AI Agent"
+                        agentState.userIdentities.any { it.id == id } -> "Human User"
+                        else -> "User/System"
+                    }
+                    appendLine("- $name ($id): $type")
+                }
+                appendLine()
+                appendLine("IMPORTANT: Each message in the conversation is prefixed with 'SenderName (senderId) @ timestamp:'")
+                appendLine("This helps you understand who said what and when.")
+                appendLine("When YOU respond, do NOT include this prefix. Just write your response naturally.")
+                appendLine("The system will automatically add your name and timestamp to your messages.")
+            }
+            contextMap["MULTI_AGENT_CONTEXT"] = multiAgentContext
+        }
 
         val context = AgentTurnContext(
             agentName = agent.name,
@@ -214,7 +255,7 @@ object AgentCognitivePipeline {
             put("providerId", agent.modelProvider)
             put("modelName", agent.modelName)
             put("correlationId", agent.id)
-            put("contents", json.encodeToJsonElement(ledgerContext))
+            put("contents", json.encodeToJsonElement(formattedMessages))  // CHANGED: Use formatted messages
             put("systemPrompt", systemPrompt)
         }))
     }
@@ -319,7 +360,7 @@ object AgentCognitivePipeline {
             return
         }
 
-        // 3. Proceed to Post
+        // 4. Run system sentinels
         var contentToPost = rawContent
         val match = redundantHeaderRegex.find(contentToPost)
         if (match != null) {
@@ -327,10 +368,11 @@ object AgentCognitivePipeline {
             store.deferredDispatch("agent", Action(ActionNames.SESSION_POST, buildJsonObject {
                 put("session", targetSessionId)
                 put("senderId", "system")
-                put("message", """SYSTEM SENTINEL (llm-output-sanitizer): Warning for [${agent.name}]: Please do not include the standard system "name (id) @timestamp:" part in your output.""")
+                put("message", """SYSTEM SENTINEL (llm-output-sanitizer): Warning for [${agent.name}]: Please do not include the standard system "name (id) @timestamp:" part in your output. The host system adds this automatically.""")
             }))
         }
 
+        // 4. Proceed to Post
         store.deferredDispatch("agent", Action(ActionNames.SESSION_POST, buildJsonObject {
             put("session", targetSessionId); put("senderId", agent.id); put("message", contentToPost)
         }))

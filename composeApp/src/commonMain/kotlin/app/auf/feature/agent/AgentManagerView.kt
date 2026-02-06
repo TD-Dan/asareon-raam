@@ -320,37 +320,36 @@ private fun AgentEditorView(
             }
         }
 
-        // --- ROW 5: Resource Slots ---
-        if (isVanilla) {
+        // --- ROW 5: Resource Slots (Strategy-Driven) ---
+        // The Strategy is the single source of truth for slot IDs and layout.
+        val currentStrategy = remember(draftAgent.cognitiveStrategyId) {
+            CognitiveStrategyRegistry.get(draftAgent.cognitiveStrategyId)
+        }
+        val resourceSlots = remember(currentStrategy) { currentStrategy.getResourceSlots() }
+
+        if (resourceSlots.size == 1) {
+            val slot = resourceSlots.first()
             ResourceSlotSelector(
-                label = "System Instruction",
-                slotKey = AgentResourceType.SYSTEM_INSTRUCTION.name,
-                resourceType = AgentResourceType.SYSTEM_INSTRUCTION,
+                label = slot.displayName,
+                slotKey = slot.slotId,
+                resourceType = slot.type,
                 agentState = agentState,
                 agent = draftAgent,
                 onUpdate = onDraftChanged
             )
-        } else {
+        } else if (resourceSlots.isNotEmpty()) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.weight(1f)) {
-                    ResourceSlotSelector(
-                        label = "Constitution",
-                        slotKey = AgentResourceType.CONSTITUTION.name,
-                        resourceType = AgentResourceType.CONSTITUTION,
-                        agentState = agentState,
-                        agent = draftAgent,
-                        onUpdate = onDraftChanged
-                    )
-                }
-                Box(Modifier.weight(1f)) {
-                    ResourceSlotSelector(
-                        label = "Bootloader",
-                        slotKey = AgentResourceType.BOOTLOADER.name,
-                        resourceType = AgentResourceType.BOOTLOADER,
-                        agentState = agentState,
-                        agent = draftAgent,
-                        onUpdate = onDraftChanged
-                    )
+                resourceSlots.forEach { slot ->
+                    Box(Modifier.weight(1f)) {
+                        ResourceSlotSelector(
+                            label = slot.displayName,
+                            slotKey = slot.slotId,
+                            resourceType = slot.type,
+                            agentState = agentState,
+                            agent = draftAgent,
+                            onUpdate = onDraftChanged
+                        )
+                    }
                 }
             }
         }

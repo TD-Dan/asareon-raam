@@ -67,14 +67,9 @@ class OpenAIProvider(
                 })
             }
             request.contents.forEach { message ->
-                // Use the high-clarity, timestamp-aware format for both content and name.
-                val formattedTimestamp = platformDependencies.formatIsoTimestamp(message.timestamp)
-                val enrichedContent = "${message.senderName} (${message.senderId}) @ ${formattedTimestamp}: ${message.content}"
-                val sanitizedName = "${message.senderName}_${message.senderId}".replace(Regex("[^a-zA-Z0-9_-]"), "_").take(64)
                 add(buildJsonObject {
                     put("role", if (message.role == "model") "assistant" else message.role)
-                    put("content", enrichedContent)
-                    put("name", sanitizedName)
+                    put("content", message.content)
                 })
             }
         }

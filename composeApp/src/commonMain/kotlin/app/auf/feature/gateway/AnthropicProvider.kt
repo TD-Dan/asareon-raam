@@ -92,13 +92,10 @@ class AnthropicProvider(
         // We'll convert the universal format to this structure
         val anthropicMessages = buildJsonArray {
             request.contents.forEach { message ->
-                val formattedTimestamp = platformDependencies.formatIsoTimestamp(message.timestamp)
-                val enrichedContent = "${message.senderName} (${message.senderId}) @ ${formattedTimestamp}: ${message.content}"
-
                 add(buildJsonObject {
                     // Map roles: "model" -> "assistant", everything else -> "user"
                     put("role", if (message.role == "model") "assistant" else "user")
-                    put("content", enrichedContent)
+                    put("content", message.content)
                 })
             }
         }
