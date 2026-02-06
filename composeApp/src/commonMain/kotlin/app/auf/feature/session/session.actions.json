@@ -258,7 +258,11 @@
         "type":"object",
         "properties":{
           "sessionId":{ "type":"string" },
-          "entry":{ "type":"object", "description":"The full LedgerEntry object that was added." }
+          "entry":{
+            "type":"object",
+            "description":"The full LedgerEntry object that was added.",
+            "$ref":"#/definitions/LedgerEntry"
+          }
         },
         "required":[ "sessionId", "entry" ]
       }
@@ -355,5 +359,84 @@
         "required": ["correlationId", "messages"]
       }
     }
-  ]
+  ],
+  "definitions": {
+    "LedgerEntry": {
+      "type": "object",
+      "description": "Represents a single, immutable entry in a session's ledger.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for this entry."
+        },
+        "timestamp": {
+          "type": "integer",
+          "description": "Unix epoch milliseconds when the entry was created."
+        },
+        "senderId": {
+          "type": "string",
+          "description": "The identifier of the originator (e.g., 'user', an agent ID, 'commandbot', 'system')."
+        },
+        "rawContent": {
+          "type": ["string", "null"],
+          "description": "The original, unmodified string content of the message. Null for UI-only entries."
+        },
+        "content": {
+          "type": "array",
+          "description": "The structured, pre-parsed representation of rawContent as a list of ContentBlock objects.",
+          "items": { "$ref": "#/definitions/ContentBlock" }
+        },
+        "metadata": {
+          "type": ["object", "null"],
+          "description": "A generic metadata object for UI hints or embedding components from other features."
+        }
+      },
+      "required": ["id", "timestamp", "senderId"]
+    },
+    "ContentBlock": {
+      "type": "object",
+      "description": "A single block of structured content within a message. This is a sealed/discriminated union using the 'type' field.",
+      "discriminator": "type",
+      "oneOf": [
+        { "$ref": "#/definitions/ContentBlock.Text" },
+        { "$ref": "#/definitions/ContentBlock.CodeBlock" }
+      ]
+    },
+    "ContentBlock.Text": {
+      "type": "object",
+      "description": "A block of plain or markdown text.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "app.auf.feature.session.ContentBlock.Text",
+          "description": "Discriminator value for kotlinx.serialization sealed interface."
+        },
+        "text": {
+          "type": "string",
+          "description": "The text content."
+        }
+      },
+      "required": ["type", "text"]
+    },
+    "ContentBlock.CodeBlock": {
+      "type": "object",
+      "description": "A fenced code block with a language tag. CommandBot watches for code blocks whose language starts with 'auf_' and dispatches the body as an action payload.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "app.auf.feature.session.ContentBlock.CodeBlock",
+          "description": "Discriminator value for kotlinx.serialization sealed interface."
+        },
+        "language": {
+          "type": "string",
+          "description": "The language tag from the fenced code block (e.g., 'kotlin', 'auf_filesystem.SYSTEM_WRITE')."
+        },
+        "code": {
+          "type": "string",
+          "description": "The content of the code block."
+        }
+      },
+      "required": ["type", "language", "code"]
+    }
+  }
 }

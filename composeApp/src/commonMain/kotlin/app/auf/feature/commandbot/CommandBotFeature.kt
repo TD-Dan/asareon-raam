@@ -3,17 +3,14 @@ package app.auf.feature.commandbot
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
 import app.auf.core.generated.ExposedActions
-import app.auf.feature.session.BlockSeparatingParser
-import app.auf.feature.session.ContentBlock
-import app.auf.feature.session.LedgerEntry
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -33,6 +30,11 @@ import kotlinx.serialization.json.put
  * - **CAG-005 (Agent Workspace Sandboxing)**: Agent file operations have their `subpath`
  *   prefixed with `{agentId}/workspace/` and are dispatched with originator `"agent"`,
  *   confining all I/O to the agent's private workspace directory.
+ *
+ * ## Decoupling
+ * This feature does NOT import any types from the session package. It reads the
+ * `session.publish.MESSAGE_POSTED` payload via raw JSON traversal, treating
+ * the published schema as a contract boundary.
  */
 class CommandBotFeature(
     private val platformDependencies: PlatformDependencies
@@ -40,12 +42,6 @@ class CommandBotFeature(
     override val name: String = "commandbot"
     override val composableProvider: Feature.ComposableProvider? = null
 
-    // --- Private, serializable data classes for decoding action payloads safely. ---
-    @Serializable
-    private data class MessagePostedPayload(val sessionId: String, val entry: LedgerEntry)
-
-    // --- Utilities ---
-    private val blockParser = BlockSeparatingParser()
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
 
     /**
@@ -74,48 +70,50 @@ class CommandBotFeature(
 
             // --- Core Command Processing ---
             ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> {
-                val payload = action.payload?.let {
-                    try {
-                        json.decodeFromJsonElement<MessagePostedPayload>(it)
-                    } catch (e: Exception) {
-                        platformDependencies.log(LogLevel.ERROR, name, "Failed to decode MessagePostedPayload", e)
-                        null
-                    }
-                } ?: return
-
-                val entry = payload.entry
+                val payload = action.payload ?: return
+                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: return
+                val entry = payload["entry"]?.jsonObject ?: return
+                val senderId = entry["senderId"]?.jsonPrimitive?.contentOrNull ?: return
 
                 // Guardrail (CAG-001): Self-Reaction Prevention.
-                if (entry.senderId == this.name) {
-                    return
-                }
+                if (senderId == this.name) return
 
-                // Find and process all command blocks in the message.
-                entry.rawContent?.let { content ->
-                    blockParser.parse(content)
-                        .filterIsInstance<ContentBlock.CodeBlock>()
-                        .filter { it.language.startsWith("auf_") }
-                        .forEach { commandBlock ->
-                            processCommandBlock(commandBlock, payload.sessionId, entry.senderId, store)
-                        }
+                // Read pre-parsed content blocks directly from the JSON payload.
+                // Session already parses rawContent into structured ContentBlock objects.
+                // We traverse the serialized form without importing Session types.
+                val contentBlocks = entry["content"]?.jsonArray ?: return
+
+                contentBlocks.forEach { blockElement ->
+                    val block = blockElement.jsonObject
+                    // ContentBlock is a sealed interface — the serialized form has a "type" discriminator.
+                    // We only care about CodeBlock entries whose language starts with "auf_".
+                    val type = block["type"]?.jsonPrimitive?.contentOrNull ?: return@forEach
+                    if (!type.contains("CodeBlock")) return@forEach
+
+                    val language = block["language"]?.jsonPrimitive?.contentOrNull ?: return@forEach
+                    if (!language.startsWith("auf_")) return@forEach
+
+                    val code = block["code"]?.jsonPrimitive?.contentOrNull ?: ""
+
+                    processCommandBlock(language, code, sessionId, senderId, store)
                 }
             }
         }
     }
 
     private fun processCommandBlock(
-        block: ContentBlock.CodeBlock,
+        language: String,
+        code: String,
         sessionId: String,
         originalSenderId: String,
         store: Store
     ) {
-        val actionName = block.language.removePrefix("auf_")
-        val payloadString = block.code
+        val actionName = language.removePrefix("auf_")
         val isAgent = knownAgentIds.contains(originalSenderId)
 
         try {
-            val payloadJson = if (payloadString.isNotBlank()) {
-                json.parseToJsonElement(payloadString) as JsonObject
+            val payloadJson = if (code.isNotBlank()) {
+                json.parseToJsonElement(code) as JsonObject
             } else {
                 buildJsonObject {}
             }
@@ -192,7 +190,7 @@ class CommandBotFeature(
         val mutablePayload = payload.toMutableMap()
 
         // Prefix the subpath
-        val originalSubpath = payload["subpath"]?.jsonPrimitive?.content ?: ""
+        val originalSubpath = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
         val prefix = rule.subpathPrefixTemplate.replace("{agentId}", agentId)
         val sandboxedSubpath = if (originalSubpath.isNotBlank()) "$prefix/$originalSubpath" else prefix
         mutablePayload["subpath"] = JsonPrimitive(sandboxedSubpath)
