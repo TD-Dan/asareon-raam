@@ -36,16 +36,24 @@ object VanillaStrategy : CognitiveStrategy {
         return buildString {
             appendLine("\n\n--- YOUR IDENTITY AND ROLE ---\n\n")
             appendLine("You are ${context.agentName}.")
-            appendLine("You are a participant in a multi-user, multi-session agent environment named AUF-App.")
+            appendLine("You are a participant in a multi-user, multi-session agent environment.")
+            appendLine("Maintain your own boundaries and role, do not respond on behalf of other participants.")
 
             if (instructions.isNotBlank()) {
-                appendLine("\n\n--- SYSTEM INSTRUCTIONS ---\n\n")
+                appendLine("\n--- SYSTEM INSTRUCTIONS ---\n")
                 appendLine(instructions)
             }
 
-            if (context.gatheredContexts.isNotEmpty()) {
-                appendLine("\n\n--- CONTEXT ---\n\n")
-                context.gatheredContexts.forEach { (source, content) ->
+            // Add multi-agent context if present (includes participant list and message format explanation)
+            context.gatheredContexts["MULTI_AGENT_CONTEXT"]?.let {
+                appendLine(it)
+            }
+
+            // Add other contexts (but not MULTI_AGENT_CONTEXT again)
+            val otherContexts = context.gatheredContexts.filterKeys { it != "MULTI_AGENT_CONTEXT" }
+            if (otherContexts.isNotEmpty()) {
+                appendLine("\n--- CONTEXT ---")
+                otherContexts.forEach { (source, content) ->
                     appendLine("[$source]: $content")
                 }
             }
