@@ -13,7 +13,7 @@ import kotlinx.serialization.json.*
  * To orchestrate the "Think" phase of the Agent's lifecycle.
  * It is the canonical handler for:
  * 1. Gathering Context (Ledger + HKG)
- * 2. Formulating the Prompt (via Strategy + Resolved Resources)
+ * 2. Formulating the Prompt (via Strategy)
  * 3. Processing the Response (via Strategy)
  */
 object AgentCognitivePipeline {
@@ -164,22 +164,21 @@ object AgentCognitivePipeline {
         store: Store
     ) {
         val statusInfo = agentState.agentStatuses[agent.id] ?: AgentStatusInfo()
-        val platformDeps = store.platformDependencies
+        val platformDependencies = store.platformDependencies
 
         val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
         val cognitiveState = if (agent.cognitiveState !is JsonNull) agent.cognitiveState else strategy.getInitialState()
 
+        platformDependencies.log(LogLevel.INFO, LOG_TAG,
+            "Assembling prompt for '${agent.id}' using strategy '${strategy.id}' (State: ${abbreviate(cognitiveState.toString(),30)}).")
+
         // === RESOURCE RESOLUTION ===
-        val resolvedResources = resolveAgentResources(agent, agentState.resources, strategy, platformDeps, store)
+        val resolvedResources = resolveAgentResources(agent, agentState.resources, strategy, platformDependencies, store)
         if (resolvedResources == null) {
             // Error already logged and status updated
             return
         }
 
-        platformDeps.log(LogLevel.INFO, LOG_TAG,
-            "Assembling prompt for '${agent.id}' using strategy '${strategy.id}' (State: ${abbreviate(cognitiveState.toString(),30)}).")
-
-        // Context assembly
         val contextMap = mutableMapOf<String, String>()
 
         if (hkgContext != null) {
@@ -193,7 +192,7 @@ object AgentCognitivePipeline {
             Platform: 'AUF App ${Version.APP_VERSION}'
             Host LLM: '${agent.modelProvider}' / '${agent.modelName}'
             Session: '${sessionName}'
-            Request Time: ${platformDeps.formatIsoTimestamp(platformDeps.getSystemTimeMillis())}
+            Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())}
         """.trimIndent()
 
         val context = AgentTurnContext(
@@ -307,7 +306,7 @@ object AgentCognitivePipeline {
 
         // 1. Handle State Updates
         if (result.newState != cognitiveState) {
-            store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_UPDATE_COGNITIVE_STATE, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_NVRAM_LOADED, buildJsonObject {
                 put("agentId", agentId)
                 put("state", result.newState)
             }))

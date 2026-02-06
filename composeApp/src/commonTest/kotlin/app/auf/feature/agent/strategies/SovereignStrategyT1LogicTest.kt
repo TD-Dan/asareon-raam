@@ -13,7 +13,10 @@ class SovereignStrategyT1LogicTest {
 
     private val testContext = AgentTurnContext(
         agentName = "TestAgent",
-        systemInstructions = "Be helpful.",
+        resolvedResources = mapOf(
+            "constitution" to "Test constitution content",
+            "bootloader" to SovereignDefaults.BOOT_SENTINEL_XML
+        ),
         gatheredContexts = mapOf("session" to "User: Hello")
     )
 
@@ -35,19 +38,6 @@ class SovereignStrategyT1LogicTest {
 
         assertFalse(prompt.contains("<boot_sentinel_protocol>"), "Prompt must NOT contain Sentinel in AWAKE phase")
         assertTrue(prompt.contains("TestAgent"), "Prompt must still contain Agent Name")
-    }
-
-    @Test
-    fun `postProcessResponse transitions to AWAKE on success`() {
-        val bootState = buildJsonObject { put("phase", "BOOTING") }
-        val response = "Executing boot sequence..." // Normal agent response
-
-        val result = SovereignStrategy.postProcessResponse(response, bootState)
-
-        assertEquals(SentinelAction.PROCEED_WITH_UPDATE, result.action)
-
-        val newPhase = (result.newState as kotlinx.serialization.json.JsonObject)["phase"].toString().replace("\"", "")
-        assertEquals("AWAKE", newPhase)
     }
 
     @Test

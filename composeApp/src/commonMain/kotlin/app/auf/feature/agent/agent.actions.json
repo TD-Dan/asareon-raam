@@ -609,8 +609,8 @@
       }
     },
     {
-      "action_name": "agent.internal.UPDATE_COGNITIVE_STATE",
-      "summary": "[INTERNAL] Updates the persisted cognitive state (NVRAM) of an agent.",
+      "action_name": "agent.internal.NVRAM_LOADED",
+      "summary": "[INTERNAL] Dispatched after NVRAM has been loaded from disk during startup.",
       "payload_schema": {
         "type": "object",
         "properties": {

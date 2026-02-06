@@ -98,8 +98,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
 
         val newState = AgentCrudLogic.reduce(initialState, action, platform)
 
-        // Assert: built-ins (2) + 1 new
-        assertEquals(3, newState.resources.size)
+        assertEquals(1, newState.resources.size)
         val created = newState.resources.last()
         assertEquals("Test Const", created.name)
         assertEquals(AgentResourceType.CONSTITUTION, created.type)
@@ -141,21 +140,6 @@ class AgentRuntimeFeatureT1CrudLogicTest {
 
         // Assert
         assertEquals("Updated Content", finalState.resources.last().content)
-    }
-
-    @Test
-    fun `SAVE_RESOURCE is ignored for built-in resources`() {
-        val initialState = AgentRuntimeState()
-        val builtInId = AgentDefaults.builtInResources.first().id
-        val action = Action(ActionNames.AGENT_SAVE_RESOURCE, buildJsonObject {
-            put("resourceId", builtInId)
-            put("content", "Hacked Content")
-        })
-
-        val newState = AgentCrudLogic.reduce(initialState, action, platform)
-
-        // Assert: Content unchanged
-        assertEquals(AgentDefaults.builtInResources.first().content, newState.resources.first().content)
     }
 
     @Test

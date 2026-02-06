@@ -2,7 +2,6 @@ package app.auf.feature.agent
 
 import app.auf.core.Action
 import app.auf.core.generated.ActionNames
-import app.auf.feature.agent.strategies.SovereignDefaults
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.*
 
@@ -128,7 +127,7 @@ object AgentCrudLogic {
                     id = platformDependencies.generateUUID(),
                     type = type,
                     name = name,
-                    content = initialContent ?: if (type == AgentResourceType.CONSTITUTION) SovereignDefaults.DEFAULT_CONSTITUTION_XML else "",
+                    content = initialContent ?: "",
                     isBuiltIn = false,
                     path = "resources/${platformDependencies.generateUUID()}.json" // Consistent file naming
                 )
@@ -172,6 +171,32 @@ object AgentCrudLogic {
                     resources = state.resources.filter { it.id != resourceId },
                     editingResourceId = if (state.editingResourceId == resourceId) null else state.editingResourceId
                 )
+            }
+            ActionNames.AGENT_UPDATE_NVRAM -> {
+                val payload = action.payload ?: return state
+                val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
+                val updates = payload["updates"]?.jsonObject ?: return state
+
+                val agent = state.agents[agentId] ?: return state
+
+                // Merge updates into existing cognitiveState (for UPDATE_NVRAM)
+                val currentState = agent.cognitiveState as? JsonObject ?: buildJsonObject {}
+                val mergedState = buildJsonObject {
+                    currentState.forEach { (k, v) -> put(k, v) }
+                    updates.forEach { (k, v) -> put(k, v) }
+                }
+
+                val updatedAgent = agent.copy(cognitiveState = mergedState)
+                state.copy(agents = state.agents + (agentId to updatedAgent))
+            }
+            ActionNames.AGENT_INTERNAL_NVRAM_LOADED -> {
+                val payload = action.payload ?: return state
+                val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
+                val newState = payload["state"] ?: return state
+
+                val agent = state.agents[agentId] ?: return state
+                val updatedAgent = agent.copy(cognitiveState = newState)
+                state.copy(agents = state.agents + (agentId to updatedAgent))
             }
             else -> state
         }

@@ -12,6 +12,10 @@ object VanillaStrategy : CognitiveStrategy {
     override val id: String = "vanilla_v1"
     override val displayName: String = "Vanilla (Simple)"
 
+    val DEFAULT_SYSTEM_INSTRUCTION_XML = """
+        You are a helpful assistant.
+    """.trimIndent()
+
     private const val SLOT_SYSTEM_INSTRUCTION = "system_instruction"
 
     override fun getResourceSlots(): List<ResourceSlot> = listOf(

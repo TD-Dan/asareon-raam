@@ -21,22 +21,6 @@ object AgentRuntimeReducer {
     ): AgentRuntimeState {
         return when (action.name) {
             // --- Internal State Setters ---
-
-            // [NEW] Persist Cognitive State Updates (NVRAM)
-            ActionNames.AGENT_INTERNAL_UPDATE_COGNITIVE_STATE -> {
-                val payload = action.payload ?: return state
-                val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
-                val newStateJson = payload["state"] ?: return state
-
-                val currentAgent = state.agents[agentId] ?: return state
-
-                val updatedAgent = currentAgent.copy(cognitiveState = newStateJson)
-
-                state.copy(
-                    agents = state.agents + (agentId to updatedAgent),
-                    agentsToPersist = (state.agentsToPersist ?: emptySet()) + agentId
-                )
-            }
             ActionNames.AGENT_INTERNAL_SET_STATUS -> handleSetStatus(action, state, platformDependencies)
 
             ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP -> {
@@ -68,14 +52,6 @@ object AgentRuntimeReducer {
                 val currentSessionMap = state.agentAvatarCardIds[payload.agentId] ?: emptyMap()
                 val newSessionMap = currentSessionMap + (payload.sessionId to payload.messageId)
                 state.copy(agentAvatarCardIds = state.agentAvatarCardIds + (payload.agentId to newSessionMap))
-            }
-            // [NEW] Resource Loaded from Disk
-            ActionNames.AGENT_INTERNAL_RESOURCE_LOADED -> {
-                val payload = action.payload ?: return state
-                val loadedResource = json.decodeFromJsonElement<AgentResource>(payload)
-                // Append or replace if ID collision (prefer loaded state)
-                val otherResources = state.resources.filter { it.id != loadedResource.id }
-                state.copy(resources = otherResources + loadedResource)
             }
 
             // --- Turn Lifecycle ---
@@ -162,14 +138,6 @@ object AgentRuntimeReducer {
                 }
                 // Note: We set agentsToPersist so the Feature knows to save these changes
                 state.copy(agents = newAgents, agentAvatarCardIds = newAvatarCards, agentsToPersist = agentsToUpdate.map { it.id }.toSet())
-            }
-
-            ActionNames.AGENT_INTERNAL_CONFIRM_DELETE -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
-                state.copy(
-                    agents = state.agents - agentId,
-                    agentAvatarCardIds = state.agentAvatarCardIds - agentId
-                )
             }
 
             ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED -> {

@@ -35,6 +35,7 @@ class AgentRuntimeFeature(
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val agentConfigFILENAME = "agent.json"
+    private val nvramFILENAME = "nvram.json"
     private val activeTurnJobs = mutableMapOf<String, Job>()
     private val avatarUpdateJobs = mutableMapOf<String, Job>()
     private var agentLoadCount = 0
@@ -78,6 +79,12 @@ class AgentRuntimeFeature(
                 store.deferredDispatch(this.name, Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
             }
             ActionNames.AGENT_INTERNAL_AGENTS_LOADED -> {
+                // Seed nvram.json for any agent that doesn't have one yet
+                agentState.agents.values.forEach { agent ->
+                    if (agent.cognitiveState is JsonNull || agent.cognitiveState == null) {
+                        saveAgentNvram(agent, store)
+                    }
+                }
                 if (agentState.sessionNames.isNotEmpty()) {
                     SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
                 }
@@ -135,10 +142,19 @@ class AgentRuntimeFeature(
                 AgentAvatarLogic.updateAgentAvatars(agentId, store)
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
             }
-            ActionNames.AGENT_INTERNAL_UPDATE_COGNITIVE_STATE -> {
+            ActionNames.AGENT_INTERNAL_NVRAM_LOADED -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[agentId] ?: return
-                saveAgentConfig(agent, store)
+                // Reducer replaced cognitiveState
+                // Save to disk (handles both: strategy transitions AND redundant save from disk loading)
+                saveAgentNvram(agent, store)
+            }
+            ActionNames.AGENT_UPDATE_NVRAM -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agent = agentState.agents[agentId] ?: return
+                // Reducer already merged updates into cognitiveState
+                // Save directly to disk
+                saveAgentNvram(agent, store)
             }
             ActionNames.AGENT_DELETE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
@@ -253,9 +269,18 @@ class AgentRuntimeFeature(
     }
 
     private fun saveAgentConfig(agent: AgentInstance, store: Store) {
+        // Exclude cognitiveState - it's saved separately in nvram.json
+        val agentWithoutNvram = agent.copy(cognitiveState = JsonNull)
         store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
             put("subpath", "${agent.id}/$agentConfigFILENAME")
-            put("content", json.encodeToString(agent))
+            put("content", json.encodeToString(agentWithoutNvram))
+        }))
+    }
+
+    private fun saveAgentNvram(agent: AgentInstance, store: Store) {
+        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+            put("subpath", "${agent.id}/$nvramFILENAME")
+            put("content", json.encodeToString(agent.cognitiveState))
         }))
     }
 
@@ -301,8 +326,13 @@ class AgentRuntimeFeature(
             } else {
                 fileList.forEach { entry ->
                     if (entry.isDirectory && entry.path != "resources") {
+                        val agentDir = platformDependencies.getFileName(entry.path)
+                        // Load both agent.json and nvram.json
                         store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
-                            put("subpath", "${platformDependencies.getFileName(entry.path)}/$agentConfigFILENAME")
+                            put("subpath", "$agentDir/$agentConfigFILENAME")
+                        }))
+                        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+                            put("subpath", "$agentDir/$nvramFILENAME")
                         }))
                     }
                 }
@@ -341,7 +371,7 @@ class AgentRuntimeFeature(
                     platformDependencies.log(LogLevel.ERROR, name, "Failed to parse resource: $subpath. Error: ${e.message}")
                 }
             }
-            // Agent config files are identified by their canonical filename
+            // Agent config files
             subpath.endsWith("/$agentConfigFILENAME") -> {
                 try {
                     val agent = json.decodeFromString<AgentInstance>(content)
@@ -353,6 +383,23 @@ class AgentRuntimeFeature(
                     if (agentLoadCount <= 0) {
                         store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
                     }
+                }
+            }
+            // NVRAM files
+            subpath.endsWith("/$nvramFILENAME") -> {
+                try {
+                    val nvramState = json.decodeFromString<JsonElement>(content)
+                    // Extract agent ID from path (e.g., "agent-xyz/nvram.json" -> "agent-xyz")
+                    val agentId = subpath.substringBeforeLast("/")
+
+                    // Dispatch to merge NVRAM into the agent's state
+                    store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_NVRAM_LOADED, buildJsonObject {
+                        put("agentId", agentId)
+                        put("state", nvramState)
+                    }))
+                } catch (e: Exception) {
+                    // NVRAM file missing or corrupted is non-fatal - agent will use initial state
+                    platformDependencies.log(LogLevel.WARN, name, "Failed to load NVRAM from $subpath (agent will use initial state): ${e.message}")
                 }
             }
             // Unknown file — log and ignore, don't corrupt agent load tracking

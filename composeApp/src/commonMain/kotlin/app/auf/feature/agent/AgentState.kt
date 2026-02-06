@@ -3,6 +3,7 @@ package app.auf.feature.agent
 import app.auf.core.FeatureState
 import app.auf.core.Identity
 import app.auf.feature.agent.strategies.SovereignDefaults
+import app.auf.feature.agent.strategies.VanillaStrategy
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
@@ -47,7 +48,14 @@ object AgentDefaults {
             name = "Boot Sentinel (v1.0)",
             content = SovereignDefaults.BOOT_SENTINEL_XML,
             isBuiltIn = true
-        )
+        ),
+        AgentResource(
+        id = "res-sys-instruction-v1",
+        type = AgentResourceType.SYSTEM_INSTRUCTION,
+        name = "Default Builtin System Instruction",
+        content = VanillaStrategy.DEFAULT_SYSTEM_INSTRUCTION_XML,
+        isBuiltIn = true
+    )
     )
 }
 
