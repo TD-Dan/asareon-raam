@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -23,6 +24,8 @@ import app.auf.core.*
 import app.auf.core.generated.ActionNames
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -47,19 +50,28 @@ private fun deriveOrderedSessionsForManager(
 // Drag-to-reorder state holder
 // =====================================================================
 
+/**
+ * Manages the in-flight state of a long-press-drag reorder gesture.
+ *
+ * IMPORTANT: This class must NOT be recreated during a drag. The mutable list is accessed
+ * via [getList]/[setList] lambdas so the caller can swap items without invalidating this object.
+ */
 private class DragReorderState(
-    private val lazyListState: androidx.compose.foundation.lazy.LazyListState,
-    private val onMove: (fromIndex: Int, toIndex: Int) -> Unit,
-    private val onDragEnd: () -> Unit
+    private val lazyListState: LazyListState,
+    private val getList: () -> List<Session>,
+    private val setList: (List<Session>) -> Unit,
+    private val onDragFinished: (newOrder: List<String>) -> Unit
 ) {
     var draggedIndex by mutableStateOf<Int?>(null)
         private set
     var dragOffset by mutableStateOf(0f)
         private set
+    val isDragging: Boolean get() = draggedIndex != null
 
     fun onDragStart(offset: Float) {
+        val startY = offset + lazyListState.firstVisibleItemScrollOffset
         val item = lazyListState.layoutInfo.visibleItemsInfo
-            .firstOrNull { offset.toInt() in it.offset..(it.offset + it.size) }
+            .firstOrNull { startY.toInt() in it.offset..(it.offset + it.size) }
             ?: return
         draggedIndex = item.index
         dragOffset = 0f
@@ -78,7 +90,9 @@ private class DragReorderState(
             .firstOrNull { currentCenter in it.offset..(it.offset + it.size) }
 
         if (targetItem != null) {
-            onMove(currentIndex, targetItem.index)
+            val list = getList().toMutableList()
+            list.add(targetItem.index, list.removeAt(currentIndex))
+            setList(list)
             draggedIndex = targetItem.index
             // Adjust offset so the card follows the finger smoothly after the swap
             dragOffset += (currentItem.offset - targetItem.offset)
@@ -86,14 +100,16 @@ private class DragReorderState(
     }
 
     fun onDragEnd() {
+        val finalOrder = getList().map { it.id }
         draggedIndex = null
         dragOffset = 0f
-        onDragEnd.invoke()
+        onDragFinished(finalOrder)
     }
 
     fun onDragCancel() {
         draggedIndex = null
         dragOffset = 0f
+        // No commit — the list will resync from the store on the next recomposition.
     }
 }
 
@@ -102,7 +118,7 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
     val appState by store.state.collectAsState()
     val sessionState = appState.featureStates["session"] as? SessionState
     val hideHidden = sessionState?.hideHiddenInManager ?: true
-    val sessions = remember(sessionState?.sessions, sessionState?.sessionOrder, hideHidden) {
+    val storeSessionList = remember(sessionState?.sessions, sessionState?.sessionOrder, hideHidden) {
         deriveOrderedSessionsForManager(
             sessionState?.sessions ?: emptyMap(),
             sessionState?.sessionOrder ?: emptyList(),
@@ -111,8 +127,18 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
     }
     val editingSessionId = sessionState?.editingSessionId
 
-    // Mutable snapshot of the list for in-flight drag reordering
-    var reorderableList by remember(sessions) { mutableStateOf(sessions) }
+    // --- Drag-reorderable list state ---
+    // This is a local mutable copy that the drag gesture manipulates.
+    // It syncs FROM the store whenever the store changes AND no drag is in flight.
+    var reorderableList by remember { mutableStateOf(storeSessionList) }
+    var isDragging by remember { mutableStateOf(false) }
+
+    // Sync from store only when not dragging.
+    LaunchedEffect(storeSessionList, isDragging) {
+        if (!isDragging) {
+            reorderableList = storeSessionList
+        }
+    }
 
     // Confirmation dialog state
     var sessionToDelete by remember { mutableStateOf<Session?>(null) }
@@ -179,7 +205,7 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
                     Icon(
                         imageVector = if (hideHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                         contentDescription = if (hideHidden) "Show Hidden Sessions" else "Hide Hidden Sessions",
-                        tint = if (hideHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (hideHidden) MaterialTheme.colorScheme.inverseOnSurface else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 Button(onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_CREATE)) }) {
@@ -199,21 +225,17 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
             val lazyListState = rememberLazyListState()
             val coroutineScope = rememberCoroutineScope()
 
-            val dragState = remember(reorderableList) {
+            // Stable reference — created once, survives list mutations during drag.
+            val dragState = remember {
                 DragReorderState(
                     lazyListState = lazyListState,
-                    onMove = { from, to ->
-                        reorderableList = reorderableList.toMutableList().apply {
-                            add(to, removeAt(from))
-                        }
-                    },
-                    onDragEnd = {
-                        // Commit the final ordering to the store
-                        reorderableList.forEachIndexed { index, session ->
-                            store.dispatch("session.ui", Action(ActionNames.SESSION_REORDER, buildJsonObject {
-                                put("sessionId", session.id); put("toIndex", index)
-                            }))
-                        }
+                    getList = { reorderableList },
+                    setList = { reorderableList = it },
+                    onDragFinished = { newOrder ->
+                        isDragging = false
+                        store.dispatch("session.ui", Action(ActionNames.SESSION_SET_ORDER, buildJsonObject {
+                            put("order", buildJsonArray { newOrder.forEach { add(it) } })
+                        }))
                     }
                 )
             }
@@ -222,16 +244,17 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
                 state = lazyListState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(reorderableList) {
+                    .pointerInput(Unit) {
                         detectDragGesturesAfterLongPress(
                             onDragStart = { offset ->
-                                dragState.onDragStart(offset.y + lazyListState.firstVisibleItemScrollOffset)
+                                dragState.onDragStart(offset.y)
+                                isDragging = dragState.isDragging
                             },
                             onDrag = { change, dragAmount ->
                                 change.consume()
                                 dragState.onDrag(dragAmount.y)
 
-                                // Auto-scroll when near edges
+                                // Auto-scroll when near viewport edges
                                 val viewportHeight = lazyListState.layoutInfo.viewportSize.height
                                 val dragY = change.position.y
                                 coroutineScope.launch {
@@ -246,21 +269,24 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
                                 }
                             },
                             onDragEnd = { dragState.onDragEnd() },
-                            onDragCancel = { dragState.onDragCancel() }
+                            onDragCancel = {
+                                dragState.onDragCancel()
+                                isDragging = false
+                            }
                         )
                     },
                 contentPadding = PaddingValues(vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 itemsIndexed(reorderableList, key = { _, session -> session.id }) { index, session ->
-                    val isDragging = dragState.draggedIndex == index
-                    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
+                    val isDraggingThis = dragState.draggedIndex == index
+                    val elevation by animateDpAsState(if (isDraggingThis) 8.dp else 0.dp)
 
                     Box(
                         modifier = Modifier
-                            .zIndex(if (isDragging) 1f else 0f)
+                            .zIndex(if (isDraggingThis) 1f else 0f)
                             .graphicsLayer {
-                                translationY = if (isDragging) dragState.dragOffset else 0f
+                                translationY = if (isDraggingThis) dragState.dragOffset else 0f
                             }
                             .shadow(elevation, shape = MaterialTheme.shapes.medium)
                     ) {

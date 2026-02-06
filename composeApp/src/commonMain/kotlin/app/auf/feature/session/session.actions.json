@@ -276,6 +276,21 @@
       }
     },
     {
+      "action_name":"session.SET_ORDER",
+      "summary":"Replaces the canonical session display ordering with the provided list. Sessions present in the existing order but absent from the provided list are appended at the end (e.g., hidden sessions filtered out of the drag-reorder view).",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "order":{
+            "type":"array",
+            "items":{ "type":"string" },
+            "description":"The new ordered list of session IDs."
+          }
+        },
+        "required":["order"]
+      }
+    },
+    {
       "action_name":"session.TOGGLE_HIDE_HIDDEN_IN_VIEWER",
       "summary":"Toggles whether hidden sessions are filtered out in the SessionView tab bar.",
       "payload_schema":{

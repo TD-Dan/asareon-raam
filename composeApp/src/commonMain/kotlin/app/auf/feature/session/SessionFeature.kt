@@ -38,6 +38,7 @@ class SessionFeature(
     @Serializable private data class RequestLedgerPayload(val sessionId: String, val correlationId: String)
     @Serializable private data class GatewayMessage(val role: String, val content: String, val senderId: String, val senderName: String)
     @Serializable private data class ReorderPayload(val sessionId: String, val toIndex: Int)
+    @Serializable private data class SetOrderPayload(val order: List<String>)
     @Serializable private data class ToggleMessageLockedPayload(val sessionId: String, val messageId: String)
 
 
@@ -481,6 +482,15 @@ class SessionFeature(
                 val clampedIndex = decoded.toIndex.coerceIn(0, currentOrder.size)
                 currentOrder.add(clampedIndex, decoded.sessionId)
                 currentFeatureState.copy(sessionOrder = currentOrder)
+            }
+
+            ActionNames.SESSION_SET_ORDER -> {
+                val decoded = payload?.let { json.decodeFromJsonElement<SetOrderPayload>(it) } ?: return currentFeatureState
+                // Preserve any session IDs in the existing order that aren't in the new list
+                // (e.g. hidden sessions that were filtered out of the manager view).
+                val suppliedSet = decoded.order.toSet()
+                val remainder = currentFeatureState.sessionOrder.filter { it !in suppliedSet }
+                currentFeatureState.copy(sessionOrder = decoded.order + remainder)
             }
 
             ActionNames.SESSION_TOGGLE_HIDE_HIDDEN_IN_VIEWER -> {
