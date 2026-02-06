@@ -27,16 +27,19 @@ plugins {
 }
 
 tasks.register("generateActionRegistry") {
-    description = "Generates a Kotlin source file with compile-time constants for all public action names and private envelope types from *.actions.json manifests."
+    description = "Generates Kotlin source files with compile-time constants for all communication contracts and exposed agent actions from *.actions.json manifests."
     group = "auf"
 
     // --- Configuration ---
     val inputDir = file("src/commonMain/kotlin/app/auf")
-    val outputFile = file("$buildDir/generated/kotlin/app/auf/core/generated/ActionNames.kt")
+    val generatedDir = layout.buildDirectory.dir("generated/kotlin/app/auf/core/generated")
+    val actionNamesOutputFile = generatedDir.map { it.file("ActionNames.kt") }
+    val exposedActionsOutputFile = generatedDir.map { it.file("ExposedActions.kt") }
 
     // --- Gradle Inputs/Outputs for build caching and up-to-date checks ---
     inputs.dir(inputDir)
-    outputs.file(outputFile)
+    outputs.file(actionNamesOutputFile)
+    outputs.file(exposedActionsOutputFile)
 
     // --- Task Action ---
     doLast {
@@ -44,82 +47,266 @@ tasks.register("generateActionRegistry") {
         val actionNames = mutableSetOf<String>()
         val envelopeTypes = mutableSetOf<String>()
 
-        inputDir.walkTopDown().forEach { file ->
-            if (file.isFile && file.name.endsWith(".actions.json")) {
+        // Exposed Actions — plain maps only (no data classes in Gradle DSL doLast blocks)
+        val exposedActionNames = mutableSetOf<String>()
+        val sandboxRules = mutableMapOf<String, Map<String, Any>>()
+        val exposedDocs = mutableListOf<Map<String, Any>>()
+
+        inputDir.walkTopDown().forEach { manifestFile ->
+            if (manifestFile.isFile && manifestFile.name.endsWith(".actions.json")) {
                 try {
-                    val content = file.readText()
+                    val content = manifestFile.readText()
                     val manifest = json.parseToJsonElement(content).jsonObject
 
                     // Parse public actions
-                    (manifest["listensFor"] as? JsonArray)?.forEach {
-                        val actionName = (it as? JsonObject)?.get("action_name")?.jsonPrimitive?.content
-                        if (actionName != null) actionNames.add(actionName)
+                    val listensFor = manifest["listensFor"] as? JsonArray
+                    if (listensFor != null) {
+                        for (i in 0 until listensFor.size) {
+                            val name = (listensFor[i] as? JsonObject)?.get("action_name")?.jsonPrimitive?.content
+                            if (name != null) actionNames.add(name)
+                        }
                     }
-                    (manifest["publishes"] as? JsonArray)?.forEach {
-                        val actionName = (it as? JsonObject)?.get("action_name")?.jsonPrimitive?.content
-                        if (actionName != null) actionNames.add(actionName)
+                    val publishes = manifest["publishes"] as? JsonArray
+                    if (publishes != null) {
+                        for (i in 0 until publishes.size) {
+                            val name = (publishes[i] as? JsonObject)?.get("action_name")?.jsonPrimitive?.content
+                            if (name != null) actionNames.add(name)
+                        }
                     }
 
                     // Parse private envelope types
-                    (manifest["private_envelopes"] as? JsonArray)?.forEach {
-                        val typeName = (it as? JsonObject)?.get("type_name")?.jsonPrimitive?.content
-                        if (typeName != null) envelopeTypes.add(typeName)
+                    val privateEnvelopes = manifest["private_envelopes"] as? JsonArray
+                    if (privateEnvelopes != null) {
+                        for (i in 0 until privateEnvelopes.size) {
+                            val typeName = (privateEnvelopes[i] as? JsonObject)?.get("type_name")?.jsonPrimitive?.content
+                            if (typeName != null) envelopeTypes.add(typeName)
+                        }
                     }
+
+                    // Parse exposed agent actions
+                    val exposed = manifest["exposedToAgents"] as? JsonArray
+                    if (exposed != null) {
+                        for (i in 0 until exposed.size) {
+                            val obj = exposed[i] as? JsonObject ?: continue
+                            val actionName = obj["action_name"]?.jsonPrimitive?.content ?: continue
+                            val summary = obj["summary"]?.jsonPrimitive?.content ?: ""
+
+                            exposedActionNames.add(actionName)
+
+                            // Parse sandboxing rule
+                            val sandboxing = obj["sandboxing"]?.jsonObject
+                            if (sandboxing != null) {
+                                val strategy = sandboxing["strategy"]?.jsonPrimitive?.content ?: ""
+                                val prefix = sandboxing["subpath_prefix_template"]?.jsonPrimitive?.content ?: ""
+                                val rewriteObj = sandboxing["payload_rewrites"]?.jsonObject
+                                val rewrites = mutableMapOf<String, String>()
+                                if (rewriteObj != null) {
+                                    for (key in rewriteObj.keys) {
+                                        rewrites[key] = rewriteObj[key].toString()
+                                    }
+                                }
+                                sandboxRules[actionName] = mapOf(
+                                    "strategy" to strategy,
+                                    "subpathPrefixTemplate" to prefix,
+                                    "payloadRewrites" to rewrites
+                                )
+                            }
+
+                            // Parse payload schema fields for documentation
+                            val payloadFields = mutableListOf<Map<String, Any>>()
+                            val schema = obj["payload_schema"]?.jsonObject
+                            if (schema != null) {
+                                val requiredArr = schema["required"] as? JsonArray
+                                val requiredFields = mutableSetOf<String>()
+                                if (requiredArr != null) {
+                                    for (j in 0 until requiredArr.size) {
+                                        requiredFields.add(requiredArr[j].jsonPrimitive.content)
+                                    }
+                                }
+                                val properties = schema["properties"]?.jsonObject
+                                if (properties != null) {
+                                    for (fieldName in properties.keys) {
+                                        val fieldObj = properties[fieldName]!!.jsonObject
+                                        payloadFields.add(mapOf(
+                                            "name" to fieldName,
+                                            "type" to (fieldObj["type"]?.jsonPrimitive?.content ?: "string"),
+                                            "description" to (fieldObj["description"]?.jsonPrimitive?.content ?: ""),
+                                            "required" to requiredFields.contains(fieldName),
+                                            "default" to (fieldObj["default"]?.toString() ?: "")
+                                        ))
+                                    }
+                                }
+                            }
+
+                            exposedDocs.add(mapOf(
+                                "actionName" to actionName,
+                                "summary" to summary,
+                                "payloadFields" to payloadFields
+                            ))
+                        }
+                    }
+
                 } catch (e: Exception) {
-                    throw GradleException("Failed to parse action manifest: ${file.path}. Error: ${e.message}", e)
+                    throw GradleException("Failed to parse action manifest: ${manifestFile.path}. Error: ${e.message}", e)
                 }
             }
         }
 
+        // ====== Generate ActionNames.kt ======
         val sortedActionNames = actionNames.sorted()
         val sortedEnvelopeTypes = envelopeTypes.sorted()
 
-        val actionConstants = sortedActionNames.joinToString("\n") { actionName ->
-            val constName = actionName.replace('.', '_').replace('-', '_').uppercase()
-            "    const val $constName = \"$actionName\""
+        val actionConstants = sortedActionNames.joinToString("\n") { name ->
+            val constName = name.replace('.', '_').replace('-', '_').uppercase()
+            "    const val $constName = \"$name\""
         }
 
-        val envelopeConstants = sortedEnvelopeTypes.joinToString("\n") { typeName ->
-            val constName = typeName.replace('.', '_').replace('-', '_').uppercase()
-            "        const val $constName = \"$typeName\""
+        val envelopeConstants = sortedEnvelopeTypes.joinToString("\n") { tn ->
+            val constName = tn.replace('.', '_').replace('-', '_').uppercase()
+            "        const val $constName = \"$tn\""
         }
 
-        val setEntries = sortedActionNames.joinToString(",\n") { actionName ->
-            val constName = actionName.replace('.', '_').replace('-', '_').uppercase()
+        val setEntries = sortedActionNames.joinToString(",\n") { name ->
+            val constName = name.replace('.', '_').replace('-', '_').uppercase()
             "        $constName"
         }
 
-        val fileContent = """
-            package app.auf.core.generated
+        val actionNamesContent = """
+            |package app.auf.core.generated
+            |
+            |/**
+            | * THIS IS A GENERATED FILE. DO NOT EDIT.
+            | * Contains compile-time constants for all communication contracts,
+            | * generated from the *.actions.json manifests during the build process.
+            | */
+            |object ActionNames {
+            |$actionConstants
+            |
+            |    /**
+            |     * Contains compile-time constants for all valid private data envelope types.
+            |     */
+            |    object Envelopes {
+            |$envelopeConstants
+            |    }
+            |
+            |    /**
+            |     * A set of all valid public action names for runtime validation in the Store.
+            |     * This is constructed from the compile-time constants above.
+            |     */
+            |    val allActionNames: Set<String> = setOf(
+            |$setEntries
+            |    )
+            |}
+        """.trimMargin()
 
-            /**
-             * THIS IS A GENERATED FILE. DO NOT EDIT.
-             * Contains compile-time constants for all communication contracts,
-             * generated from the *.actions.json manifests during the build process.
-             */
-            object ActionNames {
-            $actionConstants
+        val actionNamesOut = actionNamesOutputFile.get().asFile
+        actionNamesOut.parentFile.mkdirs()
+        actionNamesOut.writeText(actionNamesContent)
 
-                /**
-                 * Contains compile-time constants for all valid private data envelope types.
-                 */
-                object Envelopes {
-            $envelopeConstants
-                }
+        // ====== Generate ExposedActions.kt ======
+        val sortedExposedNames = exposedActionNames.sorted()
 
-                /**
-                 * A set of all valid public action names for runtime validation in the Store.
-                 * This is constructed from the compile-time constants above.
-                 */
-                val allActionNames: Set<String> = setOf(
-            $setEntries
-                )
+        val allowedSetStr = sortedExposedNames.joinToString(",\n") { "        \"$it\"" }
+
+        val sandboxRuleStr = sandboxRules.entries.sortedBy { it.key }.joinToString(",\n") { entry ->
+            val actionName = entry.key
+            val rule = entry.value
+            val strategy = rule["strategy"] as String
+            val prefix = rule["subpathPrefixTemplate"] as String
+            @Suppress("UNCHECKED_CAST")
+            val rewrites = rule["payloadRewrites"] as Map<String, String>
+            val rewritesStr = if (rewrites.isEmpty()) {
+                "emptyMap()"
+            } else {
+                "mapOf(${rewrites.entries.joinToString(", ") { rw -> "\"${rw.key}\" to \"${rw.value}\"" }})"
             }
-        """.trimIndent()
+            """        "$actionName" to SandboxRule(
+            |            strategy = "$strategy",
+            |            subpathPrefixTemplate = "$prefix",
+            |            payloadRewrites = $rewritesStr
+            |        )""".trimMargin()
+        }
 
-        outputFile.parentFile.mkdirs()
-        outputFile.writeText(fileContent)
+        val sortedDocs = exposedDocs.sortedBy { it["actionName"] as String }
+        val docStr = sortedDocs.joinToString(",\n") { doc ->
+            val actionName = doc["actionName"] as String
+            val summary = (doc["summary"] as String).replace("\"", "\\\"")
+            @Suppress("UNCHECKED_CAST")
+            val fields = doc["payloadFields"] as List<Map<String, Any>>
+
+            val fieldsStr = if (fields.isEmpty()) {
+                "emptyList()"
+            } else {
+                val fieldLines = fields.joinToString(",\n") { field ->
+                    val fname = field["name"] as String
+                    val ftype = field["type"] as String
+                    val fdesc = (field["description"] as String).replace("\"", "\\\"").replace("\n", "\\n")
+                    val freq = field["required"] as Boolean
+                    val fdefault = field["default"] as String
+                    val fdefaultStr = if (fdefault.isEmpty()) "null" else "\"${fdefault.replace("\"", "\\\"")}\""
+                    "                PayloadField(\"$fname\", \"$ftype\", \"$fdesc\", $freq, $fdefaultStr)"
+                }
+                "listOf(\n$fieldLines\n            )"
+            }
+
+            """        ExposedActionDoc(
+            |            actionName = "$actionName",
+            |            summary = "$summary",
+            |            payloadFields = $fieldsStr
+            |        )""".trimMargin()
+        }
+
+        val exposedActionsContent = """
+            |package app.auf.core.generated
+            |
+            |/**
+            | * THIS IS A GENERATED FILE. DO NOT EDIT.
+            | * Contains the compile-time registry of actions that agents are permitted to invoke,
+            | * along with sandboxing rules and documentation for prompt injection.
+            | * Generated from the 'exposedToAgents' arrays in *.actions.json manifests.
+            | */
+            |object ExposedActions {
+            |
+            |    val allowedActionNames: Set<String> = setOf(
+            |$allowedSetStr
+            |    )
+            |
+            |    data class SandboxRule(
+            |        val strategy: String,
+            |        val subpathPrefixTemplate: String,
+            |        val payloadRewrites: Map<String, String> = emptyMap()
+            |    )
+            |
+            |    val sandboxRules: Map<String, SandboxRule> = mapOf(
+            |$sandboxRuleStr
+            |    )
+            |
+            |    data class ExposedActionDoc(
+            |        val actionName: String,
+            |        val summary: String,
+            |        val payloadFields: List<PayloadField>
+            |    )
+            |
+            |    data class PayloadField(
+            |        val name: String,
+            |        val type: String,
+            |        val description: String,
+            |        val required: Boolean,
+            |        val default: String? = null
+            |    )
+            |
+            |    val documentation: List<ExposedActionDoc> = listOf(
+            |$docStr
+            |    )
+            |}
+        """.trimMargin()
+
+        val exposedActionsOut = exposedActionsOutputFile.get().asFile
+        exposedActionsOut.parentFile.mkdirs()
+        exposedActionsOut.writeText(exposedActionsContent)
+
         println("Generated ActionNames.kt with ${actionNames.size} actions and ${envelopeTypes.size} envelope types.")
+        println("Generated ExposedActions.kt with ${exposedActionNames.size} exposed agent actions and ${sandboxRules.size} sandbox rules.")
     }
 }
 
@@ -176,14 +363,14 @@ kotlin {
         binaries.executable()
     }
 
-    // This ensures our file is generated before any compilation happens.
+    // This ensures our files are generated before any compilation happens.
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
         dependsOn(tasks.getByName("generateActionRegistry"))
     }
 
     sourceSets {
-        // This tells the compiler to include our generated file in the build.
-        commonMain.get().kotlin.srcDir("$buildDir/generated/kotlin")
+        // This tells the compiler to include our generated files in the build.
+        commonMain.get().kotlin.srcDir(layout.buildDirectory.dir("generated/kotlin"))
 
         androidMain.dependencies {
             implementation(compose.preview)

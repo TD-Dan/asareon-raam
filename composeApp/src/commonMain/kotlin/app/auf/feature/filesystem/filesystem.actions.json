@@ -1,6 +1,110 @@
 {
   "feature_name": "filesystem",
   "summary": "Acts as the sole, transactional, and secure gateway to the file system.",
+  "exposedToAgents": [
+    {
+      "action_name": "filesystem.SYSTEM_WRITE",
+      "summary": "Write or overwrite a file in your workspace.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "subpath": {
+            "type": "string",
+            "description": "File path relative to your workspace root. Use '/' separators. Must include a file extension. Example: 'notes/meeting.md'"
+          },
+          "content": {
+            "type": "string",
+            "description": "The full text content to write to the file."
+          }
+        },
+        "required": ["subpath", "content"]
+      },
+      "sandboxing": {
+        "strategy": "AGENT_WORKSPACE",
+        "subpath_prefix_template": "{agentId}/workspace",
+        "payload_rewrites": {
+          "encrypt": false
+        }
+      }
+    },
+    {
+      "action_name": "filesystem.SYSTEM_READ",
+      "summary": "Read the content of a file from your workspace. The file content will be posted as a message in your session.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "subpath": {
+            "type": "string",
+            "description": "File path relative to your workspace root. Example: 'notes/meeting.md'"
+          }
+        },
+        "required": ["subpath"]
+      },
+      "sandboxing": {
+        "strategy": "AGENT_WORKSPACE",
+        "subpath_prefix_template": "{agentId}/workspace"
+      }
+    },
+    {
+      "action_name": "filesystem.SYSTEM_LIST",
+      "summary": "List files and directories in your workspace. The listing will be posted as a JSON message in your session.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "subpath": {
+            "type": "string",
+            "description": "Subdirectory to list, relative to your workspace root. Leave empty or omit to list the workspace root.",
+            "default": ""
+          },
+          "recursive": {
+            "type": "boolean",
+            "description": "If true, lists all files and directories recursively.",
+            "default": false
+          }
+        }
+      },
+      "sandboxing": {
+        "strategy": "AGENT_WORKSPACE",
+        "subpath_prefix_template": "{agentId}/workspace"
+      }
+    },
+    {
+      "action_name": "filesystem.SYSTEM_DELETE",
+      "summary": "Delete a file from your workspace.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "subpath": {
+            "type": "string",
+            "description": "File path relative to your workspace root."
+          }
+        },
+        "required": ["subpath"]
+      },
+      "sandboxing": {
+        "strategy": "AGENT_WORKSPACE",
+        "subpath_prefix_template": "{agentId}/workspace"
+      }
+    },
+    {
+      "action_name": "filesystem.SYSTEM_DELETE_DIRECTORY",
+      "summary": "Recursively delete a directory and all its contents from your workspace.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "subpath": {
+            "type": "string",
+            "description": "Directory path relative to your workspace root."
+          }
+        },
+        "required": ["subpath"]
+      },
+      "sandboxing": {
+        "strategy": "AGENT_WORKSPACE",
+        "subpath_prefix_template": "{agentId}/workspace"
+      }
+    }
+  ],
   "listensFor": [
     {
       "action_name": "filesystem.NAVIGATE",

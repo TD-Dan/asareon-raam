@@ -199,6 +199,12 @@ object AgentCognitivePipeline {
         """.trimIndent()
 
         // ============================================================
+        // Inject available system actions for agent tooling
+        // ============================================================
+        contextMap["AVAILABLE_ACTIONS"] = ExposedActionsContextProvider.generateContext()
+
+
+        // ============================================================
         // Format messages with sender context for multi-agent clarity
         // ============================================================
         val formattedMessages = ledgerContext.map { msg ->

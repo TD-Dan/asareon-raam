@@ -36,6 +36,11 @@ class AgentRuntimeFeature(
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val agentConfigFILENAME = "agent.json"
     private val nvramFILENAME = "nvram.json"
+
+    private val workspaceSubpathMarker = "/workspace/"
+
+    private val commandBotSenderId = "commandbot"
+
     private val activeTurnJobs = mutableMapOf<String, Job>()
     private val avatarUpdateJobs = mutableMapOf<String, Job>()
     private var agentLoadCount = 0
@@ -317,39 +322,93 @@ class AgentRuntimeFeature(
         val path = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
         val listing = payload["listing"]?.jsonArray
 
-        if (path == "" || path == ".") {
-            val fileList = listing?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
-            agentLoadCount = fileList.count { it.isDirectory && it.path != "resources" }
+        // Normalize for matching
+        val normalizedPath = path.replace("\\", "/")
 
-            if (agentLoadCount == 0) {
-                store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
-            } else {
-                fileList.forEach { entry ->
-                    if (entry.isDirectory && entry.path != "resources") {
-                        val agentDir = platformDependencies.getFileName(entry.path)
-                        // Load both agent.json and nvram.json
+        when {
+            // Root listing — discover agent directories
+            normalizedPath == "" || normalizedPath == "." -> {
+                val fileList = listing?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
+                agentLoadCount = fileList.count { it.isDirectory && it.path != "resources" }
+
+                if (agentLoadCount == 0) {
+                    store.deferredDispatch(this.name, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
+                } else {
+                    fileList.forEach { entry ->
+                        if (entry.isDirectory && entry.path != "resources") {
+                            val agentDir = platformDependencies.getFileName(entry.path)
+                            store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+                                put("subpath", "$agentDir/$agentConfigFILENAME")
+                            }))
+                            store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+                                put("subpath", "$agentDir/$nvramFILENAME")
+                            }))
+                        }
+                    }
+                }
+            }
+
+            // Resource listing
+            normalizedPath == "resources" -> {
+                listing?.forEach { element ->
+                    val entry = json.decodeFromJsonElement<FileEntry>(element)
+                    if (!entry.isDirectory && entry.path.endsWith(".json")) {
                         store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
-                            put("subpath", "$agentDir/$agentConfigFILENAME")
-                        }))
-                        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
-                            put("subpath", "$agentDir/$nvramFILENAME")
+                            val fileName = platformDependencies.getFileName(entry.path)
+                            val canonicalPath = "resources/$fileName"
+                            put("subpath", canonicalPath)
                         }))
                     }
                 }
             }
-        } else if (path == "resources") {
-            listing?.forEach { element ->
-                val entry = json.decodeFromJsonElement<FileEntry>(element)
-                if (!entry.isDirectory && entry.path.endsWith(".json")) {
-                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
-                        // [FIXED] Canonical Path Construction
-                        // We extract the filename regardless of whether it's "resources\file.json" or "file.json"
-                        // and strictly prepend the internal canonical directory "resources/".
-                        val fileName = platformDependencies.getFileName(entry.path)
-                        val canonicalPath = "resources/$fileName"
-                        put("subpath", canonicalPath)
-                    }))
+
+            // ====== NEW: Agent workspace directory listings ======
+            normalizedPath.contains("/workspace") -> {
+                // Extract agent ID: "agent-xyz/workspace" or "agent-xyz/workspace/subdir"
+                val agentId = normalizedPath.substringBefore("/workspace")
+                val state = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+                val agent = state.agents[agentId] ?: run {
+                    platformDependencies.log(LogLevel.WARN, name,
+                        "Workspace list response for unknown agent '$agentId'. Ignoring.")
+                    return
                 }
+                val targetSessionId = getAgentResponseSessionId(agent) ?: run {
+                    platformDependencies.log(LogLevel.WARN, name,
+                        "Agent '${agent.id}' has no session for workspace list response.")
+                    return
+                }
+
+                // Format as JSON code block for machine readability
+                val workspaceRelativePath = normalizedPath.substringAfter("$agentId/workspace")
+                    .removePrefix("/")
+                    .ifBlank { "." }
+
+                val listingJson = listing?.map { element ->
+                    val entry = json.decodeFromJsonElement<FileEntry>(element)
+                    // Strip the agent+workspace prefix so the agent sees workspace-relative paths
+                    val relativePath = entry.path.replace("\\", "/")
+                        .removePrefix("$agentId/workspace/")
+                        .removePrefix("$agentId/workspace")
+                    buildJsonObject {
+                        put("path", relativePath)
+                        put("isDirectory", entry.isDirectory)
+                    }
+                } ?: emptyList()
+
+                val message = buildString {
+                    appendLine("```json")
+                    appendLine("{")
+                    appendLine("  \"workspace_path\": \"$workspaceRelativePath\",")
+                    appendLine("  \"entries\": ${Json.encodeToString(kotlinx.serialization.json.JsonArray(listingJson))}")
+                    appendLine("}")
+                    appendLine("```")
+                }
+
+                store.deferredDispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
+                    put("session", targetSessionId)
+                    put("senderId", commandBotSenderId)
+                    put("message", message)
+                }))
             }
         }
     }
@@ -360,6 +419,34 @@ class AgentRuntimeFeature(
         val content = payload["content"]?.jsonPrimitive?.contentOrNull ?: return
 
         when {
+            // ====== Agent workspace file responses ======
+            subpath.contains(workspaceSubpathMarker) -> {
+                val agentId = subpath.substringBefore(workspaceSubpathMarker)
+                val relativeSubpath = subpath.substringAfter(workspaceSubpathMarker)
+                val state = store.state.value.featureStates[name] as? AgentRuntimeState ?: return
+                val agent = state.agents[agentId] ?: run {
+                    platformDependencies.log(LogLevel.WARN, name,
+                        "Workspace read response for unknown agent '$agentId'. Ignoring.")
+                    return
+                }
+                val targetSessionId = getAgentResponseSessionId(agent) ?: run {
+                    platformDependencies.log(LogLevel.WARN, name,
+                        "Agent '${agent.id}' has no session for workspace read response.")
+                    return
+                }
+
+                val message = if (content != null) {
+                    "```text\n[WORKSPACE FILE: $relativeSubpath]\n$content\n```"
+                } else {
+                    "```text\n[WORKSPACE ERROR] File not found: $relativeSubpath\n```"
+                }
+
+                store.deferredDispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
+                    put("session", targetSessionId)
+                    put("senderId", commandBotSenderId)
+                    put("message", message)
+                }))
+            }
             // Shared Resource files live under the "resources/" directory
             subpath.startsWith("resources/") -> {
                 try {
@@ -433,4 +520,13 @@ class AgentRuntimeFeature(
             AgentAvatarCard(agent = agent, store = store, platformDependencies = platformDependencies)
         }
     }
+}
+
+/**
+ * Determines the session where workspace operation responses should be posted.
+ * For sovereign agents: their private session (isolated cognition).
+ * For vanilla agents: their first subscribed session (where they participate).
+ */
+private fun getAgentResponseSessionId(agent: AgentInstance): String? {
+    return agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull()
 }
