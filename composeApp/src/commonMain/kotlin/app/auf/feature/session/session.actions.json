@@ -11,13 +11,17 @@
           "name":{
             "type":"string",
             "description":"An optional user-friendly name for the new session."
+          },
+          "isHidden":{
+            "type":"boolean",
+            "description":"If true, the session is created in a hidden state (e.g., for agent p-cognition). Defaults to false."
           }
         }
       }
     },
     {
       "action_name": "session.CLONE",
-      "summary": "Creates a new session by cloning an existing one, including its entire ledger.",
+      "summary": "Creates a new session by cloning an existing one, including its entire ledger. The clone is always non-hidden regardless of source.",
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -102,7 +106,7 @@
     },
     {
       "action_name":"session.UPDATE_MESSAGE",
-      "summary":"Updates the raw content and metadata of an existing message. Targets the session via the 'session' property (ID or name).",
+      "summary":"Updates the raw content and metadata of an existing message. Blocked if the target message is locked.",
       "payload_schema":{
         "type":"object",
         "properties":{
@@ -128,7 +132,7 @@
     },
     {
       "action_name":"session.DELETE_MESSAGE",
-      "summary":"Deletes a single message from a session's ledger. Targets the session via the 'session' property (ID or name).",
+      "summary":"Deletes a single message from a session's ledger. Blocked if the target message is locked.",
       "payload_schema":{
         "type":"object",
         "properties":{
@@ -198,7 +202,7 @@
     },
     {
       "action_name":"session.SET_EDITING_MESSAGE",
-      "summary":"Sets which message is currently being edited in the UI and pre-loads its content.",
+      "summary":"Sets which message is currently being edited in the UI and pre-loads its content. Blocked if the target message is locked.",
       "payload_schema":{
         "type":"object",
         "properties":{
@@ -247,6 +251,84 @@
           "sessionId",
           "messageId"
         ]
+      }
+    },
+    {
+      "action_name":"session.REORDER",
+      "summary":"Moves a session to a new position in the canonical display ordering used by both the tab bar and the session manager.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "sessionId":{
+            "type":"string",
+            "description":"The ID of the session to move."
+          },
+          "toIndex":{
+            "type":"integer",
+            "description":"The target index in the ordering list. Clamped to valid bounds."
+          }
+        },
+        "required":["sessionId", "toIndex"]
+      }
+    },
+    {
+      "action_name":"session.TOGGLE_HIDE_HIDDEN_IN_VIEWER",
+      "summary":"Toggles whether hidden sessions are filtered out in the SessionView tab bar.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{}
+      }
+    },
+    {
+      "action_name":"session.TOGGLE_HIDE_HIDDEN_IN_MANAGER",
+      "summary":"Toggles whether hidden sessions are filtered out in the SessionsManagerView.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{}
+      }
+    },
+    {
+      "action_name":"session.TOGGLE_SESSION_HIDDEN",
+      "summary":"Toggles the isHidden flag on a specific session. Used from the session manager.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "session":{
+            "type":"string",
+            "description":"The ID or name of the session to toggle."
+          }
+        },
+        "required":["session"]
+      }
+    },
+    {
+      "action_name":"session.TOGGLE_MESSAGE_LOCKED",
+      "summary":"Toggles the isLocked flag on a specific ledger entry. A locked message cannot be edited, deleted, or cleared.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "sessionId":{
+            "type":"string"
+          },
+          "messageId":{
+            "type":"string"
+          }
+        },
+        "required":["sessionId", "messageId"]
+      }
+    },
+    {
+      "action_name":"session.CLEAR",
+      "summary":"Removes all non-locked messages from a session's ledger. Locked messages are preserved.",
+      "payload_schema":{
+        "type":"object",
+        "properties":{
+          "session":{
+            "type":"string",
+            "description":"The ID or name of the session to clear."
+          }
+        },
+        "required":["session"]
       }
     }
   ],
@@ -389,6 +471,11 @@
         "metadata": {
           "type": ["object", "null"],
           "description": "A generic metadata object for UI hints or embedding components from other features."
+        },
+        "isLocked": {
+          "type": "boolean",
+          "description": "When true, this entry cannot be edited, deleted, or cleared. Defaults to false.",
+          "default": false
         }
       },
       "required": ["id", "timestamp", "senderId"]

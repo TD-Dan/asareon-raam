@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,10 +29,10 @@ fun LedgerEntryCard(
     session: Session,
     entry: LedgerEntry,
     senderName: String,
-    isCurrentUserMessage: Boolean, // THE FIX: New boolean flag
+    isCurrentUserMessage: Boolean,
     isEditingThisMessage: Boolean,
     editingContent: String?,
-    platformDependencies: PlatformDependencies // ADDITION: For timestamp formatting
+    platformDependencies: PlatformDependencies
 ) {
     val uiState = remember(session.messageUiState, entry.id) {
         session.messageUiState[entry.id] ?: MessageUiState()
@@ -76,6 +78,15 @@ fun LedgerEntryCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    // Lock indicator
+                    if (entry.isLocked) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Locked",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TooltipBox(
@@ -121,20 +132,47 @@ fun LedgerEntryCard(
                             Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                            if (entry.rawContent != null) {
-                                DropdownMenuItem(text = { Text("Edit") }, onClick = {
-                                    store.dispatch("session.ui", Action(ActionNames.SESSION_SET_EDITING_MESSAGE, buildJsonObject {
-                                        put("messageId", entry.id)
+                            // Lock / Unlock
+                            DropdownMenuItem(
+                                text = { Text(if (entry.isLocked) "Unlock" else "Lock") },
+                                onClick = {
+                                    store.dispatch("session.ui", Action(ActionNames.SESSION_TOGGLE_MESSAGE_LOCKED, buildJsonObject {
+                                        put("sessionId", session.id); put("messageId", entry.id)
                                     }))
                                     showMenu = false
-                                })
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (entry.isLocked) Icons.Default.LockOpen else Icons.Default.Lock,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            )
+                            // Edit (disabled when locked)
+                            if (entry.rawContent != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Edit") },
+                                    onClick = {
+                                        store.dispatch("session.ui", Action(ActionNames.SESSION_SET_EDITING_MESSAGE, buildJsonObject {
+                                            put("messageId", entry.id)
+                                        }))
+                                        showMenu = false
+                                    },
+                                    enabled = !entry.isLocked
+                                )
                             }
-                            DropdownMenuItem(text = { Text("Delete") }, onClick = {
-                                store.dispatch("session.ui", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
-                                    put("session", session.id); put("messageId", entry.id)
-                                }))
-                                showMenu = false
-                            })
+                            // Delete (disabled when locked)
+                            DropdownMenuItem(
+                                text = { Text("Delete") },
+                                onClick = {
+                                    store.dispatch("session.ui", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+                                        put("session", session.id); put("messageId", entry.id)
+                                    }))
+                                    showMenu = false
+                                },
+                                enabled = !entry.isLocked
+                            )
                         }
                     }
                 }

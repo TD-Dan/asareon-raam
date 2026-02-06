@@ -32,7 +32,9 @@ data class LedgerEntry(
     /** The structured, parsed representation of the rawContent. */
     val content: List<ContentBlock> = emptyList(),
     /** NEW: A generic metadata object for UI hints or embedding components from other features. */
-    val metadata: JsonObject? = null
+    val metadata: JsonObject? = null,
+    /** A locked message cannot be edited, deleted, or cleared. Acts as a durable preservation flag. */
+    val isLocked: Boolean = false
 )
 
 /**
@@ -55,7 +57,9 @@ data class Session(
     val ledger: List<LedgerEntry>,
     val createdAt: Long,
     /** A map of message IDs to their persistent UI state. */
-    val messageUiState: Map<String, MessageUiState> = emptyMap()
+    val messageUiState: Map<String, MessageUiState> = emptyMap(),
+    /** When true, this session is hidden from the default view in both the tab bar and manager. */
+    val isHidden: Boolean = false
 )
 
 /**
@@ -73,6 +77,17 @@ data class SessionState(
 
     /** The ID of the session currently visible in the main view. */
     val activeSessionId: String? = null,
+
+    /** The canonical display ordering of sessions. Both views derive their order from this list. */
+    val sessionOrder: List<String> = emptyList(),
+
+    /** TRANSIENT UI STATE: When true, the SessionView tab bar hides sessions with isHidden=true. */
+    @Transient
+    val hideHiddenInViewer: Boolean = true,
+
+    /** TRANSIENT UI STATE: When true, the SessionsManagerView hides sessions with isHidden=true. */
+    @Transient
+    val hideHiddenInManager: Boolean = true,
 
     /** TRANSIENT UI STATE: The ID of the session whose name is being edited. */
     @Transient

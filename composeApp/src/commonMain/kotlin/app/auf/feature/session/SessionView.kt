@@ -8,9 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,14 +25,36 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
+/**
+ * Derives the ordered, optionally filtered list of sessions from the canonical sessionOrder.
+ * Sessions not present in sessionOrder are appended at the end, sorted by createdAt descending.
+ */
+private fun deriveOrderedSessions(
+    sessionsMap: Map<String, Session>,
+    sessionOrder: List<String>,
+    hideHidden: Boolean
+): List<Session> {
+    val ordered = sessionOrder.mapNotNull { sessionsMap[it] }
+    val unordered = sessionsMap.values
+        .filter { it.id !in sessionOrder }
+        .sortedByDescending { it.createdAt }
+    val all = ordered + unordered
+    return if (hideHidden) all.filter { !it.isHidden } else all
+}
+
 @Composable
 fun SessionView(store: Store, features: List<Feature>, platformDependencies: PlatformDependencies) {
     val appState by store.state.collectAsState()
     val sessionState = appState.featureStates["session"] as? SessionState
     val coreState = appState.featureStates["core"] as? CoreState
 
-    val sessions = remember(sessionState?.sessions) {
-        sessionState?.sessions?.values?.sortedByDescending { it.createdAt } ?: emptyList()
+    val hideHidden = sessionState?.hideHiddenInViewer ?: true
+    val sessions = remember(sessionState?.sessions, sessionState?.sessionOrder, hideHidden) {
+        deriveOrderedSessions(
+            sessionState?.sessions ?: emptyMap(),
+            sessionState?.sessionOrder ?: emptyList(),
+            hideHidden
+        )
     }
     val activeSession = remember(sessionState?.activeSessionId, sessions) {
         sessions.find { it.id == sessionState?.activeSessionId }
@@ -54,6 +74,14 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
             } else {
                 Spacer(modifier = Modifier.weight(1f))
             }
+            // Hidden filter toggle
+            IconButton(onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_TOGGLE_HIDE_HIDDEN_IN_VIEWER)) }) {
+                Icon(
+                    imageVector = if (hideHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                    contentDescription = if (hideHidden) "Show Hidden Sessions" else "Hide Hidden Sessions",
+                    tint = if (hideHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             IconButton(onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_CREATE)) }) {
                 Icon(Icons.Default.Add, "New Session")
             }
@@ -63,7 +91,6 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
             Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No active session. Create one to begin.") }
         } else {
             LedgerPane(store, activeSession, sessionState, coreState, features, platformDependencies, Modifier.weight(1f))
-            // FIX: Pass the store to MessageInput
             MessageInput(store, activeSession, platformDependencies) { message ->
                 val activeUserId = coreState?.activeUserId ?: "user"
                 store.dispatch("session.ui", Action(ActionNames.SESSION_POST, buildJsonObject {
@@ -103,6 +130,8 @@ private fun SessionTab(store: Store, session: Session, isSelected: Boolean, isEd
             }, singleLine = true, textStyle = MaterialTheme.typography.labelLarge
         )
     } else {
+        // Dim hidden sessions when visible (filter is off)
+        val tabTextColor = if (session.isHidden) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f) else LocalContentColor.current
         Tab(
             selected = isSelected,
             onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.id) })) },
@@ -110,7 +139,7 @@ private fun SessionTab(store: Store, session: Session, isSelected: Boolean, isEd
                 onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.id) })) },
                 onDoubleClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_SET_EDITING_SESSION_NAME, buildJsonObject { put("sessionId", session.id) })) }
             )
-        ) { Text(session.name, maxLines = 1, modifier = Modifier.padding(vertical = 12.dp)) }
+        ) { Text(session.name, maxLines = 1, modifier = Modifier.padding(vertical = 12.dp), color = tabTextColor) }
     }
 }
 
@@ -127,7 +156,7 @@ private fun LedgerPane(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val identityNames = sessionState?.identityNames ?: emptyMap()
-    val activeUserId = coreState?.activeUserId // THE FIX: Get the active user ID from CoreState
+    val activeUserId = coreState?.activeUserId
 
     val agentFeature = remember(features) { features.find { it.name == "agent" } }
 
@@ -149,14 +178,13 @@ private fun LedgerPane(
                 val senderName = remember(entry.senderId, identityNames) {
                     identityNames[entry.senderId] ?: entry.senderId
                 }
-                // THE FIX: Determine if this entry is from the current user
                 val isCurrentUserMessage = entry.senderId == activeUserId
                 LedgerEntryCard(
                     store = store,
                     session = activeSession,
                     entry = entry,
                     senderName = senderName,
-                    isCurrentUserMessage = isCurrentUserMessage, // THE FIX: Pass the boolean flag
+                    isCurrentUserMessage = isCurrentUserMessage,
                     isEditingThisMessage = sessionState?.editingMessageId == entry.id,
                     editingContent = sessionState?.editingMessageContent,
                     platformDependencies = platformDependencies
@@ -203,11 +231,18 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                                 val senderName = (store.state.value.featureStates["session"] as? SessionState)?.identityNames?.get(entry.senderId) ?: entry.senderId
                                 "$senderName @ $timestamp:\n${entry.rawContent}"
                             }
-                            // FIX: Dispatch directly to the store
                             store.dispatch("ui.session.input", Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", transcript) }))
                             menuExpanded = false
                         },
                         leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Clear Session") },
+                        onClick = {
+                            store.dispatch("session.ui", Action(ActionNames.SESSION_CLEAR, buildJsonObject { put("session", activeSession.id) }))
+                            menuExpanded = false
+                        },
+                        leadingIcon = { Icon(Icons.Default.ClearAll, null) }
                     )
                 }
             }

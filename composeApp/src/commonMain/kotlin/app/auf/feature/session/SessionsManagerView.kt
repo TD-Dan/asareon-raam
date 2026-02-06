@@ -3,25 +3,49 @@ package app.auf.feature.session
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
+import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+/**
+ * Derives the ordered, optionally filtered list of sessions from the canonical sessionOrder.
+ * Sessions not present in sessionOrder are appended at the end, sorted by createdAt descending.
+ */
+private fun deriveOrderedSessionsForManager(
+    sessionsMap: Map<String, Session>,
+    sessionOrder: List<String>,
+    hideHidden: Boolean
+): List<Session> {
+    val ordered = sessionOrder.mapNotNull { sessionsMap[it] }
+    val unordered = sessionsMap.values
+        .filter { it.id !in sessionOrder }
+        .sortedByDescending { it.createdAt }
+    val all = ordered + unordered
+    return if (hideHidden) all.filter { !it.isHidden } else all
+}
+
 @Composable
-fun SessionsManagerView(store: Store) {
+fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies) {
     val appState by store.state.collectAsState()
     val sessionState = appState.featureStates["session"] as? SessionState
-    val sessions = remember(sessionState?.sessions) {
-        sessionState?.sessions?.values?.sortedByDescending { it.createdAt } ?: emptyList()
+    val hideHidden = sessionState?.hideHiddenInManager ?: true
+    val sessions = remember(sessionState?.sessions, sessionState?.sessionOrder, hideHidden) {
+        deriveOrderedSessionsForManager(
+            sessionState?.sessions ?: emptyMap(),
+            sessionState?.sessionOrder ?: emptyList(),
+            hideHidden
+        )
     }
     val editingSessionId = sessionState?.editingSessionId
 
@@ -33,9 +57,19 @@ fun SessionsManagerView(store: Store) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text("Session Manager", style = MaterialTheme.typography.headlineSmall)
-            Button(onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_CREATE)) }) {
-                Icon(Icons.Default.Add, contentDescription = "Create New Session", modifier = Modifier.padding(end = 8.dp))
-                Text("New Session")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                // Hidden filter toggle
+                IconButton(onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_TOGGLE_HIDE_HIDDEN_IN_MANAGER)) }) {
+                    Icon(
+                        imageVector = if (hideHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        contentDescription = if (hideHidden) "Show Hidden Sessions" else "Hide Hidden Sessions",
+                        tint = if (hideHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Button(onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_CREATE)) }) {
+                    Icon(Icons.Default.Add, contentDescription = "Create New Session", modifier = Modifier.padding(end = 8.dp))
+                    Text("New Session")
+                }
             }
         }
         HorizontalDivider()
@@ -51,11 +85,17 @@ fun SessionsManagerView(store: Store) {
                 contentPadding = PaddingValues(vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(sessions, key = { it.id }) { session ->
+                itemsIndexed(sessions, key = { _, session -> session.id }) { index, session ->
                     if (session.id == editingSessionId) {
                         SessionManagerCardEditor(session, store)
                     } else {
-                        SessionManagerCard(session, store)
+                        SessionManagerCard(
+                            session = session,
+                            store = store,
+                            index = index,
+                            totalCount = sessions.size,
+                            platformDependencies = platformDependencies
+                        )
                     }
                 }
             }
@@ -64,19 +104,83 @@ fun SessionsManagerView(store: Store) {
 }
 
 @Composable
-private fun SessionManagerCard(session: Session, store: Store) {
+private fun SessionManagerCard(
+    session: Session,
+    store: Store,
+    index: Int,
+    totalCount: Int,
+    platformDependencies: PlatformDependencies
+) {
+    // Dim hidden sessions
+    val cardAlpha = if (session.isHidden) 0.6f else 1f
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().alpha(cardAlpha),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Reorder buttons (drag handle substitute)
+            Column(
+                modifier = Modifier.padding(end = 4.dp),
+                verticalArrangement = Arrangement.Center
+            ) {
+                IconButton(
+                    onClick = {
+                        store.dispatch("session.ui", Action(ActionNames.SESSION_REORDER, buildJsonObject {
+                            put("sessionId", session.id); put("toIndex", index - 1)
+                        }))
+                    },
+                    modifier = Modifier.size(24.dp),
+                    enabled = index > 0
+                ) {
+                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move Up", modifier = Modifier.size(18.dp))
+                }
+                IconButton(
+                    onClick = {
+                        store.dispatch("session.ui", Action(ActionNames.SESSION_REORDER, buildJsonObject {
+                            put("sessionId", session.id); put("toIndex", index + 1)
+                        }))
+                    },
+                    modifier = Modifier.size(24.dp),
+                    enabled = index < totalCount - 1
+                ) {
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move Down", modifier = Modifier.size(18.dp))
+                }
+            }
+
+            // Lightning bolt icon for hidden (agent/p-cognition) sessions
+            if (session.isHidden) {
+                Icon(
+                    imageVector = Icons.Default.FlashOn,
+                    contentDescription = "Hidden Session",
+                    modifier = Modifier.size(20.dp).padding(end = 4.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(session.name, style = MaterialTheme.typography.titleMedium)
                 Text("ID: ${session.id}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Messages: ${session.ledger.size}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Messages: ${session.ledger.size}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val lockedCount = session.ledger.count { it.isLocked }
+                    if (lockedCount > 0) {
+                        Text("Locked: $lockedCount", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            // Visibility toggle
+            IconButton(onClick = {
+                store.dispatch("session.ui", Action(ActionNames.SESSION_TOGGLE_SESSION_HIDDEN, buildJsonObject { put("session", session.id) }))
+            }) {
+                Icon(
+                    imageVector = if (session.isHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                    contentDescription = if (session.isHidden) "Unhide Session" else "Hide Session"
+                )
             }
             // Edit Button
             IconButton(onClick = {
@@ -85,11 +189,17 @@ private fun SessionManagerCard(session: Session, store: Store) {
             }) {
                 Icon(Icons.Default.Edit, contentDescription = "Edit Session Name")
             }
-            // ADDITION: Clone Button
+            // Clone Button
             IconButton(onClick = {
                 store.dispatch("session.ui", Action(ActionNames.SESSION_CLONE, buildJsonObject { put("session", session.id) }))
             }) {
                 Icon(Icons.Default.ContentCopy, contentDescription = "Clone Session")
+            }
+            // Clear Button
+            IconButton(onClick = {
+                store.dispatch("session.ui", Action(ActionNames.SESSION_CLEAR, buildJsonObject { put("session", session.id) }))
+            }) {
+                Icon(Icons.Default.ClearAll, contentDescription = "Clear Session (preserves locked messages)")
             }
             // Delete Button
             IconButton(onClick = {
