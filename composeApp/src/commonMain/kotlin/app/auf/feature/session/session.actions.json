@@ -29,9 +29,12 @@
     },
     {
       "action_name":"session.LIST_SESSIONS",
-      "summary":"List all non-hidden sessions. Response is posted as a message to your response session.",
+      "summary":"List all non-hidden sessions. Response is posted as a message to the agent's originating session.",
       "payload_schema":null,
-      "requiresApproval":false
+      "requiresApproval":false,
+      "auto_fill":{
+        "responseSession":"{sessionId}"
+      }
     },
     {
       "action_name":"session.CREATE",

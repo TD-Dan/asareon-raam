@@ -52,7 +52,11 @@ data class ApprovalResolution(
     val actionName: String,
     val requestingAgentName: String,
     val resolution: Resolution,
-    val resolvedAt: Long
+    val resolvedAt: Long,
+    /** Retained from PendingApproval for dismiss/cleanup routing. */
+    val sessionId: String,
+    /** Retained from PendingApproval so the card entry can be deleted on dismiss. */
+    val cardMessageId: String
 )
 
 @Serializable

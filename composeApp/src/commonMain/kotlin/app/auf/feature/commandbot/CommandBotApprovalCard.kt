@@ -50,9 +50,9 @@ fun ApprovalCard(store: Store, approvalId: String) {
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             when {
-                // Resolved state — show static result
+                // Resolved state — show static result with dismiss button
                 resolvedApproval != null -> {
-                    ResolvedApprovalContent(resolvedApproval)
+                    ResolvedApprovalContent(resolvedApproval, store)
                 }
                 // Pending state — show action details + buttons
                 pendingApproval != null -> {
@@ -60,7 +60,7 @@ fun ApprovalCard(store: Store, approvalId: String) {
                 }
                 // Orphaned card — approval was lost (e.g., app restart)
                 else -> {
-                    OrphanedApprovalContent()
+                    OrphanedApprovalContent(approvalId, store)
                 }
             }
         }
@@ -166,43 +166,72 @@ private fun PendingApprovalContent(approval: PendingApproval, store: Store) {
 }
 
 @Composable
-private fun ResolvedApprovalContent(resolution: ApprovalResolution) {
+private fun ResolvedApprovalContent(resolution: ApprovalResolution, store: Store) {
     val (icon, text, color) = when (resolution.resolution) {
         Resolution.APPROVED -> Triple("✅", "Approved", MaterialTheme.colorScheme.primary)
         Resolution.DENIED -> Triple("❌", "Denied", MaterialTheme.colorScheme.error)
     }
 
     Row(
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(icon)
-        Column {
-            Text(
-                text = "$text: ${resolution.actionName}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = color
-            )
-            Text(
-                text = "Requested by ${resolution.requestingAgentName}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(icon)
+            Column {
+                Text(
+                    text = "$text: ${resolution.actionName}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = color
+                )
+                Text(
+                    text = "Requested by ${resolution.requestingAgentName}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // Dismiss button — removes the card entry from the session ledger
+        TextButton(
+            onClick = {
+                store.dispatch("commandbot.ui", Action(
+                    ActionNames.SESSION_DELETE_MESSAGE,
+                    buildJsonObject {
+                        put("session", resolution.sessionId)
+                        put("messageId", resolution.cardMessageId)
+                    }
+                ))
+            }
+        ) {
+            Text("Dismiss", style = MaterialTheme.typography.labelSmall)
         }
     }
 }
 
 @Composable
-private fun OrphanedApprovalContent() {
+private fun OrphanedApprovalContent(approvalId: String, store: Store) {
     Row(
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text("⏳")
-        Text(
-            text = "Approval request expired (app was restarted).",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Text("⏳")
+            Text(
+                text = "Approval request expired (app was restarted).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }

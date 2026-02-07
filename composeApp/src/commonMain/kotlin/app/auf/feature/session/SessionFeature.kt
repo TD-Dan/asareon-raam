@@ -27,7 +27,7 @@ class SessionFeature(
     @Serializable private data class UpdateConfigPayload(val session: String, val name: String)
     @Serializable private data class SessionTargetPayload(val session: String)
     @Serializable private data class PostPayload(val session: String, val senderId: String, val message: String? = null, val messageId: String? = null, val metadata: JsonObject? = null, val afterMessageId: String? = null, val doNotClear: Boolean = false)
-    @Serializable private data class UpdateMessagePayload(val session: String, val messageId: String, val newContent: String? = null, val newMetadata: JsonObject? = null)
+    @Serializable private data class UpdateMessagePayload(val session: String, val messageId: String, val newContent: String? = null, val newMetadata: JsonObject? = null, val doNotClear: Boolean? = null)
     @Serializable private data class MessageTargetPayload(val session: String, val messageId: String)
     @Serializable private data class SetEditingSessionPayload(val sessionId: String?)
     @Serializable private data class SetEditingMessagePayload(val messageId: String?)
@@ -537,10 +537,12 @@ class SessionFeature(
                     if (it.id == decoded.messageId) {
                         val updatedRawContent = decoded.newContent ?: it.rawContent
                         val updatedMetadata = decoded.newMetadata ?: it.metadata
+                        val updatedDoNotClear = decoded.doNotClear ?: it.doNotClear
                         it.copy(
                             rawContent = updatedRawContent,
                             content = updatedRawContent?.let { c -> blockParser.parse(c) } ?: emptyList(),
-                            metadata = updatedMetadata
+                            metadata = updatedMetadata,
+                            doNotClear = updatedDoNotClear
                         )
                     } else it
                 }

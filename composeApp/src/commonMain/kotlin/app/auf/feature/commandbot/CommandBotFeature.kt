@@ -119,7 +119,9 @@ class CommandBotFeature(
                     actionName = pending.actionName,
                     requestingAgentName = pending.requestingAgentName,
                     resolution = resolution,
-                    resolvedAt = platformDependencies.getSystemTimeMillis()
+                    resolvedAt = platformDependencies.getSystemTimeMillis(),
+                    sessionId = pending.sessionId,
+                    cardMessageId = pending.cardMessageId
                 )
 
                 currentState.copy(
@@ -132,11 +134,13 @@ class CommandBotFeature(
             ActionNames.SESSION_PUBLISH_MESSAGE_DELETED -> {
                 val messageId = action.payload?.get("messageId")?.jsonPrimitive?.contentOrNull ?: return currentState
                 val matchingApprovalId = currentState.resolvedApprovals.values
-                    .firstOrNull { /* We don't have cardMessageId in resolved state, so skip for now */ false }
+                    .firstOrNull { it.cardMessageId == messageId }
                     ?.approvalId
-                // For now, resolved approvals are lightweight and don't need aggressive cleanup.
-                // They'll be cleared on next app restart since CommandBotState is not persisted.
-                currentState
+                if (matchingApprovalId != null) {
+                    currentState.copy(resolvedApprovals = currentState.resolvedApprovals - matchingApprovalId)
+                } else {
+                    currentState
+                }
             }
 
             else -> currentState
@@ -172,17 +176,21 @@ class CommandBotFeature(
             // --- Approval Resolution ---
             ActionNames.COMMANDBOT_APPROVE -> {
                 val approvalId = action.payload?.get("approvalId")?.jsonPrimitive?.contentOrNull ?: return
+                // Read the pending approval from CURRENT state (reducer doesn't handle APPROVE).
                 val commandBotState = newState as? CommandBotState ?: return
-                // The reducer has already moved it from pending → resolved.
-                // We need the original PendingApproval from PREVIOUS state to dispatch.
-                val previousBotState = previousState as? CommandBotState
-                val approval = previousBotState?.pendingApprovals?.get(approvalId)
+                val approval = commandBotState.pendingApprovals[approvalId]
                 if (approval == null) {
                     platformDependencies.log(LogLevel.WARN, name, "APPROVE: No pending approval found for '$approvalId'.")
                     return
                 }
 
-                // Dispatch the staged action
+                // 1. Dispatch the internal state transition: pending → resolved
+                store.deferredDispatch(this.name, Action(ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
+                    put("approvalId", approvalId)
+                    put("resolution", Resolution.APPROVED.name)
+                }))
+
+                // 2. Dispatch the staged action
                 val stagedAction = Action(name = approval.actionName, payload = approval.payload)
                 store.deferredDispatch(approval.dispatchOriginator, stagedAction)
                 platformDependencies.log(
@@ -190,7 +198,10 @@ class CommandBotFeature(
                     "Approval '$approvalId' APPROVED. Dispatching '${approval.actionName}' on behalf of '${approval.requestingAgentId}'."
                 )
 
-                // Post feedback to the agent
+                // 3. Make the card clearable now that it's resolved (flip doNotClear → false)
+                makeCardClearable(approval.sessionId, approval.cardMessageId, store)
+
+                // 4. Post feedback to the agent
                 val responseSessionId = resolveAgentResponseSession(approval.requestingAgentId, store)
                 if (responseSessionId != null) {
                     postFeedbackToSession(
@@ -203,19 +214,29 @@ class CommandBotFeature(
 
             ActionNames.COMMANDBOT_DENY -> {
                 val approvalId = action.payload?.get("approvalId")?.jsonPrimitive?.contentOrNull ?: return
-                val previousBotState = previousState as? CommandBotState
-                val approval = previousBotState?.pendingApprovals?.get(approvalId)
+                // Read the pending approval from CURRENT state (reducer doesn't handle DENY).
+                val commandBotState = newState as? CommandBotState ?: return
+                val approval = commandBotState.pendingApprovals[approvalId]
                 if (approval == null) {
                     platformDependencies.log(LogLevel.WARN, name, "DENY: No pending approval found for '$approvalId'.")
                     return
                 }
+
+                // 1. Dispatch the internal state transition: pending → resolved
+                store.deferredDispatch(this.name, Action(ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
+                    put("approvalId", approvalId)
+                    put("resolution", Resolution.DENIED.name)
+                }))
 
                 platformDependencies.log(
                     LogLevel.INFO, name,
                     "Approval '$approvalId' DENIED. Action '${approval.actionName}' from '${approval.requestingAgentId}' will not be dispatched."
                 )
 
-                // Post denial feedback to the agent
+                // 2. Make the card clearable now that it's resolved
+                makeCardClearable(approval.sessionId, approval.cardMessageId, store)
+
+                // 3. Post denial feedback to the agent
                 val responseSessionId = resolveAgentResponseSession(approval.requestingAgentId, store)
                 if (responseSessionId != null) {
                     postFeedbackToSession(
@@ -310,7 +331,9 @@ class CommandBotFeature(
                 if (autoFill != null) {
                     val mutablePayload = payloadJson.toMutableMap()
                     autoFill.forEach { (key, template) ->
-                        val value = template.replace("{agentId}", originalSenderId)
+                        val value = template
+                            .replace("{agentId}", originalSenderId)
+                            .replace("{sessionId}", sessionId)
                         mutablePayload[key] = JsonPrimitive(value)
                     }
                     payloadJson = JsonObject(mutablePayload)
@@ -458,6 +481,18 @@ class CommandBotFeature(
         }
 
         return JsonObject(mutablePayload)
+    }
+
+    /**
+     * After approval resolution, flips the card's `doNotClear` to false so that
+     * `SESSION_CLEAR` can remove the resolved card.
+     */
+    private fun makeCardClearable(sessionId: String, cardMessageId: String, store: Store) {
+        store.deferredDispatch(this.name, Action(ActionNames.SESSION_UPDATE_MESSAGE, buildJsonObject {
+            put("session", sessionId)
+            put("messageId", cardMessageId)
+            put("doNotClear", false)
+        }))
     }
 
     /**
