@@ -22,6 +22,7 @@ import kotlin.coroutines.cancellation.CancellationException
 private data class GenerateContentResponse(
     val candidates: List<Candidate>? = null,
     val promptFeedback: PromptFeedback? = null,
+    val usageMetadata: UsageMetadata? = null,
     val error: ApiError? = null
 )
 @Serializable
@@ -36,6 +37,12 @@ private data class Part(val text: String)
 @Serializable
 private data class PromptFeedback(val blockReason: String?)
 @Serializable
+private data class UsageMetadata(
+    val promptTokenCount: Int? = null,
+    val candidatesTokenCount: Int? = null,
+    val totalTokenCount: Int? = null
+)
+@Serializable
 private data class ApiError(val message: String)
 @Serializable
 private data class ListModelsResponse(val models: List<ModelInfo>)
@@ -43,6 +50,13 @@ private data class ListModelsResponse(val models: List<ModelInfo>)
 private data class ModelInfo(
     val name: String,
     val supportedGenerationMethods: List<String> = emptyList()
+)
+
+// --- Token Counting API ---
+@Serializable
+private data class CountTokensResponse(
+    val totalTokens: Int? = null,
+    val error: ApiError? = null
 )
 
 /**
@@ -100,10 +114,14 @@ class GeminiProvider(
             return GatewayResponse(null, "API Error: ${it.message}", correlationId)
         }
 
+        // Extract token usage from usageMetadata
+        val inputTokens = response.usageMetadata?.promptTokenCount
+        val outputTokens = response.usageMetadata?.candidatesTokenCount
+
         // Path 2: Successful Content Generation
         val rawText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
         if (rawText != null) {
-            return GatewayResponse(rawText, null, correlationId)
+            return GatewayResponse(rawText, null, correlationId, inputTokens, outputTokens)
         }
 
         // Path 3: Safety/Content Filter Block
@@ -113,7 +131,7 @@ class GeminiProvider(
 
         if (response.candidates != null) {
             platformDependencies.log(LogLevel.INFO, id, "Received a valid response with no text content from Gemini for correlationId '$correlationId'. Treating as a completed empty turn.")
-            return GatewayResponse("", null, correlationId)
+            return GatewayResponse("", null, correlationId, inputTokens, outputTokens)
         }
 
         // Path 5 (Fallback): Unrecognized response format
@@ -162,6 +180,52 @@ class GeminiProvider(
         // For preview, we don't need the API key, just the payload logic.
         val payload = buildRequestPayload(request)
         return prettyJson.encodeToString(payload)
+    }
+
+    /**
+     * Calls Gemini's countTokens endpoint to estimate input token usage before execution.
+     * The countTokens endpoint requires the request to be wrapped in a
+     * "generateContentRequest" field, rather than accepting contents/system_instruction at root level.
+     */
+    override suspend fun countTokens(request: GatewayRequest, settings: Map<String, String>): TokenCountEstimate? {
+        val apiKey = settings[apiKeySettingKey].orEmpty()
+        if (apiKey.isBlank()) return null
+
+        return try {
+            val innerPayload = buildRequestPayload(request)
+            // Wrap in generateContentRequest as required by the countTokens endpoint.
+            // The model must be specified inside the wrapper since it's not inferred from the URL.
+            val countPayload = buildJsonObject {
+                putJsonObject("generateContentRequest") {
+                    put("model", "models/${request.modelName}")
+                    // Merge in the contents/system_instruction from the inner payload
+                    innerPayload.jsonObject.forEach { (key, value) ->
+                        put(key, value)
+                    }
+                }
+            }
+            val apiUrl = "https://$API_HOST/v1beta/models/${request.modelName}:countTokens"
+
+            val responseBody: String = client.post(apiUrl) {
+                parameter("key", apiKey)
+                contentType(ContentType.Application.Json)
+                setBody(countPayload)
+            }.body()
+
+            val response = json.decodeFromString<CountTokensResponse>(responseBody)
+
+            response.error?.let {
+                platformDependencies.log(LogLevel.WARN, id, "Token counting failed: ${it.message}")
+                return null
+            }
+
+            response.totalTokens?.let { TokenCountEstimate(it) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            platformDependencies.log(LogLevel.WARN, id, "Token counting request failed: ${e.message}")
+            null
+        }
     }
 
     override suspend fun generateContent(request: GatewayRequest, settings: Map<String, String>): GatewayResponse {

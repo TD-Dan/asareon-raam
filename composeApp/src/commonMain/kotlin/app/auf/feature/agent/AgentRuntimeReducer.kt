@@ -86,7 +86,9 @@ object AgentRuntimeReducer {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SetPreviewDataPayload>(it) } ?: return state
                 val agentId = payload.agentId
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
-                val previewData = StagedPreviewData(payload.agnosticRequest, payload.rawRequestJson)
+                // Extract estimated token count if present in the payload
+                val estimatedInputTokens = action.payload?.get("estimatedInputTokens")?.jsonPrimitive?.intOrNull
+                val previewData = StagedPreviewData(payload.agnosticRequest, payload.rawRequestJson, estimatedInputTokens)
                 val updatedStatus = currentStatus.copy(stagedPreviewData = previewData)
                 state.copy(
                     agentStatuses = state.agentStatuses + (agentId to updatedStatus),
@@ -178,6 +180,10 @@ object AgentRuntimeReducer {
         val newStatus = try { AgentStatus.valueOf(newStatusString) } catch (e: Exception) { return state }
         val newErrorMessage = if (newStatus == AgentStatus.ERROR) payload["error"]?.jsonPrimitive?.contentOrNull else null
 
+        // Extract token usage from payload (set when a generation completes)
+        val payloadInputTokens = payload["lastInputTokens"]?.jsonPrimitive?.intOrNull
+        val payloadOutputTokens = payload["lastOutputTokens"]?.jsonPrimitive?.intOrNull
+
         // State Transition Logic
         val clearTimers = currentStatus.status == AgentStatus.WAITING && newStatus != AgentStatus.WAITING
         val isStartingProcessing = newStatus == AgentStatus.PROCESSING && currentStatus.status != AgentStatus.PROCESSING
@@ -193,7 +199,10 @@ object AgentRuntimeReducer {
             processingFrontierMessageId = if (isStoppingProcessing) null else currentStatus.processingFrontierMessageId,
             processingStep = if (isStoppingProcessing) null else currentStatus.processingStep,
             stagedTurnContext = if(shouldClearContext) null else currentStatus.stagedTurnContext,
-            transientHkgContext = if (shouldClearContext) null else currentStatus.transientHkgContext
+            transientHkgContext = if (shouldClearContext) null else currentStatus.transientHkgContext,
+            // Preserve previous token data unless new data is provided in this update
+            lastInputTokens = payloadInputTokens ?: currentStatus.lastInputTokens,
+            lastOutputTokens = payloadOutputTokens ?: currentStatus.lastOutputTokens
         )
         // Reset persistence flag as this is pure runtime state
         return state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus), agentsToPersist = null)

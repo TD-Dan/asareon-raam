@@ -50,7 +50,7 @@
     },
     {
       "action_name":"gateway.PREPARE_PREVIEW",
-      "summary":"Requests the compilation of a raw, provider-specific request payload for user preview, without executing the request.",
+      "summary":"Requests the compilation of a raw, provider-specific request payload for user preview, without executing the request. If the provider supports token counting, the response will include an estimated input token count.",
       "payload_schema":{
         "type":"object",
         "properties":{
@@ -136,6 +136,14 @@
               "string",
               "null"
             ]
+          },
+          "inputTokens":{
+            "type":["integer", "null"],
+            "description":"The number of input/prompt tokens consumed, as reported by the provider. Null if the provider did not report usage."
+          },
+          "outputTokens":{
+            "type":["integer", "null"],
+            "description":"The number of output/completion tokens consumed, as reported by the provider. Null if the provider did not report usage."
           }
         },
         "required":[
@@ -200,7 +208,7 @@
   "private_envelopes":[
     {
       "type_name":"gateway.response.RESPONSE",
-      "summary":"The standard response envelope from the GatewayFeature, containing either generated content or an error.",
+      "summary":"The standard response envelope from the GatewayFeature, containing either generated content or an error, plus optional token usage.",
       "payload_schema":{
         "type":"object",
         "properties":{
@@ -218,6 +226,14 @@
           },
           "correlationId":{
             "type":"string"
+          },
+          "inputTokens":{
+            "type":["integer", "null"],
+            "description":"Input/prompt tokens consumed, as reported by the provider."
+          },
+          "outputTokens":{
+            "type":["integer", "null"],
+            "description":"Output/completion tokens consumed, as reported by the provider."
           }
         },
         "required":[
@@ -227,7 +243,7 @@
     },
     {
       "type_name":"gateway.response.PREVIEW",
-      "summary":"The response envelope containing the data for a turn preview.",
+      "summary":"The response envelope containing the data for a turn preview, plus an optional token count estimate.",
       "payload_schema":{
         "type":"object",
         "properties":{
@@ -241,6 +257,10 @@
           "rawRequestJson":{
             "type":"string",
             "description":"The final, provider-specific JSON payload as a formatted string."
+          },
+          "estimatedInputTokens":{
+            "type":["integer", "null"],
+            "description":"Estimated input token count from the provider's token counting API. Null if the provider does not support pre-flight counting."
           }
         },
         "required":[

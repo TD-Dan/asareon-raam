@@ -88,8 +88,6 @@ object AgentAvatarLogic {
         zombies.forEach { sessionId ->
             val messageId = currentCards[sessionId]
             if (messageId != null) {
-                // [CLEANUP] We don't need to explicitly clean state here; the Reducer reacts to SESSION_DELETE_MESSAGE
-                // We just send the command to the ledger.
                 store.deferredDispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
                     put("session", sessionId)
                     put("messageId", messageId)
@@ -119,7 +117,6 @@ object AgentAvatarLogic {
             }
 
             // C. Post New Card (Side Effect)
-            // --- SLICE 1 CHANGE: Include partial_view_feature and partial_view_key for generalized routing ---
             val metadata = buildJsonObject {
                 put("render_as_partial", true)
                 put("is_transient", true)
@@ -139,6 +136,15 @@ object AgentAvatarLogic {
             }))
         }
     }
+}
+
+// --- Helpers ---
+
+/**
+ * Formats a token count for display. Examples: "1,234", "12,345".
+ */
+private fun formatTokenCount(count: Int): String {
+    return count.toString().reversed().chunked(3).joinToString(",").reversed()
 }
 
 // --- Composables ---
@@ -218,6 +224,24 @@ fun AgentControlCard(
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
+
+            // NEW: Display last request token usage if available
+            val lastInput = statusInfo.lastInputTokens
+            val lastOutput = statusInfo.lastOutputTokens
+            if (lastInput != null || lastOutput != null) {
+                Text(
+                    text = buildString {
+                        append("Last request: ")
+                        if (lastInput != null) append("${formatTokenCount(lastInput)} input")
+                        if (lastInput != null && lastOutput != null) append(", ")
+                        if (lastOutput != null) append("${formatTokenCount(lastOutput)} output")
+                        append(" tokens")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -286,7 +310,7 @@ fun AgentControlCard(
                     Icon(
                         imageVector = Icons.Default.Autorenew,
                         contentDescription = "Toggle Automatic Mode",
-                        tint = if (agent.automaticMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        tint = if (agent.automaticMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
                     )
                 }
             }

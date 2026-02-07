@@ -22,7 +22,6 @@ open class GatewayFeature(
     private val providerMap = providers.associateBy { it.id }
     private val providerApiKeys = providers.map { "gateway.${it.id}.apiKey" }.toSet()
     private val json = Json { ignoreUnknownKeys = true }
-    // private val prettyJson = Json { ignoreUnknownKeys = true; prettyPrint = true } // Removed: Provider handles formatting now
 
     // REFACTOR: A map to track active generation jobs. Now mutated ONLY via onAction.
     private val activeRequests = mutableMapOf<String, Job>()
@@ -93,7 +92,6 @@ open class GatewayFeature(
     private fun handleRequestCompleted(action: Action) {
         val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull ?: return
         if (activeRequests.containsKey(correlationId)) {
-            // platformDependencies.log(LogLevel.DEBUG, name, "Cleaning up completed request: $correlationId")
             activeRequests.remove(correlationId)
         }
     }
@@ -130,6 +128,14 @@ open class GatewayFeature(
             val request = GatewayRequest(modelName, contents, correlationId, systemPrompt)
             val response = provider.generateContent(request, gatewayState.apiKeys)
 
+            // Log token usage if available
+            if (response.inputTokens != null || response.outputTokens != null) {
+                platformDependencies.log(
+                    LogLevel.INFO, name,
+                    "Token usage for $correlationId: input=${response.inputTokens ?: "N/A"}, output=${response.outputTokens ?: "N/A"}"
+                )
+            }
+
             val responsePayload = try {
                 Json.encodeToJsonElement(response).jsonObject
             } catch (e: Exception) {
@@ -147,7 +153,7 @@ open class GatewayFeature(
             }
 
             val envelope = PrivateDataEnvelope(
-                type = ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE, // Updated Name
+                type = ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE,
                 payload = responsePayload
             )
             store.deliverPrivateData(this@GatewayFeature.name, originator, envelope)
@@ -194,14 +200,26 @@ open class GatewayFeature(
                 "Error generating preview: ${e.message}"
             }
 
+            // NEW: Attempt token counting if the provider supports it
+            val tokenEstimate = try {
+                provider.countTokens(agnosticRequest, gatewayState.apiKeys)
+            } catch (e: Exception) {
+                platformDependencies.log(LogLevel.WARN, name, "Token counting failed for preview ($providerId): ${e.message}")
+                null
+            }
+
             val responsePayload = buildJsonObject {
                 put("correlationId", correlationId)
                 put("agnosticRequest", Json.encodeToJsonElement(agnosticRequest))
                 put("rawRequestJson", rawRequestJson)
+                // Include token estimate if available
+                tokenEstimate?.let {
+                    put("estimatedInputTokens", it.inputTokens)
+                }
             }
 
             val envelope = PrivateDataEnvelope(
-                type = ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW, // Updated Name
+                type = ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW,
                 payload = responsePayload
             )
             store.deliverPrivateData(this@GatewayFeature.name, originator, envelope)

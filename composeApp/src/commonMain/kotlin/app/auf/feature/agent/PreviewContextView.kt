@@ -11,6 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Token
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +24,13 @@ import app.auf.core.Store
 import app.auf.core.generated.ActionNames
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+
+/**
+ * Formats a token count for display. Examples: "1,234", "12,345".
+ */
+private fun formatTokenCount(count: Int): String {
+    return count.toString().reversed().chunked(3).joinToString(",").reversed()
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,6 +70,26 @@ fun AgentContextView(store: Store) {
         },
         bottomBar = {
             BottomAppBar {
+                // NEW: Show estimated token count in the bottom bar if available
+                previewData.estimatedInputTokens?.let { estimate ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(start = 8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Token,
+                            contentDescription = "Token estimate",
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "~${formatTokenCount(estimate)} input tokens",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 Spacer(Modifier.weight(1f))
                 Button(onClick = onDiscard, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) {
                     Text("Cancel")
@@ -103,6 +131,36 @@ private fun LogicalContextPane(previewData: StagedPreviewData, store: Store) {
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // NEW: Token estimate info card at top
+            previewData.estimatedInputTokens?.let { estimate ->
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Token,
+                                contentDescription = "Token estimate",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Text(
+                                text = "Estimated input: ${formatTokenCount(estimate)} tokens",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+
             // FIX: Display the system prompt if it exists.
             previewData.agnosticRequest.systemPrompt?.let { systemPrompt ->
                 item {

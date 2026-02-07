@@ -64,6 +64,13 @@ private data class ModelInfo(
     val displayName: String? = null
 )
 
+// --- Token Counting API ---
+@Serializable
+private data class CountTokensResponse(
+    val inputTokens: Int? = null,
+    val error: ApiError? = null
+)
+
 /**
  * A concrete implementation of the UniversalGatewayProvider for the Anthropic (Claude) API.
  * Implements the Messages API: https://docs.anthropic.com/en/api/messages
@@ -121,10 +128,14 @@ class AnthropicProvider(
             return GatewayResponse(null, "API Error: ${it.message}", correlationId)
         }
 
+        // Extract token usage (available on both success and some error paths)
+        val inputTokens = response.usage?.inputTokens
+        val outputTokens = response.usage?.outputTokens
+
         // Path 2: Successful Content Generation
         val rawText = response.content?.firstOrNull()?.text
         if (rawText != null) {
-            return GatewayResponse(rawText, null, correlationId)
+            return GatewayResponse(rawText, null, correlationId, inputTokens, outputTokens)
         }
 
         // Path 3 (Future-Proofing): Unrecognized response format
@@ -207,6 +218,63 @@ class AnthropicProvider(
     override suspend fun generatePreview(request: GatewayRequest, settings: Map<String, String>): String {
         val payload = buildRequestPayload(request)
         return prettyJson.encodeToString(payload)
+    }
+
+    /**
+     * Builds a payload specifically for the /v1/messages/count_tokens endpoint.
+     * This differs from the generation payload: it requires model and messages but
+     * must NOT include max_tokens.
+     */
+    internal fun buildCountTokensPayload(request: GatewayRequest): JsonElement {
+        val anthropicMessages = buildJsonArray {
+            request.contents.forEach { message ->
+                add(buildJsonObject {
+                    put("role", if (message.role == "model") "assistant" else "user")
+                    put("content", message.content)
+                })
+            }
+        }
+
+        return buildJsonObject {
+            put("model", request.modelName)
+            put("messages", anthropicMessages)
+            request.systemPrompt?.let { put("system", it) }
+        }
+    }
+
+    /**
+     * Calls Anthropic's /v1/messages/count_tokens endpoint to estimate input token usage
+     * before execution. This is a lightweight call that does not consume output tokens.
+     */
+    override suspend fun countTokens(request: GatewayRequest, settings: Map<String, String>): TokenCountEstimate? {
+        val apiKey = settings[apiKeySettingKey].orEmpty()
+        if (apiKey.isBlank()) return null
+
+        return try {
+            val payload = buildCountTokensPayload(request)
+            val apiUrl = "https://$apiHost/v1/messages/count_tokens"
+
+            val responseBody: String = client.post(apiUrl) {
+                header("x-api-key", apiKey)
+                header("anthropic-version", apiVersion)
+                contentType(ContentType.Application.Json)
+                setBody(payload)
+            }.body()
+
+            val response = json.decodeFromString<CountTokensResponse>(responseBody)
+
+            response.error?.let {
+                platformDependencies.log(LogLevel.WARN, id, "Token counting failed: ${it.message}")
+                return null
+            }
+
+            response.inputTokens?.let { TokenCountEstimate(it) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            platformDependencies.log(LogLevel.WARN, id, "Token counting request failed: ${e.message}")
+            null
+        }
     }
 
     override suspend fun generateContent(request: GatewayRequest, settings: Map<String, String>): GatewayResponse {

@@ -30,7 +30,20 @@ data class GatewayRequest(
 data class GatewayResponse(
     val rawContent: String?,
     val errorMessage: String?,
-    val correlationId: String
+    val correlationId: String,
+    /** The number of tokens consumed by the input/prompt, as reported by the provider. */
+    val inputTokens: Int? = null,
+    /** The number of tokens consumed by the generated output, as reported by the provider. */
+    val outputTokens: Int? = null
+)
+
+/**
+ * A provider-agnostic token count estimate, returned by providers that support
+ * pre-flight token counting (e.g., Anthropic's /v1/messages/count_tokens).
+ */
+@Serializable
+data class TokenCountEstimate(
+    val inputTokens: Int
 )
 
 /**
@@ -73,4 +86,14 @@ interface UniversalGatewayProvider {
      * @return A list of model name strings, or an empty list on failure.
      */
     suspend fun listAvailableModels(settings: Map<String, String>): List<String>
+
+    /**
+     * Estimates the token count for a request payload WITHOUT executing it.
+     * Only providers with a dedicated token-counting endpoint need to override this.
+     *
+     * @param request The generic request data.
+     * @param settings A map of all current application settings.
+     * @return A [TokenCountEstimate] if supported, or null if this provider does not support pre-flight counting.
+     */
+    suspend fun countTokens(request: GatewayRequest, settings: Map<String, String>): TokenCountEstimate? = null
 }

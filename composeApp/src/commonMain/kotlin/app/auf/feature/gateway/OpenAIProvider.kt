@@ -21,12 +21,22 @@ import kotlin.coroutines.cancellation.CancellationException
 @Serializable
 private data class OpenAIChatResponse(
     val choices: List<Choice>? = null,
+    val usage: OpenAIUsage? = null,
     val error: ApiError? = null
 )
 @Serializable
 private data class Choice(val message: OpenAIMessage)
 @Serializable
 private data class OpenAIMessage(val role: String, val content: String?, val name: String? = null)
+@Serializable
+private data class OpenAIUsage(
+    @kotlinx.serialization.SerialName("prompt_tokens")
+    val promptTokens: Int? = null,
+    @kotlinx.serialization.SerialName("completion_tokens")
+    val completionTokens: Int? = null,
+    @kotlinx.serialization.SerialName("total_tokens")
+    val totalTokens: Int? = null
+)
 @Serializable
 private data class ApiError(val message: String)
 
@@ -88,10 +98,14 @@ class OpenAIProvider(
             return GatewayResponse(null, "API Error: ${it.message}", correlationId)
         }
 
+        // Extract token usage
+        val inputTokens = response.usage?.promptTokens
+        val outputTokens = response.usage?.completionTokens
+
         // Path 2: Successful Content Generation
         val rawText = response.choices?.firstOrNull()?.message?.content
         if (rawText != null) {
-            return GatewayResponse(rawText, null, correlationId)
+            return GatewayResponse(rawText, null, correlationId, inputTokens, outputTokens)
         }
 
         // Path 3 (Future-Proofing): Unrecognized response format

@@ -50,12 +50,12 @@ object AgentDefaults {
             isBuiltIn = true
         ),
         AgentResource(
-        id = "res-sys-instruction-v1",
-        type = AgentResourceType.SYSTEM_INSTRUCTION,
-        name = "Default Builtin System Instruction",
-        content = VanillaStrategy.DEFAULT_SYSTEM_INSTRUCTION_XML,
-        isBuiltIn = true
-    )
+            id = "res-sys-instruction-v1",
+            type = AgentResourceType.SYSTEM_INSTRUCTION,
+            name = "Default Builtin System Instruction",
+            content = VanillaStrategy.DEFAULT_SYSTEM_INSTRUCTION_XML,
+            isBuiltIn = true
+        )
     )
 }
 
@@ -79,7 +79,9 @@ data class GatewayRequest(
 @Serializable
 data class StagedPreviewData(
     val agnosticRequest: GatewayRequest,
-    val rawRequestJson: String
+    val rawRequestJson: String,
+    /** Estimated input token count from the provider's counting API. Null if unsupported. */
+    val estimatedInputTokens: Int? = null
 )
 
 /**
@@ -129,7 +131,11 @@ data class AgentStatusInfo(
     val turnMode: TurnMode = TurnMode.DIRECT,
     val stagedPreviewData: StagedPreviewData? = null,
     val stagedTurnContext: List<GatewayMessage>? = null,
-    val transientHkgContext: JsonObject? = null
+    val transientHkgContext: JsonObject? = null,
+    /** Input tokens consumed by the last completed generation request. */
+    val lastInputTokens: Int? = null,
+    /** Output tokens consumed by the last completed generation request. */
+    val lastOutputTokens: Int? = null
 )
 
 @Serializable
