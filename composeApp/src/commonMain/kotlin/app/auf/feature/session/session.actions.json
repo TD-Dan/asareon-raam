@@ -100,6 +100,11 @@
           "afterMessageId": {
             "type": ["string", "null"],
             "description": "If provided, the new entry will be inserted directly after this message ID. If the ID is not found, it will be appended to the end."
+          },
+          "doNotClear": {
+            "type": "boolean",
+            "description": "If true, this entry will survive a SESSION_CLEAR action even when not locked. Used for transient UI entries like agent avatar cards. Defaults to false.",
+            "default": false
           }
         },
         "required":[
@@ -322,7 +327,7 @@
     },
     {
       "action_name":"session.CLEAR",
-      "summary":"Removes all non-locked messages from a session's ledger. Locked messages are preserved.",
+      "summary":"Removes all messages from a session's ledger that are neither locked nor marked doNotClear. Protected messages are preserved.",
       "payload_schema":{
         "type":"object",
         "properties":{
@@ -488,6 +493,11 @@
         "isLocked": {
           "type": "boolean",
           "description": "When true, this entry cannot be edited, deleted, or cleared. Defaults to false.",
+          "default": false
+        },
+        "doNotClear": {
+          "type": "boolean",
+          "description": "When true, this entry survives a SESSION_CLEAR even if not locked. Used for transient UI entries like agent avatar cards. Defaults to false.",
           "default": false
         }
       },

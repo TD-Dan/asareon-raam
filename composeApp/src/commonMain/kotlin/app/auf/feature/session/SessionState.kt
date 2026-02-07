@@ -34,7 +34,9 @@ data class LedgerEntry(
     /** NEW: A generic metadata object for UI hints or embedding components from other features. */
     val metadata: JsonObject? = null,
     /** A locked message cannot be edited, deleted, or cleared. Acts as a durable preservation flag. */
-    val isLocked: Boolean = false
+    val isLocked: Boolean = false,
+    /** When true, this entry survives a SESSION_CLEAR even if not locked. Used for transient UI entries like agent avatar cards. */
+    val doNotClear: Boolean = false
 )
 
 /**

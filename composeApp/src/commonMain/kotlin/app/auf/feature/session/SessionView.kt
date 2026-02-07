@@ -210,10 +210,11 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
     var sessionToClear by remember { mutableStateOf<Session?>(null) }
 
     sessionToClear?.let { session ->
-        val lockedCount = session.ledger.count { it.isLocked }
-        val unlocked = session.ledger.size - lockedCount
-        val detail = if (lockedCount > 0) {
-            "$unlocked unlocked message(s) will be removed. $lockedCount locked message(s) will be preserved."
+        val survivorCount = session.ledger.count { it.isLocked || it.doNotClear }
+        val removedCount = session.ledger.size - survivorCount
+        val detail = if (survivorCount > 0) {
+            //TODO: report this as "x locked messages and y other will be preserved"
+            "$removedCount message(s) will be removed. $survivorCount protected message(s) will be preserved."
         } else {
             "All ${session.ledger.size} message(s) will be removed."
         }

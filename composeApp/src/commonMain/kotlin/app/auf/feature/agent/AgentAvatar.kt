@@ -131,6 +131,7 @@ object AgentAvatarLogic {
                 put("senderId", agentId)
                 put("messageId", newMessageId)
                 put("metadata", metadata)
+                put("doNotClear", true)
                 afterMessageId?.let { put("afterMessageId", it) }
             }))
         }

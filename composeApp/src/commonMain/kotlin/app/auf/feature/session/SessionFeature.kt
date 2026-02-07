@@ -26,7 +26,7 @@ class SessionFeature(
     @Serializable private data class ClonePayload(val session: String)
     @Serializable private data class UpdateConfigPayload(val session: String, val name: String)
     @Serializable private data class SessionTargetPayload(val session: String)
-    @Serializable private data class PostPayload(val session: String, val senderId: String, val message: String? = null, val messageId: String? = null, val metadata: JsonObject? = null, val afterMessageId: String? = null)
+    @Serializable private data class PostPayload(val session: String, val senderId: String, val message: String? = null, val messageId: String? = null, val metadata: JsonObject? = null, val afterMessageId: String? = null, val doNotClear: Boolean = false)
     @Serializable private data class UpdateMessagePayload(val session: String, val messageId: String, val newContent: String? = null, val newMetadata: JsonObject? = null)
     @Serializable private data class MessageTargetPayload(val session: String, val messageId: String)
     @Serializable private data class SetEditingSessionPayload(val sessionId: String?)
@@ -419,7 +419,8 @@ class SessionFeature(
                     senderId = decoded.senderId,
                     rawContent = decoded.message,
                     content = decoded.message?.let { blockParser.parse(it) } ?: emptyList(),
-                    metadata = decoded.metadata
+                    metadata = decoded.metadata,
+                    doNotClear = decoded.doNotClear
                 )
                 val updatedLedger = if (decoded.afterMessageId != null) {
                     val insertionIndex = targetSession.ledger.indexOfFirst { it.id == decoded.afterMessageId }
@@ -600,7 +601,7 @@ class SessionFeature(
                 val identifier = payload?.let { json.decodeFromJsonElement<SessionTargetPayload>(it) }?.session ?: return currentFeatureState
                 val sessionId = resolveSessionId(identifier, currentFeatureState) ?: return currentFeatureState
                 val targetSession = currentFeatureState.sessions[sessionId] ?: return currentFeatureState
-                val survivingLedger = targetSession.ledger.filter { it.isLocked }
+                val survivingLedger = targetSession.ledger.filter { it.isLocked || it.doNotClear }
                 val survivingIds = survivingLedger.map { it.id }.toSet()
                 val updatedSession = targetSession.copy(
                     ledger = survivingLedger,
