@@ -87,7 +87,26 @@ class SessionFeature(
         }
 
         when (action.name) {
-            ActionNames.SYSTEM_PUBLISH_STARTING -> store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
+            ActionNames.SYSTEM_PUBLISH_STARTING -> {
+                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
+                // Register hide-hidden settings with the Settings feature for persistence.
+                store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+                    put("key", SessionState.SETTING_HIDE_HIDDEN_VIEWER)
+                    put("type", "BOOLEAN")
+                    put("label", "Hide hidden sessions in viewer")
+                    put("description", "When enabled, sessions marked as hidden are not shown in the tab bar.")
+                    put("section", "Session")
+                    put("defaultValue", "true")
+                }))
+                store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+                    put("key", SessionState.SETTING_HIDE_HIDDEN_MANAGER)
+                    put("type", "BOOLEAN")
+                    put("label", "Hide hidden sessions in manager")
+                    put("description", "When enabled, sessions marked as hidden are not shown in the session manager.")
+                    put("section", "Session")
+                    put("defaultValue", "true")
+                }))
+            }
 
             ActionNames.SESSION_CREATE, ActionNames.SESSION_CLONE -> {
                 // For CREATE/CLONE, we rely on the reducer having created the session and set it as active.
@@ -121,6 +140,13 @@ class SessionFeature(
 
             ActionNames.SESSION_INTERNAL_LOADED -> {
                 broadcastSessionNames(sessionState, store)
+                // Persist any sessions whose orderIndex was normalized during load.
+                val prevSessions = (previousState as? SessionState)?.sessions ?: emptyMap()
+                sessionState.sessions.forEach { (id, session) ->
+                    if (prevSessions[id]?.orderIndex != session.orderIndex) {
+                        persistSession(id, sessionState, store)
+                    }
+                }
             }
 
             ActionNames.SESSION_POST -> {
@@ -247,6 +273,16 @@ class SessionFeature(
                 persistSession(sessionId, sessionState, store)
                 store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
+
+            ActionNames.SESSION_SET_ORDER, ActionNames.SESSION_REORDER -> {
+                // Persist every session whose orderIndex was changed by the reducer.
+                val prevSessions = (previousState as? SessionState)?.sessions ?: emptyMap()
+                sessionState.sessions.forEach { (id, session) ->
+                    if (prevSessions[id]?.orderIndex != session.orderIndex) {
+                        persistSession(id, sessionState, store)
+                    }
+                }
+            }
         }
     }
 
@@ -337,12 +373,14 @@ class SessionFeature(
                     ledger = emptyList(),
                     createdAt = platformDependencies.getSystemTimeMillis(),
                     isHidden = decoded.isHidden,
-                    isAgentPrivate = decoded.isAgentPrivate
+                    isAgentPrivate = decoded.isAgentPrivate,
+                    orderIndex = 0 // Placed at top; tiebreaker with existing 0s is createdAt desc.
                 )
+                val updatedSessions = currentFeatureState.sessions + (newSession.id to newSession)
                 currentFeatureState.copy(
-                    sessions = currentFeatureState.sessions + (newSession.id to newSession),
+                    sessions = updatedSessions,
                     activeSessionId = newSession.id,
-                    sessionOrder = listOf(newSession.id) + currentFeatureState.sessionOrder
+                    sessionOrder = SessionState.deriveSessionOrder(updatedSessions)
                 )
             }
             ActionNames.SESSION_CLONE -> {
@@ -354,12 +392,14 @@ class SessionFeature(
                     name = newName,
                     createdAt = platformDependencies.getSystemTimeMillis(),
                     isHidden = false, // Clones are always non-hidden
-                    isAgentPrivate = false // Clones are always non-private
+                    isAgentPrivate = false, // Clones are always non-private
+                    orderIndex = 0 // Placed at top; tiebreaker with existing 0s is createdAt desc.
                 )
+                val updatedSessions = currentFeatureState.sessions + (newSession.id to newSession)
                 currentFeatureState.copy(
-                    sessions = currentFeatureState.sessions + (newSession.id to newSession),
+                    sessions = updatedSessions,
                     activeSessionId = newSession.id,
-                    sessionOrder = listOf(newSession.id) + currentFeatureState.sessionOrder
+                    sessionOrder = SessionState.deriveSessionOrder(updatedSessions)
                 )
             }
             ActionNames.SESSION_UPDATE_CONFIG -> {
@@ -403,7 +443,7 @@ class SessionFeature(
                     sessions = newSessions,
                     activeSessionId = newActiveId,
                     lastDeletedSessionId = sessionId,
-                    sessionOrder = currentFeatureState.sessionOrder.filter { it != sessionId }
+                    sessionOrder = SessionState.deriveSessionOrder(newSessions)
                 )
             }
             ActionNames.SESSION_UPDATE_MESSAGE -> {
@@ -460,14 +500,15 @@ class SessionFeature(
             }
             ActionNames.SESSION_INTERNAL_LOADED -> {
                 val loadedSessions = payload?.let { json.decodeFromJsonElement<InternalSessionLoadedPayload>(it) }?.sessions ?: emptyMap()
-                val newSessions = currentFeatureState.sessions + loadedSessions.filterKeys { it !in currentFeatureState.sessions }
-                val newActiveId = if (currentFeatureState.activeSessionId == null && newSessions.isNotEmpty()) newSessions.values.maxByOrNull { it.createdAt }?.id else currentFeatureState.activeSessionId
-                // Append newly loaded session IDs to sessionOrder if not already present
-                val newOrderEntries = loadedSessions.keys.filter { it !in currentFeatureState.sessionOrder }
+                val mergedSessions = currentFeatureState.sessions + loadedSessions.filterKeys { it !in currentFeatureState.sessions }
+                val newActiveId = if (currentFeatureState.activeSessionId == null && mergedSessions.isNotEmpty()) mergedSessions.values.maxByOrNull { it.createdAt }?.id else currentFeatureState.activeSessionId
+                // Normalize orderIndex values to heal any gaps/duplicates from disk, then derive display order.
+                val normalizedSessions = SessionState.normalizeOrderIndices(mergedSessions)
+                val derivedOrder = SessionState.deriveSessionOrder(normalizedSessions)
                 currentFeatureState.copy(
-                    sessions = newSessions,
+                    sessions = normalizedSessions,
                     activeSessionId = newActiveId,
-                    sessionOrder = currentFeatureState.sessionOrder + newOrderEntries
+                    sessionOrder = derivedOrder
                 )
             }
 
@@ -481,7 +522,16 @@ class SessionFeature(
                 currentOrder.removeAt(currentIndex)
                 val clampedIndex = decoded.toIndex.coerceIn(0, currentOrder.size)
                 currentOrder.add(clampedIndex, decoded.sessionId)
-                currentFeatureState.copy(sessionOrder = currentOrder)
+                // Assign contiguous orderIndex values for persistence.
+                val updatedSessions = currentFeatureState.sessions.toMutableMap()
+                currentOrder.forEachIndexed { index, id ->
+                    updatedSessions[id]?.let { session ->
+                        if (session.orderIndex != index) {
+                            updatedSessions[id] = session.copy(orderIndex = index)
+                        }
+                    }
+                }
+                currentFeatureState.copy(sessions = updatedSessions.toMap(), sessionOrder = currentOrder)
             }
 
             ActionNames.SESSION_SET_ORDER -> {
@@ -490,15 +540,42 @@ class SessionFeature(
                 // (e.g. hidden sessions that were filtered out of the manager view).
                 val suppliedSet = decoded.order.toSet()
                 val remainder = currentFeatureState.sessionOrder.filter { it !in suppliedSet }
-                currentFeatureState.copy(sessionOrder = decoded.order + remainder)
+                val fullOrder = decoded.order + remainder
+                // Assign contiguous orderIndex values for persistence.
+                val updatedSessions = currentFeatureState.sessions.toMutableMap()
+                fullOrder.forEachIndexed { index, id ->
+                    updatedSessions[id]?.let { session ->
+                        if (session.orderIndex != index) {
+                            updatedSessions[id] = session.copy(orderIndex = index)
+                        }
+                    }
+                }
+                currentFeatureState.copy(sessions = updatedSessions.toMap(), sessionOrder = fullOrder)
             }
 
-            ActionNames.SESSION_TOGGLE_HIDE_HIDDEN_IN_VIEWER -> {
-                currentFeatureState.copy(hideHiddenInViewer = !currentFeatureState.hideHiddenInViewer)
+            // --- Settings Hydration ---
+
+            ActionNames.SETTINGS_PUBLISH_LOADED -> {
+                val viewerSetting = payload?.get(SessionState.SETTING_HIDE_HIDDEN_VIEWER)
+                    ?.jsonPrimitive?.content?.toBooleanStrictOrNull()
+                val managerSetting = payload?.get(SessionState.SETTING_HIDE_HIDDEN_MANAGER)
+                    ?.jsonPrimitive?.content?.toBooleanStrictOrNull()
+                currentFeatureState.copy(
+                    hideHiddenInViewer = viewerSetting ?: currentFeatureState.hideHiddenInViewer,
+                    hideHiddenInManager = managerSetting ?: currentFeatureState.hideHiddenInManager
+                )
             }
 
-            ActionNames.SESSION_TOGGLE_HIDE_HIDDEN_IN_MANAGER -> {
-                currentFeatureState.copy(hideHiddenInManager = !currentFeatureState.hideHiddenInManager)
+            ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED -> {
+                val key = payload?.get("key")?.jsonPrimitive?.content ?: return currentFeatureState
+                val value = payload["value"]?.jsonPrimitive?.content ?: return currentFeatureState
+                when (key) {
+                    SessionState.SETTING_HIDE_HIDDEN_VIEWER ->
+                        currentFeatureState.copy(hideHiddenInViewer = value.toBooleanStrictOrNull() ?: currentFeatureState.hideHiddenInViewer)
+                    SessionState.SETTING_HIDE_HIDDEN_MANAGER ->
+                        currentFeatureState.copy(hideHiddenInManager = value.toBooleanStrictOrNull() ?: currentFeatureState.hideHiddenInManager)
+                    else -> currentFeatureState
+                }
             }
 
             ActionNames.SESSION_TOGGLE_SESSION_HIDDEN -> {

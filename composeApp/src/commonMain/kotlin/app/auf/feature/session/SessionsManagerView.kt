@@ -2,7 +2,7 @@ package app.auf.feature.session
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -23,6 +23,7 @@ import androidx.compose.ui.zIndex
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
 import app.auf.util.PlatformDependencies
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
@@ -51,7 +52,7 @@ private fun deriveOrderedSessionsForManager(
 // =====================================================================
 
 /**
- * Manages the in-flight state of a long-press-drag reorder gesture.
+ * Manages the in-flight state of a drag reorder gesture initiated from a handle.
  *
  * IMPORTANT: This class must NOT be recreated during a drag. The mutable list is accessed
  * via [getList]/[setList] lambdas so the caller can swap items without invalidating this object.
@@ -68,12 +69,9 @@ private class DragReorderState(
         private set
     val isDragging: Boolean get() = draggedIndex != null
 
-    fun onDragStart(offset: Float) {
-        val startY = offset + lazyListState.firstVisibleItemScrollOffset
-        val item = lazyListState.layoutInfo.visibleItemsInfo
-            .firstOrNull { startY.toInt() in it.offset..(it.offset + it.size) }
-            ?: return
-        draggedIndex = item.index
+    /** Called from the drag handle's pointerInput with the explicit item index. */
+    fun onDragStart(itemIndex: Int) {
+        draggedIndex = itemIndex
         dragOffset = 0f
     }
 
@@ -110,6 +108,27 @@ private class DragReorderState(
         draggedIndex = null
         dragOffset = 0f
         // No commit — the list will resync from the store on the next recomposition.
+    }
+
+    /**
+     * Auto-scroll when the dragged card is near the top or bottom 10% of the viewport.
+     */
+    fun autoScroll(coroutineScope: CoroutineScope) {
+        val idx = draggedIndex ?: return
+        val draggedItem = lazyListState.layoutInfo.visibleItemsInfo
+            .firstOrNull { it.index == idx } ?: return
+        val viewportHeight = lazyListState.layoutInfo.viewportSize.height
+        val itemCenter = draggedItem.offset + draggedItem.size / 2 + dragOffset.toInt()
+        coroutineScope.launch {
+            when {
+                itemCenter < viewportHeight * 0.1f -> lazyListState.scrollToItem(
+                    (lazyListState.firstVisibleItemIndex - 1).coerceAtLeast(0)
+                )
+                itemCenter > viewportHeight * 0.9f -> lazyListState.scrollToItem(
+                    lazyListState.firstVisibleItemIndex + 1
+                )
+            }
+        }
     }
 }
 
@@ -200,8 +219,14 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
         ) {
             Text("Session Manager", style = MaterialTheme.typography.headlineSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                // Hidden filter toggle
-                IconButton(onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_TOGGLE_HIDE_HIDDEN_IN_MANAGER)) }) {
+                // Hidden filter toggle — persisted via Settings feature
+                IconButton(onClick = {
+                    val newValue = !(sessionState?.hideHiddenInManager ?: true)
+                    store.dispatch("session.ui", Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
+                        put("key", SessionState.SETTING_HIDE_HIDDEN_MANAGER)
+                        put("value", newValue.toString())
+                    }))
+                }) {
                     Icon(
                         imageVector = if (hideHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                         contentDescription = if (hideHidden) "Show Hidden Sessions" else "Hide Hidden Sessions",
@@ -242,31 +267,44 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
 
             LazyColumn(
                 state = lazyListState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(Unit) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = { offset ->
-                                dragState.onDragStart(offset.y)
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                itemsIndexed(reorderableList, key = { _, session -> session.id }) { index, session ->
+                    val isDraggingThis = dragState.draggedIndex == index
+                    val elevation by animateDpAsState(if (isDraggingThis) 8.dp else 0.dp)
+
+                    // ── Drag handle gesture ──────────────────────────────────
+                    //
+                    // WHY pointerInput(Unit) and NOT pointerInput(index):
+                    //
+                    // When the user drags item A past item B, DragReorderState
+                    // swaps them in reorderableList, which triggers recomposition.
+                    // Because itemsIndexed uses key = session.id, Compose keeps
+                    // each composable associated with its session — but 'index'
+                    // changes (e.g. 0 → 1). If the pointerInput key were 'index',
+                    // Compose would restart the coroutine and cancel the gesture
+                    // mid-flight. Using Unit keeps the coroutine (and the gesture)
+                    // alive across all recompositions.
+                    //
+                    // rememberUpdatedState(index) gives us a State<Int> whose
+                    // .value always reflects the latest index, so onDragStart
+                    // reads the correct position even if the composable was
+                    // recomposed before the user started dragging.
+
+                    val currentIndex by rememberUpdatedState(index)
+
+                    val dragHandleModifier = Modifier.pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragStart = {
+                                dragState.onDragStart(currentIndex)
                                 isDragging = dragState.isDragging
                             },
                             onDrag = { change, dragAmount ->
                                 change.consume()
                                 dragState.onDrag(dragAmount.y)
-
-                                // Auto-scroll when near viewport edges
-                                val viewportHeight = lazyListState.layoutInfo.viewportSize.height
-                                val dragY = change.position.y
-                                coroutineScope.launch {
-                                    when {
-                                        dragY < viewportHeight * 0.1f -> lazyListState.scrollToItem(
-                                            (lazyListState.firstVisibleItemIndex - 1).coerceAtLeast(0)
-                                        )
-                                        dragY > viewportHeight * 0.9f -> lazyListState.scrollToItem(
-                                            lazyListState.firstVisibleItemIndex + 1
-                                        )
-                                    }
-                                }
+                                dragState.autoScroll(coroutineScope)
                             },
                             onDragEnd = { dragState.onDragEnd() },
                             onDragCancel = {
@@ -274,13 +312,7 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
                                 isDragging = false
                             }
                         )
-                    },
-                contentPadding = PaddingValues(vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                itemsIndexed(reorderableList, key = { _, session -> session.id }) { index, session ->
-                    val isDraggingThis = dragState.draggedIndex == index
-                    val elevation by animateDpAsState(if (isDraggingThis) 8.dp else 0.dp)
+                    }
 
                     Box(
                         modifier = Modifier
@@ -298,7 +330,8 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
                                 store = store,
                                 platformDependencies = platformDependencies,
                                 onDeleteRequest = { sessionToDelete = it },
-                                onClearRequest = { sessionToClear = it }
+                                onClearRequest = { sessionToClear = it },
+                                dragHandleModifier = dragHandleModifier
                             )
                         }
                     }
@@ -314,7 +347,8 @@ private fun SessionManagerCard(
     store: Store,
     platformDependencies: PlatformDependencies,
     onDeleteRequest: (Session) -> Unit,
-    onClearRequest: (Session) -> Unit
+    onClearRequest: (Session) -> Unit,
+    dragHandleModifier: Modifier = Modifier
 ) {
     // Dim hidden sessions
     val cardAlpha = if (session.isHidden) 0.6f else 1f
@@ -328,11 +362,13 @@ private fun SessionManagerCard(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Drag handle
+            // Drag handle — drag starts immediately on primary button press (no long-press required).
             Icon(
                 imageVector = Icons.Default.DragHandle,
-                contentDescription = "Long-press to reorder",
-                modifier = Modifier.padding(end = 8.dp).size(24.dp),
+                contentDescription = "Drag to reorder",
+                modifier = dragHandleModifier
+                    .padding(end = 8.dp)
+                    .size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
 

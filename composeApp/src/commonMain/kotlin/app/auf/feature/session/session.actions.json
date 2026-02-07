@@ -259,7 +259,7 @@
     },
     {
       "action_name":"session.REORDER",
-      "summary":"Moves a session to a new position in the canonical display ordering used by both the tab bar and the session manager.",
+      "summary":"Moves a session to a new position in the canonical display ordering. Updates the session's persistent orderIndex and persists affected sessions to disk.",
       "payload_schema":{
         "type":"object",
         "properties":{
@@ -277,7 +277,7 @@
     },
     {
       "action_name":"session.SET_ORDER",
-      "summary":"Replaces the canonical session display ordering with the provided list. Sessions present in the existing order but absent from the provided list are appended at the end (e.g., hidden sessions filtered out of the drag-reorder view).",
+      "summary":"Replaces the canonical session display ordering with the provided list. Assigns contiguous orderIndex values (0, 1, 2, …) and persists all sessions whose orderIndex changed. Sessions present in the existing order but absent from the provided list are appended at the end (e.g., hidden sessions filtered out of the drag-reorder view).",
       "payload_schema":{
         "type":"object",
         "properties":{
@@ -288,22 +288,6 @@
           }
         },
         "required":["order"]
-      }
-    },
-    {
-      "action_name":"session.TOGGLE_HIDE_HIDDEN_IN_VIEWER",
-      "summary":"Toggles whether hidden sessions are filtered out in the SessionView tab bar.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{}
-      }
-    },
-    {
-      "action_name":"session.TOGGLE_HIDE_HIDDEN_IN_MANAGER",
-      "summary":"Toggles whether hidden sessions are filtered out in the SessionsManagerView.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{}
       }
     },
     {
@@ -433,6 +417,16 @@
         "type":"object",
         "description":"A map of session IDs to Session objects."
       }
+    }
+  ],
+  "subscribesTo": [
+    {
+      "action_name": "settings.publish.LOADED",
+      "summary": "Hydrates the hideHiddenInViewer and hideHiddenInManager transient fields from persisted setting values on startup."
+    },
+    {
+      "action_name": "settings.publish.VALUE_CHANGED",
+      "summary": "Updates the hideHiddenInViewer or hideHiddenInManager transient fields when the corresponding setting is changed at runtime."
     }
   ],
   "private_envelopes": [

@@ -74,8 +74,14 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
             } else {
                 Spacer(modifier = Modifier.weight(1f))
             }
-            // Hidden filter toggle
-            IconButton(onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_TOGGLE_HIDE_HIDDEN_IN_VIEWER)) }) {
+            // Hidden filter toggle — persisted via Settings feature
+            IconButton(onClick = {
+                val newValue = !(sessionState?.hideHiddenInViewer ?: true)
+                store.dispatch("session.ui", Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
+                    put("key", SessionState.SETTING_HIDE_HIDDEN_VIEWER)
+                    put("value", newValue.toString())
+                }))
+            }) {
                 Icon(
                     imageVector = if (hideHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                     contentDescription = if (hideHidden) "Show Hidden Sessions" else "Hide Hidden Sessions",
@@ -200,6 +206,34 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
     var text by remember { mutableStateOf("") }
     var menuExpanded by remember { mutableStateOf(false) }
 
+    // Clear session confirmation dialog — mirrors the pattern used in SessionsManagerView.
+    var sessionToClear by remember { mutableStateOf<Session?>(null) }
+
+    sessionToClear?.let { session ->
+        val lockedCount = session.ledger.count { it.isLocked }
+        val unlocked = session.ledger.size - lockedCount
+        val detail = if (lockedCount > 0) {
+            "$unlocked unlocked message(s) will be removed. $lockedCount locked message(s) will be preserved."
+        } else {
+            "All ${session.ledger.size} message(s) will be removed."
+        }
+        AlertDialog(
+            onDismissRequest = { sessionToClear = null },
+            title = { Text("Clear Session?") },
+            text = { Text("Clear '${session.name}'? $detail") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        store.dispatch("session.ui", Action(ActionNames.SESSION_CLEAR, buildJsonObject { put("session", session.id) }))
+                        sessionToClear = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Clear") }
+            },
+            dismissButton = { Button(onClick = { sessionToClear = null }) { Text("Cancel") } }
+        )
+    }
+
     Surface(modifier = Modifier.fillMaxWidth(), shadowElevation = 8.dp) {
         Row(Modifier.padding(8.dp), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
 
@@ -239,7 +273,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                     DropdownMenuItem(
                         text = { Text("Clear Session") },
                         onClick = {
-                            store.dispatch("session.ui", Action(ActionNames.SESSION_CLEAR, buildJsonObject { put("session", activeSession.id) }))
+                            sessionToClear = activeSession
                             menuExpanded = false
                         },
                         leadingIcon = { Icon(Icons.Default.ClearAll, null) }
