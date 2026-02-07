@@ -11,4 +11,8 @@ actual open class PlatformDependencies {
     actual open fun formatIsoTimestamp(timestamp: Long): String {
         return timestamp.toString()
     }
+
+    actual open fun parseIsoTimestamp(timestamp: String): Long? {
+        return null
+    }
 }

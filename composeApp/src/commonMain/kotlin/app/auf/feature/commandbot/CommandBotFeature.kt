@@ -69,11 +69,12 @@ class CommandBotFeature(
         override val stageViews: Map<String, @Composable (Store, List<Feature>) -> Unit> = emptyMap()
 
         @Composable
-        override fun PartialView(store: Store, viewKey: String, contextId: String) {
-            when (viewKey) {
+        override fun PartialView(store: Store, partId: String, context: Any?) {
+            when (partId) {
                 "commandbot.approval" -> {
-                    // contextId is the approvalId (set as senderId when the card entry is posted)
-                    ApprovalCard(store, approvalId = contextId)
+                    // context is the approvalId (set as senderId when the card entry is posted)
+                    val approvalId = context as? String ?: return
+                    ApprovalCard(store, approvalId = approvalId)
                 }
             }
         }

@@ -177,6 +177,14 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
         return isoFormatter.format(Date(timestamp))
     }
 
+    actual open fun parseIsoTimestamp(timestamp: String): Long? {
+        return try {
+            isoFormatter.parse(timestamp)?.time
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     actual open fun formatDisplayTimestamp(timestamp: Long): String {
         return displayFormatter.format(Date(timestamp))
     }

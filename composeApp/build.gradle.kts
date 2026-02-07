@@ -50,6 +50,8 @@ tasks.register("generateActionRegistry") {
         // Exposed Actions — plain maps only (no data classes in Gradle DSL doLast blocks)
         val exposedActionNames = mutableSetOf<String>()
         val sandboxRules = mutableMapOf<String, Map<String, Any>>()
+        val approvalRequired = mutableSetOf<String>()
+        val autoFillRules = mutableMapOf<String, Map<String, String>>()
         val exposedDocs = mutableListOf<Map<String, Any>>()
 
         inputDir.walkTopDown().forEach { manifestFile ->
@@ -112,9 +114,25 @@ tasks.register("generateActionRegistry") {
                                 )
                             }
 
+                            // Parse requiresApproval flag
+                            val requiresApprovalFlag = obj["requiresApproval"]?.jsonPrimitive?.content?.toBoolean() ?: false
+                            if (requiresApprovalFlag) {
+                                approvalRequired.add(actionName)
+                            }
+
+                            // Parse auto_fill rules
+                            val autoFillObj = obj["auto_fill"]?.jsonObject
+                            if (autoFillObj != null) {
+                                val fills = mutableMapOf<String, String>()
+                                for (key in autoFillObj.keys) {
+                                    fills[key] = autoFillObj[key]!!.jsonPrimitive.content
+                                }
+                                autoFillRules[actionName] = fills
+                            }
+
                             // Parse payload schema fields for documentation
                             val payloadFields = mutableListOf<Map<String, Any>>()
-                            val schema = obj["payload_schema"]?.jsonObject
+                            val schema = obj["payload_schema"] as? JsonObject
                             if (schema != null) {
                                 val requiredArr = schema["required"] as? JsonArray
                                 val requiredFields = mutableSetOf<String>()
@@ -256,6 +274,15 @@ tasks.register("generateActionRegistry") {
             |        )""".trimMargin()
         }
 
+        val approvalSetStr = approvalRequired.sorted().joinToString(",\n") { "        \"$it\"" }
+
+        val autoFillStr = autoFillRules.entries.sortedBy { it.key }.joinToString(",\n") { entry ->
+            val actionName = entry.key
+            val fills = entry.value
+            val fillsStr = fills.entries.joinToString(", ") { (k, v) -> "\"$k\" to \"$v\"" }
+            "        \"$actionName\" to mapOf($fillsStr)"
+        }
+
         val exposedActionsContent = """
             |package app.auf.core.generated
             |
@@ -279,6 +306,14 @@ tasks.register("generateActionRegistry") {
             |
             |    val sandboxRules: Map<String, SandboxRule> = mapOf(
             |$sandboxRuleStr
+            |    )
+            |
+            |    val requiresApproval: Set<String> = setOf(
+            |$approvalSetStr
+            |    )
+            |
+            |    val autoFillRules: Map<String, Map<String, String>> = mapOf(
+            |$autoFillStr
             |    )
             |
             |    data class ExposedActionDoc(
@@ -306,7 +341,7 @@ tasks.register("generateActionRegistry") {
         exposedActionsOut.writeText(exposedActionsContent)
 
         println("Generated ActionNames.kt with ${actionNames.size} actions and ${envelopeTypes.size} envelope types.")
-        println("Generated ExposedActions.kt with ${exposedActionNames.size} exposed agent actions and ${sandboxRules.size} sandbox rules.")
+        println("Generated ExposedActions.kt with ${exposedActionNames.size} exposed agent actions, ${sandboxRules.size} sandbox rules, ${approvalRequired.size} approval-gated actions, and ${autoFillRules.size} auto-fill rules.")
     }
 }
 

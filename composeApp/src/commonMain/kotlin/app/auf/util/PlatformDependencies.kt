@@ -57,6 +57,14 @@ expect open class PlatformDependencies(appVersion: String) {
     // --- System Utilities ---
     open fun getSystemTimeMillis(): Long
     open fun formatIsoTimestamp(timestamp: Long): String
+    /**
+     * Parses an ISO 8601 timestamp string into epoch milliseconds.
+     * Returns null if the string cannot be parsed.
+     *
+     * @param timestamp An ISO 8601 formatted string (e.g., "2025-02-07T18:40:00Z").
+     * @return The epoch milliseconds, or null if parsing fails.
+     */
+    open fun parseIsoTimestamp(timestamp: String): Long?
     open fun formatDisplayTimestamp(timestamp: Long): String
     open fun copyToClipboard(text: String)
     /**
