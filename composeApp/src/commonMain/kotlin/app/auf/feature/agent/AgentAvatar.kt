@@ -119,9 +119,12 @@ object AgentAvatarLogic {
             }
 
             // C. Post New Card (Side Effect)
+            // --- SLICE 1 CHANGE: Include partial_view_feature and partial_view_key for generalized routing ---
             val metadata = buildJsonObject {
                 put("render_as_partial", true)
                 put("is_transient", true)
+                put("partial_view_feature", "agent")
+                put("partial_view_key", "agent.avatar")
                 put("agentStatus", statusInfo.status.name)
                 statusInfo.errorMessage?.let { put("errorMessage", it) }
             }

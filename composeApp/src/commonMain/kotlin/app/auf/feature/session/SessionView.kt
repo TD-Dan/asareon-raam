@@ -22,6 +22,7 @@ import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
@@ -164,6 +165,9 @@ private fun LedgerPane(
     val identityNames = sessionState?.identityNames ?: emptyMap()
     val activeUserId = coreState?.activeUserId
 
+    // --- SLICE 1 CHANGE: Build a lookup map of feature name → feature for PartialView routing ---
+    val featuresByName = remember(features) { features.associateBy { it.name } }
+    // Keep agent feature reference for backward compatibility with cards that lack metadata
     val agentFeature = remember(features) { features.find { it.name == "agent" } }
 
     LaunchedEffect(activeSession.ledger.size) {
@@ -178,8 +182,23 @@ private fun LedgerPane(
         items(activeSession.ledger, key = { it.id }) { entry ->
             val isPartialView = entry.metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
 
-            if (isPartialView && agentFeature != null) {
-                agentFeature.composableProvider?.PartialView(store, "agent.avatar", entry.senderId)
+            if (isPartialView) {
+                // --- SLICE 1 CHANGE: Generalized PartialView routing via metadata ---
+                // New cards include "partial_view_feature" and "partial_view_key" in metadata.
+                // Legacy cards (pre-migration agent avatars) fall back to the hardcoded agent path.
+                val featureName = entry.metadata?.get("partial_view_feature")
+                    ?.jsonPrimitive?.contentOrNull
+                val viewKey = entry.metadata?.get("partial_view_key")
+                    ?.jsonPrimitive?.contentOrNull
+
+                if (featureName != null && viewKey != null) {
+                    // New generalized path: route to whichever feature owns this partial view
+                    val targetFeature = featuresByName[featureName]
+                    targetFeature?.composableProvider?.PartialView(store, viewKey, entry.senderId)
+                } else {
+                    // Backward compatibility: legacy agent avatar cards without routing metadata
+                    agentFeature?.composableProvider?.PartialView(store, "agent.avatar", entry.senderId)
+                }
             } else {
                 val senderName = remember(entry.senderId, identityNames) {
                     identityNames[entry.senderId] ?: entry.senderId

@@ -1,6 +1,78 @@
 {
   "feature_name": "commandbot",
-  "summary": "A headless, stateless agent that observes all session transcripts for command directives (`auf_` code blocks) and dispatches them as universal Actions, making the application universally scriptable.",
-  "listensFor": [],
-  "publishes": []
+  "summary": "A stateful agent that observes all session transcripts for command directives (`auf_` code blocks) and dispatches them as universal Actions. For actions requiring approval, it stages the request and presents an approval card to the user.",
+  "listensFor": [
+    {
+      "action_name": "commandbot.APPROVE",
+      "summary": "User approves a pending agent action. Dispatches the staged action.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "approvalId": { "type": "string", "description": "The ID of the pending approval to approve." }
+        },
+        "required": ["approvalId"]
+      }
+    },
+    {
+      "action_name": "commandbot.DENY",
+      "summary": "User denies a pending agent action. Posts denial feedback to the requesting agent.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "approvalId": { "type": "string", "description": "The ID of the pending approval to deny." }
+        },
+        "required": ["approvalId"]
+      }
+    }
+  ],
+  "publishes": [
+    {
+      "action_name": "commandbot.internal.STAGE_APPROVAL",
+      "summary": "[INTERNAL] Adds a pending approval to CommandBotState.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "approvalId": { "type": "string" },
+          "sessionId": { "type": "string" },
+          "cardMessageId": { "type": "string" },
+          "requestingAgentId": { "type": "string" },
+          "requestingAgentName": { "type": "string" },
+          "actionName": { "type": "string" },
+          "payload": { "type": "object" },
+          "dispatchOriginator": { "type": "string" }
+        },
+        "required": ["approvalId", "sessionId", "cardMessageId", "requestingAgentId", "actionName", "payload", "dispatchOriginator"]
+      }
+    },
+    {
+      "action_name": "commandbot.internal.RESOLVE_APPROVAL",
+      "summary": "[INTERNAL] Moves a pending approval to the resolved map and records the resolution.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "approvalId": { "type": "string" },
+          "resolution": { "type": "string", "enum": ["APPROVED", "DENIED"] }
+        },
+        "required": ["approvalId", "resolution"]
+      }
+    }
+  ],
+  "subscribesTo": [
+    {
+      "action_name": "agent.publish.AGENT_NAMES_UPDATED",
+      "summary": "Tracks known agent IDs and names for action restriction and approval card display."
+    },
+    {
+      "action_name": "agent.publish.AGENT_DELETED",
+      "summary": "Removes a deleted agent from the known agents tracking."
+    },
+    {
+      "action_name": "session.publish.MESSAGE_POSTED",
+      "summary": "Observes new messages for `auf_` code blocks to process as commands."
+    },
+    {
+      "action_name": "session.publish.MESSAGE_DELETED",
+      "summary": "Cleans up resolved approval records when their card message is deleted."
+    }
+  ]
 }
