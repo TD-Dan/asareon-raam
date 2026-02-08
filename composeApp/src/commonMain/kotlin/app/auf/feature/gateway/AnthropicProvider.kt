@@ -25,6 +25,8 @@ private data class AnthropicResponse(
     val role: String? = null,
     val content: List<ContentBlock>? = null,
     val model: String? = null,
+    // FIX: Anthropic API returns "stop_reason" (snake_case)
+    @kotlinx.serialization.SerialName("stop_reason")
     val stopReason: String? = null,
     val usage: Usage? = null,
     val error: ApiError? = null
@@ -38,7 +40,12 @@ private data class ContentBlock(
 
 @Serializable
 private data class Usage(
+    // FIX: Anthropic API returns "input_tokens" and "output_tokens" (snake_case).
+    // Without @SerialName, these fields silently deserialize to null, causing token
+    // usage to never be reported. This was the root cause of the missing token stats.
+    @kotlinx.serialization.SerialName("input_tokens")
     val inputTokens: Int? = null,
+    @kotlinx.serialization.SerialName("output_tokens")
     val outputTokens: Int? = null
 )
 
@@ -67,6 +74,7 @@ private data class ModelInfo(
 // --- Token Counting API ---
 @Serializable
 private data class CountTokensResponse(
+    @kotlinx.serialization.SerialName("input_tokens")
     val inputTokens: Int? = null,
     val error: ApiError? = null
 )
@@ -95,8 +103,9 @@ class AnthropicProvider(
 
     /** Builds the provider-specific JSON payload from a universal request. */
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
-        // Anthropic requires alternating user/assistant messages
-        // We'll convert the universal format to this structure
+        // Anthropic requires alternating user/assistant messages.
+        // Content enrichment (sender info, timestamps) is handled upstream by the
+        // AgentCognitivePipeline — providers receive pre-enriched content and pass it through.
         val anthropicMessages = buildJsonArray {
             request.contents.forEach { message ->
                 add(buildJsonObject {
@@ -135,6 +144,15 @@ class AnthropicProvider(
         // Path 2: Successful Content Generation
         val rawText = response.content?.firstOrNull()?.text
         if (rawText != null) {
+            // LOGGING: Warn if a successful response has no token usage — may indicate
+            // a deserialization issue or an API change.
+            if (inputTokens == null && outputTokens == null) {
+                platformDependencies.log(
+                    LogLevel.WARN, id,
+                    "Successful response for correlationId '$correlationId' has no token usage data. " +
+                            "This may indicate an API change or deserialization issue."
+                )
+            }
             return GatewayResponse(rawText, null, correlationId, inputTokens, outputTokens)
         }
 

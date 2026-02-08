@@ -66,6 +66,16 @@ class OpenAIProvider(
 
     // --- Logic extracted for testability ---
 
+    /**
+     * Sanitizes a name for the OpenAI `name` field.
+     * OpenAI requires: ^[a-zA-Z0-9_-]{1,64}$
+     * Replaces disallowed characters with underscores and truncates to 64 chars.
+     */
+    private fun sanitizeOpenAIName(senderName: String, senderId: String): String {
+        val raw = "${senderName}_$senderId"
+        return raw.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(64)
+    }
+
     /** Builds the provider-specific JSON payload from a universal request. */
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         val openAiMessages = buildJsonArray {
@@ -79,7 +89,13 @@ class OpenAIProvider(
             request.contents.forEach { message ->
                 add(buildJsonObject {
                     put("role", if (message.role == "model") "assistant" else message.role)
+                    // Content enrichment (sender info, timestamps) is handled upstream by the
+                    // AgentCognitivePipeline — providers receive pre-enriched content.
                     put("content", message.content)
+                    // FIX: Include the `name` field for OpenAI. This is a provider-specific
+                    // feature that helps the model distinguish between participants in
+                    // multi-agent conversations. Other providers don't support this field.
+                    put("name", sanitizeOpenAIName(message.senderName, message.senderId))
                 })
             }
         }
@@ -105,6 +121,15 @@ class OpenAIProvider(
         // Path 2: Successful Content Generation
         val rawText = response.choices?.firstOrNull()?.message?.content
         if (rawText != null) {
+            // LOGGING: Warn if a successful response has no token usage — may indicate
+            // a deserialization issue or an API change.
+            if (inputTokens == null && outputTokens == null) {
+                platformDependencies.log(
+                    LogLevel.WARN, id,
+                    "Successful response for correlationId '$correlationId' has no token usage data. " +
+                            "This may indicate an API change or deserialization issue."
+                )
+            }
             return GatewayResponse(rawText, null, correlationId, inputTokens, outputTokens)
         }
 

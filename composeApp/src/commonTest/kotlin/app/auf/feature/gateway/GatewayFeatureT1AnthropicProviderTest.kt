@@ -15,6 +15,11 @@ import kotlin.test.*
  *
  * Mandate (P-TEST-001, T1): To test the provider's pure data transformation logic
  * without any network dependencies.
+ *
+ * ARCHITECTURE NOTE: Content enrichment (adding sender info, timestamps) is the
+ * responsibility of AgentCognitivePipeline.executeTurn, NOT the providers.
+ * Providers receive pre-enriched content and pass it through unchanged.
+ * These tests verify that pass-through behaviour.
  */
 class GatewayFeatureT1AnthropicProviderTest {
     private val platform = FakePlatformDependencies("test")
@@ -22,7 +27,7 @@ class GatewayFeatureT1AnthropicProviderTest {
 
     @Test
     fun `buildRequestPayload correctly transforms universal request to Anthropic format`() {
-        // ARRANGE
+        // ARRANGE: Content arrives pre-enriched from the pipeline
         val request = GatewayRequest(
             modelName = "claude-3-5-sonnet-20241022",
             contents = listOf(
@@ -37,11 +42,11 @@ class GatewayFeatureT1AnthropicProviderTest {
             put("messages", buildJsonArray {
                 add(buildJsonObject {
                     put("role", "user")
-                    put("content", "User (user-1) @ ISO_TIMESTAMP_1000: Hello")
+                    put("content", "Hello")
                 })
                 add(buildJsonObject {
                     put("role", "assistant")
-                    put("content", "Assistant (agent-1) @ ISO_TIMESTAMP_2000: Hi there")
+                    put("content", "Hi there")
                 })
             })
         }
@@ -68,7 +73,7 @@ class GatewayFeatureT1AnthropicProviderTest {
             put("messages", buildJsonArray {
                 add(buildJsonObject {
                     put("role", "user")
-                    put("content", "User (user-1) @ ISO_TIMESTAMP_1000: Hello")
+                    put("content", "Hello")
                 })
             })
             put("system", "You are a helpful assistant.")
@@ -136,6 +141,43 @@ class GatewayFeatureT1AnthropicProviderTest {
         assertEquals("Claude Response", response.rawContent)
         assertNull(response.errorMessage)
         assertEquals(correlationId, response.correlationId)
+    }
+
+    @Test
+    fun `parseResponse correctly extracts token usage from successful response`() {
+        // ARRANGE
+        val responseBody = """{
+            "content": [{ "type": "text", "text": "Response" }],
+            "usage": { "input_tokens": 150, "output_tokens": 42 }
+        }"""
+        val correlationId = "corr-tokens"
+
+        // ACT
+        val response = provider.parseResponse(responseBody, correlationId)
+
+        // ASSERT
+        assertEquals("Response", response.rawContent)
+        assertEquals(150, response.inputTokens)
+        assertEquals(42, response.outputTokens)
+        assertNull(response.errorMessage)
+    }
+
+    @Test
+    fun `parseResponse logs warning when successful response has no token usage`() {
+        // ARRANGE
+        val responseBody = """{ "content": [{ "type": "text", "text": "Response" }] }"""
+        val correlationId = "corr-no-tokens"
+
+        // ACT
+        val response = provider.parseResponse(responseBody, correlationId)
+
+        // ASSERT
+        assertEquals("Response", response.rawContent)
+        assertNull(response.inputTokens)
+        assertNull(response.outputTokens)
+        val warnLog = platform.capturedLogs.find { it.level == LogLevel.WARN && it.tag == "anthropic" }
+        assertNotNull(warnLog, "A warning should be logged when token usage is missing from a successful response.")
+        assertTrue(warnLog.message.contains("no token usage data"))
     }
 
     @Test
@@ -254,7 +296,7 @@ class GatewayFeatureT1AnthropicProviderTest {
         assertTrue(preview.contains("\"model\": \"claude-3-5-sonnet-20241022\""), "Should contain model name")
         assertTrue(preview.contains("\"messages\": ["), "Should contain messages array")
         assertTrue(preview.contains("\"max_tokens\": 8192"), "Should contain max_tokens")
-        assertTrue(preview.contains("User (u1) @"), "Should contain enriched content")
+        assertTrue(preview.contains("Hello"), "Should contain message content")
     }
 
     @Test
@@ -302,12 +344,14 @@ class GatewayFeatureT1AnthropicProviderTest {
     }
 
     @Test
-    fun `buildRequestPayload enriches content with sender info and timestamp`() {
-        // ARRANGE
+    fun `buildRequestPayload passes through pre-enriched content unchanged`() {
+        // ARRANGE: The pipeline pre-enriches content before sending to providers.
+        // This test verifies the provider passes it through without modification.
+        val enrichedContent = "John Doe (user-123) @ 2024-01-01T00:00:05Z: Test message"
         val request = GatewayRequest(
             modelName = "claude-3-5-sonnet-20241022",
             contents = listOf(
-                GatewayMessage("user", "Test message", "user-123", "John Doe", 5000L)
+                GatewayMessage("user", enrichedContent, "user-123", "John Doe", 5000L)
             ),
             correlationId = "corr-123"
         )
@@ -319,9 +363,6 @@ class GatewayFeatureT1AnthropicProviderTest {
 
         // ASSERT
         assertNotNull(content)
-        assertTrue(content.contains("John Doe"), "Should contain sender name")
-        assertTrue(content.contains("user-123"), "Should contain sender ID")
-        assertTrue(content.contains("ISO_TIMESTAMP_5000"), "Should contain formatted timestamp")
-        assertTrue(content.contains("Test message"), "Should contain original message")
+        assertEquals(enrichedContent, content, "Provider should pass through pre-enriched content unchanged")
     }
 }

@@ -5,6 +5,8 @@ import app.auf.feature.gateway.openai.OpenAIProvider
 import app.auf.util.LogLevel
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.*
 
@@ -13,6 +15,11 @@ import kotlin.test.*
  *
  * Mandate (P-TEST-001, T1): To test the provider's pure data transformation logic
  * without any network dependencies.
+ *
+ * ARCHITECTURE NOTE: Content enrichment (adding sender info, timestamps) is the
+ * responsibility of AgentCognitivePipeline.executeTurn, NOT the providers.
+ * Providers receive pre-enriched content and pass it through unchanged.
+ * However, OpenAI's `name` field IS provider-specific and should be tested here.
  */
 class GatewayFeatureT1OpenAIProviderTest {
     private val platform = FakePlatformDependencies("test")
@@ -34,12 +41,12 @@ class GatewayFeatureT1OpenAIProviderTest {
             put("messages", buildJsonArray {
                 add(buildJsonObject {
                     put("role", "user")
-                    put("content", "User (user-1) @ ISO_TIMESTAMP_1000: Hello")
+                    put("content", "Hello")
                     put("name", "User_user-1")
                 })
                 add(buildJsonObject {
                     put("role", "assistant")
-                    put("content", "Assistant (agent-1) @ ISO_TIMESTAMP_2000: Hi there")
+                    put("content", "Hi there")
                     put("name", "Assistant_agent-1")
                 })
             })
@@ -52,7 +59,6 @@ class GatewayFeatureT1OpenAIProviderTest {
         assertEquals(expected, actual)
     }
 
-    // TEST: New test for system prompt inclusion.
     @Test
     fun `buildRequestPayload includes system prompt when provided`() {
         val request = GatewayRequest(
@@ -70,7 +76,7 @@ class GatewayFeatureT1OpenAIProviderTest {
                 })
                 add(buildJsonObject {
                     put("role", "user")
-                    put("content", "User (user-1) @ ISO_TIMESTAMP_1000: Hello")
+                    put("content", "Hello")
                     put("name", "User_user-1")
                 })
             })
@@ -79,6 +85,30 @@ class GatewayFeatureT1OpenAIProviderTest {
         val actual = provider.buildRequestPayload(request)
 
         assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `buildRequestPayload includes sanitized name field for multi-agent clarity`() {
+        // ARRANGE: OpenAI supports a `name` field on messages — this is provider-specific
+        val request = GatewayRequest(
+            modelName = "gpt-4o",
+            contents = listOf(
+                GatewayMessage("user", "Hello", "user-123", "John Doe", 1000L)
+            ),
+            correlationId = "corr-123"
+        )
+
+        // ACT
+        val actual = provider.buildRequestPayload(request)
+        val messages = actual.jsonObject["messages"]?.jsonArray
+        val nameField = messages?.get(0)?.jsonObject?.get("name")?.toString()?.trim('"')
+
+        // ASSERT
+        assertNotNull(nameField, "OpenAI messages should include a 'name' field")
+        // Name should be sanitized: only [a-zA-Z0-9_-], max 64 chars
+        assertTrue(nameField.matches(Regex("^[a-zA-Z0-9_-]{1,64}$")), "Name should be sanitized for OpenAI: $nameField")
+        assertTrue(nameField.contains("John"), "Name should contain sender name")
+        assertTrue(nameField.contains("user-123"), "Name should contain sender ID")
     }
 
     @Test
@@ -94,6 +124,43 @@ class GatewayFeatureT1OpenAIProviderTest {
         assertEquals("OpenAI Response", response.rawContent)
         assertNull(response.errorMessage)
         assertEquals(correlationId, response.correlationId)
+    }
+
+    @Test
+    fun `parseResponse correctly extracts token usage from successful response`() {
+        // ARRANGE
+        val responseBody = """{
+            "choices": [{ "message": { "role": "assistant", "content": "Response" } }],
+            "usage": { "prompt_tokens": 120, "completion_tokens": 35, "total_tokens": 155 }
+        }"""
+        val correlationId = "corr-tokens"
+
+        // ACT
+        val response = provider.parseResponse(responseBody, correlationId)
+
+        // ASSERT
+        assertEquals("Response", response.rawContent)
+        assertEquals(120, response.inputTokens)
+        assertEquals(35, response.outputTokens)
+        assertNull(response.errorMessage)
+    }
+
+    @Test
+    fun `parseResponse logs warning when successful response has no token usage`() {
+        // ARRANGE
+        val responseBody = """{ "choices": [{ "message": { "role": "assistant", "content": "Response" } }] }"""
+        val correlationId = "corr-no-tokens"
+
+        // ACT
+        val response = provider.parseResponse(responseBody, correlationId)
+
+        // ASSERT
+        assertEquals("Response", response.rawContent)
+        assertNull(response.inputTokens)
+        assertNull(response.outputTokens)
+        val warnLog = platform.capturedLogs.find { it.level == LogLevel.WARN && it.tag == "openai" }
+        assertNotNull(warnLog, "A warning should be logged when token usage is missing from a successful response.")
+        assertTrue(warnLog.message.contains("no token usage data"))
     }
 
     @Test
@@ -127,6 +194,7 @@ class GatewayFeatureT1OpenAIProviderTest {
         assertNotNull(log, "An error should be logged for the unrecognized response.")
         assertTrue(log.message.contains(responseBody))
     }
+
     @Test
     fun `generatePreview returns a pretty-printed JSON string`() = kotlinx.coroutines.test.runTest {
         val request = GatewayRequest(
@@ -140,5 +208,27 @@ class GatewayFeatureT1OpenAIProviderTest {
         assertTrue(preview.contains("\"model\": \"gpt-4o\""), "Should contain model name")
         assertTrue(preview.contains("\"messages\": ["), "Should contain messages array")
         assertTrue(preview.contains("\"role\": \"user\""), "Should contain user role")
+    }
+
+    @Test
+    fun `buildRequestPayload passes through pre-enriched content unchanged`() {
+        // ARRANGE: The pipeline pre-enriches content before sending to providers.
+        val enrichedContent = "John Doe (user-123) @ 2024-01-01T00:00:05Z: Test message"
+        val request = GatewayRequest(
+            modelName = "gpt-4o",
+            contents = listOf(
+                GatewayMessage("user", enrichedContent, "user-123", "John Doe", 5000L)
+            ),
+            correlationId = "corr-123"
+        )
+
+        // ACT
+        val actual = provider.buildRequestPayload(request)
+        val messages = actual.jsonObject["messages"]?.jsonArray
+        val content = messages?.get(0)?.jsonObject?.get("content")?.toString()?.trim('"')
+
+        // ASSERT
+        assertNotNull(content)
+        assertEquals(enrichedContent, content, "Provider should pass through pre-enriched content unchanged")
     }
 }

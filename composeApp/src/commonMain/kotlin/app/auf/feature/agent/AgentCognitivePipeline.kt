@@ -64,6 +64,13 @@ object AgentCognitivePipeline {
             ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT -> handleHkgContextResponse(envelope.payload, store)
             ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE -> handleGatewayResponse(envelope.payload, store)
             ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW -> handleGatewayPreviewResponse(envelope.payload, store)
+            else -> {
+                // LOGGING: Warn on unrecognised private data envelope types
+                store.platformDependencies.log(
+                    LogLevel.WARN, LOG_TAG,
+                    "handlePrivateData: Received unrecognised envelope type '${envelope.type}'. Ignoring."
+                )
+            }
         }
     }
 
@@ -100,7 +107,14 @@ object AgentCognitivePipeline {
                     else -> "Unknown" to "user"
                 }
                 GatewayMessage(role, rawContent, senderId, senderName, timestamp)
-            } catch (e: Exception) { null }
+            } catch (e: Exception) {
+                // LOGGING: Log individual message parse failures instead of silently dropping
+                store.platformDependencies.log(
+                    LogLevel.WARN, LOG_TAG,
+                    "handleLedgerResponse: Failed to parse a ledger message for agent '$agentId': ${e.message}. Skipping."
+                )
+                null
+            }
         }
 
         store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
@@ -131,7 +145,11 @@ object AgentCognitivePipeline {
     }
 
     private fun handleHkgContextResponse(payload: JsonObject, store: Store) {
-        val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
+        val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: run {
+            // LOGGING: Was silently returning on missing correlationId
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleHkgContextResponse: Missing correlationId in payload.")
+            return
+        }
         val hkgContext = payload["context"]?.jsonObject
 
         store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT, buildJsonObject {
@@ -187,16 +205,29 @@ object AgentCognitivePipeline {
             }
         }
 
+        // === SESSION METADATA (with token usage context) ===
         val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.sessionNames[it] } ?: "Unknown Session"
+        val lastInput = statusInfo.lastInputTokens
+        val lastOutput = statusInfo.lastOutputTokens
+        val tokenUsageContext = if (lastInput != null || lastOutput != null) {
+            val total = (lastInput ?: 0) + (lastOutput ?: 0)
+            val inputStr = lastInput?.let { "$it" } ?: "N/A"
+            val outputStr = lastOutput?.let { "$it" } ?: "N/A"
+            "\nLast request token usage (your approximate context size): $total tokens ($inputStr input, $outputStr output). Your model token maximum and saturation point varies by model and context coherence/complexity — consult your provider documentation."
+        } else {
+            "\nLast request token usage: Not yet available (first turn or provider did not report usage)."
+        }
+
         contextMap["SESSION_METADATA"] = """
             This data is provided for you to reason about your running environment and is updated on the moment of latest request to you.
             
             You are running on platform: 'AUF App ${Version.APP_VERSION} (Windows), a multi-agent, multi-session agent/chat platform.'
             Your Host LLM (API connection): '${agent.modelProvider}' / '${agent.modelName}'
             You are currently participating in a multi-party chat session: '${sessionName}'
-            Your chat id is: '${agent.id}
+            Your chat id is: '${agent.id}'
             Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())}
         """.trimIndent()
+        contextMap["SESSION_METADATA"]+= tokenUsageContext
 
         // ============================================================
         // Inject available system actions for agent tooling
@@ -316,10 +347,25 @@ object AgentCognitivePipeline {
     }
 
     private fun handleGatewayPreviewResponse(payload: JsonObject, store: Store) {
-        val decoded = try { json.decodeFromJsonElement<GatewayPreviewResponsePayload>(payload) } catch (e: Exception) { return }
+        val decoded = try {
+            json.decodeFromJsonElement<GatewayPreviewResponsePayload>(payload)
+        } catch (e: Exception) {
+            // LOGGING: Was silently returning on parse failure
+            store.platformDependencies.log(
+                LogLevel.ERROR, LOG_TAG,
+                "handleGatewayPreviewResponse: Failed to parse preview response: ${e.message}"
+            )
+            return
+        }
         val agentId = decoded.correlationId
-        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
-        val agent = state.agents[agentId] ?: return
+        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: run {
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleGatewayPreviewResponse: Agent state missing.")
+            return
+        }
+        val agent = state.agents[agentId] ?: run {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "handleGatewayPreviewResponse: Agent '$agentId' not found. May have been deleted during preview.")
+            return
+        }
 
         store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PREVIEW_DATA, buildJsonObject {
             put("agentId", agent.id)
@@ -332,11 +378,35 @@ object AgentCognitivePipeline {
 
     private fun handleGatewayResponse(payload: JsonObject, store: Store) {
         val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
-        if (agentId == null) return
-        val decoded = try { json.decodeFromJsonElement<GatewayResponsePayload>(payload) } catch (e: Exception) { return }
-        val agentState = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
-        val agent = agentState.agents[decoded.correlationId] ?: return
-        val targetSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: return
+        if (agentId == null) {
+            // LOGGING: Was silently returning on missing correlationId
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleGatewayResponse: Missing correlationId in gateway response payload.")
+            return
+        }
+        val decoded = try {
+            json.decodeFromJsonElement<GatewayResponsePayload>(payload)
+        } catch (e: Exception) {
+            // LOGGING: Was silently returning on parse failure
+            store.platformDependencies.log(
+                LogLevel.ERROR, LOG_TAG,
+                "handleGatewayResponse: Failed to parse gateway response for agent '$agentId': ${e.message}"
+            )
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, "Failed to parse gateway response.")
+            return
+        }
+        val agentState = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: run {
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleGatewayResponse: Agent state missing.")
+            return
+        }
+        val agent = agentState.agents[decoded.correlationId] ?: run {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "handleGatewayResponse: Agent '${decoded.correlationId}' not found. May have been deleted during generation.")
+            return
+        }
+        val targetSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleGatewayResponse: Agent '${agent.id}' has no target session to post response to.")
+            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.ERROR, "No target session for response.")
+            return
+        }
 
         if (decoded.errorMessage != null) {
             AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
@@ -392,6 +462,13 @@ object AgentCognitivePipeline {
                 decoded.inputTokens?.let { put("lastInputTokens", it) }
                 decoded.outputTokens?.let { put("lastOutputTokens", it) }
             }))
+        } else {
+            // LOGGING: Warn when gateway response contains no token usage
+            store.platformDependencies.log(
+                LogLevel.WARN, LOG_TAG,
+                "Gateway response for agent '${agent.id}' contained no token usage data. " +
+                        "Provider '${agent.modelProvider}' may not support usage reporting or there is a deserialization issue."
+            )
         }
     }
 }

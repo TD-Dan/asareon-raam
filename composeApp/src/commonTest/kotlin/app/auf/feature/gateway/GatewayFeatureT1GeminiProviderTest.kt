@@ -16,6 +16,10 @@ import kotlin.test.*
  *
  * Mandate (P-TEST-001, T1): To test the provider's pure data transformation logic
  * without any network dependencies.
+ *
+ * ARCHITECTURE NOTE: Content enrichment (adding sender info, timestamps) is the
+ * responsibility of AgentCognitivePipeline.executeTurn, NOT the providers.
+ * Providers receive pre-enriched content and pass it through unchanged.
  */
 class GatewayFeatureT1GeminiProviderTest {
 
@@ -24,7 +28,7 @@ class GatewayFeatureT1GeminiProviderTest {
 
     @Test
     fun `buildRequestPayload correctly transforms universal request to Gemini format`() {
-        // ARRANGE
+        // ARRANGE: Content arrives as-is from the pipeline (already enriched upstream)
         val request = GatewayRequest(
             modelName = "gemini-pro",
             contents = listOf(
@@ -37,11 +41,11 @@ class GatewayFeatureT1GeminiProviderTest {
             put("contents", buildJsonArray {
                 add(buildJsonObject {
                     put("role", "user")
-                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", "User (user-1) @ ISO_TIMESTAMP_1000: Hello") }) })
+                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", "Hello") }) })
                 })
                 add(buildJsonObject {
                     put("role", "model")
-                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", "Assistant (agent-1) @ ISO_TIMESTAMP_2000: Hi there") }) })
+                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", "Hi there") }) })
                 })
             })
         }
@@ -53,7 +57,6 @@ class GatewayFeatureT1GeminiProviderTest {
         assertEquals(expected, actual)
     }
 
-    // TEST: New test for system prompt inclusion.
     @Test
     fun `buildRequestPayload includes system prompt when provided`() {
         val request = GatewayRequest(
@@ -62,18 +65,20 @@ class GatewayFeatureT1GeminiProviderTest {
             correlationId = "corr-123",
             systemPrompt = "You are a helpful assistant."
         )
+        // NOTE: Gemini provider places system_instruction before contents in the JSON.
+        // JsonObject equality is order-independent, so this works regardless of insertion order.
         val expected = buildJsonObject {
-            put("contents", buildJsonArray {
-                add(buildJsonObject {
-                    put("role", "user")
-                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", "User (user-1) @ ISO_TIMESTAMP_1000: Hello") }) })
-                })
-            })
             putJsonObject("system_instruction") {
                 put("parts", buildJsonArray {
                     add(buildJsonObject { put("text", "You are a helpful assistant.") })
                 })
             }
+            put("contents", buildJsonArray {
+                add(buildJsonObject {
+                    put("role", "user")
+                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", "Hello") }) })
+                })
+            })
         }
 
         val actual = provider.buildRequestPayload(request)
@@ -94,6 +99,25 @@ class GatewayFeatureT1GeminiProviderTest {
         assertEquals("Gemini Response", response.rawContent)
         assertNull(response.errorMessage)
         assertEquals(correlationId, response.correlationId)
+    }
+
+    @Test
+    fun `parseResponse correctly extracts token usage from successful response`() {
+        // ARRANGE
+        val responseBody = """{
+            "candidates": [{ "content": { "parts": [{ "text": "Response" }] } }],
+            "usageMetadata": { "promptTokenCount": 200, "candidatesTokenCount": 55, "totalTokenCount": 255 }
+        }"""
+        val correlationId = "corr-tokens"
+
+        // ACT
+        val response = provider.parseResponse(responseBody, correlationId)
+
+        // ASSERT
+        assertEquals("Response", response.rawContent)
+        assertEquals(200, response.inputTokens)
+        assertEquals(55, response.outputTokens)
+        assertNull(response.errorMessage)
     }
 
     @Test
@@ -175,6 +199,33 @@ class GatewayFeatureT1GeminiProviderTest {
         // We verify structural integrity rather than exact whitespace matching
         assertTrue(preview.contains("\"contents\": ["), "Should contain contents array")
         assertTrue(preview.contains("\"parts\": ["), "Should contain parts array")
-        assertTrue(preview.contains("User (u1) @"), "Should contain enriched content")
+        assertTrue(preview.contains("Hello"), "Should contain message content")
+    }
+
+    @Test
+    fun `buildRequestPayload passes through pre-enriched content unchanged`() {
+        // ARRANGE: The pipeline pre-enriches content before sending to providers.
+        val enrichedContent = "User (user-1) @ 2024-01-01T00:00:01Z: Hello"
+        val request = GatewayRequest(
+            modelName = "gemini-pro",
+            contents = listOf(
+                GatewayMessage("user", enrichedContent, "user-1", "User", 1000L)
+            ),
+            correlationId = "corr-123"
+        )
+
+        // ACT
+        val actual = provider.buildRequestPayload(request)
+
+        // ASSERT
+        val expectedPayload = buildJsonObject {
+            put("contents", buildJsonArray {
+                add(buildJsonObject {
+                    put("role", "user")
+                    put("parts", buildJsonArray { add(buildJsonObject{ put("text", enrichedContent) }) })
+                })
+            })
+        }
+        assertEquals(expectedPayload, actual)
     }
 }

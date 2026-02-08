@@ -82,6 +82,8 @@ class GeminiProvider(
 
     /** Builds the provider-specific JSON payload from a universal request. */
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
+        // Content enrichment (sender info, timestamps) is handled upstream by the
+        // AgentCognitivePipeline — providers receive pre-enriched content and pass it through.
         val apiContents = buildJsonArray {
             request.contents.forEach { message ->
                 add(buildJsonObject {
@@ -121,6 +123,14 @@ class GeminiProvider(
         // Path 2: Successful Content Generation
         val rawText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
         if (rawText != null) {
+            // LOGGING: Warn if a successful response has no token usage.
+            if (inputTokens == null && outputTokens == null) {
+                platformDependencies.log(
+                    LogLevel.WARN, id,
+                    "Successful response for correlationId '$correlationId' has no token usage data. " +
+                            "This may indicate an API change or deserialization issue."
+                )
+            }
             return GatewayResponse(rawText, null, correlationId, inputTokens, outputTokens)
         }
 
