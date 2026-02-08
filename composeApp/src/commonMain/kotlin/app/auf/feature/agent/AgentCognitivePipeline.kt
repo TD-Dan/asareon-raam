@@ -314,7 +314,8 @@ object AgentCognitivePipeline {
         }
 
         // === SESSION METADATA (with token usage context) ===
-        val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.sessionNames[it] } ?: "Unknown Session"
+        val sessionId = agent.subscribedSessionIds.firstOrNull()
+        val sessionName = sessionId?.let { agentState.sessionNames[it] } ?: "Unknown Session"
         val lastInput = statusInfo.lastInputTokens
         val lastOutput = statusInfo.lastOutputTokens
         val tokenUsageContext = if (lastInput != null || lastOutput != null) {
@@ -331,7 +332,7 @@ object AgentCognitivePipeline {
             
             You are running on platform: 'AUF App ${Version.APP_VERSION} (Windows), a multi-agent, multi-session agent/chat platform.'
             Your Host LLM (API connection): '${agent.modelProvider}' / '${agent.modelName}'
-            You are currently participating in a multi-party chat session: '${sessionName}'
+            You are currently participating in a multi-party chat session: '${sessionName}', id: '${sessionId}'
             Your chat id is: '${agent.id}'
             Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())}
         """.trimIndent()

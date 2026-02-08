@@ -185,7 +185,7 @@ fun LedgerEntryCard(
                     when {
                         isEditingThisMessage -> MessageEditor(store, session, entry, editingContent)
                         uiState.isRawView -> RawContentView(entry.rawContent ?: "--- No Raw Content ---")
-                        else -> ParsedContentView(entry.content, entry.rawContent)
+                        else -> ParsedContentView(store, entry.content, entry.rawContent)
                     }
                 }
             }
@@ -232,7 +232,7 @@ private fun MessageEditor(store: Store, session: Session, entry: LedgerEntry, ed
 }
 
 @Composable
-private fun ParsedContentView(content: List<ContentBlock>, rawContent: String?) {
+private fun ParsedContentView(store: Store, content: List<ContentBlock>, rawContent: String?) {
     if (content.isEmpty()) {
         if (!rawContent.isNullOrBlank()) {
             RawContentView(rawContent)
@@ -245,16 +245,77 @@ private fun ParsedContentView(content: List<ContentBlock>, rawContent: String?) 
                 when (block) {
                     is ContentBlock.Text -> Text(block.text)
                     is ContentBlock.CodeBlock -> {
+                        val isAufAction = block.language.startsWith("auf_")
+                        val backgroundColor = if (isAufAction) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        }
+                        val headerLabel = if (isAufAction) {
+                            // "auf_session.POST" → "Action 'session.POST'"
+                            "Action '${block.language.removePrefix("auf_")}'"
+                        } else {
+                            block.language
+                        }
+                        val clipboardText = if (isAufAction) {
+                            // Copy the full fenced code block as-is
+                            "```${block.language}\n${block.code}\n```"
+                        } else {
+                            // Copy just the code content
+                            block.code
+                        }
+
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            color = backgroundColor,
                             shape = MaterialTheme.shapes.medium
                         ) {
-                            Text(
-                                text = block.code,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(8.dp)
-                            )
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                // Header row: label + copy button
+                                if (headerLabel.isNotBlank()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = headerLabel,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isAufAction) {
+                                                MaterialTheme.colorScheme.onSecondaryContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            }
+                                        )
+                                        IconButton(
+                                            onClick = {
+                                                store.dispatch("session.ui", Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject {
+                                                    put("text", clipboardText)
+                                                }))
+                                            },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.ContentCopy,
+                                                contentDescription = "Copy Code Block",
+                                                modifier = Modifier.size(16.dp),
+                                                tint = if (isAufAction) {
+                                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                }
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                }
+                                // Code content
+                                Text(
+                                    text = block.code,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
                         }
                     }
                 }
