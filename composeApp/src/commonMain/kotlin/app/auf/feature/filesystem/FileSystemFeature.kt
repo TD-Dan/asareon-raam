@@ -26,7 +26,7 @@ class FileSystemFeature(
     @Serializable private data class PathPayload(val path: String)
     @Serializable private data class ToggleItemPayload(val path: String, val recursive: Boolean = false)
     @Serializable private data class DirectoryLoadedPayload(val parentPath: String, val children: List<FileEntry>)
-    @Serializable private data class SystemListPayload(val subpath: String = "", val recursive: Boolean = false)
+    @Serializable private data class SystemListPayload(val subpath: String = "", val recursive: Boolean = false, val correlationId: String? = null)
     @Serializable private data class ReadFilesContentPayload(val subpaths: List<String>)
     @Serializable private data class SystemReadPayload(val subpath: String)
     @Serializable private data class SystemWritePayload(val subpath: String, val content: String, val encrypt: Boolean = false)
@@ -294,6 +294,7 @@ class FileSystemFeature(
                     val responsePayload = buildJsonObject {
                         put("listing", Json.encodeToJsonElement(relativeListing))
                         put("subpath", payload.subpath)
+                        payload.correlationId?.let { put("correlationId", it) }
                     }
                     val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, responsePayload)
                     store.deliverPrivateData(this.name, originator, envelope)
@@ -302,6 +303,7 @@ class FileSystemFeature(
                     val responsePayload = buildJsonObject {
                         put("listing", Json.encodeToJsonElement(emptyList<FileEntry>()))
                         put("subpath", payload.subpath)
+                        payload.correlationId?.let { put("correlationId", it) }
                     }
                     val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, responsePayload)
                     store.deliverPrivateData(this.name, originator, envelope)

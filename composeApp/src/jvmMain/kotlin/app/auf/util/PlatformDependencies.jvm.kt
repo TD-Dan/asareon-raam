@@ -20,6 +20,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileSystemView
+import kotlinx.coroutines.*
 
 /**
  * The actual JVM implementation of the PlatformDependencies contract.
@@ -41,6 +42,8 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
         "$logDir${File.separatorChar}session-$timestamp.log"
     }
 
+    /** Coroutine scope for delayed scheduling. Uses a single-threaded dispatcher to avoid concurrency issues. */
+    private val schedulingScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     actual open val pathSeparator: Char = File.separatorChar
 
@@ -68,7 +71,7 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
         }
         // --- END FIX ---
         return directory.listFiles()
-            ?.map { FileEntry(it.absolutePath, it.isDirectory) }
+            ?.map { FileEntry(it.absolutePath, it.isDirectory, lastModified = it.lastModified()) }
             ?: emptyList()
     }
 
@@ -79,7 +82,7 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
 
         return root.walkTopDown()
             .filter { it.isFile }
-            .map { FileEntry(it.absolutePath, isDirectory = false) }
+            .map { FileEntry(it.absolutePath, isDirectory = false, lastModified = it.lastModified()) }
             .toList()
     }
 
@@ -199,6 +202,19 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
         if (Platform.isWindows() && window is Window) {
             WindowsDarkMode.enable(window)
         }
+    }
+
+    // --- Scheduling ---
+
+    actual open fun scheduleDelayed(delayMs: Long, callback: () -> Unit): Any? {
+        return schedulingScope.launch {
+            delay(delayMs)
+            callback()
+        }
+    }
+
+    actual open fun cancelScheduled(handle: Any?) {
+        (handle as? Job)?.cancel()
     }
 
     // --- Durable & Real-time Logging Implementation ---

@@ -120,6 +120,22 @@ open class Store(
 
 
     /**
+     * Schedules an action to be dispatched after a delay.
+     * The delayed action goes through all normal security and lifecycle guards via [deferredDispatch].
+     *
+     * @param delayMs The delay in milliseconds.
+     * @param originator The originator string for the delayed action.
+     * @param action The action to dispatch after the delay.
+     * @return A platform-specific cancellation handle, or null.
+     */
+    open fun scheduleDelayed(delayMs: Long, originator: String, action: Action): Any? {
+        return platformDependencies.scheduleDelayed(delayMs) {
+            deferredDispatch(originator, action)
+        }
+    }
+
+
+    /**
      * The single, generic entry point for all state changes and side effects.
      *
      * ARCHITECTURAL NOTE: This method does NOT delegate to [deferredDispatch].

@@ -46,6 +46,25 @@ object AgentRuntimeReducer {
                 state.copy(agentStatuses = state.agentStatuses + (payload.agentId to updatedStatus))
             }
 
+            ActionNames.AGENT_INTERNAL_SET_WORKSPACE_CONTEXT -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
+                val context = action.payload?.get("context")?.jsonPrimitive?.contentOrNull ?: return state
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val updatedStatus = currentStatus.copy(transientWorkspaceContext = context)
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
+            ActionNames.AGENT_INTERNAL_SET_CONTEXT_GATHERING_STARTED -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
+                val startedAt = action.payload?.get("startedAt")?.jsonPrimitive?.longOrNull ?: return state
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val updatedStatus = currentStatus.copy(contextGatheringStartedAt = startedAt)
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
+            // CONTEXT_GATHERING_TIMEOUT: No state change needed — pure side-effect action
+            ActionNames.AGENT_INTERNAL_CONTEXT_GATHERING_TIMEOUT -> state
+
             // [NEW] Atomic commit of avatar position
             ActionNames.AGENT_INTERNAL_AVATAR_MOVED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<AvatarMovedPayload>(it) } ?: return state
@@ -67,7 +86,9 @@ object AgentRuntimeReducer {
                     processingFrontierMessageId = currentStatus.lastSeenMessageId,
                     turnMode = if (payload.preview) TurnMode.PREVIEW else TurnMode.DIRECT,
                     stagedTurnContext = null,
-                    transientHkgContext = null
+                    transientHkgContext = null,
+                    transientWorkspaceContext = null,
+                    contextGatheringStartedAt = null
                 )
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
@@ -198,6 +219,8 @@ object AgentRuntimeReducer {
             processingStep = if (isStoppingProcessing) null else currentStatus.processingStep,
             stagedTurnContext = if(shouldClearContext) null else currentStatus.stagedTurnContext,
             transientHkgContext = if (shouldClearContext) null else currentStatus.transientHkgContext,
+            transientWorkspaceContext = if (shouldClearContext) null else currentStatus.transientWorkspaceContext,
+            contextGatheringStartedAt = if (shouldClearContext) null else currentStatus.contextGatheringStartedAt,
             // Preserve previous token data unless new data is provided in this update
             lastInputTokens = payloadInputTokens ?: currentStatus.lastInputTokens,
             lastOutputTokens = payloadOutputTokens ?: currentStatus.lastOutputTokens

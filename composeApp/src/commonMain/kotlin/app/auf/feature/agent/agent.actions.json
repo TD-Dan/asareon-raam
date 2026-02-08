@@ -626,6 +626,63 @@
           "state"
         ]
       }
+    },
+    {
+      "action_name": "agent.internal.SET_WORKSPACE_CONTEXT",
+      "summary": "[INTERNAL] Stages the formatted workspace file listing string on the agent's status.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "context"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.internal.SET_CONTEXT_GATHERING_STARTED",
+      "summary": "[INTERNAL] Records the timestamp when parallel context gathering began. Used for timeout validation.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agentId",
+          "startedAt"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.internal.CONTEXT_GATHERING_TIMEOUT",
+      "summary": "[INTERNAL] Fired by a delayed dispatch after 10s. Carries the startedAt timestamp for stale-timeout validation.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agentId",
+          "startedAt"
+        ]
+      }
     }
   ]
 }

@@ -62,6 +62,7 @@ object AgentCognitivePipeline {
         when (envelope.type) {
             ActionNames.Envelopes.SESSION_RESPONSE_LEDGER -> handleLedgerResponse(envelope.payload, store)
             ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT -> handleHkgContextResponse(envelope.payload, store)
+            ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> handleWorkspaceListingResponse(envelope.payload, store)
             ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE -> handleGatewayResponse(envelope.payload, store)
             ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW -> handleGatewayPreviewResponse(envelope.payload, store)
             else -> {
@@ -123,6 +124,43 @@ object AgentCognitivePipeline {
         }))
     }
 
+    /**
+     * [7b] Handles the workspace listing response from the filesystem feature.
+     * Extracts the correlationId (agentId), formats the listing, and stages it via action.
+     */
+    private fun handleWorkspaceListingResponse(payload: JsonObject, store: Store) {
+        val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: run {
+            // No correlationId means this listing wasn't requested by the pipeline — ignore.
+            store.platformDependencies.log(LogLevel.DEBUG, LOG_TAG,
+                "handleWorkspaceListingResponse: No correlationId — not a pipeline-initiated listing. Ignoring.")
+            return
+        }
+
+        val formattedContext = WorkspaceContextProvider.formatListingResponse(payload, store.platformDependencies)
+
+        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_WORKSPACE_CONTEXT, buildJsonObject {
+            put("agentId", agentId)
+            put("context", formattedContext)
+        }))
+    }
+
+    private fun handleHkgContextResponse(payload: JsonObject, store: Store) {
+        val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: run {
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleHkgContextResponse: Missing correlationId in payload.")
+            return
+        }
+        val hkgContext = payload["context"]?.jsonObject
+
+        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT, buildJsonObject {
+            put("agentId", agentId)
+            put("context", hkgContext ?: buildJsonObject {})
+        }))
+    }
+
+    /**
+     * [7c] Called after the ledger is staged. Dispatches ALL context requests in parallel
+     * and sets up a timeout. Does NOT call executeTurn directly — the gate handles it.
+     */
     fun evaluateTurnContext(agentId: String, store: Store) {
         val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
         val agent = state.agents[agentId] ?: run {
@@ -138,40 +176,81 @@ object AgentCognitivePipeline {
             return
         }
 
-        val isSovereign = SovereignHKGResourceLogic.requestContextIfSovereign(store, agent)
-        if (!isSovereign) {
-            executeTurn(agent, statusInfo.stagedTurnContext, null, state, store)
-        }
-    }
-
-    private fun handleHkgContextResponse(payload: JsonObject, store: Store) {
-        val agentId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: run {
-            // LOGGING: Was silently returning on missing correlationId
-            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleHkgContextResponse: Missing correlationId in payload.")
-            return
-        }
-        val hkgContext = payload["context"]?.jsonObject
-
-        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT, buildJsonObject {
+        // 1. Record the context gathering start time (for timeout validation)
+        val startedAt = store.platformDependencies.getSystemTimeMillis()
+        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_CONTEXT_GATHERING_STARTED, buildJsonObject {
             put("agentId", agentId)
-            put("context", hkgContext ?: buildJsonObject {})
+            put("startedAt", startedAt)
         }))
+
+        // 2. Dispatch workspace listing request (parallel)
+        val safeAgentId = agentId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+        store.deferredDispatch("agent", Action(ActionNames.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
+            put("subpath", "$safeAgentId/workspace")
+            put("recursive", true)
+            put("correlationId", agentId)
+        }))
+
+        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+            put("agentId", agentId); put("step", "Gathering Context")
+        }))
+
+        // 3. Request HKG context if sovereign (parallel — unchanged)
+        SovereignHKGResourceLogic.requestContextIfSovereign(store, agent)
+
+        // 4. Schedule timeout after 10 seconds
+        store.scheduleDelayed(10_000L, "agent", Action(ActionNames.AGENT_INTERNAL_CONTEXT_GATHERING_TIMEOUT, buildJsonObject {
+            put("agentId", agentId)
+            put("startedAt", startedAt)
+        }))
+
+        // Do NOT call executeTurn here — the gate (evaluateFullContext) will handle it
     }
 
-    fun evaluateHkgContext(agentId: String, store: Store) {
+    /**
+     * [7d] The unified gate function. Called whenever a context response arrives or the timeout fires.
+     * Proceeds to executeTurn only when all expected contexts are ready (or timeout forces it).
+     */
+    fun evaluateFullContext(agentId: String, store: Store, isTimeout: Boolean = false) {
         val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
         val agent = state.agents[agentId] ?: return
         val statusInfo = state.agentStatuses[agentId] ?: return
-        val ledgerContext = statusInfo.stagedTurnContext
 
+        // Bail if not processing (turn was cancelled or errored)
+        if (statusInfo.status != AgentStatus.PROCESSING) return
+
+        val ledgerContext = statusInfo.stagedTurnContext
         if (ledgerContext == null) {
-            val msg = "HKG context received for '$agentId' without staged ledger context. Aborting."
-            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
-            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, "Context assembly failed.")
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG,
+                "evaluateFullContext: Ledger context missing for '$agentId'. This should not happen.")
             return
         }
 
-        executeTurn(agent, ledgerContext, statusInfo.transientHkgContext, state, store)
+        val workspaceReady = statusInfo.transientWorkspaceContext != null
+        val isSovereign = agent.cognitiveStrategyId == "sovereign_v1"
+        val hkgReady = !isSovereign || statusInfo.transientHkgContext != null
+
+        if (workspaceReady && hkgReady) {
+            // All contexts arrived — proceed
+            executeTurn(agent, ledgerContext, statusInfo.transientHkgContext, state, store)
+        } else if (isTimeout) {
+            // Timeout — log what's missing and proceed with what we have
+            val missing = mutableListOf<String>()
+            if (!workspaceReady) missing.add("workspace")
+            if (!hkgReady) missing.add("HKG")
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
+                "Context gathering timeout for agent '$agentId'. Missing: ${missing.joinToString(", ")}. Proceeding without.")
+            executeTurn(agent, ledgerContext, statusInfo.transientHkgContext, state, store)
+        }
+        // else: not all ready and not timeout — wait for more responses
+    }
+
+    /**
+     * [7e] Kept as a thin wrapper for backward compatibility.
+     * Now delegates to the unified gate instead of calling executeTurn directly.
+     */
+    fun evaluateHkgContext(agentId: String, store: Store) {
+        evaluateFullContext(agentId, store)
     }
 
     private fun executeTurn(
@@ -233,6 +312,13 @@ object AgentCognitivePipeline {
         // Inject available system actions for agent tooling
         // ============================================================
         contextMap["AVAILABLE_ACTIONS"] = ExposedActionsContextProvider.generateContext()
+
+        // ============================================================
+        // Inject workspace file awareness context
+        // ============================================================
+        statusInfo.transientWorkspaceContext?.takeIf { it.isNotBlank() }?.let {
+            contextMap["WORKSPACE_FILES"] = it
+        }
 
 
         // ============================================================

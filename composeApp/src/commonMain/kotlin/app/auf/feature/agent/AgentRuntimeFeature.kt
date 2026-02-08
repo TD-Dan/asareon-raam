@@ -207,7 +207,25 @@ class AgentRuntimeFeature(
             }
             ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
-                AgentCognitivePipeline.evaluateHkgContext(agentId, store)
+                AgentCognitivePipeline.evaluateFullContext(agentId, store)
+            }
+            ActionNames.AGENT_INTERNAL_SET_WORKSPACE_CONTEXT -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                AgentCognitivePipeline.evaluateFullContext(agentId, store)
+            }
+            ActionNames.AGENT_INTERNAL_CONTEXT_GATHERING_TIMEOUT -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val startedAt = action.payload?.get("startedAt")?.jsonPrimitive?.longOrNull ?: return
+                val statusInfo = agentState.agentStatuses[agentId] ?: return
+
+                // Validate: only proceed if this timeout belongs to the current turn
+                if (statusInfo.status != AgentStatus.PROCESSING) return
+                if (statusInfo.contextGatheringStartedAt != startedAt) {
+                    platformDependencies.log(LogLevel.DEBUG, name,
+                        "Stale context gathering timeout for agent '$agentId' (expected startedAt=${statusInfo.contextGatheringStartedAt}, got=$startedAt). Ignoring.")
+                    return
+                }
+                AgentCognitivePipeline.evaluateFullContext(agentId, store, isTimeout = true)
             }
             ActionNames.AGENT_EXECUTE_PREVIEWED_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
@@ -313,7 +331,17 @@ class AgentRuntimeFeature(
             ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW -> {
                 AgentCognitivePipeline.handlePrivateData(envelope, store)
             }
-            ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> handleFileSystemListResponse(envelope.payload, store)
+            ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> {
+                // If the listing has a correlationId, it was requested by the cognitive pipeline
+                // for workspace context injection — route it to the pipeline.
+                val hasCorrelationId = envelope.payload["correlationId"]?.jsonPrimitive?.contentOrNull != null
+                if (hasCorrelationId) {
+                    AgentCognitivePipeline.handlePrivateData(envelope, store)
+                } else {
+                    // Agent-initiated listing — handle locally (post to session)
+                    handleFileSystemListResponse(envelope.payload, store)
+                }
+            }
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> handleFileSystemReadResponse(envelope.payload, store)
         }
     }

@@ -7,7 +7,11 @@ import kotlinx.serialization.Serializable
  * CORRECTED: This class is now serializable to be used in FeatureState.
  */
 @Serializable
-data class FileEntry(val path: String, val isDirectory: Boolean)
+data class FileEntry(
+    val path: String,
+    val isDirectory: Boolean,
+    val lastModified: Long? = null  // epoch millis — null preserves backward compat
+)
 
 /**
  * A type-safe enumeration of the fundamental security zones for file system access.
@@ -76,6 +80,25 @@ expect open class PlatformDependencies(appVersion: String) {
      */
     open fun applyNativeWindowDecorations(window: Any)
     open fun generateUUID(): String
+
+    // --- Scheduling ---
+    /**
+     * Schedules a callback to be invoked after a delay.
+     * Returns a platform-specific handle that can be passed to [cancelScheduled].
+     *
+     * @param delayMs The delay in milliseconds before the callback fires.
+     * @param callback The function to invoke after the delay.
+     * @return A cancellation handle, or null if scheduling is not supported.
+     */
+    open fun scheduleDelayed(delayMs: Long, callback: () -> Unit): Any?
+
+    /**
+     * Cancels a previously scheduled delayed callback.
+     * No-op if the handle is null or already cancelled.
+     *
+     * @param handle The handle returned by [scheduleDelayed].
+     */
+    open fun cancelScheduled(handle: Any?)
 
     // --- Logging ---
     /**

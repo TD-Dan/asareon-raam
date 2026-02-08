@@ -132,6 +132,10 @@ data class AgentStatusInfo(
     val stagedPreviewData: StagedPreviewData? = null,
     val stagedTurnContext: List<GatewayMessage>? = null,
     val transientHkgContext: JsonObject? = null,
+    /** Formatted workspace file listing for injection into the system prompt. Null = not yet received. */
+    val transientWorkspaceContext: String? = null,
+    /** Timestamp (epoch ms) when context gathering started. Used for timeout validation. */
+    val contextGatheringStartedAt: Long? = null,
     /** Input tokens consumed by the last completed generation request. */
     val lastInputTokens: Int? = null,
     /** Output tokens consumed by the last completed generation request. */

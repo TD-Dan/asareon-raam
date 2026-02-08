@@ -141,7 +141,8 @@
         "type": "object",
         "properties": {
           "subpath": { "type": "string", "description": "An optional sub-directory within the sandbox to list.", "default": "" },
-          "recursive": { "type": "boolean", "default": false }
+          "recursive": { "type": "boolean", "default": false },
+          "correlationId": { "type": ["string", "null"], "description": "Optional correlation ID passed through to the response envelope.", "default": null }
         }
       }
     },
@@ -364,7 +365,8 @@
             "type": "array",
             "items": { "$ref": "#/definitions/FileEntry" }
           },
-          "subpath": { "type": ["string", "null"] }
+          "subpath": { "type": ["string", "null"] },
+          "correlationId": { "type": ["string", "null"], "description": "Correlation ID passed through from the original SYSTEM_LIST request." }
         },
         "required": ["listing"]
       }
@@ -404,7 +406,8 @@
       "description": "Represents a file or directory. The 'path' property MUST be a subpath relative to the originator's sandbox.",
       "properties": {
         "path": { "type": "string" },
-        "isDirectory": { "type": "boolean" }
+        "isDirectory": { "type": "boolean" },
+        "lastModified": { "type": ["integer", "null"], "description": "Last modified time in epoch milliseconds. Null if unavailable." }
       }
     }
   }
