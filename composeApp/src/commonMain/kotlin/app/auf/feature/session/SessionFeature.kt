@@ -547,7 +547,11 @@ class SessionFeature(
                     } else it
                 }
                 val updatedSession = targetSession.copy(ledger = updatedLedger)
-                currentFeatureState.copy(sessions = currentFeatureState.sessions + (sessionId to updatedSession))
+                currentFeatureState.copy(
+                    sessions = currentFeatureState.sessions + (sessionId to updatedSession),
+                    editingMessageId = null,
+                    editingMessageContent = null
+                )
             }
             ActionNames.SESSION_DELETE_MESSAGE -> {
                 // --- SLICE 4 CHANGE: Support senderId+timestamp in addition to messageId ---
