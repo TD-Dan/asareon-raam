@@ -76,7 +76,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
     /**
      * Builds a harness and registers one agent via Proactive Broadcast.
-     * This makes the agent visible to CAG-004/005/006/007 enforcement.
+     * This makes the agent visible to CAG-004/006/007 enforcement.
      */
     private fun TestScope.buildHarnessWithKnownAgent(
         platform: FakePlatformDependencies = FakePlatformDependencies("test"),
@@ -289,18 +289,20 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         harness.runAndLogOnFailure {
-            // Find the CommandBot-dispatched SESSION_POST (originator = "agent")
-            // that carries the agent's message, distinct from the trigger POST.
-            val dispatched = harness.processedActions.filter {
-                it.name == ActionNames.SESSION_POST &&
-                        it.payload?.get("message")?.jsonPrimitive?.contentOrNull == "Agent message"
-            }.find { it.originator == "agent" }
+            // Agent commands now go through ACTION_CREATED, not direct dispatch
+            val actionCreated = harness.processedActions.find {
+                it.name == ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED &&
+                        it.payload?.get("actionName")?.jsonPrimitive?.contentOrNull == "session.POST"
+            }
 
-            assertNotNull(dispatched, "CommandBot should dispatch the session.POST for the agent.")
+            assertNotNull(actionCreated, "CommandBot should publish ACTION_CREATED for the agent's session.POST.")
 
-            val senderId = dispatched.payload?.get("senderId")?.jsonPrimitive?.contentOrNull
+            val actionPayload = actionCreated.payload?.get("actionPayload")?.jsonObject
+            assertNotNull(actionPayload, "ACTION_CREATED must include an actionPayload.")
+
+            val senderId = actionPayload["senderId"]?.jsonPrimitive?.contentOrNull
             assertEquals("agent-1", senderId,
-                "CAG-007 should auto-fill senderId with the requesting agent's ID.")
+                "CAG-007 should auto-fill senderId with the requesting agent's ID in the actionPayload.")
         }
     }
 

@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.Test
@@ -35,9 +36,10 @@ import kotlin.test.assertTrue
  * - Baseline command processing: human user dispatch, originator attribution (CAG-002)
  * - CAG-001: Self-reaction prevention
  * - CAG-003: Robust error handling (JSON parse failure → feedback message)
- * - Cross-feature dispatch: CommandBot → SessionFeature (session.CREATE)
+ * - Cross-feature dispatch: CommandBot → SessionFeature (human user direct dispatch)
+ * - ACTION_CREATED publishing: agent approval → ACTION_CREATED broadcast (not direct dispatch)
  * - Approval workflow: stage → approve/deny → state transitions → clearability → cleanup
- * - Auto-fill: LIST_SESSIONS responseSession injection for agent vs. human pass-through
+ * - Auto-fill: LIST_SESSIONS responseSession injection via ACTION_CREATED for agent vs. human pass-through
  *
  * ## Related Test Files
  * - [CommandBotFeatureT1ReducerTest]: Pure reducer unit tests (no Store or coroutines)
@@ -267,9 +269,12 @@ class CommandBotFeatureT2CoreTest {
             assertEquals("agent-1", approval.requestingAgentId)
             assertEquals("Test Agent", approval.requestingAgentName)
 
-            // 2. The actual SESSION_CREATE should NOT have been dispatched yet
-            val createActions = harness.processedActions.filter { it.name == ActionNames.SESSION_CREATE }
-            assertTrue(createActions.isEmpty(), "SESSION_CREATE must NOT be dispatched before approval.")
+            // 2. No ACTION_CREATED should be published while pending approval
+            val actionCreatedActions = harness.processedActions.filter {
+                it.name == ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED
+            }
+            assertTrue(actionCreatedActions.isEmpty(),
+                "ACTION_CREATED must NOT be published before approval.")
 
             // 3. An approval card should be posted to the session
             val stageAction = harness.processedActions.find { it.name == ActionNames.COMMANDBOT_INTERNAL_STAGE_APPROVAL }
@@ -309,13 +314,18 @@ class CommandBotFeatureT2CoreTest {
             assertEquals("session.CREATE", resolved.actionName)
             assertEquals("Test Agent", resolved.requestingAgentName)
 
-            // 3. The staged action should now be dispatched
-            val createAction = harness.processedActions.find { it.name == ActionNames.SESSION_CREATE }
-            assertNotNull(createAction, "SESSION_CREATE should be dispatched after approval.")
+            // 3. ACTION_CREATED should be published (the owning feature dispatches the domain action)
+            val actionCreated = harness.processedActions.find { it.name == ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED }
+            assertNotNull(actionCreated, "ACTION_CREATED should be published after approval.")
+            assertEquals("session.CREATE", actionCreated.payload?.get("actionName")?.jsonPrimitive?.content,
+                "ACTION_CREATED should carry the staged action name.")
+            assertEquals("agent-1", actionCreated.payload?.get("originatorId")?.jsonPrimitive?.content,
+                "ACTION_CREATED should identify the requesting agent as originator.")
 
-            // 4. Verify ground-truth: the session was actually created
-            val sessionState = harness.store.state.value.featureStates["session"] as SessionState
-            assertTrue(sessionState.sessions.size >= 2, "A new session should have been created.")
+            // 4. SESSION_CREATE is NOT dispatched directly by CommandBot — the owning feature would handle that
+            val createAction = harness.processedActions.find { it.name == ActionNames.SESSION_CREATE }
+            assertNull(createAction,
+                "CommandBot should NOT dispatch SESSION_CREATE directly; it publishes ACTION_CREATED instead.")
         }
     }
 
@@ -348,9 +358,12 @@ class CommandBotFeatureT2CoreTest {
             val resolved = finalState.resolvedApprovals.values.first()
             assertEquals(Resolution.DENIED, resolved.resolution)
 
-            // 3. The staged action should NOT have been dispatched
-            val createActions = harness.processedActions.filter { it.name == ActionNames.SESSION_CREATE }
-            assertTrue(createActions.isEmpty(), "SESSION_CREATE must NOT be dispatched after denial.")
+            // 3. No ACTION_CREATED should be published after denial
+            val actionCreatedActions = harness.processedActions.filter {
+                it.name == ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED
+            }
+            assertTrue(actionCreatedActions.isEmpty(),
+                "ACTION_CREATED must NOT be published after denial.")
         }
     }
 
@@ -513,7 +526,7 @@ class CommandBotFeatureT2CoreTest {
     // ========================================================================
 
     @Test
-    fun `LIST_SESSIONS from agent is dispatched with responseSession auto-filled`() = runTest {
+    fun `LIST_SESSIONS from agent is published as ACTION_CREATED with responseSession auto-filled`() = runTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
@@ -523,13 +536,18 @@ class CommandBotFeatureT2CoreTest {
 
         // ASSERT
         harness.runAndLogOnFailure {
-            val listAction = harness.processedActions.find { it.name == ActionNames.SESSION_LIST_SESSIONS }
-            assertNotNull(listAction, "CommandBot should dispatch SESSION_LIST_SESSIONS.")
+            val actionCreated = harness.processedActions.find { it.name == ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED }
+            assertNotNull(actionCreated, "CommandBot should publish ACTION_CREATED for agent LIST_SESSIONS.")
+
+            assertEquals("session.LIST_SESSIONS", actionCreated.payload?.get("actionName")?.jsonPrimitive?.content)
 
             // The auto-fill should have injected the originating sessionId as responseSession
-            val responseSession = listAction.payload?.get("responseSession")?.jsonPrimitive?.content
+            // in the actionPayload
+            val actionPayload = actionCreated.payload?.get("actionPayload")?.jsonObject
+            assertNotNull(actionPayload, "ACTION_CREATED must include an actionPayload.")
+            val responseSession = actionPayload["responseSession"]?.jsonPrimitive?.content
             assertEquals(testSession.id, responseSession,
-                "The responseSession should be auto-filled with the originating session ID.")
+                "The responseSession should be auto-filled with the originating session ID in actionPayload.")
         }
     }
 

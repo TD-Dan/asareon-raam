@@ -29,7 +29,7 @@ import kotlin.test.assertTrue
  * - Each required field missing → returns current state (approvalId, sessionId,
  *   cardMessageId, requestingAgentId, actionName)
  * - Optional field defaults: requestingAgentName → "Unknown Agent",
- *   dispatchOriginator → "agent", payload → empty JsonObject
+ *   payload → empty JsonObject
  * - requestedAt sourced from platformDependencies
  *
  * ### COMMANDBOT_INTERNAL_RESOLVE_APPROVAL
@@ -74,7 +74,6 @@ class CommandBotFeatureT1ReducerTest {
         requestingAgentName: String? = "Test Agent",
         actionName: String = "session.CREATE",
         payload: kotlinx.serialization.json.JsonObject = buildJsonObject { put("name", "Test") },
-        dispatchOriginator: String? = "agent"
     ): Action {
         return Action(ActionNames.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
             put("approvalId", approvalId)
@@ -84,7 +83,6 @@ class CommandBotFeatureT1ReducerTest {
             if (requestingAgentName != null) put("requestingAgentName", requestingAgentName)
             put("actionName", actionName)
             put("payload", payload)
-            if (dispatchOriginator != null) put("dispatchOriginator", dispatchOriginator)
         })
     }
 
@@ -107,7 +105,6 @@ class CommandBotFeatureT1ReducerTest {
         requestingAgentId: String = "agent-1",
         requestingAgentName: String = "Test Agent",
         actionName: String = "session.CREATE",
-        dispatchOriginator: String = "agent"
     ): PendingApproval {
         return PendingApproval(
             approvalId = approvalId,
@@ -327,7 +324,6 @@ class CommandBotFeatureT1ReducerTest {
             put("cardMessageId", "card-1")
             put("requestingAgentId", "agent-1")
             put("actionName", "session.CREATE")
-            put("dispatchOriginator", "agent")
             // "payload" field omitted entirely
         })
         val result = feature.reducer(initial, action) as CommandBotState
