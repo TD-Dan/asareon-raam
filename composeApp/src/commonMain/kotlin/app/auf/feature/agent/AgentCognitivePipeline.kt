@@ -315,7 +315,6 @@ object AgentCognitivePipeline {
         return resolved
     }
 
-    // [MOVED from Feature]
     private fun handleGatewayPreviewResponse(payload: JsonObject, store: Store) {
         val decoded = try { json.decodeFromJsonElement<GatewayPreviewResponsePayload>(payload) } catch (e: Exception) { return }
         val agentId = decoded.correlationId

@@ -54,7 +54,7 @@ object VanillaStrategy : CognitiveStrategy {
             if (otherContexts.isNotEmpty()) {
                 appendLine("\n--- CONTEXT ---")
                 otherContexts.forEach { (source, content) ->
-                    appendLine("[$source]: $content")
+                    appendLine("[$source]:\n $content\n")
                 }
             }
         }
