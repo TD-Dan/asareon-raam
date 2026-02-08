@@ -20,8 +20,13 @@ object WorkspaceContextProvider {
      * ```
      * --- WORKSPACE FILES ---
      * Your workspace has 7 files in 2 directories.
-     * Latest 3: notes/standup-2026-02-07.md (2026-02-07T10:30:00Z), config.json (2026-02-06T14:22:00Z), ...
-     * Oldest 3: readme.md (2026-01-15T08:00:00Z), templates/report.md (2026-01-20T11:00:00Z), ...
+     * Latest 3:
+     * notes/standup-2026-02-07.md (2026-02-07T10:30:00Z),
+     * config.json (2026-02-06T14:22:00Z),
+     * ...
+     * Oldest 3: readme.md (2026-01-15T08:00:00Z),
+     * templates/report.md (2026-01-20T11:00:00Z),
+     * ...
      * ```
      *
      * Returns `"Your workspace is empty."` if no files are present.
@@ -71,8 +76,8 @@ object WorkspaceContextProvider {
 
             // Newest 3
             val newest = sortedFiles.take(3)
-            append("Latest ${newest.size}: ")
-            append(newest.joinToString(", ") { formatEntry(it.path, it.lastModified, platformDeps) })
+            append("Latest ${newest.size}:\n")
+            append(newest.joinToString(",\n") { formatEntry(it.path, it.lastModified, platformDeps) })
             appendLine()
 
             // Oldest 3 — only show if there are more than 3 files and the oldest set differs from newest
@@ -80,8 +85,8 @@ object WorkspaceContextProvider {
                 val oldest = sortedFiles.takeLast(3)
                 // Check they're actually different from newest
                 if (oldest != newest) {
-                    append("Oldest ${oldest.size}: ")
-                    append(oldest.joinToString(", ") { formatEntry(it.path, it.lastModified, platformDeps) })
+                    append("Oldest ${oldest.size}:\n")
+                    append(oldest.joinToString(",\n") { formatEntry(it.path, it.lastModified, platformDeps) })
                     appendLine()
                 }
             }
