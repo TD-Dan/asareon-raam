@@ -1,10 +1,10 @@
 {
   "feature_name": "commandbot",
-  "summary": "A stateful agent that observes all session transcripts for command directives (`auf_` code blocks) and dispatches them as universal Actions. For actions requiring approval, it stages the request and presents an approval card to the user.",
+  "summary": "A stateful agent that observes all session transcripts for command directives (`auf_` code blocks), validates them against guardrails, and publishes ACTION_CREATED for agent commands so the owning feature can dispatch. For human commands, dispatches directly. For actions requiring approval, it stages the request and presents an approval card to the user.",
   "listensFor": [
     {
       "action_name": "commandbot.APPROVE",
-      "summary": "User approves a pending agent action. Dispatches the staged action.",
+      "summary": "User approves a pending agent action. Publishes ACTION_CREATED with the staged action.",
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -15,7 +15,7 @@
     },
     {
       "action_name": "commandbot.DENY",
-      "summary": "User denies a pending agent action. Posts denial feedback to the requesting agent.",
+      "summary": "User denies a pending agent action. Posts denial feedback to the originating session.",
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -26,6 +26,22 @@
     }
   ],
   "publishes": [
+    {
+      "action_name": "commandbot.publish.ACTION_CREATED",
+      "summary": "Published after CommandBot validates an agent command from an auf_* code block. Any feature that manages the originator entity should subscribe, apply its own sandboxing/routing, and dispatch the domain action. CommandBot does NOT dispatch domain actions itself.",
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": { "type": "string", "description": "Unique correlation ID for matching the eventual response." },
+          "originatorId": { "type": "string", "description": "The ID of the entity that posted the command." },
+          "originatorName": { "type": "string", "description": "Human-readable name of the originator." },
+          "sessionId": { "type": "string", "description": "Session where the command was posted and where results should be returned." },
+          "actionName": { "type": "string", "description": "The validated domain action name." },
+          "actionPayload": { "type": "object", "description": "The auto-filled payload, before sandbox rewrites." }
+        },
+        "required": ["correlationId", "originatorId", "originatorName", "sessionId", "actionName", "actionPayload"]
+      }
+    },
     {
       "action_name": "commandbot.internal.STAGE_APPROVAL",
       "summary": "[INTERNAL] Adds a pending approval to CommandBotState.",
@@ -38,10 +54,9 @@
           "requestingAgentId": { "type": "string" },
           "requestingAgentName": { "type": "string" },
           "actionName": { "type": "string" },
-          "payload": { "type": "object" },
-          "dispatchOriginator": { "type": "string" }
+          "payload": { "type": "object" }
         },
-        "required": ["approvalId", "sessionId", "cardMessageId", "requestingAgentId", "actionName", "payload", "dispatchOriginator"]
+        "required": ["approvalId", "sessionId", "cardMessageId", "requestingAgentId", "actionName", "payload"]
       }
     },
     {
@@ -55,24 +70,6 @@
         },
         "required": ["approvalId", "resolution"]
       }
-    }
-  ],
-  "subscribesTo": [
-    {
-      "action_name": "agent.publish.AGENT_NAMES_UPDATED",
-      "summary": "Tracks known agent IDs and names for action restriction and approval card display."
-    },
-    {
-      "action_name": "agent.publish.AGENT_DELETED",
-      "summary": "Removes a deleted agent from the known agents tracking."
-    },
-    {
-      "action_name": "session.publish.MESSAGE_POSTED",
-      "summary": "Observes new messages for `auf_` code blocks to process as commands."
-    },
-    {
-      "action_name": "session.publish.MESSAGE_DELETED",
-      "summary": "Cleans up resolved approval records when their card message is deleted."
     }
   ]
 }

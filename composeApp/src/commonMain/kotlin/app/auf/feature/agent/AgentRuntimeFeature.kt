@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
 import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ExposedActions
 import app.auf.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -26,6 +27,9 @@ import kotlinx.serialization.json.*
  * - Runtime State -> AgentRuntimeReducer
  * - Cognition -> AgentCognitivePipeline
  * - Side Effects -> AgentAvatarLogic / Self
+ *
+ * Subscribes to ACTION_CREATED from CommandBot to handle validated agent commands:
+ * applies workspace sandboxing, dispatches domain actions, and posts attributed results.
  */
 class AgentRuntimeFeature(
     private val platformDependencies: PlatformDependencies,
@@ -44,6 +48,25 @@ class AgentRuntimeFeature(
     private val activeTurnJobs = mutableMapOf<String, Job>()
     private val avatarUpdateJobs = mutableMapOf<String, Job>()
     private var agentLoadCount = 0
+
+    // ========================================================================
+    // ACTION_CREATED: Pending command response tracking
+    // ========================================================================
+
+    /**
+     * Tracks commands dispatched on behalf of agents, keyed by correlationId.
+     * Used to attribute PrivateData responses back to the requesting agent.
+     */
+    private data class PendingCommandResponse(
+        val correlationId: String,
+        val agentId: String,
+        val agentName: String,
+        val sessionId: String,
+        val actionName: String,
+        val dispatchedAt: Long
+    )
+
+    private val pendingCommandResponses = mutableMapOf<String, PendingCommandResponse>()
 
     override fun init(store: Store) {
         coroutineScope.launch {
@@ -331,8 +354,86 @@ class AgentRuntimeFeature(
             ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
             }
+
+            // ========================================================================
+            // ACTION_CREATED: Handle validated commands from CommandBot
+            // ========================================================================
+            ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED -> {
+                val payload = action.payload ?: return
+                val originatorId = payload["originatorId"]?.jsonPrimitive?.contentOrNull ?: return
+                val originatorName = payload["originatorName"]?.jsonPrimitive?.contentOrNull ?: originatorId
+                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: return
+                val actionName = payload["actionName"]?.jsonPrimitive?.contentOrNull ?: return
+                val actionPayload = payload["actionPayload"]?.jsonObject ?: buildJsonObject {}
+                val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
+
+                // Check if this originator is one of our managed agents
+                if (originatorId !in agentState.agents.keys) return  // Not our agent — ignore
+
+                platformDependencies.log(
+                    LogLevel.INFO, name,
+                    "ACTION_CREATED: Handling '$actionName' for agent '$originatorId' (correlationId=$correlationId)."
+                )
+
+                // Apply sandbox rewrite for actions that need it
+                val finalPayload = applySandboxRewrite(actionName, actionPayload, originatorId)
+
+                // Inject correlationId into the payload so it survives the round-trip
+                // through PrivateData. Receiving features MUST use ignoreUnknownKeys = true.
+                val payloadWithCorrelation = buildJsonObject {
+                    finalPayload.forEach { (key, value) -> put(key, value) }
+                    put("correlationId", correlationId)
+                }
+
+                // Track for response attribution
+                pendingCommandResponses[correlationId] = PendingCommandResponse(
+                    correlationId = correlationId,
+                    agentId = originatorId,
+                    agentName = originatorName,
+                    sessionId = sessionId,
+                    actionName = actionName,
+                    dispatchedAt = platformDependencies.getSystemTimeMillis()
+                )
+
+                // Dispatch the domain action — originator is "agent" because WE ARE the agent feature
+                store.deferredDispatch(this.name, Action(name = actionName, payload = payloadWithCorrelation))
+            }
         }
     }
+
+    // ========================================================================
+    // ACTION_CREATED: Sandbox rewrite (moved from CommandBot)
+    // ========================================================================
+
+    /**
+     * Applies workspace sandboxing to an agent's action payload.
+     * The agent feature owns the "{agentId}/workspace/" path convention.
+     *
+     * For actions with sandbox rules defined in ExposedActions, the subpath field
+     * is prefixed with the agent's workspace path. For other actions, the payload
+     * is returned unchanged.
+     */
+    private fun applySandboxRewrite(actionName: String, payload: JsonObject, agentId: String): JsonObject {
+        val rule = ExposedActions.sandboxRules[actionName] ?: return payload
+        if (rule.strategy != "AGENT_WORKSPACE") return payload
+
+        val mutablePayload = payload.toMutableMap()
+
+        val originalSubpath = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
+        val prefix = rule.subpathPrefixTemplate.replace("{agentId}", agentId)
+        val sandboxedSubpath = if (originalSubpath.isNotBlank()) "$prefix/$originalSubpath" else prefix
+        mutablePayload["subpath"] = JsonPrimitive(sandboxedSubpath)
+
+        rule.payloadRewrites.forEach { (key, jsonLiteralValue) ->
+            mutablePayload[key] = Json.parseToJsonElement(jsonLiteralValue)
+        }
+
+        return JsonObject(mutablePayload)
+    }
+
+    // ========================================================================
+    // Persistence helpers
+    // ========================================================================
 
     private fun saveAgentConfig(agent: AgentInstance, store: Store) {
         // Exclude cognitiveState - it's saved separately in nvram.json
@@ -366,7 +467,22 @@ class AgentRuntimeFeature(
         }))
     }
 
+    // ========================================================================
+    // PrivateData handling
+    // ========================================================================
+
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
+        // Check if this is a response to a pending command (ACTION_CREATED flow)
+        val correlationId = envelope.payload["correlationId"]?.jsonPrimitive?.contentOrNull
+        if (correlationId != null) {
+            val pending = pendingCommandResponses.remove(correlationId)
+            if (pending != null) {
+                postCommandResponse(pending, envelope, store)
+                return
+            }
+        }
+
+        // Existing PrivateData handling for agent feature's own operations
         when (envelope.type) {
             ActionNames.Envelopes.SESSION_RESPONSE_LEDGER,
             ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
@@ -388,6 +504,79 @@ class AgentRuntimeFeature(
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> handleFileSystemReadResponse(envelope.payload, store)
         }
     }
+
+    // ========================================================================
+    // ACTION_CREATED: Attributed response posting
+    // ========================================================================
+
+    /**
+     * Posts an attributed command response to the originating session.
+     */
+    private fun postCommandResponse(
+        pending: PendingCommandResponse,
+        envelope: PrivateDataEnvelope,
+        store: Store
+    ) {
+        val resultContent = formatResponseForSession(pending.actionName, envelope)
+
+        val message = "Responding to '${pending.actionName}' invoked by '${pending.agentName}':\n$resultContent"
+        store.deferredDispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
+            put("session", pending.sessionId)
+            put("senderId", commandBotSenderId)
+            put("message", message)
+        }))
+
+        platformDependencies.log(
+            LogLevel.INFO, name,
+            "Posted attributed response for '${pending.actionName}' (correlationId=${pending.correlationId}) to session '${pending.sessionId}'."
+        )
+    }
+
+    /**
+     * Formats a PrivateData response envelope into a human-readable session message.
+     */
+    private fun formatResponseForSession(actionName: String, envelope: PrivateDataEnvelope): String {
+        return when (envelope.type) {
+            ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> {
+                val listing = envelope.payload["listing"]?.jsonArray
+                val subpath = envelope.payload["subpath"]?.jsonPrimitive?.contentOrNull ?: "."
+                val formatted = Json { prettyPrint = true }.encodeToString(
+                    buildJsonObject {
+                        put("workspace_path", subpath.ifBlank { "." })
+                        put("entries", listing ?: JsonArray(emptyList()))
+                    }
+                )
+                "```json\n$formatted\n```"
+            }
+            ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> {
+                val subpath = envelope.payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
+                val content = envelope.payload["content"]?.jsonPrimitive?.contentOrNull
+                if (content != null) {
+                    "File: `$subpath`\n```\n$content\n```"
+                } else {
+                    "File not found: `$subpath`"
+                }
+            }
+            ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
+                val contents = envelope.payload["contents"]?.jsonObject
+                if (contents != null && contents.isNotEmpty()) {
+                    contents.entries.joinToString("\n\n") { (path, content) ->
+                        "File: `$path`\n```\n${content.jsonPrimitive.content}\n```"
+                    }
+                } else {
+                    "No file contents returned."
+                }
+            }
+            else -> {
+                // Generic fallback: pretty-print the envelope payload
+                "```json\n${Json { prettyPrint = true }.encodeToString(envelope.payload)}\n```"
+            }
+        }
+    }
+
+    // ========================================================================
+    // Existing filesystem response handlers
+    // ========================================================================
 
     private fun handleFileSystemListResponse(payload: JsonObject, store: Store) {
         val path = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
@@ -436,7 +625,7 @@ class AgentRuntimeFeature(
                 }
             }
 
-            // ====== NEW: Agent workspace directory listings ======
+            // ====== Agent workspace directory listings ======
             normalizedPath.contains("/workspace") -> {
                 // Extract agent ID: "agent-xyz/workspace" or "agent-xyz/workspace/subdir"
                 val agentId = normalizedPath.substringBefore("/workspace")
@@ -597,7 +786,7 @@ class AgentRuntimeFeature(
         override fun PartialView(store: Store, partId: String, context: Any?) {
             if (partId != "agent.avatar") return
             val agentId = context as? String ?: run {
-                platformDependencies.log(LogLevel.DEBUG, name, "PartialView: Invalid context type for agent.avatar — expected String, got ${context?.javaClass?.simpleName}.")
+                platformDependencies.log(LogLevel.DEBUG, name, "PartialView: Invalid context type for agent.avatar.")
                 return
             }
             val appState by store.state.collectAsState()

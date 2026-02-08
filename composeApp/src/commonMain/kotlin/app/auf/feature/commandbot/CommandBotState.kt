@@ -12,7 +12,7 @@ import kotlinx.serialization.json.JsonObject
 data class CommandBotState(
     /**
      * Pending approval requests, keyed by a generated approval ID.
-     * Each entry holds everything needed to dispatch the action if approved.
+     * Each entry holds everything needed to publish ACTION_CREATED if approved.
      */
     val pendingApprovals: Map<String, PendingApproval> = emptyMap(),
 
@@ -38,10 +38,8 @@ data class PendingApproval(
     val requestingAgentName: String,
     /** The fully-formed action name to dispatch if approved. */
     val actionName: String,
-    /** The final payload to dispatch (after any sandbox rewrites). */
+    /** The final payload to dispatch (after auto-fill, before sandbox rewrites). */
     val payload: JsonObject,
-    /** The originator string to use when dispatching. */
-    val dispatchOriginator: String,
     /** Timestamp of the request. */
     val requestedAt: Long
 )

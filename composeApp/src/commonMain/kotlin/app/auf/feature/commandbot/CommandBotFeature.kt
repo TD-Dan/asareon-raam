@@ -19,9 +19,10 @@ import kotlinx.serialization.json.put
 /**
  * ## Mandate
  * A stateful agent that observes all session transcripts for command directives
- * (`auf_` code blocks) and dispatches them as universal Actions, making the application
- * universally scriptable. For actions marked as requiring approval, it stages the
- * request and presents an approval card to the user before dispatching.
+ * (`auf_` code blocks) and validates them against guardrails. For agent-originated
+ * commands, it publishes [ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED] so that
+ * the owning feature (e.g., agent) can apply its own sandboxing and dispatch.
+ * For human-originated commands, it dispatches directly.
  *
  * ## Guardrails
  * - **CAG-001 (Self-Reaction Prevention)**: Ignores messages from itself.
@@ -29,17 +30,16 @@ import kotlinx.serialization.json.put
  * - **CAG-003 (Robust Error Handling)**: Posts parse errors back to the session.
  * - **CAG-004 (Agent Action Restriction)**: Agent-originated commands are restricted to the
  *   build-time [ExposedActions.allowedActionNames] allowlist. Human users are unrestricted.
- * - **CAG-005 (Agent Workspace Sandboxing)**: Agent file operations have their `subpath`
- *   prefixed with `{agentId}/workspace/` and are dispatched with originator `"agent"`,
- *   confining all I/O to the agent's private workspace directory.
  * - **CAG-006 (Approval Gate)**: Actions in [ExposedActions.requiresApproval] are staged
  *   and require explicit user approval before dispatch.
  * - **CAG-007 (Auto-Fill)**: Payload fields declared in [ExposedActions.autoFillRules] are
- *   injected before dispatch (e.g., senderId = agentId for session.POST).
+ *   injected before publishing (e.g., senderId = agentId for session.POST).
  *
  * ## Decoupling
  * This feature does NOT import any types from the session or agent packages. It reads
  * published payloads via raw JSON traversal, treating the published schema as a contract boundary.
+ * It does NOT dispatch domain actions on behalf of agents — it only validates and broadcasts
+ * via ACTION_CREATED. Sandbox rewrites are the responsibility of the owning feature.
  */
 class CommandBotFeature(
     private val platformDependencies: PlatformDependencies
@@ -57,7 +57,7 @@ class CommandBotFeature(
 
     /**
      * Tracks known agent names, keyed by agent ID.
-     * Used for display in approval cards.
+     * Used for display in approval cards and ACTION_CREATED attribution.
      */
     private val knownAgentNames = mutableMapOf<String, String>()
 
@@ -98,7 +98,6 @@ class CommandBotFeature(
                     requestingAgentName = payload["requestingAgentName"]?.jsonPrimitive?.contentOrNull ?: "Unknown Agent",
                     actionName = payload["actionName"]?.jsonPrimitive?.contentOrNull ?: return currentState,
                     payload = payload["payload"]?.jsonObject ?: buildJsonObject {},
-                    dispatchOriginator = payload["dispatchOriginator"]?.jsonPrimitive?.contentOrNull ?: "agent",
                     requestedAt = platformDependencies.getSystemTimeMillis()
                 )
                 currentState.copy(
@@ -190,26 +189,21 @@ class CommandBotFeature(
                     put("resolution", Resolution.APPROVED.name)
                 }))
 
-                // 2. Dispatch the staged action
-                val stagedAction = Action(name = approval.actionName, payload = approval.payload)
-                store.deferredDispatch(approval.dispatchOriginator, stagedAction)
+                // 2. Publish ACTION_CREATED — the owning feature will dispatch the domain action
+                publishActionCreated(
+                    actionName = approval.actionName,
+                    payload = approval.payload,
+                    sessionId = approval.sessionId,
+                    originatorId = approval.requestingAgentId,
+                    store = store
+                )
                 platformDependencies.log(
                     LogLevel.INFO, name,
-                    "Approval '$approvalId' APPROVED. Dispatching '${approval.actionName}' on behalf of '${approval.requestingAgentId}'."
+                    "Approval '$approvalId' APPROVED. Publishing ACTION_CREATED for '${approval.actionName}' on behalf of '${approval.requestingAgentId}'."
                 )
 
                 // 3. Make the card clearable now that it's resolved (flip doNotClear → false)
                 makeCardClearable(approval.sessionId, approval.cardMessageId, store)
-
-                // 4. Post feedback to the agent
-                val responseSessionId = resolveAgentResponseSession(approval.requestingAgentId, store)
-                if (responseSessionId != null) {
-                    postFeedbackToSession(
-                        responseSessionId,
-                        "[COMMAND BOT] Your action '${approval.actionName}' was approved and dispatched.",
-                        store
-                    )
-                }
             }
 
             ActionNames.COMMANDBOT_DENY -> {
@@ -236,15 +230,12 @@ class CommandBotFeature(
                 // 2. Make the card clearable now that it's resolved
                 makeCardClearable(approval.sessionId, approval.cardMessageId, store)
 
-                // 3. Post denial feedback to the agent
-                val responseSessionId = resolveAgentResponseSession(approval.requestingAgentId, store)
-                if (responseSessionId != null) {
-                    postFeedbackToSession(
-                        responseSessionId,
-                        "[COMMAND BOT] Your action '${approval.actionName}' was denied by the user.",
-                        store
-                    )
-                }
+                // 3. Post denial feedback to the originating session
+                postFeedbackToSession(
+                    approval.sessionId,
+                    "[COMMAND BOT] Action '${approval.actionName}' requested by '${approval.requestingAgentName}' was denied.",
+                    store
+                )
             }
 
             // --- Core Command Processing ---
@@ -313,19 +304,6 @@ class CommandBotFeature(
                     return
                 }
 
-                // Guardrail (CAG-005): Agent Workspace Sandboxing
-                val rule = ExposedActions.sandboxRules[actionName]
-                if (rule != null && rule.strategy == "AGENT_WORKSPACE") {
-                    val sandboxedPayload = applySandboxRewrite(payloadJson, rule, originalSenderId)
-                    // Sandbox actions are never approval-gated (they're already sandboxed)
-                    store.deferredDispatch("agent", Action(name = actionName, payload = sandboxedPayload))
-                    platformDependencies.log(
-                        LogLevel.INFO, name,
-                        "Agent '$originalSenderId' dispatched sandboxed action '$actionName'."
-                    )
-                    return
-                }
-
                 // --- CAG-007: Auto-Fill ---
                 val autoFill = ExposedActions.autoFillRules[actionName]
                 if (autoFill != null) {
@@ -345,9 +323,14 @@ class CommandBotFeature(
                     return
                 }
 
-                // Exposed action without sandbox or approval — dispatch with agent originator
-                val commandAction = Action(name = actionName, payload = payloadJson)
-                store.deferredDispatch("agent", commandAction)
+                // --- Publish validated action for the owning feature to dispatch ---
+                publishActionCreated(
+                    actionName = actionName,
+                    payload = payloadJson,
+                    sessionId = sessionId,
+                    originatorId = originalSenderId,
+                    store = store
+                )
                 return
             }
 
@@ -368,6 +351,42 @@ class CommandBotFeature(
                 store
             )
         }
+    }
+
+    // ========================================================================
+    // ACTION_CREATED Publishing
+    // ========================================================================
+
+    /**
+     * Publishes a validated command for the owning feature to pick up and dispatch.
+     * CommandBot does NOT dispatch domain actions itself — it only validates and broadcasts.
+     */
+    private fun publishActionCreated(
+        actionName: String,
+        payload: JsonObject,
+        sessionId: String,
+        originatorId: String,
+        store: Store
+    ) {
+        val correlationId = platformDependencies.generateUUID()
+        val agentName = knownAgentNames[originatorId] ?: originatorId
+
+        store.deferredDispatch(this.name, Action(
+            ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED,
+            buildJsonObject {
+                put("correlationId", correlationId)
+                put("originatorId", originatorId)
+                put("originatorName", agentName)
+                put("sessionId", sessionId)
+                put("actionName", actionName)
+                put("actionPayload", payload)
+            }
+        ))
+
+        platformDependencies.log(
+            LogLevel.INFO, name,
+            "Published ACTION_CREATED for '$actionName' from '$originatorId' (correlationId=$correlationId)."
+        )
     }
 
     // ========================================================================
@@ -414,7 +433,6 @@ class CommandBotFeature(
             put("requestingAgentName", agentName)
             put("actionName", actionName)
             put("payload", payload)
-            put("dispatchOriginator", "agent")
         }))
 
         platformDependencies.log(
@@ -424,64 +442,8 @@ class CommandBotFeature(
     }
 
     // ========================================================================
-    // Slice 6: Response Routing
-    // ========================================================================
-
-    /**
-     * Resolves the session ID where responses/feedback should be posted for a given agent.
-     * Uses raw JSON traversal of agent state to avoid importing agent types (P-ARCH-002).
-     *
-     * Priority: privateSessionId → first subscribedSessionId → null
-     */
-    private fun resolveAgentResponseSession(agentId: String, store: Store): String? {
-        try {
-            val agentStateJson = store.state.value.featureStates["agent"]
-            // FeatureState is serializable — we traverse its JSON representation
-            // via the store's raw JSON access pattern (same as knownAgentIds caching).
-            val agentStateObj = agentStateJson as? kotlinx.serialization.json.JsonObject
-                ?: return null
-
-            // Navigate: agentState.agents[agentId].privateSessionId
-            val agents = agentStateObj["agents"]?.jsonObject ?: return null
-            val agent = agents[agentId]?.jsonObject ?: return null
-
-            val privateSessionId = agent["privateSessionId"]?.jsonPrimitive?.contentOrNull
-            if (privateSessionId != null) return privateSessionId
-
-            // Fallback: first subscribed session
-            val subscribedSessions = agent["subscribedSessionIds"]?.jsonArray
-            return subscribedSessions?.firstOrNull()?.jsonPrimitive?.contentOrNull
-        } catch (e: Exception) {
-            platformDependencies.log(LogLevel.WARN, name, "Failed to resolve response session for agent '$agentId': ${e.message}")
-            return null
-        }
-    }
-
-    // ========================================================================
     // Utilities
     // ========================================================================
-
-    /**
-     * Applies workspace sandboxing to an agent's action payload.
-     */
-    private fun applySandboxRewrite(
-        payload: JsonObject,
-        rule: ExposedActions.SandboxRule,
-        agentId: String
-    ): JsonObject {
-        val mutablePayload = payload.toMutableMap()
-
-        val originalSubpath = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
-        val prefix = rule.subpathPrefixTemplate.replace("{agentId}", agentId)
-        val sandboxedSubpath = if (originalSubpath.isNotBlank()) "$prefix/$originalSubpath" else prefix
-        mutablePayload["subpath"] = JsonPrimitive(sandboxedSubpath)
-
-        rule.payloadRewrites.forEach { (key, jsonLiteralValue) ->
-            mutablePayload[key] = json.parseToJsonElement(jsonLiteralValue)
-        }
-
-        return JsonObject(mutablePayload)
-    }
 
     /**
      * After approval resolution, flips the card's `doNotClear` to false so that

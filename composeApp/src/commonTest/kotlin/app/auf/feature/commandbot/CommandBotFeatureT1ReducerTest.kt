@@ -117,7 +117,6 @@ class CommandBotFeatureT1ReducerTest {
             requestingAgentName = requestingAgentName,
             actionName = actionName,
             payload = buildJsonObject {},
-            dispatchOriginator = dispatchOriginator,
             requestedAt = 500L
         )
     }
@@ -183,7 +182,6 @@ class CommandBotFeatureT1ReducerTest {
         assertEquals("agent-1", pending.requestingAgentId)
         assertEquals("Test Agent", pending.requestingAgentName)
         assertEquals("session.CREATE", pending.actionName)
-        assertEquals("agent", pending.dispatchOriginator)
         assertTrue(pending.requestedAt > 0, "requestedAt should be populated from platformDependencies.")
     }
 
@@ -316,22 +314,6 @@ class CommandBotFeatureT1ReducerTest {
         assertNotNull(pending)
         assertEquals("Unknown Agent", pending.requestingAgentName,
             "Missing requestingAgentName should default to 'Unknown Agent'.")
-    }
-
-    @Test
-    fun `STAGE_APPROVAL - missing dispatchOriginator defaults to agent`() {
-        val feature = createFeature()
-        val initial = CommandBotState()
-
-        val result = feature.reducer(
-            initial,
-            stageApprovalAction(dispatchOriginator = null)
-        ) as CommandBotState
-
-        val pending = result.pendingApprovals["approval-1"]
-        assertNotNull(pending)
-        assertEquals("agent", pending.dispatchOriginator,
-            "Missing dispatchOriginator should default to 'agent'.")
     }
 
     @Test
