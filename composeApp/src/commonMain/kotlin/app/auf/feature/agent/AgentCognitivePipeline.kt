@@ -90,8 +90,14 @@ object AgentCognitivePipeline {
             return
         }
 
-        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
-        val agent = state.agents[agentId] ?: return
+        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: run {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "handleLedgerResponse: Agent feature state missing. Dropping ledger response for correlationId='$agentId'.")
+            return
+        }
+        val agent = state.agents[agentId] ?: run {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "handleLedgerResponse: Agent '$agentId' not found in state. Dropping ledger response.")
+            return
+        }
 
         val enrichedMessages = decoded.messages.mapNotNull { element ->
             try {
@@ -162,12 +168,18 @@ object AgentCognitivePipeline {
      * and sets up a timeout. Does NOT call executeTurn directly — the gate handles it.
      */
     fun evaluateTurnContext(agentId: String, store: Store) {
-        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
+        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: run {
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "evaluateTurnContext: Agent feature state missing. Cannot evaluate context for '$agentId'.")
+            return
+        }
         val agent = state.agents[agentId] ?: run {
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "evaluateTurnContext: Agent '$agentId' not found.")
             return
         }
-        val statusInfo = state.agentStatuses[agentId] ?: return
+        val statusInfo = state.agentStatuses[agentId] ?: run {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "evaluateTurnContext: No status entry for agent '$agentId'. Turn may have been cancelled.")
+            return
+        }
 
         if (statusInfo.stagedTurnContext == null) {
             val msg = "Turn Context Missing for '$agentId'. Aborting."
@@ -212,14 +224,26 @@ object AgentCognitivePipeline {
      * Proceeds to executeTurn only when all expected contexts are ready (or timeout forces it).
      */
     fun evaluateFullContext(agentId: String, store: Store, isTimeout: Boolean = false) {
-        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
-        val agent = state.agents[agentId] ?: return
-        val statusInfo = state.agentStatuses[agentId] ?: return
+        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: run {
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "evaluateFullContext: Agent feature state missing for '$agentId'. Context gate cannot proceed.")
+            return
+        }
+        val agent = state.agents[agentId] ?: run {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "evaluateFullContext: Agent '$agentId' not found. May have been deleted mid-turn.")
+            return
+        }
+        val statusInfo = state.agentStatuses[agentId] ?: run {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "evaluateFullContext: No status entry for agent '$agentId'. Cannot evaluate context gate.")
+            return
+        }
 
         // Bail if not in an active turn.
         // Direct turns set status to PROCESSING; preview turns do NOT change status.
         // Use contextGatheringStartedAt as the canonical indicator of an active context-gathering phase.
-        if (statusInfo.contextGatheringStartedAt == null) return
+        if (statusInfo.contextGatheringStartedAt == null) {
+            store.platformDependencies.log(LogLevel.DEBUG, LOG_TAG, "evaluateFullContext: contextGatheringStartedAt is null for '$agentId'. No active context-gathering phase — ignoring.")
+            return
+        }
 
         val ledgerContext = statusInfo.stagedTurnContext
         if (ledgerContext == null) {
