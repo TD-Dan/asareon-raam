@@ -26,9 +26,13 @@ open class FakePlatformDependencies(
     var clipboardContent: String? = null
     var currentTime = 1_000_000_000_000L
     var uuidCounter = 0
-    val capturedLogs = mutableListOf<CapturedLog>() // This property is now correctly defined.
-    val writtenFiles = mutableMapOf<String, String>() // NEW: For T3 test assertions
-    var selectedDirectoryPathToReturn: String? = null // NEW: For T1 view tests
+    val capturedLogs = mutableListOf<CapturedLog>()
+    val writtenFiles = mutableMapOf<String, String>()
+    var selectedDirectoryPathToReturn: String? = null
+
+    /** Tracks all scheduled callbacks for test assertions and manual firing. */
+    data class ScheduledCallback(val delayMs: Long, val callback: () -> Unit, var cancelled: Boolean = false)
+    val scheduledCallbacks = mutableListOf<ScheduledCallback>()
 
     override val pathSeparator: Char = '/'
 
@@ -42,7 +46,7 @@ open class FakePlatformDependencies(
             createDirectories(parent)
         }
         files[path] = FakeFile(content, currentTime)
-        writtenFiles[path] = content // NEW: Capture written content
+        writtenFiles[path] = content
     }
 
     override fun fileExists(path: String): Boolean {
@@ -64,7 +68,9 @@ open class FakePlatformDependencies(
         }
         return directChildren.map { childName ->
             val fullPath = if (path == "/") "/$childName" else "$pathWithSeparator$childName".removeSuffix("/")
-            FileEntry(fullPath, directories.contains(fullPath))
+            val isDir = directories.contains(fullPath)
+            val lastMod = if (isDir) null else files[fullPath]?.lastModified
+            FileEntry(fullPath, isDir, lastModified = lastMod)
         }
     }
 
@@ -73,7 +79,7 @@ open class FakePlatformDependencies(
         val pathWithSeparator = if (path.endsWith(pathSeparator)) path else "$path$pathSeparator"
         return files.keys
             .filter { it.startsWith(pathWithSeparator) }
-            .map { FileEntry(it, isDirectory = false) }
+            .map { FileEntry(it, isDirectory = false, lastModified = files[it]?.lastModified) }
     }
 
     override fun createDirectories(path: String) {
@@ -107,15 +113,9 @@ open class FakePlatformDependencies(
 
     override fun deleteDirectory(path: String) {
         val pathWithSeparator = if (path.endsWith(pathSeparator)) path else "$path$pathSeparator"
-
-        // Remove all files within the directory using a predicate
         files.keys.removeAll { it.startsWith(pathWithSeparator) }
         writtenFiles.keys.removeAll { it.startsWith(pathWithSeparator) }
-
-        // Remove all subdirectories using a predicate
         directories.removeAll { it.startsWith(pathWithSeparator) }
-
-        // Remove the directory itself
         directories.remove(path)
     }
 
@@ -143,7 +143,7 @@ open class FakePlatformDependencies(
 
     override fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String) { /* No-op */ }
     override fun openFolderInExplorer(path: String) { /* No-op */ }
-    override fun selectDirectoryPath(): String? = selectedDirectoryPathToReturn // CORRECTED
+    override fun selectDirectoryPath(): String? = selectedDirectoryPathToReturn
 
     override fun getSystemTimeMillis(): Long = currentTime
     override fun generateUUID(): String {
@@ -151,9 +151,48 @@ open class FakePlatformDependencies(
         return "fake-uuid-$uuidCounter"
     }
     override fun formatIsoTimestamp(timestamp: Long): String = "ISO_TIMESTAMP_$timestamp"
+    override fun parseIsoTimestamp(timestamp: String): Long? {
+        // Support the fake format produced by formatIsoTimestamp
+        return if (timestamp.startsWith("ISO_TIMESTAMP_")) {
+            timestamp.removePrefix("ISO_TIMESTAMP_").toLongOrNull()
+        } else {
+            null
+        }
+    }
     override fun formatDisplayTimestamp(timestamp: Long): String = "DISPLAY_TIMESTAMP_$timestamp"
     override fun copyToClipboard(text: String) { clipboardContent = text }
     override fun applyNativeWindowDecorations(window: Any) { /* No-op */ }
+
+    // --- Scheduling ---
+
+    override fun scheduleDelayed(delayMs: Long, callback: () -> Unit): Any? {
+        val entry = ScheduledCallback(delayMs, callback)
+        scheduledCallbacks.add(entry)
+        // Return the index as a handle for cancellation
+        return scheduledCallbacks.size - 1
+    }
+
+    override fun cancelScheduled(handle: Any?) {
+        val index = handle as? Int ?: return
+        if (index in scheduledCallbacks.indices) {
+            scheduledCallbacks[index] = scheduledCallbacks[index].copy(cancelled = true)
+        }
+    }
+
+    /**
+     * Test utility: fires all pending (non-cancelled) scheduled callbacks immediately.
+     * Useful for simulating timeout scenarios in tests.
+     */
+    fun fireAllScheduledCallbacks() {
+        scheduledCallbacks.filter { !it.cancelled }.forEach { it.callback() }
+    }
+
+    /**
+     * Test utility: fires only scheduled callbacks with the specified delay.
+     */
+    fun fireScheduledCallbacks(delayMs: Long) {
+        scheduledCallbacks.filter { !it.cancelled && it.delayMs == delayMs }.forEach { it.callback() }
+    }
 
     override fun log(level: LogLevel, tag: String, message: String, throwable: Throwable?) {
         capturedLogs.add(CapturedLog(level, tag, message, throwable))

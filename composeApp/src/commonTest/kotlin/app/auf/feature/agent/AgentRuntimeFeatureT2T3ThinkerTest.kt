@@ -3,6 +3,7 @@ package app.auf.feature.agent
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +27,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
     fun `INITIATE_TURN dispatches REQUEST_LEDGER_CONTENT`() = runTest {
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
             .build(platform = platform)
 
@@ -40,14 +42,15 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
     }
 
     @Test
-    fun `handleLedgerResponse stages context and calls evaluateTurnContext`() = runTest {
-        // This test verifies the race condition fix.
-        // The pipeline handles the response by staging context.
-        // The feature's onAction handler picks up the STAGE_TURN_CONTEXT action and calls evaluateTurnContext.
-        // This ensures sequential consistency.
+    fun `handleLedgerResponse stages context and triggers full context gathering`() = runTest {
+        // This test verifies the full pipeline from ledger response to gateway request.
+        // The flow is: LedgerResponse → STAGE_TURN_CONTEXT → evaluateTurnContext
+        // → FILESYSTEM_SYSTEM_LIST → FileSystemFeature → SET_WORKSPACE_CONTEXT
+        // → evaluateFullContext (gate) → executeTurn → GATEWAY_GENERATE_CONTENT
 
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
             .build(platform = platform)
 
@@ -70,8 +73,9 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             val stageAction = harness.processedActions.find { it.name == ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT }
             assertNotNull(stageAction)
 
-            // ASSERT 2: GATEWAY_GENERATE_CONTENT dispatched (proving evaluateTurnContext was called)
-            // This proves the loop: PrivateData -> Pipeline -> Action -> Feature.onAction -> Pipeline.evaluate -> Action
+            // ASSERT 2: GATEWAY_GENERATE_CONTENT dispatched (proving full context pipeline completed)
+            // This proves the loop: PrivateData -> Pipeline -> STAGE_TURN_CONTEXT -> evaluateTurnContext
+            // -> FILESYSTEM_SYSTEM_LIST -> FileSystemFeature -> SET_WORKSPACE_CONTEXT -> evaluateFullContext -> executeTurn
             val gatewayAction = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
             assertNotNull(gatewayAction)
         }
@@ -82,6 +86,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
         // Verifies the Sentinel Fix in a full loop context
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
             .build(platform = platform)
 
@@ -112,6 +117,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
         val orphanAgent = AgentInstance("orphan-1", "Orphan", "", "p", "m", subscribedSessionIds = emptyList(), privateSessionId = null)
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(orphanAgent.id to orphanAgent)))
             .build(platform = platform)
 
@@ -139,6 +145,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
         // ARRANGE
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
             .build(platform = platform)
 
@@ -163,12 +170,13 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
     }
 
     @Test
-    fun `evaluateHkgContext should abort if staged ledger context is missing (State Integrity)`() = runTest {
+    fun `evaluateFullContext should abort if staged ledger context is missing (State Integrity)`() = runTest {
         // ARRANGE
         // Status has NO stagedTurnContext, simulating a desync or cancellation
         val status = AgentStatusInfo(status = AgentStatus.PROCESSING, stagedTurnContext = null)
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
                 agents = mapOf(agent.id to agent),
                 agentStatuses = mapOf(agent.id to status)
@@ -176,7 +184,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            // ACT: Trigger the HKG context arrival manually
+            // ACT: Trigger a context arrival (e.g. workspace or HKG) without staged ledger
             val hkgResponse = PrivateDataEnvelope(ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, buildJsonObject {
                 put("correlationId", agent.id)
                 put("context", buildJsonObject { put("some", "data") })

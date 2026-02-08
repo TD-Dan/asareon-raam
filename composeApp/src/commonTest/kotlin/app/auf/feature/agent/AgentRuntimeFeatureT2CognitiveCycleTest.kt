@@ -4,6 +4,7 @@ import app.auf.core.*
 import app.auf.core.generated.ActionNames
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.agent.strategies.SovereignDefaults
+import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,8 +26,11 @@ import kotlin.test.*
  * **Critical Flow:**
  * - INITIATE_TURN → Request Ledger
  * - Ledger Response → STAGE_TURN_CONTEXT → evaluateTurnContext
- * - (If Sovereign) Request HKG → SET_HKG_CONTEXT → evaluateHkgContext
- * - executeTurn → GATEWAY_GENERATE_CONTENT
+ * - evaluateTurnContext dispatches workspace listing + HKG context (parallel) + timeout
+ * - Workspace listing response → SET_WORKSPACE_CONTEXT → evaluateFullContext (gate)
+ * - (If Sovereign) HKG response → SET_HKG_CONTEXT → evaluateFullContext (gate)
+ * - Gate passes → executeTurn → GATEWAY_GENERATE_CONTENT
+ * - Gateway Response → postProcessResponse → NVRAM_LOADED + SESSION_POST
  * - Gateway Response → postProcessResponse → NVRAM_LOADED + SESSION_POST
  */
 class AgentRuntimeFeatureT2CognitiveCycleTest {
@@ -58,6 +62,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
                 agents = mapOf(agentId to agent),
                 resources = AgentDefaults.builtInResources
@@ -100,14 +105,35 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             }
             assertNotNull(stageAction, "Should stage turn context")
 
-            // === PHASE 3: EVALUATE CONTEXT (triggers Gateway request) ===
+            // === PHASE 3: EVALUATE CONTEXT (triggers parallel context gathering) ===
             AgentCognitivePipeline.evaluateTurnContext(agentId, harness.store)
 
-            // ASSERT: Gateway request with Sentinel in System Prompt
+            // ASSERT: Workspace listing requested
+            val workspaceListRequest = harness.processedActions.find { action ->
+                action.name == ActionNames.FILESYSTEM_SYSTEM_LIST &&
+                        action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull == agentId
+            }
+            assertNotNull(workspaceListRequest, "Should request workspace listing")
+
+            // The FileSystemFeature handles the listing and delivers the response automatically.
+            // Workspace context should now be staged.
+
+            // For sovereign agents, HKG context is also required.
+            // Simulate HKG context response arrival:
+            val hkgResponse = PrivateDataEnvelope(
+                ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                buildJsonObject {
+                    put("correlationId", agentId)
+                    put("context", buildJsonObject { put("persona", "test") })
+                }
+            )
+            feature.onPrivateData(hkgResponse, harness.store)
+
+            // ASSERT: Gate passed — Gateway request dispatched with Sentinel in System Prompt
             val gatewayRequest = harness.processedActions.find { action ->
                 action.name == ActionNames.GATEWAY_GENERATE_CONTENT
             }
-            assertNotNull(gatewayRequest, "Should dispatch gateway request")
+            assertNotNull(gatewayRequest, "Should dispatch gateway request after all contexts gathered")
 
             val systemPrompt = gatewayRequest.payload?.get("systemPrompt")?.jsonPrimitive?.content ?: ""
             assertTrue(
@@ -151,6 +177,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
                 agents = mapOf(agentId to agent),
                 resources = AgentDefaults.builtInResources
@@ -202,6 +229,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
                 agents = mapOf(agentId to awakeAgent),
                 resources = AgentDefaults.builtInResources
@@ -230,8 +258,19 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             )
             feature.onPrivateData(ledgerResponse, harness.store)
 
-            // Trigger evaluation
+            // Trigger evaluation (parallel context gathering)
             AgentCognitivePipeline.evaluateTurnContext(agentId, harness.store)
+
+            // Workspace context arrives automatically via FileSystemFeature.
+            // Sovereign agent also needs HKG context:
+            val hkgResponse = PrivateDataEnvelope(
+                ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                buildJsonObject {
+                    put("correlationId", agentId)
+                    put("context", buildJsonObject { put("persona", "test") })
+                }
+            )
+            feature.onPrivateData(hkgResponse, harness.store)
 
             // === VERIFY NO SENTINEL ===
             val gatewayRequest = harness.processedActions.find { action ->
@@ -280,6 +319,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
                 agents = mapOf(agentId to agentWithMissingResource),
                 resources = AgentDefaults.builtInResources
@@ -307,8 +347,21 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             )
             feature.onPrivateData(ledgerResponse, harness.store)
 
-            // Trigger evaluation
+            // Trigger evaluation (parallel context gathering starts)
             AgentCognitivePipeline.evaluateTurnContext(agentId, harness.store)
+
+            // Workspace listing arrives via FileSystemFeature automatically.
+            // Sovereign agent also needs HKG context for gate to pass:
+            val hkgResponse = PrivateDataEnvelope(
+                ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                buildJsonObject {
+                    put("correlationId", agentId)
+                    put("context", buildJsonObject { put("persona", "test") })
+                }
+            )
+            feature.onPrivateData(hkgResponse, harness.store)
+
+            // Gate passes → executeTurn fires → resource validation fails → ERROR
 
             // ASSERT: No gateway request (resource validation failed)
             val gatewayRequest = harness.processedActions.find { action ->

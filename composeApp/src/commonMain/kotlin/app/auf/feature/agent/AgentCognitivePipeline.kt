@@ -221,14 +221,17 @@ object AgentCognitivePipeline {
 
         val ledgerContext = statusInfo.stagedTurnContext
         if (ledgerContext == null) {
-            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG,
-                "evaluateFullContext: Ledger context missing for '$agentId'. This should not happen.")
+            val msg = "Context arrived for '$agentId' without staged ledger context. Aborting."
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, "Context assembly failed.")
             return
         }
 
         val workspaceReady = statusInfo.transientWorkspaceContext != null
-        val isSovereign = agent.cognitiveStrategyId == "sovereign_v1"
-        val hkgReady = !isSovereign || statusInfo.transientHkgContext != null
+        // HKG context is expected when the agent has a knowledge graph configured.
+        // SovereignHKGResourceLogic.requestContextIfSovereign handles the request dispatch.
+        val expectsHkg = !agent.knowledgeGraphId.isNullOrBlank()
+        val hkgReady = !expectsHkg || statusInfo.transientHkgContext != null
 
         if (workspaceReady && hkgReady) {
             // All contexts arrived — proceed

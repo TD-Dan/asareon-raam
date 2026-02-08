@@ -43,6 +43,16 @@ class FakeStore(
         dispatchedActions.add(stampedAction)
     }
 
+    /**
+     * Captures scheduled delayed dispatches without actually scheduling.
+     * The action is captured immediately for assertion purposes.
+     */
+    override fun scheduleDelayed(delayMs: Long, originator: String, action: Action): Any? {
+        val stampedAction = action.copy(originator = originator)
+        dispatchedActions.add(stampedAction)
+        return null // No real handle needed in FakeStore
+    }
+
     fun setState(newState: AppState) {
         _fakeState.value = newState
     }

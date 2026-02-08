@@ -10,6 +10,7 @@ import java.io.IOException
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -219,5 +220,102 @@ class PlatformDependenciesJvmTest {
         val logContent = logFile.readText()
         assertTrue(logFile.name.startsWith("session-"), "Log file name is incorrect.")
         assertTrue(logContent.contains("[INFO] [TestTag] This is a test log message."), "Log file content is incorrect.")
+    }
+
+    // === New tests for workspace context feature support ===
+
+    @Test
+    fun `listDirectory should populate lastModified on file entries`() {
+        // Arrange
+        val dir = File(tempDir, "lastmod_test")
+        dir.mkdir()
+        val testFile = File(dir, "recent.txt")
+        testFile.writeText("content")
+
+        // Act
+        val entries = platform.listDirectory(dir.absolutePath)
+
+        // Assert
+        val fileEntry = entries.find { it.path.endsWith("recent.txt") }
+        assertNotNull(fileEntry, "Should find recent.txt")
+        assertNotNull(fileEntry.lastModified, "lastModified should be populated for files")
+        assertTrue(fileEntry.lastModified!! > 0, "lastModified should be a positive timestamp")
+    }
+
+    @Test
+    fun `listDirectoryRecursive should populate lastModified on all file entries`() {
+        // Arrange
+        val root = File(tempDir, "recursive_lastmod")
+        val sub = File(root, "sub")
+        platform.createDirectories(sub.absolutePath)
+        platform.writeFileContent(File(root, "a.txt").absolutePath, "a")
+        platform.writeFileContent(File(sub, "b.txt").absolutePath, "b")
+
+        // Act
+        val entries = platform.listDirectoryRecursive(root.absolutePath)
+
+        // Assert
+        assertEquals(2, entries.size)
+        entries.forEach { entry ->
+            assertNotNull(entry.lastModified, "lastModified should be populated for ${entry.path}")
+            assertTrue(entry.lastModified!! > 0, "lastModified should be positive for ${entry.path}")
+        }
+    }
+
+    @Test
+    fun `scheduleDelayed should execute callback after delay`() {
+        // Act
+        var callbackFired = false
+        val handle = platform.scheduleDelayed(50L) { callbackFired = true }
+
+        // Assert: not fired immediately
+        assertFalse(callbackFired, "Callback should not fire immediately")
+        assertNotNull(handle, "Should return a cancellation handle")
+
+        // Wait for callback
+        Thread.sleep(200)
+        assertTrue(callbackFired, "Callback should have fired after delay")
+    }
+
+    @Test
+    fun `cancelScheduled should prevent callback from firing`() {
+        // Act
+        var callbackFired = false
+        val handle = platform.scheduleDelayed(100L) { callbackFired = true }
+        platform.cancelScheduled(handle)
+
+        // Wait longer than the delay
+        Thread.sleep(300)
+
+        // Assert
+        assertFalse(callbackFired, "Cancelled callback should not fire")
+    }
+
+    @Test
+    fun `parseIsoTimestamp should correctly round-trip with formatIsoTimestamp`() {
+        // Arrange
+        val originalTimestamp = 1707400000000L // Some epoch millis
+
+        // Act
+        val formatted = platform.formatIsoTimestamp(originalTimestamp)
+        val parsed = platform.parseIsoTimestamp(formatted)
+
+        // Assert
+        assertNotNull(parsed, "Should successfully parse a valid ISO timestamp")
+        // Note: round-trip may lose sub-second precision since format uses seconds
+        assertEquals(
+            originalTimestamp / 1000,
+            parsed / 1000,
+            "Parsed timestamp should match original (to second precision)"
+        )
+    }
+
+    @Test
+    fun `parseIsoTimestamp should return null for invalid input`() {
+        // Act
+        val result = platform.parseIsoTimestamp("not-a-timestamp")
+
+        // Assert
+        assertNull(result, "Should return null for unparseable input")
     }
 }
