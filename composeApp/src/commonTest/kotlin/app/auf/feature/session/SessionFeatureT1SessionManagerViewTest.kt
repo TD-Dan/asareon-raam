@@ -24,6 +24,7 @@ class SessionFeatureT1SessionManagerViewTest {
     @get:Rule
     val composeTestRule = createComposeRule()
 
+    private lateinit var fakePlatform: FakePlatformDependencies
     private lateinit var fakeStore: FakeStore
     private val session1 = Session("sid-1", "My Session", emptyList(), 1L)
 
@@ -34,14 +35,15 @@ class SessionFeatureT1SessionManagerViewTest {
             ActionNames.SESSION_DELETE,
             ActionNames.SESSION_SET_EDITING_SESSION_NAME
         )
-        fakeStore = FakeStore(AppState(), FakePlatformDependencies("test"), validActions)
+        fakePlatform = FakePlatformDependencies("test")
+        fakeStore = FakeStore(AppState(), fakePlatform, validActions)
     }
 
     private fun setViewState(state: SessionState) {
         fakeStore.setState(AppState(featureStates = mapOf("session" to state)))
         composeTestRule.setContent {
             AppTheme {
-                SessionsManagerView(store = fakeStore)
+                SessionsManagerView(store = fakeStore, fakePlatform)
             }
         }
     }
