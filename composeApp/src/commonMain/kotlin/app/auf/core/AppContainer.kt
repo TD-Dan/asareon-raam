@@ -68,7 +68,7 @@ class AppContainer(
             gatewayFeature,
             AgentRuntimeFeature(platformDependencies, resilientCoroutineScope),
             KnowledgeGraphFeature(platformDependencies, resilientCoroutineScope),
-            CommandBotFeature(platformDependencies) // *** ADDED FEATURE ***
+            CommandBotFeature(platformDependencies)
         ))
         allFeatures
     }
@@ -81,4 +81,3 @@ class AppContainer(
             validActionNames = ActionNames.allActionNames
         )
     }
-}
