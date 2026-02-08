@@ -218,8 +218,9 @@ class AgentRuntimeFeature(
                 val startedAt = action.payload?.get("startedAt")?.jsonPrimitive?.longOrNull ?: return
                 val statusInfo = agentState.agentStatuses[agentId] ?: return
 
-                // Validate: only proceed if this timeout belongs to the current turn
-                if (statusInfo.status != AgentStatus.PROCESSING) return
+                // Validate: only proceed if this timeout belongs to the current turn.
+                // contextGatheringStartedAt is the canonical indicator — it's set at the
+                // start and cleared on turn completion, regardless of direct vs preview mode.
                 if (statusInfo.contextGatheringStartedAt != startedAt) {
                     platformDependencies.log(LogLevel.DEBUG, name,
                         "Stale context gathering timeout for agent '$agentId' (expected startedAt=${statusInfo.contextGatheringStartedAt}, got=$startedAt). Ignoring.")

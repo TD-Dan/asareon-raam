@@ -216,8 +216,10 @@ object AgentCognitivePipeline {
         val agent = state.agents[agentId] ?: return
         val statusInfo = state.agentStatuses[agentId] ?: return
 
-        // Bail if not processing (turn was cancelled or errored)
-        if (statusInfo.status != AgentStatus.PROCESSING) return
+        // Bail if not in an active turn.
+        // Direct turns set status to PROCESSING; preview turns do NOT change status.
+        // Use contextGatheringStartedAt as the canonical indicator of an active context-gathering phase.
+        if (statusInfo.contextGatheringStartedAt == null) return
 
         val ledgerContext = statusInfo.stagedTurnContext
         if (ledgerContext == null) {
