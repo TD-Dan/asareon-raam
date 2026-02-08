@@ -326,6 +326,7 @@ object AgentCognitivePipeline {
             put("agentId", agent.id)
             put("agnosticRequest", json.encodeToJsonElement(decoded.agnosticRequest))
             put("rawRequestJson", decoded.rawRequestJson)
+            decoded.estimatedInputTokens?.let { put("estimatedInputTokens", it) }
         }))
         store.dispatch("ui.agent", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.context_viewer") }))
     }
@@ -383,5 +384,15 @@ object AgentCognitivePipeline {
             put("session", targetSessionId); put("senderId", agent.id); put("message", contentToPost)
         }))
         AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE)
+
+        // Forward token usage to agent state for display on the avatar card
+        if (decoded.inputTokens != null || decoded.outputTokens != null) {
+            store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
+                put("agentId", agent.id)
+                put("status", AgentStatus.IDLE.name)
+                decoded.inputTokens?.let { put("lastInputTokens", it) }
+                decoded.outputTokens?.let { put("lastOutputTokens", it) }
+            }))
+        }
     }
 }

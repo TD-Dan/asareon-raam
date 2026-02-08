@@ -86,9 +86,7 @@ object AgentRuntimeReducer {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SetPreviewDataPayload>(it) } ?: return state
                 val agentId = payload.agentId
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
-                // Extract estimated token count if present in the payload
-                val estimatedInputTokens = action.payload?.get("estimatedInputTokens")?.jsonPrimitive?.intOrNull
-                val previewData = StagedPreviewData(payload.agnosticRequest, payload.rawRequestJson, estimatedInputTokens)
+                val previewData = StagedPreviewData(payload.agnosticRequest, payload.rawRequestJson, payload.estimatedInputTokens)
                 val updatedStatus = currentStatus.copy(stagedPreviewData = previewData)
                 state.copy(
                     agentStatuses = state.agentStatuses + (agentId to updatedStatus),
