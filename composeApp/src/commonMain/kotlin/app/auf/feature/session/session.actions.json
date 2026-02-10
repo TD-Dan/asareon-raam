@@ -719,16 +719,6 @@
       }
     }
   ],
-  "subscribesTo":[
-    {
-      "action_name":"settings.publish.LOADED",
-      "summary":"Hydrates the hideHiddenInViewer and hideHiddenInManager transient fields from persisted setting values on startup."
-    },
-    {
-      "action_name":"settings.publish.VALUE_CHANGED",
-      "summary":"Updates the hideHiddenInViewer or hideHiddenInManager transient fields when the corresponding setting is changed at runtime."
-    }
-  ],
   "private_envelopes":[
     {
       "type_name":"session.response.ledger",
