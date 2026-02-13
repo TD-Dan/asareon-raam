@@ -2,7 +2,7 @@
 
 **Version**: 3.0 — Phase 3 complete
 **Status**: Phase 1 ✅ / Phase 2.1 ✅ / Phase 2.2 ✅ / Phase 3 ✅ / Phase 4 Ready
-**Last Updated**: 2026-02-13 — Phase 3 shipped and verified
+**Last Updated**: 2026-02-13 — SettingsFeature migration complete (last onPrivateData consumer eliminated)
 
 ## Executive Summary
 
@@ -1888,8 +1888,10 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
   - **Done.** 1 `onPrivateData` handler moved (`CORE_RESPONSE_CONFIRMATION`). 6 `deliverPrivateData` calls migrated via regex-assisted bulk replacement.
 - [x] Migrate all remaining features using private data
   - **Done.** GatewayFeature (2 sender calls), KnowledgeGraphFeature (1 `onPrivateData` + 1 sender call), AgentRuntimeFeature + AgentCognitivePipeline (full refactor — 7 envelope type handlers, correlation-based routing preserved, `handlePrivateData` → `handleTargetedAction`).
+- [x] Migrate `SettingsFeature.onPrivateData` → `handleSideEffects`
+  - **Done.** 1 `onPrivateData` handler moved (`FILESYSTEM_RESPONSE_READ` — settings file load). `onPrivateData` override deleted entirely. Tests migrated: T2 `onPrivateData` test replaced with targeted action dispatch through the Store (`originator = "filesystem"`, `targetRecipient = "settings"`); T5 platform test updated to use `Store(AppState(), features, platform)` constructor (removed deleted `validActionNames` param) and `store.initFeatureLifecycles()` (replaces manual `features.forEach { it.init(store) }`). 3 new T2 tests added for previously uncovered side-effect branches (`FILESYSTEM_RESPONSE_READ` ignores non-settings files, `UPDATE` broadcasts `VALUE_CHANGED`, `OPEN_FOLDER` dispatches `FILESYSTEM_OPEN_SYSTEM_FOLDER`).
 - [ ] Phase 3b: Remove deprecated types and methods from `Feature.kt`, `Store.kt`, `AppCore.kt`
-  - **Deferred.** All features migrated, but deprecated code retained for one release cycle. Cleanup items: delete `onPrivateData` from `Feature.kt`, delete `deliverPrivateData` from `Store.kt`, delete `PrivateDataEnvelope` from `AppCore.kt`, delete `Envelopes` object from `ActionNames.kt`.
+  - **Deferred.** All features now migrated (including SettingsFeature — the last holdout). Deprecated code retained for one release cycle. Cleanup items: delete `onPrivateData` from `Feature.kt`, delete `deliverPrivateData` from `Store.kt`, delete `PrivateDataEnvelope` from `AppCore.kt`, delete `Envelopes` object from `ActionNames.kt`. No remaining callers of `onPrivateData` or `PrivateDataEnvelope` in production or test code.
 - [x] Integration tests: targeted delivery through full pipeline with security checks; originator enforcement; rejection of misused targetRecipient
   - **Done.** 7 new tests in StoreT1RoutingTest (recipient delivery, self-targeting, authorization rejection, Step 1b validation ×2, hierarchical resolution, side-effect scope). Bridge verification test in StoreT1GuardTest. 4 migrated tests in CoreFeatureT3PeerTest (filesystem identity loading ×2, confirmation dialog ×2).
 
@@ -1904,6 +1906,8 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
 **AgentRuntimeFeature was the most complex migration**: Its `onPrivateData` handled 7 envelope types with correlation-based routing (pending command responses) that needed to be preserved. The solution: a private `handleTargetedResponse()` method that checks `pendingCommandResponses` first (for command attribution), then routes to `AgentCognitivePipeline.handleTargetedAction()` or local handlers. `postCommandResponse` and `formatResponseForSession` updated from `PrivateDataEnvelope` parameter to `Action` parameter.
 
 **FileSystemFeature `onPrivateData` → `handleSideEffects` state access change**: The old `onPrivateData` read state from `store.state.value`, but `handleSideEffects` receives `newState` as a parameter (the state *after* the reducer has run). The migrated handler correctly reads from the `newState` parameter for `pendingScopedRead`, which is the right value since the reducer may have already modified it for the current action.
+
+**SettingsFeature was the last unmigrated feature**: Its `onPrivateData` had a single handler for `FILESYSTEM_RESPONSE_READ` that loaded settings from disk. The migration was mechanical — `envelope.type` → `action.name`, `envelope.payload` → `action.payload`, handler moved into `handleSideEffects` as the first `when` branch. The inner logic (checking `subpath == settingsFileName`, decoding JSON content, dispatching `SETTINGS_LOADED`) was unchanged. The T2 test was the only test in the codebase still directly calling `feature.onPrivateData()` with a `PrivateDataEnvelope` — replaced with a targeted action dispatch through the Store matching the real FilesystemFeature delivery path. The T5 platform test was still using the pre-Phase 2.1 Store constructor (`validActionNames` 4th param) and manual `features.forEach { it.init(store) }` instead of `store.initFeatureLifecycles()` — both updated.
 
 ### Known Issues (Phase 3)
 
