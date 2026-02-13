@@ -66,7 +66,21 @@ open class Store(
             val featureIdentities = features.associate { feature ->
                 feature.identity.handle to feature.identity
             }
+
+            // Seed into BOTH AppState.identityRegistry (for Store-level access)
+            // AND CoreState.identityRegistry (for CoreFeature's reducer, which validates
+            // parent existence against its own state, not AppState).
+            val currentCoreState = _state.value.featureStates["core"] as? CoreState
+            val updatedFeatureStates = if (currentCoreState != null) {
+                _state.value.featureStates + ("core" to currentCoreState.copy(
+                    identityRegistry = currentCoreState.identityRegistry + featureIdentities
+                ))
+            } else {
+                _state.value.featureStates
+            }
+
             _state.value = _state.value.copy(
+                featureStates = updatedFeatureStates,
                 identityRegistry = _state.value.identityRegistry + featureIdentities
             )
 
