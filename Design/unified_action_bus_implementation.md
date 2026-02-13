@@ -1,8 +1,8 @@
 # Unified Action Bus v2.0 — Complete Implementation Outline
 
-**Version**: 2.4 — Phase 2.2 complete
-**Status**: Phase 1 Complete / Phase 2.1 Complete / Phase 2.2 Complete / Phase 3 Ready
-**Last Updated**: 2026-02-13 — Phase 2.2 shipped and verified
+**Version**: 3.0 — Phase 3 complete
+**Status**: Phase 1 ✅ / Phase 2.1 ✅ / Phase 2.2 ✅ / Phase 3 ✅ / Phase 4 Ready
+**Last Updated**: 2026-02-13 — Phase 3 shipped and verified
 
 ## Executive Summary
 
@@ -30,8 +30,8 @@ The work is organized into **6 phases**, each independently shippable. The final
 2. [Target Architecture](#2-target-architecture)
 3. [Phase 1 — Manifest Schema Unification & ActionRegistry Codegen ✅](#3-phase-1--manifest-schema-unification--actionregistry-codegen)
 4. [Phase 2 — IdentityRegistry & Hierarchical Originators (2.1 ✅ / 2.2 ✅)](#4-phase-2--identityregistry--hierarchical-originators)
-5. [Phase 3 — Targeted Delivery & Private Envelope Absorption ⬅️ NEXT](#5-phase-3--targeted-delivery--private-envelope-absorption)
-6. [Phase 4 — Migrate Consumers (CommandBot, Agent, Session)](#6-phase-4--migrate-consumers-commandbot-agent-session)
+5. [Phase 3 — Targeted Delivery & Private Envelope Absorption ✅](#5-phase-3--targeted-delivery--private-envelope-absorption)
+6. [Phase 4 — Migrate Consumers (CommandBot, Agent, Session) ⬅️ NEXT](#6-phase-4--migrate-consumers-commandbot-agent-session)
 7. [Phase 5 — Runtime-Extensible Registry](#7-phase-5--runtime-extensible-registry)
 8. [Phase 6 — Slash-Command Autocomplete UI](#8-phase-6--slash-command-autocomplete-ui)
 9. [Future: Permissions System (Paved, Not Built)](#9-future-permissions-system-paved-not-built)
@@ -1119,7 +1119,7 @@ The `IdentityManagerView` continues to show only user identities (filtered by `p
 
 ---
 
-## 5. Phase 3 — Targeted Delivery & Private Envelope Absorption ⬅️ NEXT
+## 5. Phase 3 — Targeted Delivery & Private Envelope Absorption ✅
 
 **Goal**: Eliminate `deliverPrivateData`, `PrivateDataEnvelope`, and `Feature.onPrivateData`. All communication flows through the unified action bus with proper security.
 
@@ -1252,18 +1252,25 @@ Private data envelopes now flow through the same pipeline as every other action:
 
 | File | Change |
 |---|---|
-| `Action.kt` / `AppCore.kt` | Add `targetRecipient: String? = null` to `Action` |
-| `Store.kt` | Add targeted routing branch with `descriptor.targeted` validation; add originator enforcement for targeted actions; deprecate `deliverPrivateData` |
-| `Feature.kt` | Deprecate `onPrivateData` |
-| `PrivateDataEnvelope.kt` / `AppCore.kt` | Deprecate |
-| `CoreFeature.kt` | Migrate `onPrivateData` → `handleSideEffects`; migrate `deliverPrivateData` → targeted dispatch |
-| `SessionFeature.kt` | Same migration |
-| `FilesystemFeature.kt` | Migrate `deliverPrivateData` calls to `deferredDispatch` with `targetRecipient` (per-site structural changes, not pure find-replace) |
-| *(all features using private data)* | Same pattern |
+| `AppCore.kt` | Added `targetRecipient: String? = null` to `Action` with KDoc; updated `toString()` to show `→ 'recipient'`; deprecated `PrivateDataEnvelope` with `@Deprecated` annotation |
+| `Store.kt` | Added Step 1b targetRecipient validation; replaced Phase 3 routing placeholder with real `extractFeatureHandle(action.targetRecipient)` feature-level resolution; split Step 5 side-effects into three branches (targeted → recipient / non-broadcast → owner / broadcast → all); deprecated `deliverPrivateData` as bridge to `deferredDispatch`; removed unused `abbreviate` import |
+| `Feature.kt` | Deprecated `onPrivateData` with `@Deprecated` and migration KDoc |
+| `CoreFeature.kt` | Deleted `onPrivateData` override; moved `FILESYSTEM_RESPONSE_READ` handler into `handleSideEffects`; migrated `deliverPrivateData` for `CORE_RESPONSE_CONFIRMATION` to targeted dispatch; added `targetRecipient = originator` to both `RESPONSE_REGISTER_IDENTITY` dispatch sites (success + failure) — these were silently dropped by the old placeholder routing but rejected by Step 1b enforcement |
+| `SessionFeature.kt` | Deleted `onPrivateData` override; moved `FILESYSTEM_RESPONSE_LIST` and `FILESYSTEM_RESPONSE_READ` handlers into `handleSideEffects`; migrated `SESSION_RESPONSE_LEDGER` to targeted dispatch |
+| `FileSystemFeature.kt` | Deleted `onPrivateData` override; moved `CORE_RESPONSE_CONFIRMATION` handler into `handleSideEffects` (reads from `newState` parameter instead of `store.state.value`); migrated all 6 `deliverPrivateData` calls to targeted dispatch via regex-assisted bulk replacement |
+| `GatewayFeature.kt` | Migrated 2 `deliverPrivateData` calls (inside coroutines) to targeted dispatch; no `onPrivateData` to migrate (sender only) |
+| `KnowledgeGraphFeature.kt` | Deleted `onPrivateData` override; moved `FILESYSTEM_RESPONSE_LIST` and `FILESYSTEM_RESPONSE_FILES_CONTENT` handlers into `handleSideEffects`; migrated `KNOWLEDGEGRAPH_RESPONSE_CONTEXT` to targeted dispatch |
+| `AgentRuntimeFeature.kt` | Deleted `onPrivateData` override; created private `handleTargetedResponse()` method with correlation-based routing for command responses; added 7 targeted action name cases to `handleSideEffects` when-block; updated `postCommandResponse()` and `formatResponseForSession()` signatures from `PrivateDataEnvelope` to `Action` |
+| `AgentCognitivePipeline.kt` | Renamed `handlePrivateData()` → `handleTargetedAction()`; replaced `envelope.type` / `envelope.payload` with `action.name` / `action.payload`; replaced `ActionNames.Envelopes.*` with `ActionRegistry.Names.*` |
+| `ActionNames.kt` | No changes needed — `Envelopes` object already has `@Deprecated` annotations from Phase 1 |
+| `StoreT1RoutingTest.kt` | Replaced single "Phase 3 pre-wire" placeholder test with 7 real targeted routing tests: recipient delivery, self-targeting, foreign originator rejection, missing targetRecipient rejection, spurious targetRecipient rejection, hierarchical recipient resolution, targeted side-effect delivery scope |
+| `StoreT1GuardTest.kt` | Replaced `onPrivateData` crash test with bridge verification test: confirms deprecated `deliverPrivateData` logs WARN, routes through `processAction`, unknown action name cleanly rejected (no crash) |
+| `CoreFeatureT3PeerTest.kt` | Migrated 2 filesystem identity-loading tests from `deliverPrivateData` → `Action` with `targetRecipient = "core"`; migrated 2 confirmation dialog tests from asserting on `harness.deliveredPrivateData` to asserting on `harness.processedActions` for targeted `CORE_RESPONSE_CONFIRMATION` |
+| `CoreFeatureT2CoreTest.kt` | No changes needed — existing REGISTER_IDENTITY tests now pass with the `targetRecipient` fix in CoreFeature |
 
 ---
 
-## 6. Phase 4 — Migrate Consumers (CommandBot, Agent, Session)
+## 6. Phase 4 — Migrate Consumers (CommandBot, Agent, Session) ⬅️ NEXT
 
 **Goal**: All features read from `ActionRegistry` instead of `ExposedActions`, and from `AppState.identityRegistry` instead of their private name caches. Old parallel systems and compatibility shims are deleted.
 
@@ -1290,12 +1297,16 @@ The mutable `knownAgentIds` and `knownAgentNames` sets are deleted entirely. Com
 | Subscribes to `AGENT_NAMES_UPDATED` | Removed — single broadcast covers all |
 | `SessionView` name resolution | `appState.identityRegistry[senderHandle]?.name ?: senderHandle` |
 
+⚠️ **UUID→Handle Migration**: SessionFeature currently uses `Session.id` (UUID) as the canonical identifier throughout its internals — `subscribedSessionIds` on agents, `privateSessionId`, `contextSessionId` in the cognitive pipeline, and `sessionId` fields in payloads. The IdentityRegistry uses handles (`session.chat1`) as addresses. This mismatch means code that wants to find a session in the registry must reverse-lookup by UUID, which is fragile and defeats the purpose of the unified identity model. Phase 4 should migrate SessionFeature's internals to use handles as primary identifiers, with UUIDs retained only for persistence stability.
+
 ### 6.3 Agent Feature Migration
 
 | Current | Replacement |
 |---|---|
 | Dispatches `agent.AGENT_NAMES_UPDATED` | Dispatches `core.REGISTER_IDENTITY` / `core.UNREGISTER_IDENTITY` |
 | Internal agent name tracking | Identities are in the registry; agent feature reads them back |
+
+⚠️ **UUID→Handle Migration**: Similar to SessionFeature, AgentRuntimeFeature uses `Agent.id` (UUID) as the canonical identifier in `agentStatuses`, `pendingCommandResponses`, `correlationId` fields in response payloads, and throughout `AgentCognitivePipeline`. The cognitive pipeline's `startCognitiveCycle` takes an `agentId` (UUID) and passes it as `correlationId` in ledger requests. The registry-handle equivalent would be `agent.gemini-coder`. Phase 4 should migrate AgentRuntimeFeature's internals to use handles, aligning `correlationId` values with IdentityRegistry handles.
 
 The `AGENT_NAMES_UPDATED` action can be deprecated (mark in manifest, log warning if dispatched) and eventually removed.
 
@@ -1316,14 +1327,19 @@ The following renames should be batched and applied via IDE find-and-replace:
 |---|---|
 | `CommandBotFeature.kt` | Replace `ExposedActions.*` → `ActionRegistry.*`; delete `knownAgentIds/Names`; subscribe to identity updates |
 | `CommandBotState.kt` | No change (approval state is orthogonal) |
-| `SessionFeature.kt` | Remove `identityNames` maintenance; simplify subscriptions |
-| `SessionState.kt` | Deprecate then delete `identityNames` field |
+| `SessionFeature.kt` | Remove `identityNames` maintenance; simplify subscriptions; ⚠️ migrate internals from UUID to handle as primary identifier |
+| `SessionState.kt` | Deprecate then delete `identityNames` field; ⚠️ evaluate `Session.id` → handle migration |
 | `SessionView.kt` | Read names from `AppState.identityRegistry` |
 | `SessionsManagerView.kt` | Same |
-| `AgentFeature.kt` | Register/unregister identities instead of broadcasting names |
+| `AgentRuntimeFeature.kt` | Register/unregister identities instead of broadcasting names; ⚠️ migrate internals from UUID to handle as primary identifier |
+| `AgentRuntimeState.kt` | ⚠️ Evaluate `Agent.id` → handle migration in `agentStatuses`, `pendingCommandResponses` |
+| `AgentCognitivePipeline.kt` | ⚠️ Migrate `correlationId` from UUID to handle |
 | Agent prompt builder | Read from `ActionRegistry.byActionName` instead of `ExposedActions.documentation` |
 | `ExposedActions.kt` (generated shim) | Delete |
 | `ActionNames.kt` (generated shim) | Delete |
+| `Feature.kt` | Phase 3b cleanup: delete `onPrivateData` default method |
+| `Store.kt` | Phase 3b cleanup: delete `deliverPrivateData` bridge |
+| `AppCore.kt` | Phase 3b cleanup: delete `PrivateDataEnvelope` data class |
 | All source files | IDE-assisted batch rename of old constant names to new names |
 
 ---
@@ -1838,8 +1854,8 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
   - **Done.** `CORE_INTERNAL_IDENTITIES_LOADED` reducer creates registry entries: derives `localHandle` from name for legacy identities (lowercase, strip non-alphanumeric), constructs `core.*` handles, generates UUIDs for identities missing them, uses `registeredAt` when available.
 - [x] Update `IdentityManagerView` to read from `AppState.identityRegistry` instead of `CoreState.userIdentities`
   - **Done.** Reads `appState.identityRegistry.values.filter { it.parentHandle == "core" }`. Uses `remember(appState.identityRegistry)` for reactive updates. Sorted by `registeredAt` for stable ordering.
-- [ ] Wire `RESPONSE_REGISTER_IDENTITY` targeted delivery to originator (depends on Phase 3 targeted routing, or use `deliverPrivateData` as interim)
-  - **Deferred to Phase 3.** Response action is dispatched but not yet routed to the caller — targeted delivery requires Phase 3's `targetRecipient` routing in the Store.
+- [x] Wire `RESPONSE_REGISTER_IDENTITY` targeted delivery to originator (depends on Phase 3 targeted routing, or use `deliverPrivateData` as interim)
+  - **Done in Phase 3.** `targetRecipient = originator` added to both success and failure dispatch sites in CoreFeature. Full targeted routing now delivers the response to the requesting feature through the normal `processAction` pipeline.
 - [x] Unit tests: Store and CoreFeature tests updated and passing
   - **Done.** All existing tests pass with the rename and new registry wiring.
 
@@ -1851,28 +1867,61 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
 
 **Session/Agent registration pattern**: Both features follow the same pattern — register on load/create, unregister on delete, and handle rename by unregistering the old handle + re-registering with the new name. The `handleSideEffects` method dispatches `REGISTER_IDENTITY` / `UNREGISTER_IDENTITY` via `deferredDispatch`, which is the preferred method for actions triggered inside side-effect handlers (avoids re-entrancy).
 
-### Phase 3 — Targeted Delivery & Private Envelope Absorption ⬅️ NEXT
-- [ ] Add `targetRecipient: String? = null` to `Action`
-- [ ] Add targeted routing branch to `processAction` in Store
-- [ ] Add validation: reject `targetRecipient` on non-targeted actions; reject targeted actions without `targetRecipient`
-- [ ] Add originator enforcement: only the declaring feature can dispatch targeted actions
-- [ ] Phase 3a: Deprecate `deliverPrivateData`, `PrivateDataEnvelope`, `onPrivateData`
-- [ ] Migrate `CoreFeature.onPrivateData` → `handleSideEffects`
-- [ ] Migrate `CoreFeature.deliverPrivateData` → `deferredDispatch` with `targetRecipient`
-- [ ] Migrate `SessionFeature.onPrivateData` → `handleSideEffects`
-- [ ] Migrate `FilesystemFeature` deliverPrivateData calls → targeted dispatch (per-site structural changes)
-- [ ] Migrate all remaining features using private data
-- [ ] Phase 3b: Remove deprecated types and methods from `Feature.kt`, `Store.kt`, `PrivateDataEnvelope.kt`
-- [ ] Integration tests: targeted delivery through full pipeline with security checks; originator enforcement; rejection of misused targetRecipient
+### Phase 3 — Targeted Delivery & Private Envelope Absorption ✅ COMPLETE
+- [x] Add `targetRecipient: String? = null` to `Action`
+  - **Done.** Added with KDoc explaining Store resolution at feature level. `toString()` updated to show `→ 'recipient'`.
+- [x] Add targeted routing branch to `processAction` in Store
+  - **Done.** Replaced Phase 2.1's placeholder with real routing: `extractFeatureHandle(action.targetRecipient)` resolves `"session.chat1"` → feature `"session"`. Reducer delivered to recipient feature only. Side-effects delivered to recipient feature only (three-branch split: targeted / non-broadcast / broadcast).
+- [x] Add validation: reject `targetRecipient` on non-targeted actions; reject targeted actions without `targetRecipient`
+  - **Done.** Step 1b added after schema lookup. Both invariants enforced with ERROR-level logging and early return.
+- [x] Add originator enforcement: only the declaring feature can dispatch targeted actions
+  - **Done.** No additional code needed — targeted actions have `open: false`, and the existing Step 2 authorization check (`extractFeatureHandle(action.originator) == descriptor.featureName`) already enforces this. Verified by new test `targeted action rejects foreign originator`.
+- [x] Phase 3a: Deprecate `deliverPrivateData`, `PrivateDataEnvelope`, `onPrivateData`
+  - **Done.** `deliverPrivateData` → bridge that logs WARN and internally calls `deferredDispatch` with `targetRecipient` (all 12 call sites gain full validation immediately). `PrivateDataEnvelope` → `@Deprecated` annotation. `onPrivateData` → `@Deprecated` with migration KDoc.
+- [x] Migrate `CoreFeature.onPrivateData` → `handleSideEffects`
+  - **Done.** `FILESYSTEM_RESPONSE_READ` handler moved. `CORE_RESPONSE_CONFIRMATION` migrated to targeted dispatch. `RESPONSE_REGISTER_IDENTITY` dispatches fixed to include `targetRecipient = originator` (were silently dropped by old placeholder routing, rejected by new Step 1b enforcement).
+- [x] Migrate `CoreFeature.deliverPrivateData` → `deferredDispatch` with `targetRecipient`
+  - **Done.** 1 call site migrated.
+- [x] Migrate `SessionFeature.onPrivateData` → `handleSideEffects`
+  - **Done.** 2 handlers moved (`FILESYSTEM_RESPONSE_LIST`, `FILESYSTEM_RESPONSE_READ`). 1 `deliverPrivateData` call migrated (`SESSION_RESPONSE_LEDGER`).
+- [x] Migrate `FilesystemFeature` deliverPrivateData calls → targeted dispatch (per-site structural changes)
+  - **Done.** 1 `onPrivateData` handler moved (`CORE_RESPONSE_CONFIRMATION`). 6 `deliverPrivateData` calls migrated via regex-assisted bulk replacement.
+- [x] Migrate all remaining features using private data
+  - **Done.** GatewayFeature (2 sender calls), KnowledgeGraphFeature (1 `onPrivateData` + 1 sender call), AgentRuntimeFeature + AgentCognitivePipeline (full refactor — 7 envelope type handlers, correlation-based routing preserved, `handlePrivateData` → `handleTargetedAction`).
+- [ ] Phase 3b: Remove deprecated types and methods from `Feature.kt`, `Store.kt`, `AppCore.kt`
+  - **Deferred.** All features migrated, but deprecated code retained for one release cycle. Cleanup items: delete `onPrivateData` from `Feature.kt`, delete `deliverPrivateData` from `Store.kt`, delete `PrivateDataEnvelope` from `AppCore.kt`, delete `Envelopes` object from `ActionNames.kt`.
+- [x] Integration tests: targeted delivery through full pipeline with security checks; originator enforcement; rejection of misused targetRecipient
+  - **Done.** 7 new tests in StoreT1RoutingTest (recipient delivery, self-targeting, authorization rejection, Step 1b validation ×2, hierarchical resolution, side-effect scope). Bridge verification test in StoreT1GuardTest. 4 migrated tests in CoreFeatureT3PeerTest (filesystem identity loading ×2, confirmation dialog ×2).
 
-### Phase 4 — Migrate Consumers & Delete Shims
+**Implementation notes (Phase 3)**:
+
+**Bridge strategy proved correct**: Deprecating `deliverPrivateData` as a bridge (internally calling `deferredDispatch` with `targetRecipient`) meant all 12 private data call sites gained full validation, authorization, lifecycle guards, and audit logging *immediately* — even before individual features were migrated. This made the migration safe to do incrementally.
+
+**Step 1b enforcement caught a latent bug**: `CORE_RESPONSE_REGISTER_IDENTITY` dispatches in CoreFeature (added in Phase 2.2) were missing `targetRecipient`. The old Phase 2.1 placeholder routing silently delivered these to the owning feature as a fallback. Step 1b's strict enforcement correctly rejected them, surfaced by the existing T2 tests. Fix: add `targetRecipient = originator` to both success and failure response dispatches.
+
+**`extractFeatureHandle` reuse**: The same helper that resolves `"agent.gemini-coder"` → `"agent"` for originator authorization (Step 2) is reused for recipient resolution (Step 4). This means `targetRecipient = "session.chat1"` delivers to the `"session"` feature — sub-entity targeting is the feature's responsibility, matching the principle established in Phase 2.1.
+
+**AgentRuntimeFeature was the most complex migration**: Its `onPrivateData` handled 7 envelope types with correlation-based routing (pending command responses) that needed to be preserved. The solution: a private `handleTargetedResponse()` method that checks `pendingCommandResponses` first (for command attribution), then routes to `AgentCognitivePipeline.handleTargetedAction()` or local handlers. `postCommandResponse` and `formatResponseForSession` updated from `PrivateDataEnvelope` parameter to `Action` parameter.
+
+**FileSystemFeature `onPrivateData` → `handleSideEffects` state access change**: The old `onPrivateData` read state from `store.state.value`, but `handleSideEffects` receives `newState` as a parameter (the state *after* the reducer has run). The migrated handler correctly reads from the `newState` parameter for `pendingScopedRead`, which is the right value since the reducer may have already modified it for the current action.
+
+### Known Issues (Phase 3)
+
+⚠️ **SessionFeature uses UUIDs internally instead of handles**: `SessionFeature` still tracks sessions by UUID (`session.id`) rather than by handle (`session.chat1`). The `subscribedSessionIds` field on agents, `privateSessionId`, and the `contextSessionId` resolution in the cognitive pipeline all use UUIDs. This creates a mismatch — the IdentityRegistry uses handles as the canonical identifier, but the session feature's internal wiring still uses UUIDs. **Must be addressed in Phase 4** to fully realize the handle-based identity model.
+
+⚠️ **AgentRuntimeFeature uses UUIDs internally instead of handles**: Similar to SessionFeature, `AgentRuntimeFeature` tracks agents by `agent.id` (UUID) in `agentStatuses`, `pendingCommandResponses`, and throughout the cognitive pipeline. The `correlationId` fields in targeted response payloads carry agent UUIDs, not handles. This is functional but inconsistent with the IdentityRegistry's handle-based model. **Must be addressed in Phase 4** alongside the SessionFeature migration.
+
+### Phase 4 — Migrate Consumers & Delete Shims ⬅️ NEXT
 - [ ] Migrate `CommandBotFeature` from `ExposedActions.*` → `ActionRegistry.*`
 - [ ] Delete `CommandBotFeature.knownAgentIds` and `knownAgentNames`; read from `AppState.identityRegistry` (filter by parentHandle == "agent")
 - [ ] Migrate agent prompt builder from `ExposedActions.documentation` → `ActionRegistry.byActionName`
 - [ ] Deprecate then delete `SessionState.identityNames`; read from `AppState.identityRegistry` in views
 - [ ] Deprecate `agent.AGENT_NAMES_UPDATED`; agents use `core.REGISTER_IDENTITY` instead
+- [ ] ⚠️ **SessionFeature: migrate from UUIDs to handles** — `Session.id`, `subscribedSessionIds`, `privateSessionId`, `contextSessionId` resolution in cognitive pipeline all use UUIDs; migrate to use handles (`session.chat1`) as canonical identifiers matching IdentityRegistry
+- [ ] ⚠️ **AgentRuntimeFeature: migrate from UUIDs to handles** — `Agent.id`, `agentStatuses`, `pendingCommandResponses`, `correlationId` fields in targeted response payloads all use UUIDs; migrate to use handles (`agent.gemini-coder`) as canonical identifiers matching IdentityRegistry
 - [ ] Delete `ExposedActions.kt` deprecated delegation shim
 - [ ] Delete `ActionNames.kt` typealias shim
+- [ ] Phase 3b cleanup: Delete `onPrivateData` from `Feature.kt`, `deliverPrivateData` from `Store.kt`, `PrivateDataEnvelope` from `AppCore.kt`, `Envelopes` from `ActionNames.kt`
 - [ ] IDE-assisted batch rename: all old constant names (`SESSION_INTERNAL_LOADED` → `SESSION_LOADED`, etc.)
 - [ ] IDE-assisted batch rename: `ActionNames.` → `ActionRegistry.Names.`
 - [ ] Run full test suite
