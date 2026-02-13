@@ -95,7 +95,7 @@ class CoreFeatureT3PeerTest {
         runCurrent()
 
         // ASSERT 1: Verify that the correct internal action was dispatched.
-        val loadedAction = harness.processedActions.find { it.name == ActionNames.CORE_INTERNAL_IDENTITIES_LOADED }
+        val loadedAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_INTERNAL_IDENTITIES_LOADED }
         assertNotNull(loadedAction, "The handleSideEffects handler should dispatch an internal loaded action.")
 
         // ASSERT 2: Verify the final state is correct.
@@ -170,7 +170,7 @@ class CoreFeatureT3PeerTest {
 
         // --- ACT 1: Another feature requests a confirmation ---
         val showDialogAction = Action(
-            name = ActionNames.CORE_SHOW_CONFIRMATION_DIALOG,
+            name = ActionRegistry.Names.CORE_SHOW_CONFIRMATION_DIALOG,
             payload = buildJsonObject {
                 put("title", "Confirm Deletion")
                 put("text", "Are you sure?")
@@ -188,7 +188,7 @@ class CoreFeatureT3PeerTest {
         assertEquals(originatorFeatureName, stateAfterShow.confirmationRequest?.originator, "Originator should be captured.")
 
         // --- ACT 2: The UI dispatches the confirmation action ---
-        harness.store.dispatch("core.ui", Action(ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
+        harness.store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
             put("confirmed", true)
         }))
         runCurrent()
@@ -223,7 +223,7 @@ class CoreFeatureT3PeerTest {
 
         // --- ACT 1: Show the dialog ---
         harness.store.dispatch(originatorFeatureName, Action(
-            name = ActionNames.CORE_SHOW_CONFIRMATION_DIALOG,
+            name = ActionRegistry.Names.CORE_SHOW_CONFIRMATION_DIALOG,
             payload = buildJsonObject {
                 put("title", "Confirm")
                 put("text", "Are you sure?")
@@ -234,7 +234,7 @@ class CoreFeatureT3PeerTest {
         runCurrent()
 
         // --- ACT 2: The UI dispatches the dismiss action ---
-        harness.store.dispatch("core.ui", Action(ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
+        harness.store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
             put("confirmed", false)
         }))
         runCurrent()

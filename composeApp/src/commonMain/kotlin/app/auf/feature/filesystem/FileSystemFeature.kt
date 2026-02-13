@@ -90,7 +90,7 @@ class FileSystemFeature(
                         store.deferredDispatch(
                             originator = identity.handle,
                             action = Action(
-                                name = ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ,
+                                name = ActionRegistry.Names.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ,
                                 payload = buildJsonObject {
                                     put("clientOriginator", pendingRequest.originator)
                                     put("requestPayload", Json.encodeToJsonElement(pendingRequest.payload))
@@ -98,23 +98,23 @@ class FileSystemFeature(
                             )
                         )
                     }
-                    store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_INTERNAL_FINALIZE_SCOPED_READ))
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_INTERNAL_FINALIZE_SCOPED_READ))
                 }
             }
-            ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
-                store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+            ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING -> {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyWhitelist); put("type", "STRING_SET"); put("label", "Whitelisted Paths")
                     put("description", "Whitelisted directory paths that the app is allowed to edit.")
                     put("section", "FileSystem"); put("defaultValue", "")
                 }))
-                store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyFavorites); put("type", "STRING_SET"); put("label", "Favorite Paths")
                     put("description", "A list of favorite directory paths.")
                     put("section", "FileSystem"); put("defaultValue", "")
                 }))
             }
-            ActionNames.SYSTEM_PUBLISH_STARTING -> {
-                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", platformDependencies.getUserHomePath()) }))
+            ActionRegistry.Names.SYSTEM_PUBLISH_STARTING -> {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", platformDependencies.getUserHomePath()) }))
             }
             ActionNames.FILESYSTEM_NAVIGATE -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<PathPayload>(it) } ?: return

@@ -43,7 +43,7 @@ class GatewayFeatureT2CoreTest {
 
         override fun registerSettings(dispatch: (Action) -> Unit) {
             registerSettingsCallCount++
-            dispatch(Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+            dispatch(Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                 put("key", apiKeySettingKey); put("type", "STRING"); put("label", "$id Key")
                 put("description", "API Key for $id"); put("section", "API Keys"); put("defaultValue", "")
             }))

@@ -105,22 +105,22 @@ class AgentRuntimeFeature(
                 handleTargetedResponse(action, store)
             }
             // --- Startup ---
-            ActionNames.SYSTEM_PUBLISH_STARTING -> {
+            ActionRegistry.Names.SYSTEM_PUBLISH_STARTING -> {
                 // Inject built-in resources FIRST (ensures they're always available)
                 AgentDefaults.builtInResources.forEach { resource ->
                     store.deferredDispatch(identity.handle, Action(
-                        ActionNames.AGENT_INTERNAL_RESOURCE_LOADED,
+                        ActionRegistry.Names.AGENT_INTERNAL_RESOURCE_LOADED,
                         json.encodeToJsonElement(resource) as JsonObject
                     ))
                 }
                 // Then load user-defined resources from disk
-                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
-                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
                     put("subpath", "resources")
                 }))
-                store.deferredDispatch(identity.handle, Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_REQUEST_AVAILABLE_MODELS))
             }
-            ActionNames.AGENT_INTERNAL_AGENTS_LOADED -> {
+            ActionRegistry.Names.AGENT_INTERNAL_AGENTS_LOADED -> {
                 // Seed nvram.json for any agent that doesn't have one yet
                 agentState.agents.values.forEach { agent ->
                     if (agent.cognitiveState is JsonNull || agent.cognitiveState == null) {
@@ -131,10 +131,10 @@ class AgentRuntimeFeature(
                     SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
                 }
             }
-            ActionNames.AGENT_INTERNAL_VALIDATE_SOVEREIGN_STATE -> {
+            ActionRegistry.Names.AGENT_INTERNAL_VALIDATE_SOVEREIGN_STATE -> {
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
             }
-            ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
+            ActionRegistry.Names.AGENT_INTERNAL_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
                 AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE)
                 broadcastAgentNames(agentState, store)
@@ -147,12 +147,12 @@ class AgentRuntimeFeature(
                     }
                 ))
             }
-            ActionNames.AGENT_INTERNAL_RESOURCE_LOADED -> {
+            ActionRegistry.Names.AGENT_INTERNAL_RESOURCE_LOADED -> {
                 // No side effects needed, pure reducer handles state merge
             }
 
             // --- Agent CRUD Side Effects ---
-            ActionNames.AGENT_CREATE -> {
+            ActionRegistry.Names.AGENT_CREATE -> {
                 val agentToSave = agentState.agents.values.lastOrNull() ?: run {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "AGENT_CREATE: No agents in state after CREATE action. Reducer may have failed.")
                     return
@@ -169,7 +169,7 @@ class AgentRuntimeFeature(
                     }
                 ))
             }
-            ActionNames.AGENT_CLONE -> {
+            ActionRegistry.Names.AGENT_CLONE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agentToClone = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "AGENT_CLONE: Source agent '$agentId' not found in state.")

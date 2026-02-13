@@ -101,7 +101,7 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
 
         composeTestRule.waitForIdle()
 
-        val action = harness.store.processedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT }
+        val action = harness.store.processedActions.find { it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT }
         assertNotNull(action)
         assertEquals("h1", action.payload?.get("holonId")?.toString()?.trim('"'))
         assertEquals(newPayloadString, action.payload?.get("payload")?.toString())
@@ -126,7 +126,7 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         composeTestRule.onNodeWithText("Save Changes").performClick()
         composeTestRule.waitForIdle()
 
-        assertTrue(harness.store.processedActions.none { it.name == ActionNames.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT })
+        assertTrue(harness.store.processedActions.none { it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT })
         composeTestRule.onNodeWithText("Invalid JSON format in payload.").assertExists()
     }
 
@@ -165,7 +165,7 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         composeTestRule.waitForIdle()
 
         // Verify that the correct action was dispatched
-        val action = harness.store.processedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION }
+        val action = harness.store.processedActions.find { it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION }
         assertNotNull(action)
         val actionPayload = action.payload!!.jsonObject["action"]!!.jsonObject
         assertEquals("Ignore", actionPayload["type"]!!.jsonPrimitive.content)

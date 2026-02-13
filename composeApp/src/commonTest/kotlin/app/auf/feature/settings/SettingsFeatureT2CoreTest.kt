@@ -32,9 +32,9 @@ class SettingsFeatureT2CoreTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.BOOTING))
             .build()
 
-        harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
+        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING))
 
-        val readAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_READ }
+        val readAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_READ }
         assertNotNull(readAction)
         assertEquals("settings", readAction.originator)
         assertEquals("settings.json", readAction.payload?.get("subpath")?.jsonPrimitive?.content)
@@ -49,11 +49,11 @@ class SettingsFeatureT2CoreTest {
             put("subpath", "settings.json")
             put("content", """{ "file.key": "file.value" }""")
         }
-        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, privateDataPayload)
+        val envelope = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_READ, privateDataPayload)
 
         feature.onPrivateData(envelope, harness.store)
 
-        val loadedAction = harness.processedActions.find { it.name == ActionNames.SETTINGS_PUBLISH_LOADED }
+        val loadedAction = harness.processedActions.find { it.name == ActionRegistry.Names.SETTINGS_PUBLISH_LOADED }
         assertNotNull(loadedAction)
         assertEquals("settings", loadedAction.originator)
         assertEquals("file.value", loadedAction.payload?.get("file.key")?.jsonPrimitive?.content)
@@ -65,14 +65,14 @@ class SettingsFeatureT2CoreTest {
             .withFeature(SettingsFeature(FakePlatformDependencies("test")))
             .withInitialState("settings", SettingsState(values = mapOf("key1" to "new_value")))
             .build()
-        val action = Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject {
             put("key", "key1")
             put("value", "new_value")
         })
 
         harness.store.dispatch("settings", action)
 
-        val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
+        val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
         assertNotNull(writeAction)
         assertEquals("settings", writeAction.originator)
         assertEquals("settings.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)

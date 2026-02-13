@@ -33,9 +33,9 @@ class SessionFeatureT1SessionViewTest {
     fun setup() {
         // A minimal registry for actions this view is expected to dispatch.
         val validActions = setOf(
-            ActionNames.SESSION_CREATE,
-            ActionNames.SESSION_SET_ACTIVE_TAB,
-            ActionNames.SESSION_POST
+            ActionRegistry.Names.SESSION_CREATE,
+            ActionRegistry.Names.SESSION_SET_ACTIVE_TAB,
+            ActionRegistry.Names.SESSION_POST
         )
         fakeStore = FakeStore(AppState(), platform, validActions) // FIX: Use the platform dependency
     }
@@ -71,7 +71,7 @@ class SessionFeatureT1SessionViewTest {
 
         composeTestRule.onNodeWithText("Session Two").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.SESSION_SET_ACTIVE_TAB }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_SET_ACTIVE_TAB }
         assertNotNull(action)
         assertEquals("session.ui", action.originator)
         assertEquals(session2.id, action.payload?.get("session").toString().trim('"'))
@@ -87,7 +87,7 @@ class SessionFeatureT1SessionViewTest {
         composeTestRule.onNodeWithText("Enter message (Ctrl+Enter to send)...").performTextInput("Hello, world!")
         composeTestRule.onNodeWithContentDescription("Send").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.SESSION_POST }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_POST }
         assertNotNull(action)
         assertEquals("session.ui", action.originator)
         assertEquals(session1.id, action.payload?.get("session").toString().trim('"'))

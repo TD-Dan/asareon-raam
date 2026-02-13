@@ -71,7 +71,7 @@ class SessionFeature(
                 val data = action.payload ?: return
                 val fileList = data["listing"]?.jsonArray?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
                 fileList.filter { it.path.endsWith(".json") }.forEach {
-                    store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", platformDependencies.getFileName(it.path)) }))
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", platformDependencies.getFileName(it.path)) }))
                 }
             }
             ActionRegistry.Names.FILESYSTEM_RESPONSE_READ -> {
@@ -83,15 +83,15 @@ class SessionFeature(
                         return
                     }
                     val session = json.decodeFromString<Session>(content)
-                    store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_INTERNAL_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.id to session))) as JsonObject))
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_INTERNAL_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.id to session))) as JsonObject))
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse session file: ${data["subpath"]}. Error: ${e.message}")
                 }
             }
-            ActionNames.SYSTEM_PUBLISH_STARTING -> {
-                store.dispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
+            ActionRegistry.Names.SYSTEM_PUBLISH_STARTING -> {
+                store.dispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST))
                 // Register hide-hidden settings with the Settings feature for persistence.
-                store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", SessionState.SETTING_HIDE_HIDDEN_VIEWER)
                     put("type", "BOOLEAN")
                     put("label", "Hide hidden sessions in viewer")
@@ -99,7 +99,7 @@ class SessionFeature(
                     put("section", "Session")
                     put("defaultValue", "true")
                 }))
-                store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", SessionState.SETTING_HIDE_HIDDEN_MANAGER)
                     put("type", "BOOLEAN")
                     put("label", "Hide hidden sessions in manager")
@@ -109,7 +109,7 @@ class SessionFeature(
                 }))
             }
 
-            ActionNames.SESSION_CREATE, ActionNames.SESSION_CLONE -> {
+            ActionRegistry.Names.SESSION_CREATE, ActionRegistry.Names.SESSION_CLONE -> {
                 sessionState.activeSessionId?.let { persistSession(it, sessionState, store) }
                 broadcastSessionNames(sessionState, store)
                 // Register identity for the newly created session
@@ -127,7 +127,7 @@ class SessionFeature(
                 }
             }
 
-            ActionNames.SESSION_UPDATE_CONFIG -> {
+            ActionRegistry.Names.SESSION_UPDATE_CONFIG -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
                 val sessionId = requireSessionId(identifier, sessionState, "UPDATE_CONFIG") ?: return
 
@@ -154,12 +154,12 @@ class SessionFeature(
                 }
             }
 
-            ActionNames.SESSION_DELETE -> {
+            ActionRegistry.Names.SESSION_DELETE -> {
                 val sessionIdToDelete = sessionState.lastDeletedSessionId
                 if (sessionIdToDelete != null) {
-                    store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE, buildJsonObject { put("subpath", "$sessionIdToDelete.json") }))
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE, buildJsonObject { put("subpath", "$sessionIdToDelete.json") }))
                     broadcastSessionNames(sessionState, store)
-                    store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject { put("sessionId", sessionIdToDelete) }))
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject { put("sessionId", sessionIdToDelete) }))
                     // Unregister session identity (cascades any children)
                     store.deferredDispatch(identity.handle, Action(
                         ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
@@ -173,7 +173,7 @@ class SessionFeature(
                 }
             }
 
-            ActionNames.SESSION_INTERNAL_LOADED -> {
+            ActionRegistry.Names.SESSION_INTERNAL_LOADED -> {
                 broadcastSessionNames(sessionState, store)
                 val prevSessions = (previousState as? SessionState)?.sessions ?: emptyMap()
                 sessionState.sessions.forEach { (id, session) ->
@@ -195,7 +195,7 @@ class SessionFeature(
                 }
             }
 
-            ActionNames.SESSION_POST -> {
+            ActionRegistry.Names.SESSION_POST -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
                 val sessionId = requireSessionId(identifier, sessionState, "POST") ?: return
 
@@ -209,17 +209,17 @@ class SessionFeature(
                 }
 
                 if (postedEntry != null) {
-                    store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
                         put("sessionId", sessionId)
                         put("entry", json.encodeToJsonElement(postedEntry))
                     }))
-                    store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
                 } else {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "SESSION_POST failed: Ledger entry not found after reducer update.")
                 }
             }
 
-            ActionNames.SESSION_UPDATE_MESSAGE -> {
+            ActionRegistry.Names.SESSION_UPDATE_MESSAGE -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
                 val sessionId = requireSessionId(identifier, sessionState, "UPDATE_MESSAGE") ?: return
                 val messageId = action.payload?.get("messageId")?.jsonPrimitive?.contentOrNull ?: return
@@ -227,20 +227,20 @@ class SessionFeature(
                 if (isMessageLockedGuard(sessionId, messageId, "UPDATE_MESSAGE", prevSessionState ?: sessionState, store)) return
 
                 persistSession(sessionId, sessionState, store)
-                store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
 
-            ActionNames.SESSION_TOGGLE_MESSAGE_COLLAPSED, ActionNames.SESSION_TOGGLE_MESSAGE_RAW_VIEW -> {
+            ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_COLLAPSED, ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_RAW_VIEW -> {
                 val identifier = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull
                     ?: action.payload?.get("session")?.jsonPrimitive?.contentOrNull
 
                 val sessionId = requireSessionId(identifier, sessionState, action.name) ?: return
 
                 persistSession(sessionId, sessionState, store)
-                store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
 
-            ActionNames.SESSION_DELETE_MESSAGE -> {
+            ActionRegistry.Names.SESSION_DELETE_MESSAGE -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
                 val sessionId = requireSessionId(identifier, sessionState, "DELETE_MESSAGE") ?: return
 
@@ -276,26 +276,26 @@ class SessionFeature(
                 if (isMessageLockedGuard(sessionId, resolvedMessageId, "DELETE_MESSAGE", prevSessionStateForDelete ?: sessionState, store)) return
 
                 persistSession(sessionId, sessionState, store)
-                store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
                     put("sessionId", sessionId)
                     put("messageId", resolvedMessageId)
                 }))
-                store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
 
-            ActionNames.SESSION_SET_EDITING_MESSAGE -> {
+            ActionRegistry.Names.SESSION_SET_EDITING_MESSAGE -> {
                 val messageId = action.payload?.get("messageId")?.jsonPrimitive?.contentOrNull ?: return
                 val prevSessionStateForEdit = previousState as? SessionState ?: sessionState
                 val entry = prevSessionStateForEdit.sessions.values.flatMap { it.ledger }.find { it.id == messageId }
                 if (entry?.isLocked == true) {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "SET_EDITING_MESSAGE blocked: Message '$messageId' is locked.")
-                    store.deferredDispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject {
                         put("message", "This message is locked and cannot be modified.")
                     }))
                 }
             }
 
-            ActionNames.SESSION_REQUEST_LEDGER_CONTENT -> {
+            ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<RequestLedgerPayload>(it) }
                 if (payload == null) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "REQUEST_LEDGER_CONTENT failed: Payload invalid.")
@@ -321,17 +321,17 @@ class SessionFeature(
                 ))
             }
 
-            ActionNames.SESSION_TOGGLE_SESSION_HIDDEN -> {
+            ActionRegistry.Names.SESSION_TOGGLE_SESSION_HIDDEN -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
                 val sessionId = requireSessionId(identifier, sessionState, "TOGGLE_SESSION_HIDDEN") ?: return
                 persistSession(sessionId, sessionState, store)
             }
 
-            ActionNames.SESSION_TOGGLE_MESSAGE_LOCKED -> {
+            ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_LOCKED -> {
                 val sessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull
                 val resolvedId = requireSessionId(sessionId, sessionState, "TOGGLE_MESSAGE_LOCKED") ?: return
                 persistSession(resolvedId, sessionState, store)
-                store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", resolvedId) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", resolvedId) }))
             }
 
             ActionNames.SESSION_CLEAR -> {

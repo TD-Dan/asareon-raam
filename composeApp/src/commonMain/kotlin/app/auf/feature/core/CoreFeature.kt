@@ -101,22 +101,22 @@ class CoreFeature(
         val prevCoreState = previousState as? CoreState
 
         when (action.name) {
-            ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
-                store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+            ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING -> {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyWidth); put("type", "NUMERIC_LONG"); put("label", "Window Width")
                     put("description", "The width of the application window in pixels.")
                     put("section", "Appearance"); put("defaultValue", "1200")
                 }))
-                store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyHeight); put("type", "NUMERIC_LONG"); put("label", "Window Height")
                     put("description", "The height of the application window in pixels.")
                     put("section", "Appearance"); put("defaultValue", "800")
                 }))
             }
-            ActionNames.SYSTEM_PUBLISH_STARTING -> {
-                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", identitiesFileName)}))
+            ActionRegistry.Names.SYSTEM_PUBLISH_STARTING -> {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", identitiesFileName)}))
             }
-            ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG -> {
+            ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<DismissConfirmationPayload>(it) } ?: return
                 val request = prevCoreState?.confirmationRequest ?: return
 
@@ -130,26 +130,26 @@ class CoreFeature(
                     targetRecipient = request.originator
                 ))
             }
-            ActionNames.CORE_UPDATE_WINDOW_SIZE -> {
+            ActionRegistry.Names.CORE_UPDATE_WINDOW_SIZE -> {
                 latestCoreState?.let {
-                    store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject {
                         put("key", settingKeyWidth); put("value", it.windowWidth.toString())
                     }))
-                    store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject {
                         put("key", settingKeyHeight); put("value", it.windowHeight.toString())
                     }))
                 }
             }
-            ActionNames.CORE_OPEN_LOGS_FOLDER -> {
-                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_OPEN_APP_SUBFOLDER, buildJsonObject {
+            ActionRegistry.Names.CORE_OPEN_LOGS_FOLDER -> {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_OPEN_APP_SUBFOLDER, buildJsonObject {
                     put("folder", "logs")
                 }))
             }
-            ActionNames.CORE_COPY_TO_CLIPBOARD -> {
+            ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<CopyToClipboardPayload>(it) }
                 payload?.let {
                     platformDependencies.copyToClipboard(it.text)
-                    store.deferredDispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Copied to clipboard.") }))
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject { put("message", "Copied to clipboard.") }))
                 }
             }
             // Phase 3: Targeted response from FilesystemFeature — identity file loaded.
