@@ -7,6 +7,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import app.auf.core.*
+import app.auf.core.generated.ActionNames
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
@@ -37,7 +38,7 @@ class SettingsFeature(
 
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
         when (envelope.type) {
-            ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_READ -> {
+            ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> {
                 val payload = envelope.payload
                 if (payload["subpath"]?.jsonPrimitive?.content == settingsFileName) {
                     val loadedValues = payload["content"]?.jsonPrimitive?.contentOrNull?.let {
