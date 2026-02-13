@@ -1,126 +1,224 @@
 {
   "feature_name": "core",
   "summary": "Handles core, application-level state and UI logic like navigation, toasts, and user identity management.",
-  "listensFor": [
+  "actions": [
     {
       "action_name": "core.SET_ACTIVE_VIEW",
       "summary": "Changes the main view displayed in the UI.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
-        "properties": { "key": { "type": "string" } },
-        "required": ["key"]
+        "properties": {
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ]
       }
     },
     {
       "action_name": "core.SHOW_DEFAULT_VIEW",
       "summary": "Changes the main view to whatever is configured as the default view.",
-      "payload_schema": null
+      "open": true,
+      "broadcast": true,
+      "targeted": false
     },
     {
       "action_name": "core.UPDATE_WINDOW_SIZE",
       "summary": "Updates the application state with the new window dimensions, typically after a user resize.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "width": { "type": "integer" },
-          "height": { "type": "integer" }
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          }
         },
-        "required": ["width", "height"]
+        "required": [
+          "width",
+          "height"
+        ]
       }
     },
     {
       "action_name": "core.SHOW_TOAST",
       "summary": "Displays a short-lived message at the bottom of the screen.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
-        "properties": { "message": { "type": "string" } },
-        "required": ["message"]
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ]
       }
     },
     {
       "action_name": "core.CLEAR_TOAST",
       "summary": "Immediately hides the currently displayed toast message.",
-      "payload_schema": null
+      "open": true,
+      "broadcast": true,
+      "targeted": false
     },
     {
       "action_name": "core.OPEN_LOGS_FOLDER",
       "summary": "Requests that the application's logs folder be opened in the native file explorer.",
-      "payload_schema": null
+      "open": true,
+      "broadcast": true,
+      "targeted": false
     },
     {
       "action_name": "core.COPY_TO_CLIPBOARD",
       "summary": "Copies the provided text to the system clipboard.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
-        "properties": { "text": { "type": "string" } },
-        "required": ["text"]
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
       }
     },
     {
       "action_name": "core.ADD_USER_IDENTITY",
       "summary": "Adds a new user identity to the application.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" }
+          "name": {
+            "type": "string"
+          }
         },
-        "required": ["name"]
+        "required": [
+          "name"
+        ]
       }
     },
     {
       "action_name": "core.REMOVE_USER_IDENTITY",
       "summary": "Removes an existing user identity.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" }
+          "id": {
+            "type": "string"
+          }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       }
     },
     {
       "action_name": "core.SET_ACTIVE_USER_IDENTITY",
       "summary": "Sets the specified user identity as the active one for the application.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" }
+          "id": {
+            "type": "string"
+          }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       }
     },
     {
       "action_name": "core.SHOW_CONFIRMATION_DIALOG",
       "summary": "Requests the Core feature to display a generic, modal confirmation dialog.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "title": { "type": "string" },
-          "text": { "type": "string" },
-          "confirmButtonText": { "type": "string" },
-          "requestId": { "type": "string", "description": "A unique ID for the requesting feature to track the response." },
-          "cancelButtonText": { "type": ["string", "null"] },
-          "isDestructive": { "type": "boolean", "default": false }
+          "title": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "confirmButtonText": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string",
+            "description": "A unique ID for the requesting feature to track the response."
+          },
+          "cancelButtonText": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isDestructive": {
+            "type": "boolean",
+            "default": false
+          }
         },
-        "required": ["title", "text", "confirmButtonText", "requestId"]
+        "required": [
+          "title",
+          "text",
+          "confirmButtonText",
+          "requestId"
+        ]
       }
     },
     {
       "action_name": "core.DISMISS_CONFIRMATION_DIALOG",
       "summary": "Clears any active confirmation dialog from the UI. Dispatches a private response if it was a confirmation.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "confirmed": { "type": "boolean", "default": false }
+          "confirmed": {
+            "type": "boolean",
+            "default": false
+          }
         },
-        "required": ["confirmed"]
+        "required": [
+          "confirmed"
+        ]
       }
-    }
-  ],
-  "publishes": [
+    },
     {
-      "action_name": "core.publish.IDENTITIES_UPDATED",
+      "action_name": "core.IDENTITIES_UPDATED",
       "summary": "Broadcasts the complete state of user identities after any change.",
+      "open": false,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -132,39 +230,64 @@
             }
           },
           "activeId": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
-        "required": ["identities"]
+        "required": [
+          "identities"
+        ]
       }
     },
     {
-      "action_name": "core.internal.IDENTITIES_LOADED",
+      "action_name": "core.IDENTITIES_LOADED",
       "summary": "[INTERNAL] Dispatched after user identities have been loaded from disk.",
+      "open": false,
+      "broadcast": false,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
           "identities": {
             "type": "array",
-            "items": { "type": "object" }
+            "items": {
+              "type": "object"
+            }
           },
-          "activeId": { "type": ["string", "null"] }
+          "activeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         },
-        "required": ["identities"]
+        "required": [
+          "identities"
+        ]
       }
-    }
-  ],
-  "private_envelopes": [
+    },
     {
-      "type_name": "core.response.CONFIRMATION",
+      "action_name": "core.RESPONSE_CONFIRMATION",
       "summary": "The private response envelope sent to the original feature that requested a confirmation dialog.",
+      "open": false,
+      "broadcast": false,
+      "targeted": true,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "requestId": { "type": "string" },
-          "confirmed": { "type": "boolean" }
+          "requestId": {
+            "type": "string"
+          },
+          "confirmed": {
+            "type": "boolean"
+          }
         },
-        "required": ["requestId", "confirmed"]
+        "required": [
+          "requestId",
+          "confirmed"
+        ]
       }
     }
   ]

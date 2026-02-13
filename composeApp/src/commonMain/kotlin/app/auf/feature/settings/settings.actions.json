@@ -1,10 +1,13 @@
 {
   "feature_name": "settings",
   "summary": "Manages the persistence, state, and UI for all application settings. Other features register their settings via settings.ADD and can read/write values via the published events and the settings.UPDATE command.",
-  "listensFor": [
+  "actions": [
     {
       "action_name": "settings.ADD",
-      "summary": "Registers a new setting definition with the feature. Should be dispatched during startup (e.g., on SYSTEM_PUBLISH_STARTING) so that definitions are available before settings are loaded from disk. Idempotent — duplicate keys are ignored.",
+      "summary": "Registers a new setting definition with the feature. Should be dispatched during startup (e.g., on SYSTEM_PUBLISH_STARTING) so that definitions are available before settings are loaded from disk. Idempotent \u2014 duplicate keys are ignored.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -14,7 +17,12 @@
           },
           "type": {
             "type": "string",
-            "enum": ["BOOLEAN", "NUMERIC_LONG", "STRING", "STRING_SET"],
+            "enum": [
+              "BOOLEAN",
+              "NUMERIC_LONG",
+              "STRING",
+              "STRING_SET"
+            ],
             "description": "The data type of the setting. Determines the input control rendered in the SettingsView."
           },
           "label": {
@@ -34,24 +42,43 @@
             "description": "The string-encoded default value used when no persisted value exists. For BOOLEAN, use 'true' or 'false'."
           }
         },
-        "required": ["key", "type", "label", "section", "defaultValue"]
+        "required": [
+          "key",
+          "type",
+          "label",
+          "section",
+          "defaultValue"
+        ]
       }
     },
     {
-      "action_name": "settings.ui.internal.INPUT_CHANGED",
+      "action_name": "settings.UI_INPUT_CHANGED",
       "summary": "[INTERNAL/UI] Signals that the user has typed into a text-based setting's input field. Updates the transient inputValues for immediate UI responsiveness and starts a 750ms debounce timer before triggering the actual settings.UPDATE persistence. Used only for STRING, NUMERIC_LONG, and STRING_SET types. BOOLEAN settings bypass this and dispatch settings.UPDATE directly.",
+      "open": false,
+      "broadcast": false,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "key": { "type": "string" },
-          "value": { "type": "string" }
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
         },
-        "required": ["key", "value"]
+        "required": [
+          "key",
+          "value"
+        ]
       }
     },
     {
       "action_name": "settings.UPDATE",
-      "summary": "Commits a new value for a setting, persists all settings to disk (encrypted), and broadcasts settings.publish.VALUE_CHANGED. This is a PUBLIC command — any feature or UI component can dispatch it directly to change a setting value. The SettingsView dispatches it directly for BOOLEAN settings (no debounce) and after a 750ms debounce for text-based settings. Other features dispatch it to programmatically change settings they own (e.g., session.hide_hidden_in_viewer).",
+      "summary": "Commits a new value for a setting, persists all settings to disk (encrypted), and broadcasts settings.publish.VALUE_CHANGED. This is a PUBLIC command \u2014 any feature or UI component can dispatch it directly to change a setting value. The SettingsView dispatches it directly for BOOLEAN settings (no debounce) and after a 750ms debounce for text-based settings. Other features dispatch it to programmatically change settings they own (e.g., session.hide_hidden_in_viewer).",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -64,32 +91,43 @@
             "description": "The new string-encoded value. For BOOLEAN, use 'true' or 'false'."
           }
         },
-        "required": ["key", "value"]
+        "required": [
+          "key",
+          "value"
+        ]
       }
     },
     {
       "action_name": "settings.OPEN_FOLDER",
       "summary": "Requests that the application's settings folder be opened in the native file explorer.",
-      "payload_schema": null
-    }
-  ],
-  "publishes": [
-    {
-      "action_name": "settings.internal.LOAD",
-      "summary": "[INTERNAL] Action dispatched by the feature to itself to trigger loading from disk.",
-      "payload_schema": null
+      "open": true,
+      "broadcast": true,
+      "targeted": false
     },
     {
-      "action_name": "settings.publish.LOADED",
+      "action_name": "settings.LOAD",
+      "summary": "[INTERNAL] Action dispatched by the feature to itself to trigger loading from disk.",
+      "open": false,
+      "broadcast": false,
+      "targeted": false
+    },
+    {
+      "action_name": "settings.LOADED",
       "summary": "Broadcast after settings have been successfully loaded from disk. The payload is a flat JSON object where each key is a setting key and each value is the string-encoded setting value. Features should listen for this to hydrate their transient state from persisted settings (e.g., session hide-hidden flags).",
+      "open": false,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "description": "A map of setting keys to their string-encoded values. Only keys that were found on disk are included; features should fall back to their registered defaults for missing keys."
       }
     },
     {
-      "action_name": "settings.publish.VALUE_CHANGED",
+      "action_name": "settings.VALUE_CHANGED",
       "summary": "Broadcast whenever a setting's value is committed via settings.UPDATE. Features should listen for this to reactively update their transient state when a setting they care about changes at runtime.",
+      "open": false,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -102,7 +140,10 @@
             "description": "The new string-encoded value."
           }
         },
-        "required": ["key", "value"]
+        "required": [
+          "key",
+          "value"
+        ]
       }
     }
   ]

@@ -185,7 +185,7 @@ class GatewayFeatureT2CoreTest {
             val privateData = harness.deliveredPrivateData.firstOrNull()
             assertNotNull(privateData)
             assertEquals(originatorId, privateData.recipient)
-            assertEquals("gateway.response.RESPONSE", privateData.envelope.type)
+            assertEquals("gateway.RESPONSE_RESPONSE", privateData.envelope.type)
             assertEquals(correlationId, privateData.envelope.payload["correlationId"]?.jsonPrimitive?.content)
         }
     }
@@ -213,7 +213,7 @@ class GatewayFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             val privateData = harness.deliveredPrivateData.firstOrNull()
             assertNotNull(privateData, "Private data for preview should have been delivered.")
-            assertEquals("gateway.response.PREVIEW", privateData.envelope.type)
+            assertEquals("gateway.RESPONSE_PREVIEW", privateData.envelope.type)
 
             val rawJson = privateData.envelope.payload["rawRequestJson"]?.jsonPrimitive?.content
             // Verify we got the string from FakeProvider.generatePreview, NOT empty map

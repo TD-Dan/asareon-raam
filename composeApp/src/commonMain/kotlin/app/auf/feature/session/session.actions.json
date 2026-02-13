@@ -1,411 +1,263 @@
 {
-  "feature_name":"session",
-  "summary":"Acts as a pure, passive data manager for multiple, concurrent session transcripts (the 'Public Ledger').",
-  "exposedToAgents":[
+  "feature_name": "session",
+  "summary": "Acts as a pure, passive data manager for multiple, concurrent session transcripts (the 'Public Ledger').",
+  "actions": [
     {
-      "action_name":"session.POST",
-      "summary":"Post a message to a session.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string",
-            "description":"Target session ID."
+      "action_name": "session.CREATE",
+      "summary": "Creates a new, empty session transcript. If the name exists, a numeric suffix will be added.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "An optional user-friendly name for the new session."
           },
-          "message":{
-            "type":"string",
-            "description":"Message content (supports markdown/code blocks)."
-          }
-        },
-        "required":[
-          "session",
-          "message"
-        ]
-      },
-      "requiresApproval":false,
-      "auto_fill":{
-        "senderId":"{agentId}"
-      }
-    },
-    {
-      "action_name":"session.LIST_SESSIONS",
-      "summary":"List all non-hidden sessions. Response is posted as a message to the agent's originating session.",
-      "payload_schema":null,
-      "requiresApproval":false,
-      "auto_fill":{
-        "responseSession":"{sessionId}"
-      }
-    },
-    {
-      "action_name":"session.CREATE",
-      "summary":"Create a new session.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "name":{
-            "type":"string",
-            "description":"Name for the new session.",
-            "default":"New Session"
+          "isHidden": {
+            "type": "boolean",
+            "description": "If true, the session is created in a hidden state (e.g., for agent p-cognition). Defaults to false."
+          },
+          "isAgentPrivate": {
+            "type": "boolean",
+            "description": "If true, the session is marked as an agent's private cognition session. Defaults to false."
           }
         }
       },
-      "requiresApproval":true
-    },
-    {
-      "action_name":"session.CLONE",
-      "summary":"Clone an existing session.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "sourceSession":{
-            "type":"string",
-            "description":"ID of the session to clone."
-          }
-        },
-        "required":[
-          "sourceSession"
-        ]
-      },
-      "requiresApproval":true
-    },
-    {
-      "action_name":"session.UPDATE_CONFIG",
-      "summary":"Update a session's configuration (e.g., rename).",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string"
-          },
-          "name":{
-            "type":"string"
-          }
-        },
-        "required":[
-          "session"
-        ]
-      },
-      "requiresApproval":true
-    },
-    {
-      "action_name":"session.CLEAR",
-      "summary":"Clear all unlocked, non-protected messages from a session.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string"
-          }
-        },
-        "required":[
-          "session"
-        ]
-      },
-      "requiresApproval":true
-    },
-    {
-      "action_name":"session.DELETE",
-      "summary":"Permanently delete a session and its transcript.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string"
-          }
-        },
-        "required":[
-          "session"
-        ]
-      },
-      "requiresApproval":true
-    },
-    {
-      "action_name":"session.DELETE_MESSAGE",
-      "summary":"Delete a specific message from a session.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string"
-          },
-          "senderId":{
-            "type":"string",
-            "description":"The display name or ID of the message sender."
-          },
-          "timestamp":{
-            "type":"string",
-            "description":"ISO 8601 timestamp of the message."
-          }
-        },
-        "required":[
-          "session",
-          "senderId",
-          "timestamp"
-        ]
-      },
-      "requiresApproval":true
-    },
-    {
-      "action_name":"session.LOCK_MESSAGE",
-      "summary":"Lock a message to prevent editing, deletion, or clearing.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string",
-            "description":"Session ID."
-          },
-          "senderId":{
-            "type":"string",
-            "description":"The display name or ID of the message sender."
-          },
-          "timestamp":{
-            "type":"string",
-            "description":"ISO 8601 timestamp of the message (e.g., '2025-02-07T18:40:00Z')."
-          }
-        },
-        "required":[
-          "session",
-          "senderId",
-          "timestamp"
-        ]
-      },
-      "requiresApproval":true
-    },
-    {
-      "action_name":"session.UNLOCK_MESSAGE",
-      "summary":"Unlock a previously locked message.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string",
-            "description":"Session ID."
-          },
-          "senderId":{
-            "type":"string",
-            "description":"The display name or ID of the message sender."
-          },
-          "timestamp":{
-            "type":"string",
-            "description":"ISO 8601 timestamp of the message (e.g., '2025-02-07T18:40:00Z')."
-          }
-        },
-        "required":[
-          "session",
-          "senderId",
-          "timestamp"
-        ]
-      },
-      "requiresApproval":true
-    }
-  ],
-  "listensFor":[
-    {
-      "action_name":"session.CREATE",
-      "summary":"Creates a new, empty session transcript. If the name exists, a numeric suffix will be added.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "name":{
-            "type":"string",
-            "description":"An optional user-friendly name for the new session."
-          },
-          "isHidden":{
-            "type":"boolean",
-            "description":"If true, the session is created in a hidden state (e.g., for agent p-cognition). Defaults to false."
-          },
-          "isAgentPrivate":{
-            "type":"boolean",
-            "description":"If true, the session is marked as an agent's private cognition session. Defaults to false."
-          }
-        }
+      "agent_exposure": {
+        "requires_approval": true
       }
     },
     {
-      "action_name":"session.CLONE",
-      "summary":"Creates a new session by cloning an existing one, including its entire ledger. The clone is always non-hidden regardless of source.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string",
-            "description":"The ID of the session to clone."
+      "action_name": "session.CLONE",
+      "summary": "Creates a new session by cloning an existing one, including its entire ledger. The clone is always non-hidden regardless of source.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The ID of the session to clone."
           }
         },
-        "required":[
+        "required": [
           "session"
         ]
+      },
+      "agent_exposure": {
+        "requires_approval": true
       }
     },
     {
-      "action_name":"session.UPDATE_CONFIG",
-      "summary":"Updates the configuration of an existing session. Targets the session via the 'session' property (ID or name).",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string",
-            "description":"The ID or name of the session to update."
+      "action_name": "session.UPDATE_CONFIG",
+      "summary": "Updates the configuration of an existing session. Targets the session via the 'session' property (ID or name).",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The ID or name of the session to update."
           },
-          "name":{
-            "type":"string",
-            "description":"The new name for the session. Will be de-duplicated if necessary."
+          "name": {
+            "type": "string",
+            "description": "The new name for the session. Will be de-duplicated if necessary."
           }
         },
-        "required":[
+        "required": [
           "session"
         ]
+      },
+      "agent_exposure": {
+        "requires_approval": true
       }
     },
     {
-      "action_name":"session.DELETE",
-      "summary":"Deletes an entire session transcript. Targets the session via the 'session' property (ID or name).",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string",
-            "description":"The ID or name of the session to delete."
+      "action_name": "session.DELETE",
+      "summary": "Deletes an entire session transcript. Targets the session via the 'session' property (ID or name).",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The ID or name of the session to delete."
           }
         },
-        "required":[
+        "required": [
           "session"
         ]
+      },
+      "agent_exposure": {
+        "requires_approval": true
       }
     },
     {
-      "action_name":"session.POST",
-      "summary":"Posts a new entry to a specific session's ledger. Can be a text message or contain metadata for a UI component.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string",
-            "description":"The ID or name of the target session."
+      "action_name": "session.POST",
+      "summary": "Posts a new entry to a specific session's ledger. Can be a text message or contain metadata for a UI component.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The ID or name of the target session."
           },
-          "senderId":{
-            "type":"string"
+          "senderId": {
+            "type": "string"
           },
-          "message":{
-            "type":"string"
+          "message": {
+            "type": "string"
           },
-          "messageId":{
-            "type":"string",
-            "description":"An optional, pre-generated ID for the message. If not provided, one will be created."
+          "messageId": {
+            "type": "string",
+            "description": "An optional, pre-generated ID for the message. If not provided, one will be created."
           },
-          "metadata":{
-            "type":"object",
-            "description":"An optional, generic metadata object."
+          "metadata": {
+            "type": "object",
+            "description": "An optional, generic metadata object."
           },
-          "afterMessageId":{
-            "type":[
+          "afterMessageId": {
+            "type": [
               "string",
               "null"
             ],
-            "description":"If provided, the new entry will be inserted directly after this message ID. If the ID is not found, it will be appended to the end."
+            "description": "If provided, the new entry will be inserted directly after this message ID. If the ID is not found, it will be appended to the end."
           },
-          "doNotClear":{
-            "type":"boolean",
-            "description":"If true, this entry will survive a SESSION_CLEAR action even when not locked. Used for transient UI entries like agent avatar cards. Defaults to false.",
-            "default":false
+          "doNotClear": {
+            "type": "boolean",
+            "description": "If true, this entry will survive a SESSION_CLEAR action even when not locked. Used for transient UI entries like agent avatar cards. Defaults to false.",
+            "default": false
           }
         },
-        "required":[
+        "required": [
           "session",
           "senderId"
         ]
+      },
+      "agent_exposure": {
+        "requires_approval": false,
+        "auto_fill_rules": {
+          "senderId": "{agentId}"
+        }
       }
     },
     {
-      "action_name":"session.UPDATE_MESSAGE",
-      "summary":"Updates the raw content and metadata of an existing message. Blocked if the target message is locked.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string",
-            "description":"The ID or name of the target session."
+      "action_name": "session.UPDATE_MESSAGE",
+      "summary": "Updates the raw content and metadata of an existing message. Blocked if the target message is locked.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The ID or name of the target session."
           },
-          "messageId":{
-            "type":"string"
+          "messageId": {
+            "type": "string"
           },
-          "newContent":{
-            "type":"string"
+          "newContent": {
+            "type": "string"
           },
-          "newMetadata":{
-            "type":"object"
+          "newMetadata": {
+            "type": "object"
           }
         },
-        "required":[
+        "required": [
           "session",
           "messageId"
         ]
       }
     },
     {
-      "action_name":"session.DELETE_MESSAGE",
-      "summary":"Deletes a single message from a session's ledger. Blocked if the target message is locked.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string",
-            "description":"The ID or name of the session to delete."
+      "action_name": "session.DELETE_MESSAGE",
+      "summary": "Deletes a single message from a session's ledger. Blocked if the target message is locked.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The ID or name of the session to delete."
           },
-          "messageId":{
-            "type":"string"
+          "messageId": {
+            "type": "string"
           }
         },
-        "required":[
+        "required": [
           "session",
           "messageId"
         ]
+      },
+      "agent_exposure": {
+        "requires_approval": true
       }
     },
     {
-      "action_name":"session.REQUEST_LEDGER_CONTENT",
-      "summary":"Requests the formatted ledger content for a specific session. Used by agents to build context for a cognitive turn.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "sessionId":{
-            "type":"string"
+      "action_name": "session.REQUEST_LEDGER_CONTENT",
+      "summary": "Requests the formatted ledger content for a specific session. Used by agents to build context for a cognitive turn.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
           },
-          "correlationId":{
-            "type":"string"
+          "correlationId": {
+            "type": "string"
           }
         },
-        "required":[
+        "required": [
           "sessionId",
           "correlationId"
         ]
       }
     },
     {
-      "action_name":"session.SET_ACTIVE_TAB",
-      "summary":"Sets the currently visible session in the main tabbed view. Targets the session via the 'session' property (ID or name).",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string",
-            "description":"The ID or name of the session to make active."
+      "action_name": "session.SET_ACTIVE_TAB",
+      "summary": "Sets the currently visible session in the main tabbed view. Targets the session via the 'session' property (ID or name).",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The ID or name of the session to make active."
           }
         },
-        "required":[
+        "required": [
           "session"
         ]
       }
     },
     {
-      "action_name":"session.SET_EDITING_SESSION_NAME",
-      "summary":"Sets which session name is currently being edited in the UI.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "sessionId":{
-            "type":[
+      "action_name": "session.SET_EDITING_SESSION_NAME",
+      "summary": "Sets which session name is currently being edited in the UI.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": [
               "string",
               "null"
             ]
@@ -414,13 +266,16 @@
       }
     },
     {
-      "action_name":"session.SET_EDITING_MESSAGE",
-      "summary":"Sets which message is currently being edited in the UI and pre-loads its content. Blocked if the target message is locked.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "messageId":{
-            "type":[
+      "action_name": "session.SET_EDITING_MESSAGE",
+      "summary": "Sets which message is currently being edited in the UI and pre-loads its content. Blocked if the target message is locked.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": [
               "string",
               "null"
             ]
@@ -429,325 +284,387 @@
       }
     },
     {
-      "action_name":"session.TOGGLE_MESSAGE_COLLAPSED",
-      "summary":"Toggles the collapsed/expanded state for a single message.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "sessionId":{
-            "type":"string"
+      "action_name": "session.TOGGLE_MESSAGE_COLLAPSED",
+      "summary": "Toggles the collapsed/expanded state for a single message.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
           },
-          "messageId":{
-            "type":"string"
+          "messageId": {
+            "type": "string"
           }
         },
-        "required":[
+        "required": [
           "sessionId",
           "messageId"
         ]
       }
     },
     {
-      "action_name":"session.TOGGLE_MESSAGE_RAW_VIEW",
-      "summary":"Toggles the raw/parsed view for a single message.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "sessionId":{
-            "type":"string"
+      "action_name": "session.TOGGLE_MESSAGE_RAW_VIEW",
+      "summary": "Toggles the raw/parsed view for a single message.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
           },
-          "messageId":{
-            "type":"string"
+          "messageId": {
+            "type": "string"
           }
         },
-        "required":[
+        "required": [
           "sessionId",
           "messageId"
         ]
       }
     },
     {
-      "action_name":"session.REORDER",
-      "summary":"Moves a session to a new position in the canonical display ordering. Updates the session's persistent orderIndex and persists affected sessions to disk.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "sessionId":{
-            "type":"string",
-            "description":"The ID of the session to move."
+      "action_name": "session.REORDER",
+      "summary": "Moves a session to a new position in the canonical display ordering. Updates the session's persistent orderIndex and persists affected sessions to disk.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The ID of the session to move."
           },
-          "toIndex":{
-            "type":"integer",
-            "description":"The target index in the ordering list. Clamped to valid bounds."
+          "toIndex": {
+            "type": "integer",
+            "description": "The target index in the ordering list. Clamped to valid bounds."
           }
         },
-        "required":[
+        "required": [
           "sessionId",
           "toIndex"
         ]
       }
     },
     {
-      "action_name":"session.SET_ORDER",
-      "summary":"Replaces the canonical session display ordering with the provided list. Assigns contiguous orderIndex values (0, 1, 2, \u2026) and persists all sessions whose orderIndex changed. Sessions present in the existing order but absent from the provided list are appended at the end (e.g., hidden sessions filtered out of the drag-reorder view).",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "order":{
-            "type":"array",
-            "items":{
-              "type":"string"
+      "action_name": "session.SET_ORDER",
+      "summary": "Replaces the canonical session display ordering with the provided list. Assigns contiguous orderIndex values (0, 1, 2, \u2026) and persists all sessions whose orderIndex changed. Sessions present in the existing order but absent from the provided list are appended at the end (e.g., hidden sessions filtered out of the drag-reorder view).",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "array",
+            "items": {
+              "type": "string"
             },
-            "description":"The new ordered list of session IDs."
+            "description": "The new ordered list of session IDs."
           }
         },
-        "required":[
+        "required": [
           "order"
         ]
       }
     },
     {
-      "action_name":"session.TOGGLE_SESSION_HIDDEN",
-      "summary":"Toggles the isHidden flag on a specific session. Used from the session manager.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string",
-            "description":"The ID or name of the session to toggle."
+      "action_name": "session.TOGGLE_SESSION_HIDDEN",
+      "summary": "Toggles the isHidden flag on a specific session. Used from the session manager.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The ID or name of the session to toggle."
           }
         },
-        "required":[
+        "required": [
           "session"
         ]
       }
     },
     {
-      "action_name":"session.TOGGLE_MESSAGE_LOCKED",
-      "summary":"Toggles the isLocked flag on a specific ledger entry. A locked message cannot be edited, deleted, or cleared.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "sessionId":{
-            "type":"string"
+      "action_name": "session.TOGGLE_MESSAGE_LOCKED",
+      "summary": "Toggles the isLocked flag on a specific ledger entry. A locked message cannot be edited, deleted, or cleared.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
           },
-          "messageId":{
-            "type":"string"
+          "messageId": {
+            "type": "string"
           }
         },
-        "required":[
+        "required": [
           "sessionId",
           "messageId"
         ]
       }
     },
     {
-      "action_name":"session.CLEAR",
-      "summary":"Removes all messages from a session's ledger that are neither locked nor marked doNotClear. Protected messages are preserved.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string",
-            "description":"The ID or name of the session to clear."
+      "action_name": "session.CLEAR",
+      "summary": "Removes all messages from a session's ledger that are neither locked nor marked doNotClear. Protected messages are preserved.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The ID or name of the session to clear."
           }
         },
-        "required":[
+        "required": [
           "session"
         ]
+      },
+      "agent_exposure": {
+        "requires_approval": true
       }
     },
     {
-      "action_name":"session.LIST_SESSIONS",
-      "summary":"Lists all non-hidden sessions. The result is posted as a message to the responseSession specified in the payload.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "responseSession":{
-            "type":"string",
-            "description":"The session ID where the listing should be posted."
+      "action_name": "session.LIST_SESSIONS",
+      "summary": "Lists all non-hidden sessions. The result is posted as a message to the responseSession specified in the payload.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "responseSession": {
+            "type": "string",
+            "description": "The session ID where the listing should be posted."
           }
+        }
+      },
+      "agent_exposure": {
+        "requires_approval": false,
+        "auto_fill_rules": {
+          "responseSession": "{sessionId}"
         }
       }
     },
     {
-      "action_name":"session.LOCK_MESSAGE",
-      "summary":"Locks a message to prevent editing, deletion, or clearing. Targets by senderId + ISO 8601 timestamp.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string",
-            "description":"The ID or name of the target session."
+      "action_name": "session.LOCK_MESSAGE",
+      "summary": "Locks a message to prevent editing, deletion, or clearing. Targets by senderId + ISO 8601 timestamp.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The ID or name of the target session."
           },
-          "senderId":{
-            "type":"string",
-            "description":"The display name or ID of the message sender."
+          "senderId": {
+            "type": "string",
+            "description": "The display name or ID of the message sender."
           },
-          "timestamp":{
-            "type":"string",
-            "description":"ISO 8601 timestamp of the message (e.g., '2025-02-07T18:40:00Z')."
+          "timestamp": {
+            "type": "string",
+            "description": "ISO 8601 timestamp of the message (e.g., '2025-02-07T18:40:00Z')."
           }
         },
-        "required":[
+        "required": [
           "session",
           "senderId",
           "timestamp"
         ]
+      },
+      "agent_exposure": {
+        "requires_approval": true
       }
     },
     {
-      "action_name":"session.UNLOCK_MESSAGE",
-      "summary":"Unlocks a previously locked message. Targets by senderId + ISO 8601 timestamp.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "session":{
-            "type":"string",
-            "description":"The ID or name of the target session."
+      "action_name": "session.UNLOCK_MESSAGE",
+      "summary": "Unlocks a previously locked message. Targets by senderId + ISO 8601 timestamp.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The ID or name of the target session."
           },
-          "senderId":{
-            "type":"string",
-            "description":"The display name or ID of the message sender."
+          "senderId": {
+            "type": "string",
+            "description": "The display name or ID of the message sender."
           },
-          "timestamp":{
-            "type":"string",
-            "description":"ISO 8601 timestamp of the message (e.g., '2025-02-07T18:40:00Z')."
+          "timestamp": {
+            "type": "string",
+            "description": "ISO 8601 timestamp of the message (e.g., '2025-02-07T18:40:00Z')."
           }
         },
-        "required":[
+        "required": [
           "session",
           "senderId",
           "timestamp"
         ]
+      },
+      "agent_exposure": {
+        "requires_approval": true
       }
-    }
-  ],
-  "publishes":[
+    },
     {
-      "action_name":"session.publish.MESSAGE_POSTED",
-      "summary":"Broadcasts that a new message has been successfully posted to a session.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "sessionId":{
-            "type":"string"
+      "action_name": "session.MESSAGE_POSTED",
+      "summary": "Broadcasts that a new message has been successfully posted to a session.",
+      "open": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
           },
-          "entry":{
-            "type":"object",
-            "description":"The full LedgerEntry object that was added.",
-            "$ref":"#/definitions/LedgerEntry"
+          "entry": {
+            "type": "object",
+            "description": "The full LedgerEntry object that was added.",
+            "$ref": "#/definitions/LedgerEntry"
           }
         },
-        "required":[
+        "required": [
           "sessionId",
           "entry"
         ]
       }
     },
     {
-      "action_name":"session.publish.MESSAGE_DELETED",
-      "summary":"Broadcasts that a message has been successfully deleted from a session.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "sessionId":{
-            "type":"string"
+      "action_name": "session.MESSAGE_DELETED",
+      "summary": "Broadcasts that a message has been successfully deleted from a session.",
+      "open": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
           },
-          "messageId":{
-            "type":"string"
+          "messageId": {
+            "type": "string"
           }
         },
-        "required":[
+        "required": [
           "sessionId",
           "messageId"
         ]
       }
     },
     {
-      "action_name":"session.publish.SESSION_UPDATED",
-      "summary":"Broadcasts that a session has been updated (e.g., a new message was posted).",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "sessionId":{
-            "type":"string"
+      "action_name": "session.SESSION_UPDATED",
+      "summary": "Broadcasts that a session has been updated (e.g., a new message was posted).",
+      "open": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
           }
         },
-        "required":[
+        "required": [
           "sessionId"
         ]
       }
     },
     {
-      "action_name":"session.publish.SESSION_DELETED",
-      "summary":"Broadcasts that a session has been deleted, so other features can clean up their state.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "sessionId":{
-            "type":"string"
+      "action_name": "session.SESSION_DELETED",
+      "summary": "Broadcasts that a session has been deleted, so other features can clean up their state.",
+      "open": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
           }
         },
-        "required":[
+        "required": [
           "sessionId"
         ]
       }
     },
     {
-      "action_name":"session.publish.SESSION_NAMES_UPDATED",
-      "summary":"Broadcasts the verified map of session IDs to their names. Can only be dispatched by the SessionFeature.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "names":{
-            "type":"object",
-            "description":"A map where the key is the session ID and the value is the session's name."
+      "action_name": "session.SESSION_NAMES_UPDATED",
+      "summary": "Broadcasts the verified map of session IDs to their names. Can only be dispatched by the SessionFeature.",
+      "open": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "names": {
+            "type": "object",
+            "description": "A map where the key is the session ID and the value is the session's name."
           }
         },
-        "required":[
+        "required": [
           "names"
         ]
       }
     },
     {
-      "action_name":"session.internal.LOADED",
-      "summary":"[INTERNAL] Dispatched after all session transcripts have been loaded from disk.",
-      "payload_schema":{
-        "type":"object",
-        "description":"A map of session IDs to Session objects."
+      "action_name": "session.LOADED",
+      "summary": "[INTERNAL] Dispatched after all session transcripts have been loaded from disk.",
+      "open": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "description": "A map of session IDs to Session objects."
       }
-    }
-  ],
-  "private_envelopes":[
+    },
     {
-      "type_name":"session.response.ledger",
-      "summary":"The response envelope containing the formatted ledger content for an agent's cognitive cycle.",
-      "payload_schema":{
-        "type":"object",
-        "properties":{
-          "correlationId":{
-            "type":"string"
+      "action_name": "session.RESPONSE_LEDGER",
+      "summary": "The response envelope containing the formatted ledger content for an agent's cognitive cycle.",
+      "open": false,
+      "broadcast": false,
+      "targeted": true,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": "string"
           },
-          "messages":{
-            "type":"array",
-            "items":{
-              "type":"object",
-              "properties":{
-                "role":{
-                  "type":"string"
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string"
                 },
-                "content":{
-                  "type":"string"
+                "content": {
+                  "type": "string"
                 },
-                "senderId":{
-                  "type":"string"
+                "senderId": {
+                  "type": "string"
                 },
-                "senderName":{
-                  "type":"string"
+                "senderName": {
+                  "type": "string"
                 }
               },
-              "required":[
+              "required": [
                 "role",
                 "content",
                 "senderId",
@@ -756,119 +673,119 @@
             }
           }
         },
-        "required":[
+        "required": [
           "correlationId",
           "messages"
         ]
       }
     }
   ],
-  "definitions":{
-    "LedgerEntry":{
-      "type":"object",
-      "description":"Represents a single, immutable entry in a session's ledger.",
-      "properties":{
-        "id":{
-          "type":"string",
-          "description":"Unique identifier for this entry."
+  "definitions": {
+    "LedgerEntry": {
+      "type": "object",
+      "description": "Represents a single, immutable entry in a session's ledger.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for this entry."
         },
-        "timestamp":{
-          "type":"integer",
-          "description":"Unix epoch milliseconds when the entry was created."
+        "timestamp": {
+          "type": "integer",
+          "description": "Unix epoch milliseconds when the entry was created."
         },
-        "senderId":{
-          "type":"string",
-          "description":"The identifier of the originator (e.g., 'user', an agent ID, 'commandbot', 'system')."
+        "senderId": {
+          "type": "string",
+          "description": "The identifier of the originator (e.g., 'user', an agent ID, 'commandbot', 'system')."
         },
-        "rawContent":{
-          "type":[
+        "rawContent": {
+          "type": [
             "string",
             "null"
           ],
-          "description":"The original, unmodified string content of the message. Null for UI-only entries."
+          "description": "The original, unmodified string content of the message. Null for UI-only entries."
         },
-        "content":{
-          "type":"array",
-          "description":"The structured, pre-parsed representation of rawContent as a list of ContentBlock objects.",
-          "items":{
-            "$ref":"#/definitions/ContentBlock"
+        "content": {
+          "type": "array",
+          "description": "The structured, pre-parsed representation of rawContent as a list of ContentBlock objects.",
+          "items": {
+            "$ref": "#/definitions/ContentBlock"
           }
         },
-        "metadata":{
-          "type":[
+        "metadata": {
+          "type": [
             "object",
             "null"
           ],
-          "description":"A generic metadata object for UI hints or embedding components from other features."
+          "description": "A generic metadata object for UI hints or embedding components from other features."
         },
-        "isLocked":{
-          "type":"boolean",
-          "description":"When true, this entry cannot be edited, deleted, or cleared. Defaults to false.",
-          "default":false
+        "isLocked": {
+          "type": "boolean",
+          "description": "When true, this entry cannot be edited, deleted, or cleared. Defaults to false.",
+          "default": false
         },
-        "doNotClear":{
-          "type":"boolean",
-          "description":"When true, this entry survives a SESSION_CLEAR even if not locked. Used for transient UI entries like agent avatar cards. Defaults to false.",
-          "default":false
+        "doNotClear": {
+          "type": "boolean",
+          "description": "When true, this entry survives a SESSION_CLEAR even if not locked. Used for transient UI entries like agent avatar cards. Defaults to false.",
+          "default": false
         }
       },
-      "required":[
+      "required": [
         "id",
         "timestamp",
         "senderId"
       ]
     },
-    "ContentBlock":{
-      "type":"object",
-      "description":"A single block of structured content within a message. This is a sealed/discriminated union using the 'type' field.",
-      "discriminator":"type",
-      "oneOf":[
+    "ContentBlock": {
+      "type": "object",
+      "description": "A single block of structured content within a message. This is a sealed/discriminated union using the 'type' field.",
+      "discriminator": "type",
+      "oneOf": [
         {
-          "$ref":"#/definitions/ContentBlock.Text"
+          "$ref": "#/definitions/ContentBlock.Text"
         },
         {
-          "$ref":"#/definitions/ContentBlock.CodeBlock"
+          "$ref": "#/definitions/ContentBlock.CodeBlock"
         }
       ]
     },
-    "ContentBlock.Text":{
-      "type":"object",
-      "description":"A block of plain or markdown text.",
-      "properties":{
-        "type":{
-          "type":"string",
-          "const":"app.auf.feature.session.ContentBlock.Text",
-          "description":"Discriminator value for kotlinx.serialization sealed interface."
+    "ContentBlock.Text": {
+      "type": "object",
+      "description": "A block of plain or markdown text.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "app.auf.feature.session.ContentBlock.Text",
+          "description": "Discriminator value for kotlinx.serialization sealed interface."
         },
-        "text":{
-          "type":"string",
-          "description":"The text content."
+        "text": {
+          "type": "string",
+          "description": "The text content."
         }
       },
-      "required":[
+      "required": [
         "type",
         "text"
       ]
     },
-    "ContentBlock.CodeBlock":{
-      "type":"object",
-      "description":"A fenced code block with a language tag. CommandBot watches for code blocks whose language starts with 'auf_' and dispatches the body as an action payload.",
-      "properties":{
-        "type":{
-          "type":"string",
-          "const":"app.auf.feature.session.ContentBlock.CodeBlock",
-          "description":"Discriminator value for kotlinx.serialization sealed interface."
+    "ContentBlock.CodeBlock": {
+      "type": "object",
+      "description": "A fenced code block with a language tag. CommandBot watches for code blocks whose language starts with 'auf_' and dispatches the body as an action payload.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "app.auf.feature.session.ContentBlock.CodeBlock",
+          "description": "Discriminator value for kotlinx.serialization sealed interface."
         },
-        "language":{
-          "type":"string",
-          "description":"The language tag from the fenced code block (e.g., 'kotlin', 'auf_filesystem.SYSTEM_WRITE')."
+        "language": {
+          "type": "string",
+          "description": "The language tag from the fenced code block (e.g., 'kotlin', 'auf_filesystem.SYSTEM_WRITE')."
         },
-        "code":{
-          "type":"string",
-          "description":"The content of the code block."
+        "code": {
+          "type": "string",
+          "description": "The content of the code block."
         }
       },
-      "required":[
+      "required": [
         "type",
         "language",
         "code"

@@ -1,268 +1,622 @@
 {
   "feature_name": "knowledgegraph",
   "summary": "Acts as a universal, decoupled service that loads, manages, and serves multiple, distinct Holon Knowledge Graph (HKG) trees for consumption by any other feature.",
-  "listensFor": [
+  "actions": [
     {
       "action_name": "knowledgegraph.SET_VIEW_MODE",
       "summary": "Switches the primary view of the Knowledge Graph feature (e.g., to Inspector, Import, Export).",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
-        "properties": { "mode": { "type": "string" } },
-        "required": ["mode"]
+        "properties": {
+          "mode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ]
       }
     },
     {
       "action_name": "knowledgegraph.LOAD_PERSONA",
       "summary": "Initiates the loading or reloading of a single, complete Holon Knowledge Graph from its root persona ID.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
-        "properties": { "personaId": { "type": "string" } },
-        "required": ["personaId"]
+        "properties": {
+          "personaId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "personaId"
+        ]
       }
     },
     {
       "action_name": "knowledgegraph.REQUEST_CONTEXT",
       "summary": "The public, universal action for any feature to request the full context of a specific HKG. The response will be delivered privately to the originator.",
-      "responseEnvelopeType": "knowledgegraph.response.CONTEXT",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "personaId": { "type": "string", "description": "The root holon ID of the requested HKG." },
-          "correlationId": { "type": "string", "description": "An ID for the requester to track the response." }
+          "personaId": {
+            "type": "string",
+            "description": "The root holon ID of the requested HKG."
+          },
+          "correlationId": {
+            "type": "string",
+            "description": "An ID for the requester to track the response."
+          }
         },
-        "required": ["personaId", "correlationId"]
+        "required": [
+          "personaId",
+          "correlationId"
+        ]
       }
     },
     {
       "action_name": "knowledgegraph.RESERVE_HKG",
       "summary": "An action to acquire an exclusive lock on an HKG, preventing modification by others.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
-        "properties": { "personaId": { "type": "string" } },
-        "required": ["personaId"]
+        "properties": {
+          "personaId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "personaId"
+        ]
       }
     },
     {
       "action_name": "knowledgegraph.RELEASE_HKG",
       "summary": "An action to release an exclusive lock on an HKG.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
-        "properties": { "personaId": { "type": "string" } },
-        "required": ["personaId"]
+        "properties": {
+          "personaId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "personaId"
+        ]
       }
     },
     {
       "action_name": "knowledgegraph.SET_ACTIVE_VIEW_HOLON",
       "summary": "A UI-facing action to select a specific holon for detailed inspection within the active view.",
-      "payload_schema": { "type": "object", "properties": { "holonId": { "type": ["string", "null"] } } }
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "holonId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
     },
     {
       "action_name": "knowledgegraph.TOGGLE_HOLON_EXPANDED",
       "summary": "Toggles the collapsed/expanded state of a single holon in the tree view.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
-        "properties": { "holonId": { "type": "string" } },
-        "required": ["holonId"]
+        "properties": {
+          "holonId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "holonId"
+        ]
       }
     },
     {
       "action_name": "knowledgegraph.TOGGLE_SHOW_SUMMARIES",
       "summary": "Toggles the visibility of summary text in the holon tree view.",
-      "payload_schema": null
+      "open": true,
+      "broadcast": true,
+      "targeted": false
     },
     {
       "action_name": "knowledgegraph.SET_TYPE_FILTERS",
       "summary": "Sets the set of holon types to display in the tree view. An empty set means show all.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
-        "properties": { "types": { "type": "array", "items": { "type": "string" } } },
-        "required": ["types"]
+        "properties": {
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "types"
+        ]
       }
     },
     {
       "action_name": "knowledgegraph.START_IMPORT_ANALYSIS",
       "summary": "Initiates the user-facing workflow to select and analyze a directory for HKG import.",
-      "payload_schema": null
+      "open": true,
+      "broadcast": true,
+      "targeted": false
     },
     {
       "action_name": "knowledgegraph.SET_IMPORT_RECURSIVE",
       "summary": "Sets whether the import analysis should search sub-folders recursively.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
-        "properties": { "recursive": { "type": "boolean" } },
-        "required": ["recursive"]
+        "properties": {
+          "recursive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "recursive"
+        ]
       }
     },
     {
       "action_name": "knowledgegraph.TOGGLE_SHOW_ONLY_CHANGED",
       "summary": "Toggles whether the import view should only show files with a proposed change.",
-      "payload_schema": null
+      "open": true,
+      "broadcast": true,
+      "targeted": false
     },
     {
       "action_name": "knowledgegraph.UPDATE_IMPORT_ACTION",
       "summary": "Allows the user to override the automatically determined import action for a specific file.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "sourcePath": { "type": "string" },
-          "action": { "type": "object" }
+          "sourcePath": {
+            "type": "string"
+          },
+          "action": {
+            "type": "object"
+          }
         },
-        "required": ["sourcePath", "action"]
+        "required": [
+          "sourcePath",
+          "action"
+        ]
       }
     },
     {
       "action_name": "knowledgegraph.EXECUTE_IMPORT",
       "summary": "Triggers the execution of the currently staged import plan.",
-      "payload_schema": null
+      "open": true,
+      "broadcast": true,
+      "targeted": false
     },
     {
       "action_name": "knowledgegraph.COPY_ANALYSIS_TO_CLIPBOARD",
       "summary": "Formats the current import analysis into a string and copies it to the clipboard.",
-      "payload_schema": null
+      "open": true,
+      "broadcast": true,
+      "targeted": false
     },
     {
       "action_name": "knowledgegraph.CREATE_PERSONA",
       "summary": "Creates a new AI Persona Root holon, establishing a new, empty HKG.",
-      "payload_schema": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] }
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
     },
     {
       "action_name": "knowledgegraph.DELETE_PERSONA",
       "summary": "Deletes an entire HKG by deleting its root persona directory.",
-      "payload_schema": { "type": "object", "properties": { "personaId": { "type": "string" } }, "required": ["personaId"] }
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "personaId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "personaId"
+        ]
+      }
     },
     {
       "action_name": "knowledgegraph.SET_PERSONA_TO_DELETE",
       "summary": "A UI action to stage a persona for deletion, triggering a confirmation dialog.",
-      "payload_schema": { "type": "object", "properties": { "personaId": { "type": ["string", "null"] } } }
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "personaId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
     },
     {
       "action_name": "knowledgegraph.SET_CREATING_PERSONA",
       "summary": "A UI action to toggle the visibility of the 'Create New Persona' dialog.",
-      "payload_schema": { "type": "object", "properties": { "isCreating": { "type": "boolean" } }, "required": ["isCreating"] }
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "isCreating": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "isCreating"
+        ]
+      }
     },
     {
       "action_name": "knowledgegraph.UPDATE_HOLON_CONTENT",
       "summary": "Updates the user-editable 'payload' and 'execute' sections of a holon. This action protects the holon's header from direct modification.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "holonId": { "type": "string" },
-          "payload": { "type": "object", "description": "The new JSON object for the payload section." },
-          "execute": { "type": "object", "description": "The new JSON object for the execute section." }
+          "holonId": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "description": "The new JSON object for the payload section."
+          },
+          "execute": {
+            "type": "object",
+            "description": "The new JSON object for the execute section."
+          }
         },
-        "required": ["holonId"]
+        "required": [
+          "holonId"
+        ]
       }
     },
     {
       "action_name": "knowledgegraph.RENAME_HOLON",
       "summary": "A managed command to safely update the 'name' field in a holon's header.",
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
-        "properties": { "holonId": { "type": "string" }, "newName": { "type": "string" } },
-        "required": ["holonId", "newName"]
+        "properties": {
+          "holonId": {
+            "type": "string"
+          },
+          "newName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "holonId",
+          "newName"
+        ]
       }
     },
     {
       "action_name": "knowledgegraph.DELETE_HOLON",
       "summary": "Deletes a holon file from a loaded HKG.",
-      "payload_schema": { "type": "object", "properties": { "holonId": { "type": "string" } }, "required": ["holonId"] }
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "holonId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "holonId"
+        ]
+      }
     },
     {
       "action_name": "knowledgegraph.SET_HOLON_TO_DELETE",
       "summary": "A UI action to stage a single holon for deletion, triggering a confirmation dialog.",
-      "payload_schema": { "type": "object", "properties": { "holonId": { "type": ["string", "null"] } } }
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "holonId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
     },
     {
       "action_name": "knowledgegraph.SET_HOLON_TO_EDIT",
       "summary": "A UI action to enter or exit the holon editor view.",
-      "payload_schema": { "type": "object", "properties": { "holonId": { "type": ["string", "null"] } } }
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "holonId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
     },
     {
       "action_name": "knowledgegraph.SET_HOLON_TO_RENAME",
       "summary": "A UI action to show or hide the holon rename dialog.",
-      "payload_schema": { "type": "object", "properties": { "holonId": { "type": ["string", "null"] } } }
-    }
-  ],
-  "publishes": [
+      "open": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "holonId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
     {
-      "action_name": "knowledgegraph.publish.AVAILABLE_PERSONAS_UPDATED",
+      "action_name": "knowledgegraph.AVAILABLE_PERSONAS_UPDATED",
       "summary": "Broadcasts the list of all discovered, valid AI_Persona_Root holon headers, allowing other features (like the UI) to know which HKGs are available.",
-      "payload_schema": { "type": "object", "properties": { "names": { "type": "object" } }, "required": ["names"] }
+      "open": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "names": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "names"
+        ]
+      }
     },
     {
-      "action_name": "knowledgegraph.publish.RESERVATIONS_UPDATED",
+      "action_name": "knowledgegraph.RESERVATIONS_UPDATED",
       "summary": "Broadcasts the set of all currently reserved persona IDs.",
+      "open": false,
+      "broadcast": true,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
-        "properties": { "reservedIds": { "type": "array", "items": { "type": "string" } } },
-        "required": ["reservedIds"]
+        "properties": {
+          "reservedIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "reservedIds"
+        ]
       }
     },
     {
-      "action_name": "knowledgegraph.internal.SET_PENDING_IMPORT_ID",
+      "action_name": "knowledgegraph.SET_PENDING_IMPORT_ID",
       "summary": "[INTERNAL] Dispatched to store the correlation ID for a pending import analysis workflow.",
+      "open": false,
+      "broadcast": false,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
-        "properties": { "id": { "type": ["string", "null"] } }
+        "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       }
     },
     {
-      "action_name": "knowledgegraph.internal.SET_IMPORT_EXECUTION_STATUS",
+      "action_name": "knowledgegraph.SET_IMPORT_EXECUTION_STATUS",
       "summary": "[INTERNAL] Sets a flag indicating that the feature is waiting for parent file content to execute an import.",
+      "open": false,
+      "broadcast": false,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
-        "properties": { "isExecuting": { "type": "boolean" } },
-        "required": ["isExecuting"]
+        "properties": {
+          "isExecuting": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "isExecuting"
+        ]
       }
     },
     {
-      "action_name": "knowledgegraph.internal.PERSONA_LOADED",
+      "action_name": "knowledgegraph.PERSONA_LOADED",
       "summary": "[INTERNAL] Dispatched after a full persona HKG has been constructed in memory. Atomically merges the new/updated holons into the main state.",
+      "open": false,
+      "broadcast": false,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "holons": { "type": "object", "description": "A map of Holon ID to fully-formed Holon objects." }
+          "holons": {
+            "type": "object",
+            "description": "A map of Holon ID to fully-formed Holon objects."
+          }
         },
-        "required": ["holons"]
+        "required": [
+          "holons"
+        ]
       }
     },
     {
-      "action_name": "knowledgegraph.internal.CONFIRM_DELETE_PERSONA",
+      "action_name": "knowledgegraph.CONFIRM_DELETE_PERSONA",
       "summary": "[INTERNAL] Dispatched after the deletion side-effect is complete to commit the state change.",
-      "payload_schema": { "type": "object", "properties": { "personaId": { "type": "string" } }, "required": ["personaId"] }
-    },
-    {
-      "action_name": "knowledgegraph.internal.CONFIRM_DELETE_HOLON",
-      "summary": "[INTERNAL] Dispatched after a holon's deletion side-effect is complete to commit the state change.",
-      "payload_schema": { "type": "object", "properties": { "holonId": { "type": "string" } }, "required": ["holonId"] }
-    },
-    {
-      "action_name": "knowledgegraph.internal.ANALYSIS_COMPLETE",
-      "summary": "[INTERNAL] Dispatched after an import analysis is complete, containing the list of proposed actions.",
-      "payload_schema": {
-        "type": "object",
-        "properties": { "items": { "type": "array" }, "contents": { "type": "object" } },
-        "required": ["items", "contents"]
-      }
-    },
-    {
-      "action_name": "knowledgegraph.internal.LOAD_FAILED",
-      "summary": "[INTERNAL] Dispatched when loading or parsing fails fatally.",
-      "payload_schema": { "type": "object", "properties": { "error": { "type": "string" } }, "required": ["error"] }
-    }
-  ],
-  "private_envelopes": [
-    {
-      "type_name": "knowledgegraph.response.CONTEXT",
-      "summary": "The private response envelope sent to a feature that dispatched 'knowledgegraph.REQUEST_CONTEXT'. Contains the compiled HKG content.",
+      "open": false,
+      "broadcast": false,
+      "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "correlationId": { "type": "string" },
-          "personaId": { "type": "string" },
-          "context": { "type": "object", "description": "A map of Holon IDs to their raw string content." }
+          "personaId": {
+            "type": "string"
+          }
         },
-        "required": ["correlationId", "personaId", "context"]
+        "required": [
+          "personaId"
+        ]
+      }
+    },
+    {
+      "action_name": "knowledgegraph.CONFIRM_DELETE_HOLON",
+      "summary": "[INTERNAL] Dispatched after a holon's deletion side-effect is complete to commit the state change.",
+      "open": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "holonId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "holonId"
+        ]
+      }
+    },
+    {
+      "action_name": "knowledgegraph.ANALYSIS_COMPLETE",
+      "summary": "[INTERNAL] Dispatched after an import analysis is complete, containing the list of proposed actions.",
+      "open": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array"
+          },
+          "contents": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "items",
+          "contents"
+        ]
+      }
+    },
+    {
+      "action_name": "knowledgegraph.LOAD_FAILED",
+      "summary": "[INTERNAL] Dispatched when loading or parsing fails fatally.",
+      "open": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      }
+    },
+    {
+      "action_name": "knowledgegraph.RESPONSE_CONTEXT",
+      "summary": "The private response envelope sent to a feature that dispatched 'knowledgegraph.REQUEST_CONTEXT'. Contains the compiled HKG content.",
+      "open": false,
+      "broadcast": false,
+      "targeted": true,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": "string"
+          },
+          "personaId": {
+            "type": "string"
+          },
+          "context": {
+            "type": "object",
+            "description": "A map of Holon IDs to their raw string content."
+          }
+        },
+        "required": [
+          "correlationId",
+          "personaId",
+          "context"
+        ]
       }
     }
   ]
