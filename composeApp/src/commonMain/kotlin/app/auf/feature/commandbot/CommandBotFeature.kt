@@ -44,7 +44,7 @@ import kotlinx.serialization.json.put
 class CommandBotFeature(
     private val platformDependencies: PlatformDependencies
 ) : Feature {
-    override val name: String = "commandbot"
+    override val identity: Identity = Identity(uuid = null, handle = "commandbot", localHandle = "commandbot", name="CommandBot")
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
 
@@ -98,7 +98,7 @@ class CommandBotFeature(
                     requestingAgentName = payload["requestingAgentName"]?.jsonPrimitive?.contentOrNull ?: "Unknown Agent",
                     actionName = payload["actionName"]?.jsonPrimitive?.contentOrNull ?: return currentState,
                     payload = payload["payload"]?.jsonObject ?: buildJsonObject {},
-                    requestedAt = platformDependencies.getSystemTimeMillis()
+                    requestedAt = platformDependencies.currentTimeMillis()
                 )
                 currentState.copy(
                     pendingApprovals = currentState.pendingApprovals + (approval.approvalId to approval)
@@ -118,7 +118,7 @@ class CommandBotFeature(
                     actionName = pending.actionName,
                     requestingAgentName = pending.requestingAgentName,
                     resolution = resolution,
-                    resolvedAt = platformDependencies.getSystemTimeMillis(),
+                    resolvedAt = platformDependencies.currentTimeMillis(),
                     sessionId = pending.sessionId,
                     cardMessageId = pending.cardMessageId
                 )
@@ -162,7 +162,7 @@ class CommandBotFeature(
                     knownAgentNames[id] = nameElement.jsonPrimitive.contentOrNull ?: id
                 }
                 platformDependencies.log(
-                    LogLevel.DEBUG, name,
+                    LogLevel.DEBUG, identity.handle,
                     "Updated known agent IDs: ${knownAgentIds.joinToString(", ")}"
                 )
             }
@@ -179,12 +179,12 @@ class CommandBotFeature(
                 val commandBotState = newState as? CommandBotState ?: return
                 val approval = commandBotState.pendingApprovals[approvalId]
                 if (approval == null) {
-                    platformDependencies.log(LogLevel.WARN, name, "APPROVE: No pending approval found for '$approvalId'.")
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "APPROVE: No pending approval found for '$approvalId'.")
                     return
                 }
 
                 // 1. Dispatch the internal state transition: pending → resolved
-                store.deferredDispatch(this.name, Action(ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
                     put("approvalId", approvalId)
                     put("resolution", Resolution.APPROVED.name)
                 }))
@@ -198,7 +198,7 @@ class CommandBotFeature(
                     store = store
                 )
                 platformDependencies.log(
-                    LogLevel.INFO, name,
+                    LogLevel.INFO, identity.handle,
                     "Approval '$approvalId' APPROVED. Publishing ACTION_CREATED for '${approval.actionName}' on behalf of '${approval.requestingAgentId}'."
                 )
 
@@ -212,18 +212,18 @@ class CommandBotFeature(
                 val commandBotState = newState as? CommandBotState ?: return
                 val approval = commandBotState.pendingApprovals[approvalId]
                 if (approval == null) {
-                    platformDependencies.log(LogLevel.WARN, name, "DENY: No pending approval found for '$approvalId'.")
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "DENY: No pending approval found for '$approvalId'.")
                     return
                 }
 
                 // 1. Dispatch the internal state transition: pending → resolved
-                store.deferredDispatch(this.name, Action(ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
                     put("approvalId", approvalId)
                     put("resolution", Resolution.DENIED.name)
                 }))
 
                 platformDependencies.log(
-                    LogLevel.INFO, name,
+                    LogLevel.INFO, identity.handle,
                     "Approval '$approvalId' DENIED. Action '${approval.actionName}' from '${approval.requestingAgentId}' will not be dispatched."
                 )
 
@@ -246,7 +246,7 @@ class CommandBotFeature(
                 val senderId = entry["senderId"]?.jsonPrimitive?.contentOrNull ?: return
 
                 // Guardrail (CAG-001): Self-Reaction Prevention.
-                if (senderId == this.name) return
+                if (senderId == identity.handle) return
 
                 // Read pre-parsed content blocks directly from the JSON payload.
                 val contentBlocks = entry["content"]?.jsonArray ?: return
@@ -293,7 +293,7 @@ class CommandBotFeature(
                 // Guardrail (CAG-004): Agent Action Restriction
                 if (actionName !in ExposedActions.allowedActionNames) {
                     platformDependencies.log(
-                        LogLevel.WARN, name,
+                        LogLevel.WARN, identity.handle,
                         "Agent '$originalSenderId' attempted disallowed action '$actionName'. Blocked."
                     )
                     postFeedbackToSession(
@@ -342,7 +342,7 @@ class CommandBotFeature(
         } catch (e: Exception) {
             // Guardrail (CAG-003): Robust Error Handling with feedback loop.
             platformDependencies.log(
-                LogLevel.ERROR, name,
+                LogLevel.ERROR, identity.handle,
                 "Failed to parse command '$actionName' due to invalid JSON payload.", e
             )
             postFeedbackToSession(
@@ -371,7 +371,7 @@ class CommandBotFeature(
         val correlationId = platformDependencies.generateUUID()
         val agentName = knownAgentNames[originatorId] ?: originatorId
 
-        store.deferredDispatch(this.name, Action(
+        store.deferredDispatch(identity.handle, Action(
             ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED,
             buildJsonObject {
                 put("correlationId", correlationId)
@@ -384,7 +384,7 @@ class CommandBotFeature(
         ))
 
         platformDependencies.log(
-            LogLevel.INFO, name,
+            LogLevel.INFO, identity.handle,
             "Published ACTION_CREATED for '$actionName' from '$originatorId' (correlationId=$correlationId)."
         )
     }
@@ -416,7 +416,7 @@ class CommandBotFeature(
             put("partial_view_key", "commandbot.approval")
         }
 
-        store.deferredDispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_POST, buildJsonObject {
             put("session", sessionId)
             put("senderId", approvalId) // senderId doubles as the contextId for PartialView
             put("messageId", cardMessageId)
@@ -425,7 +425,7 @@ class CommandBotFeature(
         }))
 
         // 2. Stage the approval in CommandBotState
-        store.deferredDispatch(this.name, Action(ActionNames.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionNames.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
             put("approvalId", approvalId)
             put("sessionId", sessionId)
             put("cardMessageId", cardMessageId)
@@ -436,7 +436,7 @@ class CommandBotFeature(
         }))
 
         platformDependencies.log(
-            LogLevel.INFO, name,
+            LogLevel.INFO, identity.handle,
             "Staged approval '$approvalId' for agent '$agentId' action '$actionName'. Awaiting user decision."
         )
     }
@@ -450,7 +450,7 @@ class CommandBotFeature(
      * `SESSION_CLEAR` can remove the resolved card.
      */
     private fun makeCardClearable(sessionId: String, cardMessageId: String, store: Store) {
-        store.deferredDispatch(this.name, Action(ActionNames.SESSION_UPDATE_MESSAGE, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_UPDATE_MESSAGE, buildJsonObject {
             put("session", sessionId)
             put("messageId", cardMessageId)
             put("doNotClear", false)
@@ -466,10 +466,10 @@ class CommandBotFeature(
             name = ActionNames.SESSION_POST,
             payload = buildJsonObject {
                 put("session", sessionId)
-                put("senderId", this@CommandBotFeature.name)
+                put("senderId", identity.handle)
                 put("message", formattedMessage)
             }
         )
-        store.deferredDispatch(this.name, feedbackAction)
+        store.deferredDispatch(identity.handle, feedbackAction)
     }
 }

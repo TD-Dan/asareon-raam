@@ -23,7 +23,7 @@ object AgentAutoTriggerLogic {
         platformDependencies: PlatformDependencies,
         featureName: String
     ) {
-        val currentTime = platformDependencies.getSystemTimeMillis()
+        val currentTime = platformDependencies.currentTimeMillis()
 
         state.agents.values.forEach { agent ->
             // REF: Slice 3 - Access runtime status from `agentStatuses`

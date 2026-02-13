@@ -45,7 +45,7 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
                     put("rawContent", "Response from the Gateway.")
                 }
                 store.deliverPrivateData(
-                    this.name,
+                    identity.handle,
                     "agent",
                     PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE, responsePayload)
                 )

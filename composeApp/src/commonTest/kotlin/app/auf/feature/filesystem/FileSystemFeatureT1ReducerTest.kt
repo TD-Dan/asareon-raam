@@ -24,7 +24,7 @@ class FileSystemFeatureT1ReducerTest {
 
     private val platform = FakePlatformDependencies("v2-test")
     private val feature = FileSystemFeature(platform)
-    private val featureName = feature.name
+    private val featureName = feature.identity.handle
 
     @Test
     fun `reducer DIRECTORY_LOADED correctly updates path and rootItems and clears error`() {

@@ -145,7 +145,7 @@ open class FakePlatformDependencies(
     override fun openFolderInExplorer(path: String) { /* No-op */ }
     override fun selectDirectoryPath(): String? = selectedDirectoryPathToReturn
 
-    override fun getSystemTimeMillis(): Long = currentTime
+    override fun currentTimeMillis(): Long = currentTime
     override fun generateUUID(): String {
         uuidCounter++
         return "fake-uuid-$uuidCounter"

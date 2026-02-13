@@ -253,7 +253,7 @@ internal fun executeImportWrites(
         val finalPath = finalPaths[holonId] ?: determinePath(holonId)
 
         if (finalPath != null) {
-            val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())
+            val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())
             val headerWithMeta = holon.header.copy(
                 filePath = finalPath,
                 modifiedAt = newTimestamp,

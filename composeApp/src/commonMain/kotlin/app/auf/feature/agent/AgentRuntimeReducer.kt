@@ -214,7 +214,7 @@ object AgentRuntimeReducer {
             errorMessage = newErrorMessage,
             waitingSinceTimestamp = if (clearTimers) null else currentStatus.waitingSinceTimestamp,
             lastMessageReceivedTimestamp = if (clearTimers) null else currentStatus.lastMessageReceivedTimestamp,
-            processingSinceTimestamp = if (isStartingProcessing) platformDependencies.getSystemTimeMillis() else if (isStoppingProcessing) null else currentStatus.processingSinceTimestamp,
+            processingSinceTimestamp = if (isStartingProcessing) platformDependencies.currentTimeMillis() else if (isStoppingProcessing) null else currentStatus.processingSinceTimestamp,
             processingFrontierMessageId = if (isStoppingProcessing) null else currentStatus.processingFrontierMessageId,
             processingStep = if (isStoppingProcessing) null else currentStatus.processingStep,
             stagedTurnContext = if(shouldClearContext) null else currentStatus.stagedTurnContext,
@@ -235,7 +235,7 @@ object AgentRuntimeReducer {
         val messageId = entry["id"]?.jsonPrimitive?.contentOrNull ?: return state
         val sessionId = payload.sessionId
         val senderId = entry["senderId"]?.jsonPrimitive?.contentOrNull
-        val currentTime = platformDependencies.getSystemTimeMillis()
+        val currentTime = platformDependencies.currentTimeMillis()
 
         // Filter out avatar updates (metadata: render_as_partial) to prevent cycles
         val metadata = entry["metadata"]?.jsonObject

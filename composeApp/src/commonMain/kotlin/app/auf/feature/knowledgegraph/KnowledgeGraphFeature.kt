@@ -19,7 +19,7 @@ class KnowledgeGraphFeature(
     private val platformDependencies: PlatformDependencies,
     private val coroutineScope: CoroutineScope
 ) : Feature {
-    override val name: String = "knowledgegraph"
+    override val identity: Identity = Identity(uuid = null, handle = "knowledgegraph", localHandle = "knowledgegraph", name="Knowledge Graph")
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
 
     @Serializable data class FilesContentPayload(val correlationId: String?, val contents: Map<String, String>)
@@ -38,8 +38,8 @@ class KnowledgeGraphFeature(
             val owner = kgState.reservations[rootId]
             if (owner != originator) {
                 val errorMsg = "Blocked modification on reserved HKG '$rootId' by non-owner '$originator'."
-                platformDependencies.log(LogLevel.WARN, name, errorMsg)
-                store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
+                platformDependencies.log(LogLevel.WARN, identity.handle, errorMsg)
+                store.dispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
                     put("message", "Action failed: Knowledge Graph is locked by another user.")
                 }))
                 return true
@@ -68,12 +68,12 @@ class KnowledgeGraphFeature(
 
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
+                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
             }
             ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED -> {
                 if (prevKgState?.personaRoots != kgState.personaRoots) {
                     val idToNameMap = kgState.personaRoots.entries.associate { (name, id) -> id to name }
-                    store.deferredDispatch(this.name, Action(
+                    store.deferredDispatch(identity.handle, Action(
                         name = ActionNames.KNOWLEDGEGRAPH_PUBLISH_AVAILABLE_PERSONAS_UPDATED,
                         payload = buildJsonObject {
                             put("names", json.encodeToJsonElement(idToNameMap))
@@ -87,15 +87,15 @@ class KnowledgeGraphFeature(
                     if (prevKgState?.reservations?.containsKey(personaId) == true) {
                         val owner = prevKgState.reservations[personaId]
                         val errorMsg = "'$originator' failed to reserve HKG '$personaId': already reserved by '$owner'."
-                        platformDependencies.log(LogLevel.WARN, name, errorMsg)
-                        store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
+                        platformDependencies.log(LogLevel.WARN, identity.handle, errorMsg)
+                        store.dispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
                             put("message", "Failed to lock HKG: Already locked.")
                         }))
                     }
                 }
 
                 if (prevKgState?.reservations != kgState.reservations) {
-                    store.deferredDispatch(this.name, Action(
+                    store.deferredDispatch(identity.handle, Action(
                         name = ActionNames.KNOWLEDGEGRAPH_PUBLISH_RESERVATIONS_UPDATED,
                         payload = buildJsonObject {
                             put("reservedIds", json.encodeToJsonElement(kgState.reservations.keys.toList()))
@@ -105,7 +105,7 @@ class KnowledgeGraphFeature(
             }
             ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA -> {
                 val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: return
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
                     put("subpath", personaId)
                     put("recursive", true)
                 }))
@@ -120,12 +120,12 @@ class KnowledgeGraphFeature(
                     put("context", Json.encodeToJsonElement(contextMap))
                 }
                 val responseEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, responsePayload)
-                store.deliverPrivateData(this.name, originator, responseEnvelope)
+                store.deliverPrivateData(identity.handle, originator, responseEnvelope)
             }
             ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS -> {
                 val correlationId = platformDependencies.generateUUID()
-                store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_SET_PENDING_IMPORT_ID, buildJsonObject { put("id", correlationId) }))
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_SET_PENDING_IMPORT_ID, buildJsonObject { put("id", correlationId) }))
+                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI, buildJsonObject {
                     put("correlationId", correlationId)
                     put("recursive", true)
                     putJsonArray("fileExtensions") { add("json") }
@@ -134,7 +134,7 @@ class KnowledgeGraphFeature(
             ActionNames.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE -> {
                 if (kgState.importFileContents.isNotEmpty()) {
                     val analysisPayload = runImportAnalysis(kgState.importFileContents, kgState, kgState.importUserOverrides, kgState.isImportRecursive, platformDependencies)
-                    store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
                 }
             }
             ActionNames.KNOWLEDGEGRAPH_EXECUTE_IMPORT -> {
@@ -150,8 +150,8 @@ class KnowledgeGraphFeature(
 
                 if (parentHolonFilePaths.isNotEmpty()) {
                     // [FIX] Explicitly signal that the next read response is for execution context.
-                    store.dispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_SET_IMPORT_EXECUTION_STATUS, buildJsonObject { put("isExecuting", true) }))
-                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
+                    store.dispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_SET_IMPORT_EXECUTION_STATUS, buildJsonObject { put("isExecuting", true) }))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
                         put("subpaths", Json.encodeToJsonElement(parentHolonFilePaths))
                     }))
                 } else {
@@ -173,16 +173,16 @@ class KnowledgeGraphFeature(
                         }
                     }
                 }
-                store.dispatch(this.name, Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject {
+                store.dispatch(identity.handle, Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject {
                     put("text", report)
                 }))
-                store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
+                store.dispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
                     put("message", "Analysis report copied to clipboard.")
                 }))
             }
             ActionNames.KNOWLEDGEGRAPH_CREATE_PERSONA -> {
                 val name = payload?.get("name")?.jsonPrimitive?.content ?: return
-                val timestamp = platformDependencies.getSystemTimeMillis()
+                val timestamp = platformDependencies.currentTimeMillis()
                 val isoTimestamp = platformDependencies.formatIsoTimestamp(timestamp)
                 val fileSafeTimestamp = isoTimestamp.replace(":", "").replace("-", "")
                 val newId = normalizeHolonId("${name.lowercase().replace(" ", "-")}-${fileSafeTimestamp}")
@@ -196,19 +196,19 @@ class KnowledgeGraphFeature(
                 val fullContent = prepareHolonForWriting(newHolon)
 
                 val destSubpath = "$newId/$newId.json"
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                     put("subpath", destSubpath); put("content", fullContent)
                 }))
 
                 store.dispatch("ui.kgView", Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Created persona '$name'.") }))
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
+                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
             }
             ActionNames.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT -> {
                 val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: return
                 if (isModificationLocked(holonId = holonId, originator = originator, kgState = kgState, store = store)) return
 
                 val holonToUpdate = kgState.holons[holonId] ?: return
-                val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())
+                val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())
                 val updatedHeader = holonToUpdate.header.copy(modifiedAt = newTimestamp)
                 val intermediateHolon = holonToUpdate.copy(
                     header = updatedHeader,
@@ -216,12 +216,12 @@ class KnowledgeGraphFeature(
                     execute = payload["execute"] ?: holonToUpdate.execute
                 )
                 val finalSyncedHolon = synchronizeRawContent(intermediateHolon)
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                     put("subpath", finalSyncedHolon.header.filePath)
                     put("content", prepareHolonForWriting(finalSyncedHolon))
                 }))
                 findRootPersonaId(holonId, kgState)?.let {
-                    store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
                 }
             }
             ActionNames.KNOWLEDGEGRAPH_RENAME_HOLON -> {
@@ -230,26 +230,26 @@ class KnowledgeGraphFeature(
 
                 val newName = payload["newName"]?.jsonPrimitive?.content ?: return
                 val holonToUpdate = kgState.holons[holonId] ?: return
-                val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())
+                val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())
                 val updatedHeader = holonToUpdate.header.copy(name = newName, modifiedAt = newTimestamp)
                 val intermediateHolon = holonToUpdate.copy(header = updatedHeader)
                 val finalSyncedHolon = synchronizeRawContent(intermediateHolon)
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                     put("subpath", finalSyncedHolon.header.filePath)
                     put("content", prepareHolonForWriting(finalSyncedHolon))
                 }))
                 findRootPersonaId(holonId, kgState)?.let {
-                    store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
                 }
             }
             ActionNames.KNOWLEDGEGRAPH_DELETE_PERSONA -> {
                 val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: return
                 if (isModificationLocked(personaId = personaId, originator = originator, kgState = kgState, store = store)) return
 
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
                     put("subpath", personaId)
                 }))
-                store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA, buildJsonObject {
                     put("personaId", personaId)
                 }))
             }
@@ -262,23 +262,23 @@ class KnowledgeGraphFeature(
                 val parentHolon = parentId?.let { kgState.holons[it] }
 
                 platformDependencies.getParentDirectory(holonToDelete.header.filePath)?.let { holonDir ->
-                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
                         put("subpath", holonDir)
                     }))
                 }
 
                 if (parentHolon != null) {
                     val updatedSubHolons = parentHolon.header.subHolons.filter { it.id != holonId }
-                    val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())
+                    val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())
                     val updatedParentHeader = parentHolon.header.copy(subHolons = updatedSubHolons, modifiedAt = newTimestamp)
                     val intermediateParent = parentHolon.copy(header = updatedParentHeader)
                     val finalSyncedParent = synchronizeRawContent(intermediateParent)
-                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                         put("subpath", finalSyncedParent.header.filePath)
                         put("content", prepareHolonForWriting(finalSyncedParent))
                     }))
                 }
-                store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_HOLON, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_HOLON, buildJsonObject {
                     put("holonId", holonId)
                 }))
             }
@@ -501,7 +501,7 @@ class KnowledgeGraphFeature(
     }
 
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
-        val kgState = store.state.value.featureStates[name] as? KnowledgeGraphState
+        val kgState = store.state.value.featureStates[identity.handle] as? KnowledgeGraphState
         when (envelope.type) {
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> {
                 val listing = envelope.payload["listing"]?.let { json.decodeFromJsonElement<List<FileEntry>>(it) } ?: return
@@ -510,18 +510,18 @@ class KnowledgeGraphFeature(
                 if (isRecursiveResponse) {
                     val fileSubpaths = listing.filter { !it.isDirectory }.map { it.path }
                     if (fileSubpaths.isNotEmpty()) {
-                        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
+                        store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
                             put("subpaths", Json.encodeToJsonElement(fileSubpaths))
                         }))
                     } else {
-                        store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
+                        store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
                             put("error", "No holon files found in persona directory.")
                         }))
                     }
                 } else {
                     listing.filter { it.isDirectory }.forEach { dir ->
                         val personaId = platformDependencies.getFileName(dir.path)
-                        store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", personaId) }))
+                        store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", personaId) }))
                     }
                 }
             }
@@ -533,20 +533,20 @@ class KnowledgeGraphFeature(
                     if (kgState?.isExecutingImport == true) {
                         // We received parent content for import execution.
                         // Reset the flag immediately.
-                        store.dispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_SET_IMPORT_EXECUTION_STATUS, buildJsonObject { put("isExecuting", false) }))
+                        store.dispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_SET_IMPORT_EXECUTION_STATUS, buildJsonObject { put("isExecuting", false) }))
                         // Call execution with the fresh parent content.
                         executeImportWrites(fileData.contents, kgState, store, platformDependencies)
                     } else if (fileData.correlationId != null && fileData.correlationId == kgState?.pendingImportCorrelationId) {
                         val analysisPayload = runImportAnalysis(fileData.contents, kgState, kgState.importUserOverrides, kgState.isImportRecursive, platformDependencies)
-                        store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
+                        store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
                     } else {
                         handleFilesContentForLoad(fileData, store)
                     }
                 } catch (e: Exception) {
                     val errorMsg = "Failed to process file content response."
-                    platformDependencies.log(LogLevel.ERROR, name, errorMsg, e)
-                    store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
-                    store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, errorMsg, e)
+                    store.dispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
                         put("error", errorMsg)
                     }))
                 }
@@ -563,25 +563,25 @@ class KnowledgeGraphFeature(
                 val holon = createHolonFromString(rawContent, path, platformDependencies)
                 holonsById[holon.header.id] = holon
             } catch (e: HolonValidationException) {
-                platformDependencies.log(LogLevel.ERROR, name, "Failed to load holon at '$path': ${e.message}")
+                platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to load holon at '$path': ${e.message}")
                 hasErrors = true
             } catch (e: Exception) {
-                platformDependencies.log(LogLevel.ERROR, name, "An unexpected error occurred parsing '$path'", e)
+                platformDependencies.log(LogLevel.ERROR, identity.handle, "An unexpected error occurred parsing '$path'", e)
                 hasErrors = true
             }
         }
 
         if (holonsById.isEmpty() && fileData.contents.isNotEmpty()) {
             val errorMsg = "Loading failed: All holon files in the persona were malformed or had ID mismatches."
-            store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
-            store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
+            store.dispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
+            store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
                 put("error", errorMsg)
             }))
             return
         }
 
         if(hasErrors) {
-            store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Warning: Some holon files failed to load. Check logs.") }))
+            store.dispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Warning: Some holon files failed to load. Check logs.") }))
         }
 
 
@@ -605,7 +605,7 @@ class KnowledgeGraphFeature(
 
         rootHolons.forEach { enrichRecursively(it, null, 0) }
 
-        store.deferredDispatch(this.name, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED, buildJsonObject {
             put("holons", json.encodeToJsonElement(enrichedHolons))
         }))
     }

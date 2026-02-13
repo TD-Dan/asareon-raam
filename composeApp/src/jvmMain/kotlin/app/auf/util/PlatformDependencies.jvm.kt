@@ -172,7 +172,7 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
 
     // --- System Utilities ---
 
-    actual open fun getSystemTimeMillis(): Long = System.currentTimeMillis()
+    actual open fun currentTimeMillis(): Long = System.currentTimeMillis()
 
     actual open fun generateUUID(): String = UUID.randomUUID().toString()
 

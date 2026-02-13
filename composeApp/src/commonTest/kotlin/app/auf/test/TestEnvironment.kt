@@ -151,7 +151,7 @@ class TestEnvironment {
     }
 
     fun withFeature(feature: Feature): TestEnvironment {
-        if (features.none { it.name == feature.name }) {
+        if (features.none { it.name == feature.identity.handle }) {
             features.add(feature)
         }
         return this
@@ -179,11 +179,11 @@ class TestEnvironment {
 
         // Ensure CoreFeature and its state are always present for lifecycle management.
         val coreFeature = CoreFeature(platform)
-        if (features.none { it.name == coreFeature.name }) {
+        if (features.none { it.name == coreFeature.identity.handle }) {
             allFeatures.add(coreFeature)
         }
-        if (!initialStates.containsKey(coreFeature.name)) {
-            initialStates[coreFeature.name] = CoreState(lifecycle = AppLifecycle.RUNNING)
+        if (!initialStates.containsKey(coreFeature.identity.handle)) {
+            initialStates[coreFeature.identity.handle] = CoreState(lifecycle = AppLifecycle.RUNNING)
         }
         allFeatures.addAll(features)
 
@@ -192,9 +192,9 @@ class TestEnvironment {
         // Initialize state for features that don't have it specified
         val newFeatureStates = initialStates.toMutableMap()
         allFeatures.forEach { feature ->
-            if (!newFeatureStates.containsKey(feature.name)) {
+            if (!newFeatureStates.containsKey(feature.identity.handle)) {
                 val defaultState = feature.reducer(null, initStateAction)
-                defaultState?.let { newFeatureStates[feature.name] = it }
+                defaultState?.let { newFeatureStates[feature.identity.handle] = it }
             }
         }
         val fullyPopulatedState = AppState(featureStates = newFeatureStates)

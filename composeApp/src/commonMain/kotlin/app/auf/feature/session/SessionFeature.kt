@@ -19,7 +19,7 @@ class SessionFeature(
     private val platformDependencies: PlatformDependencies,
     private val coroutineScope: CoroutineScope
 ) : Feature {
-    override val name: String = "session"
+    override val identity: Identity = Identity(uuid = null, handle = "session", localHandle = "session", name="Session Manager")
 
     // --- Private, serializable data classes for decoding action payloads safely. ---
     @Serializable private data class CreatePayload(val name: String? = null, val isHidden: Boolean = false, val isAgentPrivate: Boolean = false)
@@ -54,20 +54,20 @@ class SessionFeature(
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> {
                 val fileList = data["listing"]?.jsonArray?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
                 fileList.filter { it.path.endsWith(".json") }.forEach {
-                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", platformDependencies.getFileName(it.path)) }))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", platformDependencies.getFileName(it.path)) }))
                 }
             }
             ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> {
                 try {
                     val content = data["content"]?.jsonPrimitive?.content ?: ""
                     if (content.isBlank()) {
-                        platformDependencies.log(LogLevel.WARN, name, "Received empty session file content for ${data["subpath"]}")
+                        platformDependencies.log(LogLevel.WARN, identity.handle, "Received empty session file content for ${data["subpath"]}")
                         return
                     }
                     val session = json.decodeFromString<Session>(content)
-                    store.deferredDispatch(this.name, Action(ActionNames.SESSION_INTERNAL_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.id to session))) as JsonObject))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_INTERNAL_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.id to session))) as JsonObject))
                 } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, name, "Failed to parse session file: ${data["subpath"]}. Error: ${e.message}")
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse session file: ${data["subpath"]}. Error: ${e.message}")
                 }
             }
         }
@@ -79,21 +79,21 @@ class SessionFeature(
         // Helper to log errors for missing sessions
         fun requireSessionId(identifier: String?, state: SessionState, context: String): String? {
             if (identifier == null) {
-                platformDependencies.log(LogLevel.ERROR, name, "Action $context failed: 'session' identifier missing in payload.")
+                platformDependencies.log(LogLevel.ERROR, identity.handle, "Action $context failed: 'session' identifier missing in payload.")
                 return null
             }
             val resolved = resolveSessionId(identifier, state)
             if (resolved == null) {
-                platformDependencies.log(LogLevel.ERROR, name, "Action $context failed: Could not resolve session with identifier '$identifier'.")
+                platformDependencies.log(LogLevel.ERROR, identity.handle, "Action $context failed: Could not resolve session with identifier '$identifier'.")
             }
             return resolved
         }
 
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
-                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
+                store.dispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
                 // Register hide-hidden settings with the Settings feature for persistence.
-                store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
                     put("key", SessionState.SETTING_HIDE_HIDDEN_VIEWER)
                     put("type", "BOOLEAN")
                     put("label", "Hide hidden sessions in viewer")
@@ -101,7 +101,7 @@ class SessionFeature(
                     put("section", "Session")
                     put("defaultValue", "true")
                 }))
-                store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
                     put("key", SessionState.SETTING_HIDE_HIDDEN_MANAGER)
                     put("type", "BOOLEAN")
                     put("label", "Hide hidden sessions in manager")
@@ -127,12 +127,12 @@ class SessionFeature(
             ActionNames.SESSION_DELETE -> {
                 val sessionIdToDelete = sessionState.lastDeletedSessionId
                 if (sessionIdToDelete != null) {
-                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE, buildJsonObject { put("subpath", "$sessionIdToDelete.json") }))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE, buildJsonObject { put("subpath", "$sessionIdToDelete.json") }))
                     broadcastSessionNames(sessionState, store)
-                    store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject { put("sessionId", sessionIdToDelete) }))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject { put("sessionId", sessionIdToDelete) }))
                 } else {
                     val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
-                    platformDependencies.log(LogLevel.WARN, name, "SESSION_DELETE ignored: Session '$identifier' not found in state.")
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "SESSION_DELETE ignored: Session '$identifier' not found in state.")
                 }
             }
 
@@ -160,13 +160,13 @@ class SessionFeature(
                 }
 
                 if (postedEntry != null) {
-                    store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
                         put("sessionId", sessionId)
                         put("entry", json.encodeToJsonElement(postedEntry))
                     }))
-                    store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
                 } else {
-                    platformDependencies.log(LogLevel.ERROR, name, "SESSION_POST failed: Ledger entry not found after reducer update.")
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "SESSION_POST failed: Ledger entry not found after reducer update.")
                 }
             }
 
@@ -178,7 +178,7 @@ class SessionFeature(
                 if (isMessageLockedGuard(sessionId, messageId, "UPDATE_MESSAGE", prevSessionState ?: sessionState, store)) return
 
                 persistSession(sessionId, sessionState, store)
-                store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
+                store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
 
             ActionNames.SESSION_TOGGLE_MESSAGE_COLLAPSED, ActionNames.SESSION_TOGGLE_MESSAGE_RAW_VIEW -> {
@@ -188,7 +188,7 @@ class SessionFeature(
                 val sessionId = requireSessionId(identifier, sessionState, action.name) ?: return
 
                 persistSession(sessionId, sessionState, store)
-                store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
+                store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
 
             ActionNames.SESSION_DELETE_MESSAGE -> {
@@ -217,7 +217,7 @@ class SessionFeature(
                         }
                     } else null
                 } else {
-                    platformDependencies.log(LogLevel.ERROR, name, "DELETE_MESSAGE failed: Neither messageId nor senderId+timestamp provided.")
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "DELETE_MESSAGE failed: Neither messageId nor senderId+timestamp provided.")
                     null
                 }
 
@@ -227,11 +227,11 @@ class SessionFeature(
                 if (isMessageLockedGuard(sessionId, resolvedMessageId, "DELETE_MESSAGE", prevSessionStateForDelete ?: sessionState, store)) return
 
                 persistSession(sessionId, sessionState, store)
-                store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
                     put("sessionId", sessionId)
                     put("messageId", resolvedMessageId)
                 }))
-                store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
+                store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
 
             ActionNames.SESSION_SET_EDITING_MESSAGE -> {
@@ -239,8 +239,8 @@ class SessionFeature(
                 val prevSessionStateForEdit = previousState as? SessionState ?: sessionState
                 val entry = prevSessionStateForEdit.sessions.values.flatMap { it.ledger }.find { it.id == messageId }
                 if (entry?.isLocked == true) {
-                    platformDependencies.log(LogLevel.WARN, name, "SET_EDITING_MESSAGE blocked: Message '$messageId' is locked.")
-                    store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "SET_EDITING_MESSAGE blocked: Message '$messageId' is locked.")
+                    store.deferredDispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
                         put("message", "This message is locked and cannot be modified.")
                     }))
                 }
@@ -249,13 +249,13 @@ class SessionFeature(
             ActionNames.SESSION_REQUEST_LEDGER_CONTENT -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<RequestLedgerPayload>(it) }
                 if (payload == null) {
-                    platformDependencies.log(LogLevel.ERROR, name, "REQUEST_LEDGER_CONTENT failed: Payload invalid.")
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "REQUEST_LEDGER_CONTENT failed: Payload invalid.")
                     return
                 }
 
                 val session = sessionState.sessions[payload.sessionId]
                 if (session == null) {
-                    platformDependencies.log(LogLevel.ERROR, name, "REQUEST_LEDGER_CONTENT failed: Session '${payload.sessionId}' not found.")
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "REQUEST_LEDGER_CONTENT failed: Session '${payload.sessionId}' not found.")
                     return
                 }
 
@@ -266,7 +266,7 @@ class SessionFeature(
                     putJsonArray("messages") { messages.forEach { add(it) } }
                 }
                 val envelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, responsePayload)
-                store.deliverPrivateData(this.name, action.originator ?: "unknown", envelope)
+                store.deliverPrivateData(identity.handle, action.originator ?: "unknown", envelope)
             }
 
             ActionNames.SESSION_TOGGLE_SESSION_HIDDEN -> {
@@ -279,14 +279,14 @@ class SessionFeature(
                 val sessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull
                 val resolvedId = requireSessionId(sessionId, sessionState, "TOGGLE_MESSAGE_LOCKED") ?: return
                 persistSession(resolvedId, sessionState, store)
-                store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", resolvedId) }))
+                store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", resolvedId) }))
             }
 
             ActionNames.SESSION_CLEAR -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
                 val sessionId = requireSessionId(identifier, sessionState, "CLEAR") ?: return
                 persistSession(sessionId, sessionState, store)
-                store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
+                store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
 
             ActionNames.SESSION_SET_ORDER, ActionNames.SESSION_REORDER -> {
@@ -314,13 +314,13 @@ class SessionFeature(
                     ?: action.payload?.get("session")?.jsonPrimitive?.contentOrNull
 
                 if (responseSessionId != null) {
-                    store.deferredDispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_POST, buildJsonObject {
                         put("session", responseSessionId)
                         put("senderId", "system")
                         put("message", responseMessage)
                     }))
                 } else {
-                    platformDependencies.log(LogLevel.WARN, name, "LIST_SESSIONS: No response session specified.")
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "LIST_SESSIONS: No response session specified.")
                 }
             }
 
@@ -348,7 +348,7 @@ class SessionFeature(
                 }
 
                 persistSession(sessionId, sessionState, store)
-                store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
+                store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_UPDATED, buildJsonObject { put("sessionId", sessionId) }))
             }
         }
     }
@@ -363,7 +363,7 @@ class SessionFeature(
      */
     private fun postResolutionError(sessionId: String, error: String, originator: String?, store: Store) {
         val formattedError = "```text\n[SESSION] Message resolution failed:\n$error\n```"
-        store.deferredDispatch(this.name, Action(ActionNames.SESSION_POST, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_POST, buildJsonObject {
             put("session", sessionId)
             put("senderId", "system")
             put("message", formattedError)
@@ -382,13 +382,13 @@ class SessionFeature(
                 it.metadata?.get("is_transient")?.jsonPrimitive?.booleanOrNull ?: false
             }
         )
-        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
             put("subpath", "${persistedSession.id}.json"); put("content", json.encodeToString(persistedSession))
         }))
     }
 
     private fun broadcastSessionNames(state: SessionState, store: Store) {
-        store.deferredDispatch(this.name, Action(ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED, buildJsonObject {
             put("names", Json.encodeToJsonElement(state.sessions.mapValues { it.value.name }))
         }))
     }
@@ -415,8 +415,8 @@ class SessionFeature(
         val session = state.sessions[sessionId] ?: return false
         val entry = session.ledger.find { it.id == messageId } ?: return false
         if (entry.isLocked) {
-            platformDependencies.log(LogLevel.WARN, name, "$actionContext blocked: Message '$messageId' in session '$sessionId' is locked.")
-            store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
+            platformDependencies.log(LogLevel.WARN, identity.handle, "$actionContext blocked: Message '$messageId' in session '$sessionId' is locked.")
+            store.deferredDispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
                 put("message", "This message is locked and cannot be modified.")
             }))
             return true
@@ -431,7 +431,7 @@ class SessionFeature(
         var newState: SessionState = when (action.name) {
             ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED -> {
                 val identities = payload?.get("identities")?.jsonArray?.map { json.decodeFromJsonElement<Identity>(it) } ?: return currentFeatureState
-                val userNames = identities.associate { it.id to it.name }
+                val userNames = identities.associate { it.handle to it.name }
                 val agentNames = currentFeatureState.identityNames.filterKeys { it !in userNames.keys }
                 currentFeatureState.copy(identityNames = agentNames + userNames)
             }
@@ -451,7 +451,7 @@ class SessionFeature(
                     id = platformDependencies.generateUUID(),
                     name = findUniqueName(desiredName, currentFeatureState),
                     ledger = emptyList(),
-                    createdAt = platformDependencies.getSystemTimeMillis(),
+                    createdAt = platformDependencies.currentTimeMillis(),
                     isHidden = decoded.isHidden,
                     isAgentPrivate = decoded.isAgentPrivate,
                     orderIndex = 0
@@ -470,7 +470,7 @@ class SessionFeature(
                 val newSession = sessionToClone.copy(
                     id = platformDependencies.generateUUID(),
                     name = newName,
-                    createdAt = platformDependencies.getSystemTimeMillis(),
+                    createdAt = platformDependencies.currentTimeMillis(),
                     isHidden = false,
                     isAgentPrivate = false,
                     orderIndex = 0
@@ -495,7 +495,7 @@ class SessionFeature(
                 val targetSession = currentFeatureState.sessions[sessionId] ?: return currentFeatureState
                 val newEntry = LedgerEntry(
                     id = decoded.messageId ?: platformDependencies.generateUUID(),
-                    timestamp = platformDependencies.getSystemTimeMillis(),
+                    timestamp = platformDependencies.currentTimeMillis(),
                     senderId = decoded.senderId,
                     rawContent = decoded.message,
                     content = decoded.message?.let { blockParser.parse(it) } ?: emptyList(),

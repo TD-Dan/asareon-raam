@@ -18,7 +18,7 @@ import kotlinx.serialization.json.*
 class FileSystemFeature(
     private val platformDependencies: PlatformDependencies
 ) : Feature {
-    override val name: String = "filesystem"
+    override val identity: Identity = Identity(uuid = null, handle = "filesystem", localHandle = "filesystem", name="File System")
     override val composableProvider: Feature.ComposableProvider = FileSystemComposableProvider()
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -51,16 +51,16 @@ class FileSystemFeature(
 
     private fun filenameGuard(subpath: String, originator: String, operation: String): Boolean {
         if (subpath.isBlank()) {
-            platformDependencies.log(LogLevel.ERROR, name, "Refused to $operation a blank filename for originator '$originator'.")
+            platformDependencies.log(LogLevel.ERROR, identity.handle, "Refused to $operation a blank filename for originator '$originator'.")
             return false
         }
         if (subpath.contains("..")) {
-            platformDependencies.log(LogLevel.ERROR, name, "SECURITY: Refused path with directory traversal characters ('..') for originator '$originator' in operation '$operation': '$subpath'")
+            platformDependencies.log(LogLevel.ERROR, identity.handle, "SECURITY: Refused path with directory traversal characters ('..') for originator '$originator' in operation '$operation': '$subpath'")
             return false
         }
         val fileName = subpath.substringAfterLast(platformDependencies.pathSeparator)
         if (!fileName.contains('.')) {
-            platformDependencies.log(LogLevel.ERROR, name, "Refused filename without a file extension for originator '$originator' in operation '$operation': '$subpath'")
+            platformDependencies.log(LogLevel.ERROR, identity.handle, "Refused filename without a file extension for originator '$originator' in operation '$operation': '$subpath'")
             return false
         }
         return true
@@ -68,7 +68,7 @@ class FileSystemFeature(
 
     private fun filepathGuard(subpath: String, originator: String, operation: String): Boolean {
         if (subpath.contains("..")) {
-            platformDependencies.log(LogLevel.ERROR, name, "SECURITY: Refused path with directory traversal characters ('..') for originator '$originator' in operation '$operation': '$subpath'")
+            platformDependencies.log(LogLevel.ERROR, identity.handle, "SECURITY: Refused path with directory traversal characters ('..') for originator '$originator' in operation '$operation': '$subpath'")
             return false
         }
         return true
@@ -76,7 +76,7 @@ class FileSystemFeature(
 
 
     override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
-        val state = store.state.value.featureStates[name] as? FileSystemState ?: return
+        val state = store.state.value.featureStates[identity.handle] as? FileSystemState ?: return
         when (envelope.type) {
             ActionNames.Envelopes.CORE_RESPONSE_CONFIRMATION -> {
                 val payload = json.decodeFromJsonElement<ConfirmationResponsePayload>(envelope.payload)
@@ -84,7 +84,7 @@ class FileSystemFeature(
                 if (pendingRequest?.requestId == payload.requestId) {
                     if (payload.confirmed) {
                         store.deferredDispatch(
-                            originator = this.name, // This internal action MUST originate from this feature
+                            originator = identity.handle, // This internal action MUST originate from this feature
                             action = Action(
                                 name = ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ,
                                 payload = buildJsonObject {
@@ -95,7 +95,7 @@ class FileSystemFeature(
                             )
                         )
                     }
-                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_INTERNAL_FINALIZE_SCOPED_READ))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_INTERNAL_FINALIZE_SCOPED_READ))
                 }
             }
         }
@@ -106,32 +106,32 @@ class FileSystemFeature(
         val fileSystemState = newState as? FileSystemState ?: return
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
-                store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyWhitelist); put("type", "STRING_SET"); put("label", "Whitelisted Paths")
                     put("description", "Whitelisted directory paths that the app is allowed to edit.")
                     put("section", "FileSystem"); put("defaultValue", "")
                 }))
-                store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyFavorites); put("type", "STRING_SET"); put("label", "Favorite Paths")
                     put("description", "A list of favorite directory paths.")
                     put("section", "FileSystem"); put("defaultValue", "")
                 }))
             }
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", platformDependencies.getUserHomePath()) }))
+                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", platformDependencies.getUserHomePath()) }))
             }
             ActionNames.FILESYSTEM_NAVIGATE -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<PathPayload>(it) } ?: return
-                store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_INTERNAL_LOAD_CHILDREN, buildJsonObject { put("path", payload.path) }))
+                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_INTERNAL_LOAD_CHILDREN, buildJsonObject { put("path", payload.path) }))
             }
             ActionNames.FILESYSTEM_SELECT_DIRECTORY_UI -> {
                 platformDependencies.selectDirectoryPath()?.let {
-                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", it) }))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", it) }))
                 }
             }
             ActionNames.FILESYSTEM_REQUEST_SCOPED_READ_UI -> {
                 val requestId = platformDependencies.generateUUID()
-                store.deferredDispatch(this.name, Action(
+                store.deferredDispatch(identity.handle, Action(
                     name = ActionNames.FILESYSTEM_INTERNAL_STAGE_SCOPED_READ,
                     payload = buildJsonObject {
                         put("requestId", requestId)
@@ -148,7 +148,7 @@ class FileSystemFeature(
                     put("confirmButtonText", "Proceed with Care")
                     put("requestId", payload.requestId)
                 }
-                store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_CONFIRMATION_DIALOG, dialogRequest))
+                store.deferredDispatch(identity.handle, Action(ActionNames.CORE_SHOW_CONFIRMATION_DIALOG, dialogRequest))
             }
             ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<ExecuteScopedReadPayload>(it) } ?: return
@@ -156,7 +156,7 @@ class FileSystemFeature(
                 val requestPayload = json.decodeFromJsonElement<RequestScopedReadUiPayload>(payload.requestPayload)
 
                 platformDependencies.selectDirectoryPath()?.let { selectedPath ->
-                    platformDependencies.log(LogLevel.INFO, name, "User granted one-time access to '$selectedPath' for '$clientOriginator'.")
+                    platformDependencies.log(LogLevel.INFO, identity.handle, "User granted one-time access to '$selectedPath' for '$clientOriginator'.")
                     try {
                         // 1. List files recursively
                         val allFiles = if (requestPayload.recursive) {
@@ -173,8 +173,8 @@ class FileSystemFeature(
                         // 3. Enforce security limit
                         if (filteredFiles.size > 1000) {
                             val errorMsg = "Import failed: Directory contains more than 1000 files (${filteredFiles.size}). Please select a smaller directory."
-                            platformDependencies.log(LogLevel.ERROR, name, errorMsg)
-                            store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
+                            platformDependencies.log(LogLevel.ERROR, identity.handle, errorMsg)
+                            store.dispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
                             return // Abort the operation
                         }
 
@@ -187,7 +187,7 @@ class FileSystemFeature(
                                 val relativePath = fileEntry.path.removePrefix(rootPathWithSeparator)
                                 contentMap[relativePath] = fileContent
                             } catch (e: Exception) {
-                                platformDependencies.log(LogLevel.WARN, name, "Scoped read failed for one file '${fileEntry.path}': ${e.message}", e)
+                                platformDependencies.log(LogLevel.WARN, identity.handle, "Scoped read failed for one file '${fileEntry.path}': ${e.message}", e)
                             }
                         }
 
@@ -197,20 +197,20 @@ class FileSystemFeature(
                             put("contents", Json.encodeToJsonElement(contentMap))
                         }
                         val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, responsePayload)
-                        store.deliverPrivateData(this.name, clientOriginator, envelope)
+                        store.deliverPrivateData(identity.handle, clientOriginator, envelope)
 
                     } catch (e: Exception) {
                         val errorMsg = "Scoped read failed for '$selectedPath': ${e.message}"
-                        platformDependencies.log(LogLevel.ERROR, name, errorMsg, e)
-                        store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
+                        platformDependencies.log(LogLevel.ERROR, identity.handle, errorMsg, e)
+                        store.dispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
                     }
-                } ?: platformDependencies.log(LogLevel.INFO, name, "User cancelled one-time access grant for '$clientOriginator'.")
+                } ?: platformDependencies.log(LogLevel.INFO, identity.handle, "User cancelled one-time access grant for '$clientOriginator'.")
             }
             ActionNames.FILESYSTEM_TOGGLE_ITEM_EXPANDED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<PathPayload>(it) } ?: return
                 val item = findItemByPath(fileSystemState.rootItems, payload.path)
                 if (item?.isDirectory == true && item.children == null) {
-                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_INTERNAL_LOAD_CHILDREN, action.payload))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_INTERNAL_LOAD_CHILDREN, action.payload))
                 }
             }
             ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED -> {
@@ -227,19 +227,19 @@ class FileSystemFeature(
                 val payload = action.payload?.let { json.decodeFromJsonElement<PathPayload>(it) } ?: return
                 try {
                     val children = platformDependencies.listDirectory(payload.path)
-                    store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED, buildJsonObject {
                         put("parentPath", payload.path); put("children", Json.encodeToJsonElement(children))
                     }))
                 } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, name, "Failed to read directory ${payload.path}", e)
-                    store.dispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Failed to read directory: ${e.message}") }))
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to read directory ${payload.path}", e)
+                    store.dispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Failed to read directory: ${e.message}") }))
                 }
             }
             ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return
                 if (findItemByPath(fileSystemState.rootItems, payload.parentPath)?.isSelected == true) {
                     payload.children.forEach { child ->
-                        store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED, buildJsonObject {
+                        store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED, buildJsonObject {
                             put("path", child.path); put("recursive", true)
                         }))
                     }
@@ -248,7 +248,7 @@ class FileSystemFeature(
             ActionNames.FILESYSTEM_COPY_SELECTION_TO_CLIPBOARD -> {
                 val selectedFiles = findSelectedFiles(fileSystemState.rootItems)
                 if (selectedFiles.isEmpty()) {
-                    store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "No files selected.") })); return
+                    store.deferredDispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "No files selected.") })); return
                 }
                 val stringBuilder = StringBuilder()
                 val rootPath = fileSystemState.currentPath ?: ""
@@ -259,26 +259,26 @@ class FileSystemFeature(
                         val relativePath = item.path.removePrefix(rootPath).removePrefix(platformDependencies.pathSeparator.toString())
                         stringBuilder.append("```${relativePath.substringAfterLast('.', "")} \"$relativePath\"\n$content\n```\n\n")
                     } catch (e: Exception) {
-                        platformDependencies.log(LogLevel.WARN, name, "Could not read file for clipboard copy: ${item.path}: ${e.message}", e)
+                        platformDependencies.log(LogLevel.WARN, identity.handle, "Could not read file for clipboard copy: ${item.path}: ${e.message}", e)
                         errorCount++
                     }
                 }
                 if (stringBuilder.isNotEmpty()) {
-                    store.deferredDispatch(this.name, Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", stringBuilder.toString().trim()) }))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", stringBuilder.toString().trim()) }))
                 }
                 if (errorCount > 0) {
-                    store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Failed to read $errorCount files.") }))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Failed to read $errorCount files.") }))
                 }
             }
             ActionNames.FILESYSTEM_ADD_WHITELIST_PATH, ActionNames.FILESYSTEM_REMOVE_WHITELIST_PATH -> {
                 val path = action.payload?.let { json.decodeFromJsonElement<PathPayload>(it) }?.path ?: return
                 val newSet = if (action.name.startsWith("filesystem.ADD")) fileSystemState.whitelistedPaths + path else fileSystemState.whitelistedPaths - path
-                store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", settingKeyWhitelist); put("value", serializeSet(newSet)) }))
+                store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", settingKeyWhitelist); put("value", serializeSet(newSet)) }))
             }
             ActionNames.FILESYSTEM_ADD_FAVORITE_PATH, ActionNames.FILESYSTEM_REMOVE_FAVORITE_PATH -> {
                 val path = action.payload?.let { json.decodeFromJsonElement<PathPayload>(it) }?.path ?: return
                 val newSet = if (action.name.startsWith("filesystem.ADD")) fileSystemState.favoritePaths + path else fileSystemState.favoritePaths - path
-                store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", settingKeyFavorites); put("value", serializeSet(newSet)) }))
+                store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", settingKeyFavorites); put("value", serializeSet(newSet)) }))
             }
             ActionNames.FILESYSTEM_SYSTEM_LIST -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SystemListPayload>(it) } ?: SystemListPayload()
@@ -298,7 +298,7 @@ class FileSystemFeature(
                         payload.correlationId?.let { put("correlationId", it) }
                     }
                     val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, responsePayload)
-                    store.deliverPrivateData(this.name, originator, envelope)
+                    store.deliverPrivateData(identity.handle, originator, envelope)
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, "filesystem","Filesystem listing failed: ${e.message}", e)
                     val responsePayload = buildJsonObject {
@@ -307,7 +307,7 @@ class FileSystemFeature(
                         payload.correlationId?.let { put("correlationId", it) }
                     }
                     val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, responsePayload)
-                    store.deliverPrivateData(this.name, originator, envelope)
+                    store.deliverPrivateData(identity.handle, originator, envelope)
                 }
             }
             ActionNames.FILESYSTEM_READ_FILES_CONTENT -> {
@@ -328,7 +328,7 @@ class FileSystemFeature(
                     put("contents", Json.encodeToJsonElement(contentMap))
                 }
                 val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, responsePayload)
-                store.deliverPrivateData(this.name, originator, envelope)
+                store.deliverPrivateData(identity.handle, originator, envelope)
             }
             ActionNames.FILESYSTEM_SYSTEM_READ -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SystemReadPayload>(it) } ?: return
@@ -340,15 +340,15 @@ class FileSystemFeature(
                         put("content", cryptoManager.decrypt(platformDependencies.readFileContent(fullPath)))
                     }
                     val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, responsePayload)
-                    store.deliverPrivateData(this.name, originator, envelope)
+                    store.deliverPrivateData(identity.handle, originator, envelope)
                 } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, name, "System read failed for '${payload.subpath}'", e)
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "System read failed for '${payload.subpath}'", e)
                     val responsePayload = buildJsonObject {
                         put("subpath", payload.subpath)
                         put("content", JsonNull)
                     }
                     val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, responsePayload)
-                    store.deliverPrivateData(this.name, originator, envelope)
+                    store.deliverPrivateData(identity.handle, originator, envelope)
                 }
             }
             ActionNames.FILESYSTEM_SYSTEM_WRITE -> {
@@ -358,8 +358,8 @@ class FileSystemFeature(
                 try {
                     platformDependencies.writeFileContent(fullPath, if (payload.encrypt) cryptoManager.encrypt(payload.content) else payload.content)
                 } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, name, "Error writing system file", e)
-                    store.deferredDispatch(this.name, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Error writing system file: ${e.message}") }))
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Error writing system file", e)
+                    store.deferredDispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Error writing system file: ${e.message}") }))
                 }
             }
             ActionNames.FILESYSTEM_SYSTEM_DELETE -> {
@@ -441,7 +441,7 @@ class FileSystemFeature(
 
     private fun dispatchLoadChildrenRecursive(item: FileSystemItem, maxDepth: Int, store: Store) {
         if (maxDepth <= 0 || !item.isDirectory) return
-        if (item.children == null) store.dispatch(this.name, Action(ActionNames.FILESYSTEM_INTERNAL_LOAD_CHILDREN, buildJsonObject { put("path", item.path) }))
+        if (item.children == null) store.dispatch(identity.handle, Action(ActionNames.FILESYSTEM_INTERNAL_LOAD_CHILDREN, buildJsonObject { put("path", item.path) }))
         else item.children.forEach { dispatchLoadChildrenRecursive(it, maxDepth - 1, store) }
     }
 

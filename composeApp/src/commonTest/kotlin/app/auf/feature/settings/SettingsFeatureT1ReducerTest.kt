@@ -19,7 +19,7 @@ import kotlin.test.assertNotNull
 class SettingsFeatureT1ReducerTest {
 
     private val feature = SettingsFeature(FakePlatformDependencies("test"))
-    private val featureName = feature.name
+    private val featureName = feature.identity.handle
 
     private fun createAddAction(key: String, defaultValue: String, section: String = "Test"): Action {
         return Action(ActionNames.SETTINGS_ADD, buildJsonObject {

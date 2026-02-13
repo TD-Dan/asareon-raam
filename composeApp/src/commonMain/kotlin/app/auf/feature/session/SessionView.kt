@@ -166,9 +166,9 @@ private fun LedgerPane(
     val activeUserId = coreState?.activeUserId
 
     // --- SLICE 1 CHANGE: Build a lookup map of feature name → feature for PartialView routing ---
-    val featuresByName = remember(features) { features.associateBy { it.name } }
+    val featuresByName = remember(features) { features.associateBy { it.identity.handle } }
     // Keep agent feature reference for backward compatibility with cards that lack metadata
-    val agentFeature = remember(features) { features.find { it.name == "agent" } }
+    val agentFeature = remember(features) { features.find { it.identity.handle == "agent" } }
 
     LaunchedEffect(activeSession.ledger.size) {
         if (activeSession.ledger.size > 1) {

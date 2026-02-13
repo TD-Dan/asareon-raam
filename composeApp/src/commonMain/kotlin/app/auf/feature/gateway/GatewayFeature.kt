@@ -16,7 +16,7 @@ open class GatewayFeature(
     // All available providers are injected here at the composition root (e.g., in AppContainer).
     providers: List<UniversalGatewayProvider>
 ) : Feature {
-    override val name: String = "gateway"
+    override val identity: Identity = Identity(uuid = null, handle = "gateway", localHandle = "gateway", name="Gateway")
 
     // The feature's only internal, transient state is this private map of its plugins.
     private val providerMap = providers.associateBy { it.id }
@@ -32,7 +32,7 @@ open class GatewayFeature(
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
                 // Each provider registers its own settings, making the system extensible.
                 providerMap.values.forEach { provider ->
-                    provider.registerSettings { actionToDispatch -> store.dispatch(this.name, actionToDispatch) }
+                    provider.registerSettings { actionToDispatch -> store.dispatch(identity.handle, actionToDispatch) }
                 }
             }
 
@@ -54,7 +54,7 @@ open class GatewayFeature(
 
             ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS -> {
                 val payload = Json.encodeToJsonElement(gatewayState.availableModels).jsonObject
-                store.dispatch(this.name, Action(ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED, payload))
+                store.dispatch(identity.handle, Action(ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED, payload))
             }
 
             ActionNames.GATEWAY_GENERATE_CONTENT -> {
@@ -80,12 +80,12 @@ open class GatewayFeature(
         val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull ?: return
         val job = activeRequests[correlationId]
         if (job != null) {
-            platformDependencies.log(LogLevel.INFO, name, "Cancelling gateway request with correlationId: $correlationId")
+            platformDependencies.log(LogLevel.INFO, identity.handle, "Cancelling gateway request with correlationId: $correlationId")
             job.cancel()
             // We do NOT remove from map here. The job cancellation will trigger the completion handler,
             // which dispatches REQUEST_COMPLETED, which removes it safely.
         } else {
-            platformDependencies.log(LogLevel.WARN, name, "Received CANCEL_REQUEST for unknown or completed correlationId: $correlationId")
+            platformDependencies.log(LogLevel.WARN, identity.handle, "Received CANCEL_REQUEST for unknown or completed correlationId: $correlationId")
         }
     }
 
@@ -102,7 +102,7 @@ open class GatewayFeature(
         // SAFETY: Check for missing originator (Silent Drop Prevention)
         val originator = action.originator
         if (originator == null) {
-            platformDependencies.log(LogLevel.ERROR, name, "DROPPED REQUEST: GENERATE_CONTENT received without an originator. Cannot reply.")
+            platformDependencies.log(LogLevel.ERROR, identity.handle, "DROPPED REQUEST: GENERATE_CONTENT received without an originator. Cannot reply.")
             return
         }
 
@@ -117,12 +117,12 @@ open class GatewayFeature(
 
         val provider = providerMap[providerId]
         if (provider == null) {
-            platformDependencies.log(LogLevel.ERROR, name, "GENERATE_CONTENT request for unknown provider '$providerId'. Ignoring.")
+            platformDependencies.log(LogLevel.ERROR, identity.handle, "GENERATE_CONTENT request for unknown provider '$providerId'. Ignoring.")
             return
         }
 
         // AUDIT: Log the request intention
-        platformDependencies.log(LogLevel.INFO, name, "Generating content via $providerId ($modelName). CorrelationId: $correlationId. SystemPrompt: ${systemPrompt != null}")
+        platformDependencies.log(LogLevel.INFO, identity.handle, "Generating content via $providerId ($modelName). CorrelationId: $correlationId. SystemPrompt: ${systemPrompt != null}")
 
         val job = coroutineScope.launch {
             val request = GatewayRequest(modelName, contents, correlationId, systemPrompt)
@@ -131,7 +131,7 @@ open class GatewayFeature(
             // Log token usage if available
             if (response.inputTokens != null || response.outputTokens != null) {
                 platformDependencies.log(
-                    LogLevel.INFO, name,
+                    LogLevel.INFO, identity.handle,
                     "Token usage for $correlationId: input=${response.inputTokens ?: "N/A"}, output=${response.outputTokens ?: "N/A"}"
                 )
             }
@@ -141,7 +141,7 @@ open class GatewayFeature(
             } catch (e: Exception) {
                 platformDependencies.log(
                     LogLevel.FATAL,
-                    name,
+                    identity.handle,
                     "CRITICAL: Failed to serialize GatewayResponse for originator '$originator'. This is a contract violation. Error: ${e.message}"
                 )
                 val errorResponse = GatewayResponse(
@@ -156,7 +156,7 @@ open class GatewayFeature(
                 type = ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE,
                 payload = responsePayload
             )
-            store.deliverPrivateData(this@GatewayFeature.name, originator, envelope)
+            store.deliverPrivateData(this@GatewayFeature.identity.handle, originator, envelope)
         }
 
         // CONCURRENCY: Register job and setup safe cleanup
@@ -164,7 +164,7 @@ open class GatewayFeature(
         job.invokeOnCompletion {
             // Dispatch internal action to mutate map on the main thread
             val cleanupPayload = buildJsonObject { put("correlationId", correlationId) }
-            store.dispatch(this@GatewayFeature.name, Action(ActionNames.GATEWAY_INTERNAL_REQUEST_COMPLETED, cleanupPayload))
+            store.dispatch(this@GatewayFeature.identity.handle, Action(ActionNames.GATEWAY_INTERNAL_REQUEST_COMPLETED, cleanupPayload))
         }
     }
 
@@ -172,7 +172,7 @@ open class GatewayFeature(
         val payload = action.payload ?: return
         val originator = action.originator
         if (originator == null) {
-            platformDependencies.log(LogLevel.ERROR, name, "DROPPED REQUEST: PREPARE_PREVIEW received without an originator.")
+            platformDependencies.log(LogLevel.ERROR, identity.handle, "DROPPED REQUEST: PREPARE_PREVIEW received without an originator.")
             return
         }
 
@@ -184,7 +184,7 @@ open class GatewayFeature(
 
         val provider = providerMap[providerId]
         if (provider == null) {
-            platformDependencies.log(LogLevel.ERROR, name, "PREPARE_PREVIEW request for unknown provider '$providerId'.")
+            platformDependencies.log(LogLevel.ERROR, identity.handle, "PREPARE_PREVIEW request for unknown provider '$providerId'.")
             return
         }
 
@@ -196,7 +196,7 @@ open class GatewayFeature(
             val rawRequestJson = try {
                 provider.generatePreview(agnosticRequest, gatewayState.apiKeys)
             } catch (e: Exception) {
-                platformDependencies.log(LogLevel.ERROR, name, "Failed to generate preview: ${e.message}")
+                platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to generate preview: ${e.message}")
                 "Error generating preview: ${e.message}"
             }
 
@@ -204,7 +204,7 @@ open class GatewayFeature(
             val tokenEstimate = try {
                 provider.countTokens(agnosticRequest, gatewayState.apiKeys)
             } catch (e: Exception) {
-                platformDependencies.log(LogLevel.WARN, name, "Token counting failed for preview ($providerId): ${e.message}")
+                platformDependencies.log(LogLevel.WARN, identity.handle, "Token counting failed for preview ($providerId): ${e.message}")
                 null
             }
 
@@ -222,7 +222,7 @@ open class GatewayFeature(
                 type = ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW,
                 payload = responsePayload
             )
-            store.deliverPrivateData(this@GatewayFeature.name, originator, envelope)
+            store.deliverPrivateData(this@GatewayFeature.identity.handle, originator, envelope)
         }
     }
 
@@ -236,7 +236,7 @@ open class GatewayFeature(
                 put("providerId", providerId)
                 put("models", Json.encodeToJsonElement(models))
             }
-            store.dispatch(this@GatewayFeature.name, Action(ActionNames.GATEWAY_INTERNAL_MODELS_UPDATED, payload))
+            store.dispatch(this@GatewayFeature.identity.handle, Action(ActionNames.GATEWAY_INTERNAL_MODELS_UPDATED, payload))
         }
     }
 

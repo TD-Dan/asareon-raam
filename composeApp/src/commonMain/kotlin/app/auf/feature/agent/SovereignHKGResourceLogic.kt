@@ -88,7 +88,7 @@ object SovereignHKGResourceLogic {
 
     fun requestContextIfSovereign(store: Store, agent: AgentInstance): Boolean {
         val kgId = agent.knowledgeGraphId
-        val kgFeatureExists = store.features.any { it.name == "knowledgegraph" }
+        val kgFeatureExists = store.features.any { it.identity.handle == "knowledgegraph" }
 
         if (kgId != null && kgFeatureExists) {
             store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {

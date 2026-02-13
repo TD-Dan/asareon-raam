@@ -182,7 +182,7 @@ fun AgentControlCard(
     LaunchedEffect(statusInfo.status, statusInfo.processingSinceTimestamp) {
         if (statusInfo.status == AgentStatus.PROCESSING && statusInfo.processingSinceTimestamp != null) {
             while (true) {
-                val elapsed = platformDependencies.getSystemTimeMillis() - statusInfo.processingSinceTimestamp
+                val elapsed = platformDependencies.currentTimeMillis() - statusInfo.processingSinceTimestamp
                 processingTime = elapsed.milliseconds.toComponents { minutes, seconds, _ ->
                     "${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
                 }

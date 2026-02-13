@@ -44,12 +44,12 @@ class FileSystemFeatureT2CoreTest {
         ))
         val harness = TestEnvironment.create()
             .withFeature(feature)
-            .withInitialState(feature.name, initialState)
+            .withInitialState(feature.identity.handle, initialState)
             .build(platform = platform)
         val action = Action(ActionNames.FILESYSTEM_EXPAND_ALL, buildJsonObject { put("path", "/a") })
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch(feature.name, action)
+            harness.store.dispatch(feature.identity.handle, action)
 
             val dispatchedAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_INTERNAL_LOAD_CHILDREN }
             assertNotNull(dispatchedAction, "LOAD_CHILDREN should have been dispatched.")
@@ -66,7 +66,7 @@ class FileSystemFeatureT2CoreTest {
         ))
         val harness = TestEnvironment.create()
             .withFeature(feature)
-            .withInitialState(feature.name, initialState)
+            .withInitialState(feature.identity.handle, initialState)
             .build(platform = platform)
         // FIX: The `children` payload must be a correctly serialized JSON array of FileEntry objects.
         val payload = buildJsonObject {
@@ -78,7 +78,7 @@ class FileSystemFeatureT2CoreTest {
         val action = Action(ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED, payload)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch(feature.name, action)
+            harness.store.dispatch(feature.identity.handle, action)
 
             val dispatchedAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED }
             assertNotNull(dispatchedAction, "TOGGLE_ITEM_SELECTED should have been dispatched for the new child.")
@@ -186,7 +186,7 @@ class FileSystemFeatureT2CoreTest {
             assertNotNull(stageAction, "An internal action to stage the request should have been dispatched.")
             val requestId = stageAction.payload?.get("requestId")?.jsonPrimitive?.content
             assertNotNull(requestId, "The staging action must contain a requestId.")
-            val stateAfterRequest = harness.store.state.value.featureStates[feature.name] as FileSystemState
+            val stateAfterRequest = harness.store.state.value.featureStates[feature.identity.handle] as FileSystemState
             assertNotNull(stateAfterRequest.pendingScopedRead, "The original request should be stored as pending.")
             assertEquals(requestId, stateAfterRequest.pendingScopedRead?.requestId)
             assertEquals(originator, stateAfterRequest.pendingScopedRead?.originator)
@@ -203,7 +203,7 @@ class FileSystemFeatureT2CoreTest {
                     put("confirmed", true)
                 }
             )
-            harness.store.deliverPrivateData("core", feature.name, confirmationResponse)
+            harness.store.deliverPrivateData("core", feature.identity.handle, confirmationResponse)
 
             // --- 5. ASSERT 2: The feature correctly resumes the workflow ---
             val executeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ }
@@ -211,7 +211,7 @@ class FileSystemFeatureT2CoreTest {
 
             // --- THE FIX ---
             // 1. Verify the action was dispatched by the feature itself (security).
-            assertEquals(feature.name, executeAction.originator, "The internal execute action must originate from the filesystem feature.")
+            assertEquals(feature.identity.handle, executeAction.originator, "The internal execute action must originate from the filesystem feature.")
             // 2. Verify the original client's identity is preserved in the payload (causality).
             val clientOriginator = executeAction.payload?.get("clientOriginator")?.jsonPrimitive?.content
             assertEquals(originator, clientOriginator, "The original client's identity must be preserved in the payload.")
@@ -221,7 +221,7 @@ class FileSystemFeatureT2CoreTest {
             assertNotNull(finalizeAction, "FINALIZE_SCOPED_READ should be dispatched to clean up state.")
 
             // Verify the pending request is cleared from the state.
-            val finalState = harness.store.state.value.featureStates[feature.name] as FileSystemState
+            val finalState = harness.store.state.value.featureStates[feature.identity.handle] as FileSystemState
             assertNull(finalState.pendingScopedRead, "The pending request should be cleared after being handled.")
         }
     }

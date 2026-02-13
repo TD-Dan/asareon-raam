@@ -1,6 +1,6 @@
 {
   "feature_name": "core",
-  "summary": "Handles core, application-level state and UI logic like navigation, toasts, and user identity management.",
+  "summary": "Handles core, application-level state and UI logic like navigation, toasts, user identity management, and the universal identity registry.",
   "actions": [
     {
       "action_name": "core.SET_ACTIVE_VIEW",
@@ -289,6 +289,96 @@
           "confirmed"
         ]
       }
+    },
+    {
+      "action_name": "core.REGISTER_IDENTITY",
+      "summary": "Register a new identity in the universal registry. The originator automatically becomes the parent — no feature can register identities outside its own namespace. CoreFeature validates localHandle format ([a-z][a-z0-9-]*), deduplicates among siblings (appends -2, -3 etc.), and generates a UUID. The full bus address is constructed as originator.localHandle. Only delivered to CoreFeature (non-broadcast); the caller receives a targeted core.RESPONSE_REGISTER_IDENTITY with the result.",
+      "open": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "localHandle": {
+            "type": "string",
+            "description": "Leaf-level handle for this identity. Must match [a-z][a-z0-9-]*. The full bus address is constructed as originator.localHandle."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable display name (full Unicode allowed)."
+          }
+        },
+        "required": ["localHandle", "name"]
+      }
+    },
+    {
+      "action_name": "core.RESPONSE_REGISTER_IDENTITY",
+      "summary": "Targeted response to a core.REGISTER_IDENTITY request. Contains the approved identity (possibly with a deduplicated localHandle) on success, or an error on failure. The caller should match this to their request by comparing the requestedLocalHandle field.",
+      "open": false,
+      "broadcast": false,
+      "targeted": true,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the registration was accepted."
+          },
+          "requestedLocalHandle": {
+            "type": "string",
+            "description": "The localHandle that was originally requested."
+          },
+          "approvedLocalHandle": {
+            "type": "string",
+            "description": "The localHandle that was actually registered (may differ due to deduplication). Only present on success."
+          },
+          "handle": {
+            "type": "string",
+            "description": "The full bus address of the registered identity. Only present on success."
+          },
+          "uuid": {
+            "type": "string",
+            "description": "The system-assigned UUID. Only present on success."
+          },
+          "name": {
+            "type": "string",
+            "description": "The display name. Only present on success."
+          },
+          "parentHandle": {
+            "type": "string",
+            "description": "The parent's full handle (= the originator). Only present on success."
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message explaining why registration was rejected. Only present on failure."
+          }
+        },
+        "required": ["success", "requestedLocalHandle"]
+      }
+    },
+    {
+      "action_name": "core.UNREGISTER_IDENTITY",
+      "summary": "Remove an identity from the registry. Cascades: all descendants (by handle prefix) are also removed. Namespace enforcement: the originator can only unregister identities within its own namespace. Only delivered to CoreFeature (non-broadcast); a core.IDENTITY_REGISTRY_UPDATED event follows on success.",
+      "open": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string",
+            "description": "Full handle of the identity to remove."
+          }
+        },
+        "required": ["handle"]
+      }
+    },
+    {
+      "action_name": "core.IDENTITY_REGISTRY_UPDATED",
+      "summary": "Broadcast after any change to the identity registry. Features that need to react to identity changes (e.g., updating UI, refreshing name caches) should listen for this. Replaces both core.IDENTITIES_UPDATED and agent.AGENT_NAMES_UPDATED for registry consumers.",
+      "open": false,
+      "broadcast": true,
+      "targeted": false
     }
   ]
 }

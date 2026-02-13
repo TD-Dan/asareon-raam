@@ -1,5 +1,6 @@
 package app.auf.core
 
+import app.auf.core.generated.ActionRegistry
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -14,10 +15,38 @@ object Version {
 
 /**
  * The root state container for the entire application.
- * Its sole responsibility is to hold the state slices for each registered feature.
+ * Holds feature state slices plus application infrastructure registries.
+ *
+ * Both registries are application infrastructure, not feature state:
+ * - [actionDescriptors]: "what can be done" — validated against by the Store for every dispatch
+ * - [identityRegistry]: "who is doing it" — used by the Store for originator resolution
+ *
+ * They live here (not in any FeatureState) because the Store needs them before any
+ * feature reducer runs — a chicken-and-egg problem if they were in feature state.
  */
 data class AppState(
-    val featureStates: Map<String, FeatureState> = emptyMap()
+    val featureStates: Map<String, FeatureState> = emptyMap(),
+
+    /**
+     * The universal action catalog. Pre-populated from the generated ActionRegistry
+     * at construction time. Extended at runtime by Phase 5's REGISTER_ACTION.
+     * The Store validates every dispatched action against this map.
+     */
+    val actionDescriptors: Map<String, ActionRegistry.ActionDescriptor> = ActionRegistry.byActionName,
+
+    /**
+     * The universal identity registry. Every participant on the action bus has an
+     * entry here: features, users, agents, sessions, scripts.
+     * Keyed by Identity.handle (the bus address).
+     *
+     * Seeded with feature identities during initFeatureLifecycles().
+     * Mutated at runtime via core.REGISTER_IDENTITY / core.UNREGISTER_IDENTITY.
+     *
+     * This field is mechanically lifted from CoreState.identityRegistry after each
+     * reduce cycle. CoreFeature owns the business logic; AppState provides the
+     * infrastructure-level read path for Store authorization.
+     */
+    val identityRegistry: Map<String, Identity> = emptyMap()
 )
 
 /**
@@ -29,7 +58,8 @@ interface FeatureState
  * The single, universal action class for the entire application.
  * All communication, whether intent (Command) or result (Event), flows through this class.
  * It is based on a string name for routing and a serializable JSON object for the payload.
- * The originator can contain an uuid or feature name for debugging or other purposes.
+ * The originator can contain a hierarchical handle (e.g., "agent.gemini-flash-abc123")
+ * for authorization resolution via extractFeatureHandle().
  * This design enforces the 'Absolute Decoupling' and 'Manifest-Driven Contracts' principles.
  */
 @Serializable
@@ -55,6 +85,8 @@ data class Action(val name: String, val payload: JsonObject? = null, val origina
  * The canonical contract for all data passed through the private channel.
  * This envelope ensures that all private communication is explicitly typed and
  * carries a serializable payload, eliminating the unsafe 'Any' type.
+ *
+ * DEPRECATED: Will be replaced by targeted actions in Phase 3.
  */
 @Serializable
 data class PrivateDataEnvelope(

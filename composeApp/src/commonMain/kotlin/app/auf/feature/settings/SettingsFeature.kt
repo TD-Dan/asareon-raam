@@ -28,7 +28,7 @@ data class SettingsState(
 class SettingsFeature(
     private val platformDependencies: PlatformDependencies
 ) : Feature {
-    override val name: String = "settings"
+    override val identity: Identity = Identity(uuid = null, handle = "settings", localHandle = "settings", name="Settings")
     override val composableProvider: Feature.ComposableProvider = SettingsComposableProvider()
 
     private val featureScope = CoroutineScope(Dispatchers.Default)
@@ -43,7 +43,7 @@ class SettingsFeature(
                     val loadedValues = payload["content"]?.jsonPrimitive?.contentOrNull?.let {
                         try { Json.decodeFromString<Map<String, String>>(it) } catch (e: Exception) { emptyMap() }
                     } ?: emptyMap()
-                    store.dispatch(this.name, Action(ActionNames.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+                    store.dispatch(identity.handle, Action(ActionNames.SETTINGS_PUBLISH_LOADED, buildJsonObject {
                         loadedValues.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
                     }))
                 }
@@ -53,26 +53,26 @@ class SettingsFeature(
 
     override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         when (action.name) {
-            ActionNames.SYSTEM_PUBLISH_INITIALIZING -> store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", settingsFileName) }))
+            ActionNames.SYSTEM_PUBLISH_INITIALIZING -> store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", settingsFileName) }))
             ActionNames.SETTINGS_UI_INTERNAL_INPUT_CHANGED -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
                 val value = action.payload.get("value")?.jsonPrimitive?.content ?: return
                 debounceJobs[key]?.cancel()
                 debounceJobs[key] = featureScope.launch {
                     delay(750L)
-                    store.deferredDispatch(name, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", key); put("value", value) }))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_UPDATE, buildJsonObject { put("key", key); put("value", value) }))
                 }
             }
             ActionNames.SETTINGS_UPDATE -> {
                 val latestSettingsState = newState as? SettingsState ?: return
-                store.dispatch(this.name, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+                store.dispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                     put("subpath", settingsFileName)
                     put("content", Json.encodeToString(latestSettingsState.values))
                     put("encrypt", true)
                 }))
-                action.payload?.let { store.deferredDispatch(this.name, Action(ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED, it)) }
+                action.payload?.let { store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED, it)) }
             }
-            ActionNames.SETTINGS_OPEN_FOLDER -> store.deferredDispatch(this.name, Action(ActionNames.FILESYSTEM_OPEN_SYSTEM_FOLDER))
+            ActionNames.SETTINGS_OPEN_FOLDER -> store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_OPEN_SYSTEM_FOLDER))
         }
     }
 

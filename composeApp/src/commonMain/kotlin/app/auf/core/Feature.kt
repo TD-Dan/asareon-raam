@@ -6,11 +6,26 @@ import androidx.compose.runtime.Composable
  * Defines the universal contract for a self-contained, modular feature plugin within the AUF app.
  * This is the cornerstone of the "Core Ignorance" and "Contextual Granularity" principles.
  *
+ * Each feature registers itself with an [Identity] that provides its bus handle (used for
+ * action routing and originator authorization) and a human-readable display name.
  */
 interface Feature {
-    val name: String
+    /**
+     * The feature's identity on the action bus. The [Identity.handle] is used for routing
+     * and authorization (replaces the old `val name: String`). The [Identity.uuid] is null
+     * for features since their handles are stable across restarts.
+     *
+     * Example:
+     * ```
+     * override val identity = Identity(uuid = null, handle = "session", name = "Session Manager")
+     * ```
+     */
+    val identity: Identity
+
     fun reducer(state: FeatureState?, action: Action): FeatureState? = state
 
+    // Phase 2.2 will rename this to handleSideEffects. Keeping as onAction for now
+    // to avoid a codebase-wide rename in this phase.
     fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {}
 
     fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {}

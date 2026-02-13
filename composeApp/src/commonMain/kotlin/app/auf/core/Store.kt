@@ -1,6 +1,6 @@
 package app.auf.core
 
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
 import app.auf.util.LogLevel
@@ -11,41 +11,22 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-/**
- * A helper class to encapsulate the three-part structure of our action names.
- * E.g., "session.publish.NAMES_UPDATED"
- */
-private data class ParsedActionName(
-    val feature: String,
-    val type: ActionType,
-) {
-    enum class ActionType { PUBLIC, INTERNAL, PUBLISH, SYSTEM }
-}
-
-/**
- * Parses a string action name into its constituent parts for routing and security checks.
- */
-private fun parseActionName(name: String): ParsedActionName {
-    val parts = name.split('.')
-    val featureName = parts.getOrNull(0) ?: "unknown"
-    val actionType = when {
-        featureName == "system" -> ParsedActionName.ActionType.SYSTEM
-        parts.getOrNull(1) == "internal" -> ParsedActionName.ActionType.INTERNAL
-        parts.getOrNull(1) == "publish" -> ParsedActionName.ActionType.PUBLISH
-        else -> ParsedActionName.ActionType.PUBLIC // Default to PUBLIC logic if unclear, but validation catches this.
-    }
-    return ParsedActionName(featureName, actionType)
-}
-
 
 /**
  * The central state container for the Unidirectional Data Flow (UDF) architecture.
+ *
+ * Phase 2 changes:
+ * - Authorization is schema-driven via the `open` flag (who can dispatch).
+ * - Routing is schema-driven via `broadcast`/`targeted` flags (who receives).
+ *   These two concerns are orthogonal.
+ * - Feature identities are seeded at boot in initFeatureLifecycles().
+ * - After each reduce cycle, CoreState.identityRegistry is lifted to AppState.identityRegistry.
+ * - The validActionNames constructor param is removed; validation uses AppState.actionDescriptors.
  */
 open class Store(
     initialState: AppState,
     val features: List<Feature>,
-    val platformDependencies: PlatformDependencies,
-    private val validActionNames: Set<String>
+    val platformDependencies: PlatformDependencies
 ) {
 
     private val _state = MutableStateFlow(initialState)
@@ -62,8 +43,33 @@ open class Store(
      */
     internal var onDispatch: ((Action) -> Unit)? = null
 
+    /**
+     * Extracts the feature-level handle from a hierarchical originator string.
+     * "agent.gemini-flash-abc123" → "agent"
+     * "agent.gemini-flash.sub-task" → "agent"
+     * "session.chat1" → "session"
+     * "core" → "core"
+     * null → null
+     *
+     * This enables hierarchical originator resolution: an action dispatched by
+     * "agent.gemini-flash-abc123" is authorized as if it came from the "agent" feature.
+     */
+    private fun extractFeatureHandle(originator: String?): String? =
+        originator?.substringBefore('.')
+
     fun initFeatureLifecycles() {
         if (!lifecycleStarted) {
+            // Seed feature identities directly — no action bus needed.
+            // Feature identities are structural facts known at compile time.
+            // They cannot go through the action bus because during BOOTING,
+            // only system.INITIALIZING is permitted (lifecycle guard).
+            val featureIdentities = features.associate { feature ->
+                feature.identity.handle to feature.identity
+            }
+            _state.value = _state.value.copy(
+                identityRegistry = _state.value.identityRegistry + featureIdentities
+            )
+
             features.forEach { it.init(this) }
             lifecycleStarted = true
         }
@@ -73,6 +79,8 @@ open class Store(
      * Securely delivers a private data payload to a single target feature, bypassing the
      * public action bus. This is a privileged operation. The act of delivery is logged
      * for audibility, but the payload content is NOT.
+     *
+     * DEPRECATED: Will be replaced by targeted actions in Phase 3.
      */
     open fun deliverPrivateData(originator: String, recipient: String, envelope: PrivateDataEnvelope) {
         platformDependencies.log(
@@ -80,19 +88,16 @@ open class Store(
             tag = "Store",
             message = "Delivering private data of type '${envelope.type}' from '$originator' to '$recipient' with payload '${abbreviate(envelope.payload, 100)}'"
         )
-        val recipientFeature = features.find { it.name == recipient }
+        val recipientFeature = features.find { it.identity.handle == recipient }
         if (recipientFeature == null) {
             platformDependencies.log(LogLevel.ERROR, "Store", "deliverPrivateData failed: recipient feature '$recipient' not found.")
             return
         }
 
-        // TODO: check that the envelope has a valid action name defined in the ActionNames.kt file
-        // TODO: evolve the *.actions.json files to be real json schemas and verify the payload conforms to the defined schema
-
         try {
             recipientFeature.onPrivateData(envelope, this)
         } catch (e: Exception) {
-            handleFeatureException(e, "onPrivateData", recipientFeature.name)
+            handleFeatureException(e, "onPrivateData", recipientFeature.identity.handle)
         }
 
         // After the private data handler runs, ensure any deferred actions are processed.
@@ -102,10 +107,6 @@ open class Store(
     /**
      * Enqueues an action to be dispatched.
      * This is the preferred method for actions triggered inside `onAction` to avoid re-entrancy issues.
-     *
-     * ARCHITECTURAL NOTE: This method is functionally distinct from [dispatch] to avoid
-     * double-recording issues in inheritance-based test spies. It replicates the queuing logic
-     * but skips the re-entrancy warning, as deferral is the correct solution for re-entrancy.
      */
     open fun deferredDispatch(originator: String, action: Action) {
         val stampedAction = action.copy(originator = originator)
@@ -118,15 +119,8 @@ open class Store(
         ensureProcessingLoop()
     }
 
-
     /**
      * Schedules an action to be dispatched after a delay.
-     * The delayed action goes through all normal security and lifecycle guards via [deferredDispatch].
-     *
-     * @param delayMs The delay in milliseconds.
-     * @param originator The originator string for the delayed action.
-     * @param action The action to dispatch after the delay.
-     * @return A platform-specific cancellation handle, or null.
      */
     open fun scheduleDelayed(delayMs: Long, originator: String, action: Action): Any? {
         return platformDependencies.scheduleDelayed(delayMs) {
@@ -134,13 +128,8 @@ open class Store(
         }
     }
 
-
     /**
      * The single, generic entry point for all state changes and side effects.
-     *
-     * ARCHITECTURAL NOTE: This method does NOT delegate to [deferredDispatch].
-     * It adds to the queue directly. This is deliberate to ensure that a TestStore
-     * overriding both methods does not record the same action twice (once in dispatch, once in deferredDispatch).
      */
     open fun dispatch(originator: String, action: Action) {
         val stampedAction = action.copy(originator = originator)
@@ -156,9 +145,7 @@ open class Store(
     }
 
     /**
-     * [NEW] The master event loop for the application.
-     * This is the single, synchronized point where all actions (initial and deferred)
-     * are processed sequentially.
+     * The master event loop for the application.
      */
     private fun ensureProcessingLoop() {
         if (isDispatching) return
@@ -174,14 +161,31 @@ open class Store(
     }
 
     /**
-     * [NEW] The core logic for processing a single action.
-     * This was extracted from the old `dispatch` function.
+     * The core logic for processing a single action.
+     *
+     * Authorization and routing are schema-driven via ActionDescriptor flags:
+     *   - `open` controls AUTHORIZATION: who can dispatch the action
+     *   - `broadcast`/`targeted` control DELIVERY: who receives the action
+     * These two concerns are orthogonal.
+     *
+     * Authorization (step 2):
+     *   open: true  → any originator
+     *   open: false → originator's feature handle must match action's owning feature
+     *
+     * Routing (step 4):
+     *   targeted: true     → deliver to targetRecipient only (Phase 3)
+     *   broadcast: true    → deliver to all features
+     *   else (!broadcast)  → deliver to owning feature only
+     *
+     * This means `open: true, broadcast: false` is valid: "anyone can dispatch, only
+     * the owning feature receives." Used for commands like REGISTER_IDENTITY where
+     * any feature can request, but only CoreFeature processes.
      */
     private fun processAction(action: Action) {
-        // --- PHASE 1: PARSE, AUTHORIZATION & LIFECYCLE GUARDS ---
-        val parsedName = parseActionName(action.name)
+        // --- STEP 1: SCHEMA LOOKUP ---
 
-        if (!validActionNames.contains(action.name)) {
+        val descriptor = _state.value.actionDescriptors[action.name]
+        if (descriptor == null) {
             platformDependencies.log(
                 level = LogLevel.ERROR,
                 tag = "Store",
@@ -190,10 +194,13 @@ open class Store(
             return
         }
 
-        val isAuthorized = when (parsedName.type) {
-            ParsedActionName.ActionType.SYSTEM -> action.originator?.startsWith("system") == true
-            ParsedActionName.ActionType.INTERNAL, ParsedActionName.ActionType.PUBLISH -> action.originator == parsedName.feature
-            ParsedActionName.ActionType.PUBLIC -> true
+        // --- STEP 2: AUTHORIZATION (open flag) ---
+        // `open` answers: "who is allowed to dispatch this?"
+        // open: true  → any originator
+        // open: false → only the owning feature (via hierarchical prefix match)
+        val isAuthorized = when {
+            descriptor.open -> true
+            else -> extractFeatureHandle(action.originator) == descriptor.featureName
         }
 
         if (!isAuthorized) {
@@ -205,6 +212,19 @@ open class Store(
             return
         }
 
+        // FUTURE: After authorization, check required permissions:
+        // val requiredPerms = descriptor.requiredPermissions
+        // if (requiredPerms != null) {
+        //     val identity = _state.value.identityRegistry[action.originator]
+        //     val effectivePerms = resolvePermissions(identity)  // walk parentHandle chain
+        //     if (!requiredPerms.all { effectivePerms[it] == true }) {
+        //         log(ERROR, "Permission denied for '${action.originator}' on '${action.name}'")
+        //         return
+        //     }
+        // }
+
+        // --- STEP 3: LIFECYCLE GUARD ---
+
         val coreState = _state.value.featureStates["core"] as? CoreState
         val currentLifecycle = coreState?.lifecycle ?: AppLifecycle.BOOTING
         platformDependencies.log(
@@ -214,10 +234,10 @@ open class Store(
         )
 
         val isActionAllowed = when (currentLifecycle) {
-            AppLifecycle.BOOTING -> action.name == ActionNames.SYSTEM_PUBLISH_INITIALIZING
+            AppLifecycle.BOOTING -> action.name == ActionRegistry.Names.SYSTEM_INITIALIZING
             AppLifecycle.INITIALIZING -> true
-            AppLifecycle.RUNNING -> action.name != ActionNames.SYSTEM_PUBLISH_INITIALIZING && action.name != ActionNames.SYSTEM_PUBLISH_STARTING
-            AppLifecycle.CLOSING -> action.name == ActionNames.SYSTEM_PUBLISH_CLOSING
+            AppLifecycle.RUNNING -> action.name != ActionRegistry.Names.SYSTEM_INITIALIZING && action.name != ActionRegistry.Names.SYSTEM_STARTING
+            AppLifecycle.CLOSING -> action.name == ActionRegistry.Names.SYSTEM_CLOSING
         }
 
         if (!isActionAllowed) {
@@ -232,37 +252,63 @@ open class Store(
         // T2 Hook: Capture the processed action.
         onDispatch?.invoke(action)
 
-        // --- PHASE 2 & 3 Combined into a single, safe block ---
+        // --- STEP 4: ROUTE, REDUCE, SIDE-EFFECTS ---
         try {
-            // --- PHASE 2: ROUTE, REDUCE, UPDATE ---
             val previousState = _state.value
             val newState: AppState
 
-            if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
-                // Targeted dispatch for internal actions
-                val targetFeature = features.find { it.name == parsedName.feature }
+            // Routing: `broadcast` and `targeted` control delivery (orthogonal to `open`).
+            //   targeted: true     → deliver to targetRecipient only (Phase 3)
+            //   broadcast: true    → deliver to all features
+            //   !broadcast         → deliver to owning feature only
+            //
+            // This means open+!broadcast (e.g., REGISTER_IDENTITY) is correctly routed
+            // to the owning feature only, even though anyone can dispatch it.
+            if (descriptor.targeted) {
+                // Phase 3: targeted delivery via action.targetRecipient
+                // For now, fall through to owning-feature-only delivery as a safe default.
+                val targetFeature = features.find { it.identity.handle == descriptor.featureName }
                 if (targetFeature != null) {
-                    val oldFeatureState = previousState.featureStates[targetFeature.name]
+                    val oldFeatureState = previousState.featureStates[targetFeature.identity.handle]
                     val newFeatureState = targetFeature.reducer(oldFeatureState, action)
                     newState = if (oldFeatureState !== newFeatureState) {
                         val newFeatureStates = previousState.featureStates.toMutableMap()
-                        newFeatureState?.let { newFeatureStates[targetFeature.name] = it } ?: newFeatureStates.remove(targetFeature.name)
+                        newFeatureState?.let { newFeatureStates[targetFeature.identity.handle] = it } ?: newFeatureStates.remove(targetFeature.identity.handle)
                         previousState.copy(featureStates = newFeatureStates)
                     } else {
                         previousState
                     }
                 } else {
-                    platformDependencies.log(LogLevel.ERROR, "Store", "Internal action '${action.name}' dispatched, but target feature '${parsedName.feature}' not found.")
+                    platformDependencies.log(LogLevel.ERROR, "Store", "Targeted action '${action.name}' dispatched, but owning feature '${descriptor.featureName}' not found.")
+                    newState = previousState
+                }
+            } else if (!descriptor.broadcast) {
+                // Non-broadcast: deliver to owning feature only.
+                // This covers both internal actions (!open, !broadcast) and
+                // open non-broadcast commands (open, !broadcast) like REGISTER_IDENTITY.
+                val targetFeature = features.find { it.identity.handle == descriptor.featureName }
+                if (targetFeature != null) {
+                    val oldFeatureState = previousState.featureStates[targetFeature.identity.handle]
+                    val newFeatureState = targetFeature.reducer(oldFeatureState, action)
+                    newState = if (oldFeatureState !== newFeatureState) {
+                        val newFeatureStates = previousState.featureStates.toMutableMap()
+                        newFeatureState?.let { newFeatureStates[targetFeature.identity.handle] = it } ?: newFeatureStates.remove(targetFeature.identity.handle)
+                        previousState.copy(featureStates = newFeatureStates)
+                    } else {
+                        previousState
+                    }
+                } else {
+                    platformDependencies.log(LogLevel.ERROR, "Store", "Non-broadcast action '${action.name}' dispatched, but target feature '${descriptor.featureName}' not found.")
                     newState = previousState
                 }
             } else {
-                // Sequential fold for all broadcast actions. This is architecturally critical.
+                // Broadcast: deliver to all features.
                 newState = features.fold(previousState) { accumulatingState, feature ->
-                    val oldFeatureState = accumulatingState.featureStates[feature.name]
+                    val oldFeatureState = accumulatingState.featureStates[feature.identity.handle]
                     val newFeatureState = feature.reducer(oldFeatureState, action)
                     if (oldFeatureState !== newFeatureState) {
                         val newFeatureStates = accumulatingState.featureStates.toMutableMap()
-                        newFeatureState?.let { newFeatureStates[feature.name] = it } ?: newFeatureStates.remove(feature.name)
+                        newFeatureState?.let { newFeatureStates[feature.identity.handle] = it } ?: newFeatureStates.remove(feature.identity.handle)
                         accumulatingState.copy(featureStates = newFeatureStates)
                     } else {
                         accumulatingState
@@ -270,22 +316,36 @@ open class Store(
                 }
             }
 
-            if (newState != previousState) {
-                _state.value = newState
+            // --- LIFT: CoreState.identityRegistry → AppState.identityRegistry ---
+            // CoreFeature owns all identity business logic in its reducer.
+            // We mechanically lift the result to AppState so the Store (and any other
+            // infrastructure code) can access it without depending on CoreState.
+            val updatedCoreState = newState.featureStates["core"] as? CoreState
+            val liftedState = if (updatedCoreState != null && updatedCoreState.identityRegistry != newState.identityRegistry) {
+                newState.copy(identityRegistry = updatedCoreState.identityRegistry)
+            } else {
+                newState
             }
 
-            // --- PHASE 3: Side Effects (onAction) ---
-            if (parsedName.type == ParsedActionName.ActionType.INTERNAL) {
-                val targetFeature = features.find { it.name == parsedName.feature }
+            if (liftedState != previousState) {
+                _state.value = liftedState
+            }
+
+            // --- STEP 5: SIDE EFFECTS (onAction) ---
+            // Delivery scope for side effects mirrors the routing decision above.
+            if (descriptor.targeted || !descriptor.broadcast) {
+                // targeted or non-broadcast: side effects for owning feature only
+                val targetFeature = features.find { it.identity.handle == descriptor.featureName }
                 if (targetFeature != null) {
-                    val prevFeatureState = previousState.featureStates[targetFeature.name]
-                    val newFeatureState = newState.featureStates[targetFeature.name]
+                    val prevFeatureState = previousState.featureStates[targetFeature.identity.handle]
+                    val newFeatureState = liftedState.featureStates[targetFeature.identity.handle]
                     targetFeature.onAction(action, this, prevFeatureState, newFeatureState)
                 }
             } else {
+                // broadcast: side effects for all features
                 features.forEach { feature ->
-                    val prevFeatureState = previousState.featureStates[feature.name]
-                    val newFeatureState = newState.featureStates[feature.name]
+                    val prevFeatureState = previousState.featureStates[feature.identity.handle]
+                    val newFeatureState = liftedState.featureStates[feature.identity.handle]
                     feature.onAction(action, this, prevFeatureState, newFeatureState)
                 }
             }
@@ -300,15 +360,12 @@ open class Store(
         val logMessage = "FATAL EXCEPTION in $location for feature '$featureName' (ref: $uniqueErrorId): \n${e.stackTraceToString()}"
         val toastMessage = "An internal error occurred in '$featureName'. (Ref: $uniqueErrorId)"
 
-        // 1. Log the full error for developers/auditors.
         platformDependencies.log(LogLevel.FATAL, "Store.ExceptionHandler", logMessage)
 
-        // 2. Dispatch a safe, universal action to inform the user without crashing.
         val toastAction = Action(
-            name = ActionNames.CORE_SHOW_TOAST,
+            name = ActionRegistry.Names.CORE_SHOW_TOAST,
             payload = buildJsonObject { put("message", toastMessage) }
         )
-        // This dispatch is a simple state update and is considered safe.
         deferredDispatch("Store.ExceptionHandler", toastAction)
         ensureProcessingLoop()
     }

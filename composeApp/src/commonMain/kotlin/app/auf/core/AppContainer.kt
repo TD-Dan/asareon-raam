@@ -1,6 +1,5 @@
 package app.auf.core
 
-import app.auf.core.generated.ActionNames
 import app.auf.feature.agent.AgentRuntimeFeature
 import app.auf.feature.commandbot.CommandBotFeature
 import app.auf.feature.core.CoreFeature
@@ -30,13 +29,9 @@ class AppContainer(
     lateinit var store: Store
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
-        // This handler will catch any uncaught exception from any coroutine launched
-        // by a feature that uses the provided scope.
-        // We delegate to the Store's centralized handler to log the error and show a toast.
         if (::store.isInitialized) {
             store.handleFeatureException(throwable as Exception, "async-operation", "unknown-feature")
         } else {
-            // Fallback if the store itself failed to initialize
             platformDependencies.log(
                 app.auf.util.LogLevel.FATAL,
                 "AppContainer",
@@ -45,13 +40,12 @@ class AppContainer(
         }
     }
 
-    // Create a new scope that combines the SupervisorJob, the main dispatcher, and our exception handler.
     private val resilientCoroutineScope = CoroutineScope(appCoroutineScope.coroutineContext + SupervisorJob() + exceptionHandler)
 
     val features: List<Feature> = run {
         val gatewayFeature = GatewayFeature(
             platformDependencies,
-            resilientCoroutineScope, // Pass the new, resilient scope to features
+            resilientCoroutineScope,
             providers = listOf(
                 GeminiProvider(platformDependencies),
                 OpenAIProvider(platformDependencies),
@@ -74,11 +68,12 @@ class AppContainer(
     }
 
     init {
+        // Phase 2: validActionNames param removed. Store now validates against
+        // AppState.actionDescriptors (pre-populated from ActionRegistry.byActionName).
         store = Store(
             initialState = AppState(),
             features = features,
-            platformDependencies = platformDependencies,
-            validActionNames = ActionNames.allActionNames
+            platformDependencies = platformDependencies
         )
     }
 }

@@ -42,13 +42,13 @@ class StoreT1FlowControlTest {
         // The onAction handler triggers subsequent dispatches based on the action name.
         override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
             when (action.name) {
-                "seq.A_DEFERRED_B" -> store.deferredDispatch(name, Action("seq.B"))
+                "seq.A_DEFERRED_B" -> store.deferredDispatch(identity.handle, Action("seq.B"))
                 "seq.A_IMMEDIATE_B" -> store.dispatch(name, Action("seq.B")) // Test re-entrancy guard
                 "seq.A_DEFERRED_B_C" -> {
-                    store.deferredDispatch(name, Action("seq.B"))
-                    store.deferredDispatch(name, Action("seq.C"))
+                    store.deferredDispatch(identity.handle, Action("seq.B"))
+                    store.deferredDispatch(identity.handle, Action("seq.C"))
                 }
-                "seq.B_DEFERRED_C" -> store.deferredDispatch(name, Action("seq.C"))
+                "seq.B_DEFERRED_C" -> store.deferredDispatch(identity.handle, Action("seq.C"))
             }
         }
     }
@@ -145,7 +145,7 @@ class StoreT1FlowControlTest {
             }
             override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
                 when(action.name) {
-                    "seq.A" -> store.deferredDispatch(name, Action("seq.B"))
+                    "seq.A" -> store.deferredDispatch(identity.handle, Action("seq.B"))
                     "seq.B" -> {
                         // CAPTURE: When B's onAction runs, what does it see in the state?
                         stateValueWhenB_onAction_WasCalled = (newState as SequencingState).log.first()

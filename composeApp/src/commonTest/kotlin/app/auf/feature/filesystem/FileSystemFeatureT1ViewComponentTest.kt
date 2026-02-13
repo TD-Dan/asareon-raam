@@ -39,7 +39,7 @@ class FileSystemFeatureT1ViewComponentTest {
     }
 
     private fun setViewState(state: FileSystemState) {
-        val appState = AppState(featureStates = mapOf(feature.name to state))
+        val appState = AppState(featureStates = mapOf(feature.identity.handle to state))
         fakeStore.setState(appState)
 
         composeTestRule.setContent {

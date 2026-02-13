@@ -69,12 +69,12 @@ fun IdentityManagerView(store: Store) {
                     Text("Select your active identity for this session. This will be used to identify you in conversations with agents.", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
                 }
-                items(coreState.userIdentities, key = { it.id }) { identity ->
+                items(coreState.userIdentities, key = { it.handle }) { identity ->
                     IdentityRow(
                         identity = identity,
-                        isActive = identity.id == coreState.activeUserId,
-                        onSetActive = { store.dispatch("core.ui", Action(ActionNames.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", identity.id) })) },
-                        onDelete = { store.dispatch("core.ui", Action(ActionNames.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", identity.id) })) }
+                        isActive = identity.handle == coreState.activeUserId,
+                        onSetActive = { store.dispatch("core.ui", Action(ActionNames.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) })) },
+                        onDelete = { store.dispatch("core.ui", Action(ActionNames.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) })) }
                     )
                 }
             }
@@ -100,7 +100,7 @@ private fun IdentityRow(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(identity.name, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
-                Text("ID: ${identity.id}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("ID: ${identity.handle}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (!isActive) {

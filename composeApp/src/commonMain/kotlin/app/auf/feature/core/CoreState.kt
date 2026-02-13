@@ -41,7 +41,17 @@ data class CoreState(
     // Add window dimensions to the state with sensible defaults.
     val windowWidth: Int = 1200,
     val windowHeight: Int = 800,
-    // User Identity Management State
+
+    // --- Identity Registry ---
+    // The canonical identity registry. CoreFeature owns all business logic for identity
+    // management (validation, deduplication, UUID generation). The Store lifts this to
+    // AppState.identityRegistry after each reduce cycle for infrastructure-level access.
+    val identityRegistry: Map<String, Identity> = emptyMap(),
+
+    // --- User Identity Management State (TRANSITIONAL) ---
+    // These fields are kept during Phase 2 for backward compatibility.
+    // Phase 2.2 will deprecate userIdentities in favor of identityRegistry
+    // filtered by parentHandle == "core".
     val userIdentities: List<Identity> = emptyList(),
     val activeUserId: String? = null,
 

@@ -106,7 +106,7 @@ object AgentCognitivePipeline {
                 val rawContent = entryJson["rawContent"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
                 val timestamp = entryJson["timestamp"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
 
-                val user = state.userIdentities.find { it.id == senderId }
+                val user = state.userIdentities.find { it.handle == senderId }
                 val (senderName, role) = when {
                     senderId == agent.id -> agent.name to "model"
                     state.agents.containsKey(senderId) -> state.agents[senderId]!!.name to "user"
@@ -189,7 +189,7 @@ object AgentCognitivePipeline {
         }
 
         // 1. Record the context gathering start time (for timeout validation)
-        val startedAt = store.platformDependencies.getSystemTimeMillis()
+        val startedAt = store.platformDependencies.currentTimeMillis()
         store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_CONTEXT_GATHERING_STARTED, buildJsonObject {
             put("agentId", agentId)
             put("startedAt", startedAt)
@@ -334,7 +334,7 @@ object AgentCognitivePipeline {
             Your Host LLM (API connection): '${agent.modelProvider}' / '${agent.modelName}'
             You are currently participating in a multi-party chat session: '${sessionName}', id: '${sessionId}'
             Your chat id is: '${agent.id}'
-            Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.getSystemTimeMillis())}
+            Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())}
         """.trimIndent()
         contextMap["SESSION_METADATA"]+= tokenUsageContext
 
@@ -375,7 +375,7 @@ object AgentCognitivePipeline {
                     val type = when {
                         id == agent.id -> "YOU (this agent)"
                         agentState.agents.containsKey(id) -> "AI Agent"
-                        agentState.userIdentities.any { it.id == id } -> "Human User"
+                        agentState.userIdentities.any { it.handle == id } -> "Human User"
                         else -> "User/System"
                     }
                     appendLine("- $name ($id): $type")

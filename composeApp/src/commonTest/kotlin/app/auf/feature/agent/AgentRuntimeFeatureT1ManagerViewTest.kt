@@ -54,7 +54,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     }
 
     private fun setViewState(state: AgentRuntimeState) {
-        val appState = AppState(featureStates = mapOf(agentFeature.name to state))
+        val appState = AppState(featureStates = mapOf(agentFeature.identity.handle to state))
         fakeStore.setState(appState)
 
         composeTestRule.setContent {

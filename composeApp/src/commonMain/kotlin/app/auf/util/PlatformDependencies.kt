@@ -59,7 +59,7 @@ expect open class PlatformDependencies(appVersion: String) {
     open fun selectDirectoryPath(): String?
 
     // --- System Utilities ---
-    open fun getSystemTimeMillis(): Long
+    open fun currentTimeMillis(): Long
     open fun formatIsoTimestamp(timestamp: Long): String
     /**
      * Parses an ISO 8601 timestamp string into epoch milliseconds.
