@@ -1,10 +1,12 @@
 package app.auf.core
 
 import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.core.CoreState
+import app.auf.test.testDescriptorsFor
 import app.auf.util.LogLevel
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -21,7 +23,9 @@ class StoreT1GuardTest {
     // A simple, self-contained feature for testing state changes within this test file.
     private data class TestState(val value: Int = 0) : FeatureState
     private class TestFeature : Feature {
-        override val name = "TestFeature"
+        override val identity = Identity(
+            uuid = null, localHandle = "testfeature", handle = "testfeature", name = "TestFeature"
+        )
         override val composableProvider: Feature.ComposableProvider? = null
         override fun reducer(state: FeatureState?, action: Action): FeatureState? {
             if (action.name == "test.INCREMENT") {
@@ -34,25 +38,26 @@ class StoreT1GuardTest {
 
     // A feature designed to fail for testing exception handling.
     private open class CrashingFeature : Feature {
-        override val name = "CrashingFeature"
+        override val identity = Identity(
+            uuid = null, localHandle = "crashingfeature", handle = "crashingfeature", name = "CrashingFeature"
+        )
         override val composableProvider: Feature.ComposableProvider? = null
         override fun reducer(state: FeatureState?, action: Action): FeatureState? {
             if (action.name == "test.CRASH_REDUCER") throw IllegalStateException("Reducer deliberately crashed")
             return state
         }
         override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
-            if (action.name == "test.CRASH_ON_ACTION") throw IllegalStateException("onAction deliberately crashed")
+            if (action.name == "test.CRASH_ON_ACTION") throw IllegalStateException("handleSideEffects deliberately crashed")
         }
         override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
             if (envelope.type == "test.CRASH_PRIVATE") throw IllegalStateException("onPrivateData deliberately crashed")
         }
     }
 
-    // A specialized feature for the onAction crash test. It successfully changes its own
-    // state in the reducer, and then fails in the onAction handler for the same action.
+    // A specialized feature for the handleSideEffects crash test. It successfully changes its own
+    // state in the reducer, and then fails in the handleSideEffects handler for the same action.
     private data class CrashingState(val changed: Boolean = false) : FeatureState
     private class StateChangingCrashingFeature : CrashingFeature() {
-        override val name = "CrashingFeature" // Same name to occupy the same state slice
         override fun reducer(state: FeatureState?, action: Action): FeatureState? {
             if (action.name == "test.CRASH_ON_ACTION") {
                 return CrashingState(changed = true)
@@ -64,12 +69,8 @@ class StoreT1GuardTest {
 
     private val platform = FakePlatformDependencies("v2-test")
 
-    // A minimal, custom action registry for testing the store's guards.
-    private val testActionRegistry = setOf(
-        ActionNames.SYSTEM_PUBLISH_INITIALIZING,
-        ActionNames.SYSTEM_PUBLISH_STARTING,
-        ActionNames.SYSTEM_PUBLISH_CLOSING,
-        ActionNames.CORE_SHOW_TOAST, // Needed for the exception handler
+    // A minimal, custom action descriptor set for testing the store's guards.
+    private val testActionNames = setOf(
         "test.INCREMENT",
         "test.CRASH_REDUCER",
         "test.CRASH_ON_ACTION"
@@ -80,18 +81,25 @@ class StoreT1GuardTest {
         features.addAll(extraFeatures)
         val initialFeatureStates = mutableMapOf<String, FeatureState>(
             "core" to initialCoreState,
-            "TestFeature" to TestState()
+            "testfeature" to TestState()
         )
         extraFeatures.forEach {
             // Ensure the feature has a default state if it's a crashing feature
-            if (it.name == "CrashingFeature") {
-                initialFeatureStates[it.name] = CrashingState()
+            if (it.identity.handle == "crashingfeature") {
+                initialFeatureStates[it.identity.handle] = CrashingState()
             } else {
-                initialFeatureStates[it.name] = object : FeatureState {}
+                initialFeatureStates[it.identity.handle] = object : FeatureState {}
             }
         }
 
-        return Store(AppState(featureStates = initialFeatureStates), features, platform, testActionRegistry)
+        return Store(
+            AppState(
+                featureStates = initialFeatureStates,
+                actionDescriptors = ActionRegistry.byActionName + testDescriptorsFor(testActionNames)
+            ),
+            features,
+            platform
+        )
     }
 
     // --- Security & Lifecycle Guard Tests ---
@@ -113,7 +121,7 @@ class StoreT1GuardTest {
     }
 
     @Test
-    fun `store guard allows SYSTEM_PUBLISH_INITIALIZING when BOOTING`() {
+    fun `store guard allows SYSTEM_INITIALIZING when BOOTING`() {
         val store = createStore(CoreState(lifecycle = AppLifecycle.BOOTING))
         val initialState = store.state.value
         store.dispatch("system.main", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
@@ -152,7 +160,7 @@ class StoreT1GuardTest {
     }
 
     @Test
-    fun `exception in onAction should NOT abort state change, but should log FATAL and show toast`() {
+    fun `exception in handleSideEffects should NOT abort state change, but should log FATAL and show toast`() {
         platform.capturedLogs.clear()
         val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING), StateChangingCrashingFeature())
         val action = Action("test.CRASH_ON_ACTION")
@@ -161,7 +169,7 @@ class StoreT1GuardTest {
 
         val finalState = store.state.value
         val finalCoreState = finalState.featureStates["core"] as CoreState
-        val finalCrashingState = finalState.featureStates["CrashingFeature"] as CrashingState
+        val finalCrashingState = finalState.featureStates["crashingfeature"] as CrashingState
 
         assertTrue(finalCrashingState.changed, "State change from the successful reducer should be preserved.")
         assertNotNull(finalCoreState.toastMessage, "A toast message should be present.")
@@ -169,7 +177,7 @@ class StoreT1GuardTest {
 
         val log = platform.capturedLogs.find { it.level == LogLevel.FATAL }
         assertNotNull(log, "A FATAL log should have been captured.")
-        assertTrue(log.message.contains("FATAL EXCEPTION in reducer/onAction"), "Log message should identify the correct generic location.")
+        assertTrue(log.message.contains("FATAL EXCEPTION in reducer/handleSideEffects"), "Log message should identify the correct generic location.")
     }
 
 
@@ -179,16 +187,16 @@ class StoreT1GuardTest {
         val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING), CrashingFeature())
 
         val envelope = PrivateDataEnvelope("test.CRASH_PRIVATE", buildJsonObject { put("data", "test") })
-        store.deliverPrivateData("test.sender", "CrashingFeature", envelope)
+        store.deliverPrivateData("test.sender", "crashingfeature", envelope)
 
         val finalState = store.state.value
         val finalCoreState = finalState.featureStates["core"] as CoreState
 
         assertNotNull(finalCoreState.toastMessage, "A toast message should be present.")
-        assertTrue(finalCoreState.toastMessage!!.contains("An internal error occurred in 'CrashingFeature'"))
+        assertTrue(finalCoreState.toastMessage!!.contains("An internal error occurred in 'crashingfeature'"))
 
         val log = platform.capturedLogs.find { it.level == LogLevel.FATAL }
         assertNotNull(log, "A FATAL log should have been captured.")
-        assertTrue(log.message.contains("FATAL EXCEPTION in onPrivateData for feature 'CrashingFeature'"))
+        assertTrue(log.message.contains("FATAL EXCEPTION in onPrivateData for feature 'crashingfeature'"))
     }
 }

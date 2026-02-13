@@ -4,9 +4,11 @@ import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.Feature
 import app.auf.core.FeatureState
+import app.auf.core.Identity
 import app.auf.core.PrivateDataEnvelope
 import app.auf.core.Store
 import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreFeature
@@ -20,13 +22,16 @@ import kotlinx.coroutines.Dispatchers
  * perfectly record all actions that successfully pass the real Store's guards
  * without modifying any production logic. This is the architecturally correct
  * pattern for observing the action flow in tests.
+ *
+ * Phase 2 changes: The validActionNames constructor param was removed. The Store
+ * now validates actions against AppState.actionDescriptors. To register test-only
+ * actions, merge testDescriptorsFor(...) into the initial AppState.actionDescriptors.
  */
 class RecordingStore(
     initialState: AppState,
     features: List<Feature>,
-    platformDependencies: FakePlatformDependencies,
-    validActionNames: Set<String>
-) : Store(initialState, features, platformDependencies, validActionNames) {
+    platformDependencies: FakePlatformDependencies
+) : Store(initialState, features, platformDependencies) {
 
     val processedActions = mutableListOf<Action>()
     val deliveredPrivateData = mutableListOf<TestHarness.CapturedPrivateData>()
@@ -65,7 +70,7 @@ data class TestHarness(
         get() = store.deliveredPrivateData
 
     /**
-     * [NEW] Executes a block of test code and, if it fails, prints a detailed
+     * Executes a block of test code and, if it fails, prints a detailed
      * diagnostic report of all actions and logs before re-throwing the original exception.
      * This is the primary tool for debugging test failures.
      */
@@ -117,7 +122,12 @@ data class TestHarness(
 /**
  * A fluent builder for creating controlled, multi-feature test environments.
  * This is the cornerstone of our Tier 2, 3, and 4 testing strategy.
- * It defaults to using the canonical ActionRegistrySource but allows for explicit overrides.
+ *
+ * Phase 2 changes: The validActionNames constructor param was removed from the Store.
+ * The Store now validates actions against AppState.actionDescriptors. To override,
+ * use withActionDescriptors() to merge additional descriptors, or withActionRegistry()
+ * to provide a complete override set of action names (which will be converted to
+ * open+broadcast descriptors for backward compatibility).
  *
  * # USAGE WARNING: LIFECYCLE STATE
  *
@@ -143,6 +153,7 @@ class TestEnvironment {
     private val features = mutableListOf<Feature>()
     private val initialStates = mutableMapOf<String, FeatureState>()
     private var actionRegistryOverride: Set<String>? = null
+    private var extraDescriptors: Map<String, ActionRegistry.ActionDescriptor> = emptyMap()
 
     companion object {
         fun create(): TestEnvironment {
@@ -151,7 +162,7 @@ class TestEnvironment {
     }
 
     fun withFeature(feature: Feature): TestEnvironment {
-        if (features.none { it.name == feature.identity.handle }) {
+        if (features.none { it.identity.handle == feature.identity.handle }) {
             features.add(feature)
         }
         return this
@@ -163,11 +174,22 @@ class TestEnvironment {
     }
 
     /**
-     * Overrides the default ActionRegistrySource with a specific set of action names.
+     * Overrides the default ActionRegistry with a specific set of action names.
+     * These are converted to open+broadcast ActionDescriptors for backward compatibility.
      * This is an advanced feature for testing security guards and feature boundaries.
      */
     fun withActionRegistry(actions: Set<String>): TestEnvironment {
         this.actionRegistryOverride = actions
+        return this
+    }
+
+    /**
+     * Merges additional ActionDescriptors into AppState.actionDescriptors.
+     * Use testDescriptorsFor() to create descriptors for test-only action names.
+     * These are merged ON TOP of the base registry (ActionRegistry.byActionName or override).
+     */
+    fun withExtraDescriptors(descriptors: Map<String, ActionRegistry.ActionDescriptor>): TestEnvironment {
+        this.extraDescriptors = this.extraDescriptors + descriptors
         return this
     }
 
@@ -179,7 +201,7 @@ class TestEnvironment {
 
         // Ensure CoreFeature and its state are always present for lifecycle management.
         val coreFeature = CoreFeature(platform)
-        if (features.none { it.name == coreFeature.identity.handle }) {
+        if (features.none { it.identity.handle == coreFeature.identity.handle }) {
             allFeatures.add(coreFeature)
         }
         if (!initialStates.containsKey(coreFeature.identity.handle)) {
@@ -197,12 +219,53 @@ class TestEnvironment {
                 defaultState?.let { newFeatureStates[feature.identity.handle] = it }
             }
         }
-        val fullyPopulatedState = AppState(featureStates = newFeatureStates)
 
-        val validActionNames = actionRegistryOverride ?: ActionNames.allActionNames
-        val store = RecordingStore(fullyPopulatedState, allFeatures, platform, validActionNames)
+        // Build action descriptors: start from base, apply override or default, merge extras
+        val baseDescriptors = if (actionRegistryOverride != null) {
+            testDescriptorsFor(actionRegistryOverride!!)
+        } else {
+            ActionRegistry.byActionName
+        }
+        val finalDescriptors = baseDescriptors + extraDescriptors
+
+        val fullyPopulatedState = AppState(
+            featureStates = newFeatureStates,
+            actionDescriptors = finalDescriptors
+        )
+
+        val store = RecordingStore(fullyPopulatedState, allFeatures, platform)
         store.initFeatureLifecycles()
 
         return TestHarness(store, platform)
+    }
+}
+
+/**
+ * Creates open, broadcast ActionDescriptor entries for a set of test action names.
+ * This allows test-only actions to pass the Store's schema validation against
+ * AppState.actionDescriptors.
+ *
+ * All test actions are created as open+broadcast (Command type) so any originator
+ * can dispatch them and all features receive them — the most permissive configuration
+ * for general testing.
+ *
+ * For testing specific routing behaviors (internal, targeted, etc.), construct
+ * ActionDescriptor instances directly with the desired flag combination.
+ */
+fun testDescriptorsFor(actionNames: Set<String>): Map<String, ActionRegistry.ActionDescriptor> {
+    return actionNames.associateWith { name ->
+        val parts = name.split(".", limit = 2)
+        ActionRegistry.ActionDescriptor(
+            fullName = name,
+            featureName = parts.firstOrNull() ?: "test",
+            suffix = parts.getOrElse(1) { name },
+            summary = "Test action",
+            open = true,
+            broadcast = true,
+            targeted = false,
+            payloadFields = emptyList(),
+            requiredFields = emptyList(),
+            agentExposure = null
+        )
     }
 }

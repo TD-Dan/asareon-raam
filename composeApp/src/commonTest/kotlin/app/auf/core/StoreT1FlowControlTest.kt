@@ -1,15 +1,15 @@
 package app.auf.core
 
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.core.CoreState
+import app.auf.test.testDescriptorsFor
 import app.auf.util.LogLevel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 
 /**
  * Tier 1 Unit Tests for the Store's flow control logic.
@@ -26,7 +26,9 @@ class StoreT1FlowControlTest {
      * to test the Store's flow control logic.
      */
     private class SequencingFeature : Feature {
-        override val name = "SequencingFeature"
+        override val identity = Identity(
+            uuid = null, localHandle = "sequencing", handle = "sequencing", name = "SequencingFeature"
+        )
         override val composableProvider: Feature.ComposableProvider? = null
 
         // The reducer adds the action name to a log to verify order of state changes.
@@ -39,11 +41,11 @@ class StoreT1FlowControlTest {
             return state
         }
 
-        // The onAction handler triggers subsequent dispatches based on the action name.
+        // The handleSideEffects handler triggers subsequent dispatches based on the action name.
         override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
             when (action.name) {
                 "seq.A_DEFERRED_B" -> store.deferredDispatch(identity.handle, Action("seq.B"))
-                "seq.A_IMMEDIATE_B" -> store.dispatch(name, Action("seq.B")) // Test re-entrancy guard
+                "seq.A_IMMEDIATE_B" -> store.dispatch(identity.handle, Action("seq.B")) // Test re-entrancy guard
                 "seq.A_DEFERRED_B_C" -> {
                     store.deferredDispatch(identity.handle, Action("seq.B"))
                     store.deferredDispatch(identity.handle, Action("seq.C"))
@@ -54,7 +56,7 @@ class StoreT1FlowControlTest {
     }
 
     private val platform = FakePlatformDependencies("v2-test")
-    private val testActionRegistry = setOf(
+    private val testActionNames = setOf(
         "seq.A", "seq.B", "seq.C",
         "seq.A_DEFERRED_B", "seq.A_IMMEDIATE_B",
         "seq.A_DEFERRED_B_C", "seq.B_DEFERRED_C"
@@ -62,11 +64,14 @@ class StoreT1FlowControlTest {
 
     private fun createStore(): Store {
         val features = listOf(CoreFeature(platform), SequencingFeature())
-        val initialState = AppState(featureStates = mapOf(
-            "core" to CoreState(lifecycle = AppLifecycle.RUNNING),
-            "SequencingFeature" to SequencingState()
-        ))
-        return Store(initialState, features, platform, testActionRegistry)
+        val initialState = AppState(
+            featureStates = mapOf(
+                "core" to CoreState(lifecycle = AppLifecycle.RUNNING),
+                "sequencing" to SequencingState()
+            ),
+            actionDescriptors = ActionRegistry.byActionName + testDescriptorsFor(testActionNames)
+        )
+        return Store(initialState, features, platform)
     }
 
     @Test
@@ -75,7 +80,7 @@ class StoreT1FlowControlTest {
 
         store.dispatch("test", Action("seq.A_DEFERRED_B"))
 
-        val finalState = store.state.value.featureStates["SequencingFeature"] as SequencingState
+        val finalState = store.state.value.featureStates["sequencing"] as SequencingState
         val expectedLog = listOf(
             "seq.A_DEFERRED_B:REDUCER",
             "seq.B:REDUCER"
@@ -90,7 +95,7 @@ class StoreT1FlowControlTest {
 
         store.dispatch("test", Action("seq.A_IMMEDIATE_B"))
 
-        val finalState = store.state.value.featureStates["SequencingFeature"] as SequencingState
+        val finalState = store.state.value.featureStates["sequencing"] as SequencingState
         val expectedLog = listOf(
             "seq.A_IMMEDIATE_B:REDUCER",
             "seq.B:REDUCER"
@@ -107,7 +112,7 @@ class StoreT1FlowControlTest {
 
         store.dispatch("test", Action("seq.A_DEFERRED_B_C"))
 
-        val finalState = store.state.value.featureStates["SequencingFeature"] as SequencingState
+        val finalState = store.state.value.featureStates["sequencing"] as SequencingState
         val expectedLog = listOf(
             "seq.A_DEFERRED_B_C:REDUCER",
             "seq.B:REDUCER",
@@ -120,10 +125,10 @@ class StoreT1FlowControlTest {
     fun `deferred actions from a deferred action are processed correctly`() {
         val store = createStore()
 
-        // This action will cause seq.B to be deferred. The onAction for seq.B will then defer seq.C.
-        store.dispatch("test", Action("seq.A_DEFERRED_B").copy(name = "seq.B_DEFERRED_C"))
+        // This action will cause seq.B_DEFERRED_C's handler to defer seq.C.
+        store.dispatch("test", Action("seq.B_DEFERRED_C"))
 
-        val finalState = store.state.value.featureStates["SequencingFeature"] as SequencingState
+        val finalState = store.state.value.featureStates["sequencing"] as SequencingState
         val expectedLog = listOf(
             "seq.B_DEFERRED_C:REDUCER",
             "seq.C:REDUCER"
@@ -132,11 +137,13 @@ class StoreT1FlowControlTest {
     }
 
     @Test
-    fun `onAction for deferred action sees the state from the previous completed cycle`() {
-        var stateValueWhenB_onAction_WasCalled = ""
+    fun `handleSideEffects for deferred action sees the state from the previous completed cycle`() {
+        var stateSeenByB = ""
 
         class StateCheckingFeature : Feature {
-            override val name = "StateCheck"
+            override val identity = Identity(
+                uuid = null, localHandle = "statecheck", handle = "statecheck", name = "StateCheck"
+            )
             override val composableProvider: Feature.ComposableProvider? = null
             override fun reducer(state: FeatureState?, action: Action): FeatureState? {
                 return if (action.name == "seq.A") {
@@ -147,25 +154,27 @@ class StoreT1FlowControlTest {
                 when(action.name) {
                     "seq.A" -> store.deferredDispatch(identity.handle, Action("seq.B"))
                     "seq.B" -> {
-                        // CAPTURE: When B's onAction runs, what does it see in the state?
-                        stateValueWhenB_onAction_WasCalled = (newState as SequencingState).log.first()
+                        // CAPTURE: When B's handleSideEffects runs, what does it see in the state?
+                        stateSeenByB = (newState as SequencingState).log.first()
                     }
                 }
             }
         }
 
         val store = Store(
-            AppState(featureStates = mapOf(
-                "core" to CoreState(lifecycle = AppLifecycle.RUNNING),
-                "StateCheck" to SequencingState()
-            )),
+            AppState(
+                featureStates = mapOf(
+                    "core" to CoreState(lifecycle = AppLifecycle.RUNNING),
+                    "statecheck" to SequencingState()
+                ),
+                actionDescriptors = ActionRegistry.byActionName + testDescriptorsFor(setOf("seq.A", "seq.B"))
+            ),
             listOf(CoreFeature(platform), StateCheckingFeature()),
-            platform,
-            setOf("seq.A", "seq.B")
+            platform
         )
 
         store.dispatch("test", Action("seq.A"))
 
-        assertEquals("State from A", stateValueWhenB_onAction_WasCalled, "onAction for B must see the state fully updated by A's reducer.")
+        assertEquals("State from A", stateSeenByB, "handleSideEffects for B must see the state fully updated by A's reducer.")
     }
 }

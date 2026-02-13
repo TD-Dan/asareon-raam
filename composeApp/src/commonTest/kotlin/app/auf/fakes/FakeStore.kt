@@ -11,14 +11,18 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * A lightweight, controllable fake of the Store for testing side effects and UI interactions.
  * It allows manual state setting and captures all dispatched actions for verification.
+ *
+ * Note: validActionNames was removed in Phase 2.1. The Store now validates actions
+ * against AppState.actionDescriptors, which is pre-populated from ActionRegistry.byActionName.
+ * To register test-only actions, include them in the initial AppState.actionDescriptors
+ * using testDescriptorsFor().
  */
 class FakeStore(
     initialState: AppState,
     platformDependencies: PlatformDependencies,
-    validActionNames: Set<String> = emptySet(),
     // [FIX] Allow injecting features to support logic that checks store.features
     features: List<Feature> = emptyList()
-) : Store(initialState, features, platformDependencies, validActionNames) {
+) : Store(initialState, features, platformDependencies) {
     val dispatchedActions = mutableListOf<Action>()
     private val _fakeState = MutableStateFlow(initialState)
     override val state = _fakeState.asStateFlow()
