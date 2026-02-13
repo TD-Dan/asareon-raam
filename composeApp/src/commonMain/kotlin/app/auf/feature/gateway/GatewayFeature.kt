@@ -2,6 +2,7 @@ package app.auf.feature.gateway
 
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
@@ -152,11 +153,19 @@ open class GatewayFeature(
                 Json.encodeToJsonElement(errorResponse).jsonObject
             }
 
-            val envelope = PrivateDataEnvelope(
-                type = ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE,
-                payload = responsePayload
-            )
-            store.deliverPrivateData(this@GatewayFeature.identity.handle, originator, envelope)
+            store.deferredDispatch(this@GatewayFeature.identity.handle, Action(
+
+
+                name = ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+
+
+                payload = responsePayload,
+
+
+                targetRecipient = originator
+
+
+            ))
         }
 
         // CONCURRENCY: Register job and setup safe cleanup
@@ -218,11 +227,19 @@ open class GatewayFeature(
                 }
             }
 
-            val envelope = PrivateDataEnvelope(
-                type = ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW,
-                payload = responsePayload
-            )
-            store.deliverPrivateData(this@GatewayFeature.identity.handle, originator, envelope)
+            store.deferredDispatch(this@GatewayFeature.identity.handle, Action(
+
+
+                name = ActionRegistry.Names.GATEWAY_RESPONSE_PREVIEW,
+
+
+                payload = responsePayload,
+
+
+                targetRecipient = originator
+
+
+            ))
         }
     }
 

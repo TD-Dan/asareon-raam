@@ -94,6 +94,16 @@ class AgentRuntimeFeature(
             return
         }
         when (action.name) {
+            // Phase 3: Targeted responses — migrated from onPrivateData.
+            ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+            ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+            ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+            ActionRegistry.Names.GATEWAY_RESPONSE_PREVIEW,
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
+                handleTargetedResponse(action, store)
+            }
             // --- Startup ---
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
                 // Inject built-in resources FIRST (ensures they're always available)
@@ -504,40 +514,49 @@ class AgentRuntimeFeature(
     }
 
     // ========================================================================
-    // PrivateData handling
+    // Targeted action handling (Phase 3 — migrated from onPrivateData)
     // ========================================================================
 
-    override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
+    /**
+     * Handles all targeted responses delivered to the agent feature.
+     * Called from handleSideEffects for any action whose name matches a targeted response type.
+     */
+    private fun handleTargetedResponse(action: Action, store: Store) {
+        val payload = action.payload ?: return
+
         // Check if this is a response to a pending command (ACTION_CREATED flow)
-        val correlationId = envelope.payload["correlationId"]?.jsonPrimitive?.contentOrNull
+        val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
         if (correlationId != null) {
             val pending = pendingCommandResponses.remove(correlationId)
             if (pending != null) {
-                postCommandResponse(pending, envelope, store)
+                postCommandResponse(pending, action, store)
                 return
             }
         }
 
-        // Existing PrivateData handling for agent feature's own operations
-        when (envelope.type) {
-            ActionNames.Envelopes.SESSION_RESPONSE_LEDGER,
-            ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
-            ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE,
-            ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW -> {
-                AgentCognitivePipeline.handlePrivateData(envelope, store)
+        // Route to appropriate handler
+        when (action.name) {
+            ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+            ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+            ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+            ActionRegistry.Names.GATEWAY_RESPONSE_PREVIEW -> {
+                AgentCognitivePipeline.handleTargetedAction(action, store)
             }
-            ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> {
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST -> {
                 // If the listing has a correlationId, it was requested by the cognitive pipeline
                 // for workspace context injection — route it to the pipeline.
-                val hasCorrelationId = envelope.payload["correlationId"]?.jsonPrimitive?.contentOrNull != null
+                val hasCorrelationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull != null
                 if (hasCorrelationId) {
-                    AgentCognitivePipeline.handlePrivateData(envelope, store)
+                    AgentCognitivePipeline.handleTargetedAction(action, store)
                 } else {
                     // Agent-initiated listing — handle locally (post to session)
-                    handleFileSystemListResponse(envelope.payload, store)
+                    handleFileSystemListResponse(payload, store)
                 }
             }
-            ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> handleFileSystemReadResponse(envelope.payload, store)
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_READ -> handleFileSystemReadResponse(payload, store)
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
+                // Currently only received via command responses — would have been handled above
+            }
         }
     }
 
@@ -550,10 +569,10 @@ class AgentRuntimeFeature(
      */
     private fun postCommandResponse(
         pending: PendingCommandResponse,
-        envelope: PrivateDataEnvelope,
+        action: Action,
         store: Store
     ) {
-        val resultContent = formatResponseForSession(pending.actionName, envelope)
+        val resultContent = formatResponseForSession(pending.actionName, action)
 
         val message = "Responding to '${pending.actionName}' invoked by '${pending.agentName}':\n$resultContent"
         store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_POST, buildJsonObject {
@@ -569,13 +588,14 @@ class AgentRuntimeFeature(
     }
 
     /**
-     * Formats a PrivateData response envelope into a human-readable session message.
+     * Formats a targeted response action into a human-readable session message.
      */
-    private fun formatResponseForSession(actionName: String, envelope: PrivateDataEnvelope): String {
-        return when (envelope.type) {
-            ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> {
-                val listing = envelope.payload["listing"]?.jsonArray
-                val subpath = envelope.payload["subpath"]?.jsonPrimitive?.contentOrNull ?: "."
+    private fun formatResponseForSession(actionName: String, action: Action): String {
+        val payload = action.payload ?: return "No payload in response."
+        return when (action.name) {
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST -> {
+                val listing = payload["listing"]?.jsonArray
+                val subpath = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: "."
                 val formatted = Json { prettyPrint = true }.encodeToString(
                     buildJsonObject {
                         put("workspace_path", subpath.ifBlank { "." })
@@ -584,17 +604,17 @@ class AgentRuntimeFeature(
                 )
                 "```json\n$formatted\n```"
             }
-            ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> {
-                val subpath = envelope.payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
-                val content = envelope.payload["content"]?.jsonPrimitive?.contentOrNull
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_READ -> {
+                val subpath = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
+                val content = payload["content"]?.jsonPrimitive?.contentOrNull
                 if (content != null) {
                     "File: `$subpath`\n```\n$content\n```"
                 } else {
                     "File not found: `$subpath`"
                 }
             }
-            ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
-                val contents = envelope.payload["contents"]?.jsonObject
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
+                val contents = payload["contents"]?.jsonObject
                 if (contents != null && contents.isNotEmpty()) {
                     contents.entries.joinToString("\n\n") { (path, content) ->
                         "File: `$path`\n```\n${content.jsonPrimitive.content}\n```"
@@ -604,8 +624,8 @@ class AgentRuntimeFeature(
                 }
             }
             else -> {
-                // Generic fallback: pretty-print the envelope payload
-                "```json\n${Json { prettyPrint = true }.encodeToString(envelope.payload)}\n```"
+                // Generic fallback: pretty-print the payload
+                "```json\n${Json { prettyPrint = true }.encodeToString(payload)}\n```"
             }
         }
     }

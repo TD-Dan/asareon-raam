@@ -5,7 +5,6 @@ import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
-import app.auf.util.abbreviate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.buildJsonObject
@@ -90,32 +89,35 @@ open class Store(
     }
 
     /**
-     * Securely delivers a private data payload to a single target feature, bypassing the
-     * public action bus. This is a privileged operation. The act of delivery is logged
-     * for audibility, but the payload content is NOT.
+     * DEPRECATED — Phase 3. Use deferredDispatch with Action.targetRecipient instead.
      *
-     * DEPRECATED: Will be replaced by targeted actions in Phase 3.
+     * This bridge internally converts to a targeted dispatch through processAction,
+     * gaining full validation, authorization, lifecycle guards, and audit logging.
+     * Maintained for backward compatibility while features are being migrated.
+     *
+     * Example migration:
+     * ```
+     * // BEFORE:
+     * store.deliverPrivateData(identity.handle, recipient, PrivateDataEnvelope(type, payload))
+     * // AFTER:
+     * store.deferredDispatch(identity.handle, Action(name = type, payload = payload, targetRecipient = recipient))
+     * ```
      */
+    @Suppress("DEPRECATION")
+    @Deprecated("Use deferredDispatch with Action(targetRecipient = recipient) instead")
     open fun deliverPrivateData(originator: String, recipient: String, envelope: PrivateDataEnvelope) {
         platformDependencies.log(
-            level = LogLevel.INFO,
+            level = LogLevel.WARN,
             tag = "Store",
-            message = "Delivering private data of type '${envelope.type}' from '$originator' to '$recipient' with payload '${abbreviate(envelope.payload, 100)}'"
+            message = "DEPRECATED deliverPrivateData called: type='${envelope.type}' from '$originator' to '$recipient'. Migrate to targeted dispatch."
         )
-        val recipientFeature = features.find { it.identity.handle == recipient }
-        if (recipientFeature == null) {
-            platformDependencies.log(LogLevel.ERROR, "Store", "deliverPrivateData failed: recipient feature '$recipient' not found.")
-            return
-        }
-
-        try {
-            recipientFeature.onPrivateData(envelope, this)
-        } catch (e: Exception) {
-            handleFeatureException(e, "onPrivateData", recipientFeature.identity.handle)
-        }
-
-        // After the private data handler runs, ensure any deferred actions are processed.
-        ensureProcessingLoop()
+        // Bridge: convert to targeted dispatch through the normal pipeline.
+        // This gains full validation, authorization, and lifecycle guards.
+        deferredDispatch(originator, Action(
+            name = envelope.type,
+            payload = envelope.payload,
+            targetRecipient = recipient
+        ))
     }
 
     /**
@@ -208,6 +210,25 @@ open class Store(
             return
         }
 
+        // --- STEP 1b: TARGETED VALIDATION ---
+        // Reject targetRecipient on non-targeted actions, and targeted actions without one.
+        if (action.targetRecipient != null && !descriptor.targeted) {
+            platformDependencies.log(
+                level = LogLevel.ERROR,
+                tag = "Store",
+                message = "Action '${action.name}' has targetRecipient '${action.targetRecipient}' but is not declared as targeted. Rejected."
+            )
+            return
+        }
+        if (descriptor.targeted && action.targetRecipient == null) {
+            platformDependencies.log(
+                level = LogLevel.ERROR,
+                tag = "Store",
+                message = "Targeted action '${action.name}' dispatched without targetRecipient. Rejected."
+            )
+            return
+        }
+
         // --- STEP 2: AUTHORIZATION (open flag) ---
         // `open` answers: "who is allowed to dispatch this?"
         // open: true  → any originator
@@ -279,9 +300,12 @@ open class Store(
             // This means open+!broadcast (e.g., REGISTER_IDENTITY) is correctly routed
             // to the owning feature only, even though anyone can dispatch it.
             if (descriptor.targeted) {
-                // Phase 3: targeted delivery via action.targetRecipient
-                // For now, fall through to owning-feature-only delivery as a safe default.
-                val targetFeature = features.find { it.identity.handle == descriptor.featureName }
+                // Targeted delivery: deliver to the feature identified by targetRecipient.
+                // The Store resolves at the feature level only — if targetRecipient is
+                // "session.chat1", we deliver to the "session" feature. Sub-entity
+                // targeting is the feature's responsibility.
+                val recipientHandle = extractFeatureHandle(action.targetRecipient)
+                val targetFeature = features.find { it.identity.handle == recipientHandle }
                 if (targetFeature != null) {
                     val oldFeatureState = previousState.featureStates[targetFeature.identity.handle]
                     val newFeatureState = targetFeature.reducer(oldFeatureState, action)
@@ -293,7 +317,7 @@ open class Store(
                         previousState
                     }
                 } else {
-                    platformDependencies.log(LogLevel.ERROR, "Store", "Targeted action '${action.name}' dispatched, but owning feature '${descriptor.featureName}' not found.")
+                    platformDependencies.log(LogLevel.ERROR, "Store", "Targeted action '${action.name}' → unknown recipient '${action.targetRecipient}' (resolved to feature '$recipientHandle')")
                     newState = previousState
                 }
             } else if (!descriptor.broadcast) {
@@ -347,8 +371,17 @@ open class Store(
 
             // --- STEP 5: SIDE EFFECTS (handleSideEffects) ---
             // Delivery scope for side effects mirrors the routing decision above.
-            if (descriptor.targeted || !descriptor.broadcast) {
-                // targeted or non-broadcast: side effects for owning feature only
+            if (descriptor.targeted) {
+                // Targeted: side effects for recipient feature only
+                val recipientHandle = extractFeatureHandle(action.targetRecipient)
+                val targetFeature = features.find { it.identity.handle == recipientHandle }
+                if (targetFeature != null) {
+                    val prevFeatureState = previousState.featureStates[targetFeature.identity.handle]
+                    val newFeatureState = liftedState.featureStates[targetFeature.identity.handle]
+                    targetFeature.handleSideEffects(action, this, prevFeatureState, newFeatureState)
+                }
+            } else if (!descriptor.broadcast) {
+                // Non-broadcast: side effects for owning feature only
                 val targetFeature = features.find { it.identity.handle == descriptor.featureName }
                 if (targetFeature != null) {
                     val prevFeatureState = previousState.featureStates[targetFeature.identity.handle]

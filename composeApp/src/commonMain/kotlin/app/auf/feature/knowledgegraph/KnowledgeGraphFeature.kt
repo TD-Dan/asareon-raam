@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.util.FileEntry
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
@@ -67,6 +68,51 @@ class KnowledgeGraphFeature(
         val payload = action.payload
 
         when (action.name) {
+            // Phase 3: Targeted responses from FilesystemFeature — migrated from onPrivateData.
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST -> {
+                val listing = action.payload?.get("listing")?.let { json.decodeFromJsonElement<List<FileEntry>>(it) } ?: return
+                val isRecursiveResponse = action.payload["subpath"]?.jsonPrimitive?.content?.isNotEmpty() == true
+
+                if (isRecursiveResponse) {
+                    val fileSubpaths = listing.filter { !it.isDirectory }.map { it.path }
+                    if (fileSubpaths.isNotEmpty()) {
+                        store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
+                            put("subpaths", Json.encodeToJsonElement(fileSubpaths))
+                        }))
+                    } else {
+                        store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
+                            put("error", "No holon files found in persona directory.")
+                        }))
+                    }
+                } else {
+                    listing.filter { it.isDirectory }.forEach { dir ->
+                        val personaId = platformDependencies.getFileName(dir.path)
+                        store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", personaId) }))
+                    }
+                }
+            }
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
+                try {
+                    val fileData = json.decodeFromJsonElement<FilesContentPayload>(action.payload ?: return)
+
+                    if (kgState.isExecutingImport == true) {
+                        store.dispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_SET_IMPORT_EXECUTION_STATUS, buildJsonObject { put("isExecuting", false) }))
+                        executeImportWrites(fileData.contents, kgState, store, platformDependencies)
+                    } else if (fileData.correlationId != null && fileData.correlationId == kgState.pendingImportCorrelationId) {
+                        val analysisPayload = runImportAnalysis(fileData.contents, kgState, kgState.importUserOverrides, kgState.isImportRecursive, platformDependencies)
+                        store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
+                    } else {
+                        handleFilesContentForLoad(fileData, store)
+                    }
+                } catch (e: Exception) {
+                    val errorMsg = "Failed to process file content response."
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, errorMsg, e)
+                    store.dispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
+                    store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
+                        put("error", errorMsg)
+                    }))
+                }
+            }
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
                 store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
             }
@@ -119,8 +165,11 @@ class KnowledgeGraphFeature(
                     put("personaId", personaId)
                     put("context", Json.encodeToJsonElement(contextMap))
                 }
-                val responseEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, responsePayload)
-                store.deliverPrivateData(identity.handle, originator, responseEnvelope)
+                store.deferredDispatch(identity.handle, Action(
+                    name = ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                    payload = responsePayload,
+                    targetRecipient = originator
+                ))
             }
             ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS -> {
                 val correlationId = platformDependencies.generateUUID()
@@ -497,60 +546,6 @@ class KnowledgeGraphFeature(
                 )
             }
             else -> return currentFeatureState
-        }
-    }
-
-    override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
-        val kgState = store.state.value.featureStates[identity.handle] as? KnowledgeGraphState
-        when (envelope.type) {
-            ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> {
-                val listing = envelope.payload["listing"]?.let { json.decodeFromJsonElement<List<FileEntry>>(it) } ?: return
-                val isRecursiveResponse = envelope.payload["subpath"]?.jsonPrimitive?.content?.isNotEmpty() == true
-
-                if (isRecursiveResponse) {
-                    val fileSubpaths = listing.filter { !it.isDirectory }.map { it.path }
-                    if (fileSubpaths.isNotEmpty()) {
-                        store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
-                            put("subpaths", Json.encodeToJsonElement(fileSubpaths))
-                        }))
-                    } else {
-                        store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
-                            put("error", "No holon files found in persona directory.")
-                        }))
-                    }
-                } else {
-                    listing.filter { it.isDirectory }.forEach { dir ->
-                        val personaId = platformDependencies.getFileName(dir.path)
-                        store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", personaId) }))
-                    }
-                }
-            }
-            ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
-                try {
-                    val fileData = json.decodeFromJsonElement<FilesContentPayload>(envelope.payload)
-
-                    // [FIX] Explicit check for the execution state flag.
-                    if (kgState?.isExecutingImport == true) {
-                        // We received parent content for import execution.
-                        // Reset the flag immediately.
-                        store.dispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_SET_IMPORT_EXECUTION_STATUS, buildJsonObject { put("isExecuting", false) }))
-                        // Call execution with the fresh parent content.
-                        executeImportWrites(fileData.contents, kgState, store, platformDependencies)
-                    } else if (fileData.correlationId != null && fileData.correlationId == kgState?.pendingImportCorrelationId) {
-                        val analysisPayload = runImportAnalysis(fileData.contents, kgState, kgState.importUserOverrides, kgState.isImportRecursive, platformDependencies)
-                        store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
-                    } else {
-                        handleFilesContentForLoad(fileData, store)
-                    }
-                } catch (e: Exception) {
-                    val errorMsg = "Failed to process file content response."
-                    platformDependencies.log(LogLevel.ERROR, identity.handle, errorMsg, e)
-                    store.dispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
-                    store.deferredDispatch(identity.handle, Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
-                        put("error", errorMsg)
-                    }))
-                }
-            }
         }
     }
 

@@ -49,31 +49,6 @@ class SessionFeature(
     private val blockParser = BlockSeparatingParser()
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
 
-    override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
-        val data = envelope.payload
-        when (envelope.type) {
-            ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> {
-                val fileList = data["listing"]?.jsonArray?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
-                fileList.filter { it.path.endsWith(".json") }.forEach {
-                    store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", platformDependencies.getFileName(it.path)) }))
-                }
-            }
-            ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> {
-                try {
-                    val content = data["content"]?.jsonPrimitive?.content ?: ""
-                    if (content.isBlank()) {
-                        platformDependencies.log(LogLevel.WARN, identity.handle, "Received empty session file content for ${data["subpath"]}")
-                        return
-                    }
-                    val session = json.decodeFromString<Session>(content)
-                    store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_INTERNAL_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.id to session))) as JsonObject))
-                } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse session file: ${data["subpath"]}. Error: ${e.message}")
-                }
-            }
-        }
-    }
-
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val sessionState = newState as? SessionState ?: return
 
@@ -91,6 +66,28 @@ class SessionFeature(
         }
 
         when (action.name) {
+            // Phase 3: Targeted responses from FilesystemFeature — migrated from onPrivateData.
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST -> {
+                val data = action.payload ?: return
+                val fileList = data["listing"]?.jsonArray?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
+                fileList.filter { it.path.endsWith(".json") }.forEach {
+                    store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", platformDependencies.getFileName(it.path)) }))
+                }
+            }
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_READ -> {
+                val data = action.payload ?: return
+                try {
+                    val content = data["content"]?.jsonPrimitive?.content ?: ""
+                    if (content.isBlank()) {
+                        platformDependencies.log(LogLevel.WARN, identity.handle, "Received empty session file content for ${data["subpath"]}")
+                        return
+                    }
+                    val session = json.decodeFromString<Session>(content)
+                    store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_INTERNAL_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.id to session))) as JsonObject))
+                } catch (e: Exception) {
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse session file: ${data["subpath"]}. Error: ${e.message}")
+                }
+            }
             ActionNames.SYSTEM_PUBLISH_STARTING -> {
                 store.dispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
                 // Register hide-hidden settings with the Settings feature for persistence.
@@ -317,8 +314,11 @@ class SessionFeature(
                     put("correlationId", payload.correlationId)
                     putJsonArray("messages") { messages.forEach { add(it) } }
                 }
-                val envelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, responsePayload)
-                store.deliverPrivateData(identity.handle, action.originator ?: "unknown", envelope)
+                store.deferredDispatch(identity.handle, Action(
+                    name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                    payload = responsePayload,
+                    targetRecipient = action.originator ?: "unknown"
+                ))
             }
 
             ActionNames.SESSION_TOGGLE_SESSION_HIDDEN -> {

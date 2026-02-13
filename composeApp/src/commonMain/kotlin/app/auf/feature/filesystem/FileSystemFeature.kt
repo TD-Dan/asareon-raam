@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.util.BasePath
 import app.auf.util.FileEntry
 import app.auf.util.LogLevel
@@ -75,20 +76,22 @@ class FileSystemFeature(
     }
 
 
-    override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
-        val state = store.state.value.featureStates[identity.handle] as? FileSystemState ?: return
-        when (envelope.type) {
-            ActionNames.Envelopes.CORE_RESPONSE_CONFIRMATION -> {
-                val payload = json.decodeFromJsonElement<ConfirmationResponsePayload>(envelope.payload)
-                val pendingRequest = state.pendingScopedRead
-                if (pendingRequest?.requestId == payload.requestId) {
-                    if (payload.confirmed) {
+    override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
+        val originator = action.originator ?: return
+        val fileSystemState = newState as? FileSystemState ?: return
+        when (action.name) {
+            // Phase 3: Targeted response from CoreFeature — confirmation dialog result.
+            // Migrated from onPrivateData.
+            ActionRegistry.Names.CORE_RESPONSE_CONFIRMATION -> {
+                val confirmPayload = json.decodeFromJsonElement<ConfirmationResponsePayload>(action.payload ?: return)
+                val pendingRequest = fileSystemState.pendingScopedRead
+                if (pendingRequest?.requestId == confirmPayload.requestId) {
+                    if (confirmPayload.confirmed) {
                         store.deferredDispatch(
-                            originator = identity.handle, // This internal action MUST originate from this feature
+                            originator = identity.handle,
                             action = Action(
                                 name = ActionNames.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ,
                                 payload = buildJsonObject {
-                                    // Carry the original client and their request payload forward
                                     put("clientOriginator", pendingRequest.originator)
                                     put("requestPayload", Json.encodeToJsonElement(pendingRequest.payload))
                                 }
@@ -98,13 +101,6 @@ class FileSystemFeature(
                     store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_INTERNAL_FINALIZE_SCOPED_READ))
                 }
             }
-        }
-    }
-
-    override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
-        val originator = action.originator ?: return
-        val fileSystemState = newState as? FileSystemState ?: return
-        when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {
                 store.deferredDispatch(identity.handle, Action(ActionNames.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyWhitelist); put("type", "STRING_SET"); put("label", "Whitelisted Paths")
@@ -196,8 +192,15 @@ class FileSystemFeature(
                             put("correlationId", requestPayload.correlationId)
                             put("contents", Json.encodeToJsonElement(contentMap))
                         }
-                        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, responsePayload)
-                        store.deliverPrivateData(identity.handle, clientOriginator, envelope)
+                        store.deferredDispatch(identity.handle, Action(
+
+                            name = ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT,
+
+                            payload = responsePayload,
+
+                            targetRecipient = clientOriginator
+
+                        ))
 
                     } catch (e: Exception) {
                         val errorMsg = "Scoped read failed for '$selectedPath': ${e.message}"
@@ -297,8 +300,15 @@ class FileSystemFeature(
                         put("subpath", payload.subpath)
                         payload.correlationId?.let { put("correlationId", it) }
                     }
-                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, responsePayload)
-                    store.deliverPrivateData(identity.handle, originator, envelope)
+                    store.deferredDispatch(identity.handle, Action(
+
+                        name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+
+                        payload = responsePayload,
+
+                        targetRecipient = originator
+
+                    ))
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, "filesystem","Filesystem listing failed: ${e.message}", e)
                     val responsePayload = buildJsonObject {
@@ -306,8 +316,15 @@ class FileSystemFeature(
                         put("subpath", payload.subpath)
                         payload.correlationId?.let { put("correlationId", it) }
                     }
-                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, responsePayload)
-                    store.deliverPrivateData(identity.handle, originator, envelope)
+                    store.deferredDispatch(identity.handle, Action(
+
+                        name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+
+                        payload = responsePayload,
+
+                        targetRecipient = originator
+
+                    ))
                 }
             }
             ActionNames.FILESYSTEM_READ_FILES_CONTENT -> {
@@ -327,8 +344,15 @@ class FileSystemFeature(
                     put("correlationId", JsonNull)
                     put("contents", Json.encodeToJsonElement(contentMap))
                 }
-                val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, responsePayload)
-                store.deliverPrivateData(identity.handle, originator, envelope)
+                store.deferredDispatch(identity.handle, Action(
+
+                    name = ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT,
+
+                    payload = responsePayload,
+
+                    targetRecipient = originator
+
+                ))
             }
             ActionNames.FILESYSTEM_SYSTEM_READ -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SystemReadPayload>(it) } ?: return
@@ -339,16 +363,30 @@ class FileSystemFeature(
                         put("subpath", payload.subpath)
                         put("content", cryptoManager.decrypt(platformDependencies.readFileContent(fullPath)))
                     }
-                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, responsePayload)
-                    store.deliverPrivateData(identity.handle, originator, envelope)
+                    store.deferredDispatch(identity.handle, Action(
+
+                        name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+
+                        payload = responsePayload,
+
+                        targetRecipient = originator
+
+                    ))
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "System read failed for '${payload.subpath}'", e)
                     val responsePayload = buildJsonObject {
                         put("subpath", payload.subpath)
                         put("content", JsonNull)
                     }
-                    val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, responsePayload)
-                    store.deliverPrivateData(identity.handle, originator, envelope)
+                    store.deferredDispatch(identity.handle, Action(
+
+                        name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+
+                        payload = responsePayload,
+
+                        targetRecipient = originator
+
+                    ))
                 }
             }
             ActionNames.FILESYSTEM_SYSTEM_WRITE -> {

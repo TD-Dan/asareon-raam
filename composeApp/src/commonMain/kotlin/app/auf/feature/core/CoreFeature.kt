@@ -83,28 +83,6 @@ class CoreFeature(
         return "$localHandle-$counter"
     }
 
-    override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
-        when (envelope.type) {
-            ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> {
-                if (envelope.payload["subpath"]?.jsonPrimitive?.content == identitiesFileName) {
-                    val content = envelope.payload["content"]?.jsonPrimitive?.contentOrNull
-                    if (content != null) {
-                        try {
-                            val loaded = Json.decodeFromString<IdentitiesLoadedPayload>(content)
-                            store.deferredDispatch(identity.handle, Action(ActionNames.CORE_INTERNAL_IDENTITIES_LOADED, Json.encodeToJsonElement(loaded) as JsonObject))
-                        } catch (e: Exception) {
-                            platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle, "Failed to parse identities.json: ${e.message}")
-                        }
-                    } else {
-                        store.deferredDispatch(identity.handle, Action(ActionNames.CORE_INTERNAL_IDENTITIES_LOADED, buildJsonObject {
-                            put("identities", buildJsonArray { })
-                        }))
-                    }
-                }
-            }
-        }
-    }
-
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val latestCoreState = newState as? CoreState
         val prevCoreState = previousState as? CoreState
@@ -133,8 +111,11 @@ class CoreFeature(
                     put("requestId", request.requestId)
                     put("confirmed", payload.confirmed)
                 }
-                val envelope = PrivateDataEnvelope(ActionNames.Envelopes.CORE_RESPONSE_CONFIRMATION, responsePayload)
-                store.deliverPrivateData(identity.handle, request.originator, envelope)
+                store.deferredDispatch(identity.handle, Action(
+                    name = ActionRegistry.Names.CORE_RESPONSE_CONFIRMATION,
+                    payload = responsePayload,
+                    targetRecipient = request.originator
+                ))
             }
             ActionNames.CORE_UPDATE_WINDOW_SIZE -> {
                 latestCoreState?.let {
@@ -156,6 +137,26 @@ class CoreFeature(
                 payload?.let {
                     platformDependencies.copyToClipboard(it.text)
                     store.deferredDispatch(identity.handle, Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Copied to clipboard.") }))
+                }
+            }
+            // Phase 3: Targeted response from FilesystemFeature — identity file loaded.
+            // Migrated from onPrivateData.
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_READ -> {
+                val data = action.payload ?: return
+                if (data["subpath"]?.jsonPrimitive?.content == identitiesFileName) {
+                    val content = data["content"]?.jsonPrimitive?.contentOrNull
+                    if (content != null) {
+                        try {
+                            val loaded = Json.decodeFromString<IdentitiesLoadedPayload>(content)
+                            store.deferredDispatch(identity.handle, Action(ActionNames.CORE_INTERNAL_IDENTITIES_LOADED, Json.encodeToJsonElement(loaded) as JsonObject))
+                        } catch (e: Exception) {
+                            platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle, "Failed to parse identities.json: ${e.message}")
+                        }
+                    } else {
+                        store.deferredDispatch(identity.handle, Action(ActionNames.CORE_INTERNAL_IDENTITIES_LOADED, buildJsonObject {
+                            put("identities", buildJsonArray { })
+                        }))
+                    }
                 }
             }
             ActionNames.CORE_ADD_USER_IDENTITY,

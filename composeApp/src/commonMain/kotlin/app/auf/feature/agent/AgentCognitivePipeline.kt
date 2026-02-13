@@ -2,6 +2,7 @@ package app.auf.feature.agent
 
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.util.LogLevel
 import app.auf.core.Version
 import app.auf.util.PlatformDependencies
@@ -58,18 +59,26 @@ object AgentCognitivePipeline {
         }))
     }
 
-    fun handlePrivateData(envelope: PrivateDataEnvelope, store: Store) {
-        when (envelope.type) {
-            ActionNames.Envelopes.SESSION_RESPONSE_LEDGER -> handleLedgerResponse(envelope.payload, store)
-            ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT -> handleHkgContextResponse(envelope.payload, store)
-            ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST -> handleWorkspaceListingResponse(envelope.payload, store)
-            ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE -> handleGatewayResponse(envelope.payload, store)
-            ActionNames.Envelopes.GATEWAY_RESPONSE_PREVIEW -> handleGatewayPreviewResponse(envelope.payload, store)
+    /**
+     * Handles targeted actions delivered to the agent feature by the Store.
+     * Replaces the former handlePrivateData — action.name replaces envelope.type,
+     * action.payload replaces envelope.payload.
+     */
+    fun handleTargetedAction(action: Action, store: Store) {
+        val payload = action.payload ?: run {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "handleTargetedAction: Action '${action.name}' has no payload. Ignoring.")
+            return
+        }
+        when (action.name) {
+            ActionRegistry.Names.SESSION_RESPONSE_LEDGER -> handleLedgerResponse(payload, store)
+            ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT -> handleHkgContextResponse(payload, store)
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST -> handleWorkspaceListingResponse(payload, store)
+            ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE -> handleGatewayResponse(payload, store)
+            ActionRegistry.Names.GATEWAY_RESPONSE_PREVIEW -> handleGatewayPreviewResponse(payload, store)
             else -> {
-                // LOGGING: Warn on unrecognised private data envelope types
                 store.platformDependencies.log(
                     LogLevel.WARN, LOG_TAG,
-                    "handlePrivateData: Received unrecognised envelope type '${envelope.type}'. Ignoring."
+                    "handleTargetedAction: Received unrecognised action '${action.name}'. Ignoring."
                 )
             }
         }

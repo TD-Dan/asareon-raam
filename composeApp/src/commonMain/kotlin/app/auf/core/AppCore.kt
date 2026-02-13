@@ -63,7 +63,18 @@ interface FeatureState
  * This design enforces the 'Absolute Decoupling' and 'Manifest-Driven Contracts' principles.
  */
 @Serializable
-data class Action(val name: String, val payload: JsonObject? = null, val originator: String? = null) {
+data class Action(
+    val name: String,
+    val payload: JsonObject? = null,
+    val originator: String? = null,
+    /**
+     * If non-null, the Store delivers this action only to the feature identified by this handle.
+     * The Store resolves at the feature level: "session.chat1" delivers to the "session" feature.
+     * ONLY valid when the action's schema descriptor has `targeted = true`.
+     * The Store rejects targetRecipient on non-targeted actions, and targeted actions without it.
+     */
+    val targetRecipient: String? = null
+) {
 
     override fun toString(): String {
         val payloadString = payload?.let {
@@ -76,6 +87,7 @@ data class Action(val name: String, val payload: JsonObject? = null, val origina
         }
         return "<'${name}'" +
                 originator?.let { " from '$it'" }.orEmpty() +
+                targetRecipient?.let { " → '$it'" }.orEmpty() +
                 payloadString?.let { " with $it" }.orEmpty() +
                 ">"
     }
@@ -83,11 +95,12 @@ data class Action(val name: String, val payload: JsonObject? = null, val origina
 
 /**
  * The canonical contract for all data passed through the private channel.
- * This envelope ensures that all private communication is explicitly typed and
- * carries a serializable payload, eliminating the unsafe 'Any' type.
  *
- * DEPRECATED: Will be replaced by targeted actions in Phase 3.
+ * DEPRECATED — Phase 3. Use Action with targetRecipient instead.
+ * Store.deliverPrivateData now internally bridges to targeted dispatch.
+ * Will be removed in Phase 3b after all features have migrated.
  */
+@Deprecated("Use Action with targetRecipient field instead. See Phase 3 of the Unified Action Bus plan.")
 @Serializable
 data class PrivateDataEnvelope(
     /** A unique string identifying the payload's schema (e.g., "gateway.response"). */
