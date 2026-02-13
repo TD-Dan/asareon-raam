@@ -16,7 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.feature.core.CoreState
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.launch

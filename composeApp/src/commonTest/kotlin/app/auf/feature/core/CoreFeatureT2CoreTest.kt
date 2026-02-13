@@ -2,7 +2,7 @@ package app.auf.feature.core
 
 import app.auf.core.Action
 import app.auf.core.Identity
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.core.generated.ActionRegistry
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.fakes.FakePlatformDependencies

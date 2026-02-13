@@ -1,7 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.*
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.LogLevel
 import app.auf.core.Version

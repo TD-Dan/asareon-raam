@@ -2,7 +2,7 @@ package app.auf.feature.settings
 
 import app.auf.core.Action
 import app.auf.core.PrivateDataEnvelope
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState

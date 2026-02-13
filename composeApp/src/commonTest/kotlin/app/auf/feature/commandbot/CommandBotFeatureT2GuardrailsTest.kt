@@ -2,7 +2,7 @@ package app.auf.feature.commandbot
 
 import app.auf.core.Action
 import app.auf.core.Identity
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.core.CoreState

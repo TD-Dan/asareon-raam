@@ -1,7 +1,7 @@
 package app.auf.feature.settings
 
 import app.auf.core.*
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.feature.core.CoreFeature
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.util.BasePath

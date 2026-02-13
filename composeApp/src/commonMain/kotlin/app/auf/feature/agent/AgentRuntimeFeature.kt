@@ -10,7 +10,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.core.generated.ActionRegistry
 import app.auf.core.generated.ExposedActions
 import app.auf.util.*

@@ -2,7 +2,7 @@ package app.auf.feature.knowledgegraph
 
 import app.auf.core.Action
 import app.auf.core.Store
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.Json

@@ -25,7 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.feature.core.CoreState
 import aufapp.composeapp.generated.resources.Res
 import aufapp.composeapp.generated.resources.icon

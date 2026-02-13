@@ -21,7 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.Action
 import app.auf.core.Store
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 

@@ -3,7 +3,7 @@ package app.auf.feature.agent
 import app.auf.core.Action
 import app.auf.core.PrivateDataEnvelope
 import app.auf.core.Store
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
 import app.auf.feature.filesystem.FileSystemFeature

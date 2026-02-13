@@ -3,7 +3,7 @@ package app.auf.feature.settings
 import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.FeatureState
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put

@@ -3,7 +3,7 @@ package app.auf.feature.filesystem
 import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.FeatureState
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import kotlin.test.Test
 import kotlin.test.assertEquals

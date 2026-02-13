@@ -1,7 +1,7 @@
 package app.auf.feature.knowledgegraph
 
 import app.auf.core.Action
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement

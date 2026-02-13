@@ -11,7 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString

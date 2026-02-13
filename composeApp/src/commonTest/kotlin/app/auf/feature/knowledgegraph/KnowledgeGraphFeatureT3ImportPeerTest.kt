@@ -1,7 +1,7 @@
 package app.auf.feature.knowledgegraph
 
 import app.auf.core.Action
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment

@@ -1,7 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
