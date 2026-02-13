@@ -29,6 +29,10 @@ fun AboutView(store: Store) {
     val appState by store.state.collectAsState()
     val loadedFeatures = appState.featureStates.keys.sorted()
 
+    // Pre-compute per-feature stats from app-level registries
+    val actionDescriptors = appState.actionDescriptors
+    val identityRegistry = appState.identityRegistry
+
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp)
     ) {
@@ -59,7 +63,6 @@ fun AboutView(store: Store) {
                 )
                 HorizontalDivider()
                 Spacer(Modifier.height(8.dp))
-                // Wrap in SelectionContainer to make it easily copyable
                 SelectionContainer {
                     Text("AUF App Version: ${Version.APP_VERSION}")
                 }
@@ -75,9 +78,39 @@ fun AboutView(store: Store) {
                 )
                 HorizontalDivider()
             }
-            items(loadedFeatures) { featureName ->
+            items(loadedFeatures) { featureHandle ->
+                // Look up the feature's identity for display name
+                val featureIdentity = identityRegistry[featureHandle]
+                val displayName = featureIdentity?.name ?: featureHandle
+
+                // Count actions owned by this feature (action names prefixed with "featureHandle.")
+                val actionCount = actionDescriptors.keys.count { actionName ->
+                    actionName.startsWith("$featureHandle.", ignoreCase = true)
+                }
+
+                // Count sub-identities registered under this feature
+                val subIdentityCount = identityRegistry.values.count { identity ->
+                    identity.parentHandle == featureHandle
+                }
+
                 SelectionContainer {
-                    Text("• $featureName", modifier = Modifier.padding(start = 16.dp))
+                    Column(modifier = Modifier.padding(start = 16.dp, bottom = 4.dp)) {
+                        Text(
+                            text = displayName,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Handle: $featureHandle",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Actions: $actionCount · Sub-identities: $subIdentityCount",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
@@ -136,21 +169,16 @@ fun AboutView(store: Store) {
 @Composable
 private fun ClickableLink(text: String, url: String) {
     val annotatedString = buildAnnotatedString {
-        // Apply the hyperlink style
         withStyle(
             style = SpanStyle(
                 color = MaterialTheme.colorScheme.primary,
                 textDecoration = TextDecoration.Underline
             )
         ) {
-            // Attach the URL to the text.
-            // The Text composable will automatically handle the click.
             withLink(link = LinkAnnotation.Url(url)) {
                 append(text)
             }
         }
     }
-
-    // A standard Text composable is all that's needed.
     Text(text = annotatedString)
 }
