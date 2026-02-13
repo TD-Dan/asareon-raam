@@ -2,7 +2,7 @@ package app.auf.feature.core
 
 import app.auf.core.Action
 import app.auf.core.Identity
-import app.auf.core.generated.ActionRegistry
+import app.auf.core.generated.ActionNames
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
@@ -34,15 +34,14 @@ import kotlin.test.assertTrue
 class CoreFeatureT3PeerTest {
 
     /**
-     * Helper: creates a CoreState with feature identities pre-seeded in the identity
-     * registry. This mirrors what the Store does in initFeatureLifecycles() and allows
-     * REGISTER_IDENTITY dispatches from these originators to pass parent validation.
+     * Helper: seeds feature identities into AppState.identityRegistry via Store.
+     * Call this AFTER building the TestEnvironment harness.
      */
-    private fun coreStateWithFeatureIdentities(
+    private fun seedIdentities(
+        store: app.auf.core.Store,
         vararg featureHandles: String,
-        lifecycle: AppLifecycle = AppLifecycle.RUNNING,
         extraRegistry: Map<String, Identity> = emptyMap()
-    ): CoreState {
+    ) {
         val featureIdentities = featureHandles.associate { handle ->
             handle to Identity(
                 uuid = null,
@@ -52,10 +51,7 @@ class CoreFeatureT3PeerTest {
                 parentHandle = null
             )
         }
-        return CoreState(
-            identityRegistry = featureIdentities + extraRegistry,
-            lifecycle = lifecycle
-        )
+        store.updateIdentityRegistry { it + featureIdentities + extraRegistry }
     }
 
     // ================================================================
@@ -95,7 +91,7 @@ class CoreFeatureT3PeerTest {
         runCurrent()
 
         // ASSERT 1: Verify that the correct internal action was dispatched.
-        val loadedAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITIES_LOADED }
+        val loadedAction = harness.processedActions.find { it.name == ActionNames.CORE_INTERNAL_IDENTITIES_LOADED }
         assertNotNull(loadedAction, "The handleSideEffects handler should dispatch an internal loaded action.")
 
         // ASSERT 2: Verify the final state is correct.
@@ -141,14 +137,14 @@ class CoreFeatureT3PeerTest {
         ))
         runCurrent()
 
-        // ASSERT: Loaded identities should be in the identity registry under core.* namespace
-        val finalState = harness.store.state.value.featureStates["core"] as CoreState
-        val aliceEntry = finalState.identityRegistry["core.alice"]
+        // ASSERT: Loaded identities should be in AppState.identityRegistry under core.* namespace
+        val appState = harness.store.state.value
+        val aliceEntry = appState.identityRegistry["core.alice"]
         assertNotNull(aliceEntry, "Alice should be migrated to identityRegistry as 'core.alice'.")
         assertEquals("Alice", aliceEntry.name)
         assertEquals("core", aliceEntry.parentHandle)
 
-        val bobEntry = finalState.identityRegistry["core.bob"]
+        val bobEntry = appState.identityRegistry["core.bob"]
         assertNotNull(bobEntry, "Bob should be migrated to identityRegistry as 'core.bob'.")
     }
 
@@ -170,7 +166,7 @@ class CoreFeatureT3PeerTest {
 
         // --- ACT 1: Another feature requests a confirmation ---
         val showDialogAction = Action(
-            name = ActionRegistry.Names.CORE_SHOW_CONFIRMATION_DIALOG,
+            name = ActionNames.CORE_SHOW_CONFIRMATION_DIALOG,
             payload = buildJsonObject {
                 put("title", "Confirm Deletion")
                 put("text", "Are you sure?")
@@ -188,7 +184,7 @@ class CoreFeatureT3PeerTest {
         assertEquals(originatorFeatureName, stateAfterShow.confirmationRequest?.originator, "Originator should be captured.")
 
         // --- ACT 2: The UI dispatches the confirmation action ---
-        harness.store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
+        harness.store.dispatch("core.ui", Action(ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
             put("confirmed", true)
         }))
         runCurrent()
@@ -223,7 +219,7 @@ class CoreFeatureT3PeerTest {
 
         // --- ACT 1: Show the dialog ---
         harness.store.dispatch(originatorFeatureName, Action(
-            name = ActionRegistry.Names.CORE_SHOW_CONFIRMATION_DIALOG,
+            name = ActionNames.CORE_SHOW_CONFIRMATION_DIALOG,
             payload = buildJsonObject {
                 put("title", "Confirm")
                 put("text", "Are you sure?")
@@ -234,7 +230,7 @@ class CoreFeatureT3PeerTest {
         runCurrent()
 
         // --- ACT 2: The UI dispatches the dismiss action ---
-        harness.store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
+        harness.store.dispatch("core.ui", Action(ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
             put("confirmed", false)
         }))
         runCurrent()
@@ -265,8 +261,8 @@ class CoreFeatureT3PeerTest {
         // Pre-seed both "session" and "agent" feature identities so parent validation passes.
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withInitialState("core", coreStateWithFeatureIdentities("core", "session", "agent"))
             .build(platform = platform)
+        seedIdentities(harness.store, "core", "session", "agent")
 
         // ACT: Two different features register child identities
         harness.store.dispatch("session", Action(
@@ -304,14 +300,13 @@ class CoreFeatureT3PeerTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withInitialState("core", coreStateWithFeatureIdentities(
-                "core", "session", "agent",
-                extraRegistry = mapOf(
-                    "session.chat1" to Identity(uuid = "u1", localHandle = "chat1", handle = "session.chat1", name = "Chat 1", parentHandle = "session"),
-                    "agent.gemini" to Identity(uuid = "u2", localHandle = "gemini", handle = "agent.gemini", name = "Gemini", parentHandle = "agent")
-                )
-            ))
             .build(platform = platform)
+        seedIdentities(harness.store, "core", "session", "agent",
+            extraRegistry = mapOf(
+                "session.chat1" to Identity(uuid = "u1", localHandle = "chat1", handle = "session.chat1", name = "Chat 1", parentHandle = "session"),
+                "agent.gemini" to Identity(uuid = "u2", localHandle = "gemini", handle = "agent.gemini", name = "Gemini", parentHandle = "agent")
+            )
+        )
 
         // ACT: Agent tries to unregister a session child — should fail
         harness.store.dispatch("agent", Action(
@@ -320,9 +315,8 @@ class CoreFeatureT3PeerTest {
         ))
         runCurrent()
 
-        // ASSERT: Session's identity should remain intact
-        val finalState = harness.store.state.value.featureStates["core"] as CoreState
-        assertNotNull(finalState.identityRegistry["session.chat1"],
+        // ASSERT: Session's identity should remain intact in AppState.identityRegistry
+        assertNotNull(harness.store.state.value.identityRegistry["session.chat1"],
             "Namespace isolation: agent cannot unregister session's child identity.")
 
         // ASSERT: No broadcast was sent (operation was rejected)
@@ -339,8 +333,8 @@ class CoreFeatureT3PeerTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withInitialState("core", coreStateWithFeatureIdentities("core", "session"))
             .build(platform = platform)
+        seedIdentities(harness.store, "core", "session")
 
         // ACT 1: Register
         harness.store.dispatch("session", Action(
@@ -369,8 +363,8 @@ class CoreFeatureT3PeerTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withInitialState("core", coreStateWithFeatureIdentities("core", "agent"))
             .build(platform = platform)
+        seedIdentities(harness.store, "core", "agent")
 
         // ACT: Build a three-level tree:
         //   agent (feature, pre-seeded)

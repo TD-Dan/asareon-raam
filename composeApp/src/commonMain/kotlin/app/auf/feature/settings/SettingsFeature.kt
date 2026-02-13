@@ -7,7 +7,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import app.auf.core.*
-import app.auf.core.generated.ActionNames
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
@@ -36,10 +35,11 @@ class SettingsFeature(
     private val debounceJobs = mutableMapOf<String, Job>()
     private val settingsFileName = "settings.json"
 
-    override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
-        when (envelope.type) {
-            ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ -> {
-                val payload = envelope.payload
+    override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
+        when (action.name) {
+            // Phase 3: Targeted response from FilesystemFeature — migrated from onPrivateData.
+            ActionRegistry.Names.FILESYSTEM_RESPONSE_READ -> {
+                val payload = action.payload ?: return
                 if (payload["subpath"]?.jsonPrimitive?.content == settingsFileName) {
                     val loadedValues = payload["content"]?.jsonPrimitive?.contentOrNull?.let {
                         try { Json.decodeFromString<Map<String, String>>(it) } catch (e: Exception) { emptyMap() }
@@ -49,11 +49,6 @@ class SettingsFeature(
                     }))
                 }
             }
-        }
-    }
-
-    override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
-        when (action.name) {
             ActionRegistry.Names.SYSTEM_INITIALIZING -> store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", settingsFileName) }))
             ActionRegistry.Names.SETTINGS_UI_INPUT_CHANGED -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return

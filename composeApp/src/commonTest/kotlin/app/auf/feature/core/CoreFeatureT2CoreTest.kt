@@ -2,7 +2,7 @@ package app.auf.feature.core
 
 import app.auf.core.Action
 import app.auf.core.Identity
-import app.auf.core.generated.ActionRegistry
+import app.auf.core.generated.ActionNames
 import app.auf.core.generated.ActionRegistry
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.fakes.FakePlatformDependencies
@@ -27,20 +27,17 @@ import kotlin.test.assertTrue
 class CoreFeatureT2CoreTest {
 
     /**
-     * Helper: creates a CoreState with feature identities pre-seeded in the identity
-     * registry so that REGISTER_IDENTITY dispatches from those originators pass parent
-     * validation. This mirrors what the Store does in initFeatureLifecycles() when the
-     * actual features are present.
+     * Helper: seeds feature identities into AppState.identityRegistry via Store,
+     * mirroring what the Store does in initFeatureLifecycles(). Since these tests
+     * only include CoreFeature, we manually seed "session", "agent", etc.
      *
-     * NOTE: We cannot rely on initFeatureLifecycles() to seed "session" or "agent"
-     * unless we add actual SessionFeature/AgentFeature to the TestEnvironment. For
-     * unit-level T2 tests that focus on CoreFeature behavior, pre-seeding is correct.
+     * Call this AFTER building the TestEnvironment harness.
      */
-    private fun coreStateWithFeatureIdentities(
+    private fun seedIdentities(
+        store: app.auf.core.Store,
         vararg featureHandles: String,
-        lifecycle: AppLifecycle = AppLifecycle.RUNNING,
         extraRegistry: Map<String, Identity> = emptyMap()
-    ): CoreState {
+    ) {
         val featureIdentities = featureHandles.associate { handle ->
             handle to Identity(
                 uuid = null,
@@ -50,10 +47,7 @@ class CoreFeatureT2CoreTest {
                 parentHandle = null
             )
         }
-        return CoreState(
-            identityRegistry = featureIdentities + extraRegistry,
-            lifecycle = lifecycle
-        )
+        store.updateIdentityRegistry { it + featureIdentities + extraRegistry }
     }
 
     // ================================================================
@@ -62,7 +56,7 @@ class CoreFeatureT2CoreTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `handleSideEffects for SYSTEM_INITIALIZING dispatches ADD actions for its settings`() = runTest {
+    fun `handleSideEffects for SYSTEM_PUBLISH_INITIALIZING dispatches ADD actions for its settings`() = runTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -70,11 +64,11 @@ class CoreFeatureT2CoreTest {
             .build(platform = platform)
 
         // ACT: Dispatch the lifecycle action that triggers the side-effect.
-        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
+        harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
         runCurrent()
 
         // ASSERT: Verify that the correct side-effects (dispatching ADD actions) occurred.
-        val addActions = harness.processedActions.filter { it.name == ActionRegistry.Names.SETTINGS_ADD }
+        val addActions = harness.processedActions.filter { it.name == ActionNames.SETTINGS_ADD }
         assertEquals(2, addActions.size, "Should dispatch two SETTINGS_ADD actions.")
         assertNotNull(addActions.find { it.payload?.get("key").toString().contains("width") })
         assertNotNull(addActions.find { it.payload?.get("key").toString().contains("height") })
@@ -89,7 +83,7 @@ class CoreFeatureT2CoreTest {
             .build(platform = platform) // Defaults to RUNNING lifecycle
 
         val textToCopy = "Hello, Clipboard!"
-        val action = Action(ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD, buildJsonObject {
+        val action = Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject {
             put("text", textToCopy)
         })
 
@@ -100,7 +94,7 @@ class CoreFeatureT2CoreTest {
         // ASSERT
         assertEquals(textToCopy, platform.clipboardContent, "The text should be copied to the platform's clipboard.")
 
-        val toastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
+        val toastAction = harness.processedActions.find { it.name == ActionNames.CORE_SHOW_TOAST }
         assertNotNull(toastAction, "A toast message should be shown.")
         assertEquals("Copied to clipboard.", toastAction.payload?.get("message")?.jsonPrimitive?.content)
     }
@@ -119,13 +113,13 @@ class CoreFeatureT2CoreTest {
             .build(platform = platform)
 
         // ACT
-        harness.store.dispatch("ui", Action(ActionRegistry.Names.CORE_ADD_USER_IDENTITY, buildJsonObject {
+        harness.store.dispatch("ui", Action(ActionNames.CORE_ADD_USER_IDENTITY, buildJsonObject {
             put("name", "Test User")
         }))
         runCurrent()
 
         // ASSERT: Persistence
-        val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
+        val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
         assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
         assertEquals("identities.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
         assertTrue(writeAction.payload?.get("encrypt").toString().toBoolean(), "Persistence should be encrypted.")
@@ -134,7 +128,7 @@ class CoreFeatureT2CoreTest {
         assertTrue(content.contains("Test User"), "The new user's name should be in the persisted content.")
 
         // ASSERT: Broadcasting (legacy)
-        val broadcastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITIES_UPDATED }
+        val broadcastAction = harness.processedActions.find { it.name == ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED }
         assertNotNull(broadcastAction, "A legacy broadcast action should be dispatched.")
         val broadcastContent = broadcastAction.payload.toString()
         assertTrue(broadcastContent.contains("Test User"), "The new user's name should be in the broadcast payload.")
@@ -162,13 +156,13 @@ class CoreFeatureT2CoreTest {
             .build(platform = platform)
 
         // ACT
-        harness.store.dispatch("ui", Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject {
+        harness.store.dispatch("ui", Action(ActionNames.CORE_REMOVE_USER_IDENTITY, buildJsonObject {
             put("id", "user-1")
         }))
         runCurrent()
 
         // ASSERT: Persistence
-        val writeAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
+        val writeAction = harness.processedActions.findLast { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
         assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
         val content = writeAction.payload?.get("content")?.jsonPrimitive?.content
         assertNotNull(content)
@@ -176,7 +170,7 @@ class CoreFeatureT2CoreTest {
         assertTrue(content.contains("\"activeId\":\"user-2\""), "The activeId should be updated in the persisted content.")
 
         // ASSERT: Broadcasting
-        val broadcastAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.CORE_IDENTITIES_UPDATED }
+        val broadcastAction = harness.processedActions.findLast { it.name == ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED }
         assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
         val broadcastContent = broadcastAction.payload.toString()
         assertTrue(broadcastContent.contains("User 2") && !broadcastContent.contains("User 1"), "The remaining user should be in the broadcast payload.")
@@ -201,13 +195,13 @@ class CoreFeatureT2CoreTest {
             .build(platform = platform)
 
         // ACT
-        harness.store.dispatch("ui", Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject {
+        harness.store.dispatch("ui", Action(ActionNames.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject {
             put("id", "user-2")
         }))
         runCurrent()
 
         // ASSERT: Persistence
-        val writeAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
+        val writeAction = harness.processedActions.findLast { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
         assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
         val content = writeAction.payload?.get("content")?.jsonPrimitive?.content
         assertNotNull(content)
@@ -215,7 +209,7 @@ class CoreFeatureT2CoreTest {
         assertTrue(content.contains("\"activeId\":\"user-2\""), "The new activeId should be in the persisted content.")
 
         // ASSERT: Broadcasting
-        val broadcastAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.CORE_IDENTITIES_UPDATED }
+        val broadcastAction = harness.processedActions.findLast { it.name == ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED }
         assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
         val broadcastContent = broadcastAction.payload.toString()
         assertTrue(broadcastContent.contains("User 1") && broadcastContent.contains("User 2"), "Both users should be in the broadcast payload.")
@@ -230,11 +224,11 @@ class CoreFeatureT2CoreTest {
     @Test
     fun `handleSideEffects for successful REGISTER_IDENTITY dispatches response and registry update`() = runTest {
         val platform = FakePlatformDependencies("test")
-        // Pre-seed "session" feature identity so the reducer's parent validation passes.
+        // Pre-seed "session" feature identity so the parent validation passes.
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withInitialState("core", coreStateWithFeatureIdentities("core", "session"))
             .build(platform = platform)
+        seedIdentities(harness.store, "core", "session")
 
         // ACT: Session feature registers a child identity
         harness.store.dispatch("session", Action(
@@ -260,9 +254,8 @@ class CoreFeatureT2CoreTest {
         }
         assertNotNull(registryBroadcast, "IDENTITY_REGISTRY_UPDATED should be broadcast after a successful registration.")
 
-        // ASSERT: The identity is in the final state's registry
-        val finalCoreState = harness.store.state.value.featureStates["core"] as CoreState
-        assertNotNull(finalCoreState.identityRegistry["session.chat-cats"])
+        // ASSERT: The identity is in AppState.identityRegistry (single source of truth)
+        assertNotNull(harness.store.state.value.identityRegistry["session.chat-cats"])
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -277,11 +270,10 @@ class CoreFeatureT2CoreTest {
         )
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withInitialState("core", coreStateWithFeatureIdentities(
-                "core", "session",
-                extraRegistry = mapOf("session.chat1" to existingIdentity)
-            ))
             .build(platform = platform)
+        seedIdentities(harness.store, "core", "session",
+            extraRegistry = mapOf("session.chat1" to existingIdentity)
+        )
 
         // ACT: Register a duplicate localHandle
         harness.store.dispatch("session", Action(
@@ -308,8 +300,8 @@ class CoreFeatureT2CoreTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withInitialState("core", coreStateWithFeatureIdentities("core", "session"))
             .build(platform = platform)
+        seedIdentities(harness.store, "core", "session")
 
         // ACT: Dispatch with an invalid localHandle (uppercase)
         harness.store.dispatch("session", Action(
@@ -342,8 +334,8 @@ class CoreFeatureT2CoreTest {
         // Only seed "core" — so "unknown-feature" won't be in the registry
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withInitialState("core", coreStateWithFeatureIdentities("core"))
             .build(platform = platform)
+        seedIdentities(harness.store, "core")
 
         harness.store.dispatch("unknown-feature", Action(
             ActionRegistry.Names.CORE_REGISTER_IDENTITY,
@@ -368,13 +360,12 @@ class CoreFeatureT2CoreTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withInitialState("core", coreStateWithFeatureIdentities(
-                "core", "session",
-                extraRegistry = mapOf(
-                    "session.chat1" to Identity(uuid = "u1", localHandle = "chat1", handle = "session.chat1", name = "Chat 1", parentHandle = "session")
-                )
-            ))
             .build(platform = platform)
+        seedIdentities(harness.store, "core", "session",
+            extraRegistry = mapOf(
+                "session.chat1" to Identity(uuid = "u1", localHandle = "chat1", handle = "session.chat1", name = "Chat 1", parentHandle = "session")
+            )
+        )
 
         // ACT
         harness.store.dispatch("session", Action(
@@ -396,13 +387,12 @@ class CoreFeatureT2CoreTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withInitialState("core", coreStateWithFeatureIdentities(
-                "core", "session", "agent",
-                extraRegistry = mapOf(
-                    "session.chat1" to Identity(uuid = "u1", localHandle = "chat1", handle = "session.chat1", name = "Chat 1", parentHandle = "session")
-                )
-            ))
             .build(platform = platform)
+        seedIdentities(harness.store, "core", "session", "agent",
+            extraRegistry = mapOf(
+                "session.chat1" to Identity(uuid = "u1", localHandle = "chat1", handle = "session.chat1", name = "Chat 1", parentHandle = "session")
+            )
+        )
 
         // ACT: Agent tries to unregister session identity — should be rejected by namespace enforcement
         harness.store.dispatch("agent", Action(
@@ -418,9 +408,8 @@ class CoreFeatureT2CoreTest {
         assertTrue(registryBroadcasts.isEmpty(),
             "IDENTITY_REGISTRY_UPDATED must NOT be broadcast when unregistration is rejected by namespace enforcement.")
 
-        // ASSERT: Identity should still exist
-        val finalState = harness.store.state.value.featureStates["core"] as CoreState
-        assertNotNull(finalState.identityRegistry["session.chat1"], "Identity should remain after rejected unregistration.")
+        // ASSERT: Identity should still exist in AppState.identityRegistry (single source of truth)
+        assertNotNull(harness.store.state.value.identityRegistry["session.chat1"], "Identity should remain after rejected unregistration.")
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -429,8 +418,8 @@ class CoreFeatureT2CoreTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withInitialState("core", coreStateWithFeatureIdentities("core", "session"))
             .build(platform = platform)
+        seedIdentities(harness.store, "core", "session")
 
         // ACT: Unregister something that doesn't exist
         harness.store.dispatch("session", Action(
@@ -447,17 +436,17 @@ class CoreFeatureT2CoreTest {
     }
 
     // ================================================================
-    // Phase 2 — Identity registry lift to AppState
+    // Phase 2 — Identity registry in AppState (single source of truth)
     // ================================================================
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `identity registry is lifted from CoreState to AppState after registration`() = runTest {
+    fun `identity registry in AppState is updated after registration`() = runTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withInitialState("core", coreStateWithFeatureIdentities("core", "session"))
             .build(platform = platform)
+        seedIdentities(harness.store, "core", "session")
 
         // ACT
         harness.store.dispatch("session", Action(
@@ -466,10 +455,10 @@ class CoreFeatureT2CoreTest {
         ))
         runCurrent()
 
-        // ASSERT: AppState-level registry should contain the new identity
+        // ASSERT: AppState.identityRegistry (single source of truth) should contain the new identity
         val appState = harness.store.state.value
         assertNotNull(appState.identityRegistry["session.chat1"],
-            "The identity should be visible in AppState.identityRegistry after the Store lifts it from CoreState.")
+            "The identity should be visible in AppState.identityRegistry after registration.")
     }
 
     // ================================================================
@@ -484,14 +473,9 @@ class CoreFeatureT2CoreTest {
             .withFeature(CoreFeature(platform))
             .build(platform = platform)
 
-        // ASSERT: The core feature identity should be in the registry from boot
+        // ASSERT: The core feature identity should be in AppState.identityRegistry from boot
         val appState = harness.store.state.value
         assertNotNull(appState.identityRegistry["core"],
             "Core feature identity should be seeded during initFeatureLifecycles().")
-
-        // Also verify it's in CoreState (Store seeds both)
-        val coreState = appState.featureStates["core"] as CoreState
-        assertNotNull(coreState.identityRegistry["core"],
-            "Core feature identity should also be in CoreState.identityRegistry (Store seeds both).")
     }
 }

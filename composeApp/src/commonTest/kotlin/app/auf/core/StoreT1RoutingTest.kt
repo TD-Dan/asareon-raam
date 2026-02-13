@@ -481,12 +481,12 @@ class StoreT1RoutingTest {
     }
 
     // ========================================================================
-    // IDENTITY REGISTRY LIFT TEST
-    // Verifies CoreState.identityRegistry → AppState.identityRegistry mechanical lift
+    // IDENTITY REGISTRY TEST
+    // Verifies AppState.identityRegistry is updated via Store.updateIdentityRegistry()
     // ========================================================================
 
     @Test
-    fun `identity registry is lifted from CoreState to AppState after reduce`() {
+    fun `identity registry in AppState is updated after REGISTER_IDENTITY`() {
         // Use a fresh Store with initFeatureLifecycles() so feature identities are seeded.
         // REGISTER_IDENTITY validates that the parent (originator) exists in the registry.
         val alpha = TrackingFeature("alpha", "Alpha")
@@ -517,15 +517,10 @@ class StoreT1RoutingTest {
         ))
 
         val appState = store.state.value
-        val coreState = appState.featureStates["core"] as CoreState
 
-        // The identity should exist in both CoreState and AppState registries
-        assertTrue(coreState.identityRegistry.containsKey("alpha.test-entity"),
-            "CoreState.identityRegistry should contain the registered identity.")
+        // The identity should exist in AppState.identityRegistry (single source of truth)
         assertTrue(appState.identityRegistry.containsKey("alpha.test-entity"),
-            "AppState.identityRegistry should be lifted from CoreState after reduce.")
-        assertEquals(coreState.identityRegistry, appState.identityRegistry,
-            "AppState.identityRegistry should exactly mirror CoreState.identityRegistry.")
+            "AppState.identityRegistry should contain the registered identity.")
     }
 
     // ========================================================================
