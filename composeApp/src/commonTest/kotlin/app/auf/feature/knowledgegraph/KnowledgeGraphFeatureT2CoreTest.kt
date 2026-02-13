@@ -201,7 +201,7 @@ class KnowledgeGraphFeatureT2CoreTest {
             }))
 
             // ASSERT
-            val broadcastAction = harness.processedActions.find { it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_PUBLISH_RESERVATIONS_UPDATED }
+            val broadcastAction = harness.processedActions.find { it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVATIONS_UPDATED }
             assertNotNull(broadcastAction, "A RESERVATIONS_UPDATED broadcast should have been dispatched.")
 
             val payload = broadcastAction.payload!!.jsonObject

@@ -52,7 +52,7 @@ class SessionFeatureT2CoreTest {
             assertEquals(newSession.id, sessionState.activeSessionId)
 
             assertNotNull(harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE })
-            assertNotNull(harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_PUBLISH_SESSION_NAMES_UPDATED })
+            assertNotNull(harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED })
         }
     }
 
@@ -78,11 +78,11 @@ class SessionFeatureT2CoreTest {
             assertNotNull(deleteAction)
             assertEquals("sid-1.json", deleteAction.payload?.get("subpath")?.jsonPrimitive?.content)
 
-            val publishAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_PUBLISH_SESSION_NAMES_UPDATED }
+            val publishAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED }
             assertNotNull(publishAction)
             assertEquals("{}", publishAction.payload?.get("names").toString())
 
-            assertNotNull(harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_PUBLISH_SESSION_DELETED })
+            assertNotNull(harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_SESSION_DELETED })
         }
     }
 
@@ -96,7 +96,7 @@ class SessionFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             // ACT 1: Broadcast user identities from CoreFeature
             val userIdentities = listOf(Identity("user-1", "User Alpha"))
-            val coreBroadcast = Action(ActionRegistry.Names.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
+            val coreBroadcast = Action(ActionRegistry.Names.CORE_IDENTITIES_UPDATED, buildJsonObject {
                 put("identities", Json.encodeToJsonElement(userIdentities))
             })
             harness.store.dispatch("core", coreBroadcast)
@@ -110,7 +110,7 @@ class SessionFeatureT2CoreTest {
 
             // ACT 2: Broadcast agent identities from AgentRuntimeFeature
             val agentNames = mapOf("agent-1" to "Agent Beta")
-            val agentBroadcast = Action(ActionRegistry.Names.AGENT_PUBLISH_AGENT_NAMES_UPDATED, buildJsonObject {
+            val agentBroadcast = Action(ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED, buildJsonObject {
                 put("names", Json.encodeToJsonElement(agentNames))
             })
             harness.store.dispatch("agent", agentBroadcast)
@@ -155,7 +155,7 @@ class SessionFeatureT2CoreTest {
             assertEquals(1, persistedSession.ledger.size)
             assertEquals("persistent", persistedSession.ledger.first().rawContent)
 
-            val publishedEvents = harness.processedActions.filter { it.name == ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED }
+            val publishedEvents = harness.processedActions.filter { it.name == ActionRegistry.Names.SESSION_MESSAGE_POSTED }
             assertEquals(2, publishedEvents.size, "Should publish an event for every POST action, transient or not.")
         }
     }
@@ -269,7 +269,7 @@ class SessionFeatureT2CoreTest {
             }))
             testScheduler.advanceUntilIdle()
 
-            val deletedEvent = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED }
+            val deletedEvent = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_MESSAGE_DELETED }
             assertNotNull(deletedEvent)
             assertEquals("sid-1", deletedEvent.payload?.get("sessionId")?.jsonPrimitive?.content)
             assertEquals("msg-1", deletedEvent.payload?.get("messageId")?.jsonPrimitive?.content)
@@ -284,7 +284,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_PUBLISH_STARTING))
+            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
             testScheduler.advanceUntilIdle()
 
             val listAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST && it.originator == "session" }

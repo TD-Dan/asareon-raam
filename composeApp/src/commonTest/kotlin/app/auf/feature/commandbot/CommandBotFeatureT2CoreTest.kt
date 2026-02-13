@@ -108,7 +108,7 @@ class CommandBotFeatureT2CoreTest {
 
         // Simulate agent registration via Proactive Broadcast
         harness.store.dispatch("agent", Action(
-            ActionRegistry.Names.AGENT_PUBLISH_AGENT_NAMES_UPDATED,
+            ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED,
             buildJsonObject { put("names", buildJsonObject { put(agentId, agentName) }) }
         ))
 
@@ -271,7 +271,7 @@ class CommandBotFeatureT2CoreTest {
 
             // 2. No ACTION_CREATED should be published while pending approval
             val actionCreatedActions = harness.processedActions.filter {
-                it.name == ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED
+                it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED
             }
             assertTrue(actionCreatedActions.isEmpty(),
                 "ACTION_CREATED must NOT be published before approval.")
@@ -315,7 +315,7 @@ class CommandBotFeatureT2CoreTest {
             assertEquals("Test Agent", resolved.requestingAgentName)
 
             // 3. ACTION_CREATED should be published (the owning feature dispatches the domain action)
-            val actionCreated = harness.processedActions.find { it.name == ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED }
+            val actionCreated = harness.processedActions.find { it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED }
             assertNotNull(actionCreated, "ACTION_CREATED should be published after approval.")
             assertEquals("session.CREATE", actionCreated.payload?.get("actionName")?.jsonPrimitive?.content,
                 "ACTION_CREATED should carry the staged action name.")
@@ -360,7 +360,7 @@ class CommandBotFeatureT2CoreTest {
 
             // 3. No ACTION_CREATED should be published after denial
             val actionCreatedActions = harness.processedActions.filter {
-                it.name == ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED
+                it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED
             }
             assertTrue(actionCreatedActions.isEmpty(),
                 "ACTION_CREATED must NOT be published after denial.")
@@ -536,7 +536,7 @@ class CommandBotFeatureT2CoreTest {
 
         // ASSERT
         harness.runAndLogOnFailure {
-            val actionCreated = harness.processedActions.find { it.name == ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED }
+            val actionCreated = harness.processedActions.find { it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED }
             assertNotNull(actionCreated, "CommandBot should publish ACTION_CREATED for agent LIST_SESSIONS.")
 
             assertEquals("session.LIST_SESSIONS", actionCreated.payload?.get("actionName")?.jsonPrimitive?.content)

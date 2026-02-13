@@ -103,7 +103,7 @@ class GatewayFeatureT2CoreTest {
     @Test
     fun `on INITIALIZING registers settings for all providers`() = testScope.runTest {
         val harness = createHarness(this, initialLifecycle = AppLifecycle.BOOTING)
-        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING))
+        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
 
         harness.runAndLogOnFailure {
             assertEquals(1, fakeProvider1.registerSettingsCallCount)
@@ -115,12 +115,12 @@ class GatewayFeatureT2CoreTest {
     @Test
     fun `on STARTING refreshes models for all providers with API keys`() = testScope.runTest {
         val harness = createHarness(this, initialLifecycle = AppLifecycle.INITIALIZING)
-        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_LOADED, buildJsonObject {
             put("gateway.provider-1.apiKey", "k1")
             put("gateway.provider-2.apiKey", "k2")
         }))
 
-        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_PUBLISH_STARTING))
+        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -137,14 +137,14 @@ class GatewayFeatureT2CoreTest {
     @Test
     fun `on settings VALUE_CHANGED refreshes models for the correct provider`() = testScope.runTest {
         val harness = createHarness(this, initialLifecycle = AppLifecycle.INITIALIZING)
-        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_LOADED, buildJsonObject {
             put("gateway.provider-1.apiKey", "k1")
             put("gateway.provider-2.apiKey", "k2")
         }))
-        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_PUBLISH_STARTING))
+        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
         runCurrent()
 
-        val valueChangedAction = Action(ActionRegistry.Names.SETTINGS_PUBLISH_VALUE_CHANGED, buildJsonObject {
+        val valueChangedAction = Action(ActionRegistry.Names.SETTINGS_VALUE_CHANGED, buildJsonObject {
             put("key", "gateway.provider-2.apiKey"); put("value", "new-key")
         })
         harness.store.dispatch("settings", valueChangedAction)
@@ -160,7 +160,7 @@ class GatewayFeatureT2CoreTest {
     @Test
     fun `on GENERATE_CONTENT routes to correct provider and delivers response privately`() = testScope.runTest {
         val harness = createHarness(this)
-        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_LOADED, buildJsonObject {
             put("gateway.provider-2.apiKey", "k2")
         }))
         val originatorId = "agent-feature-1"
@@ -225,7 +225,7 @@ class GatewayFeatureT2CoreTest {
     @Test
     fun `CANCEL_REQUEST cancels the job and cleans up via internal action`() = testScope.runTest {
         val harness = createHarness(this)
-        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_LOADED, buildJsonObject {
             put("gateway.provider-2.apiKey", "k2")
         }))
         val correlationId = "cancel-test-123"

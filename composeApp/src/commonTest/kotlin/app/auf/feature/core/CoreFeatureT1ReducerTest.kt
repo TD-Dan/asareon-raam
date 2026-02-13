@@ -31,25 +31,25 @@ class CoreFeatureT1ReducerTest {
     // ================================================================
 
     @Test
-    fun `reducer transitions from BOOTING to INITIALIZING on SYSTEM_PUBLISH_INITIALIZING`() {
+    fun `reducer transitions from BOOTING to INITIALIZING on SYSTEM_INITIALIZING`() {
         val initialState = CoreState(lifecycle = AppLifecycle.BOOTING)
-        val action = Action(ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING)
+        val action = Action(ActionRegistry.Names.SYSTEM_INITIALIZING)
         val newState = feature.reducer(initialState, action) as? CoreState
         assertEquals(AppLifecycle.INITIALIZING, newState?.lifecycle)
     }
 
     @Test
-    fun `reducer transitions from INITIALIZING to RUNNING on SYSTEM_PUBLISH_STARTING`() {
+    fun `reducer transitions from INITIALIZING to RUNNING on SYSTEM_STARTING`() {
         val initialState = CoreState(lifecycle = AppLifecycle.INITIALIZING)
-        val action = Action(ActionRegistry.Names.SYSTEM_PUBLISH_STARTING)
+        val action = Action(ActionRegistry.Names.SYSTEM_STARTING)
         val newState = feature.reducer(initialState, action) as? CoreState
         assertEquals(AppLifecycle.RUNNING, newState?.lifecycle)
     }
 
     @Test
-    fun `reducer transitions to CLOSING on SYSTEM_PUBLISH_CLOSING`() {
+    fun `reducer transitions to CLOSING on SYSTEM_CLOSING`() {
         val initialState = CoreState(lifecycle = AppLifecycle.RUNNING)
-        val action = Action(ActionRegistry.Names.SYSTEM_PUBLISH_CLOSING)
+        val action = Action(ActionRegistry.Names.SYSTEM_CLOSING)
         val newState = feature.reducer(initialState, action) as? CoreState
         assertEquals(AppLifecycle.CLOSING, newState?.lifecycle)
     }

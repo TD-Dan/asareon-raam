@@ -30,21 +30,21 @@ open class GatewayFeature(
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val gatewayState = newState as? GatewayState ?: return
         when (action.name) {
-            ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING -> {
+            ActionRegistry.Names.SYSTEM_INITIALIZING -> {
                 // Each provider registers its own settings, making the system extensible.
                 providerMap.values.forEach { provider ->
                     provider.registerSettings { actionToDispatch -> store.dispatch(identity.handle, actionToDispatch) }
                 }
             }
 
-            ActionRegistry.Names.SYSTEM_PUBLISH_STARTING -> {
+            ActionRegistry.Names.SYSTEM_STARTING -> {
                 // After settings are loaded, trigger an initial model refresh for all providers.
                 providerMap.keys.forEach { providerId ->
                     refreshProviderModels(providerId, gatewayState, store)
                 }
             }
 
-            ActionRegistry.Names.SETTINGS_PUBLISH_VALUE_CHANGED -> {
+            ActionRegistry.Names.SETTINGS_VALUE_CHANGED -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
                 // If one of our known API keys changed, trigger a model refresh for that provider.
                 if (key in providerApiKeys) {
@@ -55,7 +55,7 @@ open class GatewayFeature(
 
             ActionRegistry.Names.GATEWAY_REQUEST_AVAILABLE_MODELS -> {
                 val payload = Json.encodeToJsonElement(gatewayState.availableModels).jsonObject
-                store.dispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED, payload))
+                store.dispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_AVAILABLE_MODELS_UPDATED, payload))
             }
 
             ActionRegistry.Names.GATEWAY_GENERATE_CONTENT -> {
@@ -268,14 +268,14 @@ open class GatewayFeature(
                 val newModels = currentFeatureState.availableModels + (providerId to models)
                 return currentFeatureState.copy(availableModels = newModels)
             }
-            ActionRegistry.Names.SETTINGS_PUBLISH_LOADED -> {
+            ActionRegistry.Names.SETTINGS_LOADED -> {
                 val loadedValues = action.payload?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap()
                 val relevantKeys = loadedValues.filterKeys { it in providerApiKeys }
                 if (relevantKeys.isNotEmpty()) {
                     return currentFeatureState.copy(apiKeys = currentFeatureState.apiKeys + relevantKeys)
                 }
             }
-            ActionRegistry.Names.SETTINGS_PUBLISH_VALUE_CHANGED -> {
+            ActionRegistry.Names.SETTINGS_VALUE_CHANGED -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
                 val value = action.payload["value"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
                 if (key in providerApiKeys) {

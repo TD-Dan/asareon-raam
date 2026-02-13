@@ -116,9 +116,9 @@ object AgentRuntimeReducer {
             }
 
             // --- External Events ---
-            ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED -> handleMessagePosted(action, state, platformDependencies)
+            ActionRegistry.Names.SESSION_MESSAGE_POSTED -> handleMessagePosted(action, state, platformDependencies)
 
-            ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED -> {
+            ActionRegistry.Names.SESSION_MESSAGE_DELETED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<MessageDeletedPayload>(it) } ?: return state
                 // REFACTORED: Iterate Map<AgentId, Map<SessionId, MessageId>>
                 var newAvatarCards = state.agentAvatarCardIds
@@ -132,7 +132,7 @@ object AgentRuntimeReducer {
                 state.copy(agentAvatarCardIds = newAvatarCards)
             }
 
-            ActionRegistry.Names.SESSION_PUBLISH_SESSION_DELETED -> {
+            ActionRegistry.Names.SESSION_SESSION_DELETED -> {
                 val deletedSessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return state
                 val agentsToUpdate = state.agents.values
                     .filter { it.subscribedSessionIds.contains(deletedSessionId) || it.privateSessionId == deletedSessionId }
@@ -161,27 +161,27 @@ object AgentRuntimeReducer {
                 state.copy(agents = newAgents, agentAvatarCardIds = newAvatarCards, agentsToPersist = agentsToUpdate.map { it.id }.toSet())
             }
 
-            ActionRegistry.Names.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED -> {
+            ActionRegistry.Names.GATEWAY_AVAILABLE_MODELS_UPDATED -> {
                 val decodedModels: Map<String, List<String>>? = try { action.payload?.let { json.decodeFromJsonElement(it) } } catch (e: Exception) { null }
                 state.copy(availableModels = decodedModels ?: emptyMap())
             }
 
-            ActionRegistry.Names.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
+            ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED -> {
                 val decoded = try { action.payload?.let { json.decodeFromJsonElement<SessionNamesPayload>(it) } } catch(e: Exception) { null }
                 if (decoded != null) state.copy(sessionNames = decoded.names) else state
             }
 
-            ActionRegistry.Names.KNOWLEDGEGRAPH_PUBLISH_AVAILABLE_PERSONAS_UPDATED -> {
+            ActionRegistry.Names.KNOWLEDGEGRAPH_AVAILABLE_PERSONAS_UPDATED -> {
                 val decoded = try { action.payload?.let { json.decodeFromJsonElement<GraphNamesPayload>(it) } } catch(e: Exception) { null }
                 if (decoded != null) state.copy(knowledgeGraphNames = decoded.names) else state
             }
 
-            ActionRegistry.Names.KNOWLEDGEGRAPH_PUBLISH_RESERVATIONS_UPDATED -> {
+            ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVATIONS_UPDATED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<ReservedIdsPayload>(it) }
                 if (payload != null) state.copy(hkgReservedIds = payload.reservedIds) else state
             }
 
-            ActionRegistry.Names.CORE_PUBLISH_IDENTITIES_UPDATED -> {
+            ActionRegistry.Names.CORE_IDENTITIES_UPDATED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<IdentitiesUpdatedPayload>(it) }
                 if (payload != null) state.copy(userIdentities = payload.identities) else state
             }

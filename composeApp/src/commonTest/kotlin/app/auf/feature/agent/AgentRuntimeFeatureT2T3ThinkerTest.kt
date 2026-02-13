@@ -91,7 +91,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            val sentinelMsg = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+            val sentinelMsg = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
                 put("sessionId", "session-1")
                 put("entry", buildJsonObject {
                     put("id", "msg-1")

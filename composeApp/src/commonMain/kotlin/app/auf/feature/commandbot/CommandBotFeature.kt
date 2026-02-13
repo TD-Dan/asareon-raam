@@ -20,7 +20,7 @@ import kotlinx.serialization.json.put
  * ## Mandate
  * A stateful agent that observes all session transcripts for command directives
  * (`auf_` code blocks) and validates them against guardrails. For agent-originated
- * commands, it publishes [ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED] so that
+ * commands, it publishes [ActionRegistry.Names.COMMANDBOT_ACTION_CREATED] so that
  * the owning feature (e.g., agent) can apply its own sandboxing and dispatch.
  * For human-originated commands, it dispatches directly.
  *
@@ -130,7 +130,7 @@ class CommandBotFeature(
             }
 
             // Clean up resolved approvals when their card message is deleted
-            ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED -> {
+            ActionRegistry.Names.SESSION_MESSAGE_DELETED -> {
                 val messageId = action.payload?.get("messageId")?.jsonPrimitive?.contentOrNull ?: return currentState
                 val matchingApprovalId = currentState.resolvedApprovals.values
                     .firstOrNull { it.cardMessageId == messageId }
@@ -153,7 +153,7 @@ class CommandBotFeature(
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         when (action.name) {
             // --- Track known agents via Proactive Broadcast ---
-            ActionRegistry.Names.AGENT_PUBLISH_AGENT_NAMES_UPDATED -> {
+            ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED -> {
                 val namesMap = action.payload?.get("names")?.jsonObject ?: return
                 knownAgentIds.clear()
                 knownAgentIds.addAll(namesMap.keys)
@@ -166,7 +166,7 @@ class CommandBotFeature(
                     "Updated known agent IDs: ${knownAgentIds.joinToString(", ")}"
                 )
             }
-            ActionRegistry.Names.AGENT_PUBLISH_AGENT_DELETED -> {
+            ActionRegistry.Names.AGENT_AGENT_DELETED -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.content ?: return
                 knownAgentIds.remove(agentId)
                 knownAgentNames.remove(agentId)
@@ -239,7 +239,7 @@ class CommandBotFeature(
             }
 
             // --- Core Command Processing ---
-            ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED -> {
+            ActionRegistry.Names.SESSION_MESSAGE_POSTED -> {
                 val payload = action.payload ?: return
                 val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: return
                 val entry = payload["entry"]?.jsonObject ?: return
@@ -372,7 +372,7 @@ class CommandBotFeature(
         val agentName = knownAgentNames[originatorId] ?: originatorId
 
         store.deferredDispatch(identity.handle, Action(
-            ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED,
+            ActionRegistry.Names.COMMANDBOT_ACTION_CREATED,
             buildJsonObject {
                 put("correlationId", correlationId)
                 put("originatorId", originatorId)

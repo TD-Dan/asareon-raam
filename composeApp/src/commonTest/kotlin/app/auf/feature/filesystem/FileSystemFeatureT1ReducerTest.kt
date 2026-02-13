@@ -61,7 +61,7 @@ class FileSystemFeatureT1ReducerTest {
             put("path", "/bad/path")
             put("error", "Directory not found")
         }
-        val action = Action(ActionRegistry.Names.FILESYSTEM_PUBLISH_NAVIGATION_FAILED, payload)
+        val action = Action(ActionRegistry.Names.FILESYSTEM_NAVIGATION_FAILED, payload)
 
         val newState = feature.reducer(initialState, action)
         val newFsState = newState.featureStates[featureName] as? FileSystemState
@@ -133,7 +133,7 @@ class FileSystemFeatureT1ReducerTest {
             put("filesystem.whitelistedPaths", "path1,path2")
             put("filesystem.favoritePaths", "fav1")
         }
-        val action = Action(ActionRegistry.Names.SETTINGS_PUBLISH_LOADED, payload)
+        val action = Action(ActionRegistry.Names.SETTINGS_LOADED, payload)
         val newState = feature.reducer(initialState, action) as FileSystemState
         assertEquals(setOf("path1", "path2"), newState.whitelistedPaths)
         assertEquals(setOf("fav1"), newState.favoritePaths)

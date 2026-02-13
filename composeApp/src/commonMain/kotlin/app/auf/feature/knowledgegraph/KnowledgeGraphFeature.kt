@@ -113,14 +113,14 @@ class KnowledgeGraphFeature(
                     }))
                 }
             }
-            ActionRegistry.Names.SYSTEM_PUBLISH_STARTING -> {
+            ActionRegistry.Names.SYSTEM_STARTING -> {
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST))
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_PERSONA_LOADED -> {
                 if (prevKgState?.personaRoots != kgState.personaRoots) {
                     val idToNameMap = kgState.personaRoots.entries.associate { (name, id) -> id to name }
                     store.deferredDispatch(identity.handle, Action(
-                        name = ActionRegistry.Names.KNOWLEDGEGRAPH_PUBLISH_AVAILABLE_PERSONAS_UPDATED,
+                        name = ActionRegistry.Names.KNOWLEDGEGRAPH_AVAILABLE_PERSONAS_UPDATED,
                         payload = buildJsonObject {
                             put("names", json.encodeToJsonElement(idToNameMap))
                         }
@@ -142,7 +142,7 @@ class KnowledgeGraphFeature(
 
                 if (prevKgState?.reservations != kgState.reservations) {
                     store.deferredDispatch(identity.handle, Action(
-                        name = ActionRegistry.Names.KNOWLEDGEGRAPH_PUBLISH_RESERVATIONS_UPDATED,
+                        name = ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVATIONS_UPDATED,
                         payload = buildJsonObject {
                             put("reservedIds", json.encodeToJsonElement(kgState.reservations.keys.toList()))
                         }

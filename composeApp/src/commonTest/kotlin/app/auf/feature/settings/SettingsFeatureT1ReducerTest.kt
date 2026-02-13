@@ -77,7 +77,7 @@ class SettingsFeatureT1ReducerTest {
     fun `reducer LOADED applies loaded values over defaults`() {
         val addAction = createAddAction("test.key", "default")
         val stateAfterAdd = feature.reducer(SettingsState(), addAction)
-        val loadedAction = Action(ActionRegistry.Names.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+        val loadedAction = Action(ActionRegistry.Names.SETTINGS_LOADED, buildJsonObject {
             put("test.key", "loaded")
         })
 

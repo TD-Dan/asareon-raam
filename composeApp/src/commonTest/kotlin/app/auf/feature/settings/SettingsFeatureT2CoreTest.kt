@@ -32,7 +32,7 @@ class SettingsFeatureT2CoreTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.BOOTING))
             .build()
 
-        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING))
+        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
 
         val readAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_READ }
         assertNotNull(readAction)
@@ -53,7 +53,7 @@ class SettingsFeatureT2CoreTest {
 
         feature.onPrivateData(envelope, harness.store)
 
-        val loadedAction = harness.processedActions.find { it.name == ActionRegistry.Names.SETTINGS_PUBLISH_LOADED }
+        val loadedAction = harness.processedActions.find { it.name == ActionRegistry.Names.SETTINGS_LOADED }
         assertNotNull(loadedAction)
         assertEquals("settings", loadedAction.originator)
         assertEquals("file.value", loadedAction.payload?.get("file.key")?.jsonPrimitive?.content)

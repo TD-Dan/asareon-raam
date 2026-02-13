@@ -100,14 +100,14 @@ data class SessionState(
 
     /**
      * PERSISTED VIA SETTINGS: When true, the SessionView tab bar hides sessions with isHidden=true.
-     * Hydrated from setting key "session.hide_hidden_in_viewer" via SETTINGS_PUBLISH_LOADED / VALUE_CHANGED.
+     * Hydrated from setting key "session.hide_hidden_in_viewer" via SETTINGS_LOADED / VALUE_CHANGED.
      */
     @Transient
     val hideHiddenInViewer: Boolean = true,
 
     /**
      * PERSISTED VIA SETTINGS: When true, the SessionsManagerView hides sessions with isHidden=true.
-     * Hydrated from setting key "session.hide_hidden_in_manager" via SETTINGS_PUBLISH_LOADED / VALUE_CHANGED.
+     * Hydrated from setting key "session.hide_hidden_in_manager" via SETTINGS_LOADED / VALUE_CHANGED.
      */
     @Transient
     val hideHiddenInManager: Boolean = true,

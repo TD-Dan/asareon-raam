@@ -43,7 +43,7 @@ class SettingsFeature(
                     val loadedValues = payload["content"]?.jsonPrimitive?.contentOrNull?.let {
                         try { Json.decodeFromString<Map<String, String>>(it) } catch (e: Exception) { emptyMap() }
                     } ?: emptyMap()
-                    store.dispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+                    store.dispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_LOADED, buildJsonObject {
                         loadedValues.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
                     }))
                 }
@@ -53,7 +53,7 @@ class SettingsFeature(
 
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         when (action.name) {
-            ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING -> store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", settingsFileName) }))
+            ActionRegistry.Names.SYSTEM_INITIALIZING -> store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", settingsFileName) }))
             ActionRegistry.Names.SETTINGS_UI_INPUT_CHANGED -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
                 val value = action.payload.get("value")?.jsonPrimitive?.content ?: return
@@ -70,7 +70,7 @@ class SettingsFeature(
                     put("content", Json.encodeToString(latestSettingsState.values))
                     put("encrypt", true)
                 }))
-                action.payload?.let { store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_PUBLISH_VALUE_CHANGED, it)) }
+                action.payload?.let { store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_VALUE_CHANGED, it)) }
             }
             ActionRegistry.Names.SETTINGS_OPEN_FOLDER -> store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER))
         }
@@ -89,7 +89,7 @@ class SettingsFeature(
                     return currentFeatureState.copy(definitions = currentFeatureState.definitions + payload, values = newValues)
                 }
             }
-            ActionRegistry.Names.SETTINGS_PUBLISH_LOADED -> {
+            ActionRegistry.Names.SETTINGS_LOADED -> {
                 val loadedValues = payload?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap()
                 val allDefaults = currentFeatureState.definitions.associate {
                     it["key"]!!.jsonPrimitive.content to it["defaultValue"]!!.jsonPrimitive.content

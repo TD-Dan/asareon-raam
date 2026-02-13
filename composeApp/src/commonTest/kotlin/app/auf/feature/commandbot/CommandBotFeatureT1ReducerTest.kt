@@ -43,7 +43,7 @@ import kotlin.test.assertTrue
  * - resolvedAt sourced from platformDependencies
  * - Resolved entry retains sessionId and cardMessageId from pending
  *
- * ### SESSION_PUBLISH_MESSAGE_DELETED
+ * ### SESSION_MESSAGE_DELETED
  * - Matching cardMessageId → removes from resolvedApprovals
  * - Non-matching messageId → state unchanged
  * - Null messageId → returns current state
@@ -509,7 +509,7 @@ class CommandBotFeatureT1ReducerTest {
     }
 
     // ========================================================================
-    // SESSION_PUBLISH_MESSAGE_DELETED
+    // SESSION_MESSAGE_DELETED
     // ========================================================================
 
     @Test
@@ -519,7 +519,7 @@ class CommandBotFeatureT1ReducerTest {
             resolvedApprovals = mapOf("approval-1" to resolvedApproval(cardMessageId = "card-1"))
         )
 
-        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_MESSAGE_DELETED, buildJsonObject {
             put("sessionId", "session-1")
             put("messageId", "card-1")
         })
@@ -535,7 +535,7 @@ class CommandBotFeatureT1ReducerTest {
         val resolved = resolvedApproval(cardMessageId = "card-1")
         val initial = CommandBotState(resolvedApprovals = mapOf("approval-1" to resolved))
 
-        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_MESSAGE_DELETED, buildJsonObject {
             put("sessionId", "session-1")
             put("messageId", "some-other-message")
         })
@@ -552,7 +552,7 @@ class CommandBotFeatureT1ReducerTest {
             resolvedApprovals = mapOf("approval-1" to resolvedApproval())
         )
 
-        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_MESSAGE_DELETED, buildJsonObject {
             put("sessionId", "session-1")
             // messageId omitted
         })
@@ -566,7 +566,7 @@ class CommandBotFeatureT1ReducerTest {
         val feature = createFeature()
         val initial = CommandBotState() // no resolved approvals
 
-        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_MESSAGE_DELETED, buildJsonObject {
             put("sessionId", "session-1")
             put("messageId", "card-1")
         })
@@ -588,7 +588,7 @@ class CommandBotFeatureT1ReducerTest {
             )
         )
 
-        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_MESSAGE_DELETED, buildJsonObject {
             put("sessionId", "session-1")
             put("messageId", "card-A")
         })
@@ -607,7 +607,7 @@ class CommandBotFeatureT1ReducerTest {
             resolvedApprovals = mapOf("resolved-1" to resolvedApproval(approvalId = "resolved-1", cardMessageId = "card-1"))
         )
 
-        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_MESSAGE_DELETED, buildJsonObject {
             put("sessionId", "session-1")
             put("messageId", "card-1")
         })

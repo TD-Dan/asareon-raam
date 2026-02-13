@@ -65,7 +65,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         val agent = AgentInstance(agentId, "Test", "", "", "", subscribedSessionIds = listOf(sessionId))
         val initialState = AgentRuntimeState(agents = mapOf(agentId to agent))
 
-        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
             put("sessionId", sessionId)
             put("entry", buildJsonObject {
                 put("id", "msg-1")
@@ -92,7 +92,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             agentStatuses = mapOf(agentId to initialStatus)
         )
 
-        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
             put("sessionId", sessionId)
             put("entry", buildJsonObject {
                 put("id", "msg-sentinel")
@@ -190,7 +190,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         val state = AgentRuntimeState(agents = mapOf("a1" to agent))
 
         // ACT
-        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_SESSION_DELETED, buildJsonObject {
             put("sessionId", "s1")
         })
         val newState = AgentRuntimeReducer.reduce(state, action, platform)

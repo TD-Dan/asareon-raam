@@ -62,7 +62,7 @@ class CoreFeatureT2CoreTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `handleSideEffects for SYSTEM_PUBLISH_INITIALIZING dispatches ADD actions for its settings`() = runTest {
+    fun `handleSideEffects for SYSTEM_INITIALIZING dispatches ADD actions for its settings`() = runTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -70,7 +70,7 @@ class CoreFeatureT2CoreTest {
             .build(platform = platform)
 
         // ACT: Dispatch the lifecycle action that triggers the side-effect.
-        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING))
+        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
         runCurrent()
 
         // ASSERT: Verify that the correct side-effects (dispatching ADD actions) occurred.
@@ -134,7 +134,7 @@ class CoreFeatureT2CoreTest {
         assertTrue(content.contains("Test User"), "The new user's name should be in the persisted content.")
 
         // ASSERT: Broadcasting (legacy)
-        val broadcastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_PUBLISH_IDENTITIES_UPDATED }
+        val broadcastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITIES_UPDATED }
         assertNotNull(broadcastAction, "A legacy broadcast action should be dispatched.")
         val broadcastContent = broadcastAction.payload.toString()
         assertTrue(broadcastContent.contains("Test User"), "The new user's name should be in the broadcast payload.")
@@ -176,7 +176,7 @@ class CoreFeatureT2CoreTest {
         assertTrue(content.contains("\"activeId\":\"user-2\""), "The activeId should be updated in the persisted content.")
 
         // ASSERT: Broadcasting
-        val broadcastAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.CORE_PUBLISH_IDENTITIES_UPDATED }
+        val broadcastAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.CORE_IDENTITIES_UPDATED }
         assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
         val broadcastContent = broadcastAction.payload.toString()
         assertTrue(broadcastContent.contains("User 2") && !broadcastContent.contains("User 1"), "The remaining user should be in the broadcast payload.")
@@ -215,7 +215,7 @@ class CoreFeatureT2CoreTest {
         assertTrue(content.contains("\"activeId\":\"user-2\""), "The new activeId should be in the persisted content.")
 
         // ASSERT: Broadcasting
-        val broadcastAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.CORE_PUBLISH_IDENTITIES_UPDATED }
+        val broadcastAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.CORE_IDENTITIES_UPDATED }
         assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
         val broadcastContent = broadcastAction.payload.toString()
         assertTrue(broadcastContent.contains("User 1") && broadcastContent.contains("User 2"), "Both users should be in the broadcast payload.")

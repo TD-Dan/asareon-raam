@@ -256,7 +256,7 @@ class AgentRuntimeFeature(
                 }
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject { put("subpath", agentId) }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_CONFIRM_DELETE, buildJsonObject { put("agentId", agentId) }))
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_PUBLISH_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
                 broadcastAgentNames(agentState, store)
                 // Unregister agent identity (cascades any sub-identities)
                 store.deferredDispatch(identity.handle, Action(
@@ -373,7 +373,7 @@ class AgentRuntimeFeature(
                 activeTurnJobs.remove(agentId)
                 AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.IDLE, "Turn cancelled by user.")
             }
-            ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED -> {
+            ActionRegistry.Names.SESSION_MESSAGE_POSTED -> {
                 val prevAgentState = previousState as? AgentRuntimeState ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "MESSAGE_POSTED: previousState is not AgentRuntimeState. Cannot detect auto-turn triggers.")
                     return
@@ -397,14 +397,14 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.AGENT_CHECK_AUTOMATIC_TRIGGERS -> {
                 AgentAutoTriggerLogic.checkAndDispatchTriggers(store, agentState, platformDependencies, identity.handle)
             }
-            ActionRegistry.Names.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
+            ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED -> {
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
             }
 
             // ========================================================================
             // ACTION_CREATED: Handle validated commands from CommandBot
             // ========================================================================
-            ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED -> {
+            ActionRegistry.Names.COMMANDBOT_ACTION_CREATED -> {
                 val payload = action.payload ?: return
                 val originatorId = payload["originatorId"]?.jsonPrimitive?.contentOrNull ?: return
                 val originatorName = payload["originatorName"]?.jsonPrimitive?.contentOrNull ?: originatorId
@@ -508,7 +508,7 @@ class AgentRuntimeFeature(
 
     private fun broadcastAgentNames(state: AgentRuntimeState, store: Store) {
         val nameMap = state.agents.mapValues { it.value.name }
-        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_PUBLISH_AGENT_NAMES_UPDATED, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED, buildJsonObject {
             put("names", Json.encodeToJsonElement(nameMap))
         }))
     }

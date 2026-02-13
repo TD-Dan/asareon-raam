@@ -101,7 +101,7 @@ class CoreFeature(
         val prevCoreState = previousState as? CoreState
 
         when (action.name) {
-            ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING -> {
+            ActionRegistry.Names.SYSTEM_INITIALIZING -> {
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyWidth); put("type", "NUMERIC_LONG"); put("label", "Window Width")
                     put("description", "The width of the application window in pixels.")
@@ -113,7 +113,7 @@ class CoreFeature(
                     put("section", "Appearance"); put("defaultValue", "800")
                 }))
             }
-            ActionRegistry.Names.SYSTEM_PUBLISH_STARTING -> {
+            ActionRegistry.Names.SYSTEM_STARTING -> {
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", identitiesFileName)}))
             }
             ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG -> {
@@ -338,7 +338,7 @@ class CoreFeature(
             put("encrypt", true)
         }))
 
-        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_IDENTITIES_UPDATED, buildJsonObject {
             put("identities", Json.encodeToJsonElement(state.userIdentities))
             state.activeUserId?.let { put("activeId", it) }
         }))
@@ -349,9 +349,9 @@ class CoreFeature(
         val originator = action.originator ?: ""
 
         when (action.name) {
-            ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING -> return coreState.copy(lifecycle = AppLifecycle.INITIALIZING)
-            ActionRegistry.Names.SYSTEM_PUBLISH_STARTING -> return coreState.copy(lifecycle = AppLifecycle.RUNNING)
-            ActionRegistry.Names.SYSTEM_PUBLISH_CLOSING -> return coreState.copy(lifecycle = AppLifecycle.CLOSING)
+            ActionRegistry.Names.SYSTEM_INITIALIZING -> return coreState.copy(lifecycle = AppLifecycle.INITIALIZING)
+            ActionRegistry.Names.SYSTEM_STARTING -> return coreState.copy(lifecycle = AppLifecycle.RUNNING)
+            ActionRegistry.Names.SYSTEM_CLOSING -> return coreState.copy(lifecycle = AppLifecycle.CLOSING)
             ActionRegistry.Names.CORE_SET_ACTIVE_VIEW -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<SetActiveViewPayload>(it) }
                 return payload?.let { coreState.copy(activeViewKey = it.key) } ?: coreState
@@ -378,13 +378,13 @@ class CoreFeature(
                 return coreState.copy(confirmationRequest = request?.copy(originator = originator))
             }
             ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG -> return coreState.copy(confirmationRequest = null)
-            ActionRegistry.Names.SETTINGS_PUBLISH_LOADED -> {
+            ActionRegistry.Names.SETTINGS_LOADED -> {
                 val loadedValues = action.payload
                 val width = loadedValues?.get(settingKeyWidth)?.jsonPrimitive?.content?.toIntOrNull()
                 val height = loadedValues?.get(settingKeyHeight)?.jsonPrimitive?.content?.toIntOrNull()
                 return coreState.copy(windowWidth = width ?: coreState.windowWidth, windowHeight = height ?: coreState.windowHeight)
             }
-            ActionRegistry.Names.SETTINGS_PUBLISH_VALUE_CHANGED -> {
+            ActionRegistry.Names.SETTINGS_VALUE_CHANGED -> {
                 val payload = action.payload ?: return coreState
                 val key = payload["key"]?.jsonPrimitive?.content
                 val value = payload["value"]?.jsonPrimitive?.content

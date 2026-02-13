@@ -100,7 +100,7 @@ class CommandBotFeatureT2GuardrailsTest {
             .build(platform = platform)
 
         harness.store.dispatch("agent", Action(
-            ActionRegistry.Names.AGENT_PUBLISH_AGENT_NAMES_UPDATED,
+            ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED,
             buildJsonObject { put("names", buildJsonObject { put(agentId, agentName) }) }
         ))
         // Note: caller is responsible for runCurrent() after setup.
@@ -166,7 +166,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
         // Delete the agent
         harness.store.dispatch("agent", Action(
-            ActionRegistry.Names.AGENT_PUBLISH_AGENT_DELETED,
+            ActionRegistry.Names.AGENT_AGENT_DELETED,
             buildJsonObject { put("agentId", "agent-1") }
         ))
         runCurrent()
@@ -191,7 +191,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
         // Register two agents
         harness.store.dispatch("agent", Action(
-            ActionRegistry.Names.AGENT_PUBLISH_AGENT_NAMES_UPDATED,
+            ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED,
             buildJsonObject {
                 put("names", buildJsonObject {
                     put("agent-1", "Agent One")
@@ -203,7 +203,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
         // Second broadcast replaces with only agent-2
         harness.store.dispatch("agent", Action(
-            ActionRegistry.Names.AGENT_PUBLISH_AGENT_NAMES_UPDATED,
+            ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED,
             buildJsonObject {
                 put("names", buildJsonObject { put("agent-2", "Agent Two") })
             }
@@ -291,7 +291,7 @@ class CommandBotFeatureT2GuardrailsTest {
         harness.runAndLogOnFailure {
             // Agent commands now go through ACTION_CREATED, not direct dispatch
             val actionCreated = harness.processedActions.find {
-                it.name == ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED &&
+                it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED &&
                         it.payload?.get("actionName")?.jsonPrimitive?.contentOrNull == "session.POST"
             }
 

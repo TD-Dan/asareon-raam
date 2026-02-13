@@ -101,7 +101,7 @@ class FileSystemFeature(
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_FINALIZE_SCOPED_READ))
                 }
             }
-            ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING -> {
+            ActionRegistry.Names.SYSTEM_INITIALIZING -> {
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyWhitelist); put("type", "STRING_SET"); put("label", "Whitelisted Paths")
                     put("description", "Whitelisted directory paths that the app is allowed to edit.")
@@ -113,7 +113,7 @@ class FileSystemFeature(
                     put("section", "FileSystem"); put("defaultValue", "")
                 }))
             }
-            ActionRegistry.Names.SYSTEM_PUBLISH_STARTING -> {
+            ActionRegistry.Names.SYSTEM_STARTING -> {
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", platformDependencies.getUserHomePath()) }))
             }
             ActionRegistry.Names.FILESYSTEM_NAVIGATE -> {
@@ -463,11 +463,11 @@ class FileSystemFeature(
             ActionRegistry.Names.FILESYSTEM_REMOVE_WHITELIST_PATH -> return currentFeatureState.copy(whitelistedPaths = currentFeatureState.whitelistedPaths - (payload?.let { json.decodeFromJsonElement<PathPayload>(it) }?.path ?: ""))
             ActionRegistry.Names.FILESYSTEM_ADD_FAVORITE_PATH -> return currentFeatureState.copy(favoritePaths = currentFeatureState.favoritePaths + (payload?.let { json.decodeFromJsonElement<PathPayload>(it) }?.path ?: ""))
             ActionRegistry.Names.FILESYSTEM_REMOVE_FAVORITE_PATH -> return currentFeatureState.copy(favoritePaths = currentFeatureState.favoritePaths - (payload?.let { json.decodeFromJsonElement<PathPayload>(it) }?.path ?: ""))
-            ActionRegistry.Names.SETTINGS_PUBLISH_LOADED -> return currentFeatureState.copy(
+            ActionRegistry.Names.SETTINGS_LOADED -> return currentFeatureState.copy(
                 whitelistedPaths = deserializeSet(payload?.get(settingKeyWhitelist)?.jsonPrimitive?.content),
                 favoritePaths = deserializeSet(payload?.get(settingKeyFavorites)?.jsonPrimitive?.content)
             )
-            ActionRegistry.Names.SETTINGS_PUBLISH_VALUE_CHANGED -> {
+            ActionRegistry.Names.SETTINGS_VALUE_CHANGED -> {
                 when (payload?.get("key")?.jsonPrimitive?.content) {
                     settingKeyWhitelist -> return currentFeatureState.copy(whitelistedPaths = deserializeSet(payload["value"]?.jsonPrimitive?.content))
                     settingKeyFavorites -> return currentFeatureState.copy(favoritePaths = deserializeSet(payload["value"]?.jsonPrimitive?.content))
