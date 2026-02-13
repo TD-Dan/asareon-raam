@@ -39,9 +39,9 @@ class FileSystemFeatureT1ReducerTest {
                 })
             }
         }
-        val action = Action(ActionNames.FILESYSTEM_INTERNAL_DIRECTORY_LOADED, payload)
+        val action = Action(ActionRegistry.Names.FILESYSTEM_INTERNAL_DIRECTORY_LOADED, payload)
 
-        val navigatingState = feature.reducer(initialState, Action(ActionNames.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", "/test") }))
+        val navigatingState = feature.reducer(initialState, Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", "/test") }))
         val newState = feature.reducer(navigatingState, action) as? FileSystemState
 
         assertNotNull(newState)
@@ -61,7 +61,7 @@ class FileSystemFeatureT1ReducerTest {
             put("path", "/bad/path")
             put("error", "Directory not found")
         }
-        val action = Action(ActionNames.FILESYSTEM_PUBLISH_NAVIGATION_FAILED, payload)
+        val action = Action(ActionRegistry.Names.FILESYSTEM_PUBLISH_NAVIGATION_FAILED, payload)
 
         val newState = feature.reducer(initialState, action)
         val newFsState = newState.featureStates[featureName] as? FileSystemState
@@ -75,7 +75,7 @@ class FileSystemFeatureT1ReducerTest {
     @Test
     fun `reducer ADD_WHITELIST_PATH adds path to whitelist`() {
         val initialState = FileSystemState()
-        val action = Action(ActionNames.FILESYSTEM_ADD_WHITELIST_PATH, buildJsonObject { put("path", "/safe/path") })
+        val action = Action(ActionRegistry.Names.FILESYSTEM_ADD_WHITELIST_PATH, buildJsonObject { put("path", "/safe/path") })
         val newState = feature.reducer(initialState, action) as FileSystemState
         assertTrue(newState.whitelistedPaths.contains("/safe/path"))
         assertEquals(1, newState.whitelistedPaths.size)
@@ -84,7 +84,7 @@ class FileSystemFeatureT1ReducerTest {
     @Test
     fun `reducer REMOVE_WHITELIST_PATH removes path from whitelist`() {
         val initialState = FileSystemState(whitelistedPaths = setOf("/safe/path", "/other"))
-        val action = Action(ActionNames.FILESYSTEM_REMOVE_WHITELIST_PATH, buildJsonObject { put("path", "/safe/path") })
+        val action = Action(ActionRegistry.Names.FILESYSTEM_REMOVE_WHITELIST_PATH, buildJsonObject { put("path", "/safe/path") })
         val newState = feature.reducer(initialState, action) as FileSystemState
         assertFalse(newState.whitelistedPaths.contains("/safe/path"))
         assertTrue(newState.whitelistedPaths.contains("/other"))
@@ -98,7 +98,7 @@ class FileSystemFeatureT1ReducerTest {
                 FileSystemItem("/a/b", "b", true, children = emptyList(), isExpanded = false)
             ), isExpanded = false)
         ))
-        val action = Action(ActionNames.FILESYSTEM_EXPAND_ALL, buildJsonObject { put("path", "/a") })
+        val action = Action(ActionRegistry.Names.FILESYSTEM_EXPAND_ALL, buildJsonObject { put("path", "/a") })
         val newState = feature.reducer(initialState, action) as FileSystemState
         val itemA = newState.rootItems.first()
         val itemB = itemA.children?.first()
@@ -114,7 +114,7 @@ class FileSystemFeatureT1ReducerTest {
                 FileSystemItem("/a/file.txt", "file.txt", false, isSelected = false)
             ))
         ))
-        val action = Action(ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_TOGGLE_ITEM_SELECTED, buildJsonObject {
             put("path", "/a")
             put("recursive", true)
         })
@@ -133,7 +133,7 @@ class FileSystemFeatureT1ReducerTest {
             put("filesystem.whitelistedPaths", "path1,path2")
             put("filesystem.favoritePaths", "fav1")
         }
-        val action = Action(ActionNames.SETTINGS_PUBLISH_LOADED, payload)
+        val action = Action(ActionRegistry.Names.SETTINGS_PUBLISH_LOADED, payload)
         val newState = feature.reducer(initialState, action) as FileSystemState
         assertEquals(setOf("path1", "path2"), newState.whitelistedPaths)
         assertEquals(setOf("fav1"), newState.favoritePaths)

@@ -105,11 +105,11 @@ class AgentRuntimeFeature(
                 handleTargetedResponse(action, store)
             }
             // --- Startup ---
-            ActionRegistry.Names.SYSTEM_PUBLISH_STARTING -> {
+            ActionRegistry.Names.SYSTEM_STARTING -> {
                 // Inject built-in resources FIRST (ensures they're always available)
                 AgentDefaults.builtInResources.forEach { resource ->
                     store.deferredDispatch(identity.handle, Action(
-                        ActionRegistry.Names.AGENT_INTERNAL_RESOURCE_LOADED,
+                        ActionRegistry.Names.AGENT_RESOURCE_LOADED,
                         json.encodeToJsonElement(resource) as JsonObject
                     ))
                 }
@@ -120,7 +120,7 @@ class AgentRuntimeFeature(
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_REQUEST_AVAILABLE_MODELS))
             }
-            ActionRegistry.Names.AGENT_INTERNAL_AGENTS_LOADED -> {
+            ActionRegistry.Names.AGENT_AGENTS_LOADED -> {
                 // Seed nvram.json for any agent that doesn't have one yet
                 agentState.agents.values.forEach { agent ->
                     if (agent.cognitiveState is JsonNull || agent.cognitiveState == null) {
@@ -185,9 +185,9 @@ class AgentRuntimeFeature(
                     put("autoWaitTimeSeconds", agentToClone.autoWaitTimeSeconds)
                     put("autoMaxWaitTimeSeconds", agentToClone.autoMaxWaitTimeSeconds)
                 }
-                store.deferredDispatch(identity.handle, Action(ActionNames.AGENT_CREATE, createPayload))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_CREATE, createPayload))
             }
-            ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE, ActionNames.AGENT_TOGGLE_ACTIVE -> {
+            ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, ActionRegistry.Names.AGENT_TOGGLE_ACTIVE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "AGENT_TOGGLE: Agent '$agentId' not found in state.")
@@ -196,7 +196,7 @@ class AgentRuntimeFeature(
                 saveAgentConfig(agent, store)
                 AgentAvatarLogic.touchAgentAvatarCard(agent, agentState, store)
             }
-            ActionNames.AGENT_UPDATE_CONFIG -> {
+            ActionRegistry.Names.AGENT_UPDATE_CONFIG -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val oldAgent = (previousState as? AgentRuntimeState)?.agents?.get(agentId)
                 val newAgent = agentState.agents[agentId] ?: run {
@@ -226,7 +226,7 @@ class AgentRuntimeFeature(
                     ))
                 }
             }
-            ActionNames.AGENT_INTERNAL_NVRAM_LOADED -> {
+            ActionRegistry.Names.AGENT_INTERNAL_NVRAM_LOADED -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "NVRAM_LOADED: Agent '$agentId' not found. Cannot persist NVRAM.")
@@ -236,7 +236,7 @@ class AgentRuntimeFeature(
                 // Save to disk (handles both: strategy transitions AND redundant save from disk loading)
                 saveAgentNvram(agent, store)
             }
-            ActionNames.AGENT_UPDATE_NVRAM -> {
+            ActionRegistry.Names.AGENT_UPDATE_NVRAM -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "UPDATE_NVRAM: Agent '$agentId' not found. Cannot update NVRAM.")
@@ -246,17 +246,17 @@ class AgentRuntimeFeature(
                 // Save directly to disk
                 saveAgentNvram(agent, store)
             }
-            ActionNames.AGENT_DELETE -> {
+            ActionRegistry.Names.AGENT_DELETE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 agentState.agentAvatarCardIds[agentId]?.forEach { (sessionId, messageId) ->
-                    store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
                         put("session", sessionId)
                         put("messageId", messageId)
                     }))
                 }
-                store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject { put("subpath", agentId) }))
-                store.deferredDispatch(identity.handle, Action(ActionNames.AGENT_INTERNAL_CONFIRM_DELETE, buildJsonObject { put("agentId", agentId) }))
-                store.deferredDispatch(identity.handle, Action(ActionNames.AGENT_PUBLISH_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject { put("subpath", agentId) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_INTERNAL_CONFIRM_DELETE, buildJsonObject { put("agentId", agentId) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_PUBLISH_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
                 broadcastAgentNames(agentState, store)
                 // Unregister agent identity (cascades any sub-identities)
                 store.deferredDispatch(identity.handle, Action(
@@ -266,14 +266,14 @@ class AgentRuntimeFeature(
             }
 
             // --- Resource CRUD Side Effects ---
-            ActionNames.AGENT_CREATE_RESOURCE -> {
+            ActionRegistry.Names.AGENT_CREATE_RESOURCE -> {
                 val newResource = agentState.resources.lastOrNull() ?: run {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "CREATE_RESOURCE: No resources in state after CREATE action. Reducer may have failed.")
                     return
                 }
                 saveResourceConfig(newResource, store)
             }
-            ActionNames.AGENT_SAVE_RESOURCE -> {
+            ActionRegistry.Names.AGENT_SAVE_RESOURCE -> {
                 val resourceId = action.payload?.get("resourceId")?.jsonPrimitive?.contentOrNull ?: return
                 val resourceToSave = agentState.resources.find { it.id == resourceId } ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "SAVE_RESOURCE: Resource '$resourceId' not found in state.")
@@ -281,38 +281,38 @@ class AgentRuntimeFeature(
                 }
                 saveResourceConfig(resourceToSave, store)
             }
-            ActionNames.AGENT_DELETE_RESOURCE -> {
+            ActionRegistry.Names.AGENT_DELETE_RESOURCE -> {
                 val resourceId = action.payload?.get("resourceId")?.jsonPrimitive?.contentOrNull ?: return
                 val resourceToDelete = (previousState as? AgentRuntimeState)?.resources?.find { it.id == resourceId } ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "DELETE_RESOURCE: Resource '$resourceId' not found in previous state.")
                     return
                 }
                 resourceToDelete.path?.let { path ->
-                    store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE, buildJsonObject {
                         put("subpath", path)
                     }))
                 }
-                store.deferredDispatch(identity.handle, Action(ActionNames.AGENT_SELECT_RESOURCE, buildJsonObject { put("resourceId", null as String?) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_SELECT_RESOURCE, buildJsonObject { put("resourceId", null as String?) }))
             }
 
             // --- Cognitive Pipeline & Peer Updates (Delegated) ---
-            ActionNames.AGENT_INITIATE_TURN -> {
+            ActionRegistry.Names.AGENT_INITIATE_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 AgentCognitivePipeline.startCognitiveCycle(agentId, store)
             }
-            ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT -> {
+            ActionRegistry.Names.AGENT_INTERNAL_STAGE_TURN_CONTEXT -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 AgentCognitivePipeline.evaluateTurnContext(agentId, store)
             }
-            ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT -> {
+            ActionRegistry.Names.AGENT_INTERNAL_SET_HKG_CONTEXT -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 AgentCognitivePipeline.evaluateFullContext(agentId, store)
             }
-            ActionNames.AGENT_INTERNAL_SET_WORKSPACE_CONTEXT -> {
+            ActionRegistry.Names.AGENT_INTERNAL_SET_WORKSPACE_CONTEXT -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 AgentCognitivePipeline.evaluateFullContext(agentId, store)
             }
-            ActionNames.AGENT_INTERNAL_CONTEXT_GATHERING_TIMEOUT -> {
+            ActionRegistry.Names.AGENT_INTERNAL_CONTEXT_GATHERING_TIMEOUT -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val startedAt = action.payload?.get("startedAt")?.jsonPrimitive?.longOrNull ?: return
                 val statusInfo = agentState.agentStatuses[agentId] ?: run {
@@ -330,7 +330,7 @@ class AgentRuntimeFeature(
                 }
                 AgentCognitivePipeline.evaluateFullContext(agentId, store, isTimeout = true)
             }
-            ActionNames.AGENT_EXECUTE_PREVIEWED_TURN -> {
+            ActionRegistry.Names.AGENT_EXECUTE_PREVIEWED_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "EXECUTE_PREVIEWED_TURN: Agent '$agentId' not found.")
@@ -344,36 +344,36 @@ class AgentRuntimeFeature(
 
                 AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.PROCESSING)
 
-                store.deferredDispatch(identity.handle, Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_GENERATE_CONTENT, buildJsonObject {
                     put("providerId", agent.modelProvider)
                     put("modelName", previewData.agnosticRequest.modelName)
                     put("correlationId", previewData.agnosticRequest.correlationId)
                     put("contents", json.encodeToJsonElement(previewData.agnosticRequest.contents))
                     previewData.agnosticRequest.systemPrompt?.let { put("systemPrompt", it) }
                 }))
-                store.deferredDispatch(identity.handle, Action(ActionNames.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId) }))
-                store.dispatch("ui.agent", Action(ActionNames.CORE_SHOW_DEFAULT_VIEW))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId) }))
+                store.dispatch("ui.agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
             }
-            ActionNames.AGENT_DISCARD_PREVIEW -> {
+            ActionRegistry.Names.AGENT_DISCARD_PREVIEW -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
                 val statusInfo = agentState.agentStatuses[agentId]
                 if (statusInfo?.status != AgentStatus.PROCESSING) {
-                    store.deferredDispatch(identity.handle, Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
                         put("agentId", agentId); put("step", JsonNull)
                     }))
                 }
-                store.dispatch("ui.agent", Action(ActionNames.CORE_SHOW_DEFAULT_VIEW))
+                store.dispatch("ui.agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
             }
-            ActionNames.AGENT_CANCEL_TURN -> {
+            ActionRegistry.Names.AGENT_CANCEL_TURN -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
-                store.deferredDispatch(identity.handle, Action(ActionNames.GATEWAY_CANCEL_REQUEST, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_CANCEL_REQUEST, buildJsonObject {
                     put("correlationId", agentId)
                 }))
                 activeTurnJobs[agentId]?.cancel()
                 activeTurnJobs.remove(agentId)
                 AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.IDLE, "Turn cancelled by user.")
             }
-            ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> {
+            ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED -> {
                 val prevAgentState = previousState as? AgentRuntimeState ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "MESSAGE_POSTED: previousState is not AgentRuntimeState. Cannot detect auto-turn triggers.")
                     return
@@ -394,17 +394,17 @@ class AgentRuntimeFeature(
                     }
                 }
             }
-            ActionNames.AGENT_INTERNAL_CHECK_AUTOMATIC_TRIGGERS -> {
+            ActionRegistry.Names.AGENT_INTERNAL_CHECK_AUTOMATIC_TRIGGERS -> {
                 AgentAutoTriggerLogic.checkAndDispatchTriggers(store, agentState, platformDependencies, identity.handle)
             }
-            ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
+            ActionRegistry.Names.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
             }
 
             // ========================================================================
             // ACTION_CREATED: Handle validated commands from CommandBot
             // ========================================================================
-            ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED -> {
+            ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED -> {
                 val payload = action.payload ?: return
                 val originatorId = payload["originatorId"]?.jsonPrimitive?.contentOrNull ?: return
                 val originatorName = payload["originatorName"]?.jsonPrimitive?.contentOrNull ?: originatorId
@@ -484,14 +484,14 @@ class AgentRuntimeFeature(
     private fun saveAgentConfig(agent: AgentInstance, store: Store) {
         // Exclude cognitiveState - it's saved separately in nvram.json
         val agentWithoutNvram = agent.copy(cognitiveState = JsonNull)
-        store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
             put("subpath", "${agent.id}/$agentConfigFILENAME")
             put("content", json.encodeToString(agentWithoutNvram))
         }))
     }
 
     private fun saveAgentNvram(agent: AgentInstance, store: Store) {
-        store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
             put("subpath", "${agent.id}/$nvramFILENAME")
             put("content", json.encodeToString(agent.cognitiveState))
         }))
@@ -499,7 +499,7 @@ class AgentRuntimeFeature(
 
     private fun saveResourceConfig(resource: AgentResource, store: Store) {
         resource.path?.let { path ->
-            store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                 put("subpath", path)
                 put("content", json.encodeToString(resource))
             }))
@@ -508,7 +508,7 @@ class AgentRuntimeFeature(
 
     private fun broadcastAgentNames(state: AgentRuntimeState, store: Store) {
         val nameMap = state.agents.mapValues { it.value.name }
-        store.deferredDispatch(identity.handle, Action(ActionNames.AGENT_PUBLISH_AGENT_NAMES_UPDATED, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_PUBLISH_AGENT_NAMES_UPDATED, buildJsonObject {
             put("names", Json.encodeToJsonElement(nameMap))
         }))
     }
@@ -575,7 +575,7 @@ class AgentRuntimeFeature(
         val resultContent = formatResponseForSession(pending.actionName, action)
 
         val message = "Responding to '${pending.actionName}' invoked by '${pending.agentName}':\n$resultContent"
-        store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_POST, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
             put("session", pending.sessionId)
             put("senderId", commandBotSenderId)
             put("message", message)
@@ -651,15 +651,15 @@ class AgentRuntimeFeature(
                 agentLoadCount = fileList.count { it.isDirectory && it.path != "resources" }
 
                 if (agentLoadCount == 0) {
-                    store.deferredDispatch(identity.handle, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_INTERNAL_AGENTS_LOADED))
                 } else {
                     fileList.forEach { entry ->
                         if (entry.isDirectory && entry.path != "resources") {
                             val agentDir = platformDependencies.getFileName(entry.path)
-                            store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+                            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
                                 put("subpath", "$agentDir/$agentConfigFILENAME")
                             }))
-                            store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+                            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
                                 put("subpath", "$agentDir/$nvramFILENAME")
                             }))
                         }
@@ -672,7 +672,7 @@ class AgentRuntimeFeature(
                 listing?.forEach { element ->
                     val entry = json.decodeFromJsonElement<FileEntry>(element)
                     if (!entry.isDirectory && entry.path.endsWith(".json")) {
-                        store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
                             val fileName = platformDependencies.getFileName(entry.path)
                             val canonicalPath = "resources/$fileName"
                             put("subpath", canonicalPath)
@@ -726,7 +726,7 @@ class AgentRuntimeFeature(
                     appendLine("```")
                 }
 
-                store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_POST, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                     put("session", targetSessionId)
                     put("senderId", commandBotSenderId)
                     put("message", message)
@@ -769,7 +769,7 @@ class AgentRuntimeFeature(
                     "```text\n[WORKSPACE ERROR] File not found: $relativeSubpath\n```"
                 }
 
-                store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_POST, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                     put("session", targetSessionId)
                     put("senderId", commandBotSenderId)
                     put("message", message)
@@ -781,7 +781,7 @@ class AgentRuntimeFeature(
                     val resource = json.decodeFromString<AgentResource>(content)
                     // Ensure the in-memory resource has a normalized path
                     val resWithPath = resource.copy(path = subpath)
-                    store.deferredDispatch(identity.handle, Action(ActionNames.AGENT_INTERNAL_RESOURCE_LOADED, json.encodeToJsonElement(resWithPath) as JsonObject))
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_INTERNAL_RESOURCE_LOADED, json.encodeToJsonElement(resWithPath) as JsonObject))
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse resource: $subpath. Error: ${e.message}")
                 }
@@ -790,13 +790,13 @@ class AgentRuntimeFeature(
             subpath.endsWith("/$agentConfigFILENAME") -> {
                 try {
                     val agent = json.decodeFromString<AgentInstance>(content)
-                    store.deferredDispatch(identity.handle, Action(ActionNames.AGENT_INTERNAL_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_INTERNAL_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse agent config from file: $subpath. Error: ${e.message}")
                 } finally {
                     agentLoadCount--
                     if (agentLoadCount <= 0) {
-                        store.deferredDispatch(identity.handle, Action(ActionNames.AGENT_INTERNAL_AGENTS_LOADED))
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_INTERNAL_AGENTS_LOADED))
                     }
                 }
             }
@@ -808,7 +808,7 @@ class AgentRuntimeFeature(
                     val agentId = subpath.substringBeforeLast("/")
 
                     // Dispatch to merge NVRAM into the agent's state
-                    store.deferredDispatch(identity.handle, Action(ActionNames.AGENT_INTERNAL_NVRAM_LOADED, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_INTERNAL_NVRAM_LOADED, buildJsonObject {
                         put("agentId", agentId)
                         put("state", nvramState)
                     }))
@@ -834,7 +834,7 @@ class AgentRuntimeFeature(
         override fun RibbonContent(store: Store, activeViewKey: String?) {
             val viewKey = "feature.agent.manager"
             val isActive = activeViewKey == viewKey
-            IconButton(onClick = { store.dispatch("ui.ribbon", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKey) })) }) {
+            IconButton(onClick = { store.dispatch("ui.ribbon", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKey) })) }) {
                 Icon(Icons.Default.Bolt, "Agent Manager", tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

@@ -45,7 +45,7 @@ class AgentRuntimeFeatureT3SessionPeerTest {
 
         harness.runAndLogOnFailure {
             // ACT: User posts a new message
-            val userPostAction = Action(ActionNames.SESSION_POST, buildJsonObject {
+            val userPostAction = Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "sid-A"); put("senderId", "user"); put("message", "New user message")
             })
             harness.store.dispatch("ui", userPostAction)
@@ -85,7 +85,7 @@ class AgentRuntimeFeatureT3SessionPeerTest {
 
         harness.runAndLogOnFailure {
             // ACT: Trigger the agent's turn
-            val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agentConfig.id) })
+            val triggerAction = Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agentConfig.id) })
             harness.store.dispatch("ui", triggerAction)
 
             // ASSERT (Agent State)

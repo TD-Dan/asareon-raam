@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
 class AgentRuntimeFeatureT1SovereignAgentLogicTest {
 
     private val platform = FakePlatformDependencies("test")
-    private val fakeStore = FakeStore(AppState(), platform, ActionNames.allActionNames)
+    private val fakeStore = FakeStore(AppState(), platform, ActionRegistry.Names.allActionNames)
 
     // ... [Other tests remain] ...
 
@@ -31,7 +31,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
 
         SovereignHKGResourceLogic.ensureSovereignSessions(fakeStore, state)
 
-        val sessionAction = fakeStore.dispatchedActions.find { it.name == ActionNames.SESSION_CREATE }
+        val sessionAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_CREATE }
         assertNotNull(sessionAction)
         assertEquals("p-cognition: Sovereign (a1)", sessionAction.payload?.get("name")?.jsonPrimitive?.content)
     }
@@ -47,7 +47,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
 
         SovereignHKGResourceLogic.ensureSovereignSessions(fakeStore, state)
 
-        val updateAction = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_UPDATE_CONFIG }
+        val updateAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
         assertNotNull(updateAction)
         assertEquals("a1", updateAction.payload?.get("agentId")?.jsonPrimitive?.content)
         assertEquals("s-new", updateAction.payload?.get("privateSessionId")?.jsonPrimitive?.content)

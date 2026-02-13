@@ -36,9 +36,9 @@ class SessionFeatureT1LedgerEntryCardTest {
     @Before
     fun setup() {
         val validActions = setOf(
-            ActionNames.SESSION_DELETE_MESSAGE,
-            ActionNames.SESSION_SET_EDITING_MESSAGE,
-            ActionNames.CORE_COPY_TO_CLIPBOARD
+            ActionRegistry.Names.SESSION_DELETE_MESSAGE,
+            ActionRegistry.Names.SESSION_SET_EDITING_MESSAGE,
+            ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD
         )
         fakeStore = FakeStore(AppState(), platform, validActions) // FIX: Use the platform dependency
     }
@@ -82,7 +82,7 @@ class SessionFeatureT1LedgerEntryCardTest {
 
         composeTestRule.onNodeWithContentDescription("Copy Message Content").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.CORE_COPY_TO_CLIPBOARD }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD }
         assertNotNull(action)
         assertEquals("Hello World", action.payload?.get("text").toString().trim('"'))
     }
@@ -96,7 +96,7 @@ class SessionFeatureT1LedgerEntryCardTest {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Delete").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_DELETE_MESSAGE }
         assertNotNull(action)
         assertEquals(session.id, action.payload?.get("session").toString().trim('"'))
         assertEquals(userEntry.id, action.payload?.get("messageId").toString().trim('"'))

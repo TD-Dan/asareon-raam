@@ -38,7 +38,7 @@ class AgentRuntimeFeatureT1AvatarTest {
     @Before
     fun setUp() {
         fakePlatform = FakePlatformDependencies("test")
-        fakeStore = FakeStore(AppState(), fakePlatform, ActionNames.allActionNames)
+        fakeStore = FakeStore(AppState(), fakePlatform, ActionRegistry.Names.allActionNames)
     }
 
     // --- 1. Logic Verification (AgentAvatarLogic) ---
@@ -72,18 +72,18 @@ class AgentRuntimeFeatureT1AvatarTest {
 
         // ASSERT
         // 1. Delete Old (Session 1 only)
-        val deleteAction = fakeStore.dispatchedActions.find { it.name == ActionNames.SESSION_DELETE_MESSAGE }
+        val deleteAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_DELETE_MESSAGE }
         assertNotNull(deleteAction)
         assertEquals(session1, deleteAction.payload?.get("session")?.jsonPrimitive?.contentOrNull)
         assertEquals(oldCard1, deleteAction.payload?.get("messageId")?.jsonPrimitive?.contentOrNull)
 
         // 2. Set Status
-        val statusAction = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_INTERNAL_SET_STATUS }
+        val statusAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_INTERNAL_SET_STATUS }
         assertNotNull(statusAction)
         assertEquals("PROCESSING", statusAction.payload?.get("status")?.jsonPrimitive?.contentOrNull)
 
         // 3. Post New (Both sessions)
-        val postActions = fakeStore.dispatchedActions.filter { it.name == ActionNames.SESSION_POST }
+        val postActions = fakeStore.dispatchedActions.filter { it.name == ActionRegistry.Names.SESSION_POST }
         assertEquals(2, postActions.size)
 
         val postedSessions = postActions.map { it.payload?.get("session")?.jsonPrimitive?.contentOrNull }.toSet()
@@ -113,12 +113,12 @@ class AgentRuntimeFeatureT1AvatarTest {
         // ASSERT
         // 1. Delete Zombie
         val zombieDelete = fakeStore.dispatchedActions.find {
-            it.name == ActionNames.SESSION_DELETE_MESSAGE && it.payload?.get("session")?.jsonPrimitive?.contentOrNull == oldZombieSession
+            it.name == ActionRegistry.Names.SESSION_DELETE_MESSAGE && it.payload?.get("session")?.jsonPrimitive?.contentOrNull == oldZombieSession
         }
         assertNotNull(zombieDelete)
 
         // 2. Post ONLY to active session
-        val postActions = fakeStore.dispatchedActions.filter { it.name == ActionNames.SESSION_POST }
+        val postActions = fakeStore.dispatchedActions.filter { it.name == ActionRegistry.Names.SESSION_POST }
         assertEquals(1, postActions.size)
         assertEquals(activeSession, postActions[0].payload?.get("session")?.jsonPrimitive?.contentOrNull)
     }
@@ -137,7 +137,7 @@ class AgentRuntimeFeatureT1AvatarTest {
         AgentAvatarLogic.updateAgentAvatars("a1", fakeStore, AgentStatus.IDLE)
 
         // ASSERT
-        val postActions = fakeStore.dispatchedActions.filter { it.name == ActionNames.SESSION_POST }
+        val postActions = fakeStore.dispatchedActions.filter { it.name == ActionRegistry.Names.SESSION_POST }
         val sessions = postActions.map { it.payload?.get("session")?.jsonPrimitive?.contentOrNull }.toSet()
 
         assertTrue(sessions.contains("private-1"))
@@ -168,7 +168,7 @@ class AgentRuntimeFeatureT1AvatarTest {
         // Click the Play arrow
         composeTestRule.onNodeWithContentDescription("Trigger Turn").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_INITIATE_TURN }
         assertNotNull(action)
         assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
         assertEquals(false, action.payload?.get("preview")?.jsonPrimitive?.boolean)
@@ -182,7 +182,7 @@ class AgentRuntimeFeatureT1AvatarTest {
         // Click the Cancel icon
         composeTestRule.onNodeWithContentDescription("Cancel Turn").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_CANCEL_TURN }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_CANCEL_TURN }
         assertNotNull(action)
         assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
     }

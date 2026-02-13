@@ -27,7 +27,7 @@ class FileSystemFeatureT2GuardTest {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
-        val action = Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
             put("subpath", "  ") // Blank path
             put("content", "some content")
         })
@@ -47,7 +47,7 @@ class FileSystemFeatureT2GuardTest {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
-        val action = Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
             put("subpath", "../secrets.json")
         })
 
@@ -66,7 +66,7 @@ class FileSystemFeatureT2GuardTest {
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val subpath = "some-folder/a-file-with-no-extension"
-        val action = Action(ActionNames.FILESYSTEM_SYSTEM_DELETE, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE, buildJsonObject {
             put("subpath", subpath)
         })
         val fullPath = "${platform.getBasePathFor(BasePath.APP_ZONE)}/$originator/$subpath"
@@ -87,7 +87,7 @@ class FileSystemFeatureT2GuardTest {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
-        val action = Action(ActionNames.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
             put("subpath", "some/../../other/path")
         })
 

@@ -95,7 +95,7 @@ class CoreFeatureT3PeerTest {
         runCurrent()
 
         // ASSERT 1: Verify that the correct internal action was dispatched.
-        val loadedAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_INTERNAL_IDENTITIES_LOADED }
+        val loadedAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITIES_LOADED }
         assertNotNull(loadedAction, "The handleSideEffects handler should dispatch an internal loaded action.")
 
         // ASSERT 2: Verify the final state is correct.

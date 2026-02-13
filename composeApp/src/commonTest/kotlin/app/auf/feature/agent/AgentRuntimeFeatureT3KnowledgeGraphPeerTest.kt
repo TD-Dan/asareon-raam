@@ -46,7 +46,7 @@ class AgentRuntimeFeatureT3KnowledgeGraphPeerTest {
         val payload = buildJsonObject {
             put("names", Json.encodeToJsonElement(personaMap))
         }
-        val broadcastAction = Action(ActionNames.KNOWLEDGEGRAPH_PUBLISH_AVAILABLE_PERSONAS_UPDATED, payload)
+        val broadcastAction = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_PUBLISH_AVAILABLE_PERSONAS_UPDATED, payload)
 
         // --- ACT ---
         harness.store.dispatch("knowledgegraph", broadcastAction)

@@ -20,7 +20,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
     @Test
     fun `CREATE should add new agent with valid defaults`() {
         val initialState = AgentRuntimeState()
-        val action = Action(ActionNames.AGENT_CREATE, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_CREATE, buildJsonObject {
             put("name", "My Agent")
         })
 
@@ -45,7 +45,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
             )
         )
 
-        val action = Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
             put("agentId", "a1")
             put("subscribedSessionIds", buildJsonArray {
                 add("public-1")
@@ -65,7 +65,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
         val agent = AgentInstance("a1", "Test", null, "p", "m", automaticMode = false)
         val state = AgentRuntimeState(agents = mapOf("a1" to agent))
 
-        val action = Action(ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject { put("agentId", "a1") })
+        val action = Action(ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject { put("agentId", "a1") })
         val newState = AgentCrudLogic.reduce(state, action, platform)
 
         assertTrue(newState.agents["a1"]!!.automaticMode)
@@ -79,7 +79,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
             agentAvatarCardIds = mapOf("a1" to mapOf("s-1" to "msg-1"))
         )
 
-        val action = Action(ActionNames.AGENT_INTERNAL_CONFIRM_DELETE, buildJsonObject { put("agentId", "a1") })
+        val action = Action(ActionRegistry.Names.AGENT_INTERNAL_CONFIRM_DELETE, buildJsonObject { put("agentId", "a1") })
         val newState = AgentCrudLogic.reduce(state, action, platform)
 
         assertNull(newState.agents["a1"])
@@ -91,7 +91,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
     @Test
     fun `CREATE_RESOURCE adds a new resource`() {
         val initialState = AgentRuntimeState()
-        val action = Action(ActionNames.AGENT_CREATE_RESOURCE, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_CREATE_RESOURCE, buildJsonObject {
             put("name", "Test Const")
             put("type", "CONSTITUTION")
         })
@@ -109,7 +109,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
     fun `CREATE_RESOURCE supports cloning via initialContent`() {
         val initialState = AgentRuntimeState()
         val content = "CLONED CONTENT"
-        val action = Action(ActionNames.AGENT_CREATE_RESOURCE, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_CREATE_RESOURCE, buildJsonObject {
             put("name", "Cloned Const")
             put("type", "CONSTITUTION")
             put("initialContent", content)
@@ -124,7 +124,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
     fun `SAVE_RESOURCE updates content of custom resource`() {
         // Setup: Create a resource first
         val initialState = AgentRuntimeState()
-        val createAction = Action(ActionNames.AGENT_CREATE_RESOURCE, buildJsonObject {
+        val createAction = Action(ActionRegistry.Names.AGENT_CREATE_RESOURCE, buildJsonObject {
             put("name", "Editable")
             put("type", "BOOTLOADER")
         })
@@ -132,7 +132,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
         val resourceId = stateWithResource.resources.last().id
 
         // Execute: Save
-        val saveAction = Action(ActionNames.AGENT_SAVE_RESOURCE, buildJsonObject {
+        val saveAction = Action(ActionRegistry.Names.AGENT_SAVE_RESOURCE, buildJsonObject {
             put("resourceId", resourceId)
             put("content", "Updated Content")
         })
@@ -147,7 +147,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
         val agent = AgentInstance("a1", "Test", null, "p", "m", resources = emptyMap())
         val state = AgentRuntimeState(agents = mapOf("a1" to agent))
 
-        val action = Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
             put("agentId", "a1")
             put("resources", buildJsonObject {
                 put("CONSTITUTION", "res-123")
@@ -168,7 +168,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
         val agent = AgentInstance("a1", "Test", null, "p", "m", resources = mapOf("CONSTITUTION" to "res-existing"))
         val state = AgentRuntimeState(agents = mapOf("a1" to agent))
 
-        val action = Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
             put("agentId", "a1")
             put("name", "Renamed")
         })
@@ -184,7 +184,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
     fun `RENAME_RESOURCE updates name`() {
         // Setup
         val initialState = AgentRuntimeState()
-        val createAction = Action(ActionNames.AGENT_CREATE_RESOURCE, buildJsonObject {
+        val createAction = Action(ActionRegistry.Names.AGENT_CREATE_RESOURCE, buildJsonObject {
             put("name", "Old Name")
             put("type", "BOOTLOADER")
         })
@@ -192,7 +192,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
         val resourceId = stateWithResource.resources.last().id
 
         // Execute: Rename
-        val renameAction = Action(ActionNames.AGENT_RENAME_RESOURCE, buildJsonObject {
+        val renameAction = Action(ActionRegistry.Names.AGENT_RENAME_RESOURCE, buildJsonObject {
             put("resourceId", resourceId)
             put("newName", "New Name")
         })

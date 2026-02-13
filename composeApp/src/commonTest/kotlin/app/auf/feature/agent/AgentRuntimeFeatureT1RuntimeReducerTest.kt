@@ -27,7 +27,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             agentStatuses = mapOf(agentId to AgentStatusInfo(status = AgentStatus.IDLE))
         )
 
-        val action = Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
             put("agentId", agentId); put("status", "PROCESSING")
         })
 
@@ -47,7 +47,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             agentStatuses = mapOf(agentId to AgentStatusInfo(status = AgentStatus.ERROR, errorMessage = "Bad thing"))
         )
 
-        val action = Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
             put("agentId", agentId); put("status", "IDLE")
         })
 
@@ -65,7 +65,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         val agent = AgentInstance(agentId, "Test", "", "", "", subscribedSessionIds = listOf(sessionId))
         val initialState = AgentRuntimeState(agents = mapOf(agentId to agent))
 
-        val action = Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
             put("sessionId", sessionId)
             put("entry", buildJsonObject {
                 put("id", "msg-1")
@@ -92,7 +92,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             agentStatuses = mapOf(agentId to initialStatus)
         )
 
-        val action = Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
             put("sessionId", sessionId)
             put("entry", buildJsonObject {
                 put("id", "msg-sentinel")
@@ -117,7 +117,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         )
         val state = AgentRuntimeState(agentStatuses = mapOf(agentId to initialStatus))
 
-        val action = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
             put("agentId", agentId)
             put("preview", true)
         })
@@ -135,7 +135,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         val messages = listOf(GatewayMessage("user", "Hello", "u1", "User", 100L))
         val state = AgentRuntimeState(agentStatuses = mapOf(agentId to AgentStatusInfo()))
 
-        val action = Action(ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
             put("agentId", agentId)
             put("messages", json.encodeToJsonElement(messages))
         })
@@ -154,7 +154,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         val rawJson = "{}"
         val state = AgentRuntimeState(agentStatuses = mapOf(agentId to AgentStatusInfo()))
 
-        val action = Action(ActionNames.AGENT_INTERNAL_SET_PREVIEW_DATA, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_INTERNAL_SET_PREVIEW_DATA, buildJsonObject {
             put("agentId", agentId)
             put("agnosticRequest", json.encodeToJsonElement(request))
             put("rawRequestJson", rawJson)
@@ -175,7 +175,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             viewingContextForAgentId = agentId
         )
 
-        val action = Action(ActionNames.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId) })
+        val action = Action(ActionRegistry.Names.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId) })
 
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
 
@@ -190,7 +190,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         val state = AgentRuntimeState(agents = mapOf("a1" to agent))
 
         // ACT
-        val action = Action(ActionNames.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject {
             put("sessionId", "s1")
         })
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
@@ -209,7 +209,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         val agentId = "agent-1"
         val state = AgentRuntimeState(agentStatuses = mapOf(agentId to AgentStatusInfo()))
 
-        val action = Action(ActionNames.AGENT_INTERNAL_SET_WORKSPACE_CONTEXT, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_INTERNAL_SET_WORKSPACE_CONTEXT, buildJsonObject {
             put("agentId", agentId)
             put("context", "Your workspace has 3 files.")
         })
@@ -225,7 +225,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         val agentId = "agent-1"
         val state = AgentRuntimeState(agentStatuses = mapOf(agentId to AgentStatusInfo()))
 
-        val action = Action(ActionNames.AGENT_INTERNAL_SET_CONTEXT_GATHERING_STARTED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_INTERNAL_SET_CONTEXT_GATHERING_STARTED, buildJsonObject {
             put("agentId", agentId)
             put("startedAt", 9999L)
         })
@@ -242,7 +242,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         val initialStatus = AgentStatusInfo(status = AgentStatus.PROCESSING, contextGatheringStartedAt = 5000L)
         val state = AgentRuntimeState(agentStatuses = mapOf(agentId to initialStatus))
 
-        val action = Action(ActionNames.AGENT_INTERNAL_CONTEXT_GATHERING_TIMEOUT, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_INTERNAL_CONTEXT_GATHERING_TIMEOUT, buildJsonObject {
             put("agentId", agentId)
             put("startedAt", 5000L)
         })
@@ -264,7 +264,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         )
         val state = AgentRuntimeState(agentStatuses = mapOf(agentId to initialStatus))
 
-        val action = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
             put("agentId", agentId)
             put("preview", false)
         })
@@ -292,7 +292,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             agentStatuses = mapOf(agentId to initialStatus)
         )
 
-        val action = Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
             put("agentId", agentId); put("status", "IDLE")
         })
 

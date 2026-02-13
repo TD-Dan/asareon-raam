@@ -26,7 +26,7 @@ class UiT1CodeEditorTest {
     private val store = FakeStore(
         initialState = AppState(),
         platformDependencies = platform,
-        validActionNames = ActionNames.allActionNames
+        validActionNames = ActionRegistry.Names.allActionNames
     )
 
     @Test

@@ -78,7 +78,7 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
             // Hidden filter toggle — persisted via Settings feature
             IconButton(onClick = {
                 val newValue = !(sessionState?.hideHiddenInViewer ?: true)
-                store.dispatch("session.ui", Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
+                store.dispatch("session.ui", Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject {
                     put("key", SessionState.SETTING_HIDE_HIDDEN_VIEWER)
                     put("value", newValue.toString())
                 }))
@@ -89,7 +89,7 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
                     tint = if (hideHidden) MaterialTheme.colorScheme.inverseOnSurface else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            IconButton(onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_CREATE)) }) {
+            IconButton(onClick = { store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_CREATE)) }) {
                 Icon(Icons.Default.Add, "New Session")
             }
         }
@@ -100,7 +100,7 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
             LedgerPane(store, activeSession, sessionState, coreState, features, platformDependencies, Modifier.weight(1f))
             MessageInput(store, activeSession, platformDependencies) { message ->
                 val activeUserId = coreState?.activeUserId ?: "user"
-                store.dispatch("session.ui", Action(ActionNames.SESSION_POST, buildJsonObject {
+                store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                     put("session", activeSession.id); put("senderId", activeUserId); put("message", message)
                 }))
             }
@@ -119,13 +119,13 @@ private fun SessionTab(store: Store, session: Session, isSelected: Boolean, isEd
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
                         Key.Enter -> {
-                            store.dispatch("session.ui", Action(ActionNames.SESSION_UPDATE_CONFIG, buildJsonObject {
+                            store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_UPDATE_CONFIG, buildJsonObject {
                                 put("session", session.id); put("name", text)
                             }))
                             return@onKeyEvent true
                         }
                         Key.Escape -> {
-                            store.dispatch("session.ui", Action(ActionNames.SESSION_SET_EDITING_SESSION_NAME, buildJsonObject {
+                            store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, buildJsonObject {
                                 put("sessionId", null as String?)
                             }))
                             return@onKeyEvent true
@@ -141,10 +141,10 @@ private fun SessionTab(store: Store, session: Session, isSelected: Boolean, isEd
         val tabTextColor = if (session.isHidden) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f) else LocalContentColor.current
         Tab(
             selected = isSelected,
-            onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.id) })) },
+            onClick = { store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.id) })) },
             modifier = Modifier.combinedClickable(
-                onClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.id) })) },
-                onDoubleClick = { store.dispatch("session.ui", Action(ActionNames.SESSION_SET_EDITING_SESSION_NAME, buildJsonObject { put("sessionId", session.id) })) }
+                onClick = { store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.id) })) },
+                onDoubleClick = { store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, buildJsonObject { put("sessionId", session.id) })) }
             )
         ) { Text(session.name, maxLines = 1, modifier = Modifier.padding(vertical = 12.dp), color = tabTextColor) }
     }
@@ -244,7 +244,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
             confirmButton = {
                 Button(
                     onClick = {
-                        store.dispatch("session.ui", Action(ActionNames.SESSION_CLEAR, buildJsonObject { put("session", session.id) }))
+                        store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject { put("session", session.id) }))
                         sessionToClear = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -285,7 +285,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                                 val senderName = (store.state.value.featureStates["session"] as? SessionState)?.identityNames?.get(entry.senderId) ?: entry.senderId
                                 "$senderName @ $timestamp:\n${entry.rawContent}"
                             }
-                            store.dispatch("ui.session.input", Action(ActionNames.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", transcript) }))
+                            store.dispatch("ui.session.input", Action(ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", transcript) }))
                             menuExpanded = false
                         },
                         leadingIcon = { Icon(Icons.Default.ContentCopy, null) }

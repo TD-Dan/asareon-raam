@@ -164,7 +164,7 @@ class GeminiProvider(
             put("section", "API Keys")
             put("defaultValue", "")
         }
-        dispatch(Action(ActionNames.SETTINGS_ADD, payload))
+        dispatch(Action(ActionRegistry.Names.SETTINGS_ADD, payload))
     }
 
     override suspend fun listAvailableModels(settings: Map<String, String>): List<String> {

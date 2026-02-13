@@ -43,7 +43,7 @@ class SettingsFeatureT5PlatformTest {
     @Test
     fun `settings UPDATE action correctly persists and reloads settings via FileSystemFeature`() = runTest {
         val platform = JvmTestPlatformDependencies(testAppVersion)
-        val addTestAction = Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+        val addTestAction = Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
             put("key", "test.key"); put("type", "STRING"); put("label", "Test Key")
             put("description", "A key for testing."); put("section", "General"); put("defaultValue", "default")
         })
@@ -51,14 +51,14 @@ class SettingsFeatureT5PlatformTest {
         // --- SCOPE 1: Save the setting ---
         run {
             val features = listOf(CoreFeature(platform), SettingsFeature(platform), FileSystemFeature(platform))
-            val store = Store(AppState(), features, platform, ActionNames.allActionNames)
+            val store = Store(AppState(), features, platform, ActionRegistry.Names.allActionNames)
             features.forEach { it.init(store) }
 
-            store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
+            store.dispatch("system.test", Action(ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING))
             store.dispatch("test.setup", addTestAction)
-            store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
+            store.dispatch("system.test", Action(ActionRegistry.Names.SYSTEM_PUBLISH_STARTING))
 
-            val updateAction = Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
+            val updateAction = Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject {
                 put("key", "test.key"); put("value", "live_value")
             })
             store.dispatch("settings.ui", updateAction)
@@ -67,12 +67,12 @@ class SettingsFeatureT5PlatformTest {
         // --- SCOPE 2: Re-initialize and reload the setting ---
         run {
             val features = listOf(CoreFeature(platform), SettingsFeature(platform), FileSystemFeature(platform))
-            val store = Store(AppState(), features, platform, ActionNames.allActionNames)
+            val store = Store(AppState(), features, platform, ActionRegistry.Names.allActionNames)
             features.forEach { it.init(store) }
 
-            store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
+            store.dispatch("system.test", Action(ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING))
             store.dispatch("test.setup", addTestAction)
-            store.dispatch("system.test", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
+            store.dispatch("system.test", Action(ActionRegistry.Names.SYSTEM_PUBLISH_STARTING))
 
             val finalState = store.state.value.featureStates["settings"] as? SettingsState
             assertNotNull(finalState, "SettingsState should not be null after reloading.")

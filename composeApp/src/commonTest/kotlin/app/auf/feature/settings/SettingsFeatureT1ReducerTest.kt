@@ -22,7 +22,7 @@ class SettingsFeatureT1ReducerTest {
     private val featureName = feature.identity.handle
 
     private fun createAddAction(key: String, defaultValue: String, section: String = "Test"): Action {
-        return Action(ActionNames.SETTINGS_ADD, buildJsonObject {
+        return Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
             put("key", key)
             put("type", "STRING")
             put("label", "$key Label")
@@ -47,7 +47,7 @@ class SettingsFeatureT1ReducerTest {
     @Test
     fun `reducer UPDATE changes the value for an existing key`() {
         val initialState = SettingsState(values = mapOf("test.key" to "old"))
-        val action = Action(ActionNames.SETTINGS_UPDATE, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject {
             put("key", "test.key")
             put("value", "new")
         })
@@ -61,7 +61,7 @@ class SettingsFeatureT1ReducerTest {
     @Test
     fun `reducer INPUT_CHANGED updates transient input value but not persisted value`() {
         val initialState = SettingsState(values = mapOf("key" to "persisted"))
-        val action = Action(ActionNames.SETTINGS_UI_INTERNAL_INPUT_CHANGED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SETTINGS_UI_INTERNAL_INPUT_CHANGED, buildJsonObject {
             put("key", "key")
             put("value", "transient")
         })
@@ -77,7 +77,7 @@ class SettingsFeatureT1ReducerTest {
     fun `reducer LOADED applies loaded values over defaults`() {
         val addAction = createAddAction("test.key", "default")
         val stateAfterAdd = feature.reducer(SettingsState(), addAction)
-        val loadedAction = Action(ActionNames.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+        val loadedAction = Action(ActionRegistry.Names.SETTINGS_PUBLISH_LOADED, buildJsonObject {
             put("test.key", "loaded")
         })
 

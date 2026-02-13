@@ -32,10 +32,10 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            val action = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) })
+            val action = Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) })
             harness.store.dispatch("ui", action)
 
-            val request = harness.processedActions.find { it.name == ActionNames.SESSION_REQUEST_LEDGER_CONTENT }
+            val request = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT }
             assertNotNull(request)
             assertEquals("agent-1", request.payload?.get("correlationId")?.jsonPrimitive?.content)
         }
@@ -55,7 +55,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            val response = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, buildJsonObject {
+            val response = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.SESSION_RESPONSE_LEDGER, buildJsonObject {
                 put("correlationId", agent.id)
                 put("messages", buildJsonArray {
                     add(buildJsonObject {
@@ -70,13 +70,13 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             feature.onPrivateData(response, harness.store)
 
             // ASSERT 1: STAGE_TURN_CONTEXT dispatched
-            val stageAction = harness.processedActions.find { it.name == ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT }
+            val stageAction = harness.processedActions.find { it.name == ActionRegistry.Names.AGENT_INTERNAL_STAGE_TURN_CONTEXT }
             assertNotNull(stageAction)
 
             // ASSERT 2: GATEWAY_GENERATE_CONTENT dispatched (proving full context pipeline completed)
             // This proves the loop: PrivateData -> Pipeline -> STAGE_TURN_CONTEXT -> evaluateTurnContext
             // -> FILESYSTEM_SYSTEM_LIST -> FileSystemFeature -> SET_WORKSPACE_CONTEXT -> evaluateFullContext -> executeTurn
-            val gatewayAction = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
+            val gatewayAction = harness.processedActions.find { it.name == ActionRegistry.Names.GATEWAY_GENERATE_CONTENT }
             assertNotNull(gatewayAction)
         }
     }
@@ -91,7 +91,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            val sentinelMsg = Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+            val sentinelMsg = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
                 put("sessionId", "session-1")
                 put("entry", buildJsonObject {
                     put("id", "msg-1")
@@ -123,7 +123,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
 
         harness.runAndLogOnFailure {
             // ACT
-            harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                 put("agentId", orphanAgent.id)
             }))
 
@@ -136,7 +136,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             // Should have descriptive error message
             assertTrue(status?.errorMessage?.contains("no session") == true)
             // Should NOT have dispatched a ledger request
-            assertNull(harness.processedActions.find { it.name == ActionNames.SESSION_REQUEST_LEDGER_CONTENT })
+            assertNull(harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT })
         }
     }
 
@@ -151,7 +151,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
 
         harness.runAndLogOnFailure {
             // ACT: Send malformed payload in envelope
-            val malformedResponse = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, buildJsonObject {
+            val malformedResponse = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.SESSION_RESPONSE_LEDGER, buildJsonObject {
                 put("correlationId", agent.id)
                 // Missing "messages" array, or other schema violation
                 put("invalid_key", "invalid_value")
@@ -185,7 +185,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
 
         harness.runAndLogOnFailure {
             // ACT: Trigger a context arrival (e.g. workspace or HKG) without staged ledger
-            val hkgResponse = PrivateDataEnvelope(ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, buildJsonObject {
+            val hkgResponse = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, buildJsonObject {
                 put("correlationId", agent.id)
                 put("context", buildJsonObject { put("some", "data") })
             })
@@ -200,7 +200,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             assertTrue(finalStatus?.errorMessage?.contains("Context assembly failed") == true)
 
             // Should NOT proceed to Gateway
-            assertNull(harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT })
+            assertNull(harness.processedActions.find { it.name == ActionRegistry.Names.GATEWAY_GENERATE_CONTENT })
         }
     }
 }

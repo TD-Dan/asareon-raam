@@ -47,7 +47,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
     @Test
     fun `full cognitive cycle completes and sets agent to IDLE on success`() = runTest {
         harness.runAndLogOnFailure {
-            val triggerAction = Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) })
+            val triggerAction = Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) })
             harness.store.dispatch("ui", triggerAction)
 
             val stateAfterTrigger = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
@@ -55,12 +55,12 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
             assertEquals(AgentStatus.PROCESSING, stateAfterTrigger.agentStatuses[agent.id]?.status)
 
             // Mock response sequence...
-            val ledgerEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.SESSION_RESPONSE_LEDGER, buildJsonObject {
+            val ledgerEnvelope = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.SESSION_RESPONSE_LEDGER, buildJsonObject {
                 put("correlationId", agent.id); put("messages", buildJsonArray { })
             })
             feature.onPrivateData(ledgerEnvelope, harness.store)
 
-            val gatewayEnvelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE, buildJsonObject {
+            val gatewayEnvelope = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.GATEWAY_RESPONSE_RESPONSE, buildJsonObject {
                 put("correlationId", agent.id); put("rawContent", "Success")
             })
             feature.onPrivateData(gatewayEnvelope, harness.store)
@@ -74,8 +74,8 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
     @Test
     fun `full cognitive cycle transitions agent to ERROR on gateway failure`() = runTest {
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) }))
-            val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) }))
+            val envelope = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.GATEWAY_RESPONSE_RESPONSE, buildJsonObject {
                 put("correlationId", agent.id); put("errorMessage", "Fail")
             })
             feature.onPrivateData(envelope, harness.store)
@@ -104,7 +104,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
             // Simulate LLM hallucinating the header
             put("rawContent", "Test (agent-1) @ 2025-10-27T12:34:56Z: This is the actual response.")
         }
-        val envelope = PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE, gatewayResponsePayload)
+        val envelope = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.GATEWAY_RESPONSE_RESPONSE, gatewayResponsePayload)
 
         harness.runAndLogOnFailure {
             // ACT: Deliver the response
@@ -112,7 +112,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
 
             // ASSERT 1: Sentinel Warning Posted
             val sentinelAction = harness.processedActions.find {
-                it.name == ActionNames.SESSION_POST &&
+                it.name == ActionRegistry.Names.SESSION_POST &&
                         it.payload?.get("senderId")?.jsonPrimitive?.content == "system"
             }
             assertNotNull(sentinelAction, "A sentinel warning should have been posted by 'system'.")
@@ -123,7 +123,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
 
             // ASSERT 2: Cleaned Response Posted
             val agentResponseAction = harness.processedActions.find {
-                it.name == ActionNames.SESSION_POST &&
+                it.name == ActionRegistry.Names.SESSION_POST &&
                         it.payload?.get("senderId")?.jsonPrimitive?.content == agent.id
             }
             assertNotNull(agentResponseAction, "The agent's own response should have been posted.")

@@ -37,7 +37,7 @@ fun AboutView(store: Store) {
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
         ) {
-            IconButton(onClick = { store.dispatch("core.ui", Action(ActionNames.CORE_SHOW_DEFAULT_VIEW)) }) {
+            IconButton(onClick = { store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW)) }) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
             Spacer(Modifier.width(16.dp))
@@ -119,7 +119,7 @@ fun AboutView(store: Store) {
                 HorizontalDivider()
                 Spacer(Modifier.height(8.dp))
                 Button(
-                    onClick = { store.dispatch("core.ui", Action(ActionNames.CORE_OPEN_LOGS_FOLDER)) }
+                    onClick = { store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_OPEN_LOGS_FOLDER)) }
                 ) {
                     Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                     Text("Open Logs Folder")

@@ -18,7 +18,7 @@ object SovereignHKGResourceLogic {
             // We do NOT create session here. We let the ensureSovereignSessions logic handle it
             // naturally in the next loop or immediate check to keep logic centralized.
             // However, ensuring reservation is still good practice here.
-            store.deferredDispatch("agent", Action(ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject { put("personaId", newAgent.knowledgeGraphId) }))
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject { put("personaId", newAgent.knowledgeGraphId) }))
         }
     }
 
@@ -26,12 +26,12 @@ object SovereignHKGResourceLogic {
         val justBecameVanilla = oldAgent?.knowledgeGraphId != null && newAgent.knowledgeGraphId == null
         if (justBecameVanilla) {
             val truncatedSubscriptions = oldAgent.subscribedSessionIds.take(1)
-            store.deferredDispatch("agent", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
                 put("agentId", newAgent.id)
                 put("privateSessionId", JsonNull)
                 put("subscribedSessionIds", buildJsonArray { truncatedSubscriptions.forEach { add(it) } })
             }))
-            store.deferredDispatch("agent", Action(ActionNames.KNOWLEDGEGRAPH_RELEASE_HKG, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RELEASE_HKG, buildJsonObject {
                 put("personaId", oldAgent.knowledgeGraphId)
             }))
         }
@@ -47,7 +47,7 @@ object SovereignHKGResourceLogic {
         // 1. HKG Reservation (Always ensure reservation for Sovereigns)
         agentState.agents.values.forEach { agent ->
             if (agent.knowledgeGraphId != null && !agentState.hkgReservedIds.contains(agent.knowledgeGraphId)) {
-                store.deferredDispatch("agent", Action(ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject { put("personaId", agent.knowledgeGraphId) }))
+                store.deferredDispatch("agent", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject { put("personaId", agent.knowledgeGraphId) }))
             }
         }
 
@@ -70,14 +70,14 @@ object SovereignHKGResourceLogic {
 
             if (existingSessionEntry != null) {
                 // FOUND: Link it.
-                store.deferredDispatch("agent", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
+                store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
                     put("agentId", agent.id)
                     put("privateSessionId", existingSessionEntry.key)
                 }))
             } else {
                 // NOT FOUND: Create it.
                 // This will trigger SESSION_NAMES_UPDATED later, which will hit case A.
-                store.deferredDispatch("agent", Action(ActionNames.SESSION_CREATE, buildJsonObject {
+                store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_CREATE, buildJsonObject {
                     put("name", expectedSessionName)
                     put("isHidden", true)
                     put("isAgentPrivate", true)
@@ -91,12 +91,12 @@ object SovereignHKGResourceLogic {
         val kgFeatureExists = store.features.any { it.identity.handle == "knowledgegraph" }
 
         if (kgId != null && kgFeatureExists) {
-            store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
                 put("agentId", agent.id); put("step", "Requesting HKG")
             }))
 
             store.deferredDispatch("agent", Action(
-                name = ActionNames.KNOWLEDGEGRAPH_REQUEST_CONTEXT,
+                name = ActionRegistry.Names.KNOWLEDGEGRAPH_REQUEST_CONTEXT,
                 payload = buildJsonObject {
                     put("correlationId", agent.id)
                     put("personaId", kgId)

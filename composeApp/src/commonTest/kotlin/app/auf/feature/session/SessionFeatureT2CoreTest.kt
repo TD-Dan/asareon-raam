@@ -41,7 +41,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionNames.SESSION_CREATE))
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_CREATE))
             testScheduler.advanceUntilIdle()
 
             val sessionState = harness.store.state.value.featureStates["session"] as? SessionState
@@ -51,8 +51,8 @@ class SessionFeatureT2CoreTest {
             assertEquals("New Session", newSession.name)
             assertEquals(newSession.id, sessionState.activeSessionId)
 
-            assertNotNull(harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE })
-            assertNotNull(harness.processedActions.find { it.name == ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED })
+            assertNotNull(harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE })
+            assertNotNull(harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_PUBLISH_SESSION_NAMES_UPDATED })
         }
     }
 
@@ -67,22 +67,22 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionNames.SESSION_DELETE, buildJsonObject { put("session", "sid-1") }))
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_DELETE, buildJsonObject { put("session", "sid-1") }))
             testScheduler.advanceUntilIdle()
 
             val sessionState = harness.store.state.value.featureStates["session"] as? SessionState
             assertNotNull(sessionState)
             assertTrue(sessionState.sessions.isEmpty())
 
-            val deleteAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_DELETE }
+            val deleteAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE }
             assertNotNull(deleteAction)
             assertEquals("sid-1.json", deleteAction.payload?.get("subpath")?.jsonPrimitive?.content)
 
-            val publishAction = harness.processedActions.find { it.name == ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED }
+            val publishAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_PUBLISH_SESSION_NAMES_UPDATED }
             assertNotNull(publishAction)
             assertEquals("{}", publishAction.payload?.get("names").toString())
 
-            assertNotNull(harness.processedActions.find { it.name == ActionNames.SESSION_PUBLISH_SESSION_DELETED })
+            assertNotNull(harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_PUBLISH_SESSION_DELETED })
         }
     }
 
@@ -96,7 +96,7 @@ class SessionFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             // ACT 1: Broadcast user identities from CoreFeature
             val userIdentities = listOf(Identity("user-1", "User Alpha"))
-            val coreBroadcast = Action(ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
+            val coreBroadcast = Action(ActionRegistry.Names.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
                 put("identities", Json.encodeToJsonElement(userIdentities))
             })
             harness.store.dispatch("core", coreBroadcast)
@@ -110,7 +110,7 @@ class SessionFeatureT2CoreTest {
 
             // ACT 2: Broadcast agent identities from AgentRuntimeFeature
             val agentNames = mapOf("agent-1" to "Agent Beta")
-            val agentBroadcast = Action(ActionNames.AGENT_PUBLISH_AGENT_NAMES_UPDATED, buildJsonObject {
+            val agentBroadcast = Action(ActionRegistry.Names.AGENT_PUBLISH_AGENT_NAMES_UPDATED, buildJsonObject {
                 put("names", Json.encodeToJsonElement(agentNames))
             })
             harness.store.dispatch("agent", agentBroadcast)
@@ -136,10 +136,10 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            val persistentAction = Action(ActionNames.SESSION_POST, buildJsonObject {
+            val persistentAction = Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "sid-1"); put("senderId", "user"); put("message", "persistent")
             })
-            val transientAction = Action(ActionNames.SESSION_POST, buildJsonObject {
+            val transientAction = Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "sid-1"); put("senderId", "agent"); put("metadata", buildJsonObject { put("is_transient", true) })
             })
 
@@ -147,7 +147,7 @@ class SessionFeatureT2CoreTest {
             harness.store.dispatch("ui", transientAction)
             testScheduler.advanceUntilIdle()
 
-            val writeActions = harness.processedActions.filter { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
+            val writeActions = harness.processedActions.filter { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
             assertEquals(2, writeActions.size)
             val finalWriteContent = writeActions.last().payload?.get("content")?.jsonPrimitive?.content
             assertNotNull(finalWriteContent)
@@ -155,7 +155,7 @@ class SessionFeatureT2CoreTest {
             assertEquals(1, persistedSession.ledger.size)
             assertEquals("persistent", persistedSession.ledger.first().rawContent)
 
-            val publishedEvents = harness.processedActions.filter { it.name == ActionNames.SESSION_PUBLISH_MESSAGE_POSTED }
+            val publishedEvents = harness.processedActions.filter { it.name == ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED }
             assertEquals(2, publishedEvents.size, "Should publish an event for every POST action, transient or not.")
         }
     }
@@ -173,7 +173,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            val insertAction = Action(ActionNames.SESSION_POST, buildJsonObject {
+            val insertAction = Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "sid-1")
                 put("senderId", "agent")
                 put("message", "Second")
@@ -205,7 +205,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            val appendAction = Action(ActionNames.SESSION_POST, buildJsonObject {
+            val appendAction = Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "sid-1")
                 put("senderId", "agent")
                 put("message", "Appended")
@@ -235,7 +235,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            val appendAction = Action(ActionNames.SESSION_POST, buildJsonObject {
+            val appendAction = Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "sid-1")
                 put("senderId", "agent")
                 put("message", "Appended")
@@ -264,12 +264,12 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
                 put("session", "sid-1"); put("messageId", "msg-1")
             }))
             testScheduler.advanceUntilIdle()
 
-            val deletedEvent = harness.processedActions.find { it.name == ActionNames.SESSION_PUBLISH_MESSAGE_DELETED }
+            val deletedEvent = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED }
             assertNotNull(deletedEvent)
             assertEquals("sid-1", deletedEvent.payload?.get("sessionId")?.jsonPrimitive?.content)
             assertEquals("msg-1", deletedEvent.payload?.get("messageId")?.jsonPrimitive?.content)
@@ -284,10 +284,10 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
+            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_PUBLISH_STARTING))
             testScheduler.advanceUntilIdle()
 
-            val listAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_LIST && it.originator == "session" }
+            val listAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST && it.originator == "session" }
             assertNotNull(listAction, "Should have dispatched filesystem.SYSTEM_LIST")
         }
     }
@@ -303,14 +303,14 @@ class SessionFeatureT2CoreTest {
                 FileEntry("/app/session/notes.txt", false)
             )
             val payload = buildJsonObject { put("listing", Json.encodeToJsonElement<List<FileEntry>>(fileList)) }
-            val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, payload)
+            val envelope = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_LIST, payload)
 
             // FIX: Use store.deliverPrivateData instead of calling onPrivateData directly.
             // This ensures that the Store's event loop is triggered to process deferred actions.
             harness.store.deliverPrivateData("filesystem", "session", envelope)
             testScheduler.advanceUntilIdle()
 
-            val readActions = harness.processedActions.filter { it.name == ActionNames.FILESYSTEM_SYSTEM_READ }
+            val readActions = harness.processedActions.filter { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_READ }
             assertEquals(2, readActions.size)
             assertEquals("session-1.json", readActions[0].payload?.get("subpath")?.jsonPrimitive?.content)
             assertEquals("session-2.json", readActions[1].payload?.get("subpath")?.jsonPrimitive?.content)
@@ -327,7 +327,7 @@ class SessionFeatureT2CoreTest {
                 put("subpath", "loaded-1.json")
                 put("content", sessionJsonContent)
             }
-            val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, payload)
+            val envelope = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_READ, payload)
 
             // FIX: Use store.deliverPrivateData to pump the event loop.
             harness.store.deliverPrivateData("filesystem", "session", envelope)
@@ -350,13 +350,13 @@ class SessionFeatureT2CoreTest {
                 put("subpath", "bad-1.json")
                 put("content", corruptedJsonContent)
             }
-            val envelope = PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ, payload)
+            val envelope = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_READ, payload)
 
             // FIX: Use store.deliverPrivateData for consistency, though expecting no dispatch.
             harness.store.deliverPrivateData("filesystem", "session", envelope)
             testScheduler.advanceUntilIdle()
 
-            val loadedAction = harness.processedActions.find { it.name == ActionNames.SESSION_INTERNAL_LOADED }
+            val loadedAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_INTERNAL_LOADED }
             assertNull(loadedAction, "LOADED should not be dispatched for corrupted content.")
             val log = harness.platform.capturedLogs.find { it.level == LogLevel.ERROR }
             assertNotNull(log)
@@ -371,7 +371,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "unknown-session-id")
                 put("senderId", "user")
                 put("message", "Test")

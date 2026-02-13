@@ -47,38 +47,38 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
     kgState.personaIdToDelete?.let { personaId ->
         val personaName = kgState.holons[personaId]?.header?.name ?: "Unknown Persona"
         AlertDialog(
-            onDismissRequest = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", JsonNull) })) },
+            onDismissRequest = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", JsonNull) })) },
             title = { Text("Delete Persona?") },
             text = { Text("Are you sure you want to permanently delete '$personaName'? This action cannot be undone.") },
             confirmButton = {
                 Button(
-                    onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject { put("personaId", personaId) })) },
+                    onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject { put("personaId", personaId) })) },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) { Text("Delete") }
             },
-            dismissButton = { Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", JsonNull) })) }) { Text("Cancel") } }
+            dismissButton = { Button(onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", JsonNull) })) }) { Text("Cancel") } }
         )
     }
     kgState.holonIdToDelete?.let { holonId ->
         val holonName = kgState.holons[holonId]?.header?.name ?: "Unknown Holon"
         AlertDialog(
-            onDismissRequest = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", null as String?) })) },
+            onDismissRequest = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", null as String?) })) },
             title = { Text("Delete Holon?") },
             text = { Text("Are you sure you want to permanently delete '$holonName'? This will also delete all of its children.") },
             confirmButton = {
                 Button(
-                    onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject { put("holonId", holonId) })) },
+                    onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject { put("holonId", holonId) })) },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) { Text("Delete") }
             },
-            dismissButton = { Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", null as String?) })) }) { Text("Cancel") } }
+            dismissButton = { Button(onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", null as String?) })) }) { Text("Cancel") } }
         )
     }
     kgState.holonIdToRename?.let { holonId ->
         RenameHolonDialog(
             holon = kgState.holons[holonId],
-            onDismiss = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_RENAME, buildJsonObject { put("holonId", null as String?) })) },
-            onRename = { newName -> store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject { put("holonId", holonId); put("newName", newName) })) }
+            onDismiss = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_RENAME, buildJsonObject { put("holonId", null as String?) })) },
+            onRename = { newName -> store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject { put("holonId", holonId); put("newName", newName) })) }
         )
     }
 
@@ -87,7 +87,7 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
     if (kgState.isCreatingPersona) {
         var newPersonaName by remember { mutableStateOf("") }
         AlertDialog(
-            onDismissRequest = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_CREATING_PERSONA, buildJsonObject { put("isCreating", false) })) },
+            onDismissRequest = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_CREATING_PERSONA, buildJsonObject { put("isCreating", false) })) },
             title = { Text("Create New Persona") },
             text = {
                 OutlinedTextField(
@@ -100,13 +100,13 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
             confirmButton = {
                 Button(
                     onClick = {
-                        store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_CREATE_PERSONA, buildJsonObject { put("name", newPersonaName) }))
-                        store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_CREATING_PERSONA, buildJsonObject { put("isCreating", false) }))
+                        store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_CREATE_PERSONA, buildJsonObject { put("name", newPersonaName) }))
+                        store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_CREATING_PERSONA, buildJsonObject { put("isCreating", false) }))
                     },
                     enabled = newPersonaName.isNotBlank()
                 ) { Text("Create") }
             },
-            dismissButton = { Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_CREATING_PERSONA, buildJsonObject { put("isCreating", false) })) }) { Text("Cancel") } }
+            dismissButton = { Button(onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_CREATING_PERSONA, buildJsonObject { put("isCreating", false) })) }) { Text("Cancel") } }
         )
     }
 
@@ -121,20 +121,20 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
                             Text("Show Summaries", style = MaterialTheme.typography.labelMedium)
                             Switch(
                                 checked = kgState.showSummariesInTreeView,
-                                onCheckedChange = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_TOGGLE_SHOW_SUMMARIES)) },
+                                onCheckedChange = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_TOGGLE_SHOW_SUMMARIES)) },
                                 modifier = Modifier.padding(horizontal = 8.dp)
                             )
                         }
                         IconButton(
-                            onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.IMPORT.name) })) }
+                            onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.IMPORT.name) })) }
                         ) {
                             Icon(Icons.Default.Download, contentDescription = "Import Holons")
                         }
-                        Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_CREATING_PERSONA, buildJsonObject { put("isCreating", true) })) }) {
+                        Button(onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_CREATING_PERSONA, buildJsonObject { put("isCreating", true) })) }) {
                             Text("Create Persona")
                         }
                     } else {
-                        IconButton(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) })) }) {
+                        IconButton(onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) })) }) {
                             Icon(Icons.Default.Close, contentDescription = "Close View")
                         }
                     }
@@ -176,7 +176,7 @@ private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: 
                             } else {
                                 kgState.activeTypeFilters + type
                             }
-                            store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_TYPE_FILTERS, buildJsonObject { put("types", Json.encodeToJsonElement(newFilters)) }))
+                            store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_TYPE_FILTERS, buildJsonObject { put("types", Json.encodeToJsonElement(newFilters)) }))
                         },
                         label = { Text(type) }
                     )
@@ -205,9 +205,9 @@ private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: 
                 if (holonToEditId != null) {
                     HolonEditView(
                         holon = kgState.holons[holonToEditId],
-                        onDismiss = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT, buildJsonObject { put("holonId", null as String?) })) },
+                        onDismiss = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT, buildJsonObject { put("holonId", null as String?) })) },
                         onSave = { holonId, newPayload, newExecute ->
-                            store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT, buildJsonObject {
+                            store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT, buildJsonObject {
                                 put("holonId", holonId)
                                 newPayload?.let { put("payload", it) }
                                 newExecute?.let { put("execute", it) }
@@ -323,7 +323,7 @@ private fun HolonTreeItem(holon: Holon, kgState: KnowledgeGraphState, store: Sto
         leadingContent = {
             if (hasChildren) {
                 IconButton(
-                    onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_TOGGLE_HOLON_EXPANDED, buildJsonObject { put("holonId", header.id) })) },
+                    onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_TOGGLE_HOLON_EXPANDED, buildJsonObject { put("holonId", header.id) })) },
                     modifier = Modifier.size(24.dp)
                 ) {
                     Icon(
@@ -338,7 +338,7 @@ private fun HolonTreeItem(holon: Holon, kgState: KnowledgeGraphState, store: Sto
         },
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON, buildJsonObject { put("holonId", header.id) })) }
+            .clickable { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON, buildJsonObject { put("holonId", header.id) })) }
             .background(if (header.id == selectedHolonId) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
             .padding(start = (header.depth * 12).dp) // Reduced padding to accommodate icon
     )
@@ -361,18 +361,18 @@ private fun HolonDetailView(holon: Holon?, store: Store, modifier: Modifier = Mo
             TopAppBar(
                 title = { Text(holon.header.name, style = MaterialTheme.typography.titleMedium) },
                 actions = {
-                    Button(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT, buildJsonObject { put("holonId", holon.header.id) })) }) { Text("Edit") }
+                    Button(onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT, buildJsonObject { put("holonId", holon.header.id) })) }) { Text("Edit") }
                     Spacer(Modifier.width(8.dp))
                     if (holon.header.type == "AI_Persona_Root") {
                         Button(
-                            onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", holon.header.id) })) },
+                            onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", holon.header.id) })) },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                         ) { Text("Delete Persona") }
                     } else {
-                        OutlinedButton(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_RENAME, buildJsonObject { put("holonId", holon.header.id) })) }) { Text("Rename") }
+                        OutlinedButton(onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_RENAME, buildJsonObject { put("holonId", holon.header.id) })) }) { Text("Rename") }
                         Spacer(Modifier.width(8.dp))
                         Button(
-                            onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", holon.header.id) })) },
+                            onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", holon.header.id) })) },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                         ) { Text("Delete") }
                     }
@@ -534,18 +534,18 @@ private fun ImportPane(
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("Select a folder to analyze for holon files.", modifier = Modifier.weight(1f))
             Button(onClick = {
-                store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS))
+                store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS))
             }) { Text("Select & Analyze...") }
         }
         Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable {
-                store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE, buildJsonObject { put("recursive", !kgState.isImportRecursive) }))
+                store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE, buildJsonObject { put("recursive", !kgState.isImportRecursive) }))
             }) {
                 Checkbox(checked = kgState.isImportRecursive, onCheckedChange = null)
                 Text("Import sub-folders recursively")
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable {
-                store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_TOGGLE_SHOW_ONLY_CHANGED))
+                store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_TOGGLE_SHOW_ONLY_CHANGED))
             }) {
                 Checkbox(checked = kgState.showOnlyChangedImportItems, onCheckedChange = null)
                 Text("Show only changed files")
@@ -566,7 +566,7 @@ private fun ImportPane(
                         item = item,
                         selectedAction = kgState.importSelectedActions[item.sourcePath] ?: item.proposedAction,
                         onActionSelected = { newAction ->
-                            store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION, buildJsonObject {
+                            store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION, buildJsonObject {
                                 put("sourcePath", item.sourcePath)
                                 put("action", Json.encodeToJsonElement(newAction))
                             }))
@@ -596,16 +596,16 @@ private fun ImportPane(
                 }
 
                 // [ADDED] "Copy Report" button
-                OutlinedButton(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_COPY_ANALYSIS_TO_CLIPBOARD)) }) {
+                OutlinedButton(onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_COPY_ANALYSIS_TO_CLIPBOARD)) }) {
                     Icon(Icons.Default.ContentCopy, contentDescription = "Copy Report", modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Copy Report")
                 }
                 Spacer(modifier = Modifier.width(16.dp))
-                OutlinedButton(onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) })) }) { Text("Cancel") }
+                OutlinedButton(onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) })) }) { Text("Cancel") }
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(
-                    onClick = { store.dispatch("ui.kgView", Action(ActionNames.KNOWLEDGEGRAPH_EXECUTE_IMPORT)) },
+                    onClick = { store.dispatch("ui.kgView", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_EXECUTE_IMPORT)) },
                     enabled = kgState.importItems.isNotEmpty()
                 ) { Text("Execute Import") }
             }

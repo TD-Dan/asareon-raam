@@ -135,7 +135,7 @@ private fun PendingApprovalContent(approval: PendingApproval, store: Store) {
         OutlinedButton(
             onClick = {
                 store.dispatch("commandbot.ui", Action(
-                    ActionNames.COMMANDBOT_DENY,
+                    ActionRegistry.Names.COMMANDBOT_DENY,
                     buildJsonObject { put("approvalId", approval.approvalId) }
                 ))
             },
@@ -153,7 +153,7 @@ private fun PendingApprovalContent(approval: PendingApproval, store: Store) {
         Button(
             onClick = {
                 store.dispatch("commandbot.ui", Action(
-                    ActionNames.COMMANDBOT_APPROVE,
+                    ActionRegistry.Names.COMMANDBOT_APPROVE,
                     buildJsonObject { put("approvalId", approval.approvalId) }
                 ))
             }
@@ -201,7 +201,7 @@ private fun ResolvedApprovalContent(resolution: ApprovalResolution, store: Store
         TextButton(
             onClick = {
                 store.dispatch("commandbot.ui", Action(
-                    ActionNames.SESSION_DELETE_MESSAGE,
+                    ActionRegistry.Names.SESSION_DELETE_MESSAGE,
                     buildJsonObject {
                         put("session", resolution.sessionId)
                         put("messageId", resolution.cardMessageId)

@@ -49,7 +49,7 @@ fun IdentityManagerView(store: Store) {
         AddIdentityDialog(
             onDismiss = { showAddDialog = false },
             onAdd = { name ->
-                store.dispatch("core.ui", Action(ActionNames.CORE_ADD_USER_IDENTITY, buildJsonObject { put("name", name) }))
+                store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_ADD_USER_IDENTITY, buildJsonObject { put("name", name) }))
                 showAddDialog = false
             }
         )
@@ -60,7 +60,7 @@ fun IdentityManagerView(store: Store) {
             TopAppBar(
                 title = { Text("Identity Manager") },
                 navigationIcon = {
-                    IconButton(onClick = { store.dispatch("core.ui", Action(ActionNames.CORE_SHOW_DEFAULT_VIEW)) }) {
+                    IconButton(onClick = { store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW)) }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -106,10 +106,10 @@ fun IdentityManagerView(store: Store) {
                         identity = identity,
                         isActive = identity.handle == coreState?.activeUserId,
                         onSetActive = {
-                            store.dispatch("core.ui", Action(ActionNames.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) }))
+                            store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) }))
                         },
                         onDelete = {
-                            store.dispatch("core.ui", Action(ActionNames.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) }))
+                            store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) }))
                         }
                     )
                 }

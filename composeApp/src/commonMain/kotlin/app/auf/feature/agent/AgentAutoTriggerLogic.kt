@@ -43,7 +43,7 @@ object AgentAutoTriggerLogic {
                 val timeoutTrigger = totalWait >= agent.autoMaxWaitTimeSeconds
 
                 if (debounceTrigger || timeoutTrigger) {
-                    store.deferredDispatch(featureName, Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+                    store.deferredDispatch(featureName, Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                         put("agentId", agent.id)
                         put("preview", false)
                     }))

@@ -75,7 +75,7 @@ class CommandBotFeatureT1ReducerTest {
         actionName: String = "session.CREATE",
         payload: kotlinx.serialization.json.JsonObject = buildJsonObject { put("name", "Test") },
     ): Action {
-        return Action(ActionNames.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
+        return Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
             put("approvalId", approvalId)
             put("sessionId", sessionId)
             put("cardMessageId", cardMessageId)
@@ -91,7 +91,7 @@ class CommandBotFeatureT1ReducerTest {
         approvalId: String = "approval-1",
         resolution: String = "APPROVED"
     ): Action {
-        return Action(ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
+        return Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
             put("approvalId", approvalId)
             put("resolution", resolution)
         })
@@ -201,7 +201,7 @@ class CommandBotFeatureT1ReducerTest {
         val feature = createFeature()
         val initial = CommandBotState()
 
-        val action = Action(ActionNames.COMMANDBOT_INTERNAL_STAGE_APPROVAL, null)
+        val action = Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_STAGE_APPROVAL, null)
         val result = feature.reducer(initial, action)
 
         assertSame(initial, result, "Null payload should return the same state instance.")
@@ -212,7 +212,7 @@ class CommandBotFeatureT1ReducerTest {
         val feature = createFeature()
         val initial = CommandBotState()
 
-        val action = Action(ActionNames.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
+        val action = Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
             // approvalId omitted
             put("sessionId", "session-1")
             put("cardMessageId", "card-1")
@@ -230,7 +230,7 @@ class CommandBotFeatureT1ReducerTest {
         val feature = createFeature()
         val initial = CommandBotState()
 
-        val action = Action(ActionNames.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
+        val action = Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
             put("approvalId", "approval-1")
             // sessionId omitted
             put("cardMessageId", "card-1")
@@ -248,7 +248,7 @@ class CommandBotFeatureT1ReducerTest {
         val feature = createFeature()
         val initial = CommandBotState()
 
-        val action = Action(ActionNames.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
+        val action = Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
             put("approvalId", "approval-1")
             put("sessionId", "session-1")
             // cardMessageId omitted
@@ -266,7 +266,7 @@ class CommandBotFeatureT1ReducerTest {
         val feature = createFeature()
         val initial = CommandBotState()
 
-        val action = Action(ActionNames.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
+        val action = Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
             put("approvalId", "approval-1")
             put("sessionId", "session-1")
             put("cardMessageId", "card-1")
@@ -284,7 +284,7 @@ class CommandBotFeatureT1ReducerTest {
         val feature = createFeature()
         val initial = CommandBotState()
 
-        val action = Action(ActionNames.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
+        val action = Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
             put("approvalId", "approval-1")
             put("sessionId", "session-1")
             put("cardMessageId", "card-1")
@@ -318,7 +318,7 @@ class CommandBotFeatureT1ReducerTest {
         val feature = createFeature()
         val initial = CommandBotState()
 
-        val action = Action(ActionNames.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
+        val action = Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
             put("approvalId", "approval-1")
             put("sessionId", "session-1")
             put("cardMessageId", "card-1")
@@ -407,7 +407,7 @@ class CommandBotFeatureT1ReducerTest {
         val feature = createFeature()
         val initial = CommandBotState(pendingApprovals = mapOf("approval-1" to pendingApproval()))
 
-        val action = Action(ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, null)
+        val action = Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, null)
         val result = feature.reducer(initial, action)
 
         assertSame(initial, result)
@@ -418,7 +418,7 @@ class CommandBotFeatureT1ReducerTest {
         val feature = createFeature()
         val initial = CommandBotState(pendingApprovals = mapOf("approval-1" to pendingApproval()))
 
-        val action = Action(ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
+        val action = Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
             put("resolution", "APPROVED")
             // approvalId omitted
         })
@@ -432,7 +432,7 @@ class CommandBotFeatureT1ReducerTest {
         val feature = createFeature()
         val initial = CommandBotState(pendingApprovals = mapOf("approval-1" to pendingApproval()))
 
-        val action = Action(ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
+        val action = Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
             put("approvalId", "approval-1")
             // resolution omitted
         })
@@ -446,7 +446,7 @@ class CommandBotFeatureT1ReducerTest {
         val feature = createFeature()
         val initial = CommandBotState(pendingApprovals = mapOf("approval-1" to pendingApproval()))
 
-        val action = Action(ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
+        val action = Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
             put("approvalId", "approval-1")
             put("resolution", "MAYBE")
         })
@@ -519,7 +519,7 @@ class CommandBotFeatureT1ReducerTest {
             resolvedApprovals = mapOf("approval-1" to resolvedApproval(cardMessageId = "card-1"))
         )
 
-        val action = Action(ActionNames.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
             put("sessionId", "session-1")
             put("messageId", "card-1")
         })
@@ -535,7 +535,7 @@ class CommandBotFeatureT1ReducerTest {
         val resolved = resolvedApproval(cardMessageId = "card-1")
         val initial = CommandBotState(resolvedApprovals = mapOf("approval-1" to resolved))
 
-        val action = Action(ActionNames.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
             put("sessionId", "session-1")
             put("messageId", "some-other-message")
         })
@@ -552,7 +552,7 @@ class CommandBotFeatureT1ReducerTest {
             resolvedApprovals = mapOf("approval-1" to resolvedApproval())
         )
 
-        val action = Action(ActionNames.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
             put("sessionId", "session-1")
             // messageId omitted
         })
@@ -566,7 +566,7 @@ class CommandBotFeatureT1ReducerTest {
         val feature = createFeature()
         val initial = CommandBotState() // no resolved approvals
 
-        val action = Action(ActionNames.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
             put("sessionId", "session-1")
             put("messageId", "card-1")
         })
@@ -588,7 +588,7 @@ class CommandBotFeatureT1ReducerTest {
             )
         )
 
-        val action = Action(ActionNames.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
             put("sessionId", "session-1")
             put("messageId", "card-A")
         })
@@ -607,7 +607,7 @@ class CommandBotFeatureT1ReducerTest {
             resolvedApprovals = mapOf("resolved-1" to resolvedApproval(approvalId = "resolved-1", cardMessageId = "card-1"))
         )
 
-        val action = Action(ActionNames.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED, buildJsonObject {
             put("sessionId", "session-1")
             put("messageId", "card-1")
         })

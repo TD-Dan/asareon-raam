@@ -52,15 +52,15 @@ class KnowledgeGraphFeatureT2CoreTest {
     fun `full load sequence correctly populates and synchronizes holons`() {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         harness.runAndLogOnFailure {
-            harness.store.dispatch("system", Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "persona-1-20251112T190000Z") }))
-            harness.store.deliverPrivateData("filesystem", "knowledgegraph", PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, buildJsonObject {
+            harness.store.dispatch("system", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "persona-1-20251112T190000Z") }))
+            harness.store.deliverPrivateData("filesystem", "knowledgegraph", PrivateDataEnvelope(ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_LIST, buildJsonObject {
                 put("subpath", "persona-1-20251112T190000Z")
                 put("listing", buildJsonArray {
                     add(json.encodeToJsonElement(FileEntry("persona-1-20251112T190000Z/persona-1-20251112T190000Z.json", false)))
                     add(json.encodeToJsonElement(FileEntry("persona-1-20251112T190000Z/holon-a-20251112T190000Z/holon-a-20251112T190000Z.json", false)))
                 })
             }))
-            harness.store.deliverPrivateData("filesystem", "knowledgegraph", PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, buildJsonObject {
+            harness.store.deliverPrivateData("filesystem", "knowledgegraph", PrivateDataEnvelope(ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, buildJsonObject {
                 put("correlationId", JsonNull)
                 put("contents", buildJsonObject {
                     put("persona-1-20251112T190000Z/persona-1-20251112T190000Z.json", persona1Content)
@@ -87,10 +87,10 @@ class KnowledgeGraphFeatureT2CoreTest {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         harness.runAndLogOnFailure {
             // ACT 1: Initiate load
-            harness.store.dispatch("system", Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "empty-persona") }))
+            harness.store.dispatch("system", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "empty-persona") }))
 
             // ACT 2: Simulate empty recursive listing response from FileSystem
-            harness.store.deliverPrivateData("filesystem", "knowledgegraph", PrivateDataEnvelope(ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST, buildJsonObject {
+            harness.store.deliverPrivateData("filesystem", "knowledgegraph", PrivateDataEnvelope(ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_LIST, buildJsonObject {
                 put("subpath", "empty-persona")
                 put("listing", buildJsonArray { }) // Empty list
             }))
@@ -125,14 +125,14 @@ class KnowledgeGraphFeatureT2CoreTest {
 
         harness.runAndLogOnFailure {
             // ACT
-            harness.store.dispatch("agent-alpha", Action(ActionNames.KNOWLEDGEGRAPH_REQUEST_CONTEXT, buildJsonObject {
+            harness.store.dispatch("agent-alpha", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_REQUEST_CONTEXT, buildJsonObject {
                 put("personaId", p1.header.id)
                 put("correlationId", "req-123")
             }))
 
             // ASSERT
             val delivery = harness.store.deliveredPrivateData.find {
-                it.recipient == "agent-alpha" && it.envelope.type == ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT
+                it.recipient == "agent-alpha" && it.envelope.type == ActionRegistry.Names.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT
             }
             assertNotNull(delivery, "A private response should be delivered to the agent.")
 
@@ -171,12 +171,12 @@ class KnowledgeGraphFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject {
                 put("holonId", "h1")
                 put("newName", "New Name")
             }))
 
-            val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
+            val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
             assertNotNull(writeAction)
 
             val writtenContent = writeAction.payload!!.jsonObject["content"]!!.jsonPrimitive.content
@@ -187,7 +187,7 @@ class KnowledgeGraphFeatureT2CoreTest {
             assertNotNull(parsedHeader["modified_at"]?.jsonPrimitive?.content)
 
             // Assert a reload was triggered to update the in-memory state
-            assertTrue(harness.processedActions.any { it.name == ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA })
+            assertTrue(harness.processedActions.any { it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA })
         }
     }
 
@@ -196,12 +196,12 @@ class KnowledgeGraphFeatureT2CoreTest {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         harness.runAndLogOnFailure {
             // ACT
-            harness.store.dispatch("agent-alpha", Action(ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject {
+            harness.store.dispatch("agent-alpha", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject {
                 put("personaId", "persona-1")
             }))
 
             // ASSERT
-            val broadcastAction = harness.processedActions.find { it.name == ActionNames.KNOWLEDGEGRAPH_PUBLISH_RESERVATIONS_UPDATED }
+            val broadcastAction = harness.processedActions.find { it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_PUBLISH_RESERVATIONS_UPDATED }
             assertNotNull(broadcastAction, "A RESERVATIONS_UPDATED broadcast should have been dispatched.")
 
             val payload = broadcastAction.payload!!.jsonObject
@@ -222,10 +222,10 @@ class KnowledgeGraphFeatureT2CoreTest {
 
         // A map of the action to test and the forbidden action it would cause
         val actionsToTest = mapOf(
-            Action(ActionNames.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT, buildJsonObject { put("holonId", holonId) }) to ActionNames.FILESYSTEM_SYSTEM_WRITE,
-            Action(ActionNames.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject { put("holonId", holonId); put("newName", "X") }) to ActionNames.FILESYSTEM_SYSTEM_WRITE,
-            Action(ActionNames.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject { put("holonId", holonId) }) to ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY,
-            Action(ActionNames.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject { put("personaId", personaId) }) to ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY
+            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT, buildJsonObject { put("holonId", holonId) }) to ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE,
+            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject { put("holonId", holonId); put("newName", "X") }) to ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE,
+            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject { put("holonId", holonId) }) to ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY,
+            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject { put("personaId", personaId) }) to ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY
         )
 
         actionsToTest.forEach { (actionToDispatch, forbiddenAction) ->
@@ -243,7 +243,7 @@ class KnowledgeGraphFeatureT2CoreTest {
                 // ASSERT
                 assertTrue(harness.processedActions.none { it.name == forbiddenAction },
                     "Action ${actionToDispatch.name} should have been blocked, but caused $forbiddenAction.")
-                assertTrue(harness.processedActions.any { it.name == ActionNames.CORE_SHOW_TOAST },
+                assertTrue(harness.processedActions.any { it.name == ActionRegistry.Names.CORE_SHOW_TOAST },
                     "A toast notification should be shown for blocked action ${actionToDispatch.name}.")
                 assertTrue(platform.capturedLogs.any { it.level == LogLevel.WARN && it.message.contains("Blocked modification") },
                     "A warning should be logged for blocked action ${actionToDispatch.name}.")
@@ -259,8 +259,8 @@ class KnowledgeGraphFeatureT2CoreTest {
         val holon = Holon(HolonHeader(id = holonId, name="H", type="T", parentId = personaId, filePath = "p1/h1.json"), buildJsonObject{})
 
         val actionsToTest = mapOf(
-            Action(ActionNames.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject { put("holonId", holonId); put("newName", "X") }) to ActionNames.FILESYSTEM_SYSTEM_WRITE,
-            Action(ActionNames.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject { put("personaId", personaId) }) to ActionNames.FILESYSTEM_SYSTEM_DELETE_DIRECTORY
+            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject { put("holonId", holonId); put("newName", "X") }) to ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE,
+            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject { put("personaId", personaId) }) to ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY
         )
 
         actionsToTest.forEach { (actionToDispatch, expectedAction) ->
@@ -290,14 +290,14 @@ class KnowledgeGraphFeatureT2CoreTest {
 
         harness.runAndLogOnFailure {
             // ACT: Another agent tries to reserve the same HKG
-            harness.store.dispatch("agent-beta", Action(ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject {
+            harness.store.dispatch("agent-beta", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject {
                 put("personaId", "persona-1")
             }))
 
             // ASSERT
             val finalState = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
             assertEquals("agent-alpha", finalState.reservations["persona-1"], "Reservation owner should not have changed.")
-            assertTrue(harness.processedActions.any { it.name == ActionNames.CORE_SHOW_TOAST })
+            assertTrue(harness.processedActions.any { it.name == ActionRegistry.Names.CORE_SHOW_TOAST })
             assertTrue(platform.capturedLogs.any { it.level == LogLevel.WARN && it.message.contains("already reserved") })
         }
     }

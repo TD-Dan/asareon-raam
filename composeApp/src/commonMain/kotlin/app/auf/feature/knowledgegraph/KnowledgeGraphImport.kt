@@ -261,14 +261,14 @@ internal fun executeImportWrites(
             )
             val finalHolon = synchronizeRawContent(holon.copy(header = headerWithMeta))
             val contentToWrite = prepareHolonForWriting(finalHolon)
-            store.deferredDispatch("knowledgegraph", Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+            store.deferredDispatch("knowledgegraph", Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
                 put("subpath", finalPath); put("content", contentToWrite)
             }))
         }
     }
 
 
-    store.dispatch("ui.kgView", Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject { put("message", "Import complete. Reloading Knowledge Graph...") }))
-    store.deferredDispatch("knowledgegraph", Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) }))
-    store.deferredDispatch("knowledgegraph", Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
+    store.dispatch("ui.kgView", Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject { put("message", "Import complete. Reloading Knowledge Graph...") }))
+    store.deferredDispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) }))
+    store.deferredDispatch("knowledgegraph", Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST))
 }

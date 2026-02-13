@@ -60,7 +60,7 @@ class AgentRuntimeFeatureT3WatcherTest {
     private fun dispatchHeartbeat(timePassedMillis: Long) {
         platform.currentTime += timePassedMillis
         // Fix: Use "agent" as originator to pass Store security checks for agent.internal.* actions
-        harness.store.dispatch("agent", Action(ActionNames.AGENT_INTERNAL_CHECK_AUTOMATIC_TRIGGERS))
+        harness.store.dispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_CHECK_AUTOMATIC_TRIGGERS))
         testScope.runCurrent()
     }
 
@@ -71,7 +71,7 @@ class AgentRuntimeFeatureT3WatcherTest {
 
         harness.runAndLogOnFailure {
             // ACT: A user message arrives.
-            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "sid-A"); put("senderId", "user"); put("message", "Hello")
             }))
             testScope.runCurrent()
@@ -81,13 +81,13 @@ class AgentRuntimeFeatureT3WatcherTest {
 
             // ACT: Advance time by 4 seconds (Undershoot). Should NOT trigger.
             dispatchHeartbeat(4000)
-            assertNull(harness.processedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN }, "Should not trigger at 4s")
+            assertNull(harness.processedActions.find { it.name == ActionRegistry.Names.AGENT_INITIATE_TURN }, "Should not trigger at 4s")
 
             // ACT: Advance time by 2 more seconds (Total 6s). Should trigger.
             dispatchHeartbeat(2000)
 
             // ASSERT
-            val triggerAction = harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }
+            val triggerAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.AGENT_INITIATE_TURN }
             assertNotNull(triggerAction, "Agent should have triggered its turn after the debounce period.")
             assertEquals(agent.id, triggerAction.payload?.get("agentId")?.jsonPrimitive?.content)
         }
@@ -100,30 +100,30 @@ class AgentRuntimeFeatureT3WatcherTest {
 
         harness.runAndLogOnFailure {
             // ACT 1: First user message arrives.
-            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "sid-A"); put("senderId", "user"); put("message", "First part")
             }))
             testScope.runCurrent()
 
             // ACT 2: Advance time by 3s.
             dispatchHeartbeat(3000)
-            assertNull(harness.processedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent should not have triggered yet.")
+            assertNull(harness.processedActions.find { it.name == ActionRegistry.Names.AGENT_INITIATE_TURN }, "Agent should not have triggered yet.")
 
             // ACT 3: A second message arrives, resetting the timer.
-            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "sid-A"); put("senderId", "user"); put("message", "Second part")
             }))
             testScope.runCurrent()
 
             // ACT 4: Advance time by 3s again. (Total since first msg: 6s, but only 3s since second).
             dispatchHeartbeat(3000)
-            assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent should not have triggered as timer should have reset.")
+            assertNull(harness.processedActions.findLast { it.name == ActionRegistry.Names.AGENT_INITIATE_TURN }, "Agent should not have triggered as timer should have reset.")
 
             // ACT 5: Advance past the reset timer's deadline.
             dispatchHeartbeat(2001)
 
             // ASSERT
-            assertNotNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent should have triggered after the second message's debounce period.")
+            assertNotNull(harness.processedActions.findLast { it.name == ActionRegistry.Names.AGENT_INITIATE_TURN }, "Agent should have triggered after the second message's debounce period.")
         }
     }
 
@@ -134,27 +134,27 @@ class AgentRuntimeFeatureT3WatcherTest {
 
         harness.runAndLogOnFailure {
             // ACT 1: First message starts the max-wait timer.
-            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "sid-A"); put("senderId", "user"); put("message", "Message 1")
             }))
             testScope.runCurrent() // T=0
 
             // ACT 2: Send messages every 8 seconds, preventing the 10s debounce from ever completing.
             dispatchHeartbeat(8000) // T=8s
-            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject { put("session", "sid-A"); put("senderId", "user"); put("message", "Message 2") }))
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject { put("session", "sid-A"); put("senderId", "user"); put("message", "Message 2") }))
             testScope.runCurrent()
-            assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Should not trigger at T=8s.")
+            assertNull(harness.processedActions.findLast { it.name == ActionRegistry.Names.AGENT_INITIATE_TURN }, "Should not trigger at T=8s.")
 
             dispatchHeartbeat(8000) // T=16s
-            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject { put("session", "sid-A"); put("senderId", "user"); put("message", "Message 3") }))
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject { put("session", "sid-A"); put("senderId", "user"); put("message", "Message 3") }))
             testScope.runCurrent()
-            assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Should not trigger at T=16s.")
+            assertNull(harness.processedActions.findLast { it.name == ActionRegistry.Names.AGENT_INITIATE_TURN }, "Should not trigger at T=16s.")
 
             // ACT 3: Advance past the 20s max-wait time.
             dispatchHeartbeat(5000) // T=21s
 
             // ASSERT
-            assertNotNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Agent must trigger after max wait time is exceeded.")
+            assertNotNull(harness.processedActions.findLast { it.name == ActionRegistry.Names.AGENT_INITIATE_TURN }, "Agent must trigger after max wait time is exceeded.")
         }
     }
 
@@ -165,7 +165,7 @@ class AgentRuntimeFeatureT3WatcherTest {
 
         harness.runAndLogOnFailure {
             // ACT: A user message arrives, putting agent in WAITING.
-            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "sid-A"); put("senderId", "user"); put("message", "Hello")
             }))
             testScope.runCurrent()
@@ -174,7 +174,7 @@ class AgentRuntimeFeatureT3WatcherTest {
             dispatchHeartbeat(5000)
 
             // ASSERT
-            assertNull(harness.processedActions.findLast { it.name == ActionNames.AGENT_INITIATE_TURN }, "Manual agent should never trigger automatically.")
+            assertNull(harness.processedActions.findLast { it.name == ActionRegistry.Names.AGENT_INITIATE_TURN }, "Manual agent should never trigger automatically.")
         }
     }
 
@@ -191,7 +191,7 @@ class AgentRuntimeFeatureT3WatcherTest {
 
         harness.runAndLogOnFailure {
             // Simulate message arrival manually to force WAITING state
-            harness.store.dispatch("ui", Action(ActionNames.SESSION_POST, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "sid-A"); put("senderId", "user"); put("message", "Wake up!")
             }))
             testScope.runCurrent()
@@ -201,7 +201,7 @@ class AgentRuntimeFeatureT3WatcherTest {
 
             // ASSERT
             assertNull(
-                harness.processedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN },
+                harness.processedActions.find { it.name == ActionRegistry.Names.AGENT_INITIATE_TURN },
                 "Paused agent should NOT trigger even if automatic and waiting."
             )
         }
@@ -217,7 +217,7 @@ class AgentRuntimeFeatureT3WatcherTest {
             // Advance time without sending any message first
             dispatchHeartbeat(10000)
 
-            assertNull(harness.processedActions.find { it.name == ActionNames.AGENT_INITIATE_TURN })
+            assertNull(harness.processedActions.find { it.name == ActionRegistry.Names.AGENT_INITIATE_TURN })
         }
     }
 }

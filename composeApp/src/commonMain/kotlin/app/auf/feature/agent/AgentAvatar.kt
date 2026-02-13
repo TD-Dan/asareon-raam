@@ -32,7 +32,7 @@ object AgentAvatarLogic {
         val sessionMap = agentState.agentAvatarCardIds[agent.id] ?: return
         sessionMap.forEach { (sessionId, messageId) ->
             store.deferredDispatch("agent", Action(
-                name = ActionNames.SESSION_UPDATE_MESSAGE,
+                name = ActionRegistry.Names.SESSION_UPDATE_MESSAGE,
                 payload = buildJsonObject {
                     put("session", sessionId)
                     put("messageId", messageId)
@@ -53,7 +53,7 @@ object AgentAvatarLogic {
     ) {
         // 1. Dispatch Status Change (if requested)
         if (newStatus != null) {
-            store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
                 put("agentId", agentId)
                 put("status", newStatus.name)
                 newError?.let { put("error", it) }
@@ -88,7 +88,7 @@ object AgentAvatarLogic {
         zombies.forEach { sessionId ->
             val messageId = currentCards[sessionId]
             if (messageId != null) {
-                store.deferredDispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+                store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
                     put("session", sessionId)
                     put("messageId", messageId)
                 }))
@@ -102,7 +102,7 @@ object AgentAvatarLogic {
             // A. Generate New ID and Commit Intention (Sovereign Update)
             val newMessageId = platformDependencies.generateUUID()
 
-            store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_AVATAR_MOVED, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_AVATAR_MOVED, buildJsonObject {
                 put("agentId", agentId)
                 put("sessionId", sessionId)
                 put("messageId", newMessageId)
@@ -110,7 +110,7 @@ object AgentAvatarLogic {
 
             // B. Delete Old (if exists)
             if (oldMessageId != null) {
-                store.deferredDispatch("agent", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+                store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
                     put("session", sessionId)
                     put("messageId", oldMessageId)
                 }))
@@ -126,7 +126,7 @@ object AgentAvatarLogic {
                 statusInfo.errorMessage?.let { put("errorMessage", it) }
             }
 
-            store.deferredDispatch("agent", Action(ActionNames.SESSION_POST, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", sessionId)
                 put("senderId", agentId)
                 put("messageId", newMessageId)
@@ -256,8 +256,8 @@ fun AgentControlCard(
                     DropdownMenuItem(
                         text = { Text("Edit Agent") },
                         onClick = {
-                            store.dispatch("ui.controls", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.manager") }))
-                            store.dispatch("ui.controls", Action(ActionNames.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.id) }))
+                            store.dispatch("ui.controls", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.manager") }))
+                            store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.id) }))
                             menuExpanded = false
                         },
                         leadingIcon = { Icon(Icons.Default.Edit, null) }
@@ -265,7 +265,7 @@ fun AgentControlCard(
                     DropdownMenuItem(
                         text = { Text("Preview Turn") },
                         onClick = {
-                            store.dispatch("ui.controls", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+                            store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                                 put("agentId", agent.id)
                                 put("preview", true)
                             }))
@@ -285,7 +285,7 @@ fun AgentControlCard(
             ) {
                 IconButton(
                     onClick = {
-                        store.dispatch("ui.controls", Action(ActionNames.AGENT_TOGGLE_ACTIVE, buildJsonObject { put("agentId", agent.id) }))
+                        store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_TOGGLE_ACTIVE, buildJsonObject { put("agentId", agent.id) }))
                     }
                 ) {
                     Icon(
@@ -304,7 +304,7 @@ fun AgentControlCard(
             ) {
                 IconButton(
                     onClick = {
-                        store.dispatch("ui.controls", Action(ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject { put("agentId", agent.id) }))
+                        store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject { put("agentId", agent.id) }))
                     }
                 ) {
                     Icon(
@@ -317,14 +317,14 @@ fun AgentControlCard(
 
             if (statusInfo.status == AgentStatus.PROCESSING) {
                 Button(
-                    onClick = { store.dispatch("ui.controls", Action(ActionNames.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agent.id) })) },
+                    onClick = { store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agent.id) })) },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                 ) {
                     Icon(Icons.Default.Cancel, contentDescription = "Cancel Turn")
                 }
             } else {
                 Button(
-                    onClick = { store.dispatch("ui.controls", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+                    onClick = { store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                         put("agentId", agent.id)
                         put("preview", false) // Direct execution
                     })) },

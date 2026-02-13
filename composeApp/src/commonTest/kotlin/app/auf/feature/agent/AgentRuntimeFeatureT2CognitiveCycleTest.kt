@@ -71,21 +71,21 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
         harness.runAndLogOnFailure {
             // === PHASE 1: INITIATE TURN ===
-            harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                 put("agentId", agentId)
                 put("preview", false)
             }))
 
             // ASSERT: Ledger request dispatched
             val ledgerRequest = harness.processedActions.find { action ->
-                action.name == ActionNames.SESSION_REQUEST_LEDGER_CONTENT
+                action.name == ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT
             }
             assertNotNull(ledgerRequest, "Should request ledger content")
             assertEquals(agentId, ledgerRequest.payload?.get("correlationId")?.jsonPrimitive?.content)
 
             // === PHASE 2: LEDGER RESPONSE ===
             val ledgerResponse = PrivateDataEnvelope(
-                ActionNames.Envelopes.SESSION_RESPONSE_LEDGER,
+                ActionRegistry.Names.Envelopes.SESSION_RESPONSE_LEDGER,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("messages", buildJsonArray {
@@ -101,7 +101,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // ASSERT: Turn context staged
             val stageAction = harness.processedActions.find { action ->
-                action.name == ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT
+                action.name == ActionRegistry.Names.AGENT_INTERNAL_STAGE_TURN_CONTEXT
             }
             assertNotNull(stageAction, "Should stage turn context")
 
@@ -110,7 +110,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // ASSERT: Workspace listing requested
             val workspaceListRequest = harness.processedActions.find { action ->
-                action.name == ActionNames.FILESYSTEM_SYSTEM_LIST &&
+                action.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST &&
                         action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull == agentId
             }
             assertNotNull(workspaceListRequest, "Should request workspace listing")
@@ -121,7 +121,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             // For sovereign agents, HKG context is also required.
             // Simulate HKG context response arrival:
             val hkgResponse = PrivateDataEnvelope(
-                ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                ActionRegistry.Names.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("context", buildJsonObject { put("persona", "test") })
@@ -131,7 +131,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // ASSERT: Gate passed — Gateway request dispatched with Sentinel in System Prompt
             val gatewayRequest = harness.processedActions.find { action ->
-                action.name == ActionNames.GATEWAY_GENERATE_CONTENT
+                action.name == ActionRegistry.Names.GATEWAY_GENERATE_CONTENT
             }
             assertNotNull(gatewayRequest, "Should dispatch gateway request after all contexts gathered")
 
@@ -143,7 +143,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // === PHASE 4: GATEWAY SUCCESS RESPONSE ===
             val gatewaySuccess = PrivateDataEnvelope(
-                ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE,
+                ActionRegistry.Names.Envelopes.GATEWAY_RESPONSE_RESPONSE,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("rawContent", "Boot sequence complete. I am now awake and ready to serve.")
@@ -154,7 +154,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // ASSERT: State transition to AWAKE
             val nvramUpdate = harness.processedActions.find { action ->
-                action.name == ActionNames.AGENT_INTERNAL_NVRAM_LOADED
+                action.name == ActionRegistry.Names.AGENT_INTERNAL_NVRAM_LOADED
             }
             assertNotNull(nvramUpdate, "Should update NVRAM state on sentinel success")
 
@@ -163,7 +163,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // ASSERT: Response posted to session
             val sessionPost = harness.processedActions.find { action ->
-                action.name == ActionNames.SESSION_POST
+                action.name == ActionRegistry.Names.SESSION_POST
             }
             assertNotNull(sessionPost, "Should post response to session")
             assertEquals(sessionId, sessionPost.payload?.get("session")?.jsonPrimitive?.content)
@@ -187,7 +187,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
         harness.runAndLogOnFailure {
             // Simulate a gateway failure response with sentinel failure token
             val gatewayFailure = PrivateDataEnvelope(
-                ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE,
+                ActionRegistry.Names.Envelopes.GATEWAY_RESPONSE_RESPONSE,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("rawContent", "[${SovereignDefaults.SENTINEL_FAILURE_TOKEN}: NO_AGENT_PRESENT]")
@@ -199,19 +199,19 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // ASSERT: No state update (remains BOOTING)
             val nvramUpdate = harness.processedActions.find { action ->
-                action.name == ActionNames.AGENT_INTERNAL_NVRAM_LOADED
+                action.name == ActionRegistry.Names.AGENT_INTERNAL_NVRAM_LOADED
             }
             assertNull(nvramUpdate, "Should NOT update NVRAM on sentinel failure")
 
             // ASSERT: No session post
             val sessionPost = harness.processedActions.find { action ->
-                action.name == ActionNames.SESSION_POST
+                action.name == ActionRegistry.Names.SESSION_POST
             }
             assertNull(sessionPost, "Should NOT post to session on sentinel failure")
 
             // ASSERT: Agent status set to IDLE with warning
             val statusUpdates = harness.processedActions.filter { action ->
-                action.name == ActionNames.AGENT_INTERNAL_SET_STATUS
+                action.name == ActionRegistry.Names.AGENT_INTERNAL_SET_STATUS
             }
             val idleStatus = statusUpdates.lastOrNull()
             assertNotNull(idleStatus, "Should update status on sentinel failure")
@@ -238,13 +238,13 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
         harness.runAndLogOnFailure {
             // === INITIATE TURN ===
-            harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                 put("agentId", agentId)
             }))
 
             // === DELIVER LEDGER ===
             val ledgerResponse = PrivateDataEnvelope(
-                ActionNames.Envelopes.SESSION_RESPONSE_LEDGER,
+                ActionRegistry.Names.Envelopes.SESSION_RESPONSE_LEDGER,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("messages", buildJsonArray {
@@ -264,7 +264,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             // Workspace context arrives automatically via FileSystemFeature.
             // Sovereign agent also needs HKG context:
             val hkgResponse = PrivateDataEnvelope(
-                ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                ActionRegistry.Names.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("context", buildJsonObject { put("persona", "test") })
@@ -274,7 +274,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // === VERIFY NO SENTINEL ===
             val gatewayRequest = harness.processedActions.find { action ->
-                action.name == ActionNames.GATEWAY_GENERATE_CONTENT
+                action.name == ActionRegistry.Names.GATEWAY_GENERATE_CONTENT
             }
             assertNotNull(gatewayRequest, "Should dispatch gateway request")
 
@@ -286,7 +286,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // === DELIVER NORMAL RESPONSE ===
             val gatewayResponse = PrivateDataEnvelope(
-                ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE,
+                ActionRegistry.Names.Envelopes.GATEWAY_RESPONSE_RESPONSE,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("rawContent", "2+2 equals 4.")
@@ -297,7 +297,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // === VERIFY POST ===
             val sessionPost = harness.processedActions.find { action ->
-                action.name == ActionNames.SESSION_POST
+                action.name == ActionRegistry.Names.SESSION_POST
             }
             assertNotNull(sessionPost, "AWAKE agent should post response")
             assertTrue(
@@ -328,12 +328,12 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
         harness.runAndLogOnFailure {
             // Initiate turn and deliver ledger
-            harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                 put("agentId", agentId)
             }))
 
             val ledgerResponse = PrivateDataEnvelope(
-                ActionNames.Envelopes.SESSION_RESPONSE_LEDGER,
+                ActionRegistry.Names.Envelopes.SESSION_RESPONSE_LEDGER,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("messages", buildJsonArray {
@@ -353,7 +353,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             // Workspace listing arrives via FileSystemFeature automatically.
             // Sovereign agent also needs HKG context for gate to pass:
             val hkgResponse = PrivateDataEnvelope(
-                ActionNames.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                ActionRegistry.Names.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("context", buildJsonObject { put("persona", "test") })
@@ -365,13 +365,13 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // ASSERT: No gateway request (resource validation failed)
             val gatewayRequest = harness.processedActions.find { action ->
-                action.name == ActionNames.GATEWAY_GENERATE_CONTENT
+                action.name == ActionRegistry.Names.GATEWAY_GENERATE_CONTENT
             }
             assertNull(gatewayRequest, "Should NOT dispatch gateway request when resources missing")
 
             // ASSERT: Agent status set to ERROR
             val statusUpdates = harness.processedActions.filter { action ->
-                action.name == ActionNames.AGENT_INTERNAL_SET_STATUS
+                action.name == ActionRegistry.Names.AGENT_INTERNAL_SET_STATUS
             }
             val errorStatus = statusUpdates.find { action ->
                 action.payload?.get("status")?.jsonPrimitive?.content == "ERROR"

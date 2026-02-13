@@ -33,7 +33,7 @@ fun AgentManagerView(store: Store, platformDependencies: app.auf.util.PlatformDe
     }
 
     LaunchedEffect(Unit) {
-        store.dispatch("ui.agentManager", Action(ActionNames.GATEWAY_REQUEST_AVAILABLE_MODELS))
+        store.dispatch("ui.agentManager", Action(ActionRegistry.Names.GATEWAY_REQUEST_AVAILABLE_MODELS))
     }
 
     Scaffold(
@@ -43,13 +43,13 @@ fun AgentManagerView(store: Store, platformDependencies: app.auf.util.PlatformDe
                 TabRow(selectedTabIndex = agentState?.activeManagerTab ?: 0) {
                     Tab(
                         selected = agentState?.activeManagerTab == 0,
-                        onClick = { store.dispatch("ui.agentManager", Action(ActionNames.AGENT_SET_MANAGER_TAB, buildJsonObject { put("tabIndex", 0) })) },
+                        onClick = { store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_SET_MANAGER_TAB, buildJsonObject { put("tabIndex", 0) })) },
                         text = { Text("Agents") },
                         icon = { Icon(Icons.Default.Group, "Agents") }
                     )
                     Tab(
                         selected = agentState?.activeManagerTab == 1,
-                        onClick = { store.dispatch("ui.agentManager", Action(ActionNames.AGENT_SET_MANAGER_TAB, buildJsonObject { put("tabIndex", 1) })) },
+                        onClick = { store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_SET_MANAGER_TAB, buildJsonObject { put("tabIndex", 1) })) },
                         text = { Text("System Resources") },
                         icon = { Icon(Icons.Default.SettingsSystemDaydream, "Resources") }
                     )
@@ -89,7 +89,7 @@ private fun AgentListView(
             confirmButton = {
                 Button(
                     onClick = {
-                        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_DELETE, buildJsonObject { put("agentId", agent.id) }))
+                        store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_DELETE, buildJsonObject { put("agentId", agent.id) }))
                         agentToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -102,7 +102,7 @@ private fun AgentListView(
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(16.dp), Arrangement.End) {
             Button(onClick = {
-                store.dispatch("ui.agentManager", Action(ActionNames.AGENT_CREATE, buildJsonObject {
+                store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_CREATE, buildJsonObject {
                     put("name", "New Agent")
                 }))
             }) {
@@ -125,7 +125,7 @@ private fun AgentListView(
                         agentState = agentState,
                         store = store,
                         onDeleteRequest = { agentToDelete = it },
-                        onEditRequest = { store.dispatch("ui.agentManager", Action(ActionNames.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.id) })) },
+                        onEditRequest = { store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.id) })) },
                         platformDependencies = platformDependencies
                     )
                 }
@@ -158,7 +158,7 @@ private fun AgentCard(
                     IconButton(onClick = onEditRequest) {
                         Icon(Icons.Default.Edit, "Edit Agent")
                     }
-                    IconButton(onClick = { store.dispatch("ui.agentManager", Action(ActionNames.AGENT_CLONE, buildJsonObject { put("agentId", agent.id) })) }) {
+                    IconButton(onClick = { store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_CLONE, buildJsonObject { put("agentId", agent.id) })) }) {
                         Icon(Icons.Default.ContentCopy, "Clone Agent")
                     }
                     IconButton(onClick = { onDeleteRequest(agent) }) {
@@ -263,7 +263,7 @@ private fun AgentEditorView(
     val onDraftChanged: (AgentInstance) -> Unit = { draftAgent = it }
 
     val onSave = {
-        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_UPDATE_CONFIG, buildJsonObject {
+        store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
             put("agentId", agent.id)
             put("name", agentNameInput)
             put("cognitiveStrategyId", draftAgent.cognitiveStrategyId)
@@ -277,10 +277,10 @@ private fun AgentEditorView(
             autoMaxWaitTimeInput.toIntOrNull()?.let { put("autoMaxWaitTimeSeconds", it) }
             put("resources", Json.encodeToJsonElement(draftAgent.resources))
         }))
-        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_SET_EDITING, buildJsonObject { put("agentId", null as String?) }))
+        store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", null as String?) }))
     }
     val onCancel = {
-        store.dispatch("ui.agentManager", Action(ActionNames.AGENT_SET_EDITING, buildJsonObject { put("agentId", null as String?) }))
+        store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", null as String?) }))
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -442,7 +442,7 @@ private fun AgentResourcesView(
                             ResourceListItem(
                                 resource = res,
                                 isSelected = res.id == agentState.editingResourceId,
-                                onClick = { store.dispatch("ui.resources", Action(ActionNames.AGENT_SELECT_RESOURCE, buildJsonObject { put("resourceId", res.id) })) }
+                                onClick = { store.dispatch("ui.resources", Action(ActionRegistry.Names.AGENT_SELECT_RESOURCE, buildJsonObject { put("resourceId", res.id) })) }
                             )
                         }
                     }
@@ -469,7 +469,7 @@ private fun AgentResourcesView(
         CreateResourceDialog(
             onDismiss = { showCreateDialog = false },
             onConfirm = { name, type, content ->
-                store.dispatch("ui.resources", Action(ActionNames.AGENT_CREATE_RESOURCE, buildJsonObject {
+                store.dispatch("ui.resources", Action(ActionRegistry.Names.AGENT_CREATE_RESOURCE, buildJsonObject {
                     put("name", name)
                     put("type", type.name)
                     if (content != null) put("initialContent", content)
@@ -531,14 +531,14 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
             Row {
                 if (!resource.isBuiltIn) {
                     Button(
-                        onClick = { store.dispatch("ui.resources", Action(ActionNames.AGENT_DELETE_RESOURCE, buildJsonObject { put("resourceId", resource.id) })) },
+                        onClick = { store.dispatch("ui.resources", Action(ActionRegistry.Names.AGENT_DELETE_RESOURCE, buildJsonObject { put("resourceId", resource.id) })) },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.error)
                     ) {
                         Icon(Icons.Default.Delete, "Delete")
                     }
                     Spacer(Modifier.width(8.dp))
                     Button(
-                        onClick = { store.dispatch("ui.resources", Action(ActionNames.AGENT_SAVE_RESOURCE, buildJsonObject {
+                        onClick = { store.dispatch("ui.resources", Action(ActionRegistry.Names.AGENT_SAVE_RESOURCE, buildJsonObject {
                             put("resourceId", resource.id)
                             put("content", content)
                         })) },
@@ -576,7 +576,7 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
             initialType = resource.type,
             lockType = true,
             onConfirm = { name, type, _ ->
-                store.dispatch("ui.resources", Action(ActionNames.AGENT_CREATE_RESOURCE, buildJsonObject {
+                store.dispatch("ui.resources", Action(ActionRegistry.Names.AGENT_CREATE_RESOURCE, buildJsonObject {
                     put("name", name)
                     put("type", type.name)
                     put("initialContent", resource.content)
@@ -591,7 +591,7 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
             currentName = resource.name,
             onDismiss = { showRenameDialog = false },
             onConfirm = { newName ->
-                store.dispatch("ui.resources", Action(ActionNames.AGENT_RENAME_RESOURCE, buildJsonObject {
+                store.dispatch("ui.resources", Action(ActionRegistry.Names.AGENT_RENAME_RESOURCE, buildJsonObject {
                     put("resourceId", resource.id)
                     put("newName", newName)
                 }))

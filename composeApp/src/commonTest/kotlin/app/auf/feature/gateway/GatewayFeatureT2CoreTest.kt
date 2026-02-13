@@ -103,7 +103,7 @@ class GatewayFeatureT2CoreTest {
     @Test
     fun `on INITIALIZING registers settings for all providers`() = testScope.runTest {
         val harness = createHarness(this, initialLifecycle = AppLifecycle.BOOTING)
-        harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
+        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING))
 
         harness.runAndLogOnFailure {
             assertEquals(1, fakeProvider1.registerSettingsCallCount)
@@ -115,12 +115,12 @@ class GatewayFeatureT2CoreTest {
     @Test
     fun `on STARTING refreshes models for all providers with API keys`() = testScope.runTest {
         val harness = createHarness(this, initialLifecycle = AppLifecycle.INITIALIZING)
-        harness.store.dispatch("settings", Action(ActionNames.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_PUBLISH_LOADED, buildJsonObject {
             put("gateway.provider-1.apiKey", "k1")
             put("gateway.provider-2.apiKey", "k2")
         }))
 
-        harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
+        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_PUBLISH_STARTING))
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -137,14 +137,14 @@ class GatewayFeatureT2CoreTest {
     @Test
     fun `on settings VALUE_CHANGED refreshes models for the correct provider`() = testScope.runTest {
         val harness = createHarness(this, initialLifecycle = AppLifecycle.INITIALIZING)
-        harness.store.dispatch("settings", Action(ActionNames.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_PUBLISH_LOADED, buildJsonObject {
             put("gateway.provider-1.apiKey", "k1")
             put("gateway.provider-2.apiKey", "k2")
         }))
-        harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
+        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_PUBLISH_STARTING))
         runCurrent()
 
-        val valueChangedAction = Action(ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED, buildJsonObject {
+        val valueChangedAction = Action(ActionRegistry.Names.SETTINGS_PUBLISH_VALUE_CHANGED, buildJsonObject {
             put("key", "gateway.provider-2.apiKey"); put("value", "new-key")
         })
         harness.store.dispatch("settings", valueChangedAction)
@@ -160,13 +160,13 @@ class GatewayFeatureT2CoreTest {
     @Test
     fun `on GENERATE_CONTENT routes to correct provider and delivers response privately`() = testScope.runTest {
         val harness = createHarness(this)
-        harness.store.dispatch("settings", Action(ActionNames.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_PUBLISH_LOADED, buildJsonObject {
             put("gateway.provider-2.apiKey", "k2")
         }))
         val originatorId = "agent-feature-1"
         val correlationId = "test-turn-123"
         val message = GatewayMessage("user", "Test", "user-1", "User", 1L)
-        val action = Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
+        val action = Action(ActionRegistry.Names.GATEWAY_GENERATE_CONTENT, buildJsonObject {
             put("providerId", "provider-2"); put("modelName", "gpt-x")
             put("correlationId", correlationId)
             put("contents", buildJsonArray { add(Json.encodeToJsonElement(message)) })
@@ -199,7 +199,7 @@ class GatewayFeatureT2CoreTest {
         val message = GatewayMessage("user", "Preview Test", "user-1", "User", 1L)
         val systemPrompt = "You are a test assistant."
 
-        val action = Action(ActionNames.GATEWAY_PREPARE_PREVIEW, buildJsonObject {
+        val action = Action(ActionRegistry.Names.GATEWAY_PREPARE_PREVIEW, buildJsonObject {
             put("providerId", "provider-1"); put("modelName", "model-1")
             put("correlationId", correlationId); put("systemPrompt", systemPrompt)
             put("contents", buildJsonArray { add(Json.encodeToJsonElement(message)) })
@@ -225,13 +225,13 @@ class GatewayFeatureT2CoreTest {
     @Test
     fun `CANCEL_REQUEST cancels the job and cleans up via internal action`() = testScope.runTest {
         val harness = createHarness(this)
-        harness.store.dispatch("settings", Action(ActionNames.SETTINGS_PUBLISH_LOADED, buildJsonObject {
+        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_PUBLISH_LOADED, buildJsonObject {
             put("gateway.provider-2.apiKey", "k2")
         }))
         val correlationId = "cancel-test-123"
 
         // 1. Start a long running request (Provider 2 has 1000ms delay)
-        val generateAction = Action(ActionNames.GATEWAY_GENERATE_CONTENT, buildJsonObject {
+        val generateAction = Action(ActionRegistry.Names.GATEWAY_GENERATE_CONTENT, buildJsonObject {
             put("providerId", "provider-2"); put("modelName", "gpt-x")
             put("correlationId", correlationId)
             put("contents", buildJsonArray { add(Json.encodeToJsonElement(GatewayMessage("user", "hi", "u1", "U", 1L))) })
@@ -240,7 +240,7 @@ class GatewayFeatureT2CoreTest {
         runCurrent() // Launches coroutine, effectively "in flight"
 
         // 2. Dispatch Cancel
-        val cancelAction = Action(ActionNames.GATEWAY_CANCEL_REQUEST, buildJsonObject {
+        val cancelAction = Action(ActionRegistry.Names.GATEWAY_CANCEL_REQUEST, buildJsonObject {
             put("correlationId", correlationId)
         })
         harness.store.dispatch("system", cancelAction)
@@ -259,7 +259,7 @@ class GatewayFeatureT2CoreTest {
             runCurrent()
 
             // 5. Verify the internal cleanup action was dispatched (triggered by invokeOnCompletion)
-            val cleanupAction = harness.processedActions.find { it.name == ActionNames.GATEWAY_INTERNAL_REQUEST_COMPLETED }
+            val cleanupAction = harness.processedActions.find { it.name == ActionRegistry.Names.GATEWAY_INTERNAL_REQUEST_COMPLETED }
             assertNotNull(cleanupAction, "Cleanup action should be dispatched")
             assertEquals(correlationId, cleanupAction.payload?.get("correlationId")?.jsonPrimitive?.content)
 

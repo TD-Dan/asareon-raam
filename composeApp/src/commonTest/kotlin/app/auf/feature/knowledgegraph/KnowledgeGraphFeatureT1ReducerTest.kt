@@ -42,7 +42,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
         val payload = buildJsonObject {
             put("holons", json.encodeToJsonElement(mapOf("p1" to p1, "h1" to h1)))
         }
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED, payload)
+        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED, payload)
 
         val newState = feature.reducer(initialState, action) as KnowledgeGraphState
 
@@ -58,7 +58,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
     @Test
     fun `on LOAD_PERSONA should set isLoading flag`() {
         val initialState = KnowledgeGraphState()
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "p1") })
+        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "p1") })
         val newState = feature.reducer(initialState, action) as KnowledgeGraphState
         assertTrue(newState.isLoading)
     }
@@ -66,7 +66,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
     @Test
     fun `on INTERNAL_LOAD_FAILED should set the fatalError message and clear isLoading flag`() {
         val initialState = KnowledgeGraphState(isLoading = true)
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject { put("error", "Test error") })
+        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject { put("error", "Test error") })
 
         val newState = feature.reducer(initialState, action) as KnowledgeGraphState
 
@@ -80,7 +80,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
     fun `RESERVE_HKG should add a persona to agent mapping to the reservations map`() {
         val initialState = KnowledgeGraphState(reservations = emptyMap())
         val action = Action(
-            name = ActionNames.KNOWLEDGEGRAPH_RESERVE_HKG,
+            name = ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG,
             originator = "agent-alpha",
             payload = buildJsonObject { put("personaId", "persona-1") }
         )
@@ -97,7 +97,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
             reservations = mapOf("persona-1" to "agent-alpha", "persona-2" to "agent-beta")
         )
         val action = Action(
-            name = ActionNames.KNOWLEDGEGRAPH_RELEASE_HKG,
+            name = ActionRegistry.Names.KNOWLEDGEGRAPH_RELEASE_HKG,
             payload = buildJsonObject { put("personaId", "persona-1") }
         )
 
@@ -114,7 +114,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
     @Test
     fun `on SET_VIEW_MODE should correctly switch the viewMode`() {
         val initialState = KnowledgeGraphState(viewMode = KnowledgeGraphViewMode.INSPECTOR)
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.IMPORT.name) })
+        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.IMPORT.name) })
 
         val newState = feature.reducer(initialState, action) as KnowledgeGraphState
 
@@ -124,7 +124,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
     @Test
     fun `on SET_ACTIVE_VIEW_HOLON should set active holon and clear edit mode`() {
         val initialState = KnowledgeGraphState(holonIdToEdit = "h1")
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON, buildJsonObject { put("holonId", "h2") })
+        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_ACTIVE_VIEW_HOLON, buildJsonObject { put("holonId", "h2") })
         val newState = feature.reducer(initialState, action) as KnowledgeGraphState
         assertEquals("h2", newState.activeHolonIdForView)
         assertNull(newState.holonIdToEdit)
@@ -133,7 +133,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
     @Test
     fun `on SET_HOLON_TO_EDIT should set the holonIdToEdit`() {
         val initialState = KnowledgeGraphState()
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT, buildJsonObject { put("holonId", "h1") })
+        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT, buildJsonObject { put("holonId", "h1") })
         val newState = feature.reducer(initialState, action) as KnowledgeGraphState
         assertEquals("h1", newState.holonIdToEdit)
     }
@@ -141,7 +141,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
     @Test
     fun `on SET_HOLON_TO_RENAME should set the holonIdToRename`() {
         val initialState = KnowledgeGraphState()
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_SET_HOLON_TO_RENAME, buildJsonObject { put("holonId", "h1") })
+        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_RENAME, buildJsonObject { put("holonId", "h1") })
         val newState = feature.reducer(initialState, action) as KnowledgeGraphState
         assertEquals("h1", newState.holonIdToRename)
     }
@@ -149,7 +149,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
     @Test
     fun `on TOGGLE_SHOW_SUMMARIES should toggle the flag`() {
         val initialState = KnowledgeGraphState(showSummariesInTreeView = true)
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_TOGGLE_SHOW_SUMMARIES)
+        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_TOGGLE_SHOW_SUMMARIES)
         val newState = feature.reducer(initialState, action) as KnowledgeGraphState
         assertFalse(newState.showSummariesInTreeView)
     }
@@ -157,7 +157,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
     @Test
     fun `on SET_TYPE_FILTERS should update the active filters`() {
         val initialState = KnowledgeGraphState()
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_SET_TYPE_FILTERS, buildJsonObject {
+        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_TYPE_FILTERS, buildJsonObject {
             put("types", json.encodeToJsonElement(setOf("Type1", "Type2")))
         })
         val newState = feature.reducer(initialState, action) as KnowledgeGraphState
@@ -176,7 +176,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
             holons = mapOf("p1" to p1, "h1" to h1, "h2" to h2, "p2" to p2),
             personaRoots = mapOf("P1" to "p1", "P2" to "p2")
         )
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA, buildJsonObject { put("personaId", "p1") })
+        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA, buildJsonObject { put("personaId", "p1") })
 
         val newState = feature.reducer(initialState, action) as KnowledgeGraphState
 
@@ -210,7 +210,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
 
         // User ignores the parent
         // [FIX] Explicitly serialize as ImportAction to include class discriminator for polymorphic deserialization
-        val action = Action(ActionNames.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION, buildJsonObject {
+        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_IMPORT_ACTION, buildJsonObject {
             put("sourcePath", parentFile)
             put("action", json.encodeToJsonElement<ImportAction>(Ignore()))
         })

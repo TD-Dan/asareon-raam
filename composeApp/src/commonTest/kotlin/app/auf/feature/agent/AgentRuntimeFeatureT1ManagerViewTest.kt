@@ -50,7 +50,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     @Before
     fun setUp() {
         fakePlatform = FakePlatformDependencies("test")
-        fakeStore = FakeStore(AppState(), fakePlatform, ActionNames.allActionNames)
+        fakeStore = FakeStore(AppState(), fakePlatform, ActionRegistry.Names.allActionNames)
     }
 
     private fun setViewState(state: AgentRuntimeState) {
@@ -75,7 +75,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
         composeTestRule.onNodeWithText("New Agent").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_CREATE }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_CREATE }
         assertNotNull(action)
         assertEquals("New Agent", action.payload?.get("name")?.jsonPrimitive?.contentOrNull)
     }
@@ -89,7 +89,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         composeTestRule.onNodeWithText("Delete Agent?").assertIsDisplayed()
         composeTestRule.onNodeWithText("Delete").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_DELETE }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_DELETE }
         assertNotNull(action)
         assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
     }
@@ -101,7 +101,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
         composeTestRule.onNodeWithContentDescription("Clone Agent").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_CLONE }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_CLONE }
         assertNotNull(action)
         assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
     }
@@ -115,7 +115,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
         composeTestRule.onNodeWithContentDescription("Edit Agent").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_SET_EDITING }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_SET_EDITING }
         assertNotNull(action)
         assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
     }
@@ -130,7 +130,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
         composeTestRule.onNodeWithContentDescription("Cancel Edit").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_SET_EDITING }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_SET_EDITING }
         assertNotNull(action)
         assertNull(action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
     }
@@ -155,7 +155,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         // 3. Save
         composeTestRule.onNodeWithContentDescription("Save").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_UPDATE_CONFIG }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
         assertNotNull(action)
         val payload = action.payload!!
         assertEquals("a1", payload["agentId"]?.jsonPrimitive?.contentOrNull)
@@ -183,14 +183,14 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         composeTestRule.onNode(isToggleable()).performClick()
 
         // Verify NO action dispatched yet
-        val prematureAction = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_UPDATE_CONFIG }
+        val prematureAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
         assertNull(prematureAction, "No UPDATE_CONFIG should fire before Save")
 
         // 2. Save
         composeTestRule.onNodeWithContentDescription("Save").performClick()
 
         // 3. Verify the saved payload includes automaticMode = true
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_UPDATE_CONFIG }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
         assertNotNull(action)
         assertEquals(true, action.payload?.get("automaticMode")?.jsonPrimitive?.booleanOrNull)
     }
@@ -211,10 +211,10 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         composeTestRule.onNodeWithContentDescription("Cancel Edit").performClick()
 
         // 3. Verify: only SET_EDITING dispatched, no UPDATE_CONFIG
-        val updateAction = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_UPDATE_CONFIG }
+        val updateAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
         assertNull(updateAction, "Cancel should not dispatch UPDATE_CONFIG")
 
-        val setEditingAction = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_SET_EDITING }
+        val setEditingAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_SET_EDITING }
         assertNotNull(setEditingAction)
     }
 
@@ -251,14 +251,14 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         composeTestRule.onNodeWithText("Sage").performClick()
 
         // Verify: no action dispatched yet
-        val prematureAction = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_UPDATE_CONFIG }
+        val prematureAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
         assertNull(prematureAction, "Dropdown selection should not dispatch directly")
 
         // 2. Save
         composeTestRule.onNodeWithContentDescription("Save").performClick()
 
         // 3. Verify payload
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_UPDATE_CONFIG }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
         assertNotNull(action)
         assertEquals("p2", action.payload?.get("knowledgeGraphId")?.jsonPrimitive?.contentOrNull)
     }
@@ -293,7 +293,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
         composeTestRule.onNodeWithText("System Resources").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_SET_MANAGER_TAB }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_SET_MANAGER_TAB }
         assertNotNull(action)
         assertEquals(1, action.payload?.get("tabIndex")?.jsonPrimitive?.int)
     }
@@ -315,7 +315,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
         composeTestRule.onNodeWithText("Constitution v1").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_SELECT_RESOURCE }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_SELECT_RESOURCE }
         assertNotNull(action)
         assertEquals("const_v1", action.payload?.get("resourceId")?.jsonPrimitive?.content)
     }
@@ -339,7 +339,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         composeTestRule.onNodeWithTag("code_editor_input").performTextInput("New Content")
         composeTestRule.onNodeWithContentDescription("Save").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_SAVE_RESOURCE }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_SAVE_RESOURCE }
         assertNotNull(action)
         assertEquals("New Content", action.payload?.get("content")?.jsonPrimitive?.content)
     }
@@ -405,14 +405,14 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         composeTestRule.onNodeWithText("My Instruction").performClick()
 
         // 2. Verify: no action dispatched yet
-        val prematureAction = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_UPDATE_CONFIG }
+        val prematureAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
         assertNull(prematureAction)
 
         // 3. Save
         composeTestRule.onNodeWithContentDescription("Save").performClick()
 
         // 4. Verify resources map in payload
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_UPDATE_CONFIG }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
         assertNotNull(action)
         val resourcesPayload = action.payload?.get("resources")?.jsonObject
         assertNotNull(resourcesPayload)

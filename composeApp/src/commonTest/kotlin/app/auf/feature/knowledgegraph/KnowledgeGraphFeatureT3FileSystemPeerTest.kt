@@ -58,13 +58,13 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
 
         harness.runAndLogOnFailure {
             // ACT
-            harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject {
                 put("holonId", holonId)
                 put("newName", "New Name")
             }))
 
             // ASSERT
-            val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE && it.payload?.get("subpath")?.jsonPrimitive?.content == holonFilePath }
+            val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE && it.payload?.get("subpath")?.jsonPrimitive?.content == holonFilePath }
             assertNotNull(writeAction, "A SYSTEM_WRITE action for the correct file path should have been dispatched.")
 
             val writtenContent = writeAction.payload!!.jsonObject["content"]!!.jsonPrimitive.content
@@ -125,12 +125,12 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
 
         harness.runAndLogOnFailure {
             // ACT 1: Load the data from the fake disk.
-            harness.store.dispatch("system", Action(ActionNames.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject {
+            harness.store.dispatch("system", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject {
                 put("personaId", personaId)
             }))
 
             // ACT 2: Dispatch a managed command to modify the holon's header.
-            harness.store.dispatch("ui", Action(ActionNames.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject {
                 put("holonId", holonId)
                 put("newName", "New Name")
             }))

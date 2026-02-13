@@ -34,7 +34,7 @@ class FileSystemFeatureT1ViewComponentTest {
     fun setUp() {
         fakePlatform = FakePlatformDependencies(testAppVersion)
         feature = FileSystemFeature(fakePlatform)
-        val validActions = setOf(ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED)
+        val validActions = setOf(ActionRegistry.Names.FILESYSTEM_TOGGLE_ITEM_SELECTED)
         fakeStore = FakeStore(AppState(), fakePlatform, validActions)
     }
 
@@ -89,7 +89,7 @@ class FileSystemFeatureT1ViewComponentTest {
             .onNodeWithTag("checkbox-$filePath")
             .performClick()
 
-        val dispatchedAction = fakeStore.dispatchedActions.find { it.name == ActionNames.FILESYSTEM_TOGGLE_ITEM_SELECTED }
+        val dispatchedAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_TOGGLE_ITEM_SELECTED }
 
         assertNotNull(dispatchedAction, "A TOGGLE_ITEM_SELECTED action should have been dispatched.")
         assertEquals("filesystem.ui", dispatchedAction.originator)

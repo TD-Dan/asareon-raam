@@ -33,7 +33,7 @@ class AgentRuntimeFeatureT1ContextViewTest {
     @Before
     fun setUp() {
         fakePlatform = FakePlatformDependencies("test")
-        fakeStore = FakeStore(AppState(), fakePlatform, ActionNames.allActionNames)
+        fakeStore = FakeStore(AppState(), fakePlatform, ActionRegistry.Names.allActionNames)
     }
 
     private fun setPreviewState(
@@ -103,7 +103,7 @@ class AgentRuntimeFeatureT1ContextViewTest {
 
         composeTestRule.onNodeWithText("Execute Turn").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_EXECUTE_PREVIEWED_TURN }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_EXECUTE_PREVIEWED_TURN }
         assertNotNull(action)
         assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
     }
@@ -116,7 +116,7 @@ class AgentRuntimeFeatureT1ContextViewTest {
         // We test the "Cancel" button here.
         composeTestRule.onNodeWithText("Cancel").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.AGENT_DISCARD_PREVIEW }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_DISCARD_PREVIEW }
         assertNotNull(action)
         assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
     }
@@ -130,7 +130,7 @@ class AgentRuntimeFeatureT1ContextViewTest {
 
         composeTestRule.onNodeWithText("Copy All").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.CORE_COPY_TO_CLIPBOARD }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD }
         assertNotNull(action)
         assertEquals("{\"test\": true}", action.payload?.get("text")?.jsonPrimitive?.contentOrNull)
     }

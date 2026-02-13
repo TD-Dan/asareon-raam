@@ -161,21 +161,21 @@ class CoreFeature(
                     if (content != null) {
                         try {
                             val loaded = Json.decodeFromString<IdentitiesLoadedPayload>(content)
-                            store.deferredDispatch(identity.handle, Action(ActionNames.CORE_INTERNAL_IDENTITIES_LOADED, Json.encodeToJsonElement(loaded) as JsonObject))
+                            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_INTERNAL_IDENTITIES_LOADED, Json.encodeToJsonElement(loaded) as JsonObject))
                         } catch (e: Exception) {
                             platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle, "Failed to parse identities.json: ${e.message}")
                         }
                     } else {
-                        store.deferredDispatch(identity.handle, Action(ActionNames.CORE_INTERNAL_IDENTITIES_LOADED, buildJsonObject {
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_INTERNAL_IDENTITIES_LOADED, buildJsonObject {
                             put("identities", buildJsonArray { })
                         }))
                     }
                 }
             }
-            ActionNames.CORE_ADD_USER_IDENTITY,
-            ActionNames.CORE_REMOVE_USER_IDENTITY,
-            ActionNames.CORE_SET_ACTIVE_USER_IDENTITY,
-            ActionNames.CORE_INTERNAL_IDENTITIES_LOADED -> {
+            ActionRegistry.Names.CORE_ADD_USER_IDENTITY,
+            ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY,
+            ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY,
+            ActionRegistry.Names.CORE_INTERNAL_IDENTITIES_LOADED -> {
                 if (latestCoreState != null) {
                     // Sync user identities to AppState.identityRegistry via Store.
                     // Build registry entries from the authoritative userIdentities list.
@@ -332,13 +332,13 @@ class CoreFeature(
 
     private fun persistAndBroadcastIdentities(state: CoreState, store: Store) {
         val persistencePayload = IdentitiesLoadedPayload(state.userIdentities, state.activeUserId)
-        store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
             put("subpath", identitiesFileName)
             put("content", Json.encodeToString(persistencePayload))
             put("encrypt", true)
         }))
 
-        store.deferredDispatch(identity.handle, Action(ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_PUBLISH_IDENTITIES_UPDATED, buildJsonObject {
             put("identities", Json.encodeToJsonElement(state.userIdentities))
             state.activeUserId?.let { put("activeId", it) }
         }))
@@ -349,24 +349,24 @@ class CoreFeature(
         val originator = action.originator ?: ""
 
         when (action.name) {
-            ActionNames.SYSTEM_PUBLISH_INITIALIZING -> return coreState.copy(lifecycle = AppLifecycle.INITIALIZING)
-            ActionNames.SYSTEM_PUBLISH_STARTING -> return coreState.copy(lifecycle = AppLifecycle.RUNNING)
-            ActionNames.SYSTEM_PUBLISH_CLOSING -> return coreState.copy(lifecycle = AppLifecycle.CLOSING)
-            ActionNames.CORE_SET_ACTIVE_VIEW -> {
+            ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING -> return coreState.copy(lifecycle = AppLifecycle.INITIALIZING)
+            ActionRegistry.Names.SYSTEM_PUBLISH_STARTING -> return coreState.copy(lifecycle = AppLifecycle.RUNNING)
+            ActionRegistry.Names.SYSTEM_PUBLISH_CLOSING -> return coreState.copy(lifecycle = AppLifecycle.CLOSING)
+            ActionRegistry.Names.CORE_SET_ACTIVE_VIEW -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<SetActiveViewPayload>(it) }
                 return payload?.let { coreState.copy(activeViewKey = it.key) } ?: coreState
             }
-            ActionNames.CORE_SHOW_DEFAULT_VIEW -> return coreState.copy(activeViewKey = coreState.defaultViewKey)
-            ActionNames.CORE_UPDATE_WINDOW_SIZE -> {
+            ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW -> return coreState.copy(activeViewKey = coreState.defaultViewKey)
+            ActionRegistry.Names.CORE_UPDATE_WINDOW_SIZE -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<UpdateWindowSizePayload>(it) }
                 return payload?.let { coreState.copy(windowWidth = it.width, windowHeight = it.height) } ?: coreState
             }
-            ActionNames.CORE_SHOW_TOAST -> {
+            ActionRegistry.Names.CORE_SHOW_TOAST -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<ShowToastPayload>(it) }
                 return payload?.let { coreState.copy(toastMessage = it.message) } ?: coreState
             }
-            ActionNames.CORE_CLEAR_TOAST -> return coreState.copy(toastMessage = null)
-            ActionNames.CORE_SHOW_CONFIRMATION_DIALOG -> {
+            ActionRegistry.Names.CORE_CLEAR_TOAST -> return coreState.copy(toastMessage = null)
+            ActionRegistry.Names.CORE_SHOW_CONFIRMATION_DIALOG -> {
                 val request = action.payload?.let {
                     try {
                         Json.decodeFromJsonElement<ConfirmationDialogRequest>(it)
@@ -377,14 +377,14 @@ class CoreFeature(
                 }
                 return coreState.copy(confirmationRequest = request?.copy(originator = originator))
             }
-            ActionNames.CORE_DISMISS_CONFIRMATION_DIALOG -> return coreState.copy(confirmationRequest = null)
-            ActionNames.SETTINGS_PUBLISH_LOADED -> {
+            ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG -> return coreState.copy(confirmationRequest = null)
+            ActionRegistry.Names.SETTINGS_PUBLISH_LOADED -> {
                 val loadedValues = action.payload
                 val width = loadedValues?.get(settingKeyWidth)?.jsonPrimitive?.content?.toIntOrNull()
                 val height = loadedValues?.get(settingKeyHeight)?.jsonPrimitive?.content?.toIntOrNull()
                 return coreState.copy(windowWidth = width ?: coreState.windowWidth, windowHeight = height ?: coreState.windowHeight)
             }
-            ActionNames.SETTINGS_PUBLISH_VALUE_CHANGED -> {
+            ActionRegistry.Names.SETTINGS_PUBLISH_VALUE_CHANGED -> {
                 val payload = action.payload ?: return coreState
                 val key = payload["key"]?.jsonPrimitive?.content
                 val value = payload["value"]?.jsonPrimitive?.content
@@ -395,7 +395,7 @@ class CoreFeature(
                 }
                 return newCoreState
             }
-            ActionNames.CORE_INTERNAL_IDENTITIES_LOADED -> {
+            ActionRegistry.Names.CORE_INTERNAL_IDENTITIES_LOADED -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<IdentitiesLoadedPayload>(it) } ?: return coreState
                 val identities: List<Identity>
                 val activeId: String?
@@ -415,7 +415,7 @@ class CoreFeature(
                     activeUserId = activeId
                 )
             }
-            ActionNames.CORE_ADD_USER_IDENTITY -> {
+            ActionRegistry.Names.CORE_ADD_USER_IDENTITY -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<AddUserIdentityPayload>(it) } ?: return coreState
                 val localHandle = payload.name.lowercase().replace(Regex("[^a-z0-9-]"), "-").trimStart('-').ifEmpty { "user" }
                 // Dedup against existing user identities (registry sync is handled in handleSideEffects).
@@ -437,7 +437,7 @@ class CoreFeature(
                     userIdentities = coreState.userIdentities + newUser
                 )
             }
-            ActionNames.CORE_REMOVE_USER_IDENTITY -> {
+            ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return coreState
                 @Suppress("DEPRECATION")
                 val updatedIdentities = coreState.userIdentities.filterNot { it.handle == payload.id }
@@ -449,7 +449,7 @@ class CoreFeature(
                     activeUserId = updatedActiveId
                 )
             }
-            ActionNames.CORE_SET_ACTIVE_USER_IDENTITY -> {
+            ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return coreState
                 @Suppress("DEPRECATION")
                 if (coreState.userIdentities.any { it.handle == payload.id }) {
@@ -478,7 +478,7 @@ class CoreFeature(
 
         @Composable
         override fun RibbonContent(store: Store, activeViewKey: String?) {
-            IconButton(onClick = { store.dispatch("core.ui", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKeyIdentities) })) }) {
+            IconButton(onClick = { store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKeyIdentities) })) }) {
                 Icon(Icons.Default.Person, "Identity Manager", tint = if (activeViewKey == viewKeyIdentities) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -488,7 +488,7 @@ class CoreFeature(
             DropdownMenuItem(
                 text = { Text("About") },
                 onClick = {
-                    store.dispatch("core.ui", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKeyAbout) }))
+                    store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKeyAbout) }))
                     onDismiss()
                 },
                 leadingIcon = { Icon(Icons.Default.Info, "About Application") }

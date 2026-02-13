@@ -21,9 +21,9 @@ object AgentRuntimeReducer {
     ): AgentRuntimeState {
         return when (action.name) {
             // --- Internal State Setters ---
-            ActionNames.AGENT_INTERNAL_SET_STATUS -> handleSetStatus(action, state, platformDependencies)
+            ActionRegistry.Names.AGENT_INTERNAL_SET_STATUS -> handleSetStatus(action, state, platformDependencies)
 
-            ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP -> {
+            ActionRegistry.Names.AGENT_INTERNAL_SET_PROCESSING_STEP -> {
                 val payload = action.payload ?: return state
                 val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
@@ -32,21 +32,21 @@ object AgentRuntimeReducer {
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
 
-            ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT -> {
+            ActionRegistry.Names.AGENT_INTERNAL_STAGE_TURN_CONTEXT -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<StageTurnContextPayload>(it) } ?: return state
                 val currentStatus = state.agentStatuses[payload.agentId] ?: AgentStatusInfo()
                 val updatedStatus = currentStatus.copy(stagedTurnContext = payload.messages)
                 state.copy(agentStatuses = state.agentStatuses + (payload.agentId to updatedStatus))
             }
 
-            ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT -> {
+            ActionRegistry.Names.AGENT_INTERNAL_SET_HKG_CONTEXT -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SetHkgContextPayload>(it) } ?: return state
                 val currentStatus = state.agentStatuses[payload.agentId] ?: AgentStatusInfo()
                 val updatedStatus = currentStatus.copy(transientHkgContext = payload.context)
                 state.copy(agentStatuses = state.agentStatuses + (payload.agentId to updatedStatus))
             }
 
-            ActionNames.AGENT_INTERNAL_SET_WORKSPACE_CONTEXT -> {
+            ActionRegistry.Names.AGENT_INTERNAL_SET_WORKSPACE_CONTEXT -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
                 val context = action.payload?.get("context")?.jsonPrimitive?.contentOrNull ?: return state
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
@@ -54,7 +54,7 @@ object AgentRuntimeReducer {
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
 
-            ActionNames.AGENT_INTERNAL_SET_CONTEXT_GATHERING_STARTED -> {
+            ActionRegistry.Names.AGENT_INTERNAL_SET_CONTEXT_GATHERING_STARTED -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
                 val startedAt = action.payload?.get("startedAt")?.jsonPrimitive?.longOrNull ?: return state
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
@@ -63,10 +63,10 @@ object AgentRuntimeReducer {
             }
 
             // CONTEXT_GATHERING_TIMEOUT: No state change needed — pure side-effect action
-            ActionNames.AGENT_INTERNAL_CONTEXT_GATHERING_TIMEOUT -> state
+            ActionRegistry.Names.AGENT_INTERNAL_CONTEXT_GATHERING_TIMEOUT -> state
 
             // [NEW] Atomic commit of avatar position
-            ActionNames.AGENT_INTERNAL_AVATAR_MOVED -> {
+            ActionRegistry.Names.AGENT_INTERNAL_AVATAR_MOVED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<AvatarMovedPayload>(it) } ?: return state
                 val currentSessionMap = state.agentAvatarCardIds[payload.agentId] ?: emptyMap()
                 val newSessionMap = currentSessionMap + (payload.sessionId to payload.messageId)
@@ -74,7 +74,7 @@ object AgentRuntimeReducer {
             }
 
             // --- Turn Lifecycle ---
-            ActionNames.AGENT_INITIATE_TURN -> {
+            ActionRegistry.Names.AGENT_INITIATE_TURN -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<InitiateTurnPayload>(it) } ?: return state
                 val agentId = payload.agentId
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
@@ -93,7 +93,7 @@ object AgentRuntimeReducer {
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
 
-            ActionNames.AGENT_DISCARD_PREVIEW -> {
+            ActionRegistry.Names.AGENT_DISCARD_PREVIEW -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
                 val updatedStatus = currentStatus.copy(stagedPreviewData = null, processingStep = null)
@@ -103,7 +103,7 @@ object AgentRuntimeReducer {
                 )
             }
 
-            ActionNames.AGENT_INTERNAL_SET_PREVIEW_DATA -> {
+            ActionRegistry.Names.AGENT_INTERNAL_SET_PREVIEW_DATA -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SetPreviewDataPayload>(it) } ?: return state
                 val agentId = payload.agentId
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
@@ -116,9 +116,9 @@ object AgentRuntimeReducer {
             }
 
             // --- External Events ---
-            ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> handleMessagePosted(action, state, platformDependencies)
+            ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED -> handleMessagePosted(action, state, platformDependencies)
 
-            ActionNames.SESSION_PUBLISH_MESSAGE_DELETED -> {
+            ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<MessageDeletedPayload>(it) } ?: return state
                 // REFACTORED: Iterate Map<AgentId, Map<SessionId, MessageId>>
                 var newAvatarCards = state.agentAvatarCardIds
@@ -132,7 +132,7 @@ object AgentRuntimeReducer {
                 state.copy(agentAvatarCardIds = newAvatarCards)
             }
 
-            ActionNames.SESSION_PUBLISH_SESSION_DELETED -> {
+            ActionRegistry.Names.SESSION_PUBLISH_SESSION_DELETED -> {
                 val deletedSessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return state
                 val agentsToUpdate = state.agents.values
                     .filter { it.subscribedSessionIds.contains(deletedSessionId) || it.privateSessionId == deletedSessionId }
@@ -161,27 +161,27 @@ object AgentRuntimeReducer {
                 state.copy(agents = newAgents, agentAvatarCardIds = newAvatarCards, agentsToPersist = agentsToUpdate.map { it.id }.toSet())
             }
 
-            ActionNames.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED -> {
+            ActionRegistry.Names.GATEWAY_PUBLISH_AVAILABLE_MODELS_UPDATED -> {
                 val decodedModels: Map<String, List<String>>? = try { action.payload?.let { json.decodeFromJsonElement(it) } } catch (e: Exception) { null }
                 state.copy(availableModels = decodedModels ?: emptyMap())
             }
 
-            ActionNames.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
+            ActionRegistry.Names.SESSION_PUBLISH_SESSION_NAMES_UPDATED -> {
                 val decoded = try { action.payload?.let { json.decodeFromJsonElement<SessionNamesPayload>(it) } } catch(e: Exception) { null }
                 if (decoded != null) state.copy(sessionNames = decoded.names) else state
             }
 
-            ActionNames.KNOWLEDGEGRAPH_PUBLISH_AVAILABLE_PERSONAS_UPDATED -> {
+            ActionRegistry.Names.KNOWLEDGEGRAPH_PUBLISH_AVAILABLE_PERSONAS_UPDATED -> {
                 val decoded = try { action.payload?.let { json.decodeFromJsonElement<GraphNamesPayload>(it) } } catch(e: Exception) { null }
                 if (decoded != null) state.copy(knowledgeGraphNames = decoded.names) else state
             }
 
-            ActionNames.KNOWLEDGEGRAPH_PUBLISH_RESERVATIONS_UPDATED -> {
+            ActionRegistry.Names.KNOWLEDGEGRAPH_PUBLISH_RESERVATIONS_UPDATED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<ReservedIdsPayload>(it) }
                 if (payload != null) state.copy(hkgReservedIds = payload.reservedIds) else state
             }
 
-            ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED -> {
+            ActionRegistry.Names.CORE_PUBLISH_IDENTITIES_UPDATED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<IdentitiesUpdatedPayload>(it) }
                 if (payload != null) state.copy(userIdentities = payload.identities) else state
             }

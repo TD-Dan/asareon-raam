@@ -100,7 +100,7 @@ class CommandBotFeatureT2GuardrailsTest {
             .build(platform = platform)
 
         harness.store.dispatch("agent", Action(
-            ActionNames.AGENT_PUBLISH_AGENT_NAMES_UPDATED,
+            ActionRegistry.Names.AGENT_PUBLISH_AGENT_NAMES_UPDATED,
             buildJsonObject { put("names", buildJsonObject { put(agentId, agentName) }) }
         ))
         // Note: caller is responsible for runCurrent() after setup.
@@ -114,7 +114,7 @@ class CommandBotFeatureT2GuardrailsTest {
      * and publish MESSAGE_POSTED, which CommandBot observes.
      */
     private fun postRawMessage(harness: TestHarness, senderId: String, message: String) {
-        harness.store.dispatch("test", Action(ActionNames.SESSION_POST, buildJsonObject {
+        harness.store.dispatch("test", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
             put("session", testSession.id)
             put("senderId", senderId)
             put("message", message)
@@ -134,7 +134,7 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         harness.runAndLogOnFailure {
-            val toast = harness.processedActions.find { it.name == ActionNames.CORE_SHOW_TOAST }
+            val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertNotNull(toast,
                 "An unregistered sender should be treated as human and bypass agent restrictions.")
             assertEquals("agent-1", toast.originator,
@@ -153,7 +153,7 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         harness.runAndLogOnFailure {
-            val toast = harness.processedActions.find { it.name == ActionNames.CORE_SHOW_TOAST }
+            val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertNull(toast,
                 "After registration, the agent should be subject to CAG-004 enforcement.")
         }
@@ -166,7 +166,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
         // Delete the agent
         harness.store.dispatch("agent", Action(
-            ActionNames.AGENT_PUBLISH_AGENT_DELETED,
+            ActionRegistry.Names.AGENT_PUBLISH_AGENT_DELETED,
             buildJsonObject { put("agentId", "agent-1") }
         ))
         runCurrent()
@@ -177,7 +177,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
         harness.runAndLogOnFailure {
             val toast = harness.processedActions.find {
-                it.name == ActionNames.CORE_SHOW_TOAST &&
+                it.name == ActionRegistry.Names.CORE_SHOW_TOAST &&
                         it.payload?.get("message")?.jsonPrimitive?.contentOrNull == "Allowed"
             }
             assertNotNull(toast,
@@ -191,7 +191,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
         // Register two agents
         harness.store.dispatch("agent", Action(
-            ActionNames.AGENT_PUBLISH_AGENT_NAMES_UPDATED,
+            ActionRegistry.Names.AGENT_PUBLISH_AGENT_NAMES_UPDATED,
             buildJsonObject {
                 put("names", buildJsonObject {
                     put("agent-1", "Agent One")
@@ -203,7 +203,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
         // Second broadcast replaces with only agent-2
         harness.store.dispatch("agent", Action(
-            ActionNames.AGENT_PUBLISH_AGENT_NAMES_UPDATED,
+            ActionRegistry.Names.AGENT_PUBLISH_AGENT_NAMES_UPDATED,
             buildJsonObject {
                 put("names", buildJsonObject { put("agent-2", "Agent Two") })
             }
@@ -216,7 +216,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
         harness.runAndLogOnFailure {
             val toast = harness.processedActions.find {
-                it.name == ActionNames.CORE_SHOW_TOAST &&
+                it.name == ActionRegistry.Names.CORE_SHOW_TOAST &&
                         it.payload?.get("message")?.jsonPrimitive?.contentOrNull == "From ex-agent"
             }
             assertNotNull(toast,
@@ -238,12 +238,12 @@ class CommandBotFeatureT2GuardrailsTest {
 
         harness.runAndLogOnFailure {
             // The target action must NOT be dispatched
-            val toast = harness.processedActions.find { it.name == ActionNames.CORE_SHOW_TOAST }
+            val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertNull(toast, "Non-exposed action must be blocked for known agents.")
 
             // A feedback SESSION_POST should be dispatched by CommandBot
             val feedbackPost = harness.processedActions.filter {
-                it.name == ActionNames.SESSION_POST && it.originator == "commandbot"
+                it.name == ActionRegistry.Names.SESSION_POST && it.originator == "commandbot"
             }.lastOrNull()
             assertNotNull(feedbackPost, "CommandBot should post feedback about the blocked action.")
 
@@ -265,7 +265,7 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         harness.runAndLogOnFailure {
-            val toast = harness.processedActions.find { it.name == ActionNames.CORE_SHOW_TOAST }
+            val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertNotNull(toast, "Human users bypass CAG-004 and can dispatch any action.")
             assertEquals(testUser.id, toast.originator, "CAG-002: originator should be the human user.")
         }
@@ -291,7 +291,7 @@ class CommandBotFeatureT2GuardrailsTest {
         harness.runAndLogOnFailure {
             // Agent commands now go through ACTION_CREATED, not direct dispatch
             val actionCreated = harness.processedActions.find {
-                it.name == ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED &&
+                it.name == ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED &&
                         it.payload?.get("actionName")?.jsonPrimitive?.contentOrNull == "session.POST"
             }
 
@@ -319,7 +319,7 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         harness.runAndLogOnFailure {
-            val toast = harness.processedActions.find { it.name == ActionNames.CORE_SHOW_TOAST }
+            val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertNotNull(toast, "A command with an empty code block body should still be dispatched.")
 
             // Payload should be an empty JsonObject, not null
@@ -341,7 +341,7 @@ class CommandBotFeatureT2GuardrailsTest {
             // Only the SESSION_POST and its side-effects should be present — no command dispatches.
             // SessionFeature also emits filesystem.SYSTEM_WRITE for persistence, so we exclude those.
             val commandActions = harness.processedActions.drop(actionCountBefore).filter {
-                it.name != ActionNames.SESSION_POST &&
+                it.name != ActionRegistry.Names.SESSION_POST &&
                         !it.name.startsWith("session.publish.") &&
                         !it.name.startsWith("session.internal.") &&
                         !it.name.startsWith("filesystem.")
@@ -364,7 +364,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
         harness.runAndLogOnFailure {
             val commandActions = harness.processedActions.drop(actionCountBefore).filter {
-                it.name != ActionNames.SESSION_POST &&
+                it.name != ActionRegistry.Names.SESSION_POST &&
                         !it.name.startsWith("session.publish.") &&
                         !it.name.startsWith("session.internal.") &&
                         !it.name.startsWith("filesystem.")
@@ -394,7 +394,7 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         harness.runAndLogOnFailure {
-            val toasts = harness.processedActions.filter { it.name == ActionNames.CORE_SHOW_TOAST }
+            val toasts = harness.processedActions.filter { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertEquals(2, toasts.size,
                 "Both auf_ code blocks in a single message should be processed.")
 
@@ -423,7 +423,7 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         harness.runAndLogOnFailure {
-            val toasts = harness.processedActions.filter { it.name == ActionNames.CORE_SHOW_TOAST }
+            val toasts = harness.processedActions.filter { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertEquals(1, toasts.size,
                 "Only the auf_ block should be processed; the json block should be ignored.")
             assertEquals("Only this one",
@@ -447,7 +447,7 @@ class CommandBotFeatureT2GuardrailsTest {
         harness.runAndLogOnFailure {
             // Find the SESSION_POST dispatched by CommandBot to post the approval card
             val cardPost = harness.processedActions.filter {
-                it.name == ActionNames.SESSION_POST && it.originator == "commandbot"
+                it.name == ActionRegistry.Names.SESSION_POST && it.originator == "commandbot"
             }.find {
                 it.payload?.get("metadata") != null
             }
@@ -493,7 +493,7 @@ class CommandBotFeatureT2GuardrailsTest {
             // The card's senderId must match the approvalId so that PartialView
             // receives it as the context parameter.
             val cardPost = harness.processedActions.filter {
-                it.name == ActionNames.SESSION_POST && it.originator == "commandbot"
+                it.name == ActionRegistry.Names.SESSION_POST && it.originator == "commandbot"
             }.find { it.payload?.get("metadata") != null }
             assertNotNull(cardPost)
 
@@ -518,7 +518,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
             // Verify the card post's messageId matches what was staged
             val cardPost = harness.processedActions.filter {
-                it.name == ActionNames.SESSION_POST && it.originator == "commandbot"
+                it.name == ActionRegistry.Names.SESSION_POST && it.originator == "commandbot"
             }.find { it.payload?.get("metadata") != null }
             assertNotNull(cardPost)
 
@@ -539,7 +539,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
         val actionCountBefore = harness.processedActions.size
 
-        harness.store.dispatch("commandbot.ui", Action(ActionNames.COMMANDBOT_DENY, buildJsonObject {
+        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.COMMANDBOT_DENY, buildJsonObject {
             put("approvalId", "approval-does-not-exist")
         }))
         runCurrent()
@@ -551,7 +551,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
             // No RESOLVE_APPROVAL should have been dispatched
             val resolveActions = harness.processedActions.filter {
-                it.name == ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL
+                it.name == ActionRegistry.Names.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL
             }
             assertTrue(resolveActions.isEmpty(),
                 "No RESOLVE_APPROVAL should be dispatched for a non-existent approval.")

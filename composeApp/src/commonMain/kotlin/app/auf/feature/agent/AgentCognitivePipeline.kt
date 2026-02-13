@@ -51,10 +51,10 @@ object AgentCognitivePipeline {
             AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.PROCESSING)
         }
 
-        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
             put("agentId", agentId); put("step", "Requesting Ledger")
         }))
-        store.deferredDispatch("agent", Action(ActionNames.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject {
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject {
             put("sessionId", contextSessionId); put("correlationId", agentId)
         }))
     }
@@ -133,7 +133,7 @@ object AgentCognitivePipeline {
             }
         }
 
-        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_STAGE_TURN_CONTEXT, buildJsonObject {
             put("agentId", agent.id)
             put("messages", json.encodeToJsonElement(enrichedMessages))
         }))
@@ -153,7 +153,7 @@ object AgentCognitivePipeline {
 
         val formattedContext = WorkspaceContextProvider.formatListingResponse(payload, store.platformDependencies)
 
-        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_WORKSPACE_CONTEXT, buildJsonObject {
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_SET_WORKSPACE_CONTEXT, buildJsonObject {
             put("agentId", agentId)
             put("context", formattedContext)
         }))
@@ -166,7 +166,7 @@ object AgentCognitivePipeline {
         }
         val hkgContext = payload["context"]?.jsonObject
 
-        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_HKG_CONTEXT, buildJsonObject {
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_SET_HKG_CONTEXT, buildJsonObject {
             put("agentId", agentId)
             put("context", hkgContext ?: buildJsonObject {})
         }))
@@ -199,20 +199,20 @@ object AgentCognitivePipeline {
 
         // 1. Record the context gathering start time (for timeout validation)
         val startedAt = store.platformDependencies.currentTimeMillis()
-        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_CONTEXT_GATHERING_STARTED, buildJsonObject {
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_SET_CONTEXT_GATHERING_STARTED, buildJsonObject {
             put("agentId", agentId)
             put("startedAt", startedAt)
         }))
 
         // 2. Dispatch workspace listing request (parallel)
         val safeAgentId = agentId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
-        store.deferredDispatch("agent", Action(ActionNames.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
             put("subpath", "$safeAgentId/workspace")
             put("recursive", true)
             put("correlationId", agentId)
         }))
 
-        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
             put("agentId", agentId); put("step", "Gathering Context")
         }))
 
@@ -220,7 +220,7 @@ object AgentCognitivePipeline {
         SovereignHKGResourceLogic.requestContextIfSovereign(store, agent)
 
         // 4. Schedule timeout after 10 seconds
-        store.scheduleDelayed(10_000L, "agent", Action(ActionNames.AGENT_INTERNAL_CONTEXT_GATHERING_TIMEOUT, buildJsonObject {
+        store.scheduleDelayed(10_000L, "agent", Action(ActionRegistry.Names.AGENT_INTERNAL_CONTEXT_GATHERING_TIMEOUT, buildJsonObject {
             put("agentId", agentId)
             put("startedAt", startedAt)
         }))
@@ -406,10 +406,10 @@ object AgentCognitivePipeline {
 
         val systemPrompt = strategy.prepareSystemPrompt(context, cognitiveState)
 
-        val requestActionName = if (statusInfo.turnMode == TurnMode.PREVIEW) ActionNames.GATEWAY_PREPARE_PREVIEW else ActionNames.GATEWAY_GENERATE_CONTENT
+        val requestActionName = if (statusInfo.turnMode == TurnMode.PREVIEW) ActionRegistry.Names.GATEWAY_PREPARE_PREVIEW else ActionRegistry.Names.GATEWAY_GENERATE_CONTENT
         val step = if (statusInfo.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"
 
-        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
             put("agentId", agent.id); put("step", step)
         }))
 
@@ -462,7 +462,7 @@ object AgentCognitivePipeline {
             val errorMsg = "Missing required resources: ${missingRequired.joinToString(", ")}"
             platformDeps.log(LogLevel.ERROR, LOG_TAG, "Agent '${agent.id}': $errorMsg")
             AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.ERROR, errorMsg)
-            store.dispatch("agent", Action(ActionNames.CORE_SHOW_TOAST, buildJsonObject {
+            store.dispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject {
                 put("message", "Agent '${agent.name}': $errorMsg")
             }))
             return null
@@ -492,13 +492,13 @@ object AgentCognitivePipeline {
             return
         }
 
-        store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_PREVIEW_DATA, buildJsonObject {
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_SET_PREVIEW_DATA, buildJsonObject {
             put("agentId", agent.id)
             put("agnosticRequest", json.encodeToJsonElement(decoded.agnosticRequest))
             put("rawRequestJson", decoded.rawRequestJson)
             decoded.estimatedInputTokens?.let { put("estimatedInputTokens", it) }
         }))
-        store.dispatch("ui.agent", Action(ActionNames.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.context_viewer") }))
+        store.dispatch("ui.agent", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.context_viewer") }))
     }
 
     private fun handleGatewayResponse(payload: JsonObject, store: Store) {
@@ -548,7 +548,7 @@ object AgentCognitivePipeline {
 
         // 1. Handle State Updates
         if (result.newState != cognitiveState) {
-            store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_NVRAM_LOADED, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_NVRAM_LOADED, buildJsonObject {
                 put("agentId", agentId)
                 put("state", result.newState)
             }))
@@ -566,7 +566,7 @@ object AgentCognitivePipeline {
         val match = redundantHeaderRegex.find(contentToPost)
         if (match != null) {
             contentToPost = contentToPost.substring(match.range.last + 1).trimStart()
-            store.deferredDispatch("agent", Action(ActionNames.SESSION_POST, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", targetSessionId)
                 put("senderId", "system")
                 put("message", """SYSTEM SENTINEL (llm-output-sanitizer): Warning for [${agent.name}]: Please do not include the standard system "name (id) @timestamp:" part in your output. The host system adds this automatically.""")
@@ -574,14 +574,14 @@ object AgentCognitivePipeline {
         }
 
         // 4. Proceed to Post
-        store.deferredDispatch("agent", Action(ActionNames.SESSION_POST, buildJsonObject {
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
             put("session", targetSessionId); put("senderId", agent.id); put("message", contentToPost)
         }))
         AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE)
 
         // Forward token usage to agent state for display on the avatar card
         if (decoded.inputTokens != null || decoded.outputTokens != null) {
-            store.deferredDispatch("agent", Action(ActionNames.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
                 put("agentId", agent.id)
                 put("status", AgentStatus.IDLE.name)
                 decoded.inputTokens?.let { put("lastInputTokens", it) }

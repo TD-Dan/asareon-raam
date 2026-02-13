@@ -20,7 +20,7 @@ import kotlinx.serialization.json.put
  * ## Mandate
  * A stateful agent that observes all session transcripts for command directives
  * (`auf_` code blocks) and validates them against guardrails. For agent-originated
- * commands, it publishes [ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED] so that
+ * commands, it publishes [ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED] so that
  * the owning feature (e.g., agent) can apply its own sandboxing and dispatch.
  * For human-originated commands, it dispatches directly.
  *
@@ -88,7 +88,7 @@ class CommandBotFeature(
         val currentState = state as? CommandBotState ?: CommandBotState()
 
         return when (action.name) {
-            ActionNames.COMMANDBOT_INTERNAL_STAGE_APPROVAL -> {
+            ActionRegistry.Names.COMMANDBOT_INTERNAL_STAGE_APPROVAL -> {
                 val payload = action.payload ?: return currentState
                 val approval = PendingApproval(
                     approvalId = payload["approvalId"]?.jsonPrimitive?.contentOrNull ?: return currentState,
@@ -105,7 +105,7 @@ class CommandBotFeature(
                 )
             }
 
-            ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL -> {
+            ActionRegistry.Names.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL -> {
                 val payload = action.payload ?: return currentState
                 val approvalId = payload["approvalId"]?.jsonPrimitive?.contentOrNull ?: return currentState
                 val resolutionStr = payload["resolution"]?.jsonPrimitive?.contentOrNull ?: return currentState
@@ -130,7 +130,7 @@ class CommandBotFeature(
             }
 
             // Clean up resolved approvals when their card message is deleted
-            ActionNames.SESSION_PUBLISH_MESSAGE_DELETED -> {
+            ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_DELETED -> {
                 val messageId = action.payload?.get("messageId")?.jsonPrimitive?.contentOrNull ?: return currentState
                 val matchingApprovalId = currentState.resolvedApprovals.values
                     .firstOrNull { it.cardMessageId == messageId }
@@ -153,7 +153,7 @@ class CommandBotFeature(
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         when (action.name) {
             // --- Track known agents via Proactive Broadcast ---
-            ActionNames.AGENT_PUBLISH_AGENT_NAMES_UPDATED -> {
+            ActionRegistry.Names.AGENT_PUBLISH_AGENT_NAMES_UPDATED -> {
                 val namesMap = action.payload?.get("names")?.jsonObject ?: return
                 knownAgentIds.clear()
                 knownAgentIds.addAll(namesMap.keys)
@@ -166,14 +166,14 @@ class CommandBotFeature(
                     "Updated known agent IDs: ${knownAgentIds.joinToString(", ")}"
                 )
             }
-            ActionNames.AGENT_PUBLISH_AGENT_DELETED -> {
+            ActionRegistry.Names.AGENT_PUBLISH_AGENT_DELETED -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.content ?: return
                 knownAgentIds.remove(agentId)
                 knownAgentNames.remove(agentId)
             }
 
             // --- Approval Resolution ---
-            ActionNames.COMMANDBOT_APPROVE -> {
+            ActionRegistry.Names.COMMANDBOT_APPROVE -> {
                 val approvalId = action.payload?.get("approvalId")?.jsonPrimitive?.contentOrNull ?: return
                 // Read the pending approval from CURRENT state (reducer doesn't handle APPROVE).
                 val commandBotState = newState as? CommandBotState ?: return
@@ -184,7 +184,7 @@ class CommandBotFeature(
                 }
 
                 // 1. Dispatch the internal state transition: pending → resolved
-                store.deferredDispatch(identity.handle, Action(ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
                     put("approvalId", approvalId)
                     put("resolution", Resolution.APPROVED.name)
                 }))
@@ -206,7 +206,7 @@ class CommandBotFeature(
                 makeCardClearable(approval.sessionId, approval.cardMessageId, store)
             }
 
-            ActionNames.COMMANDBOT_DENY -> {
+            ActionRegistry.Names.COMMANDBOT_DENY -> {
                 val approvalId = action.payload?.get("approvalId")?.jsonPrimitive?.contentOrNull ?: return
                 // Read the pending approval from CURRENT state (reducer doesn't handle DENY).
                 val commandBotState = newState as? CommandBotState ?: return
@@ -217,7 +217,7 @@ class CommandBotFeature(
                 }
 
                 // 1. Dispatch the internal state transition: pending → resolved
-                store.deferredDispatch(identity.handle, Action(ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
                     put("approvalId", approvalId)
                     put("resolution", Resolution.DENIED.name)
                 }))
@@ -239,7 +239,7 @@ class CommandBotFeature(
             }
 
             // --- Core Command Processing ---
-            ActionNames.SESSION_PUBLISH_MESSAGE_POSTED -> {
+            ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED -> {
                 val payload = action.payload ?: return
                 val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: return
                 val entry = payload["entry"]?.jsonObject ?: return
@@ -372,7 +372,7 @@ class CommandBotFeature(
         val agentName = knownAgentNames[originatorId] ?: originatorId
 
         store.deferredDispatch(identity.handle, Action(
-            ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED,
+            ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED,
             buildJsonObject {
                 put("correlationId", correlationId)
                 put("originatorId", originatorId)
@@ -416,7 +416,7 @@ class CommandBotFeature(
             put("partial_view_key", "commandbot.approval")
         }
 
-        store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_POST, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
             put("session", sessionId)
             put("senderId", approvalId) // senderId doubles as the contextId for PartialView
             put("messageId", cardMessageId)
@@ -425,7 +425,7 @@ class CommandBotFeature(
         }))
 
         // 2. Stage the approval in CommandBotState
-        store.deferredDispatch(identity.handle, Action(ActionNames.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
             put("approvalId", approvalId)
             put("sessionId", sessionId)
             put("cardMessageId", cardMessageId)
@@ -450,7 +450,7 @@ class CommandBotFeature(
      * `SESSION_CLEAR` can remove the resolved card.
      */
     private fun makeCardClearable(sessionId: String, cardMessageId: String, store: Store) {
-        store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_UPDATE_MESSAGE, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_UPDATE_MESSAGE, buildJsonObject {
             put("session", sessionId)
             put("messageId", cardMessageId)
             put("doNotClear", false)
@@ -463,7 +463,7 @@ class CommandBotFeature(
     private fun postFeedbackToSession(sessionId: String, message: String, store: Store) {
         val formattedMessage = "```text\n$message\n```"
         val feedbackAction = Action(
-            name = ActionNames.SESSION_POST,
+            name = ActionRegistry.Names.SESSION_POST,
             payload = buildJsonObject {
                 put("session", sessionId)
                 put("senderId", identity.handle)

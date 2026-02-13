@@ -31,9 +31,9 @@ class SessionFeatureT1SessionManagerViewTest {
     @Before
     fun setup() {
         val validActions = setOf(
-            ActionNames.SESSION_CREATE,
-            ActionNames.SESSION_DELETE,
-            ActionNames.SESSION_SET_EDITING_SESSION_NAME
+            ActionRegistry.Names.SESSION_CREATE,
+            ActionRegistry.Names.SESSION_DELETE,
+            ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME
         )
         fakePlatform = FakePlatformDependencies("test")
         fakeStore = FakeStore(AppState(), fakePlatform, validActions)
@@ -62,7 +62,7 @@ class SessionFeatureT1SessionManagerViewTest {
 
         composeTestRule.onNodeWithContentDescription("Delete Session").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.SESSION_DELETE }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_DELETE }
         assertNotNull(action)
         assertEquals("session.ui", action.originator)
         assertEquals(session1.id, action.payload?.get("session").toString().trim('"'))
@@ -74,7 +74,7 @@ class SessionFeatureT1SessionManagerViewTest {
 
         composeTestRule.onNodeWithText("New Session").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionNames.SESSION_CREATE }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_CREATE }
         assertNotNull(action)
         assertEquals("session.ui", action.originator)
     }

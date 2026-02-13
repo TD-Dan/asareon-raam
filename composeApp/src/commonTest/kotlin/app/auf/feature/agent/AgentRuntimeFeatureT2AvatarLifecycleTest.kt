@@ -56,14 +56,14 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
             // ACT
             // Simulate rapid-fire messages.
             // Current Logic: Debounced by 50ms.
-            val msg1 = Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+            val msg1 = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
                 put("sessionId", session1)
                 put("entry", buildJsonObject {
                     put("id", "msg-1"); put("senderId", "user"); put("timestamp", 1000L)
                 })
             })
 
-            val msg2 = Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+            val msg2 = Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
                 put("sessionId", session1)
                 put("entry", buildJsonObject {
                     put("id", "msg-2"); put("senderId", "user"); put("timestamp", 1001L)
@@ -79,7 +79,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
 
             // ASSERT
             val avatarPostActions = harness.processedActions.filter {
-                it.name == ActionNames.SESSION_POST &&
+                it.name == ActionRegistry.Names.SESSION_POST &&
                         it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.id
             }
 
@@ -111,7 +111,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
         harness.runAndLogOnFailure {
             // ACT
             // Trigger the agent in Session 1
-            harness.store.dispatch("session", Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
                 put("sessionId", session1)
                 put("entry", buildJsonObject {
                     put("id", "msg-trigger"); put("senderId", "user"); put("timestamp", 1000L)
@@ -123,7 +123,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
             // ASSERT
             // We expect avatar cards posted to BOTH session-1 and session-2
             val postedSessions = harness.processedActions
-                .filter { it.name == ActionNames.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.id }
+                .filter { it.name == ActionRegistry.Names.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.id }
                 .mapNotNull { it.payload?.get("session")?.jsonPrimitive?.contentOrNull }
                 .toSet()
 
@@ -159,7 +159,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
         harness.runAndLogOnFailure {
             // ACT
             // Trigger the agent in public message
-            harness.store.dispatch("session", Action(ActionNames.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_PUBLISH_MESSAGE_POSTED, buildJsonObject {
                 put("sessionId", publicSession)
                 put("entry", buildJsonObject {
                     put("id", "msg-pub")
@@ -172,7 +172,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
 
             // ASSERT
             val postedSessions = harness.processedActions
-                .filter { it.name == ActionNames.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.id }
+                .filter { it.name == ActionRegistry.Names.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.id }
                 .mapNotNull { it.payload?.get("session")?.jsonPrimitive?.contentOrNull }
                 .toSet()
 

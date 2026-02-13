@@ -108,7 +108,7 @@ class CommandBotFeatureT2CoreTest {
 
         // Simulate agent registration via Proactive Broadcast
         harness.store.dispatch("agent", Action(
-            ActionNames.AGENT_PUBLISH_AGENT_NAMES_UPDATED,
+            ActionRegistry.Names.AGENT_PUBLISH_AGENT_NAMES_UPDATED,
             buildJsonObject { put("names", buildJsonObject { put(agentId, agentName) }) }
         ))
 
@@ -120,7 +120,7 @@ class CommandBotFeatureT2CoreTest {
      * into ContentBlocks and publishes MESSAGE_POSTED, which CommandBot observes.
      */
     private fun postMessage(harness: TestHarness, senderId: String, message: String) {
-        harness.store.dispatch(senderId, Action(ActionNames.SESSION_POST, buildJsonObject {
+        harness.store.dispatch(senderId, Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
             put("session", testSession.id)
             put("senderId", senderId)
             put("message", message)
@@ -148,7 +148,7 @@ class CommandBotFeatureT2CoreTest {
 
         // ASSERT
         harness.runAndLogOnFailure {
-            val dispatchedToastAction = harness.processedActions.find { it.name == ActionNames.CORE_SHOW_TOAST }
+            val dispatchedToastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertNotNull(dispatchedToastAction, "The command bot should have dispatched a CORE_SHOW_TOAST action.")
             assertEquals(testUser.id, dispatchedToastAction.originator,
                 "CAG-002: The originator of the dispatched action must be the original message sender.")
@@ -173,7 +173,7 @@ class CommandBotFeatureT2CoreTest {
 
         // ASSERT
         harness.runAndLogOnFailure {
-            val dispatchedCreateAction = harness.processedActions.find { it.name == ActionNames.SESSION_CREATE }
+            val dispatchedCreateAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_CREATE }
             assertNotNull(dispatchedCreateAction, "The command bot should have dispatched a SESSION_CREATE action.")
             assertEquals(testUser.id, dispatchedCreateAction.originator, "Originator must be the original user.")
 
@@ -197,7 +197,7 @@ class CommandBotFeatureT2CoreTest {
         val selfOriginatedCommand = "```auf_core.SHOW_TOAST\n{ \"message\": \"This should not be sent\" }\n```"
 
         // ACT: Post with senderId = "commandbot" (the feature's own name)
-        harness.store.dispatch("some-other-feature", Action(ActionNames.SESSION_POST, buildJsonObject {
+        harness.store.dispatch("some-other-feature", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
             put("session", testSession.id)
             put("senderId", "commandbot")
             put("message", selfOriginatedCommand)
@@ -206,7 +206,7 @@ class CommandBotFeatureT2CoreTest {
 
         // ASSERT
         harness.runAndLogOnFailure {
-            val dispatchedToastAction = harness.processedActions.find { it.name == ActionNames.CORE_SHOW_TOAST }
+            val dispatchedToastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertNull(dispatchedToastAction, "The bot must ignore commands where the senderId matches its own name.")
         }
     }
@@ -227,10 +227,10 @@ class CommandBotFeatureT2CoreTest {
 
         // ASSERT
         harness.runAndLogOnFailure {
-            val dispatchedToastAction = harness.processedActions.find { it.name == ActionNames.CORE_SHOW_TOAST }
+            val dispatchedToastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertNull(dispatchedToastAction, "No toast action should be dispatched for a malformed command.")
 
-            val feedbackAction = harness.processedActions.findLast { it.name == ActionNames.SESSION_POST }
+            val feedbackAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.SESSION_POST }
             assertNotNull(feedbackAction, "A new session.POST action should be dispatched as feedback.")
             assertEquals("commandbot", feedbackAction.originator)
             assertEquals("commandbot", feedbackAction.payload?.get("senderId")?.jsonPrimitive?.content)
@@ -271,13 +271,13 @@ class CommandBotFeatureT2CoreTest {
 
             // 2. No ACTION_CREATED should be published while pending approval
             val actionCreatedActions = harness.processedActions.filter {
-                it.name == ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED
+                it.name == ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED
             }
             assertTrue(actionCreatedActions.isEmpty(),
                 "ACTION_CREATED must NOT be published before approval.")
 
             // 3. An approval card should be posted to the session
-            val stageAction = harness.processedActions.find { it.name == ActionNames.COMMANDBOT_INTERNAL_STAGE_APPROVAL }
+            val stageAction = harness.processedActions.find { it.name == ActionRegistry.Names.COMMANDBOT_INTERNAL_STAGE_APPROVAL }
             assertNotNull(stageAction, "STAGE_APPROVAL internal action should have been dispatched.")
         }
     }
@@ -295,7 +295,7 @@ class CommandBotFeatureT2CoreTest {
         val approvalId = commandBotState.pendingApprovals.keys.first()
 
         // ACT: User approves
-        harness.store.dispatch("commandbot.ui", Action(ActionNames.COMMANDBOT_APPROVE, buildJsonObject {
+        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.COMMANDBOT_APPROVE, buildJsonObject {
             put("approvalId", approvalId)
         }))
         runCurrent()
@@ -315,7 +315,7 @@ class CommandBotFeatureT2CoreTest {
             assertEquals("Test Agent", resolved.requestingAgentName)
 
             // 3. ACTION_CREATED should be published (the owning feature dispatches the domain action)
-            val actionCreated = harness.processedActions.find { it.name == ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED }
+            val actionCreated = harness.processedActions.find { it.name == ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED }
             assertNotNull(actionCreated, "ACTION_CREATED should be published after approval.")
             assertEquals("session.CREATE", actionCreated.payload?.get("actionName")?.jsonPrimitive?.content,
                 "ACTION_CREATED should carry the staged action name.")
@@ -323,7 +323,7 @@ class CommandBotFeatureT2CoreTest {
                 "ACTION_CREATED should identify the requesting agent as originator.")
 
             // 4. SESSION_CREATE is NOT dispatched directly by CommandBot — the owning feature would handle that
-            val createAction = harness.processedActions.find { it.name == ActionNames.SESSION_CREATE }
+            val createAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_CREATE }
             assertNull(createAction,
                 "CommandBot should NOT dispatch SESSION_CREATE directly; it publishes ACTION_CREATED instead.")
         }
@@ -341,7 +341,7 @@ class CommandBotFeatureT2CoreTest {
         val approvalId = commandBotState.pendingApprovals.keys.first()
 
         // ACT: User denies
-        harness.store.dispatch("commandbot.ui", Action(ActionNames.COMMANDBOT_DENY, buildJsonObject {
+        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.COMMANDBOT_DENY, buildJsonObject {
             put("approvalId", approvalId)
         }))
         runCurrent()
@@ -360,7 +360,7 @@ class CommandBotFeatureT2CoreTest {
 
             // 3. No ACTION_CREATED should be published after denial
             val actionCreatedActions = harness.processedActions.filter {
-                it.name == ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED
+                it.name == ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED
             }
             assertTrue(actionCreatedActions.isEmpty(),
                 "ACTION_CREATED must NOT be published after denial.")
@@ -387,7 +387,7 @@ class CommandBotFeatureT2CoreTest {
         assertTrue(cardEntryBefore.doNotClear, "Card should have doNotClear=true before resolution.")
 
         // ACT: Approve (triggers doNotClear flip)
-        harness.store.dispatch("commandbot.ui", Action(ActionNames.COMMANDBOT_APPROVE, buildJsonObject {
+        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.COMMANDBOT_APPROVE, buildJsonObject {
             put("approvalId", approvalId)
         }))
         runCurrent()
@@ -396,7 +396,7 @@ class CommandBotFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             // Verify the UPDATE_MESSAGE was dispatched to flip doNotClear
             val updateAction = harness.processedActions.find {
-                it.name == ActionNames.SESSION_UPDATE_MESSAGE &&
+                it.name == ActionRegistry.Names.SESSION_UPDATE_MESSAGE &&
                         it.payload?.get("messageId")?.jsonPrimitive?.content == cardMessageId
             }
             assertNotNull(updateAction, "An UPDATE_MESSAGE should be dispatched to make the card clearable.")
@@ -425,7 +425,7 @@ class CommandBotFeatureT2CoreTest {
         val firstCardId = stateAfterFirst.pendingApprovals.values.first().cardMessageId
 
         // Approve the first
-        harness.store.dispatch("commandbot.ui", Action(ActionNames.COMMANDBOT_APPROVE, buildJsonObject {
+        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.COMMANDBOT_APPROVE, buildJsonObject {
             put("approvalId", firstApprovalId)
         }))
         runCurrent()
@@ -438,7 +438,7 @@ class CommandBotFeatureT2CoreTest {
         val secondCardId = stateAfterSecond.pendingApprovals.values.first().cardMessageId
 
         // ACT: Clear the session
-        harness.store.dispatch(testUser.id, Action(ActionNames.SESSION_CLEAR, buildJsonObject {
+        harness.store.dispatch(testUser.id, Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject {
             put("session", testSession.id)
         }))
         runCurrent()
@@ -471,7 +471,7 @@ class CommandBotFeatureT2CoreTest {
         val cardMessageId = commandBotState.pendingApprovals.values.first().cardMessageId
 
         // Approve it
-        harness.store.dispatch("commandbot.ui", Action(ActionNames.COMMANDBOT_APPROVE, buildJsonObject {
+        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.COMMANDBOT_APPROVE, buildJsonObject {
             put("approvalId", approvalId)
         }))
         runCurrent()
@@ -481,7 +481,7 @@ class CommandBotFeatureT2CoreTest {
         assertEquals(1, midState.resolvedApprovals.size, "Should have one resolved approval.")
 
         // ACT: Delete the card message (simulates Dismiss button)
-        harness.store.dispatch("commandbot.ui", Action(ActionNames.SESSION_DELETE_MESSAGE, buildJsonObject {
+        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
             put("session", testSession.id)
             put("messageId", cardMessageId)
         }))
@@ -501,7 +501,7 @@ class CommandBotFeatureT2CoreTest {
         runCurrent()
 
         // ACT: Approve a non-existent approval
-        harness.store.dispatch("commandbot.ui", Action(ActionNames.COMMANDBOT_APPROVE, buildJsonObject {
+        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.COMMANDBOT_APPROVE, buildJsonObject {
             put("approvalId", "approval-does-not-exist")
         }))
         runCurrent()
@@ -514,7 +514,7 @@ class CommandBotFeatureT2CoreTest {
 
             // No RESOLVE_APPROVAL should have been dispatched
             val resolveActions = harness.processedActions.filter {
-                it.name == ActionNames.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL
+                it.name == ActionRegistry.Names.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL
             }
             assertTrue(resolveActions.isEmpty(),
                 "No RESOLVE_APPROVAL should be dispatched for a non-existent approval.")
@@ -536,7 +536,7 @@ class CommandBotFeatureT2CoreTest {
 
         // ASSERT
         harness.runAndLogOnFailure {
-            val actionCreated = harness.processedActions.find { it.name == ActionNames.COMMANDBOT_PUBLISH_ACTION_CREATED }
+            val actionCreated = harness.processedActions.find { it.name == ActionRegistry.Names.COMMANDBOT_PUBLISH_ACTION_CREATED }
             assertNotNull(actionCreated, "CommandBot should publish ACTION_CREATED for agent LIST_SESSIONS.")
 
             assertEquals("session.LIST_SESSIONS", actionCreated.payload?.get("actionName")?.jsonPrimitive?.content)
@@ -564,7 +564,7 @@ class CommandBotFeatureT2CoreTest {
 
         // ASSERT
         harness.runAndLogOnFailure {
-            val listAction = harness.processedActions.find { it.name == ActionNames.SESSION_LIST_SESSIONS }
+            val listAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_LIST_SESSIONS }
             assertNotNull(listAction, "CommandBot should dispatch SESSION_LIST_SESSIONS for human users.")
 
             // CAG-002: originator is the human user

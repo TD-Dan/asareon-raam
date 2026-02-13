@@ -45,7 +45,7 @@ class AgentRuntimeFeatureT2StartupTest {
 
         // 2. Action: Trigger the Startup Sequence
         harness.runAndLogOnFailure {
-            harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
+            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_PUBLISH_STARTING))
 
             // The feature dispatches SYSTEM_LIST, then the Store (via logic not shown but assumed in FakeStore integration)
             // or the harness needs to process the side effects.
@@ -73,7 +73,7 @@ class AgentRuntimeFeatureT2StartupTest {
                 originator = "filesystem",
                 recipient = "agent",
                 envelope = app.auf.core.PrivateDataEnvelope(
-                    type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST,
+                    type = ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_LIST,
                     payload = listPayload
                 )
             )
@@ -81,7 +81,7 @@ class AgentRuntimeFeatureT2StartupTest {
             // Now the feature should have dispatched a READ request.
             // Let's verify that request looks correct.
             val readAction = harness.processedActions.find {
-                it.name == ActionNames.FILESYSTEM_SYSTEM_READ &&
+                it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_READ &&
                         it.payload?.get("subpath")?.toString()?.contains(resourceId) == true
             }
             assertNotNull(readAction, "Should have dispatched a READ action for the resource")
@@ -100,7 +100,7 @@ class AgentRuntimeFeatureT2StartupTest {
                 originator = "filesystem",
                 recipient = "agent",
                 envelope = app.auf.core.PrivateDataEnvelope(
-                    type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ,
+                    type = ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_READ,
                     payload = readPayload
                 )
             )
@@ -135,7 +135,7 @@ class AgentRuntimeFeatureT2StartupTest {
         harness.platform.writtenFiles["$agentId/agent.json"] = agentConfigJson
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
+            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_PUBLISH_STARTING))
 
             // Simulate root listing: one agent directory
             val listPayload = kotlinx.serialization.json.buildJsonObject {
@@ -156,14 +156,14 @@ class AgentRuntimeFeatureT2StartupTest {
                 originator = "filesystem",
                 recipient = "agent",
                 envelope = app.auf.core.PrivateDataEnvelope(
-                    type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST,
+                    type = ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_LIST,
                     payload = listPayload
                 )
             )
 
             // Verify the feature dispatched a READ for "agent-abc/agent.json"
             val readAction = harness.processedActions.find {
-                it.name == ActionNames.FILESYSTEM_SYSTEM_READ &&
+                it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_READ &&
                         it.payload?.get("subpath")?.toString()?.contains("agent.json") == true
             }
             assertNotNull(readAction, "Should have dispatched READ for agent.json")
@@ -178,7 +178,7 @@ class AgentRuntimeFeatureT2StartupTest {
                 originator = "filesystem",
                 recipient = "agent",
                 envelope = app.auf.core.PrivateDataEnvelope(
-                    type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ,
+                    type = ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_READ,
                     payload = readPayload
                 )
             )
@@ -191,7 +191,7 @@ class AgentRuntimeFeatureT2StartupTest {
 
             // Assert: AGENTS_LOADED fired (agentLoadCount reached 0)
             val agentsLoadedAction = harness.processedActions.find {
-                it.name == ActionNames.AGENT_INTERNAL_AGENTS_LOADED
+                it.name == ActionRegistry.Names.AGENT_INTERNAL_AGENTS_LOADED
             }
             assertNotNull(agentsLoadedAction, "AGENTS_LOADED should fire after all agents are read")
         }
@@ -210,7 +210,7 @@ class AgentRuntimeFeatureT2StartupTest {
         val harness = environment.build()
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_STARTING))
+            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_PUBLISH_STARTING))
 
             // Root listing: one agent directory
             val listPayload = kotlinx.serialization.json.buildJsonObject {
@@ -231,7 +231,7 @@ class AgentRuntimeFeatureT2StartupTest {
                 originator = "filesystem",
                 recipient = "agent",
                 envelope = app.auf.core.PrivateDataEnvelope(
-                    type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_LIST,
+                    type = ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_LIST,
                     payload = listPayload
                 )
             )
@@ -246,14 +246,14 @@ class AgentRuntimeFeatureT2StartupTest {
                 originator = "filesystem",
                 recipient = "agent",
                 envelope = app.auf.core.PrivateDataEnvelope(
-                    type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ,
+                    type = ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_READ,
                     payload = unknownPayload
                 )
             )
 
             // AGENTS_LOADED should NOT have fired (agentLoadCount is still 1)
             val prematureLoaded = harness.processedActions.find {
-                it.name == ActionNames.AGENT_INTERNAL_AGENTS_LOADED
+                it.name == ActionRegistry.Names.AGENT_INTERNAL_AGENTS_LOADED
             }
             assertNull(prematureLoaded, "Unknown file should not decrement agentLoadCount")
 
@@ -267,14 +267,14 @@ class AgentRuntimeFeatureT2StartupTest {
                 originator = "filesystem",
                 recipient = "agent",
                 envelope = app.auf.core.PrivateDataEnvelope(
-                    type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ,
+                    type = ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_READ,
                     payload = realPayload
                 )
             )
 
             // NOW AGENTS_LOADED should fire
             val agentsLoaded = harness.processedActions.find {
-                it.name == ActionNames.AGENT_INTERNAL_AGENTS_LOADED
+                it.name == ActionRegistry.Names.AGENT_INTERNAL_AGENTS_LOADED
             }
             assertNotNull(agentsLoaded, "AGENTS_LOADED should fire after the real agent config is loaded")
 

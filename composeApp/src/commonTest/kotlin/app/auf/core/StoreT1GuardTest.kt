@@ -125,7 +125,7 @@ class StoreT1GuardTest {
     fun `store guard allows SYSTEM_INITIALIZING when BOOTING`() {
         val store = createStore(CoreState(lifecycle = AppLifecycle.BOOTING))
         val initialState = store.state.value
-        store.dispatch("system.main", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
+        store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING))
         assertNotEquals(initialState, store.state.value, "State should have changed.")
         val finalCoreState = store.state.value.featureStates["core"] as CoreState
         assertEquals(AppLifecycle.INITIALIZING, finalCoreState.lifecycle)

@@ -38,7 +38,7 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
         coroutineScope: CoroutineScope
     ) : GatewayFeature(platformDependencies, coroutineScope, emptyList<UniversalGatewayProvider>()) {
         override fun handleSideEffects(action: Action, store: Store, previousState: app.auf.core.FeatureState?, newState: app.auf.core.FeatureState?) {
-            if (action.name == ActionNames.GATEWAY_GENERATE_CONTENT) {
+            if (action.name == ActionRegistry.Names.GATEWAY_GENERATE_CONTENT) {
                 val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.content ?: return
                 val responsePayload = buildJsonObject {
                     put("correlationId", correlationId)
@@ -47,7 +47,7 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
                 store.deliverPrivateData(
                     identity.handle,
                     "agent",
-                    PrivateDataEnvelope(ActionNames.Envelopes.GATEWAY_RESPONSE_RESPONSE, responsePayload)
+                    PrivateDataEnvelope(ActionRegistry.Names.Envelopes.GATEWAY_RESPONSE_RESPONSE, responsePayload)
                 )
             }
         }
@@ -116,17 +116,17 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
         harness.runAndLogOnFailure {
             // ACT 1: Force KG to load personas.
             // We use the feature's own discovery mechanism.
-            harness.store.dispatch("knowledgegraph", Action(ActionNames.FILESYSTEM_SYSTEM_LIST))
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST))
             runCurrent()
 
             // ACT 2: Initiate Turn
-            harness.store.dispatch("ui", Action(ActionNames.AGENT_INITIATE_TURN, buildJsonObject {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                 put("agentId", "philosopher-1")
             }))
             runCurrent()
 
             // ASSERT
-            val gatewayRequest = harness.processedActions.find { it.name == ActionNames.GATEWAY_GENERATE_CONTENT }
+            val gatewayRequest = harness.processedActions.find { it.name == ActionRegistry.Names.GATEWAY_GENERATE_CONTENT }
             assertNotNull(gatewayRequest, "Gateway request missing.")
 
             val systemPrompt = gatewayRequest.payload?.get("systemPrompt")?.jsonPrimitive?.content ?: ""
@@ -136,12 +136,12 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
             )
 
             val postToPrivate = harness.processedActions.find {
-                it.name == ActionNames.SESSION_POST && it.payload?.get("session")?.jsonPrimitive?.content == "private-session-1"
+                it.name == ActionRegistry.Names.SESSION_POST && it.payload?.get("session")?.jsonPrimitive?.content == "private-session-1"
             }
             assertNotNull(postToPrivate, "Should post to private session.")
 
             val postToPublic = harness.processedActions.find {
-                it.name == ActionNames.SESSION_POST && it.payload?.get("session")?.jsonPrimitive?.content == "public-session-1"
+                it.name == ActionRegistry.Names.SESSION_POST && it.payload?.get("session")?.jsonPrimitive?.content == "public-session-1"
             }
             assertNull(postToPublic, "Should NOT post to public session.")
         }

@@ -21,7 +21,7 @@ object AgentCrudLogic {
         platformDependencies: PlatformDependencies
     ): AgentRuntimeState {
         return when (action.name) {
-            ActionNames.AGENT_CREATE -> {
+            ActionRegistry.Names.AGENT_CREATE -> {
                 val payload = action.payload ?: return state
                 val newAgent = AgentInstance(
                     id = platformDependencies.generateUUID(),
@@ -37,7 +37,7 @@ object AgentCrudLogic {
                 )
                 state.copy(agents = state.agents + (newAgent.id to newAgent), editingAgentId = newAgent.id)
             }
-            ActionNames.AGENT_UPDATE_CONFIG -> {
+            ActionRegistry.Names.AGENT_UPDATE_CONFIG -> {
                 val payload = action.payload ?: return state
                 val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
                 val agentToUpdate = state.agents[agentId] ?: return state
@@ -73,49 +73,49 @@ object AgentCrudLogic {
                 )
                 state.copy(agents = state.agents + (agentId to updatedAgent))
             }
-            ActionNames.AGENT_TOGGLE_AUTOMATIC_MODE -> {
+            ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
                 val agentToUpdate = state.agents[agentId] ?: return state
                 val updatedAgent = agentToUpdate.copy(automaticMode = !agentToUpdate.automaticMode)
                 state.copy(agents = state.agents + (agentId to updatedAgent))
             }
-            ActionNames.AGENT_TOGGLE_ACTIVE -> {
+            ActionRegistry.Names.AGENT_TOGGLE_ACTIVE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
                 val agentToUpdate = state.agents[agentId] ?: return state
                 val updatedAgent = agentToUpdate.copy(isAgentActive = !agentToUpdate.isAgentActive)
                 state.copy(agents = state.agents + (agentId to updatedAgent))
             }
-            ActionNames.AGENT_SET_EDITING -> {
+            ActionRegistry.Names.AGENT_SET_EDITING -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull
                 state.copy(editingAgentId = if (agentId == state.editingAgentId) null else agentId)
             }
-            ActionNames.AGENT_SET_MANAGER_TAB -> {
+            ActionRegistry.Names.AGENT_SET_MANAGER_TAB -> {
                 val tabIndex = action.payload?.get("tabIndex")?.jsonPrimitive?.intOrNull ?: 0
                 state.copy(activeManagerTab = tabIndex)
             }
-            ActionNames.AGENT_INTERNAL_CONFIRM_DELETE -> {
+            ActionRegistry.Names.AGENT_INTERNAL_CONFIRM_DELETE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
                 state.copy(
                     agents = state.agents - agentId,
                     agentAvatarCardIds = state.agentAvatarCardIds - agentId
                 )
             }
-            ActionNames.AGENT_INTERNAL_AGENT_LOADED -> {
+            ActionRegistry.Names.AGENT_INTERNAL_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return state
                 if (!state.agents.containsKey(agent.id)) state.copy(agents = state.agents + (agent.id to agent)) else state
             }
             // [NEW] Handle loading resources from disk
-            ActionNames.AGENT_INTERNAL_RESOURCE_LOADED -> {
+            ActionRegistry.Names.AGENT_INTERNAL_RESOURCE_LOADED -> {
                 val resource = action.payload?.let { json.decodeFromJsonElement<AgentResource>(it) } ?: return state
                 // Merge logic: Add if new, replace if exists
                 val updatedResources = state.resources.filter { it.id != resource.id } + resource
                 state.copy(resources = updatedResources)
             }
-            ActionNames.AGENT_SELECT_RESOURCE -> {
+            ActionRegistry.Names.AGENT_SELECT_RESOURCE -> {
                 val resourceId = action.payload?.get("resourceId")?.jsonPrimitive?.contentOrNull
                 state.copy(editingResourceId = resourceId)
             }
-            ActionNames.AGENT_CREATE_RESOURCE -> {
+            ActionRegistry.Names.AGENT_CREATE_RESOURCE -> {
                 val payload = action.payload ?: return state
                 val name = payload["name"]?.jsonPrimitive?.contentOrNull ?: return state
                 val typeString = payload["type"]?.jsonPrimitive?.contentOrNull ?: return state
@@ -137,7 +137,7 @@ object AgentCrudLogic {
                     editingResourceId = newResource.id
                 )
             }
-            ActionNames.AGENT_SAVE_RESOURCE -> {
+            ActionRegistry.Names.AGENT_SAVE_RESOURCE -> {
                 val payload = action.payload ?: return state
                 val resourceId = payload["resourceId"]?.jsonPrimitive?.contentOrNull ?: return state
                 val content = payload["content"]?.jsonPrimitive?.contentOrNull ?: return state
@@ -152,7 +152,7 @@ object AgentCrudLogic {
                 state.copy(resources = updatedResources)
             }
             // [NEW] Rename Logic
-            ActionNames.AGENT_RENAME_RESOURCE -> {
+            ActionRegistry.Names.AGENT_RENAME_RESOURCE -> {
                 val payload = action.payload ?: return state
                 val resourceId = payload["resourceId"]?.jsonPrimitive?.contentOrNull ?: return state
                 val newName = payload["newName"]?.jsonPrimitive?.contentOrNull ?: return state
@@ -162,7 +162,7 @@ object AgentCrudLogic {
                 }
                 state.copy(resources = updatedResources)
             }
-            ActionNames.AGENT_DELETE_RESOURCE -> {
+            ActionRegistry.Names.AGENT_DELETE_RESOURCE -> {
                 val resourceId = action.payload?.get("resourceId")?.jsonPrimitive?.contentOrNull ?: return state
                 val resourceToDelete = state.resources.find { it.id == resourceId }
                 if (resourceToDelete?.isBuiltIn == true) return state
@@ -172,7 +172,7 @@ object AgentCrudLogic {
                     editingResourceId = if (state.editingResourceId == resourceId) null else state.editingResourceId
                 )
             }
-            ActionNames.AGENT_UPDATE_NVRAM -> {
+            ActionRegistry.Names.AGENT_UPDATE_NVRAM -> {
                 val payload = action.payload ?: return state
                 val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
                 val updates = payload["updates"]?.jsonObject ?: return state
@@ -189,7 +189,7 @@ object AgentCrudLogic {
                 val updatedAgent = agent.copy(cognitiveState = mergedState)
                 state.copy(agents = state.agents + (agentId to updatedAgent))
             }
-            ActionNames.AGENT_INTERNAL_NVRAM_LOADED -> {
+            ActionRegistry.Names.AGENT_INTERNAL_NVRAM_LOADED -> {
                 val payload = action.payload ?: return state
                 val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
                 val newState = payload["state"] ?: return state
