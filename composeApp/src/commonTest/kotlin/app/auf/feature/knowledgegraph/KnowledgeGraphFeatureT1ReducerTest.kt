@@ -42,7 +42,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
         val payload = buildJsonObject {
             put("holons", json.encodeToJsonElement(mapOf("p1" to p1, "h1" to h1)))
         }
-        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED, payload)
+        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_PERSONA_LOADED, payload)
 
         val newState = feature.reducer(initialState, action) as KnowledgeGraphState
 
@@ -66,7 +66,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
     @Test
     fun `on INTERNAL_LOAD_FAILED should set the fatalError message and clear isLoading flag`() {
         val initialState = KnowledgeGraphState(isLoading = true)
-        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject { put("error", "Test error") })
+        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_FAILED, buildJsonObject { put("error", "Test error") })
 
         val newState = feature.reducer(initialState, action) as KnowledgeGraphState
 
@@ -176,7 +176,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
             holons = mapOf("p1" to p1, "h1" to h1, "h2" to h2, "p2" to p2),
             personaRoots = mapOf("P1" to "p1", "P2" to "p2")
         )
-        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA, buildJsonObject { put("personaId", "p1") })
+        val action = Action(ActionRegistry.Names.KNOWLEDGEGRAPH_CONFIRM_DELETE_PERSONA, buildJsonObject { put("personaId", "p1") })
 
         val newState = feature.reducer(initialState, action) as KnowledgeGraphState
 

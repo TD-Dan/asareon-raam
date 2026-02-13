@@ -551,7 +551,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
             // No RESOLVE_APPROVAL should have been dispatched
             val resolveActions = harness.processedActions.filter {
-                it.name == ActionRegistry.Names.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL
+                it.name == ActionRegistry.Names.COMMANDBOT_RESOLVE_APPROVAL
             }
             assertTrue(resolveActions.isEmpty(),
                 "No RESOLVE_APPROVAL should be dispatched for a non-existent approval.")

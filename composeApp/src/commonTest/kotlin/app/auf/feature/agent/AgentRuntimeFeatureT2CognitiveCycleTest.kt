@@ -20,7 +20,7 @@ import kotlin.test.*
  * **Test Scope:**
  * 1. Booting Phase (Sentinel Injection in System Prompt)
  * 2. Gateway Processing (Sentinel Validation)
- * 3. State Transition (NVRAM Persistence via AGENT_INTERNAL_NVRAM_LOADED)
+ * 3. State Transition (NVRAM Persistence via AGENT_NVRAM_LOADED)
  * 4. Awake Phase (Normal Operation)
  *
  * **Critical Flow:**
@@ -101,7 +101,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // ASSERT: Turn context staged
             val stageAction = harness.processedActions.find { action ->
-                action.name == ActionRegistry.Names.AGENT_INTERNAL_STAGE_TURN_CONTEXT
+                action.name == ActionRegistry.Names.AGENT_STAGE_TURN_CONTEXT
             }
             assertNotNull(stageAction, "Should stage turn context")
 
@@ -154,7 +154,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // ASSERT: State transition to AWAKE
             val nvramUpdate = harness.processedActions.find { action ->
-                action.name == ActionRegistry.Names.AGENT_INTERNAL_NVRAM_LOADED
+                action.name == ActionRegistry.Names.AGENT_NVRAM_LOADED
             }
             assertNotNull(nvramUpdate, "Should update NVRAM state on sentinel success")
 
@@ -199,7 +199,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // ASSERT: No state update (remains BOOTING)
             val nvramUpdate = harness.processedActions.find { action ->
-                action.name == ActionRegistry.Names.AGENT_INTERNAL_NVRAM_LOADED
+                action.name == ActionRegistry.Names.AGENT_NVRAM_LOADED
             }
             assertNull(nvramUpdate, "Should NOT update NVRAM on sentinel failure")
 
@@ -211,7 +211,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // ASSERT: Agent status set to IDLE with warning
             val statusUpdates = harness.processedActions.filter { action ->
-                action.name == ActionRegistry.Names.AGENT_INTERNAL_SET_STATUS
+                action.name == ActionRegistry.Names.AGENT_SET_STATUS
             }
             val idleStatus = statusUpdates.lastOrNull()
             assertNotNull(idleStatus, "Should update status on sentinel failure")
@@ -371,7 +371,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // ASSERT: Agent status set to ERROR
             val statusUpdates = harness.processedActions.filter { action ->
-                action.name == ActionRegistry.Names.AGENT_INTERNAL_SET_STATUS
+                action.name == ActionRegistry.Names.AGENT_SET_STATUS
             }
             val errorStatus = statusUpdates.find { action ->
                 action.payload?.get("status")?.jsonPrimitive?.content == "ERROR"

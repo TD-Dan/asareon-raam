@@ -191,7 +191,7 @@ class AgentRuntimeFeatureT2StartupTest {
 
             // Assert: AGENTS_LOADED fired (agentLoadCount reached 0)
             val agentsLoadedAction = harness.processedActions.find {
-                it.name == ActionRegistry.Names.AGENT_INTERNAL_AGENTS_LOADED
+                it.name == ActionRegistry.Names.AGENT_AGENTS_LOADED
             }
             assertNotNull(agentsLoadedAction, "AGENTS_LOADED should fire after all agents are read")
         }
@@ -253,7 +253,7 @@ class AgentRuntimeFeatureT2StartupTest {
 
             // AGENTS_LOADED should NOT have fired (agentLoadCount is still 1)
             val prematureLoaded = harness.processedActions.find {
-                it.name == ActionRegistry.Names.AGENT_INTERNAL_AGENTS_LOADED
+                it.name == ActionRegistry.Names.AGENT_AGENTS_LOADED
             }
             assertNull(prematureLoaded, "Unknown file should not decrement agentLoadCount")
 
@@ -274,7 +274,7 @@ class AgentRuntimeFeatureT2StartupTest {
 
             // NOW AGENTS_LOADED should fire
             val agentsLoaded = harness.processedActions.find {
-                it.name == ActionRegistry.Names.AGENT_INTERNAL_AGENTS_LOADED
+                it.name == ActionRegistry.Names.AGENT_AGENTS_LOADED
             }
             assertNotNull(agentsLoaded, "AGENTS_LOADED should fire after the real agent config is loaded")
 

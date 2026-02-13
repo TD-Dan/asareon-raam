@@ -78,7 +78,7 @@ class AgentRuntimeFeatureT1AvatarTest {
         assertEquals(oldCard1, deleteAction.payload?.get("messageId")?.jsonPrimitive?.contentOrNull)
 
         // 2. Set Status
-        val statusAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_INTERNAL_SET_STATUS }
+        val statusAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_SET_STATUS }
         assertNotNull(statusAction)
         assertEquals("PROCESSING", statusAction.payload?.get("status")?.jsonPrimitive?.contentOrNull)
 

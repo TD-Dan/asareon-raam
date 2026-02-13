@@ -18,8 +18,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
-import app.auf.core.generated.ActionNames
-import app.auf.feature.agent.strategies.VanillaStrategy
+import app.auf.core.generated.ActionRegistry
+import app.auf.feature.agent.strategies.VanillaStrategy // TODO: This is a violation of absolute decoupling
 import app.auf.ui.components.CodeEditor
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*

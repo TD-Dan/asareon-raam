@@ -83,7 +83,7 @@ class SessionFeature(
                         return
                     }
                     val session = json.decodeFromString<Session>(content)
-                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_INTERNAL_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.id to session))) as JsonObject))
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.id to session))) as JsonObject))
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse session file: ${data["subpath"]}. Error: ${e.message}")
                 }
@@ -173,7 +173,7 @@ class SessionFeature(
                 }
             }
 
-            ActionRegistry.Names.SESSION_INTERNAL_LOADED -> {
+            ActionRegistry.Names.SESSION_LOADED -> {
                 broadcastSessionNames(sessionState, store)
                 val prevSessions = (previousState as? SessionState)?.sessions ?: emptyMap()
                 sessionState.sessions.forEach { (id, session) ->
@@ -695,7 +695,7 @@ class SessionFeature(
                 val updated = session.copy(messageUiState = session.messageUiState + (decoded.messageId to current.copy(isRawView = !current.isRawView)))
                 currentFeatureState.copy(sessions = currentFeatureState.sessions + (decoded.sessionId to updated))
             }
-            ActionRegistry.Names.SESSION_INTERNAL_LOADED -> {
+            ActionRegistry.Names.SESSION_LOADED -> {
                 val loaded = payload?.let { json.decodeFromJsonElement<InternalSessionLoadedPayload>(it) } ?: return currentFeatureState
                 val merged = currentFeatureState.sessions + loaded.sessions
                 val normalized = SessionState.normalizeOrderIndices(merged)

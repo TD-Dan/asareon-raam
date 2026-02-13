@@ -60,7 +60,7 @@ class AgentRuntimeFeatureT3WatcherTest {
     private fun dispatchHeartbeat(timePassedMillis: Long) {
         platform.currentTime += timePassedMillis
         // Fix: Use "agent" as originator to pass Store security checks for agent.internal.* actions
-        harness.store.dispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_CHECK_AUTOMATIC_TRIGGERS))
+        harness.store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CHECK_AUTOMATIC_TRIGGERS))
         testScope.runCurrent()
     }
 

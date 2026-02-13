@@ -161,12 +161,12 @@ class CoreFeature(
                     if (content != null) {
                         try {
                             val loaded = Json.decodeFromString<IdentitiesLoadedPayload>(content)
-                            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_INTERNAL_IDENTITIES_LOADED, Json.encodeToJsonElement(loaded) as JsonObject))
+                            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_IDENTITIES_LOADED, Json.encodeToJsonElement(loaded) as JsonObject))
                         } catch (e: Exception) {
                             platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle, "Failed to parse identities.json: ${e.message}")
                         }
                     } else {
-                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_INTERNAL_IDENTITIES_LOADED, buildJsonObject {
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_IDENTITIES_LOADED, buildJsonObject {
                             put("identities", buildJsonArray { })
                         }))
                     }
@@ -175,7 +175,7 @@ class CoreFeature(
             ActionRegistry.Names.CORE_ADD_USER_IDENTITY,
             ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY,
             ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY,
-            ActionRegistry.Names.CORE_INTERNAL_IDENTITIES_LOADED -> {
+            ActionRegistry.Names.CORE_IDENTITIES_LOADED -> {
                 if (latestCoreState != null) {
                     // Sync user identities to AppState.identityRegistry via Store.
                     // Build registry entries from the authoritative userIdentities list.
@@ -395,7 +395,7 @@ class CoreFeature(
                 }
                 return newCoreState
             }
-            ActionRegistry.Names.CORE_INTERNAL_IDENTITIES_LOADED -> {
+            ActionRegistry.Names.CORE_IDENTITIES_LOADED -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<IdentitiesLoadedPayload>(it) } ?: return coreState
                 val identities: List<Identity>
                 val activeId: String?

@@ -70,7 +70,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             feature.onPrivateData(response, harness.store)
 
             // ASSERT 1: STAGE_TURN_CONTEXT dispatched
-            val stageAction = harness.processedActions.find { it.name == ActionRegistry.Names.AGENT_INTERNAL_STAGE_TURN_CONTEXT }
+            val stageAction = harness.processedActions.find { it.name == ActionRegistry.Names.AGENT_STAGE_TURN_CONTEXT }
             assertNotNull(stageAction)
 
             // ASSERT 2: GATEWAY_GENERATE_CONTENT dispatched (proving full context pipeline completed)

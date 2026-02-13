@@ -1,7 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.*
 
@@ -93,19 +93,19 @@ object AgentCrudLogic {
                 val tabIndex = action.payload?.get("tabIndex")?.jsonPrimitive?.intOrNull ?: 0
                 state.copy(activeManagerTab = tabIndex)
             }
-            ActionRegistry.Names.AGENT_INTERNAL_CONFIRM_DELETE -> {
+            ActionRegistry.Names.AGENT_CONFIRM_DELETE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
                 state.copy(
                     agents = state.agents - agentId,
                     agentAvatarCardIds = state.agentAvatarCardIds - agentId
                 )
             }
-            ActionRegistry.Names.AGENT_INTERNAL_AGENT_LOADED -> {
+            ActionRegistry.Names.AGENT_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return state
                 if (!state.agents.containsKey(agent.id)) state.copy(agents = state.agents + (agent.id to agent)) else state
             }
             // [NEW] Handle loading resources from disk
-            ActionRegistry.Names.AGENT_INTERNAL_RESOURCE_LOADED -> {
+            ActionRegistry.Names.AGENT_RESOURCE_LOADED -> {
                 val resource = action.payload?.let { json.decodeFromJsonElement<AgentResource>(it) } ?: return state
                 // Merge logic: Add if new, replace if exists
                 val updatedResources = state.resources.filter { it.id != resource.id } + resource
@@ -189,7 +189,7 @@ object AgentCrudLogic {
                 val updatedAgent = agent.copy(cognitiveState = mergedState)
                 state.copy(agents = state.agents + (agentId to updatedAgent))
             }
-            ActionRegistry.Names.AGENT_INTERNAL_NVRAM_LOADED -> {
+            ActionRegistry.Names.AGENT_NVRAM_LOADED -> {
                 val payload = action.payload ?: return state
                 val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
                 val newState = payload["state"] ?: return state

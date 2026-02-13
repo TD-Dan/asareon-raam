@@ -38,7 +38,7 @@ class SettingsFeatureT1SettingsViewTest {
         // Use a restricted action registry to ensure the view only dispatches what it's supposed to.
         val validActions = setOf(
             ActionRegistry.Names.SETTINGS_OPEN_FOLDER,
-            ActionRegistry.Names.SETTINGS_UI_INTERNAL_INPUT_CHANGED,
+            ActionRegistry.Names.SETTINGS_UI_INPUT_CHANGED,
             ActionRegistry.Names.SETTINGS_UPDATE
         )
         fakeStore = FakeStore(AppState(), fakePlatform, validActions)
@@ -81,7 +81,7 @@ class SettingsFeatureT1SettingsViewTest {
 
         composeTestRule.onNodeWithText("old_value").performTextReplacement("new_key")
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SETTINGS_UI_INTERNAL_INPUT_CHANGED }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SETTINGS_UI_INPUT_CHANGED }
         assertNotNull(action)
         assertEquals("settings.ui", action.originator)
         assertEquals("test.api.key", action.payload?.get("key")?.jsonPrimitive?.content)

@@ -88,7 +88,7 @@ class CommandBotFeature(
         val currentState = state as? CommandBotState ?: CommandBotState()
 
         return when (action.name) {
-            ActionRegistry.Names.COMMANDBOT_INTERNAL_STAGE_APPROVAL -> {
+            ActionRegistry.Names.COMMANDBOT_STAGE_APPROVAL -> {
                 val payload = action.payload ?: return currentState
                 val approval = PendingApproval(
                     approvalId = payload["approvalId"]?.jsonPrimitive?.contentOrNull ?: return currentState,
@@ -105,7 +105,7 @@ class CommandBotFeature(
                 )
             }
 
-            ActionRegistry.Names.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL -> {
+            ActionRegistry.Names.COMMANDBOT_RESOLVE_APPROVAL -> {
                 val payload = action.payload ?: return currentState
                 val approvalId = payload["approvalId"]?.jsonPrimitive?.contentOrNull ?: return currentState
                 val resolutionStr = payload["resolution"]?.jsonPrimitive?.contentOrNull ?: return currentState
@@ -184,7 +184,7 @@ class CommandBotFeature(
                 }
 
                 // 1. Dispatch the internal state transition: pending → resolved
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.COMMANDBOT_RESOLVE_APPROVAL, buildJsonObject {
                     put("approvalId", approvalId)
                     put("resolution", Resolution.APPROVED.name)
                 }))
@@ -217,7 +217,7 @@ class CommandBotFeature(
                 }
 
                 // 1. Dispatch the internal state transition: pending → resolved
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.COMMANDBOT_RESOLVE_APPROVAL, buildJsonObject {
                     put("approvalId", approvalId)
                     put("resolution", Resolution.DENIED.name)
                 }))
@@ -425,7 +425,7 @@ class CommandBotFeature(
         }))
 
         // 2. Stage the approval in CommandBotState
-        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.COMMANDBOT_INTERNAL_STAGE_APPROVAL, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.COMMANDBOT_STAGE_APPROVAL, buildJsonObject {
             put("approvalId", approvalId)
             put("sessionId", sessionId)
             put("cardMessageId", cardMessageId)

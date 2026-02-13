@@ -177,10 +177,10 @@ class CoreFeatureT1ReducerTest {
     }
 
     @Test
-    fun `reducer on CORE_INTERNAL_IDENTITIES_LOADED creates a default user if loaded list is empty`() {
+    fun `reducer on CORE_IDENTITIES_LOADED creates a default user if loaded list is empty`() {
         platform.uuidCounter = 0 // Reset for predictable ID
         val initialState = CoreState(userIdentities = emptyList())
-        val action = Action(ActionRegistry.Names.CORE_INTERNAL_IDENTITIES_LOADED, buildJsonObject { put("identities", buildJsonArray {}) })
+        val action = Action(ActionRegistry.Names.CORE_IDENTITIES_LOADED, buildJsonObject { put("identities", buildJsonArray {}) })
         val newState = feature.reducer(initialState, action) as? CoreState
         assertNotNull(newState)
         assertEquals(1, newState.userIdentities.size)
@@ -189,10 +189,10 @@ class CoreFeatureT1ReducerTest {
     }
 
     @Test
-    fun `reducer on CORE_INTERNAL_IDENTITIES_LOADED migrates users into identityRegistry`() {
+    fun `reducer on CORE_IDENTITIES_LOADED migrates users into identityRegistry`() {
         platform.uuidCounter = 0
         val initialState = CoreState()
-        val action = Action(ActionRegistry.Names.CORE_INTERNAL_IDENTITIES_LOADED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.CORE_IDENTITIES_LOADED, buildJsonObject {
             put("identities", buildJsonArray {
                 add(buildJsonObject { put("uuid", "uuid-a"); put("localHandle", "alice"); put("handle", "alice"); put("name", "Alice") })
             })
@@ -207,9 +207,9 @@ class CoreFeatureT1ReducerTest {
     }
 
     @Test
-    fun `reducer on CORE_INTERNAL_IDENTITIES_LOADED sets active user to first if saved active ID is invalid`() {
+    fun `reducer on CORE_IDENTITIES_LOADED sets active user to first if saved active ID is invalid`() {
         val initialState = CoreState()
-        val action = Action(ActionRegistry.Names.CORE_INTERNAL_IDENTITIES_LOADED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.CORE_IDENTITIES_LOADED, buildJsonObject {
             put("identities", buildJsonArray {
                 add(buildJsonObject { put("uuid", "uuid-1"); put("localHandle", "user-1"); put("handle", "user-1"); put("name", "User 1") })
                 add(buildJsonObject { put("uuid", "uuid-2"); put("localHandle", "user-2"); put("handle", "user-2"); put("name", "User 2") })

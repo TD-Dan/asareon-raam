@@ -10,7 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.auf.core.Action
 import app.auf.core.Store
-import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.delay
@@ -53,7 +53,7 @@ object AgentAvatarLogic {
     ) {
         // 1. Dispatch Status Change (if requested)
         if (newStatus != null) {
-            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_SET_STATUS, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_STATUS, buildJsonObject {
                 put("agentId", agentId)
                 put("status", newStatus.name)
                 newError?.let { put("error", it) }
@@ -102,7 +102,7 @@ object AgentAvatarLogic {
             // A. Generate New ID and Commit Intention (Sovereign Update)
             val newMessageId = platformDependencies.generateUUID()
 
-            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_AVATAR_MOVED, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_AVATAR_MOVED, buildJsonObject {
                 put("agentId", agentId)
                 put("sessionId", sessionId)
                 put("messageId", newMessageId)

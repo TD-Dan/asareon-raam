@@ -259,7 +259,7 @@ class GatewayFeatureT2CoreTest {
             runCurrent()
 
             // 5. Verify the internal cleanup action was dispatched (triggered by invokeOnCompletion)
-            val cleanupAction = harness.processedActions.find { it.name == ActionRegistry.Names.GATEWAY_INTERNAL_REQUEST_COMPLETED }
+            val cleanupAction = harness.processedActions.find { it.name == ActionRegistry.Names.GATEWAY_REQUEST_COMPLETED }
             assertNotNull(cleanupAction, "Cleanup action should be dispatched")
             assertEquals(correlationId, cleanupAction.payload?.get("correlationId")?.jsonPrimitive?.content)
 

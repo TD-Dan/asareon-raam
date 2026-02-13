@@ -71,7 +71,7 @@ open class GatewayFeature(
             }
 
             // NEW: Safe concurrency handler
-            ActionRegistry.Names.GATEWAY_INTERNAL_REQUEST_COMPLETED -> {
+            ActionRegistry.Names.GATEWAY_REQUEST_COMPLETED -> {
                 handleRequestCompleted(action)
             }
         }
@@ -173,7 +173,7 @@ open class GatewayFeature(
         job.invokeOnCompletion {
             // Dispatch internal action to mutate map on the main thread
             val cleanupPayload = buildJsonObject { put("correlationId", correlationId) }
-            store.dispatch(this@GatewayFeature.identity.handle, Action(ActionRegistry.Names.GATEWAY_INTERNAL_REQUEST_COMPLETED, cleanupPayload))
+            store.dispatch(this@GatewayFeature.identity.handle, Action(ActionRegistry.Names.GATEWAY_REQUEST_COMPLETED, cleanupPayload))
         }
     }
 
@@ -253,7 +253,7 @@ open class GatewayFeature(
                 put("providerId", providerId)
                 put("models", Json.encodeToJsonElement(models))
             }
-            store.dispatch(this@GatewayFeature.identity.handle, Action(ActionRegistry.Names.GATEWAY_INTERNAL_MODELS_UPDATED, payload))
+            store.dispatch(this@GatewayFeature.identity.handle, Action(ActionRegistry.Names.GATEWAY_MODELS_UPDATED, payload))
         }
     }
 
@@ -261,7 +261,7 @@ open class GatewayFeature(
         val currentFeatureState = state as? GatewayState ?: GatewayState()
 
         when (action.name) {
-            ActionRegistry.Names.GATEWAY_INTERNAL_MODELS_UPDATED -> {
+            ActionRegistry.Names.GATEWAY_MODELS_UPDATED -> {
                 val payload = action.payload ?: return currentFeatureState
                 val providerId = payload["providerId"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
                 val models = Json.decodeFromJsonElement<List<String>>(payload["models"] ?: return currentFeatureState)

@@ -21,9 +21,9 @@ object AgentRuntimeReducer {
     ): AgentRuntimeState {
         return when (action.name) {
             // --- Internal State Setters ---
-            ActionRegistry.Names.AGENT_INTERNAL_SET_STATUS -> handleSetStatus(action, state, platformDependencies)
+            ActionRegistry.Names.AGENT_SET_STATUS -> handleSetStatus(action, state, platformDependencies)
 
-            ActionRegistry.Names.AGENT_INTERNAL_SET_PROCESSING_STEP -> {
+            ActionRegistry.Names.AGENT_SET_PROCESSING_STEP -> {
                 val payload = action.payload ?: return state
                 val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
@@ -32,21 +32,21 @@ object AgentRuntimeReducer {
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
 
-            ActionRegistry.Names.AGENT_INTERNAL_STAGE_TURN_CONTEXT -> {
+            ActionRegistry.Names.AGENT_STAGE_TURN_CONTEXT -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<StageTurnContextPayload>(it) } ?: return state
                 val currentStatus = state.agentStatuses[payload.agentId] ?: AgentStatusInfo()
                 val updatedStatus = currentStatus.copy(stagedTurnContext = payload.messages)
                 state.copy(agentStatuses = state.agentStatuses + (payload.agentId to updatedStatus))
             }
 
-            ActionRegistry.Names.AGENT_INTERNAL_SET_HKG_CONTEXT -> {
+            ActionRegistry.Names.AGENT_SET_HKG_CONTEXT -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SetHkgContextPayload>(it) } ?: return state
                 val currentStatus = state.agentStatuses[payload.agentId] ?: AgentStatusInfo()
                 val updatedStatus = currentStatus.copy(transientHkgContext = payload.context)
                 state.copy(agentStatuses = state.agentStatuses + (payload.agentId to updatedStatus))
             }
 
-            ActionRegistry.Names.AGENT_INTERNAL_SET_WORKSPACE_CONTEXT -> {
+            ActionRegistry.Names.AGENT_SET_WORKSPACE_CONTEXT -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
                 val context = action.payload?.get("context")?.jsonPrimitive?.contentOrNull ?: return state
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
@@ -54,7 +54,7 @@ object AgentRuntimeReducer {
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
 
-            ActionRegistry.Names.AGENT_INTERNAL_SET_CONTEXT_GATHERING_STARTED -> {
+            ActionRegistry.Names.AGENT_SET_CONTEXT_GATHERING_STARTED -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
                 val startedAt = action.payload?.get("startedAt")?.jsonPrimitive?.longOrNull ?: return state
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
@@ -63,10 +63,10 @@ object AgentRuntimeReducer {
             }
 
             // CONTEXT_GATHERING_TIMEOUT: No state change needed — pure side-effect action
-            ActionRegistry.Names.AGENT_INTERNAL_CONTEXT_GATHERING_TIMEOUT -> state
+            ActionRegistry.Names.AGENT_CONTEXT_GATHERING_TIMEOUT -> state
 
             // [NEW] Atomic commit of avatar position
-            ActionRegistry.Names.AGENT_INTERNAL_AVATAR_MOVED -> {
+            ActionRegistry.Names.AGENT_AVATAR_MOVED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<AvatarMovedPayload>(it) } ?: return state
                 val currentSessionMap = state.agentAvatarCardIds[payload.agentId] ?: emptyMap()
                 val newSessionMap = currentSessionMap + (payload.sessionId to payload.messageId)
@@ -103,7 +103,7 @@ object AgentRuntimeReducer {
                 )
             }
 
-            ActionRegistry.Names.AGENT_INTERNAL_SET_PREVIEW_DATA -> {
+            ActionRegistry.Names.AGENT_SET_PREVIEW_DATA -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SetPreviewDataPayload>(it) } ?: return state
                 val agentId = payload.agentId
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()

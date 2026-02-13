@@ -81,7 +81,7 @@ fun SettingsView(
                             // Dispatch the correct action based on the setting type
                             val actionName = when (definitionJson["type"]?.jsonPrimitive?.content) {
                                 "BOOLEAN" -> ActionRegistry.Names.SETTINGS_UPDATE // Booleans update instantly
-                                else -> ActionRegistry.Names.SETTINGS_UI_INTERNAL_INPUT_CHANGED // Text fields are debounced
+                                else -> ActionRegistry.Names.SETTINGS_UI_INPUT_CHANGED // Text fields are debounced
                             }
                             store.dispatch("settings.ui", Action(actionName, payload))
                         }

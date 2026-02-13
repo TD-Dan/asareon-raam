@@ -91,7 +91,7 @@ object SovereignHKGResourceLogic {
         val kgFeatureExists = store.features.any { it.identity.handle == "knowledgegraph" }
 
         if (kgId != null && kgFeatureExists) {
-            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_INTERNAL_SET_PROCESSING_STEP, buildJsonObject {
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
                 put("agentId", agent.id); put("step", "Requesting HKG")
             }))
 

@@ -80,7 +80,7 @@ class KnowledgeGraphFeature(
                             put("subpaths", Json.encodeToJsonElement(fileSubpaths))
                         }))
                     } else {
-                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_FAILED, buildJsonObject {
                             put("error", "No holon files found in persona directory.")
                         }))
                     }
@@ -96,11 +96,11 @@ class KnowledgeGraphFeature(
                     val fileData = json.decodeFromJsonElement<FilesContentPayload>(action.payload ?: return)
 
                     if (kgState.isExecutingImport == true) {
-                        store.dispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_SET_IMPORT_EXECUTION_STATUS, buildJsonObject { put("isExecuting", false) }))
+                        store.dispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_IMPORT_EXECUTION_STATUS, buildJsonObject { put("isExecuting", false) }))
                         executeImportWrites(fileData.contents, kgState, store, platformDependencies)
                     } else if (fileData.correlationId != null && fileData.correlationId == kgState.pendingImportCorrelationId) {
                         val analysisPayload = runImportAnalysis(fileData.contents, kgState, kgState.importUserOverrides, kgState.isImportRecursive, platformDependencies)
-                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_ANALYSIS_COMPLETE, analysisPayload))
                     } else {
                         handleFilesContentForLoad(fileData, store)
                     }
@@ -108,7 +108,7 @@ class KnowledgeGraphFeature(
                     val errorMsg = "Failed to process file content response."
                     platformDependencies.log(LogLevel.ERROR, identity.handle, errorMsg, e)
                     store.dispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
-                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_FAILED, buildJsonObject {
                         put("error", errorMsg)
                     }))
                 }
@@ -116,7 +116,7 @@ class KnowledgeGraphFeature(
             ActionRegistry.Names.SYSTEM_PUBLISH_STARTING -> {
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST))
             }
-            ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED -> {
+            ActionRegistry.Names.KNOWLEDGEGRAPH_PERSONA_LOADED -> {
                 if (prevKgState?.personaRoots != kgState.personaRoots) {
                     val idToNameMap = kgState.personaRoots.entries.associate { (name, id) -> id to name }
                     store.deferredDispatch(identity.handle, Action(
@@ -173,7 +173,7 @@ class KnowledgeGraphFeature(
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS -> {
                 val correlationId = platformDependencies.generateUUID()
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_SET_PENDING_IMPORT_ID, buildJsonObject { put("id", correlationId) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PENDING_IMPORT_ID, buildJsonObject { put("id", correlationId) }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_REQUEST_SCOPED_READ_UI, buildJsonObject {
                     put("correlationId", correlationId)
                     put("recursive", true)
@@ -183,7 +183,7 @@ class KnowledgeGraphFeature(
             ActionRegistry.Names.KNOWLEDGEGRAPH_SET_IMPORT_RECURSIVE -> {
                 if (kgState.importFileContents.isNotEmpty()) {
                     val analysisPayload = runImportAnalysis(kgState.importFileContents, kgState, kgState.importUserOverrides, kgState.isImportRecursive, platformDependencies)
-                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE, analysisPayload))
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_ANALYSIS_COMPLETE, analysisPayload))
                 }
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_EXECUTE_IMPORT -> {
@@ -199,7 +199,7 @@ class KnowledgeGraphFeature(
 
                 if (parentHolonFilePaths.isNotEmpty()) {
                     // [FIX] Explicitly signal that the next read response is for execution context.
-                    store.dispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_SET_IMPORT_EXECUTION_STATUS, buildJsonObject { put("isExecuting", true) }))
+                    store.dispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_IMPORT_EXECUTION_STATUS, buildJsonObject { put("isExecuting", true) }))
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
                         put("subpaths", Json.encodeToJsonElement(parentHolonFilePaths))
                     }))
@@ -298,7 +298,7 @@ class KnowledgeGraphFeature(
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
                     put("subpath", personaId)
                 }))
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_CONFIRM_DELETE_PERSONA, buildJsonObject {
                     put("personaId", personaId)
                 }))
             }
@@ -327,7 +327,7 @@ class KnowledgeGraphFeature(
                         put("content", prepareHolonForWriting(finalSyncedParent))
                     }))
                 }
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_HOLON, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_CONFIRM_DELETE_HOLON, buildJsonObject {
                     put("holonId", holonId)
                 }))
             }
@@ -360,7 +360,7 @@ class KnowledgeGraphFeature(
 
         when (action.name) {
             // [FIX] Handle the new action to toggle the execution flag.
-            ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_SET_IMPORT_EXECUTION_STATUS -> {
+            ActionRegistry.Names.KNOWLEDGEGRAPH_SET_IMPORT_EXECUTION_STATUS -> {
                 val isExecuting = payload?.get("isExecuting")?.jsonPrimitive?.booleanOrNull ?: false
                 return currentFeatureState.copy(isExecutingImport = isExecuting)
             }
@@ -382,11 +382,11 @@ class KnowledgeGraphFeature(
                     reservations = currentFeatureState.reservations - personaId
                 )
             }
-            ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_SET_PENDING_IMPORT_ID -> {
+            ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PENDING_IMPORT_ID -> {
                 val id = payload?.get("id")?.jsonPrimitive?.contentOrNull
                 return currentFeatureState.copy(pendingImportCorrelationId = id)
             }
-            ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED -> {
+            ActionRegistry.Names.KNOWLEDGEGRAPH_PERSONA_LOADED -> {
                 val holons = payload?.get("holons")?.let { json.decodeFromJsonElement<Map<String, Holon>>(it) } ?: return currentFeatureState
                 val newHolons = currentFeatureState.holons + holons
                 val newRoots = newHolons.values
@@ -397,7 +397,7 @@ class KnowledgeGraphFeature(
             ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA -> {
                 return currentFeatureState.copy(isLoading = true, fatalError = null)
             }
-            ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED -> {
+            ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_FAILED -> {
                 val error = payload?.get("error")?.jsonPrimitive?.content ?: "Unknown loading error."
                 return currentFeatureState.copy(isLoading = false, fatalError = error)
             }
@@ -454,7 +454,7 @@ class KnowledgeGraphFeature(
                     importFileContents = emptyMap()
                 )
             }
-            ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_ANALYSIS_COMPLETE -> {
+            ActionRegistry.Names.KNOWLEDGEGRAPH_ANALYSIS_COMPLETE -> {
 
                 val analysis = payload?.let { json.decodeFromJsonElement<AnalysisCompletePayload>(it) } ?: return currentFeatureState
                 return currentFeatureState.copy(
@@ -494,7 +494,7 @@ class KnowledgeGraphFeature(
                 val isCreating = payload?.get("isCreating")?.jsonPrimitive?.booleanOrNull ?: return currentFeatureState
                 return currentFeatureState.copy(isCreatingPersona = isCreating)
             }
-            ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_PERSONA -> {
+            ActionRegistry.Names.KNOWLEDGEGRAPH_CONFIRM_DELETE_PERSONA -> {
                 val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: return currentFeatureState
                 val rootHolon = currentFeatureState.holons[personaId] ?: return currentFeatureState
                 val idsToDelete = mutableSetOf<String>()
@@ -519,7 +519,7 @@ class KnowledgeGraphFeature(
                 val holonId = payload?.get("holonId")?.jsonPrimitive?.contentOrNull
                 return currentFeatureState.copy(holonIdToDelete = holonId)
             }
-            ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_CONFIRM_DELETE_HOLON -> {
+            ActionRegistry.Names.KNOWLEDGEGRAPH_CONFIRM_DELETE_HOLON -> {
                 val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: return currentFeatureState
                 val holonToDelete = currentFeatureState.holons[holonId] ?: return currentFeatureState
                 val idsToDelete = mutableSetOf<String>()
@@ -569,7 +569,7 @@ class KnowledgeGraphFeature(
         if (holonsById.isEmpty() && fileData.contents.isNotEmpty()) {
             val errorMsg = "Loading failed: All holon files in the persona were malformed or had ID mismatches."
             store.dispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject { put("message", errorMsg) }))
-            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_LOAD_FAILED, buildJsonObject {
+            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_FAILED, buildJsonObject {
                 put("error", errorMsg)
             }))
             return
@@ -600,7 +600,7 @@ class KnowledgeGraphFeature(
 
         rootHolons.forEach { enrichRecursively(it, null, 0) }
 
-        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_INTERNAL_PERSONA_LOADED, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_PERSONA_LOADED, buildJsonObject {
             put("holons", json.encodeToJsonElement(enrichedHolons))
         }))
     }

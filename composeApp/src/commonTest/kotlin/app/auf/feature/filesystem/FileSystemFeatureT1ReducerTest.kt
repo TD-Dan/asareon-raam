@@ -39,7 +39,7 @@ class FileSystemFeatureT1ReducerTest {
                 })
             }
         }
-        val action = Action(ActionRegistry.Names.FILESYSTEM_INTERNAL_DIRECTORY_LOADED, payload)
+        val action = Action(ActionRegistry.Names.FILESYSTEM_DIRECTORY_LOADED, payload)
 
         val navigatingState = feature.reducer(initialState, Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", "/test") }))
         val newState = feature.reducer(navigatingState, action) as? FileSystemState

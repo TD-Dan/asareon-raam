@@ -356,7 +356,7 @@ class SessionFeatureT2CoreTest {
             harness.store.deliverPrivateData("filesystem", "session", envelope)
             testScheduler.advanceUntilIdle()
 
-            val loadedAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_INTERNAL_LOADED }
+            val loadedAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_LOADED }
             assertNull(loadedAction, "LOADED should not be dispatched for corrupted content.")
             val log = harness.platform.capturedLogs.find { it.level == LogLevel.ERROR }
             assertNotNull(log)

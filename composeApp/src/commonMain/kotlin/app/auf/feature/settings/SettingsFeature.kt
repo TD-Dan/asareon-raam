@@ -54,7 +54,7 @@ class SettingsFeature(
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         when (action.name) {
             ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING -> store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", settingsFileName) }))
-            ActionRegistry.Names.SETTINGS_UI_INTERNAL_INPUT_CHANGED -> {
+            ActionRegistry.Names.SETTINGS_UI_INPUT_CHANGED -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
                 val value = action.payload.get("value")?.jsonPrimitive?.content ?: return
                 debounceJobs[key]?.cancel()
@@ -97,7 +97,7 @@ class SettingsFeature(
                 val finalValues = allDefaults + loadedValues
                 return currentFeatureState.copy(values = finalValues, inputValues = finalValues)
             }
-            ActionRegistry.Names.SETTINGS_UI_INTERNAL_INPUT_CHANGED -> {
+            ActionRegistry.Names.SETTINGS_UI_INPUT_CHANGED -> {
                 val key = payload?.get("key")?.jsonPrimitive?.content ?: return currentFeatureState
                 val value = payload["value"]?.jsonPrimitive?.content ?: return currentFeatureState
                 return currentFeatureState.copy(inputValues = currentFeatureState.inputValues + (key to value))

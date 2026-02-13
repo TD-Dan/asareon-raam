@@ -61,7 +61,7 @@ class SettingsFeatureT1ReducerTest {
     @Test
     fun `reducer INPUT_CHANGED updates transient input value but not persisted value`() {
         val initialState = SettingsState(values = mapOf("key" to "persisted"))
-        val action = Action(ActionRegistry.Names.SETTINGS_UI_INTERNAL_INPUT_CHANGED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.SETTINGS_UI_INPUT_CHANGED, buildJsonObject {
             put("key", "key")
             put("value", "transient")
         })

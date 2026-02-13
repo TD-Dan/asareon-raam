@@ -277,7 +277,7 @@ class CommandBotFeatureT2CoreTest {
                 "ACTION_CREATED must NOT be published before approval.")
 
             // 3. An approval card should be posted to the session
-            val stageAction = harness.processedActions.find { it.name == ActionRegistry.Names.COMMANDBOT_INTERNAL_STAGE_APPROVAL }
+            val stageAction = harness.processedActions.find { it.name == ActionRegistry.Names.COMMANDBOT_STAGE_APPROVAL }
             assertNotNull(stageAction, "STAGE_APPROVAL internal action should have been dispatched.")
         }
     }
@@ -514,7 +514,7 @@ class CommandBotFeatureT2CoreTest {
 
             // No RESOLVE_APPROVAL should have been dispatched
             val resolveActions = harness.processedActions.filter {
-                it.name == ActionRegistry.Names.COMMANDBOT_INTERNAL_RESOLVE_APPROVAL
+                it.name == ActionRegistry.Names.COMMANDBOT_RESOLVE_APPROVAL
             }
             assertTrue(resolveActions.isEmpty(),
                 "No RESOLVE_APPROVAL should be dispatched for a non-existent approval.")

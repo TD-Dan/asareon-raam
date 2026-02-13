@@ -90,7 +90,7 @@ class FileSystemFeature(
                         store.deferredDispatch(
                             originator = identity.handle,
                             action = Action(
-                                name = ActionRegistry.Names.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ,
+                                name = ActionRegistry.Names.FILESYSTEM_EXECUTE_SCOPED_READ,
                                 payload = buildJsonObject {
                                     put("clientOriginator", pendingRequest.originator)
                                     put("requestPayload", Json.encodeToJsonElement(pendingRequest.payload))
@@ -98,7 +98,7 @@ class FileSystemFeature(
                             )
                         )
                     }
-                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_INTERNAL_FINALIZE_SCOPED_READ))
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_FINALIZE_SCOPED_READ))
                 }
             }
             ActionRegistry.Names.SYSTEM_PUBLISH_INITIALIZING -> {
@@ -118,7 +118,7 @@ class FileSystemFeature(
             }
             ActionRegistry.Names.FILESYSTEM_NAVIGATE -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<PathPayload>(it) } ?: return
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_INTERNAL_LOAD_CHILDREN, buildJsonObject { put("path", payload.path) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LOAD_CHILDREN, buildJsonObject { put("path", payload.path) }))
             }
             ActionRegistry.Names.FILESYSTEM_SELECT_DIRECTORY_UI -> {
                 platformDependencies.selectDirectoryPath()?.let {
@@ -128,7 +128,7 @@ class FileSystemFeature(
             ActionRegistry.Names.FILESYSTEM_REQUEST_SCOPED_READ_UI -> {
                 val requestId = platformDependencies.generateUUID()
                 store.deferredDispatch(identity.handle, Action(
-                    name = ActionRegistry.Names.FILESYSTEM_INTERNAL_STAGE_SCOPED_READ,
+                    name = ActionRegistry.Names.FILESYSTEM_STAGE_SCOPED_READ,
                     payload = buildJsonObject {
                         put("requestId", requestId)
                         put("originator", originator)
@@ -136,7 +136,7 @@ class FileSystemFeature(
                     }
                 ))
             }
-            ActionRegistry.Names.FILESYSTEM_INTERNAL_STAGE_SCOPED_READ -> {
+            ActionRegistry.Names.FILESYSTEM_STAGE_SCOPED_READ -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<StageScopedReadPayload>(it) } ?: return
                 val dialogRequest = buildJsonObject {
                     put("title", "Danger Zone: Grant File Access?")
@@ -146,7 +146,7 @@ class FileSystemFeature(
                 }
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_CONFIRMATION_DIALOG, dialogRequest))
             }
-            ActionRegistry.Names.FILESYSTEM_INTERNAL_EXECUTE_SCOPED_READ -> {
+            ActionRegistry.Names.FILESYSTEM_EXECUTE_SCOPED_READ -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<ExecuteScopedReadPayload>(it) } ?: return
                 val clientOriginator = payload.clientOriginator
                 val requestPayload = json.decodeFromJsonElement<RequestScopedReadUiPayload>(payload.requestPayload)
@@ -213,7 +213,7 @@ class FileSystemFeature(
                 val payload = action.payload?.let { json.decodeFromJsonElement<PathPayload>(it) } ?: return
                 val item = findItemByPath(fileSystemState.rootItems, payload.path)
                 if (item?.isDirectory == true && item.children == null) {
-                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_INTERNAL_LOAD_CHILDREN, action.payload))
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LOAD_CHILDREN, action.payload))
                 }
             }
             ActionRegistry.Names.FILESYSTEM_TOGGLE_ITEM_SELECTED -> {
@@ -226,11 +226,11 @@ class FileSystemFeature(
                 val payload = action.payload?.let { json.decodeFromJsonElement<PathPayload>(it) } ?: return
                 findItemByPath(fileSystemState.rootItems, payload.path)?.let { dispatchLoadChildrenRecursive(it, 3, store) }
             }
-            ActionRegistry.Names.FILESYSTEM_INTERNAL_LOAD_CHILDREN -> {
+            ActionRegistry.Names.FILESYSTEM_LOAD_CHILDREN -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<PathPayload>(it) } ?: return
                 try {
                     val children = platformDependencies.listDirectory(payload.path)
-                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_INTERNAL_DIRECTORY_LOADED, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_DIRECTORY_LOADED, buildJsonObject {
                         put("parentPath", payload.path); put("children", Json.encodeToJsonElement(children))
                     }))
                 } catch (e: Exception) {
@@ -238,7 +238,7 @@ class FileSystemFeature(
                     store.dispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject { put("message", "Failed to read directory: ${e.message}") }))
                 }
             }
-            ActionRegistry.Names.FILESYSTEM_INTERNAL_DIRECTORY_LOADED -> {
+            ActionRegistry.Names.FILESYSTEM_DIRECTORY_LOADED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return
                 if (findItemByPath(fileSystemState.rootItems, payload.parentPath)?.isSelected == true) {
                     payload.children.forEach { child ->
@@ -425,7 +425,7 @@ class FileSystemFeature(
         val payload = action.payload
 
         when (action.name) {
-            ActionRegistry.Names.FILESYSTEM_INTERNAL_STAGE_SCOPED_READ -> {
+            ActionRegistry.Names.FILESYSTEM_STAGE_SCOPED_READ -> {
                 val decoded = payload?.let { json.decodeFromJsonElement<StageScopedReadPayload>(it) } ?: return currentFeatureState
                 val requestPayload = json.decodeFromJsonElement<RequestScopedReadUiPayload>(decoded.requestPayload)
                 val pendingRequest = PendingScopedRead(
@@ -436,10 +436,10 @@ class FileSystemFeature(
                 )
                 return currentFeatureState.copy(pendingScopedRead = pendingRequest)
             }
-            ActionRegistry.Names.FILESYSTEM_INTERNAL_FINALIZE_SCOPED_READ -> {
+            ActionRegistry.Names.FILESYSTEM_FINALIZE_SCOPED_READ -> {
                 return currentFeatureState.copy(pendingScopedRead = null)
             }
-            ActionRegistry.Names.FILESYSTEM_INTERNAL_DIRECTORY_LOADED -> {
+            ActionRegistry.Names.FILESYSTEM_DIRECTORY_LOADED -> {
                 val decoded = payload?.let { json.decodeFromJsonElement<DirectoryLoadedPayload>(it) } ?: return currentFeatureState
                 val newChildren = decoded.children.map { FileSystemItem(it.path, platformDependencies.getFileName(it.path), it.isDirectory) }
                 return if (currentFeatureState.currentPath == decoded.parentPath) currentFeatureState.copy(rootItems = newChildren, error = null)
@@ -479,7 +479,7 @@ class FileSystemFeature(
 
     private fun dispatchLoadChildrenRecursive(item: FileSystemItem, maxDepth: Int, store: Store) {
         if (maxDepth <= 0 || !item.isDirectory) return
-        if (item.children == null) store.dispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_INTERNAL_LOAD_CHILDREN, buildJsonObject { put("path", item.path) }))
+        if (item.children == null) store.dispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LOAD_CHILDREN, buildJsonObject { put("path", item.path) }))
         else item.children.forEach { dispatchLoadChildrenRecursive(it, maxDepth - 1, store) }
     }
 

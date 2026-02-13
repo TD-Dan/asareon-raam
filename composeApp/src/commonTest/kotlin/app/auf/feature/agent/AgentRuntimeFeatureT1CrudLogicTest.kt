@@ -79,7 +79,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
             agentAvatarCardIds = mapOf("a1" to mapOf("s-1" to "msg-1"))
         )
 
-        val action = Action(ActionRegistry.Names.AGENT_INTERNAL_CONFIRM_DELETE, buildJsonObject { put("agentId", "a1") })
+        val action = Action(ActionRegistry.Names.AGENT_CONFIRM_DELETE, buildJsonObject { put("agentId", "a1") })
         val newState = AgentCrudLogic.reduce(state, action, platform)
 
         assertNull(newState.agents["a1"])
