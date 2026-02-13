@@ -60,7 +60,7 @@ class KnowledgeGraphFeature(
     }
 
 
-    override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
+    override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val originator = action.originator ?: return
         val kgState = newState as? KnowledgeGraphState ?: return
         val prevKgState = previousState as? KnowledgeGraphState

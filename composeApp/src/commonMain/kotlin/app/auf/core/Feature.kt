@@ -24,9 +24,15 @@ interface Feature {
 
     fun reducer(state: FeatureState?, action: Action): FeatureState? = state
 
-    // Phase 2.2 will rename this to handleSideEffects. Keeping as onAction for now
-    // to avoid a codebase-wide rename in this phase.
-    fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {}
+    /**
+     * The impure phase where features perform I/O, dispatch follow-up actions, and interact
+     * with external systems. Called after the reducer has produced a new state.
+     *
+     * Named `handleSideEffects` (not `onAction`) because it truthfully describes what the
+     * method does — a developer unfamiliar with the system won't mistakenly call it directly,
+     * bypassing the Store pipeline (validation, authorization, reducer, audit logging).
+     */
+    fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {}
 
     fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {}
     fun init(store: Store) {}

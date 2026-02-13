@@ -106,7 +106,7 @@ open class Store(
 
     /**
      * Enqueues an action to be dispatched.
-     * This is the preferred method for actions triggered inside `onAction` to avoid re-entrancy issues.
+     * This is the preferred method for actions triggered inside `handleSideEffects` to avoid re-entrancy issues.
      */
     open fun deferredDispatch(originator: String, action: Action) {
         val stampedAction = action.copy(originator = originator)
@@ -331,7 +331,7 @@ open class Store(
                 _state.value = liftedState
             }
 
-            // --- STEP 5: SIDE EFFECTS (onAction) ---
+            // --- STEP 5: SIDE EFFECTS (handleSideEffects) ---
             // Delivery scope for side effects mirrors the routing decision above.
             if (descriptor.targeted || !descriptor.broadcast) {
                 // targeted or non-broadcast: side effects for owning feature only
@@ -339,18 +339,18 @@ open class Store(
                 if (targetFeature != null) {
                     val prevFeatureState = previousState.featureStates[targetFeature.identity.handle]
                     val newFeatureState = liftedState.featureStates[targetFeature.identity.handle]
-                    targetFeature.onAction(action, this, prevFeatureState, newFeatureState)
+                    targetFeature.handleSideEffects(action, this, prevFeatureState, newFeatureState)
                 }
             } else {
                 // broadcast: side effects for all features
                 features.forEach { feature ->
                     val prevFeatureState = previousState.featureStates[feature.identity.handle]
                     val newFeatureState = liftedState.featureStates[feature.identity.handle]
-                    feature.onAction(action, this, prevFeatureState, newFeatureState)
+                    feature.handleSideEffects(action, this, prevFeatureState, newFeatureState)
                 }
             }
         } catch (e: Exception) {
-            handleFeatureException(e, "reducer/onAction", "broadcast")
+            handleFeatureException(e, "reducer/handleSideEffects", "broadcast")
         }
     }
 

@@ -101,7 +101,7 @@ class FileSystemFeature(
         }
     }
 
-    override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
+    override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val originator = action.originator ?: return
         val fileSystemState = newState as? FileSystemState ?: return
         when (action.name) {

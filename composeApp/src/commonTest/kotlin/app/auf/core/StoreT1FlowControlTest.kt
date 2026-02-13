@@ -40,7 +40,7 @@ class StoreT1FlowControlTest {
         }
 
         // The onAction handler triggers subsequent dispatches based on the action name.
-        override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
+        override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
             when (action.name) {
                 "seq.A_DEFERRED_B" -> store.deferredDispatch(identity.handle, Action("seq.B"))
                 "seq.A_IMMEDIATE_B" -> store.dispatch(name, Action("seq.B")) // Test re-entrancy guard
@@ -143,7 +143,7 @@ class StoreT1FlowControlTest {
                     SequencingState(log = listOf("State from A"))
                 } else state
             }
-            override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
+            override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
                 when(action.name) {
                     "seq.A" -> store.deferredDispatch(identity.handle, Action("seq.B"))
                     "seq.B" -> {

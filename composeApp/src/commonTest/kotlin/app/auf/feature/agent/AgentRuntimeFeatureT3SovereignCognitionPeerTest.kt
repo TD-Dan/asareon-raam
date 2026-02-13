@@ -37,7 +37,7 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
         platformDependencies: FakePlatformDependencies,
         coroutineScope: CoroutineScope
     ) : GatewayFeature(platformDependencies, coroutineScope, emptyList<UniversalGatewayProvider>()) {
-        override fun onAction(action: Action, store: Store, previousState: app.auf.core.FeatureState?, newState: app.auf.core.FeatureState?) {
+        override fun handleSideEffects(action: Action, store: Store, previousState: app.auf.core.FeatureState?, newState: app.auf.core.FeatureState?) {
             if (action.name == ActionNames.GATEWAY_GENERATE_CONTENT) {
                 val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.content ?: return
                 val responsePayload = buildJsonObject {

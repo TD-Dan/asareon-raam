@@ -150,7 +150,7 @@ class CommandBotFeature(
     // Slice 3: onAction — core command processing + approval gate
     // ========================================================================
 
-    override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
+    override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         when (action.name) {
             // --- Track known agents via Proactive Broadcast ---
             ActionNames.AGENT_PUBLISH_AGENT_NAMES_UPDATED -> {

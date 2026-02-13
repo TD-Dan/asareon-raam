@@ -28,6 +28,13 @@ fun IdentityManagerView(store: Store) {
     val coreState = appState.featureStates["core"] as? CoreState
     var showAddDialog by remember { mutableStateOf(false) }
 
+    // Read user identities from the unified identity registry (parentHandle == "core")
+    val userIdentities = remember(appState.identityRegistry) {
+        appState.identityRegistry.values
+            .filter { it.parentHandle == "core" }
+            .sortedBy { it.registeredAt }
+    }
+
     if (showAddDialog) {
         AddIdentityDialog(
             onDismiss = { showAddDialog = false },
@@ -55,7 +62,7 @@ fun IdentityManagerView(store: Store) {
             )
         }
     ) { paddingValues ->
-        if (coreState == null || coreState.userIdentities.isEmpty()) {
+        if (userIdentities.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(paddingValues), Alignment.Center) {
                 Text("No user identities configured.")
             }
@@ -69,10 +76,10 @@ fun IdentityManagerView(store: Store) {
                     Text("Select your active identity for this session. This will be used to identify you in conversations with agents.", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
                 }
-                items(coreState.userIdentities, key = { it.handle }) { identity ->
+                items(userIdentities, key = { it.handle }) { identity ->
                     IdentityRow(
                         identity = identity,
-                        isActive = identity.handle == coreState.activeUserId,
+                        isActive = identity.handle == coreState?.activeUserId,
                         onSetActive = { store.dispatch("core.ui", Action(ActionNames.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) })) },
                         onDelete = { store.dispatch("core.ui", Action(ActionNames.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) })) }
                     )

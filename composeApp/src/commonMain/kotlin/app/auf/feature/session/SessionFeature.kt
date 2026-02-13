@@ -9,6 +9,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import app.auf.core.*
 import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.Serializable
@@ -73,7 +74,7 @@ class SessionFeature(
         }
     }
 
-    override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
+    override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val sessionState = newState as? SessionState ?: return
 
         // Helper to log errors for missing sessions
@@ -114,6 +115,19 @@ class SessionFeature(
             ActionNames.SESSION_CREATE, ActionNames.SESSION_CLONE -> {
                 sessionState.activeSessionId?.let { persistSession(it, sessionState, store) }
                 broadcastSessionNames(sessionState, store)
+                // Register identity for the newly created session
+                val prevSessions = (previousState as? SessionState)?.sessions ?: emptyMap()
+                val newSessionIds = sessionState.sessions.keys - prevSessions.keys
+                newSessionIds.forEach { id ->
+                    val session = sessionState.sessions[id] ?: return@forEach
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+                        buildJsonObject {
+                            put("localHandle", session.id)
+                            put("name", session.name)
+                        }
+                    ))
+                }
             }
 
             ActionNames.SESSION_UPDATE_CONFIG -> {
@@ -122,6 +136,25 @@ class SessionFeature(
 
                 persistSession(sessionId, sessionState, store)
                 broadcastSessionNames(sessionState, store)
+                // If name changed, re-register identity with updated name.
+                // REGISTER_IDENTITY deduplicates by handle, so re-registering with the same
+                // localHandle updates the name. (This relies on the localHandle being stable.)
+                val prevSession = (previousState as? SessionState)?.sessions?.get(sessionId)
+                val newSession = sessionState.sessions[sessionId]
+                if (prevSession != null && newSession != null && prevSession.name != newSession.name) {
+                    // Unregister old, re-register with new name
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
+                        buildJsonObject { put("handle", "session.$sessionId") }
+                    ))
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+                        buildJsonObject {
+                            put("localHandle", sessionId)
+                            put("name", newSession.name)
+                        }
+                    ))
+                }
             }
 
             ActionNames.SESSION_DELETE -> {
@@ -130,6 +163,13 @@ class SessionFeature(
                     store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_DELETE, buildJsonObject { put("subpath", "$sessionIdToDelete.json") }))
                     broadcastSessionNames(sessionState, store)
                     store.deferredDispatch(identity.handle, Action(ActionNames.SESSION_PUBLISH_SESSION_DELETED, buildJsonObject { put("sessionId", sessionIdToDelete) }))
+                    // Unregister session identity (cascades any children)
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
+                        buildJsonObject {
+                            put("handle", "session.$sessionIdToDelete")
+                        }
+                    ))
                 } else {
                     val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
                     platformDependencies.log(LogLevel.WARN, identity.handle, "SESSION_DELETE ignored: Session '$identifier' not found in state.")
@@ -143,6 +183,18 @@ class SessionFeature(
                     if (prevSessions[id]?.orderIndex != session.orderIndex) {
                         persistSession(id, sessionState, store)
                     }
+                }
+                // Register identities for newly loaded sessions
+                val newSessionIds = sessionState.sessions.keys - prevSessions.keys
+                newSessionIds.forEach { id ->
+                    val session = sessionState.sessions[id] ?: return@forEach
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+                        buildJsonObject {
+                            put("localHandle", session.id)
+                            put("name", session.name)
+                        }
+                    ))
                 }
             }
 
@@ -567,7 +619,7 @@ class SessionFeature(
                     messageId != null -> messageId
                     targetSenderId != null && targetTimestamp != null -> {
                         val result = MessageResolution.resolve(targetSession.ledger, targetSenderId, targetTimestamp, platformDependencies)
-                        result.entry?.id // null if not found; onAction handles the error feedback
+                        result.entry?.id // null if not found; handleSideEffects handles the error feedback
                     }
                     else -> null
                 }
@@ -595,7 +647,7 @@ class SessionFeature(
                 val result = MessageResolution.resolve(targetSession.ledger, decoded.senderId, decoded.timestamp, platformDependencies)
 
                 if (result.entry == null) {
-                    // Can't update state; onAction will detect unchanged ledger and post error
+                    // Can't update state; handleSideEffects will detect unchanged ledger and post error
                     return currentFeatureState
                 }
 
@@ -606,7 +658,7 @@ class SessionFeature(
                 currentFeatureState.copy(sessions = currentFeatureState.sessions + (sessionId to updatedSession))
             }
 
-            // --- LIST_SESSIONS is handled purely in onAction (side-effect only, no state change) ---
+            // --- LIST_SESSIONS is handled purely in handleSideEffects (side-effect only, no state change) ---
             ActionNames.SESSION_LIST_SESSIONS -> currentFeatureState
 
             ActionNames.SESSION_SET_ACTIVE_TAB -> {

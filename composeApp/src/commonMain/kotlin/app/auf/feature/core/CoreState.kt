@@ -48,10 +48,14 @@ data class CoreState(
     // AppState.identityRegistry after each reduce cycle for infrastructure-level access.
     val identityRegistry: Map<String, Identity> = emptyMap(),
 
-    // --- User Identity Management State (TRANSITIONAL) ---
-    // These fields are kept during Phase 2 for backward compatibility.
-    // Phase 2.2 will deprecate userIdentities in favor of identityRegistry
-    // filtered by parentHandle == "core".
+    // --- User Identity Management State (DEPRECATED — Phase 2.2) ---
+    // userIdentities is kept for backward compatibility during the migration period.
+    // New code should read from AppState.identityRegistry filtered by parentHandle == "core".
+    // Will be removed in Phase 4.
+    @Deprecated(
+        message = "Use AppState.identityRegistry filtered by parentHandle == \"core\" instead.",
+        replaceWith = ReplaceWith("AppState.identityRegistry")
+    )
     val userIdentities: List<Identity> = emptyList(),
     val activeUserId: String? = null,
 

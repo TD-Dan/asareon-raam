@@ -105,7 +105,7 @@ class CoreFeature(
         }
     }
 
-    override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
+    override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val latestCoreState = newState as? CoreState
         val prevCoreState = previousState as? CoreState
 
@@ -164,6 +164,10 @@ class CoreFeature(
             ActionNames.CORE_INTERNAL_IDENTITIES_LOADED -> {
                 if (latestCoreState != null) {
                     persistAndBroadcastIdentities(latestCoreState, store)
+                    // Broadcast identity registry update so all features get the unified notification
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+                    ))
                 }
             }
 
@@ -298,33 +302,87 @@ class CoreFeature(
             }
             ActionNames.CORE_INTERNAL_IDENTITIES_LOADED -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<IdentitiesLoadedPayload>(it) } ?: return coreState
+                val identities: List<Identity>
+                val activeId: String?
                 if (payload.identities.isEmpty()) {
                     val defaultUser = Identity(platformDependencies.generateUUID(), name = "DefaultUser", handle = "default-user", localHandle = "default-user")
-                    return coreState.copy(
-                        userIdentities = listOf(defaultUser),
-                        activeUserId = defaultUser.handle
-                    )
+                    identities = listOf(defaultUser)
+                    activeId = defaultUser.handle
                 } else {
-                    val activeId = if (payload.activeId in payload.identities.map { it.handle }) payload.activeId else payload.identities.first().handle
-                    return coreState.copy(
-                        userIdentities = payload.identities,
-                        activeUserId = activeId
-                    )
+                    identities = payload.identities
+                    activeId = if (payload.activeId in identities.map { it.handle }) payload.activeId else identities.first().handle
                 }
+
+                // Migrate loaded identities into the identity registry under parentHandle = "core".
+                // Each old Identity(id, name) becomes a proper registry entry with UUID, handle, etc.
+                val registryEntries = identities.associate { oldIdentity ->
+                    val localHandle = oldIdentity.localHandle.ifBlank {
+                        // Legacy identities may not have a proper localHandle — derive from name
+                        oldIdentity.name.lowercase().replace(Regex("[^a-z0-9-]"), "-").trimStart('-').ifEmpty { "user" }
+                    }
+                    val fullHandle = "core.$localHandle"
+                    val registryIdentity = Identity(
+                        uuid = oldIdentity.uuid ?: platformDependencies.generateUUID(),
+                        localHandle = localHandle,
+                        handle = fullHandle,
+                        name = oldIdentity.name,
+                        parentHandle = "core",
+                        registeredAt = oldIdentity.registeredAt.takeIf { it > 0 } ?: platformDependencies.currentTimeMillis()
+                    )
+                    fullHandle to registryIdentity
+                }
+
+                @Suppress("DEPRECATION")
+                return coreState.copy(
+                    userIdentities = identities,
+                    activeUserId = activeId,
+                    identityRegistry = coreState.identityRegistry + registryEntries
+                )
             }
             ActionNames.CORE_ADD_USER_IDENTITY -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<AddUserIdentityPayload>(it) } ?: return coreState
-                val newUser = Identity(platformDependencies.generateUUID(), localHandle = payload.name, handle=payload.name, name=payload.name)
-                return coreState.copy(userIdentities = coreState.userIdentities + newUser)
+                val localHandle = payload.name.lowercase().replace(Regex("[^a-z0-9-]"), "-").trimStart('-').ifEmpty { "user" }
+                val finalLocalHandle = deduplicateLocalHandle(localHandle, "core", coreState.identityRegistry)
+                val fullHandle = "core.$finalLocalHandle"
+                val uuid = platformDependencies.generateUUID()
+                val newUser = Identity(
+                    uuid = uuid,
+                    localHandle = finalLocalHandle,
+                    handle = fullHandle,
+                    name = payload.name,
+                    parentHandle = "core",
+                    registeredAt = platformDependencies.currentTimeMillis()
+                )
+                @Suppress("DEPRECATION")
+                return coreState.copy(
+                    userIdentities = coreState.userIdentities + newUser,
+                    identityRegistry = coreState.identityRegistry + (fullHandle to newUser)
+                )
             }
             ActionNames.CORE_REMOVE_USER_IDENTITY -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return coreState
+                @Suppress("DEPRECATION")
                 val updatedIdentities = coreState.userIdentities.filterNot { it.handle == payload.id }
                 val updatedActiveId = if (coreState.activeUserId == payload.id) updatedIdentities.firstOrNull()?.handle else coreState.activeUserId
-                return coreState.copy(userIdentities = updatedIdentities, activeUserId = updatedActiveId)
+                // Also remove from identity registry — find the entry by old handle or by core.* handle
+                val handleToRemove = coreState.identityRegistry.keys.find { it == payload.id || it == "core.${payload.id}" }
+                val updatedRegistry = if (handleToRemove != null) {
+                    // Cascade: remove identity and all descendants
+                    val prefix = "$handleToRemove."
+                    coreState.identityRegistry.filterKeys { key -> key != handleToRemove && !key.startsWith(prefix) }
+                } else {
+                    coreState.identityRegistry
+                }
+                @Suppress("DEPRECATION")
+                return coreState.copy(
+                    userIdentities = updatedIdentities,
+                    activeUserId = updatedActiveId,
+                    identityRegistry = updatedRegistry
+                )
             }
             ActionNames.CORE_SET_ACTIVE_USER_IDENTITY -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return coreState
+                @Suppress("DEPRECATION")
                 if (coreState.userIdentities.any { it.handle == payload.id }) {
                     return coreState.copy(activeUserId = payload.id)
                 }

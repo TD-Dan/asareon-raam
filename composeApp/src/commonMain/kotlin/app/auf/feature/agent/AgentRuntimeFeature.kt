@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
 import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.core.generated.ExposedActions
 import app.auf.util.*
 import kotlinx.coroutines.CoroutineScope
@@ -87,9 +88,9 @@ class AgentRuntimeFeature(
         return AgentRuntimeReducer.reduce(currentFeatureState, action, platformDependencies)
     }
 
-    override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
+    override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val agentState = newState as? AgentRuntimeState ?: run {
-            platformDependencies.log(LogLevel.ERROR, identity.handle, "onAction: newState is not AgentRuntimeState for action '${action.name}'. Feature state corrupted?")
+            platformDependencies.log(LogLevel.ERROR, identity.handle, "handleSideEffects: newState is not AgentRuntimeState for action '${action.name}'. Feature state corrupted?")
             return
         }
         when (action.name) {
@@ -127,6 +128,14 @@ class AgentRuntimeFeature(
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
                 AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE)
                 broadcastAgentNames(agentState, store)
+                // Register agent identity
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+                    buildJsonObject {
+                        put("localHandle", agent.id)
+                        put("name", agent.name)
+                    }
+                ))
             }
             ActionNames.AGENT_INTERNAL_RESOURCE_LOADED -> {
                 // No side effects needed, pure reducer handles state merge
@@ -141,6 +150,14 @@ class AgentRuntimeFeature(
                 saveAgentConfig(agentToSave, store)
                 broadcastAgentNames(agentState, store)
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+                // Register agent identity
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+                    buildJsonObject {
+                        put("localHandle", agentToSave.id)
+                        put("name", agentToSave.name)
+                    }
+                ))
             }
             ActionNames.AGENT_CLONE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
@@ -184,6 +201,20 @@ class AgentRuntimeFeature(
                 broadcastAgentNames(agentState, store)
                 AgentAvatarLogic.updateAgentAvatars(agentId, store)
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+                // If agent name changed, re-register identity with updated name
+                if (oldAgent != null && oldAgent.name != newAgent.name) {
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
+                        buildJsonObject { put("handle", "agent.$agentId") }
+                    ))
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+                        buildJsonObject {
+                            put("localHandle", agentId)
+                            put("name", newAgent.name)
+                        }
+                    ))
+                }
             }
             ActionNames.AGENT_INTERNAL_NVRAM_LOADED -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
@@ -217,6 +248,11 @@ class AgentRuntimeFeature(
                 store.deferredDispatch(identity.handle, Action(ActionNames.AGENT_INTERNAL_CONFIRM_DELETE, buildJsonObject { put("agentId", agentId) }))
                 store.deferredDispatch(identity.handle, Action(ActionNames.AGENT_PUBLISH_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
                 broadcastAgentNames(agentState, store)
+                // Unregister agent identity (cascades any sub-identities)
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
+                    buildJsonObject { put("handle", "agent.$agentId") }
+                ))
             }
 
             // --- Resource CRUD Side Effects ---

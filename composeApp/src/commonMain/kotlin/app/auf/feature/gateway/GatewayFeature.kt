@@ -26,7 +26,7 @@ open class GatewayFeature(
     // REFACTOR: A map to track active generation jobs. Now mutated ONLY via onAction.
     private val activeRequests = mutableMapOf<String, Job>()
 
-    override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
+    override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val gatewayState = newState as? GatewayState ?: return
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> {

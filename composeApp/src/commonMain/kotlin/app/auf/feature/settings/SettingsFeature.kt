@@ -51,7 +51,7 @@ class SettingsFeature(
         }
     }
 
-    override fun onAction(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
+    override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         when (action.name) {
             ActionNames.SYSTEM_PUBLISH_INITIALIZING -> store.deferredDispatch(identity.handle, Action(ActionNames.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", settingsFileName) }))
             ActionNames.SETTINGS_UI_INTERNAL_INPUT_CHANGED -> {
