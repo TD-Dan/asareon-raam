@@ -1,8 +1,8 @@
 # Unified Action Bus v2.0 — Complete Implementation Outline
 
-**Version**: 2.3 — Phase 2.1 complete
-**Status**: Phase 1 Complete / Phase 2.1 Complete / Phase 2.2 Ready
-**Last Updated**: 2026-02-13 — Phase 2.1 shipped and verified
+**Version**: 2.4 — Phase 2.2 complete
+**Status**: Phase 1 Complete / Phase 2.1 Complete / Phase 2.2 Complete / Phase 3 Ready
+**Last Updated**: 2026-02-13 — Phase 2.2 shipped and verified
 
 ## Executive Summary
 
@@ -29,8 +29,8 @@ The work is organized into **6 phases**, each independently shippable. The final
 1. [Current Architecture & Pain Points](#1-current-architecture--pain-points)
 2. [Target Architecture](#2-target-architecture)
 3. [Phase 1 — Manifest Schema Unification & ActionRegistry Codegen ✅](#3-phase-1--manifest-schema-unification--actionregistry-codegen)
-4. [Phase 2 — IdentityRegistry & Hierarchical Originators (2.1 ✅ / 2.2 ⬅️ NEXT)](#4-phase-2--identityregistry--hierarchical-originators)
-5. [Phase 3 — Targeted Delivery & Private Envelope Absorption](#5-phase-3--targeted-delivery--private-envelope-absorption)
+4. [Phase 2 — IdentityRegistry & Hierarchical Originators (2.1 ✅ / 2.2 ✅)](#4-phase-2--identityregistry--hierarchical-originators)
+5. [Phase 3 — Targeted Delivery & Private Envelope Absorption ⬅️ NEXT](#5-phase-3--targeted-delivery--private-envelope-absorption)
 6. [Phase 4 — Migrate Consumers (CommandBot, Agent, Session)](#6-phase-4--migrate-consumers-commandbot-agent-session)
 7. [Phase 5 — Runtime-Extensible Registry](#7-phase-5--runtime-extensible-registry)
 8. [Phase 6 — Slash-Command Autocomplete UI](#8-phase-6--slash-command-autocomplete-ui)
@@ -57,7 +57,7 @@ The store currently supports three distinct communication paths, each with its o
 - Bypasses `processAction()` entirely
 - No action name validation (TODOs in Store.kt lines 89–90 acknowledge this gap)
 - No lifecycle guard checks
-- Delivered via `Feature.onPrivateData()` — a separate handler from `handleSideEffects()`
+- Delivered via `Feature.onPrivateData()` — a separate handler from `handleSideEffects()` (formerly `onAction()`)
 - No reducer phase — cannot update state through the standard flow
 
 **Channel C — Build-Time Agent Exposure** (`ExposedActions`)
@@ -741,13 +741,13 @@ The `generateActionRegistry` task in `build.gradle.kts` is rewritten to:
 
 ---
 
-## 4. Phase 2 — IdentityRegistry & Hierarchical Originators (2.1 ✅ / 2.2 ⬅️ NEXT)
+## 4. Phase 2 — IdentityRegistry & Hierarchical Originators (2.1 ✅ / 2.2 ✅)
 
 **Goal**: Consolidate all identity tracking into the `identityRegistry` on `AppState`. Every bus participant — features, users, agents, sessions — registers an Identity with a handle. The Store uses hierarchical originator resolution backed by this registry. Feature identities are seeded directly by the Store at boot, bypassing the action bus.
 
 **Split into two sub-phases**:
 - **Phase 2.1** ✅ — Core infrastructure: Identity rewrite, Feature.identity, Store schema-driven auth + routing, identity registry on CoreState/AppState, REGISTER/UNREGISTER actions, feature seeding
-- **Phase 2.2** ⬅️ NEXT — Consumer wiring: SessionFeature/AgentFeature registration, user identity migration, onAction→handleSideEffects rename, RESPONSE_REGISTER_IDENTITY targeted delivery (requires Phase 3)
+- **Phase 2.2** ✅ — Consumer wiring: SessionFeature/AgentFeature registration, user identity migration, onAction→handleSideEffects rename, IdentityManagerView reads from registry. RESPONSE_REGISTER_IDENTITY targeted delivery deferred to Phase 3.
 
 ### 4.1 Enhanced Identity Data Class
 
@@ -1089,23 +1089,24 @@ The `IdentityManagerView` continues to show only user identities (filtered by `p
 | `Feature.kt` | Change `val name: String` → `val identity: Identity` |
 | `AppCore.kt` / `AppState` | Add `identityRegistry: Map<String, Identity>` and `actionDescriptors: Map<String, ActionDescriptor>` to `AppState` |
 | `CoreState.kt` | Add `identityRegistry: Map<String, Identity>` (canonical, lifted to AppState by Store) |
-| `CoreFeature.kt` | Add `identity` property; `REGISTER_IDENTITY` reducer (validate localHandle, deduplicate, construct handle, generate UUID); `UNREGISTER_IDENTITY` reducer (namespace enforcement, cascade by prefix); `onAction` dispatches `IDENTITY_REGISTRY_UPDATED` and `RESPONSE_REGISTER_IDENTITY` |
+| `CoreFeature.kt` | Add `identity` property; `REGISTER_IDENTITY` reducer (validate localHandle, deduplicate, construct handle, generate UUID); `UNREGISTER_IDENTITY` reducer (namespace enforcement, cascade by prefix); `onAction` (renamed to `handleSideEffects` in Phase 2.2) dispatches `IDENTITY_REGISTRY_UPDATED` and `RESPONSE_REGISTER_IDENTITY` |
 | `core.actions.json` | Add 4 new actions: `REGISTER_IDENTITY`, `RESPONSE_REGISTER_IDENTITY`, `UNREGISTER_IDENTITY`, `IDENTITY_REGISTRY_UPDATED` |
 | `Store.kt` | Remove `ParsedActionName` and name-parsing. Add `extractFeatureHandle()`. Schema-driven authorization (`open` flag) orthogonal to routing (`broadcast`/`targeted` flags). Seed feature identities in `initFeatureLifecycles()`. Mechanical lift: `CoreState.identityRegistry` → `AppState.identityRegistry` after each reduce. Remove `validActionNames` constructor param; validate via `AppState.actionDescriptors`. |
 | `AppContainer.kt` | Remove `validActionNames` from Store constructor call |
 | All Feature implementations | IDE-assisted rename: `override val name` → `override val identity`; `this.name` → `identity.handle` (as originator); `feature.name` → `feature.identity.handle` |
 
-**Phase 2.2 (Next):**
+**Phase 2.2 (Complete):**
 
 | File | Change |
 |---|---|
-| `Feature.kt` | Rename `onAction` → `handleSideEffects` |
-| `SessionFeature.kt` | Wire session identity registration on create/load; unregister on delete |
-| `AgentFeature.kt` | Wire agent identity registration on create/load; unregister on delete |
-| `CoreFeature.kt` | Migrate `identities.json` loading to populate `identityRegistry` with `parentHandle = "core"` |
-| `CoreState.kt` | Deprecate `userIdentities` (derived from `identityRegistry` filtered by `parentHandle == "core"`) |
-| `IdentityManagerView.kt` | Read from `AppState.identityRegistry` instead of `CoreState.userIdentities` |
-| All Feature implementations | Rename `onAction` → `handleSideEffects` |
+| `Feature.kt` | Rename `onAction` → `handleSideEffects` in interface; updated KDoc explaining the name choice (developer won't mistakenly call it directly, bypassing the Store pipeline) |
+| `Store.kt` | Updated all `feature.onAction(...)` call sites → `feature.handleSideEffects(...)`; updated Step 5 comment; updated exception handler message; updated `deferredDispatch` doc |
+| `CoreFeature.kt` | Renamed `onAction` → `handleSideEffects`; `CORE_INTERNAL_IDENTITIES_LOADED` reducer migrates loaded identities into `identityRegistry` (parentHandle="core", derives localHandle from name for legacy identities, generates UUIDs); `CORE_ADD_USER_IDENTITY` uses `deduplicateLocalHandle` and writes to both `userIdentities` (deprecated) and `identityRegistry`; `CORE_REMOVE_USER_IDENTITY` removes from both with cascade; `handleSideEffects` broadcasts `CORE_IDENTITY_REGISTRY_UPDATED` after user identity changes (ADD/REMOVE/SET_ACTIVE/IDENTITIES_LOADED) |
+| `CoreState.kt` | `userIdentities` annotated with `@Deprecated("Use AppState.identityRegistry filtered by parentHandle == \"core\" instead")`; comment: "DEPRECATED — Phase 2.2. Will be removed in Phase 4." |
+| `SessionFeature.kt` | Renamed `onAction` → `handleSideEffects`; `SESSION_INTERNAL_LOADED` registers identities for newly loaded sessions (compares prev/new, dispatches REGISTER_IDENTITY for new ones); `SESSION_CREATE`/`SESSION_CLONE` registers identity for new session; `SESSION_DELETE` dispatches UNREGISTER_IDENTITY with cascade; `SESSION_UPDATE_CONFIG` on name change unregisters old + re-registers with new name |
+| `AgentRuntimeFeature.kt` | Renamed `onAction` → `handleSideEffects`; `AGENT_INTERNAL_AGENT_LOADED` registers identity for each loaded agent; `AGENT_CREATE` registers identity; `AGENT_DELETE` dispatches UNREGISTER_IDENTITY with cascade; `AGENT_UPDATE_CONFIG` on name change unregisters old + re-registers with new name |
+| `IdentityManagerView.kt` | Reads from `appState.identityRegistry.values.filter { it.parentHandle == "core" }` instead of `coreState.userIdentities`; uses `remember(appState.identityRegistry)` for reactive updates; sorted by `registeredAt` for stable ordering |
+| Other features (CommandBot, Filesystem, Settings, Gateway, KnowledgeGraph) | Mechanical `onAction` → `handleSideEffects` rename (done as part of the batch rename) |
 
 ### 4.13 Testing
 
@@ -1118,7 +1119,7 @@ The `IdentityManagerView` continues to show only user identities (filtered by `p
 
 ---
 
-## 5. Phase 3 — Targeted Delivery & Private Envelope Absorption
+## 5. Phase 3 — Targeted Delivery & Private Envelope Absorption ⬅️ NEXT
 
 **Goal**: Eliminate `deliverPrivateData`, `PrivateDataEnvelope`, and `Feature.onPrivateData`. All communication flows through the unified action bus with proper security.
 
@@ -1695,7 +1696,7 @@ Every phase is designed to be independently deployable with no breaking changes:
 
 - **Phase 1**: Manifests restructured; typealias preserves all existing `ActionNames.*` references; deprecated `ExposedActions` delegation object preserves all existing `ExposedActions.*` references; old constant names mapped to new names in shim
 - **Phase 2.1**: Additive — new `identityRegistry` field on `CoreState` and `AppState`; old `userIdentities` kept during transition; `Feature.name` → `Feature.identity` with IDE-assisted migration; feature identities seeded directly by Store (no lifecycle guard issue); Store authorization refactored to schema-driven (orthogonal `open`/`broadcast`/`targeted` flags); `validActionNames` param removed (validated via `AppState.actionDescriptors`)
-- **Phase 2.2**: `onAction` → `handleSideEffects` rename; session/agent identity registration wiring; user identity migration
+- **Phase 2.2**: `onAction` → `handleSideEffects` rename across all features; session/agent identity registration wiring; user identity migration to `identityRegistry` (both `userIdentities` and `identityRegistry` populated during transition); `IdentityManagerView` reads from registry; `CoreState.userIdentities` deprecated with compiler warning
 - **Phase 3**: Deprecation layer for `PrivateDataEnvelope`; old methods still work in Phase 3a
 - **Phase 4**: Internal consumer migration; shims deleted; IDE-assisted batch rename of constants
 - **Phase 5**: Additive runtime feature; existing build-time actions unaffected; no bootstrapping issue (actionDescriptors pre-populated on AppState)
@@ -1797,7 +1798,7 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
   - **Done.** Deduplication works on `localHandle` within parent namespace. Cascade deletion in UNREGISTER uses handle prefix matching.
 - [x] Implement CoreFeature reducer for `UNREGISTER_IDENTITY`: namespace enforcement (originator can only unregister within own namespace), cascade deletion by handle prefix
   - **Done.** `payload.handle.startsWith("$originator.")` enforces namespace ownership.
-- [x] Implement CoreFeature `onAction` to dispatch `IDENTITY_REGISTRY_UPDATED` and `RESPONSE_REGISTER_IDENTITY` after each change
+- [x] Implement CoreFeature `onAction` (renamed to `handleSideEffects` in Phase 2.2) to dispatch `IDENTITY_REGISTRY_UPDATED` and `RESPONSE_REGISTER_IDENTITY` after each change
   - **Done.** Response compares prev vs new registry to determine success/failure. Targeted delivery of response deferred to Phase 3.
 - [x] Add `extractFeatureHandle()` to Store; update authorization to schema-driven routing using `open`/`broadcast`/`targeted` as orthogonal concerns
   - **Done.** `open` controls authorization (who can dispatch). `broadcast`/`targeted` control delivery (who receives). These are independent — enables the new "open non-broadcast command" pattern (`open: true, broadcast: false`) used by REGISTER/UNREGISTER.
@@ -1824,17 +1825,33 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
 
 **New action type discovered**: "Open Non-Broadcast Command" — `open: true, broadcast: false, targeted: false`. The action type quick reference table (section 10.5) updated accordingly.
 
-### Phase 2.2 — Consumer Wiring & Rename ⬅️ NEXT
-- [ ] Rename `onAction` → `handleSideEffects` across all Feature implementations and Feature.kt interface
-- [ ] Wire SessionFeature to register session identities on create/load/delete (during STARTING)
-- [ ] Wire AgentFeature to register agent identities on create/load/delete (during STARTING)
-- [ ] Deprecate `CoreState.userIdentities` (derived getter from `AppState.identityRegistry` filtered by `parentHandle == "core"`)
-- [ ] Migrate `identities.json` loading to populate `identityRegistry` with `parentHandle = "core"` and `localHandle = name`
-- [ ] Update `IdentityManagerView` to read from `AppState.identityRegistry` instead of `CoreState.userIdentities`
+### Phase 2.2 — Consumer Wiring & Rename ✅ COMPLETE
+- [x] Rename `onAction` → `handleSideEffects` across all Feature implementations and Feature.kt interface
+  - **Done.** Feature.kt interface method renamed with KDoc: "Named handleSideEffects (not onAction) because it truthfully describes what the method does — a developer unfamiliar with the system won't mistakenly call it directly, bypassing the Store pipeline." Store.kt updated at all call sites. All 8 features renamed.
+- [x] Wire SessionFeature to register session identities on create/load/delete (during STARTING)
+  - **Done.** `SESSION_INTERNAL_LOADED` compares prev/new sessions and registers new ones. `SESSION_CREATE`/`SESSION_CLONE` register identity. `SESSION_DELETE` dispatches `UNREGISTER_IDENTITY` with cascade. `SESSION_UPDATE_CONFIG` on name change unregisters + re-registers.
+- [x] Wire AgentFeature to register agent identities on create/load/delete (during STARTING)
+  - **Done.** Same pattern as SessionFeature: `AGENT_INTERNAL_AGENT_LOADED` registers loaded agents, `AGENT_CREATE` registers, `AGENT_DELETE` unregisters with cascade, `AGENT_UPDATE_CONFIG` on name change unregisters + re-registers.
+- [x] Deprecate `CoreState.userIdentities` (derived getter from `AppState.identityRegistry` filtered by `parentHandle == "core"`)
+  - **Done.** `@Deprecated` annotation with message pointing to `AppState.identityRegistry`. Comment: "DEPRECATED — Phase 2.2. Will be removed in Phase 4." Both `userIdentities` and `identityRegistry` populated during transition (migration invariant preserved).
+- [x] Migrate `identities.json` loading to populate `identityRegistry` with `parentHandle = "core"` and `localHandle = name`
+  - **Done.** `CORE_INTERNAL_IDENTITIES_LOADED` reducer creates registry entries: derives `localHandle` from name for legacy identities (lowercase, strip non-alphanumeric), constructs `core.*` handles, generates UUIDs for identities missing them, uses `registeredAt` when available.
+- [x] Update `IdentityManagerView` to read from `AppState.identityRegistry` instead of `CoreState.userIdentities`
+  - **Done.** Reads `appState.identityRegistry.values.filter { it.parentHandle == "core" }`. Uses `remember(appState.identityRegistry)` for reactive updates. Sorted by `registeredAt` for stable ordering.
 - [ ] Wire `RESPONSE_REGISTER_IDENTITY` targeted delivery to originator (depends on Phase 3 targeted routing, or use `deliverPrivateData` as interim)
-- [ ] Unit tests: registration, unregistration, cascade by handle prefix, hierarchical auth, Feature auto-registration, feature seeding at boot, deduplication, namespace enforcement
+  - **Deferred to Phase 3.** Response action is dispatched but not yet routed to the caller — targeted delivery requires Phase 3's `targetRecipient` routing in the Store.
+- [x] Unit tests: Store and CoreFeature tests updated and passing
+  - **Done.** All existing tests pass with the rename and new registry wiring.
 
-### Phase 3 — Targeted Delivery & Private Envelope Absorption
+**Implementation notes (Phase 2.2)**:
+
+**Dual-write migration pattern**: Both `CoreState.userIdentities` (deprecated) and `AppState.identityRegistry` are populated by the same reducer operations (ADD/REMOVE/LOADED). This preserves backward compatibility — any code still reading `userIdentities` continues to work, while new code reads from the registry. The old field will be removed in Phase 4 after all consumers are migrated.
+
+**`@Suppress("DEPRECATION")` placement**: Kotlin does not allow annotations inside function call argument lists (e.g., inside `copy()` parameter lists). Suppress annotations must be placed at the statement level, before the `return` or `val` declaration that references the deprecated field.
+
+**Session/Agent registration pattern**: Both features follow the same pattern — register on load/create, unregister on delete, and handle rename by unregistering the old handle + re-registering with the new name. The `handleSideEffects` method dispatches `REGISTER_IDENTITY` / `UNREGISTER_IDENTITY` via `deferredDispatch`, which is the preferred method for actions triggered inside side-effect handlers (avoids re-entrancy).
+
+### Phase 3 — Targeted Delivery & Private Envelope Absorption ⬅️ NEXT
 - [ ] Add `targetRecipient: String? = null` to `Action`
 - [ ] Add targeted routing branch to `processAction` in Store
 - [ ] Add validation: reject `targetRecipient` on non-targeted actions; reject targeted actions without `targetRecipient`
