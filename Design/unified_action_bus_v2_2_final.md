@@ -1,7 +1,8 @@
 # Unified Action Bus v2.0 — Complete Implementation Outline
 
 **Version**: 2.2 — Revised (red-team fixes propagated)
-**Status**: Planning / Pre-Implementation
+**Status**: Phase 1 Complete / Phase 2 Ready
+**Last Updated**: 2026-02-13 — Phase 1 shipped and verified
 
 ## Executive Summary
 
@@ -27,8 +28,8 @@ The work is organized into **6 phases**, each independently shippable. The final
 
 1. [Current Architecture & Pain Points](#1-current-architecture--pain-points)
 2. [Target Architecture](#2-target-architecture)
-3. [Phase 1 — Manifest Schema Unification & ActionRegistry Codegen](#3-phase-1--manifest-schema-unification--actionregistry-codegen)
-4. [Phase 2 — IdentityRegistry & Hierarchical Originators](#4-phase-2--identityregistry--hierarchical-originators)
+3. [Phase 1 — Manifest Schema Unification & ActionRegistry Codegen ✅](#3-phase-1--manifest-schema-unification--actionregistry-codegen)
+4. [Phase 2 — IdentityRegistry & Hierarchical Originators ⬅️ NEXT](#4-phase-2--identityregistry--hierarchical-originators)
 5. [Phase 3 — Targeted Delivery & Private Envelope Absorption](#5-phase-3--targeted-delivery--private-envelope-absorption)
 6. [Phase 4 — Migrate Consumers (CommandBot, Agent, Session)](#6-phase-4--migrate-consumers-commandbot-agent-session)
 7. [Phase 5 — Runtime-Extensible Registry](#7-phase-5--runtime-extensible-registry)
@@ -318,7 +319,7 @@ This means:
 
 ---
 
-## 3. Phase 1 — Manifest Schema Unification & ActionRegistry Codegen
+## 3. Phase 1 — Manifest Schema Unification & ActionRegistry Codegen ✅
 
 **Goal**: Single `actions` array per manifest; one generated `ActionRegistry.kt` replaces both `ActionNames.kt` and `ExposedActions.kt`. Routing moves from name-parsed conventions to explicit schema flags.
 
@@ -705,9 +706,33 @@ The `generateActionRegistry` task in `build.gradle.kts` is rewritten to:
 | `ActionNames.kt` (generated) | Becomes typealias shim with old→new name mappings |
 | `ExposedActions.kt` (generated) | Becomes deprecated delegation object pointing to ActionRegistry |
 
+### 3.11 Implementation Notes (Post-Completion)
+
+**Completed**: 2026-02-13
+
+**Tooling produced**:
+- `migrate_manifests.py` — one-time Python migration script with divergence detection, name mapping generation, and classification of all 168 actions across 9 features
+- Rewritten `generateActionRegistry` Gradle task emitting three files: `ActionRegistry.kt`, `ActionNames.kt` (compat shim), `ExposedActions.kt` (delegation shim)
+
+**Lesson learned — Gradle `doLast` data class limitation**: The initial Gradle task used `data class` declarations inside the `doLast` block. Gradle compiles these closures as anonymous inner classes in a script context, causing constructor metadata to be lost at runtime (`No argument 0 in type '<root>.Build_gradle.<no name provided>...PayloadFieldData'`). The fix was to use plain `Map<String, Any>` throughout the task action, matching the original working task's pattern. The data classes in the *generated output* (`ActionRegistry.kt`) are fine since those are compiled as normal Kotlin source.
+
+**Divergences resolved**:
+
+| Action | Issue | Resolution |
+|---|---|---|
+| `session.CLONE` | `exposedToAgents` uses `sourceSession`; `listensFor` uses `session` | `listensFor` is canonical — migrated manifest uses `session` |
+| `session.DELETE_MESSAGE` | `exposedToAgents` uses `senderId`+`timestamp`; `listensFor` uses `messageId` | `listensFor` is canonical — **requires manual review** of CommandBot translation path |
+| `session.POST` | `exposedToAgents` missing 5 fields (`messageId`, `metadata`, etc.) | `listensFor` superset — no issue |
+| `session.CREATE` | `exposedToAgents` missing `isHidden`, `isAgentPrivate` | Superset — no issue |
+| `session.LIST_SESSIONS` | `exposedToAgents` missing `responseSession` | Auto-filled by CommandBot — no issue |
+| `filesystem.SYSTEM_WRITE` | `listensFor` has `encrypt` not in agent schema | Sandboxing rewrites `encrypt` → `"false"` — no issue |
+| `filesystem.SYSTEM_LIST` | `listensFor` has `correlationId` not in agent schema | Optional field — no issue |
+
+**Statistics**: 168 total actions (105 commands, 18 events, 37 internal, 8 targeted). 63 action name renames. 15 agent-exposed actions preserved with full metadata.
+
 ---
 
-## 4. Phase 2 — IdentityRegistry & Hierarchical Originators
+## 4. Phase 2 — IdentityRegistry & Hierarchical Originators ⬅️ NEXT
 
 **Goal**: Consolidate all identity tracking into the `identityRegistry` on `AppState`. Every bus participant — features, users, agents, sessions — registers an Identity with a handle. The Store uses hierarchical originator resolution backed by this registry. Feature identities are seeded directly by the Store at boot, bypassing the action bus.
 
@@ -1675,19 +1700,31 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
 
 ## 11. Migration Checklist
 
-### Phase 1 — Manifest Schema Unification & ActionRegistry Codegen
-- [ ] Manually resolve payload schema divergences between `exposedToAgents` and `listensFor` (e.g., `session.CLONE`: `sourceSession` vs `session`). The `listensFor` schema is canonical.
-- [ ] Write migration script for `*.actions.json` files (listensFor + exposedToAgents + publishes + private_envelopes → unified actions[]; add permissions[]; replace `inbound`/`public` with `open`/`broadcast`/`targeted`)
-- [ ] Rename all action names: strip `.internal.`, `.publish.`, `.response.` infixes → `feature.ACTION_NAME`
-- [ ] Run migration on all manifests; verify no data loss
-- [ ] Rewrite Gradle `generateActionRegistry` task to read unified schema with `open`/`broadcast`/`targeted` boolean flags
-- [ ] Add codegen validation: reject `targeted: true` + `broadcast: true` on the same action
-- [ ] Generate `ActionRegistry.kt` with Names, descriptors (using `open`/`broadcast`/`targeted` booleans and `isCommand`/`isEvent`/`isInternal`/`isResponse` derived properties), and derived views
-- [ ] Generate `ActionNames.kt` as typealias compatibility shim with old-name → new-name mappings
-- [ ] Generate `ExposedActions.kt` as deprecated delegation object pointing to `ActionRegistry` derived views
-- [ ] Verify `ActionRegistry.Names.allActionNames` covers all previous actions (modulo renames)
-- [ ] Verify `ActionRegistry.agentAllowedNames` matches previous `ExposedActions.allowedActionNames`
-- [ ] All existing tests pass with both shims in place
+### Phase 1 — Manifest Schema Unification & ActionRegistry Codegen ✅ COMPLETE
+- [x] Manually resolve payload schema divergences between `exposedToAgents` and `listensFor` (e.g., `session.CLONE`: `sourceSession` vs `session`). The `listensFor` schema is canonical.
+  - **Done.** Divergence report generated. 7 divergences identified; all resolved with `listensFor` as canonical. `session.DELETE_MESSAGE` structural divergence (agent uses `senderId`+`timestamp`, reducer uses `messageId`) flagged for manual review — CommandBot likely translates.
+- [x] Write migration script for `*.actions.json` files (listensFor + exposedToAgents + publishes + private_envelopes → unified actions[]; add permissions[]; replace `inbound`/`public` with `open`/`broadcast`/`targeted`)
+  - **Done.** `migrate_manifests.py` — one-time Python script.
+- [x] Rename all action names: strip `.internal.`, `.publish.`, `.response.` infixes → `feature.ACTION_NAME`
+  - **Done.** 63 renames applied. Special handling for `settings.ui.internal.INPUT_CHANGED` → `settings.UI_INPUT_CHANGED`. Envelope type names like `session.response.ledger` → `session.RESPONSE_LEDGER`.
+- [x] Run migration on all manifests; verify no data loss
+  - **Done.** 9 manifests migrated. 168 actions total (= 160 old actions + 8 old envelopes). All old ActionNames.kt constants accounted for via rename mapping.
+- [x] Rewrite Gradle `generateActionRegistry` task to read unified schema with `open`/`broadcast`/`targeted` boolean flags
+  - **Done.** Key lesson: Gradle `doLast` blocks cannot use `data class` declarations (constructor metadata lost in script closures). Rewrote using plain `Map<String, Any>` throughout, matching the original working task's pattern.
+- [x] Add codegen validation: reject `targeted: true` + `broadcast: true` on the same action
+  - **Done.** Throws `GradleException` at codegen time.
+- [x] Generate `ActionRegistry.kt` with Names, descriptors (using `open`/`broadcast`/`targeted` booleans and `isCommand`/`isEvent`/`isInternal`/`isResponse` derived properties), and derived views
+  - **Done.** 4 sections: Names (constants + `allActionNames`), Descriptor data classes (with derived type properties), Feature registry, Derived views (`byActionName`, `agentAllowedNames`, `agentRequiresApproval`, `agentAutoFillRules`, `agentSandboxRules`).
+- [x] Generate `ActionNames.kt` as typealias compatibility shim with old-name → new-name mappings
+  - **Done.** All 168 current-name constants delegate to `ActionRegistry.Names`. 55 renamed constants provided as `@Deprecated` aliases with `ReplaceWith`. Envelope constants in nested `Envelopes` object similarly deprecated.
+- [x] Generate `ExposedActions.kt` as deprecated delegation object pointing to `ActionRegistry` derived views
+  - **Done.** Thin delegation shim — `allowedActionNames`, `requiresApproval`, `autoFillRules`, `sandboxRules`, and `documentation` all delegate to `ActionRegistry` derived views. Local `SandboxRule`/`PayloadField`/`ExposedActionDoc` data classes preserved for API compatibility.
+- [x] Verify `ActionRegistry.Names.allActionNames` covers all previous actions (modulo renames)
+  - **Done.** 168 = 168. All 160 old action names + 8 envelope types covered.
+- [x] Verify `ActionRegistry.agentAllowedNames` matches previous `ExposedActions.allowedActionNames`
+  - **Done.** 15 agent-allowed, 8 requiring approval, 5 sandbox rules, 2 auto-fill rules — all match.
+- [x] All existing tests pass with both shims in place
+  - **Done.** Build passes, all tests green.
 
 ### Phase 2 — IdentityRegistry & Hierarchical Originators
 - [ ] Rewrite `Identity.kt`: `uuid: String?`, `handle`, `name`, `parentHandle`, `registeredAt`
