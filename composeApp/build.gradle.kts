@@ -780,7 +780,7 @@ kotlin {
         }
         named("jvmTest") {
             kotlin.exclude(
-                "**"
+          //      "**"
             )
         }
     }

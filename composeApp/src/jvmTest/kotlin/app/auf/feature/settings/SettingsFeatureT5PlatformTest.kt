@@ -51,8 +51,8 @@ class SettingsFeatureT5PlatformTest {
         // --- SCOPE 1: Save the setting ---
         run {
             val features = listOf(CoreFeature(platform), SettingsFeature(platform), FileSystemFeature(platform))
-            val store = Store(AppState(), features, platform, ActionRegistry.Names.allActionNames)
-            features.forEach { it.init(store) }
+            val store = Store(AppState(), features, platform)
+            store.initFeatureLifecycles()
 
             store.dispatch("system.test", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
             store.dispatch("test.setup", addTestAction)
@@ -67,8 +67,8 @@ class SettingsFeatureT5PlatformTest {
         // --- SCOPE 2: Re-initialize and reload the setting ---
         run {
             val features = listOf(CoreFeature(platform), SettingsFeature(platform), FileSystemFeature(platform))
-            val store = Store(AppState(), features, platform, ActionRegistry.Names.allActionNames)
-            features.forEach { it.init(store) }
+            val store = Store(AppState(), features, platform)
+            store.initFeatureLifecycles()
 
             store.dispatch("system.test", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
             store.dispatch("test.setup", addTestAction)
