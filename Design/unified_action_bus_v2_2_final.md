@@ -1,8 +1,8 @@
 # Unified Action Bus v2.0 — Complete Implementation Outline
 
-**Version**: 2.2 — Revised (red-team fixes propagated)
-**Status**: Phase 1 Complete / Phase 2 Ready
-**Last Updated**: 2026-02-13 — Phase 1 shipped and verified
+**Version**: 2.3 — Phase 2.1 complete
+**Status**: Phase 1 Complete / Phase 2.1 Complete / Phase 2.2 Ready
+**Last Updated**: 2026-02-13 — Phase 2.1 shipped and verified
 
 ## Executive Summary
 
@@ -29,7 +29,7 @@ The work is organized into **6 phases**, each independently shippable. The final
 1. [Current Architecture & Pain Points](#1-current-architecture--pain-points)
 2. [Target Architecture](#2-target-architecture)
 3. [Phase 1 — Manifest Schema Unification & ActionRegistry Codegen ✅](#3-phase-1--manifest-schema-unification--actionregistry-codegen)
-4. [Phase 2 — IdentityRegistry & Hierarchical Originators ⬅️ NEXT](#4-phase-2--identityregistry--hierarchical-originators)
+4. [Phase 2 — IdentityRegistry & Hierarchical Originators (2.1 ✅ / 2.2 ⬅️ NEXT)](#4-phase-2--identityregistry--hierarchical-originators)
 5. [Phase 3 — Targeted Delivery & Private Envelope Absorption](#5-phase-3--targeted-delivery--private-envelope-absorption)
 6. [Phase 4 — Migrate Consumers (CommandBot, Agent, Session)](#6-phase-4--migrate-consumers-commandbot-agent-session)
 7. [Phase 5 — Runtime-Extensible Registry](#7-phase-5--runtime-extensible-registry)
@@ -205,10 +205,15 @@ data class Action(
 @Serializable
 data class Identity(
     val uuid: String?,                 // null for features (stable by handle); system-assigned for entities [^1]
-    val handle: String,                // human-readable bus address: "gemini-flash-nr1"
-                                       // only regexp [a-z0-9-] allowed; uniqueness forced by appending number
-    val name: String,                  // display name: "Gemini Flash nr.1", all unicode allowed
-    val parentHandle: String? = null,  // handle of parent identity (for tree structure)
+    val localHandle: String,           // leaf-level identity name: "gemini-coder-1"
+                                       // only regexp [a-z][a-z0-9-]* allowed (must start with letter, no dots)
+    val handle: String,                // full bus address: "agent.gemini-coder-1"
+                                       // constructed as parentHandle.localHandle by CoreFeature
+                                       // registry key — immutable after registration
+    val name: String,                  // display name: "Gemini Coder nr.1", all unicode allowed
+    val parentHandle: String? = null,  // always the originator that registered this identity
+                                       // null for root identities (features)
+                                       // immutable — enforced by design (originator IS the parent)
     val registeredAt: Long = 0
 
     // FUTURE: Permissions hook — not implemented in v2.0
@@ -218,18 +223,21 @@ data class Identity(
 
 [^1]: `uuid` and `handle` are both usable as identifiers, but features may use both together for cross-application uniqueness (e.g., saving agent configuration to `uuid.handle.json` eliminates most import clashes). The shorthand `id` is banned from the codebase; always use `identity` to refer to `Identity`.
 
-### 2.4 The Four Action Types
+### 2.4 The Five Action Types
 
-Every action in the system falls into exactly one of four semantic types. These types are derived from two independent boolean flags (`open` and `broadcast`) plus one explicit flag (`targeted`):
+Every action in the system falls into one of five semantic types. These types are derived from two independent boolean flags (`open` and `broadcast`) plus one explicit flag (`targeted`). **Authorization (`open`) and delivery (`broadcast`/`targeted`) are orthogonal concerns:**
 
 | Type | `open` | `broadcast` | `targeted` | Authorization | Delivery | Example |
 |---|---|---|---|---|---|---|
 | **Command** | `true` | `true` | `false` | Any originator | All features | `session.POST` |
+| **Open Non-Broadcast** | `true` | `false` | `false` | Any originator | Owner only | `core.REGISTER_IDENTITY` |
 | **Event** | `false` | `true` | `false` | Owner only | All features | `session.MESSAGE_POSTED` |
 | **Internal** | `false` | `false` | `false` | Owner only | Owner only | `session.LOADED` |
 | **Response** | `false` | `false` | `true` | Owner only | Specified recipient | `filesystem.RESPONSE_READ` |
 
 A targeted command (`open: true, targeted: true`) is also valid — it means "anyone can invoke, delivered to a specific recipient." No current action uses this, but it's a reasonable future pattern.
+
+**Open Non-Broadcast** is the pattern used by `core.REGISTER_IDENTITY` and `core.UNREGISTER_IDENTITY`: any feature can dispatch the request, but only CoreFeature's reducer and side-effects receive it. This avoids wasting reducer cycles across all features for what is essentially a service call. The caller receives results via a targeted response (`core.RESPONSE_REGISTER_IDENTITY`).
 
 **Derived convenience properties** (on `ActionDescriptor`):
 ```kotlin
@@ -239,7 +247,7 @@ val isInternal: Boolean get() = !open && !broadcast && !targeted
 val isResponse: Boolean get() = !open && targeted
 ```
 
-These four are mutually exclusive and exhaustive for the `!open` cases. `isCommand` intentionally covers both broadcast and targeted commands.
+These four are mutually exclusive and exhaustive for the `!open` cases. `isCommand` intentionally covers both broadcast and non-broadcast open actions.
 
 **Validation rule**: `targeted` and `broadcast` are mutually exclusive. An action cannot be both broadcast and targeted. The codegen and Store enforce this.
 
@@ -251,21 +259,22 @@ These four are mutually exclusive and exhaustive for the `!open` cases. `isComma
 processAction(action):
   1. Look up descriptor: appState.actionDescriptors[action.name]
      → reject if not found
-  2. Authorize originator:
+  2. Authorize originator (OPEN flag — who can dispatch):
      a. Extract feature-level handle: originator.substringBefore('.')
-     b. If descriptor.open → open (any originator)
+     b. If descriptor.open → any originator allowed
      c. If !descriptor.open → require feature match (originator prefix == descriptor.featureName)
      d. FUTURE: Check requiredPermissions against IdentityRegistry grants
   3. Lifecycle guard
-  4. Route:
-     a. action.targetRecipient != null  →  TARGETED: deliver to recipient feature only
-        (only valid when descriptor.targeted == true; reject otherwise)
-        (only valid when originator prefix == descriptor.featureName; reject otherwise)
-     b. !descriptor.broadcast           →  INTERNAL: deliver to owning feature only
+  4. Route (BROADCAST/TARGETED flags — who receives; orthogonal to OPEN):
+     a. descriptor.targeted             →  TARGETED: deliver to recipient feature only (Phase 3)
+     b. !descriptor.broadcast           →  OWNER-ONLY: deliver to owning feature only
      c. descriptor.broadcast            →  BROADCAST: deliver to all features
   5. For each target: reducer(state, action) → new state
+  5b. LIFT: CoreState.identityRegistry → AppState.identityRegistry (mechanical copy)
   6. For each target: handleSideEffects(action, store, prev, new)
 ```
+
+**Key insight — authorization ≠ routing**: The `open` flag controls *who can dispatch* (step 2). The `broadcast`/`targeted` flags control *who receives* (step 4). These are independent. An action can be `open: true, broadcast: false` (anyone can dispatch, only the owning feature receives) — used by `core.REGISTER_IDENTITY` where any feature can request registration but only CoreFeature processes it.
 
 **Why this is better than name parsing**:
 - A typo in an action name (`session.interal.LOADED`) no longer silently changes routing — the descriptor's boolean flags are the single source of truth
@@ -732,9 +741,13 @@ The `generateActionRegistry` task in `build.gradle.kts` is rewritten to:
 
 ---
 
-## 4. Phase 2 — IdentityRegistry & Hierarchical Originators ⬅️ NEXT
+## 4. Phase 2 — IdentityRegistry & Hierarchical Originators (2.1 ✅ / 2.2 ⬅️ NEXT)
 
 **Goal**: Consolidate all identity tracking into the `identityRegistry` on `AppState`. Every bus participant — features, users, agents, sessions — registers an Identity with a handle. The Store uses hierarchical originator resolution backed by this registry. Feature identities are seeded directly by the Store at boot, bypassing the action bus.
+
+**Split into two sub-phases**:
+- **Phase 2.1** ✅ — Core infrastructure: Identity rewrite, Feature.identity, Store schema-driven auth + routing, identity registry on CoreState/AppState, REGISTER/UNREGISTER actions, feature seeding
+- **Phase 2.2** ⬅️ NEXT — Consumer wiring: SessionFeature/AgentFeature registration, user identity migration, onAction→handleSideEffects rename, RESPONSE_REGISTER_IDENTITY targeted delivery (requires Phase 3)
 
 ### 4.1 Enhanced Identity Data Class
 
@@ -744,33 +757,42 @@ data class Identity(
     /**
      * Globally unique, system-assigned identifier.
      * Null for features — their handles are stable across restarts.
-     * Generated for ephemeral entities (users, agents, sessions, ...).
+     * Generated by CoreFeature for ephemeral entities (users, agents, sessions, ...).
      */
     val uuid: String?,
     /**
-     * Human-readable bus address. This is what appears as action.originator
-     * and what other systems use to reference this entity.
-     * Only [a-z0-9-] characters allowed. Uniqueness enforced by appending numbers.
-     * Examples: "session", "session.chat1", "agent.gemini-flash-x", "core.alice-2"
+     * The leaf-level handle for this identity, unique among siblings.
+     * Only [a-z][a-z0-9-]* allowed (must start with a letter, no dots).
+     * The dot is a hierarchy separator, never part of a localHandle.
+     * Examples: "session", "chat-cats", "gemini-coder-1", "alice"
+     */
+    val localHandle: String,
+    /**
+     * The full bus address, constructed as "parentHandle.localHandle" for child identities,
+     * or just "localHandle" for root identities (features).
+     * This is the registry key and what appears as action.originator.
+     * Constructed by CoreFeature — features never set this directly.
+     * Examples: "session", "session.chat-cats", "agent.gemini-coder-1", "core.alice"
      */
     val handle: String,
     /** Display name shown in the UI. Full Unicode allowed. */
     val name: String,
     /**
-     * Handle of the parent identity. Forms a tree:
-     *   "session.chat1" → parent is "session"
-     *   "agent.gemini-x" → parent is "agent"
-     *   "core.alice" → parent is "core"
-     * Root identities (features, system) have parentHandle = null.
+     * Handle of the parent identity — always the originator that registered this identity.
+     * Null for root identities (features, system).
+     * Immutable after registration — enforced by design: the originator IS the parent,
+     * so no feature can register identities outside its own namespace.
      */
     val parentHandle: String? = null,
-    /** When this identity was registered. */
+    /** Epoch millis when this identity was registered. */
     val registeredAt: Long = 0
 
     // FUTURE: Permissions grants — paved, not implemented in v2.0.
     // val permissions: Map<String, Boolean>? = null
 )
 ```
+
+**Handle construction rule**: `handle = parentHandle + "." + localHandle` for child identities, or just `localHandle` for root identities. CoreFeature constructs this — the `REGISTER_IDENTITY` payload only contains `localHandle` and `name`. The originator automatically becomes the `parentHandle`.
 
 ### 4.2 AppState Changes
 
@@ -800,54 +822,81 @@ data class CoreState(
 
 ### 4.3 New Actions (in core.actions.json)
 
-// TODO: This step needs improving. "core.REGISTER_IDENTITY" should be responsible for creating the uuid and making sure that handle is valid and not taken already. core should respond to the command requester with core.RESPONSE_REGISTER_IDENTITY that inludes the issued uuid, valid handle and payload including the original request OR an error code and message stating what went wrong. Every action should also carry an uuid themselves so they can easily be mapped in the receiving end to the right request. So session registering identity for `chat-cats` when a `session.chat-cats` already exist gets a response back with `session.chat-cats-2` as the handle and session can match the request to the response via actions uuid. This moves the duplicated id management code from features to store.
+Four new actions added to `core.actions.json`:
 
 ```json
 {
     "action_name": "core.REGISTER_IDENTITY",
-    "summary": "Register a new identity in the universal registry. Any feature can register identities for its sub-entities.",
+    "summary": "Register a new identity in the universal registry. The originator automatically becomes the parent — no feature can register identities outside its own namespace. CoreFeature validates localHandle format, deduplicates among siblings, generates UUID, and constructs the full handle as originator.localHandle.",
     "open": true,
-    "broadcast": true,
+    "broadcast": false,
     "targeted": false,
     "payload_schema": {
         "type": "object",
         "properties": {
-            "uuid":          { "type": ["string", "null"], "description": "Globally unique ID. Null for features." },
-            "handle":        { "type": "string", "description": "Bus address (e.g., 'agent.gemini-flash-x')." },
-            "name":          { "type": "string", "description": "Human-readable display name." },
-            "parentHandle":  { "type": ["string", "null"], "description": "Handle of the parent identity." }
+            "localHandle":   { "type": "string", "description": "Leaf-level handle. Must match [a-z][a-z0-9-]*. Full bus address constructed as originator.localHandle." },
+            "name":          { "type": "string", "description": "Human-readable display name (full Unicode allowed)." }
         },
-        "required": ["handle", "name"]
+        "required": ["localHandle", "name"]
+    }
+},
+{
+    "action_name": "core.RESPONSE_REGISTER_IDENTITY",
+    "summary": "Targeted response to a REGISTER_IDENTITY request. Contains the approved identity on success, or error on failure. Caller matches by requestedLocalHandle.",
+    "open": false,
+    "broadcast": false,
+    "targeted": true,
+    "payload_schema": {
+        "type": "object",
+        "properties": {
+            "success":               { "type": "boolean" },
+            "requestedLocalHandle":  { "type": "string" },
+            "approvedLocalHandle":   { "type": "string", "description": "Only on success. May differ from requested due to deduplication." },
+            "handle":                { "type": "string", "description": "Only on success. The full bus address." },
+            "uuid":                  { "type": "string", "description": "Only on success." },
+            "name":                  { "type": "string", "description": "Only on success." },
+            "parentHandle":          { "type": "string", "description": "Only on success. The originator's handle." },
+            "error":                 { "type": "string", "description": "Only on failure." }
+        },
+        "required": ["success", "requestedLocalHandle"]
     }
 },
 {
     "action_name": "core.UNREGISTER_IDENTITY",
-    "summary": "Remove an identity from the registry. Cascades: children are also removed.",
+    "summary": "Remove an identity from the registry. Cascades: all descendants (by handle prefix) are also removed. Namespace enforcement: originator can only unregister within its own namespace.",
     "open": true,
-    "broadcast": true,
+    "broadcast": false,
     "targeted": false,
     "payload_schema": {
         "type": "object",
         "properties": {
-            "handle": { "type": "string", "description": "Handle of the identity to remove." }
+            "handle": { "type": "string", "description": "Full handle of the identity to remove." }
         },
         "required": ["handle"]
     }
 },
 {
     "action_name": "core.IDENTITY_REGISTRY_UPDATED",
-    "summary": "Broadcast after any change to the identity registry. Replaces both core.IDENTITIES_UPDATED and agent.AGENT_NAMES_UPDATED.",
+    "summary": "Broadcast after any change to the identity registry. Replaces both core.IDENTITIES_UPDATED and agent.AGENT_NAMES_UPDATED for registry consumers.",
     "open": false,
     "broadcast": true,
     "targeted": false
 }
 ```
 
-//TODO: No speacial store handling needed. CoreFeature can still take care of all the business logic as it is a privileged "companion" class to the core classes. This keeps the store clean of business logic and hides it all in the CoreFeature files.
+**Design decisions (resolved from original TODOs)**:
 
-**Special Store handling**: Because `identityRegistry` lives on `AppState` (not `CoreState`), the Store intercepts `core.REGISTER_IDENTITY` and `core.UNREGISTER_IDENTITY` in `processAction` and applies mutations to `AppState.identityRegistry` directly, before the normal reducer fold. This is the same pattern used for `actionDescriptors` in Phase 5 — both are system infrastructure, not feature domain state.
+1. **The originator IS the parent** — `REGISTER_IDENTITY` has no `parentHandle` field. The originator of the dispatch call automatically becomes the parent. This is enforced by design, not by validation code. If `"agent.gemini-coder"` dispatches `REGISTER_IDENTITY { localHandle: "sub-task" }`, the result is `"agent.gemini-coder.sub-task"` — no code path exists to register outside the dispatcher's namespace.
 
-CoreFeature's `handleSideEffects` still dispatches `core.IDENTITY_REGISTRY_UPDATED` after each change to inform subscribing features.
+2. **CoreFeature owns all business logic (Approach B)** — The Store stays clean of identity management logic. CoreFeature's reducer handles validation, deduplication, UUID generation. The Store only performs a mechanical lift of `CoreState.identityRegistry` → `AppState.identityRegistry` after each reduce cycle.
+
+3. **REGISTER and UNREGISTER are `open: true, broadcast: false`** — Any feature can dispatch them, but only CoreFeature receives and processes them. This avoids wasting reducer cycles across all 8 features for what is essentially a service call to CoreFeature.
+
+4. **RESPONSE_REGISTER_IDENTITY is `targeted: true`** — The caller needs to know if its localHandle was approved, modified (dedup), or rejected. Targeted delivery to the originator is deferred to Phase 3; for now the response is dispatched but not yet routed to the caller.
+
+5. **Namespace enforcement on UNREGISTER** — The originator can only unregister identities whose handle equals their own or starts with `originator.` — preventing cross-namespace deletion.
+
+6. **Cascade deletion by handle prefix** — Removing `"agent.gemini-coder"` also removes `"agent.gemini-coder.sub-task"` via prefix matching, which is simpler and faster than parentHandle traversal and catches all depth levels in one pass.
 
 ### 4.4 Feature Identity Seeding at Boot
 
@@ -872,9 +921,6 @@ fun initFeatureLifecycles() {
 }
 ```
 
-
-// v v v v v   TODO: HUMAN CHECK Needed for all from this point forward    v v v v v
-
 Sub-entities (sessions, agents, users) register via `core.REGISTER_IDENTITY` through the action bus during `STARTING`, which is the correct lifecycle phase for runtime data.
 
 ### 4.5 Sub-Entity Registration
@@ -883,35 +929,31 @@ Sub-entities (sessions, agents, users) register via `core.REGISTER_IDENTITY` thr
 
 ```kotlin
 // After loading sessions from disk, register each session:
-store.deferredDispatch(this.identity.handle, Action(Names.CORE_REGISTER_IDENTITY, buildJsonObject {
-    put("uuid", platformDependencies.generateUUID())
-    put("handle", "session.${session.id}")
-    put("name", session.name)
-    put("parentHandle", "session")
+store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_REGISTER_IDENTITY, buildJsonObject {
+    put("localHandle", session.id)        // e.g., "chat-cats"
+    put("name", session.name)             // e.g., "Chat about Cats"
 }))
+// → originator = "session" → handle = "session.chat-cats", parentHandle = "session"
 
 // After loading agents from disk, register each agent:
-store.deferredDispatch(this.identity.handle, Action(Names.CORE_REGISTER_IDENTITY, buildJsonObject {
-    put("uuid", platformDependencies.generateUUID())
-    put("handle", "agent.${agentId}")
-    put("name", agentDisplayName)
-    put("parentHandle", "agent")
+store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_REGISTER_IDENTITY, buildJsonObject {
+    put("localHandle", agentId)           // e.g., "gemini-coder"
+    put("name", agentDisplayName)         // e.g., "Gemini Coder"
 }))
+// → originator = "agent" → handle = "agent.gemini-coder", parentHandle = "agent"
 ```
 
 **At runtime**, when entities are created or destroyed:
 
 ```kotlin
 // Session created:
-store.deferredDispatch(this.identity.handle, Action(Names.CORE_REGISTER_IDENTITY, buildJsonObject {
-    put("uuid", platformDependencies.generateUUID())
-    put("handle", "session.${newSession.id}")
+store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_REGISTER_IDENTITY, buildJsonObject {
+    put("localHandle", newSession.id)
     put("name", newSession.name)
-    put("parentHandle", "session")
 }))
 
-// Agent deleted:
-store.deferredDispatch(this.identity.handle, Action(Names.CORE_UNREGISTER_IDENTITY, buildJsonObject {
+// Agent deleted (cascade removes all sub-identities):
+store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_UNREGISTER_IDENTITY, buildJsonObject {
     put("handle", "agent.${deletedAgentId}")
 }))
 ```
@@ -975,12 +1017,11 @@ When `SessionFeature` creates a session, it registers an identity:
 
 ```kotlin
 // After SESSION_CREATE succeeds:
-store.deferredDispatch(this.identity.handle, Action(Names.CORE_REGISTER_IDENTITY, buildJsonObject {
-    put("uuid", platformDependencies.generateUUID())
-    put("handle", "session.${newSession.id}")
-    put("name", newSession.name)
-    put("parentHandle", "session")
+store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_REGISTER_IDENTITY, buildJsonObject {
+    put("localHandle", newSession.id)    // e.g., "chat-cats"
+    put("name", newSession.name)         // e.g., "Chat about Cats"
 }))
+// → originator = "session" → handle = "session.chat-cats", parentHandle = "session"
 ```
 
 When a session is renamed, the identity name is updated. When deleted, unregistered (cascades children). This means:
@@ -1040,20 +1081,31 @@ The `IdentityManagerView` continues to show only user identities (filtered by `p
 
 ### 4.12 Files Changed
 
+**Phase 2.1 (Complete):**
+
 | File | Change |
 |---|---|
-| `Identity.kt` | Rewrite: `uuid: String?`, `handle`, `parentHandle`, `registeredAt` |
-| `Feature.kt` | Change `val name: String` → `val identity: Identity`; rename `onAction` → `handleSideEffects` |
-| `AppState.kt` / `AppCore.kt` | Add `identityRegistry: Map<String, Identity>` to `AppState` |
-| `CoreState.kt` | Remove `identityRegistry` (lives on AppState); deprecate `userIdentities`; add `activeUserHandle` |
-| `CoreFeature.kt` | Add `REGISTER_IDENTITY` / `UNREGISTER_IDENTITY` handling; dispatch `IDENTITY_REGISTRY_UPDATED`; migrate boot flow |
-| `core.actions.json` | Add new identity actions and broadcast event |
-| `Store.kt` | Add `extractFeatureHandle()`; update authorization to schema-driven routing; update all `feature.name` references to `feature.identity.handle`; seed feature identities in `initFeatureLifecycles()`; intercept identity actions to mutate `AppState.identityRegistry` |
-| `SessionFeature.kt` | Add `identity` property; register session identities on create/load; unregister on delete |
-| `AgentFeature.kt` | Add `identity` property; register agent identities on create/load; unregister on delete |
-| `CommandBotFeature.kt` | Add `identity` property |
+| `Identity.kt` | Rewrite: `uuid: String?`, `localHandle`, `handle`, `name`, `parentHandle`, `registeredAt` |
+| `Feature.kt` | Change `val name: String` → `val identity: Identity` |
+| `AppCore.kt` / `AppState` | Add `identityRegistry: Map<String, Identity>` and `actionDescriptors: Map<String, ActionDescriptor>` to `AppState` |
+| `CoreState.kt` | Add `identityRegistry: Map<String, Identity>` (canonical, lifted to AppState by Store) |
+| `CoreFeature.kt` | Add `identity` property; `REGISTER_IDENTITY` reducer (validate localHandle, deduplicate, construct handle, generate UUID); `UNREGISTER_IDENTITY` reducer (namespace enforcement, cascade by prefix); `onAction` dispatches `IDENTITY_REGISTRY_UPDATED` and `RESPONSE_REGISTER_IDENTITY` |
+| `core.actions.json` | Add 4 new actions: `REGISTER_IDENTITY`, `RESPONSE_REGISTER_IDENTITY`, `UNREGISTER_IDENTITY`, `IDENTITY_REGISTRY_UPDATED` |
+| `Store.kt` | Remove `ParsedActionName` and name-parsing. Add `extractFeatureHandle()`. Schema-driven authorization (`open` flag) orthogonal to routing (`broadcast`/`targeted` flags). Seed feature identities in `initFeatureLifecycles()`. Mechanical lift: `CoreState.identityRegistry` → `AppState.identityRegistry` after each reduce. Remove `validActionNames` constructor param; validate via `AppState.actionDescriptors`. |
+| `AppContainer.kt` | Remove `validActionNames` from Store constructor call |
+| All Feature implementations | IDE-assisted rename: `override val name` → `override val identity`; `this.name` → `identity.handle` (as originator); `feature.name` → `feature.identity.handle` |
+
+**Phase 2.2 (Next):**
+
+| File | Change |
+|---|---|
+| `Feature.kt` | Rename `onAction` → `handleSideEffects` |
+| `SessionFeature.kt` | Wire session identity registration on create/load; unregister on delete |
+| `AgentFeature.kt` | Wire agent identity registration on create/load; unregister on delete |
+| `CoreFeature.kt` | Migrate `identities.json` loading to populate `identityRegistry` with `parentHandle = "core"` |
+| `CoreState.kt` | Deprecate `userIdentities` (derived from `identityRegistry` filtered by `parentHandle == "core"`) |
 | `IdentityManagerView.kt` | Read from `AppState.identityRegistry` instead of `CoreState.userIdentities` |
-| All Feature implementations | IDE-assisted rename: `override val name` → `override val identity`; `onAction` → `handleSideEffects` |
+| All Feature implementations | Rename `onAction` → `handleSideEffects` |
 
 ### 4.13 Testing
 
@@ -1642,7 +1694,8 @@ Already stubbed in Phase 2's Store code as a comment:
 Every phase is designed to be independently deployable with no breaking changes:
 
 - **Phase 1**: Manifests restructured; typealias preserves all existing `ActionNames.*` references; deprecated `ExposedActions` delegation object preserves all existing `ExposedActions.*` references; old constant names mapped to new names in shim
-- **Phase 2**: Additive — new `identityRegistry` field on `AppState`; old `userIdentities` populated during transition; `Feature.name` → `Feature.identity` with IDE-assisted migration; feature identities seeded directly by Store (no lifecycle guard issue)
+- **Phase 2.1**: Additive — new `identityRegistry` field on `CoreState` and `AppState`; old `userIdentities` kept during transition; `Feature.name` → `Feature.identity` with IDE-assisted migration; feature identities seeded directly by Store (no lifecycle guard issue); Store authorization refactored to schema-driven (orthogonal `open`/`broadcast`/`targeted` flags); `validActionNames` param removed (validated via `AppState.actionDescriptors`)
+- **Phase 2.2**: `onAction` → `handleSideEffects` rename; session/agent identity registration wiring; user identity migration
 - **Phase 3**: Deprecation layer for `PrivateDataEnvelope`; old methods still work in Phase 3a
 - **Phase 4**: Internal consumer migration; shims deleted; IDE-assisted batch rename of constants
 - **Phase 5**: Additive runtime feature; existing build-time actions unaffected; no bootstrapping issue (actionDescriptors pre-populated on AppState)
@@ -1691,6 +1744,7 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
 | Type | `open` | `broadcast` | `targeted` | Shorthand | Who Dispatches | Who Receives |
 |---|---|---|---|---|---|---|
 | Command | `true` | `true` | `false` | `isCommand` | Anyone | All features |
+| Open Non-Broadcast | `true` | `false` | `false` | `isCommand` | Anyone | Owner only |
 | Targeted Command | `true` | `false` | `true` | `isCommand` | Anyone | Specified recipient |
 | Event | `false` | `true` | `false` | `isEvent` | Owner only | All features |
 | Internal | `false` | `false` | `false` | `isInternal` | Owner only | Owner only |
@@ -1726,26 +1780,59 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
 - [x] All existing tests pass with both shims in place
   - **Done.** Build passes, all tests green.
 
-### Phase 2 — IdentityRegistry & Hierarchical Originators
-- [ ] Rewrite `Identity.kt`: `uuid: String?`, `handle`, `name`, `parentHandle`, `registeredAt`
-- [ ] Add `identityRegistry: Map<String, Identity>` and `actionDescriptors: Map<String, ActionDescriptor>` to `AppState`
-- [ ] Change `Feature.kt`: `val name: String` → `val identity: Identity`; rename `onAction` → `handleSideEffects`
-- [ ] IDE-assisted global rename: `feature.name` → `feature.identity.handle` across all source files; `onAction(` → `handleSideEffects(`
-- [ ] Verify: `featureStates` map keys remain unchanged (handles equal old names)
-- [ ] Update all Feature implementations with `override val identity` and renamed method
-- [ ] Add `core.REGISTER_IDENTITY`, `core.UNREGISTER_IDENTITY` actions to `core.actions.json` with `open`/`broadcast`/`targeted` flags
-- [ ] Add `core.IDENTITY_REGISTRY_UPDATED` event action
-- [ ] Implement Store interception of identity actions to mutate `AppState.identityRegistry`
-- [ ] Implement CoreFeature `handleSideEffects` to dispatch `IDENTITY_REGISTRY_UPDATED` after each change
-- [ ] Add `extractFeatureHandle()` to Store; update authorization to schema-driven routing using `open`/`broadcast`/`targeted`
-- [ ] Update Store to reference `feature.identity.handle` instead of `feature.name`
-- [ ] Seed feature identities directly in `initFeatureLifecycles()` (no action bus, no lifecycle guard issue)
-- [ ] Add FUTURE permission check as commented-out code block in Store
+### Phase 2.1 — Identity Infrastructure & Schema-Driven Routing ✅ COMPLETE
+- [x] Rewrite `Identity.kt`: `uuid: String?`, `localHandle`, `handle`, `name`, `parentHandle`, `registeredAt`
+  - **Done.** `localHandle` is the leaf (`[a-z][a-z0-9-]*`), `handle` is the full bus address (`parentHandle.localHandle`), constructed by CoreFeature. Registry keyed by `handle`.
+- [x] Add `identityRegistry: Map<String, Identity>` to `CoreState` (canonical) and `AppState` (lifted)
+  - **Done.** CoreFeature owns business logic in its reducer. Store mechanically lifts `CoreState.identityRegistry` → `AppState.identityRegistry` after each reduce cycle.
+- [x] Add `actionDescriptors: Map<String, ActionDescriptor>` to `AppState`
+  - **Done.** Pre-populated from `ActionRegistry.byActionName`. Replaces `validActionNames` constructor param on Store.
+- [x] Change `Feature.kt`: `val name: String` → `val identity: Identity`
+  - **Done.** All 8 features updated via IDE-assisted rename.
+- [x] IDE-assisted global rename: `feature.name` → `feature.identity.handle`; `this.name` → `identity.handle` (as originator)
+  - **Done.** Verified: `featureStates` map keys remain unchanged (handles equal old names).
+- [x] Add 4 new actions to `core.actions.json`: `REGISTER_IDENTITY` (open, non-broadcast), `RESPONSE_REGISTER_IDENTITY` (targeted), `UNREGISTER_IDENTITY` (open, non-broadcast), `IDENTITY_REGISTRY_UPDATED` (event broadcast)
+  - **Done.** REGISTER/UNREGISTER are `open: true, broadcast: false` — anyone can dispatch, only CoreFeature receives. Response is targeted (delivery deferred to Phase 3).
+- [x] Implement CoreFeature reducer for `REGISTER_IDENTITY`: validate `localHandle` format (`[a-z][a-z0-9-]*`), originator IS the parent (no parentHandle field), deduplicate among siblings (append -2, -3), generate UUID, construct full handle
+  - **Done.** Deduplication works on `localHandle` within parent namespace. Cascade deletion in UNREGISTER uses handle prefix matching.
+- [x] Implement CoreFeature reducer for `UNREGISTER_IDENTITY`: namespace enforcement (originator can only unregister within own namespace), cascade deletion by handle prefix
+  - **Done.** `payload.handle.startsWith("$originator.")` enforces namespace ownership.
+- [x] Implement CoreFeature `onAction` to dispatch `IDENTITY_REGISTRY_UPDATED` and `RESPONSE_REGISTER_IDENTITY` after each change
+  - **Done.** Response compares prev vs new registry to determine success/failure. Targeted delivery of response deferred to Phase 3.
+- [x] Add `extractFeatureHandle()` to Store; update authorization to schema-driven routing using `open`/`broadcast`/`targeted` as orthogonal concerns
+  - **Done.** `open` controls authorization (who can dispatch). `broadcast`/`targeted` control delivery (who receives). These are independent — enables the new "open non-broadcast command" pattern (`open: true, broadcast: false`) used by REGISTER/UNREGISTER.
+- [x] Remove `ParsedActionName` and name-parsing from Store
+  - **Done.** All routing now driven by `ActionDescriptor` boolean flags from the manifest.
+- [x] Remove `validActionNames` constructor param from Store; validate via `AppState.actionDescriptors`
+  - **Done.** AppContainer updated accordingly.
+- [x] Update Store to reference `feature.identity.handle` instead of `feature.name` throughout
+  - **Done.**
+- [x] Seed feature identities directly in `initFeatureLifecycles()` (no action bus, no lifecycle guard issue)
+  - **Done.** Feature identities seeded into `AppState.identityRegistry` before `features.forEach { it.init(this) }`.
+- [x] Add FUTURE permission check as commented-out code block in Store
+  - **Done.** Stubbed after authorization check with `resolvePermissions()` walk.
+- [x] All existing tests pass with changes in place
+  - **Done.** Build passes, all tests green.
+
+**Implementation notes (Phase 2.1)**:
+
+**Approach B adopted**: Store stays clean of identity business logic. CoreFeature's reducer owns validation, deduplication, UUID generation. Store only does a mechanical lift (`CoreState.identityRegistry` → `AppState.identityRegistry`) after reduce — same pattern as any state that needs to be accessible at the AppState level.
+
+**"The originator IS the parent"**: REGISTER_IDENTITY has no `parentHandle` payload field. The originator of the dispatch call automatically becomes the parent. This means `"agent"` registering `{ localHandle: "gemini-coder" }` produces `"agent.gemini-coder"` — and there is literally no code path to register outside your own namespace. Namespace enforcement is structural, not validation.
+
+**Authorization ≠ Routing (orthogonal)**: The old Store conflated these — `isInternal` (`!open && !broadcast && !targeted`) was used for routing, but it excluded `open` actions from owner-only delivery. The fix separates them: `open` flag controls authorization (step 2), `broadcast`/`targeted` flags control delivery (step 4). This enables `open: true, broadcast: false` (REGISTER_IDENTITY: anyone can dispatch, only CoreFeature receives).
+
+**New action type discovered**: "Open Non-Broadcast Command" — `open: true, broadcast: false, targeted: false`. The action type quick reference table (section 10.5) updated accordingly.
+
+### Phase 2.2 — Consumer Wiring & Rename ⬅️ NEXT
+- [ ] Rename `onAction` → `handleSideEffects` across all Feature implementations and Feature.kt interface
 - [ ] Wire SessionFeature to register session identities on create/load/delete (during STARTING)
 - [ ] Wire AgentFeature to register agent identities on create/load/delete (during STARTING)
-- [ ] Deprecate `CoreState.userIdentities` (derived getter from `AppState.identityRegistry` during transition)
-- [ ] Migrate `identities.json` loading to populate `AppState.identityRegistry` with `parentHandle = "core"` and `handle = "core.{name}"`
-- [ ] Unit tests: registration, unregistration, cascade by parentHandle, hierarchical auth, Feature auto-registration, feature seeding at boot
+- [ ] Deprecate `CoreState.userIdentities` (derived getter from `AppState.identityRegistry` filtered by `parentHandle == "core"`)
+- [ ] Migrate `identities.json` loading to populate `identityRegistry` with `parentHandle = "core"` and `localHandle = name`
+- [ ] Update `IdentityManagerView` to read from `AppState.identityRegistry` instead of `CoreState.userIdentities`
+- [ ] Wire `RESPONSE_REGISTER_IDENTITY` targeted delivery to originator (depends on Phase 3 targeted routing, or use `deliverPrivateData` as interim)
+- [ ] Unit tests: registration, unregistration, cascade by handle prefix, hierarchical auth, Feature auto-registration, feature seeding at boot, deduplication, namespace enforcement
 
 ### Phase 3 — Targeted Delivery & Private Envelope Absorption
 - [ ] Add `targetRecipient: String? = null` to `Action`
@@ -1776,7 +1863,8 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
 ### Phase 5 — Runtime-Extensible Registry
 - [ ] Create `registry.actions.json` with REGISTER_ACTION, UNREGISTER_ACTION, CATALOG_UPDATED
 - [ ] Add Store special-case handling for `REGISTER_ACTION` / `UNREGISTER_ACTION` to mutate `AppState.actionDescriptors`
-- [ ] Remove `validActionNames` constructor param from Store; validate via `AppState.actionDescriptors` only
+- [x] Remove `validActionNames` constructor param from Store; validate via `AppState.actionDescriptors` only
+  - **Done in Phase 2.1.** Store now validates against `AppState.actionDescriptors` (pre-populated from `ActionRegistry.byActionName`).
 - [ ] Add tests for runtime registration/unregistration
 - [ ] Add test: runtime-registered action appears in `AppState.actionDescriptors`
 - [ ] Add test: build-time actions cannot be overridden or removed
