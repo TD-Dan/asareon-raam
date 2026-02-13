@@ -3,6 +3,7 @@ package app.auf.feature.core
 import app.auf.core.Action
 import app.auf.core.Identity
 import app.auf.core.generated.ActionNames
+import app.auf.core.generated.ActionRegistry
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
@@ -20,14 +21,48 @@ import kotlin.test.assertTrue
 /**
  * Tier 2 Core Tests for CoreFeature.
  *
- * Mandate (P-TEST-001, T2): To test the feature's reducer and onAction handlers working
- * together within a realistic TestEnvironment that includes the real Store.
+ * Mandate (P-TEST-001, T2): To test the feature's reducer and handleSideEffects handlers
+ * working together within a realistic TestEnvironment that includes the real Store.
  */
 class CoreFeatureT2CoreTest {
 
+    /**
+     * Helper: creates a CoreState with feature identities pre-seeded in the identity
+     * registry so that REGISTER_IDENTITY dispatches from those originators pass parent
+     * validation. This mirrors what the Store does in initFeatureLifecycles() when the
+     * actual features are present.
+     *
+     * NOTE: We cannot rely on initFeatureLifecycles() to seed "session" or "agent"
+     * unless we add actual SessionFeature/AgentFeature to the TestEnvironment. For
+     * unit-level T2 tests that focus on CoreFeature behavior, pre-seeding is correct.
+     */
+    private fun coreStateWithFeatureIdentities(
+        vararg featureHandles: String,
+        lifecycle: AppLifecycle = AppLifecycle.RUNNING,
+        extraRegistry: Map<String, Identity> = emptyMap()
+    ): CoreState {
+        val featureIdentities = featureHandles.associate { handle ->
+            handle to Identity(
+                uuid = null,
+                localHandle = handle,
+                handle = handle,
+                name = handle.replaceFirstChar { it.uppercase() },
+                parentHandle = null
+            )
+        }
+        return CoreState(
+            identityRegistry = featureIdentities + extraRegistry,
+            lifecycle = lifecycle
+        )
+    }
+
+    // ================================================================
+    // Existing lifecycle & clipboard tests
+    // ================================================================
+
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `onAction for SYSTEM_PUBLISH_INITIALIZING dispatches ADD actions for its settings`() = runTest {
+    fun `handleSideEffects for SYSTEM_PUBLISH_INITIALIZING dispatches ADD actions for its settings`() = runTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -36,7 +71,7 @@ class CoreFeatureT2CoreTest {
 
         // ACT: Dispatch the lifecycle action that triggers the side-effect.
         harness.store.dispatch("system", Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING))
-        runCurrent() // Allow deferred actions to process
+        runCurrent()
 
         // ASSERT: Verify that the correct side-effects (dispatching ADD actions) occurred.
         val addActions = harness.processedActions.filter { it.name == ActionNames.SETTINGS_ADD }
@@ -47,7 +82,7 @@ class CoreFeatureT2CoreTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `onAction for CORE_COPY_TO_CLIPBOARD copies text and shows a toast`() = runTest {
+    fun `handleSideEffects for CORE_COPY_TO_CLIPBOARD copies text and shows a toast`() = runTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -60,7 +95,7 @@ class CoreFeatureT2CoreTest {
 
         // ACT
         harness.store.dispatch("ui", action)
-        runCurrent() // Allow deferred actions to process
+        runCurrent()
 
         // ASSERT
         assertEquals(textToCopy, platform.clipboardContent, "The text should be copied to the platform's clipboard.")
@@ -70,10 +105,13 @@ class CoreFeatureT2CoreTest {
         assertEquals("Copied to clipboard.", toastAction.payload?.get("message")?.jsonPrimitive?.content)
     }
 
-    // NEW TEST: Verifies persistence and broadcasting side effects.
+    // ================================================================
+    // Legacy user identity persistence & broadcast tests
+    // ================================================================
+
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `onAction for ADD_USER_IDENTITY persists and broadcasts the new identity state`() = runTest {
+    fun `handleSideEffects for ADD_USER_IDENTITY persists and broadcasts the new identity state`() = runTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -84,7 +122,7 @@ class CoreFeatureT2CoreTest {
         harness.store.dispatch("ui", Action(ActionNames.CORE_ADD_USER_IDENTITY, buildJsonObject {
             put("name", "Test User")
         }))
-        runCurrent() // Allow deferred actions to process
+        runCurrent()
 
         // ASSERT: Persistence
         val writeAction = harness.processedActions.find { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
@@ -95,89 +133,365 @@ class CoreFeatureT2CoreTest {
         assertNotNull(content)
         assertTrue(content.contains("Test User"), "The new user's name should be in the persisted content.")
 
-        // ASSERT: Broadcasting
+        // ASSERT: Broadcasting (legacy)
         val broadcastAction = harness.processedActions.find { it.name == ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED }
-        assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
+        assertNotNull(broadcastAction, "A legacy broadcast action should be dispatched.")
         val broadcastContent = broadcastAction.payload.toString()
         assertTrue(broadcastContent.contains("Test User"), "The new user's name should be in the broadcast payload.")
+
+        // ASSERT: Phase 2 registry broadcast
+        val registryBroadcast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED }
+        assertNotNull(registryBroadcast, "An IDENTITY_REGISTRY_UPDATED broadcast should be dispatched for legacy user identity changes.")
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `onAction for REMOVE_USER_IDENTITY persists and broadcasts changes`() = runTest {
+    fun `handleSideEffects for REMOVE_USER_IDENTITY persists and broadcasts changes`() = runTest {
         val platform = FakePlatformDependencies("test")
-        val user1 = Identity("id-1", "User 1")
-        val user2 = Identity("id-2", "User 2")
+        val user1 = Identity("id-1", localHandle = "user-1", handle = "user-1", name = "User 1")
+        val user2 = Identity("id-2", localHandle = "user-2", handle = "user-2", name = "User 2")
 
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
             .withFeature(FileSystemFeature(platform))
             .withInitialState("core", CoreState(
                 userIdentities = listOf(user1, user2),
-                activeUserId = "id-1",
-                lifecycle = AppLifecycle.RUNNING // FIX: Set correct lifecycle
+                activeUserId = "user-1",
+                lifecycle = AppLifecycle.RUNNING
             ))
             .build(platform = platform)
 
         // ACT
         harness.store.dispatch("ui", Action(ActionNames.CORE_REMOVE_USER_IDENTITY, buildJsonObject {
-            put("id", "id-1")
+            put("id", "user-1")
         }))
-        runCurrent() // Execute pending coroutine tasks before asserting.
+        runCurrent()
 
         // ASSERT: Persistence
         val writeAction = harness.processedActions.findLast { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
         assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
-        val content = writeAction.payload?.get("content")?.jsonPrimitive?.content // [FIX] Use .jsonPrimitive.content
+        val content = writeAction.payload?.get("content")?.jsonPrimitive?.content
         assertNotNull(content)
         assertTrue(content.contains("User 2") && !content.contains("User 1"), "The remaining user should be in the persisted content.")
-        assertTrue(content.contains("\"activeId\":\"id-2\""), "The activeId should be updated in the persisted content.")
-
+        assertTrue(content.contains("\"activeId\":\"user-2\""), "The activeId should be updated in the persisted content.")
 
         // ASSERT: Broadcasting
         val broadcastAction = harness.processedActions.findLast { it.name == ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED }
         assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
         val broadcastContent = broadcastAction.payload.toString()
         assertTrue(broadcastContent.contains("User 2") && !broadcastContent.contains("User 1"), "The remaining user should be in the broadcast payload.")
-        assertEquals("id-2", broadcastAction.payload?.get("activeId")?.jsonPrimitive?.content)
+        assertEquals("user-2", broadcastAction.payload?.get("activeId")?.jsonPrimitive?.content)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `onAction for SET_ACTIVE_USER_IDENTITY persists and broadcasts changes`() = runTest {
+    fun `handleSideEffects for SET_ACTIVE_USER_IDENTITY persists and broadcasts changes`() = runTest {
         val platform = FakePlatformDependencies("test")
-        val user1 = Identity("id-1", "User 1")
-        val user2 = Identity("id-2", "User 2")
+        val user1 = Identity("id-1", localHandle = "user-1", handle = "user-1", name = "User 1")
+        val user2 = Identity("id-2", localHandle = "user-2", handle = "user-2", name = "User 2")
 
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
             .withFeature(FileSystemFeature(platform))
             .withInitialState("core", CoreState(
                 userIdentities = listOf(user1, user2),
-                activeUserId = "id-1",
-                lifecycle = AppLifecycle.RUNNING // FIX: Set correct lifecycle
+                activeUserId = "user-1",
+                lifecycle = AppLifecycle.RUNNING
             ))
             .build(platform = platform)
 
         // ACT
         harness.store.dispatch("ui", Action(ActionNames.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject {
-            put("id", "id-2")
+            put("id", "user-2")
         }))
-        runCurrent() // Execute pending coroutine tasks before asserting.
+        runCurrent()
 
         // ASSERT: Persistence
         val writeAction = harness.processedActions.findLast { it.name == ActionNames.FILESYSTEM_SYSTEM_WRITE }
         assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
-        val content = writeAction.payload?.get("content")?.jsonPrimitive?.content // [FIX] Use .jsonPrimitive.content
+        val content = writeAction.payload?.get("content")?.jsonPrimitive?.content
         assertNotNull(content)
         assertTrue(content.contains("User 1") && content.contains("User 2"), "Both users should be in the persisted content.")
-        assertTrue(content.contains("\"activeId\":\"id-2\""), "The new activeId should be in the persisted content.")
+        assertTrue(content.contains("\"activeId\":\"user-2\""), "The new activeId should be in the persisted content.")
 
         // ASSERT: Broadcasting
         val broadcastAction = harness.processedActions.findLast { it.name == ActionNames.CORE_PUBLISH_IDENTITIES_UPDATED }
         assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
         val broadcastContent = broadcastAction.payload.toString()
         assertTrue(broadcastContent.contains("User 1") && broadcastContent.contains("User 2"), "Both users should be in the broadcast payload.")
-        assertEquals("id-2", broadcastAction.payload?.get("activeId")?.jsonPrimitive?.content)
+        assertEquals("user-2", broadcastAction.payload?.get("activeId")?.jsonPrimitive?.content)
+    }
+
+    // ================================================================
+    // Phase 2 — REGISTER_IDENTITY side effects
+    // ================================================================
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `handleSideEffects for successful REGISTER_IDENTITY dispatches response and registry update`() = runTest {
+        val platform = FakePlatformDependencies("test")
+        // Pre-seed "session" feature identity so the reducer's parent validation passes.
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .withInitialState("core", coreStateWithFeatureIdentities("core", "session"))
+            .build(platform = platform)
+
+        // ACT: Session feature registers a child identity
+        harness.store.dispatch("session", Action(
+            ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+            buildJsonObject { put("localHandle", "chat-cats"); put("name", "Chat about Cats") }
+        ))
+        runCurrent()
+
+        // ASSERT: A success response should be dispatched
+        val responseAction = harness.processedActions.find {
+            it.name == ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY
+        }
+        assertNotNull(responseAction, "A RESPONSE_REGISTER_IDENTITY should be dispatched on success.")
+        assertEquals("true", responseAction.payload?.get("success")?.jsonPrimitive?.content)
+        assertEquals("chat-cats", responseAction.payload?.get("requestedLocalHandle")?.jsonPrimitive?.content)
+        assertEquals("chat-cats", responseAction.payload?.get("approvedLocalHandle")?.jsonPrimitive?.content)
+        assertEquals("session.chat-cats", responseAction.payload?.get("handle")?.jsonPrimitive?.content)
+        assertEquals("session", responseAction.payload?.get("parentHandle")?.jsonPrimitive?.content)
+
+        // ASSERT: IDENTITY_REGISTRY_UPDATED broadcast should be dispatched
+        val registryBroadcast = harness.processedActions.find {
+            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+        }
+        assertNotNull(registryBroadcast, "IDENTITY_REGISTRY_UPDATED should be broadcast after a successful registration.")
+
+        // ASSERT: The identity is in the final state's registry
+        val finalCoreState = harness.store.state.value.featureStates["core"] as CoreState
+        assertNotNull(finalCoreState.identityRegistry["session.chat-cats"])
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `handleSideEffects for successful REGISTER_IDENTITY includes deduplicated handle in response`() = runTest {
+        val platform = FakePlatformDependencies("test")
+
+        // Pre-seed state with "session" feature identity AND an existing "session.chat1"
+        val existingIdentity = Identity(
+            uuid = "existing-uuid", localHandle = "chat1", handle = "session.chat1",
+            name = "Chat 1", parentHandle = "session"
+        )
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .withInitialState("core", coreStateWithFeatureIdentities(
+                "core", "session",
+                extraRegistry = mapOf("session.chat1" to existingIdentity)
+            ))
+            .build(platform = platform)
+
+        // ACT: Register a duplicate localHandle
+        harness.store.dispatch("session", Action(
+            ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+            buildJsonObject { put("localHandle", "chat1"); put("name", "Chat 1 Duplicate") }
+        ))
+        runCurrent()
+
+        // ASSERT: Response should show the deduplicated handle
+        val responseAction = harness.processedActions.find {
+            it.name == ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY
+        }
+        assertNotNull(responseAction)
+        assertEquals("true", responseAction.payload?.get("success")?.jsonPrimitive?.content)
+        assertEquals("chat1", responseAction.payload?.get("requestedLocalHandle")?.jsonPrimitive?.content)
+        assertEquals("chat1-2", responseAction.payload?.get("approvedLocalHandle")?.jsonPrimitive?.content,
+            "Response should contain the deduplicated localHandle.")
+        assertEquals("session.chat1-2", responseAction.payload?.get("handle")?.jsonPrimitive?.content)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `handleSideEffects for rejected REGISTER_IDENTITY dispatches failure response and NO registry update`() = runTest {
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .withInitialState("core", coreStateWithFeatureIdentities("core", "session"))
+            .build(platform = platform)
+
+        // ACT: Dispatch with an invalid localHandle (uppercase)
+        harness.store.dispatch("session", Action(
+            ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+            buildJsonObject { put("localHandle", "InvalidHandle"); put("name", "Test") }
+        ))
+        runCurrent()
+
+        // ASSERT: A failure response should be dispatched
+        val responseAction = harness.processedActions.find {
+            it.name == ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY
+        }
+        assertNotNull(responseAction, "A RESPONSE_REGISTER_IDENTITY should be dispatched even on failure.")
+        assertEquals("false", responseAction.payload?.get("success")?.jsonPrimitive?.content)
+        assertNotNull(responseAction.payload?.get("error")?.jsonPrimitive?.content, "Error message should be present.")
+
+        // ASSERT: IDENTITY_REGISTRY_UPDATED should NOT be broadcast on rejection
+        val registryBroadcasts = harness.processedActions.filter {
+            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+        }
+        assertTrue(registryBroadcasts.isEmpty(),
+            "IDENTITY_REGISTRY_UPDATED must NOT be broadcast when a registration is rejected.")
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `handleSideEffects for rejected REGISTER_IDENTITY with unknown originator does not broadcast`() = runTest {
+        val platform = FakePlatformDependencies("test")
+
+        // Only seed "core" — so "unknown-feature" won't be in the registry
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .withInitialState("core", coreStateWithFeatureIdentities("core"))
+            .build(platform = platform)
+
+        harness.store.dispatch("unknown-feature", Action(
+            ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+            buildJsonObject { put("localHandle", "test"); put("name", "Test") }
+        ))
+        runCurrent()
+
+        val registryBroadcasts = harness.processedActions.filter {
+            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+        }
+        assertTrue(registryBroadcasts.isEmpty(),
+            "IDENTITY_REGISTRY_UPDATED must NOT be broadcast when registration fails due to unknown parent.")
+    }
+
+    // ================================================================
+    // Phase 2 — UNREGISTER_IDENTITY side effects
+    // ================================================================
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `handleSideEffects for successful UNREGISTER_IDENTITY broadcasts registry update`() = runTest {
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .withInitialState("core", coreStateWithFeatureIdentities(
+                "core", "session",
+                extraRegistry = mapOf(
+                    "session.chat1" to Identity(uuid = "u1", localHandle = "chat1", handle = "session.chat1", name = "Chat 1", parentHandle = "session")
+                )
+            ))
+            .build(platform = platform)
+
+        // ACT
+        harness.store.dispatch("session", Action(
+            ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
+            buildJsonObject { put("handle", "session.chat1") }
+        ))
+        runCurrent()
+
+        // ASSERT: Registry broadcast should fire
+        val registryBroadcast = harness.processedActions.find {
+            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+        }
+        assertNotNull(registryBroadcast, "IDENTITY_REGISTRY_UPDATED should be broadcast after successful unregistration.")
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `handleSideEffects for rejected UNREGISTER_IDENTITY does NOT broadcast registry update`() = runTest {
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .withInitialState("core", coreStateWithFeatureIdentities(
+                "core", "session", "agent",
+                extraRegistry = mapOf(
+                    "session.chat1" to Identity(uuid = "u1", localHandle = "chat1", handle = "session.chat1", name = "Chat 1", parentHandle = "session")
+                )
+            ))
+            .build(platform = platform)
+
+        // ACT: Agent tries to unregister session identity — should be rejected by namespace enforcement
+        harness.store.dispatch("agent", Action(
+            ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
+            buildJsonObject { put("handle", "session.chat1") }
+        ))
+        runCurrent()
+
+        // ASSERT: No registry broadcast
+        val registryBroadcasts = harness.processedActions.filter {
+            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+        }
+        assertTrue(registryBroadcasts.isEmpty(),
+            "IDENTITY_REGISTRY_UPDATED must NOT be broadcast when unregistration is rejected by namespace enforcement.")
+
+        // ASSERT: Identity should still exist
+        val finalState = harness.store.state.value.featureStates["core"] as CoreState
+        assertNotNull(finalState.identityRegistry["session.chat1"], "Identity should remain after rejected unregistration.")
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `handleSideEffects for UNREGISTER_IDENTITY of non-existent handle does NOT broadcast`() = runTest {
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .withInitialState("core", coreStateWithFeatureIdentities("core", "session"))
+            .build(platform = platform)
+
+        // ACT: Unregister something that doesn't exist
+        harness.store.dispatch("session", Action(
+            ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
+            buildJsonObject { put("handle", "session.nonexistent") }
+        ))
+        runCurrent()
+
+        val registryBroadcasts = harness.processedActions.filter {
+            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+        }
+        assertTrue(registryBroadcasts.isEmpty(),
+            "IDENTITY_REGISTRY_UPDATED must NOT be broadcast for a no-op unregistration (handle not in registry).")
+    }
+
+    // ================================================================
+    // Phase 2 — Identity registry lift to AppState
+    // ================================================================
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `identity registry is lifted from CoreState to AppState after registration`() = runTest {
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .withInitialState("core", coreStateWithFeatureIdentities("core", "session"))
+            .build(platform = platform)
+
+        // ACT
+        harness.store.dispatch("session", Action(
+            ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+            buildJsonObject { put("localHandle", "chat1"); put("name", "Chat 1") }
+        ))
+        runCurrent()
+
+        // ASSERT: AppState-level registry should contain the new identity
+        val appState = harness.store.state.value
+        assertNotNull(appState.identityRegistry["session.chat1"],
+            "The identity should be visible in AppState.identityRegistry after the Store lifts it from CoreState.")
+    }
+
+    // ================================================================
+    // Phase 2 — Feature identity seeding at boot
+    // ================================================================
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `feature identities are seeded into registry during initFeatureLifecycles`() = runTest {
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .build(platform = platform)
+
+        // ASSERT: The core feature identity should be in the registry from boot
+        val appState = harness.store.state.value
+        assertNotNull(appState.identityRegistry["core"],
+            "Core feature identity should be seeded during initFeatureLifecycles().")
+
+        // Also verify it's in CoreState (Store seeds both)
+        val coreState = appState.featureStates["core"] as CoreState
+        assertNotNull(coreState.identityRegistry["core"],
+            "Core feature identity should also be in CoreState.identityRegistry (Store seeds both).")
     }
 }
