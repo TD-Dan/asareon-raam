@@ -14,12 +14,11 @@ import kotlinx.serialization.json.put
 /**
  * The central state container for the Unidirectional Data Flow (UDF) architecture.
  *
- * Phase 2 changes:
  * - Authorization is schema-driven via the `open` flag (who can dispatch).
  * - Routing is schema-driven via `broadcast`/`targeted` flags (who receives).
  *   These two concerns are orthogonal.
  * - Feature identities are seeded at boot in initFeatureLifecycles().
- * - After each reduce cycle, CoreState.identityRegistry is lifted to AppState.identityRegistry.
+ * - AppState.identityRegistry is the single source of truth, mutated via updateIdentityRegistry().
  * - The validActionNames constructor param is removed; validation uses AppState.actionDescriptors.
  */
 open class Store(
@@ -56,6 +55,18 @@ open class Store(
     private fun extractFeatureHandle(originator: String?): String? =
         originator?.substringBefore('.')
 
+    /**
+     * Mutates AppState.identityRegistry directly.
+     * Called by CoreFeature from handleSideEffects to register/unregister identities.
+     * Business logic (validation, parent checks) remains in CoreFeature;
+     * the Store owns only the state.
+     */
+    fun updateIdentityRegistry(transform: (Map<String, Identity>) -> Map<String, Identity>) {
+        _state.value = _state.value.copy(
+            identityRegistry = transform(_state.value.identityRegistry)
+        )
+    }
+
     fun initFeatureLifecycles() {
         if (!lifecycleStarted) {
             // Seed feature identities directly — no action bus needed.
@@ -66,20 +77,8 @@ open class Store(
                 feature.identity.handle to feature.identity
             }
 
-            // Seed into BOTH AppState.identityRegistry (for Store-level access)
-            // AND CoreState.identityRegistry (for CoreFeature's reducer, which validates
-            // parent existence against its own state, not AppState).
-            val currentCoreState = _state.value.featureStates["core"] as? CoreState
-            val updatedFeatureStates = if (currentCoreState != null) {
-                _state.value.featureStates + ("core" to currentCoreState.copy(
-                    identityRegistry = currentCoreState.identityRegistry + featureIdentities
-                ))
-            } else {
-                _state.value.featureStates
-            }
-
+            // Seed AppState directly — single source of truth from the start.
             _state.value = _state.value.copy(
-                featureStates = updatedFeatureStates,
                 identityRegistry = _state.value.identityRegistry + featureIdentities
             )
 
@@ -354,19 +353,8 @@ open class Store(
                 }
             }
 
-            // --- LIFT: CoreState.identityRegistry → AppState.identityRegistry ---
-            // CoreFeature owns all identity business logic in its reducer.
-            // We mechanically lift the result to AppState so the Store (and any other
-            // infrastructure code) can access it without depending on CoreState.
-            val updatedCoreState = newState.featureStates["core"] as? CoreState
-            val liftedState = if (updatedCoreState != null && updatedCoreState.identityRegistry != newState.identityRegistry) {
-                newState.copy(identityRegistry = updatedCoreState.identityRegistry)
-            } else {
-                newState
-            }
-
-            if (liftedState != previousState) {
-                _state.value = liftedState
+            if (newState != previousState) {
+                _state.value = newState
             }
 
             // --- STEP 5: SIDE EFFECTS (handleSideEffects) ---
@@ -377,7 +365,7 @@ open class Store(
                 val targetFeature = features.find { it.identity.handle == recipientHandle }
                 if (targetFeature != null) {
                     val prevFeatureState = previousState.featureStates[targetFeature.identity.handle]
-                    val newFeatureState = liftedState.featureStates[targetFeature.identity.handle]
+                    val newFeatureState = newState.featureStates[targetFeature.identity.handle]
                     targetFeature.handleSideEffects(action, this, prevFeatureState, newFeatureState)
                 }
             } else if (!descriptor.broadcast) {
@@ -385,14 +373,14 @@ open class Store(
                 val targetFeature = features.find { it.identity.handle == descriptor.featureName }
                 if (targetFeature != null) {
                     val prevFeatureState = previousState.featureStates[targetFeature.identity.handle]
-                    val newFeatureState = liftedState.featureStates[targetFeature.identity.handle]
+                    val newFeatureState = newState.featureStates[targetFeature.identity.handle]
                     targetFeature.handleSideEffects(action, this, prevFeatureState, newFeatureState)
                 }
             } else {
                 // broadcast: side effects for all features
                 features.forEach { feature ->
                     val prevFeatureState = previousState.featureStates[feature.identity.handle]
-                    val newFeatureState = liftedState.featureStates[feature.identity.handle]
+                    val newFeatureState = newState.featureStates[feature.identity.handle]
                     feature.handleSideEffects(action, this, prevFeatureState, newFeatureState)
                 }
             }

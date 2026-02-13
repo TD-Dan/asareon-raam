@@ -83,6 +83,19 @@ class CoreFeature(
         return "$localHandle-$counter"
     }
 
+    /** Sends a failure response for REGISTER_IDENTITY back to the originator. */
+    private fun sendRegistrationFailure(store: Store, originator: String, requestedLocalHandle: String, error: String) {
+        store.deferredDispatch(identity.handle, Action(
+            ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY,
+            buildJsonObject {
+                put("success", false)
+                put("requestedLocalHandle", requestedLocalHandle)
+                put("error", error)
+            },
+            targetRecipient = originator
+        ))
+    }
+
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val latestCoreState = newState as? CoreState
         val prevCoreState = previousState as? CoreState
@@ -164,6 +177,33 @@ class CoreFeature(
             ActionNames.CORE_SET_ACTIVE_USER_IDENTITY,
             ActionNames.CORE_INTERNAL_IDENTITIES_LOADED -> {
                 if (latestCoreState != null) {
+                    // Sync user identities to AppState.identityRegistry via Store.
+                    // Build registry entries from the authoritative userIdentities list.
+                    @Suppress("DEPRECATION")
+                    val registryEntries = latestCoreState.userIdentities.associate { userIdentity ->
+                        val localHandle = userIdentity.localHandle.ifBlank {
+                            userIdentity.name.lowercase().replace(Regex("[^a-z0-9-]"), "-").trimStart('-').ifEmpty { "user" }
+                        }
+                        val fullHandle = if (userIdentity.handle.startsWith("core.")) userIdentity.handle else "core.$localHandle"
+                        val registryIdentity = Identity(
+                            uuid = userIdentity.uuid ?: platformDependencies.generateUUID(),
+                            localHandle = localHandle,
+                            handle = fullHandle,
+                            name = userIdentity.name,
+                            parentHandle = "core",
+                            registeredAt = userIdentity.registeredAt.takeIf { it > 0 } ?: platformDependencies.currentTimeMillis()
+                        )
+                        fullHandle to registryIdentity
+                    }
+
+                    // Replace all "core.*" entries in the registry with the current set.
+                    store.updateIdentityRegistry { current ->
+                        val withoutCoreChildren = current.filterKeys { key ->
+                            !key.startsWith("core.")
+                        }
+                        withoutCoreChildren + registryEntries
+                    }
+
                     persistAndBroadcastIdentities(latestCoreState, store)
                     // Broadcast identity registry update so all features get the unified notification
                     store.deferredDispatch(identity.handle, Action(
@@ -173,67 +213,119 @@ class CoreFeature(
             }
 
             // --- Identity Registry Management ---
+            // Business logic lives here; storage is delegated to store.updateIdentityRegistry().
             ActionRegistry.Names.CORE_REGISTER_IDENTITY -> {
-                // The reducer already handled validation, dedup, and storage.
-                // Now we need to:
-                // 1. Send a targeted response to the originator with the result
-                // 2. Broadcast that the registry changed
-
                 val originator = action.originator ?: return
-                val requestedLocalHandle = action.payload?.get("localHandle")?.jsonPrimitive?.contentOrNull
-
-                // Determine result by comparing previous and current registry
-                val prevRegistry = prevCoreState?.identityRegistry ?: emptyMap()
-                val newRegistry = latestCoreState?.identityRegistry ?: emptyMap()
-                val addedEntries = newRegistry.keys - prevRegistry.keys
-
-                if (addedEntries.isNotEmpty()) {
-                    // Success — the new identity was added
-                    val addedHandle = addedEntries.first()
-                    val addedIdentity = newRegistry[addedHandle]!!
-
-                    // Targeted response to the originator: here's what was approved
-                    store.deferredDispatch(identity.handle, Action(
-                        ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY,
-                        buildJsonObject {
-                            put("success", true)
-                            put("requestedLocalHandle", requestedLocalHandle ?: "")
-                            put("approvedLocalHandle", addedIdentity.localHandle)
-                            put("handle", addedIdentity.handle)
-                            put("uuid", addedIdentity.uuid)
-                            put("name", addedIdentity.name)
-                            put("parentHandle", addedIdentity.parentHandle ?: "")
-                        },
-                        targetRecipient = originator
-                    ))
-
-                    // Broadcast registry update
-                    store.deferredDispatch(identity.handle, Action(
-                        ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
-                    ))
-                } else {
-                    // Registration was rejected by the reducer (validation failed).
-                    // Send failure response — the reducer already logged the reason.
-                    store.deferredDispatch(identity.handle, Action(
-                        ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY,
-                        buildJsonObject {
-                            put("success", false)
-                            put("requestedLocalHandle", requestedLocalHandle ?: "")
-                            put("error", "Registration rejected. Check logs for details.")
-                        },
-                        targetRecipient = originator
-                    ))
+                val payload = action.payload?.let {
+                    Json.decodeFromJsonElement<RegisterIdentityPayload>(it)
                 }
+                if (payload == null) {
+                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                        "REGISTER_IDENTITY: missing or invalid payload")
+                    sendRegistrationFailure(store, originator, "", "Missing or invalid payload")
+                    return
+                }
+
+                // Validate localHandle format: [a-z][a-z0-9-]*
+                if (!isValidLocalHandle(payload.localHandle)) {
+                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                        "REGISTER_IDENTITY: invalid localHandle '${payload.localHandle}' — " +
+                                "must match [a-z][a-z0-9-]* (start with letter, then letters/digits/hyphens)")
+                    sendRegistrationFailure(store, originator, payload.localHandle, "Invalid localHandle format")
+                    return
+                }
+
+                // The originator IS the parent — enforced by design.
+                val parentHandle = originator.ifEmpty { null }
+                val registry = store.state.value.identityRegistry
+
+                // Validate that the parent actually exists in the registry
+                if (parentHandle != null && parentHandle !in registry) {
+                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                        "REGISTER_IDENTITY: originator '${parentHandle}' not found in identity registry")
+                    sendRegistrationFailure(store, originator, payload.localHandle, "Parent not found in registry")
+                    return
+                }
+
+                // Deduplicate among siblings (same parent namespace)
+                val finalLocalHandle = deduplicateLocalHandle(payload.localHandle, parentHandle, registry)
+                val fullHandle = constructHandle(parentHandle, finalLocalHandle)
+
+                val newIdentity = Identity(
+                    uuid = platformDependencies.generateUUID(),
+                    localHandle = finalLocalHandle,
+                    handle = fullHandle,
+                    name = payload.name,
+                    parentHandle = parentHandle,
+                    registeredAt = platformDependencies.currentTimeMillis()
+                )
+
+                // Delegate storage to the Store
+                store.updateIdentityRegistry { it + (fullHandle to newIdentity) }
+
+                // Targeted response to the originator: here's what was approved
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY,
+                    buildJsonObject {
+                        put("success", true)
+                        put("requestedLocalHandle", payload.localHandle)
+                        put("approvedLocalHandle", newIdentity.localHandle)
+                        put("handle", newIdentity.handle)
+                        put("uuid", newIdentity.uuid)
+                        put("name", newIdentity.name)
+                        put("parentHandle", newIdentity.parentHandle ?: "")
+                    },
+                    targetRecipient = originator
+                ))
+
+                // Broadcast registry update
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+                ))
             }
             ActionRegistry.Names.CORE_UNREGISTER_IDENTITY -> {
-                // Broadcast registry update if something actually changed
-                val prevRegistry = prevCoreState?.identityRegistry ?: emptyMap()
-                val newRegistry = latestCoreState?.identityRegistry ?: emptyMap()
-                if (prevRegistry != newRegistry) {
-                    store.deferredDispatch(identity.handle, Action(
-                        ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
-                    ))
+                val originator = action.originator ?: return
+                val payload = action.payload?.let {
+                    Json.decodeFromJsonElement<UnregisterIdentityPayload>(it)
                 }
+                if (payload == null) {
+                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                        "UNREGISTER_IDENTITY: missing or invalid payload")
+                    return
+                }
+
+                val registry = store.state.value.identityRegistry
+
+                if (payload.handle !in registry) {
+                    platformDependencies.log(app.auf.util.LogLevel.WARN, identity.handle,
+                        "UNREGISTER_IDENTITY: handle '${payload.handle}' not in registry")
+                    return
+                }
+
+                // Namespace enforcement: originator can only unregister identities
+                // within its own namespace (handle must start with originator + ".")
+                // or the exact handle itself (unregister self).
+                val isOwnNamespace = payload.handle == originator ||
+                        payload.handle.startsWith("$originator.")
+                if (!isOwnNamespace) {
+                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                        "UNREGISTER_IDENTITY: originator '$originator' cannot unregister " +
+                                "'${payload.handle}' — outside its namespace")
+                    return
+                }
+
+                // Cascade: remove the identity and all its descendants.
+                val handlePrefix = "${payload.handle}."
+                val handlesToRemove = registry.keys.filter { key ->
+                    key == payload.handle || key.startsWith(handlePrefix)
+                }.toSet()
+
+                store.updateIdentityRegistry { it - handlesToRemove }
+
+                // Broadcast registry update
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+                ))
             }
         }
     }
@@ -316,36 +408,20 @@ class CoreFeature(
                     activeId = if (payload.activeId in identities.map { it.handle }) payload.activeId else identities.first().handle
                 }
 
-                // Migrate loaded identities into the identity registry under parentHandle = "core".
-                // Each old Identity(id, name) becomes a proper registry entry with UUID, handle, etc.
-                val registryEntries = identities.associate { oldIdentity ->
-                    val localHandle = oldIdentity.localHandle.ifBlank {
-                        // Legacy identities may not have a proper localHandle — derive from name
-                        oldIdentity.name.lowercase().replace(Regex("[^a-z0-9-]"), "-").trimStart('-').ifEmpty { "user" }
-                    }
-                    val fullHandle = "core.$localHandle"
-                    val registryIdentity = Identity(
-                        uuid = oldIdentity.uuid ?: platformDependencies.generateUUID(),
-                        localHandle = localHandle,
-                        handle = fullHandle,
-                        name = oldIdentity.name,
-                        parentHandle = "core",
-                        registeredAt = oldIdentity.registeredAt.takeIf { it > 0 } ?: platformDependencies.currentTimeMillis()
-                    )
-                    fullHandle to registryIdentity
-                }
-
+                // Identity registry migration is handled in handleSideEffects via store.updateIdentityRegistry().
                 @Suppress("DEPRECATION")
                 return coreState.copy(
                     userIdentities = identities,
-                    activeUserId = activeId,
-                    identityRegistry = coreState.identityRegistry + registryEntries
+                    activeUserId = activeId
                 )
             }
             ActionNames.CORE_ADD_USER_IDENTITY -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<AddUserIdentityPayload>(it) } ?: return coreState
                 val localHandle = payload.name.lowercase().replace(Regex("[^a-z0-9-]"), "-").trimStart('-').ifEmpty { "user" }
-                val finalLocalHandle = deduplicateLocalHandle(localHandle, "core", coreState.identityRegistry)
+                // Dedup against existing user identities (registry sync is handled in handleSideEffects).
+                @Suppress("DEPRECATION")
+                val existingAsMap = coreState.userIdentities.associateBy { it.handle }
+                val finalLocalHandle = deduplicateLocalHandle(localHandle, "core", existingAsMap)
                 val fullHandle = "core.$finalLocalHandle"
                 val uuid = platformDependencies.generateUUID()
                 val newUser = Identity(
@@ -358,8 +434,7 @@ class CoreFeature(
                 )
                 @Suppress("DEPRECATION")
                 return coreState.copy(
-                    userIdentities = coreState.userIdentities + newUser,
-                    identityRegistry = coreState.identityRegistry + (fullHandle to newUser)
+                    userIdentities = coreState.userIdentities + newUser
                 )
             }
             ActionNames.CORE_REMOVE_USER_IDENTITY -> {
@@ -367,20 +442,11 @@ class CoreFeature(
                 @Suppress("DEPRECATION")
                 val updatedIdentities = coreState.userIdentities.filterNot { it.handle == payload.id }
                 val updatedActiveId = if (coreState.activeUserId == payload.id) updatedIdentities.firstOrNull()?.handle else coreState.activeUserId
-                // Also remove from identity registry — find the entry by old handle or by core.* handle
-                val handleToRemove = coreState.identityRegistry.keys.find { it == payload.id || it == "core.${payload.id}" }
-                val updatedRegistry = if (handleToRemove != null) {
-                    // Cascade: remove identity and all descendants
-                    val prefix = "$handleToRemove."
-                    coreState.identityRegistry.filterKeys { key -> key != handleToRemove && !key.startsWith(prefix) }
-                } else {
-                    coreState.identityRegistry
-                }
+                // Identity registry cleanup is handled in handleSideEffects via store.updateIdentityRegistry().
                 @Suppress("DEPRECATION")
                 return coreState.copy(
                     userIdentities = updatedIdentities,
-                    activeUserId = updatedActiveId,
-                    identityRegistry = updatedRegistry
+                    activeUserId = updatedActiveId
                 )
             }
             ActionNames.CORE_SET_ACTIVE_USER_IDENTITY -> {
@@ -394,96 +460,8 @@ class CoreFeature(
 
             // ================================================================
             // Identity Registry Management (Phase 2)
+            // Handled entirely in handleSideEffects via store.updateIdentityRegistry().
             // ================================================================
-
-            ActionRegistry.Names.CORE_REGISTER_IDENTITY -> {
-                val payload = action.payload?.let {
-                    Json.decodeFromJsonElement<RegisterIdentityPayload>(it)
-                }
-                if (payload == null) {
-                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
-                        "REGISTER_IDENTITY: missing or invalid payload")
-                    return coreState
-                }
-
-                // Validate localHandle format: [a-z][a-z0-9-]*
-                if (!isValidLocalHandle(payload.localHandle)) {
-                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
-                        "REGISTER_IDENTITY: invalid localHandle '${payload.localHandle}' — " +
-                                "must match [a-z][a-z0-9-]* (start with letter, then letters/digits/hyphens)")
-                    return coreState
-                }
-
-                // The originator IS the parent — enforced by design.
-                // No feature can register identities outside its own namespace.
-                val parentHandle = originator.ifEmpty { null }
-
-                // Validate that the parent actually exists in the registry
-                if (parentHandle != null && parentHandle !in coreState.identityRegistry) {
-                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
-                        "REGISTER_IDENTITY: originator '${parentHandle}' not found in identity registry")
-                    return coreState
-                }
-
-                // Deduplicate among siblings (same parent namespace)
-                val finalLocalHandle = deduplicateLocalHandle(
-                    payload.localHandle, parentHandle, coreState.identityRegistry
-                )
-                val fullHandle = constructHandle(parentHandle, finalLocalHandle)
-
-                val newIdentity = Identity(
-                    uuid = platformDependencies.generateUUID(),
-                    localHandle = finalLocalHandle,
-                    handle = fullHandle,
-                    name = payload.name,
-                    parentHandle = parentHandle,
-                    registeredAt = platformDependencies.currentTimeMillis()
-                )
-
-                return coreState.copy(
-                    identityRegistry = coreState.identityRegistry + (fullHandle to newIdentity)
-                )
-            }
-
-            ActionRegistry.Names.CORE_UNREGISTER_IDENTITY -> {
-                val payload = action.payload?.let {
-                    Json.decodeFromJsonElement<UnregisterIdentityPayload>(it)
-                }
-                if (payload == null) {
-                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
-                        "UNREGISTER_IDENTITY: missing or invalid payload")
-                    return coreState
-                }
-
-                if (payload.handle !in coreState.identityRegistry) {
-                    platformDependencies.log(app.auf.util.LogLevel.WARN, identity.handle,
-                        "UNREGISTER_IDENTITY: handle '${payload.handle}' not in registry")
-                    return coreState
-                }
-
-                // Namespace enforcement: originator can only unregister identities
-                // within its own namespace (handle must start with originator + ".")
-                // or the exact handle itself (unregister self).
-                val isOwnNamespace = payload.handle == originator ||
-                        payload.handle.startsWith("$originator.")
-                if (!isOwnNamespace) {
-                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
-                        "UNREGISTER_IDENTITY: originator '$originator' cannot unregister " +
-                                "'${payload.handle}' — outside its namespace")
-                    return coreState
-                }
-
-                // Cascade: remove the identity and all its descendants.
-                // Any identity whose handle starts with "removedHandle." is a descendant.
-                val handlePrefix = "${payload.handle}."
-                val handlesToRemove = coreState.identityRegistry.keys.filter { key ->
-                    key == payload.handle || key.startsWith(handlePrefix)
-                }.toSet()
-
-                return coreState.copy(
-                    identityRegistry = coreState.identityRegistry - handlesToRemove
-                )
-            }
 
             else -> return coreState
         }

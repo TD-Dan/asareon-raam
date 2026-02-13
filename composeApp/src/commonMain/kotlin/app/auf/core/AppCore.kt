@@ -40,11 +40,12 @@ data class AppState(
      * Keyed by Identity.handle (the bus address).
      *
      * Seeded with feature identities during initFeatureLifecycles().
-     * Mutated at runtime via core.REGISTER_IDENTITY / core.UNREGISTER_IDENTITY.
+     * Mutated at runtime via Store.updateIdentityRegistry(), called by CoreFeature
+     * from handleSideEffects in response to core.REGISTER_IDENTITY / core.UNREGISTER_IDENTITY.
      *
-     * This field is mechanically lifted from CoreState.identityRegistry after each
-     * reduce cycle. CoreFeature owns the business logic; AppState provides the
-     * infrastructure-level read path for Store authorization.
+     * AppState is the single source of truth for identity data. CoreFeature retains
+     * the business logic (validation, deduplication, namespace enforcement); the Store
+     * owns the state. This parallels actionDescriptors.
      */
     val identityRegistry: Map<String, Identity> = emptyMap()
 )
