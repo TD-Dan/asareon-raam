@@ -8,7 +8,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
-import app.auf.core.generated.ActionRegistry
 import app.auf.util.BasePath
 import app.auf.util.FileEntry
 import app.auf.util.LogLevel

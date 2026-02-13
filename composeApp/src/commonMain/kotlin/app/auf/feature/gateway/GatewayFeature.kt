@@ -2,7 +2,6 @@ package app.auf.feature.gateway
 
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
-import app.auf.core.generated.ActionRegistry
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
