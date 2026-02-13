@@ -2,7 +2,6 @@ package app.auf.feature.core
 
 import app.auf.core.Action
 import app.auf.core.Identity
-import app.auf.core.PrivateDataEnvelope
 import app.auf.core.generated.ActionNames
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
@@ -25,9 +24,12 @@ import kotlin.test.assertTrue
  * Tier 3 Peer Tests for CoreFeature.
  *
  * Mandate (P-TEST-001, T3): To test the feature's role as a peer in larger,
- * multi-feature workflows. These tests verify the contracts (like PrivateDataEnvelope)
+ * multi-feature workflows. These tests verify the targeted action contracts
  * and service patterns (like the global dialog and identity registry) that enable
  * inter-feature communication.
+ *
+ * Phase 3: Tests updated to use targeted dispatch (Action.targetRecipient) instead of
+ * the deprecated PrivateDataEnvelope / deliverPrivateData pattern.
  */
 class CoreFeatureT3PeerTest {
 
@@ -57,12 +59,12 @@ class CoreFeatureT3PeerTest {
     }
 
     // ================================================================
-    // Private data: identities loaded from filesystem
+    // Targeted delivery: identities loaded from filesystem
     // ================================================================
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `onPrivateData correctly loads identities from filesystem response`() = runTest {
+    fun `targeted FILESYSTEM_RESPONSE_READ correctly loads identities`() = runTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -81,21 +83,20 @@ class CoreFeatureT3PeerTest {
             put("activeId", "loaded-user")
         }.toString()
 
-        val envelope = PrivateDataEnvelope(
-            type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ,
+        // ACT: Dispatch a targeted action (as FileSystemFeature would after Phase 3 migration).
+        harness.store.dispatch("filesystem", Action(
+            name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
             payload = buildJsonObject {
                 put("subpath", "identities.json")
                 put("content", fileContent)
-            }
-        )
-
-        // ACT: Deliver the private data directly to the CoreFeature.
-        harness.store.deliverPrivateData("FileSystemFeature", "core", envelope)
+            },
+            targetRecipient = "core"
+        ))
         runCurrent()
 
         // ASSERT 1: Verify that the correct internal action was dispatched.
         val loadedAction = harness.processedActions.find { it.name == ActionNames.CORE_INTERNAL_IDENTITIES_LOADED }
-        assertNotNull(loadedAction, "The onPrivateData handler should dispatch an internal loaded action.")
+        assertNotNull(loadedAction, "The handleSideEffects handler should dispatch an internal loaded action.")
 
         // ASSERT 2: Verify the final state is correct.
         val finalState = harness.store.state.value.featureStates["core"] as CoreState
@@ -105,7 +106,7 @@ class CoreFeatureT3PeerTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `onPrivateData migrates loaded identities into identity registry`() = runTest {
+    fun `targeted FILESYSTEM_RESPONSE_READ migrates loaded identities into identity registry`() = runTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -129,15 +130,15 @@ class CoreFeatureT3PeerTest {
             put("activeId", "alice")
         }.toString()
 
-        val envelope = PrivateDataEnvelope(
-            type = ActionNames.Envelopes.FILESYSTEM_RESPONSE_READ,
+        // ACT: Dispatch targeted action (replacing old deliverPrivateData call).
+        harness.store.dispatch("filesystem", Action(
+            name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
             payload = buildJsonObject {
                 put("subpath", "identities.json")
                 put("content", fileContent)
-            }
-        )
-
-        harness.store.deliverPrivateData("FileSystemFeature", "core", envelope)
+            },
+            targetRecipient = "core"
+        ))
         runCurrent()
 
         // ASSERT: Loaded identities should be in the identity registry under core.* namespace
@@ -157,7 +158,7 @@ class CoreFeatureT3PeerTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `confirmation dialog flow delivers private response on CONFIRM`() = runTest {
+    fun `confirmation dialog flow delivers targeted response on CONFIRM`() = runTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -192,14 +193,15 @@ class CoreFeatureT3PeerTest {
         }))
         runCurrent()
 
-        // --- ASSERT 2: The correct private response is delivered and state is cleared ---
-        assertEquals(1, harness.deliveredPrivateData.size, "A private data envelope should have been delivered.")
-        val delivery = harness.deliveredPrivateData.first()
-        assertEquals("core", delivery.originator)
-        assertEquals(originatorFeatureName, delivery.recipient)
-        assertEquals(ActionNames.Envelopes.CORE_RESPONSE_CONFIRMATION, delivery.envelope.type)
+        // --- ASSERT 2: A targeted CORE_RESPONSE_CONFIRMATION action was dispatched ---
+        val responseAction = harness.processedActions.find {
+            it.name == ActionRegistry.Names.CORE_RESPONSE_CONFIRMATION
+        }
+        assertNotNull(responseAction, "A targeted CORE_RESPONSE_CONFIRMATION action should have been dispatched.")
+        assertEquals("core", responseAction.originator, "The response should originate from core.")
+        assertEquals(originatorFeatureName, responseAction.targetRecipient, "The response should be targeted to the requesting feature.")
 
-        val responsePayload = Json.decodeFromString<ConfirmationResponsePayload>(delivery.envelope.payload.toString())
+        val responsePayload = Json.decodeFromString<ConfirmationResponsePayload>(responseAction.payload.toString())
         assertEquals(testRequestId, responsePayload.requestId)
         assertTrue(responsePayload.confirmed, "The response should indicate confirmation.")
 
@@ -209,7 +211,7 @@ class CoreFeatureT3PeerTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `confirmation dialog flow delivers private response on DISMISS`() = runTest {
+    fun `confirmation dialog flow delivers targeted response on DISMISS`() = runTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -237,12 +239,14 @@ class CoreFeatureT3PeerTest {
         }))
         runCurrent()
 
-        // --- ASSERT: The correct private response is delivered ---
-        assertEquals(1, harness.deliveredPrivateData.size)
-        val delivery = harness.deliveredPrivateData.first()
-        assertEquals(ActionNames.Envelopes.CORE_RESPONSE_CONFIRMATION, delivery.envelope.type)
+        // --- ASSERT: A targeted CORE_RESPONSE_CONFIRMATION action was dispatched ---
+        val responseAction = harness.processedActions.find {
+            it.name == ActionRegistry.Names.CORE_RESPONSE_CONFIRMATION
+        }
+        assertNotNull(responseAction, "A targeted CORE_RESPONSE_CONFIRMATION action should have been dispatched.")
+        assertEquals(originatorFeatureName, responseAction.targetRecipient, "The response should be targeted to the requesting feature.")
 
-        val responsePayload = Json.decodeFromString<ConfirmationResponsePayload>(delivery.envelope.payload.toString())
+        val responsePayload = Json.decodeFromString<ConfirmationResponsePayload>(responseAction.payload.toString())
         assertEquals(testRequestId, responsePayload.requestId)
         assertTrue(!responsePayload.confirmed, "The response should indicate dismissal (not confirmed).")
 

@@ -316,19 +316,102 @@ class StoreT1RoutingTest {
     }
 
     @Test
-    fun `targeted action is delivered to owning feature only (Phase 3 pre-wire)`() {
-        // Phase 3 will add targetRecipient routing. For now, targeted actions
-        // fall through to owning-feature-only delivery as a safe default.
+    fun `targeted action is delivered to recipient feature only`() {
         val store = createRoutingStore(
             descriptor("alpha.RESPONSE", featureName = "alpha", open = false, broadcast = false, targeted = true)
         )
 
-        store.dispatch("alpha", Action("alpha.RESPONSE"))
+        // Alpha dispatches a targeted response to beta
+        store.dispatch("alpha", Action("alpha.RESPONSE", targetRecipient = "beta"))
+
+        assertTrue(store.betaState().reducerLog.contains("alpha.RESPONSE"),
+            "Targeted action should be delivered to the recipient feature.")
+        assertTrue(store.alphaState().reducerLog.isEmpty(),
+            "Targeted action should NOT be delivered to the dispatching/owning feature (unless it's also the recipient).")
+    }
+
+    @Test
+    fun `targeted action delivered to self when recipient is owning feature`() {
+        val store = createRoutingStore(
+            descriptor("alpha.RESPONSE", featureName = "alpha", open = false, broadcast = false, targeted = true)
+        )
+
+        // Alpha dispatches a targeted response to itself
+        store.dispatch("alpha", Action("alpha.RESPONSE", targetRecipient = "alpha"))
 
         assertTrue(store.alphaState().reducerLog.contains("alpha.RESPONSE"),
-            "Targeted action should be delivered to owning feature (Phase 3 pre-wire).")
+            "Targeted action should be delivered when recipient is the owning feature itself.")
         assertTrue(store.betaState().reducerLog.isEmpty(),
-            "Targeted action should NOT be delivered to non-owning features.")
+            "Targeted action should NOT be delivered to non-recipient features.")
+    }
+
+    @Test
+    fun `targeted action rejects foreign originator`() {
+        platform.capturedLogs.clear()
+        val store = createRoutingStore(
+            descriptor("alpha.RESPONSE", featureName = "alpha", open = false, broadcast = false, targeted = true)
+        )
+
+        // Beta tries to dispatch alpha's targeted action — should be rejected by authorization
+        store.dispatch("beta", Action("alpha.RESPONSE", targetRecipient = "alpha"))
+
+        assertTrue(store.alphaState().reducerLog.isEmpty(),
+            "Targeted action dispatched by unauthorized originator should be rejected.")
+        assertTrue(store.betaState().reducerLog.isEmpty(),
+            "Targeted action dispatched by unauthorized originator should not reach any feature.")
+    }
+
+    @Test
+    fun `targeted action without targetRecipient is rejected`() {
+        platform.capturedLogs.clear()
+        val store = createRoutingStore(
+            descriptor("alpha.RESPONSE", featureName = "alpha", open = false, broadcast = false, targeted = true)
+        )
+
+        // Dispatch without targetRecipient — should be rejected at Step 1b
+        store.dispatch("alpha", Action("alpha.RESPONSE"))
+
+        assertTrue(store.alphaState().reducerLog.isEmpty(),
+            "Targeted action without targetRecipient should be rejected.")
+
+        val errorLog = platform.capturedLogs.find {
+            it.level == LogLevel.ERROR && it.message.contains("without targetRecipient")
+        }
+        assertNotNull(errorLog, "An error should be logged for targeted action missing targetRecipient.")
+    }
+
+    @Test
+    fun `non-targeted action with targetRecipient is rejected`() {
+        platform.capturedLogs.clear()
+        val store = createRoutingStore(
+            descriptor("alpha.INTERNAL", featureName = "alpha", open = false, broadcast = false, targeted = false)
+        )
+
+        // Dispatch a non-targeted action with targetRecipient — should be rejected at Step 1b
+        store.dispatch("alpha", Action("alpha.INTERNAL", targetRecipient = "beta"))
+
+        assertTrue(store.alphaState().reducerLog.isEmpty(),
+            "Non-targeted action with targetRecipient should be rejected.")
+
+        val errorLog = platform.capturedLogs.find {
+            it.level == LogLevel.ERROR && it.message.contains("not declared as targeted")
+        }
+        assertNotNull(errorLog, "An error should be logged for non-targeted action carrying targetRecipient.")
+    }
+
+    @Test
+    fun `targeted action resolves hierarchical recipient to feature level`() {
+        val store = createRoutingStore(
+            descriptor("alpha.RESPONSE", featureName = "alpha", open = false, broadcast = false, targeted = true)
+        )
+
+        // Target "beta.sub-entity" — Store should resolve to feature "beta"
+        store.dispatch("alpha", Action("alpha.RESPONSE", targetRecipient = "beta.sub-entity"))
+
+        assertTrue(store.betaState().reducerLog.contains("alpha.RESPONSE"),
+            "Targeted action with hierarchical recipient should be delivered to the resolved feature.")
+        assertTrue(store.alphaState().reducerLog.isEmpty(),
+            "Targeted action should not be delivered to the owning feature.")
     }
 
     // ========================================================================
@@ -380,6 +463,21 @@ class StoreT1RoutingTest {
             "handleSideEffects should be called on alpha (owner) for open non-broadcast.")
         assertTrue(store.betaState().sideEffectLog.isEmpty(),
             "handleSideEffects should NOT be called on beta for open non-broadcast.")
+    }
+
+    @Test
+    fun `handleSideEffects called only on recipient for targeted action`() {
+        val store = createRoutingStore(
+            descriptor("alpha.RESPONSE", featureName = "alpha", open = false, broadcast = false, targeted = true),
+            useSideEffectTracking = true
+        )
+
+        store.dispatch("alpha", Action("alpha.RESPONSE", targetRecipient = "beta"))
+
+        assertTrue(store.betaState().sideEffectLog.contains("alpha.RESPONSE"),
+            "handleSideEffects should be called on beta (recipient) for targeted action.")
+        assertTrue(store.alphaState().sideEffectLog.isEmpty(),
+            "handleSideEffects should NOT be called on alpha (owner/sender) for targeted action.")
     }
 
     // ========================================================================

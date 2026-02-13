@@ -49,6 +49,7 @@ class StoreT1GuardTest {
         override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
             if (action.name == "test.CRASH_ON_ACTION") throw IllegalStateException("handleSideEffects deliberately crashed")
         }
+        @Suppress("DEPRECATION")
         override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
             if (envelope.type == "test.CRASH_PRIVATE") throw IllegalStateException("onPrivateData deliberately crashed")
         }
@@ -182,21 +183,36 @@ class StoreT1GuardTest {
 
 
     @Test
-    fun `exception in onPrivateData should log FATAL and show toast`() {
+    fun `deprecated deliverPrivateData bridges to targeted dispatch and rejects unknown action`() {
+        // Phase 3: deliverPrivateData is now a deprecated bridge that converts to
+        // deferredDispatch with targetRecipient. The envelope type becomes the action name,
+        // which flows through processAction with full validation.
+        //
+        // Since "test.CRASH_PRIVATE" is not in actionDescriptors, the Store rejects it
+        // at Step 1 (schema lookup) as an unknown action. The onPrivateData method is
+        // never called — crashes there are no longer possible via this code path.
         platform.capturedLogs.clear()
         val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING), CrashingFeature())
 
+        @Suppress("DEPRECATION")
         val envelope = PrivateDataEnvelope("test.CRASH_PRIVATE", buildJsonObject { put("data", "test") })
+        @Suppress("DEPRECATION")
         store.deliverPrivateData("test.sender", "crashingfeature", envelope)
 
-        val finalState = store.state.value
-        val finalCoreState = finalState.featureStates["core"] as CoreState
+        // The bridge should log a deprecation warning
+        val warnLog = platform.capturedLogs.find {
+            it.level == LogLevel.WARN && it.message.contains("DEPRECATED deliverPrivateData")
+        }
+        assertNotNull(warnLog, "The deprecated bridge should log a warning about the deprecated call.")
 
-        assertNotNull(finalCoreState.toastMessage, "A toast message should be present.")
-        assertTrue(finalCoreState.toastMessage!!.contains("An internal error occurred in 'crashingfeature'"))
+        // The Store should reject the action as unknown (not in actionDescriptors)
+        val errorLog = platform.capturedLogs.find {
+            it.level == LogLevel.ERROR && it.message.contains("Unknown Action")
+        }
+        assertNotNull(errorLog, "The bridge routes through processAction, which rejects unknown action names.")
 
-        val log = platform.capturedLogs.find { it.level == LogLevel.FATAL }
-        assertNotNull(log, "A FATAL log should have been captured.")
-        assertTrue(log.message.contains("FATAL EXCEPTION in onPrivateData for feature 'crashingfeature'"))
+        // No toast or FATAL log — the action was simply rejected, not crashed
+        val fatalLog = platform.capturedLogs.find { it.level == LogLevel.FATAL }
+        assertNull(fatalLog, "No FATAL error should occur — the action is cleanly rejected before reaching any feature.")
     }
 }

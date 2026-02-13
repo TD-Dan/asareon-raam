@@ -203,7 +203,8 @@ class CoreFeature(
                             put("uuid", addedIdentity.uuid)
                             put("name", addedIdentity.name)
                             put("parentHandle", addedIdentity.parentHandle ?: "")
-                        }
+                        },
+                        targetRecipient = originator
                     ))
 
                     // Broadcast registry update
@@ -219,7 +220,8 @@ class CoreFeature(
                             put("success", false)
                             put("requestedLocalHandle", requestedLocalHandle ?: "")
                             put("error", "Registration rejected. Check logs for details.")
-                        }
+                        },
+                        targetRecipient = originator
                     ))
                 }
             }
