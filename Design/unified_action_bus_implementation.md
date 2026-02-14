@@ -1,8 +1,8 @@
 # Unified Action Bus v2.0 — Complete Implementation Outline
 
-**Version**: 3.0 — Phase 3 complete
-**Status**: Phase 1 ✅ / Phase 2.1 ✅ / Phase 2.2 ✅ / Phase 3 ✅ / Phase 4 Ready
-**Last Updated**: 2026-02-13 — SettingsFeature migration complete (last onPrivateData consumer eliminated)
+**Version**: 4.0 — Phase 4 Session identity migration complete
+**Status**: Phase 1 ✅ / Phase 2.1 ✅ / Phase 2.2 ✅ / Phase 3 ✅ / Phase 4 Session ✅ / Phase 4 Agent & CommandBot Ready
+**Last Updated**: 2026-02-14 — Session identity migration complete (Session.id → Session.identity, two-phase async creation, UUID folder persistence)
 
 ## Executive Summary
 
@@ -31,7 +31,7 @@ The work is organized into **6 phases**, each independently shippable. The final
 3. [Phase 1 — Manifest Schema Unification & ActionRegistry Codegen ✅](#3-phase-1--manifest-schema-unification--actionregistry-codegen)
 4. [Phase 2 — IdentityRegistry & Hierarchical Originators (2.1 ✅ / 2.2 ✅)](#4-phase-2--identityregistry--hierarchical-originators)
 5. [Phase 3 — Targeted Delivery & Private Envelope Absorption ✅](#5-phase-3--targeted-delivery--private-envelope-absorption)
-6. [Phase 4 — Migrate Consumers (CommandBot, Agent, Session) ⬅️ NEXT](#6-phase-4--migrate-consumers-commandbot-agent-session)
+6. [Phase 4 — Migrate Consumers (CommandBot, Agent, Session) — Session ✅](#6-phase-4--migrate-consumers-commandbot-agent-session)
 7. [Phase 5 — Runtime-Extensible Registry](#7-phase-5--runtime-extensible-registry)
 8. [Phase 6 — Slash-Command Autocomplete UI](#8-phase-6--slash-command-autocomplete-ui)
 9. [Future: Permissions System (Paved, Not Built)](#9-future-permissions-system-paved-not-built)
@@ -1270,7 +1270,7 @@ Private data envelopes now flow through the same pipeline as every other action:
 
 ---
 
-## 6. Phase 4 — Migrate Consumers (CommandBot, Agent, Session) ⬅️ NEXT
+## 6. Phase 4 — Migrate Consumers (CommandBot, Agent, Session) — Session ✅
 
 **Goal**: All features read from `ActionRegistry` instead of `ExposedActions`, and from `AppState.identityRegistry` instead of their private name caches. Old parallel systems and compatibility shims are deleted.
 
@@ -1288,16 +1288,100 @@ Private data envelopes now flow through the same pipeline as every other action:
 
 The mutable `knownAgentIds` and `knownAgentNames` sets are deleted entirely. CommandBot becomes stateless with respect to identity — it reads from the single source of truth.
 
-### 6.2 Session Feature Migration
+### 6.2 Session Feature Migration ✅
 
-| Current | Replacement |
+**Completed 2026-02-14.** Full session identity migration as specified in `phase4-session-identity-migration.md`.
+
+#### Data Model Changes
+
+| Before | After |
 |---|---|
-| `SessionState.identityNames: Map<String, String>` | `AppState.identityRegistry` — read directly |
-| Subscribes to `CORE_IDENTITIES_UPDATED` | Subscribes to `CORE_IDENTITY_REGISTRY_UPDATED` |
-| Subscribes to `AGENT_NAMES_UPDATED` | Removed — single broadcast covers all |
-| `SessionView` name resolution | `appState.identityRegistry[senderHandle]?.name ?: senderHandle` |
+| `Session.id: String` (UUID) | `Session.identity: Identity` (uuid, localHandle, handle, name, parentHandle) |
+| `Session.name: String` | `Session.identity.name` |
+| `SessionState.activeSessionId` | `SessionState.activeSessionLocalHandle` |
+| `SessionState.editingSessionId` | `SessionState.editingSessionLocalHandle` |
+| `SessionState.lastDeletedSessionId` | `SessionState.lastDeletedSessionLocalHandle` |
+| Sessions map keyed by UUID | Sessions map keyed by `identity.localHandle` |
+| — | `SessionState.pendingCreations: Map<String, PendingSessionCreation>` (transient, keyed by UUID) |
+| — | `SessionState.activeUserId: String?` (cached from `CORE_IDENTITIES_UPDATED` broadcast) |
 
-⚠️ **UUID→Handle Migration**: SessionFeature currently uses `Session.id` (UUID) as the canonical identifier throughout its internals — `subscribedSessionIds` on agents, `privateSessionId`, `contextSessionId` in the cognitive pipeline, and `sessionId` fields in payloads. The IdentityRegistry uses handles (`session.chat1`) as addresses. This mismatch means code that wants to find a session in the registry must reverse-lookup by UUID, which is fragile and defeats the purpose of the unified identity model. Phase 4 should migrate SessionFeature's internals to use handles as primary identifiers, with UUIDs retained only for persistence stability.
+#### Two-Phase Async Session Creation
+
+Session creation is now a two-phase flow mediated by CoreFeature's identity registry:
+
+1. **SESSION_CREATE** reducer stashes a `PendingSessionCreation` (uuid, requestedName, isHidden, isAgentPrivate, createdAt). No session is added to state yet.
+2. **SESSION_CREATE** side effect dispatches `core.REGISTER_IDENTITY` with `name` and `uuid` (localHandle is null — CoreFeature generates it via `slugifyName()`).
+3. **CoreFeature** processes the registration: generates localHandle slug, deduplicates, adds to registry, sends targeted `RESPONSE_REGISTER_IDENTITY` back to session.
+4. **RESPONSE_REGISTER_IDENTITY** reducer: on success, creates the actual `Session` from the pending data with the approved `Identity`, adds to `sessions` map, sets active. On failure, removes pending, sets error.
+
+Clone follows the same flow with `cloneSourceLocalHandle` stored in the pending.
+
+#### Persistence Path Change
+
+| Before | After |
+|---|---|
+| `v2/session/{uuid}.json` (flat) | `v2/session/{uuid}/{localHandle}.json` (UUID folder, slug filename) |
+
+The UUID folder is stable across renames. When a session is renamed, `UPDATE_IDENTITY` triggers a file rename inside the folder (`old-slug.json` → `new-slug.json`). On delete, the entire UUID folder is removed.
+
+#### File Loading (Two-Level Traversal)
+
+`FILESYSTEM_RESPONSE_LIST` now handles two levels:
+1. First response: top-level listing of UUID folders → dispatches `SYSTEM_LIST` for each UUID folder
+2. Second response: contents of a UUID folder → dispatches `SYSTEM_READ` for each `.json` file inside
+
+#### CoreFeature Additions
+
+- `CoreFeature.slugifyName()`: companion function converting display names to valid localHandle slugs (lowercase, hyphens, strip diacritics)
+- `REGISTER_IDENTITY` loosened: `localHandle` optional (generated from name if null), `uuid` field accepted (validated against UUID regex, passed through to response for correlation)
+- `UUID_REGEX` companion constant for UUID format validation
+- `UPDATE_IDENTITY` action: namespace-enforced name change with slug recomputation, deduplication, atomic swap, child cascade, targeted response
+- `RESPONSE_UPDATE_IDENTITY` action: targeted response carrying old/new handle and updated identity
+
+#### View Decoupling
+
+`SessionView.kt` previously imported `CoreState` to read `activeUserId` — a cross-feature import violation. Fixed by:
+1. Adding `activeUserId` to `SessionState` as a `@Transient` cached field
+2. Populating it from the `CORE_IDENTITIES_UPDATED` broadcast payload (`activeId` field)
+3. Removing the `CoreState` import and `coreState` parameter from `LedgerPane`
+
+All views updated mechanically: `session.id` → `session.identity.localHandle`, `session.name` → `session.identity.name`.
+
+#### Session Resolution
+
+`resolveSessionId()` now resolves session identifiers in priority order:
+1. Exact match on `identity.localHandle`
+2. Match on full `identity.handle` (e.g. `session.my-chat`)
+3. Case-insensitive match on `identity.name` (display name)
+
+#### Manifest Changes
+
+- `core_actions.json`: `REGISTER_IDENTITY` loosened (localHandle optional, uuid added), `UPDATE_IDENTITY` + `RESPONSE_UPDATE_IDENTITY` added
+- `session_actions.json`: field descriptions updated from "ID or name" to "localHandle, full handle, or display name"
+
+#### Test Updates
+
+All session tests updated to use `Identity`-based `Session` construction:
+- **T1 LedgerEntryCardTest**: Identity construction, localHandle in map keys and payload assertions
+- **T1 SessionManagerViewTest**: Identity construction, `"Handle: sid-1"` display text, localHandle keys
+- **T1 SessionViewTest**: Identity construction, `activeSessionLocalHandle` state field
+- **T2 CoreTest**: Major rewrite — two-phase creation flow, UUID folder deletion, two-level file loading, Identity-format JSON, new tests for `activeUserId` caching, persist path format, three-way `resolveSessionId`
+- **FakePlatformDependencies**: `generateUUID()` updated to produce valid UUID v4 format (`00000000-0000-4000-a000-{counter}`)
+
+#### Files Changed
+
+| File | Change |
+|---|---|
+| `CoreFeature.kt` | `slugifyName()`, loosened `REGISTER_IDENTITY`, `UUID_REGEX`, `UPDATE_IDENTITY` handler, `RESPONSE_UPDATE_IDENTITY` |
+| `SessionState.kt` | `Session.identity: Identity`, `PendingSessionCreation`, renamed state fields, `activeUserId` cache |
+| `SessionFeature.kt` | Two-phase creation reducers/side-effects, `RESPONSE_REGISTER_IDENTITY`/`RESPONSE_UPDATE_IDENTITY` handlers, two-level file loading, `resolveSessionId()` triple-match, `persistSession()` UUID path, removed `CoreFeature` import |
+| `SessionView.kt` | Mechanical renames, removed `CoreState` import, `activeUserId` from `SessionState` |
+| `SessionsManagerView.kt` | Mechanical renames (`session.id`→`identity.localHandle`, `session.name`→`identity.name`, `"Handle:"` label) |
+| `LedgerEntryCard.kt` | Mechanical renames (`session.id`→`identity.localHandle`) |
+| `core_actions.json` | Loosened REGISTER_IDENTITY, added UPDATE_IDENTITY + RESPONSE_UPDATE_IDENTITY |
+| `session_actions.json` | Updated field descriptions |
+| `FakePlatformDependencies.kt` | Valid UUID format in `generateUUID()` |
+| 4 test files | Updated to Identity-based Session construction and new state field names |
 
 ### 6.3 Agent Feature Migration
 
@@ -1327,10 +1411,15 @@ The following renames should be batched and applied via IDE find-and-replace:
 |---|---|
 | `CommandBotFeature.kt` | Replace `ExposedActions.*` → `ActionRegistry.*`; delete `knownAgentIds/Names`; subscribe to identity updates |
 | `CommandBotState.kt` | No change (approval state is orthogonal) |
-| `SessionFeature.kt` | Remove `identityNames` maintenance; simplify subscriptions; ⚠️ migrate internals from UUID to handle as primary identifier |
-| `SessionState.kt` | Deprecate then delete `identityNames` field; ⚠️ evaluate `Session.id` → handle migration |
-| `SessionView.kt` | Read names from `AppState.identityRegistry` |
-| `SessionsManagerView.kt` | Same |
+| `SessionFeature.kt` | ✅ Two-phase creation, RESPONSE handlers, two-level file loading, `resolveSessionId()` triple-match, UUID persistence paths, removed `CoreFeature` import |
+| `SessionState.kt` | ✅ `Session.identity: Identity`, `PendingSessionCreation`, renamed state fields, `activeUserId` cache |
+| `SessionView.kt` | ✅ Mechanical renames, removed `CoreState` import, `activeUserId` from `SessionState` |
+| `SessionsManagerView.kt` | ✅ Mechanical renames |
+| `LedgerEntryCard.kt` | ✅ Mechanical renames |
+| `CoreFeature.kt` | ✅ `slugifyName()`, loosened `REGISTER_IDENTITY`, `UUID_REGEX`, `UPDATE_IDENTITY` + response handler |
+| `core_actions.json` | ✅ Loosened REGISTER_IDENTITY, added UPDATE_IDENTITY + RESPONSE_UPDATE_IDENTITY |
+| `session_actions.json` | ✅ Updated field descriptions |
+| `FakePlatformDependencies.kt` | ✅ Valid UUID format in `generateUUID()` |
 | `AgentRuntimeFeature.kt` | Register/unregister identities instead of broadcasting names; ⚠️ migrate internals from UUID to handle as primary identifier |
 | `AgentRuntimeState.kt` | ⚠️ Evaluate `Agent.id` → handle migration in `agentStatuses`, `pendingCommandResponses` |
 | `AgentCognitivePipeline.kt` | ⚠️ Migrate `correlationId` from UUID to handle |
@@ -1909,19 +1998,37 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
 
 **SettingsFeature was the last unmigrated feature**: Its `onPrivateData` had a single handler for `FILESYSTEM_RESPONSE_READ` that loaded settings from disk. The migration was mechanical — `envelope.type` → `action.name`, `envelope.payload` → `action.payload`, handler moved into `handleSideEffects` as the first `when` branch. The inner logic (checking `subpath == settingsFileName`, decoding JSON content, dispatching `SETTINGS_LOADED`) was unchanged. The T2 test was the only test in the codebase still directly calling `feature.onPrivateData()` with a `PrivateDataEnvelope` — replaced with a targeted action dispatch through the Store matching the real FilesystemFeature delivery path. The T5 platform test was still using the pre-Phase 2.1 Store constructor (`validActionNames` 4th param) and manual `features.forEach { it.init(store) }` instead of `store.initFeatureLifecycles()` — both updated.
 
-### Known Issues (Phase 3)
+**Phase 4 Session Identity Migration (2026-02-14)**: The largest single migration in the project. `Session.id` (UUID string) and `Session.name` were replaced with `Session.identity: Identity`, bringing sessions fully into the IdentityRegistry model. Session creation became a two-phase async flow: `SESSION_CREATE` stashes a `PendingSessionCreation`, dispatches `REGISTER_IDENTITY` to CoreFeature (with `name` and caller-generated `uuid`, no `localHandle` — CoreFeature generates the slug via new `slugifyName()` companion function), and the actual Session is only created when `RESPONSE_REGISTER_IDENTITY` arrives with the approved Identity. This ensures every session has a registry-approved handle from birth. Persistence path changed from flat `{uuid}.json` to `{uuid}/{localHandle}.json` — the UUID folder is stable across renames, while the slug filename inside is human-readable. File loading became two-level: list UUID folders → list contents of each → read `.json` files. A new `UPDATE_IDENTITY` action in CoreFeature handles renames with namespace enforcement, slug recomputation, deduplication, atomic swap, child handle cascade, and a targeted response that triggers file rename in SessionFeature. `resolveSessionId()` was upgraded to triple-match: localHandle, full handle (`session.my-chat`), or display name. A cross-feature import violation was discovered and fixed — `SessionView` was importing `CoreState` for `activeUserId`; replaced with a `@Transient activeUserId` field on `SessionState` cached from `CORE_IDENTITIES_UPDATED` broadcast. All view files received mechanical renames (`session.id`→`identity.localHandle`, `session.name`→`identity.name`). `FakePlatformDependencies.generateUUID()` was updated to produce valid UUID v4 format (`00000000-0000-4000-a000-{counter}`) to pass CoreFeature's UUID validation regex. All 4 test files updated — T2 CoreTest required the most work: two-phase creation verification, UUID folder deletion, two-level file loading, Identity-format JSON, plus new test coverage for `activeUserId` caching, persist path format, and three-way session resolution.
 
-⚠️ **SessionFeature uses UUIDs internally instead of handles**: `SessionFeature` still tracks sessions by UUID (`session.id`) rather than by handle (`session.chat1`). The `subscribedSessionIds` field on agents, `privateSessionId`, and the `contextSessionId` resolution in the cognitive pipeline all use UUIDs. This creates a mismatch — the IdentityRegistry uses handles as the canonical identifier, but the session feature's internal wiring still uses UUIDs. **Must be addressed in Phase 4** to fully realize the handle-based identity model.
+### Known Issues (Phase 4)
 
-⚠️ **AgentRuntimeFeature uses UUIDs internally instead of handles**: Similar to SessionFeature, `AgentRuntimeFeature` tracks agents by `agent.id` (UUID) in `agentStatuses`, `pendingCommandResponses`, and throughout the cognitive pipeline. The `correlationId` fields in targeted response payloads carry agent UUIDs, not handles. This is functional but inconsistent with the IdentityRegistry's handle-based model. **Must be addressed in Phase 4** alongside the SessionFeature migration.
+~~⚠️ **SessionFeature uses UUIDs internally instead of handles**~~ — **Resolved in Phase 4 Session migration.** `Session.id` replaced by `Session.identity` containing both UUID (for persistence) and localHandle (for runtime addressing). Sessions map keyed by localHandle. Two-phase async creation via CoreFeature's identity registry.
 
-### Phase 4 — Migrate Consumers & Delete Shims ⬅️ NEXT
+⚠️ **AgentRuntimeFeature uses UUIDs internally instead of handles**: Similar to the now-resolved SessionFeature issue, `AgentRuntimeFeature` tracks agents by `agent.id` (UUID) in `agentStatuses`, `pendingCommandResponses`, and throughout the cognitive pipeline. The `correlationId` fields in targeted response payloads carry agent UUIDs, not handles. This is functional but inconsistent with the IdentityRegistry's handle-based model. **Must be addressed in Phase 4** alongside the remaining CommandBot migration.
+
+⚠️ **Cross-feature references to session UUIDs**: `subscribedSessionIds` on agents, `privateSessionId`, and `contextSessionId` in the cognitive pipeline still use UUIDs. These will need updating when the Agent migration brings those features in line with the handle-based model. The `Session.identity.uuid` field is available for reverse-lookup during the transition.
+
+### Phase 4 — Migrate Consumers & Delete Shims — Session ✅, Agent & CommandBot ⬅️ NEXT
+
+#### Session Identity Migration ✅
+- [x] ⚠️ **SessionFeature: migrate from UUIDs to handles** — `Session.id` replaced with `Session.identity: Identity`; sessions map keyed by `localHandle`; two-phase async creation via `REGISTER_IDENTITY`/`RESPONSE_REGISTER_IDENTITY`; persistence path changed to `uuid/localHandle.json`
+- [x] **CoreFeature: `slugifyName()` + loosened `REGISTER_IDENTITY`** — `localHandle` optional (generated from name), `uuid` field accepted and validated, `UUID_REGEX` constant
+- [x] **CoreFeature: `UPDATE_IDENTITY` action** — namespace-enforced rename with slug recomputation, dedup, atomic swap, child cascade, targeted response
+- [x] **SessionState data model** — `Session.identity: Identity`, `PendingSessionCreation`, `activeSessionLocalHandle`, `editingSessionLocalHandle`, `lastDeletedSessionLocalHandle`, `activeUserId` cache
+- [x] **SessionFeature reducers** — two-phase creation (`SESSION_CREATE`→pending→`RESPONSE_REGISTER_IDENTITY`→session), `RESPONSE_UPDATE_IDENTITY` handle re-keying, `resolveSessionId()` triple-match (localHandle, full handle, display name)
+- [x] **SessionFeature side effects** — `REGISTER_IDENTITY` dispatch, `RESPONSE_REGISTER_IDENTITY` persistence/broadcast, UUID folder deletion, `UPDATE_IDENTITY` dispatch on rename, two-level file loading
+- [x] **Views: mechanical renames** — `session.id`→`identity.localHandle`, `session.name`→`identity.name` in SessionView, SessionsManagerView, LedgerEntryCard
+- [x] **Views: decoupled from CoreState** — removed `import CoreState` from SessionView; `activeUserId` cached on SessionState from broadcast
+- [x] **Manifests** — `core_actions.json` loosened + new actions; `session_actions.json` field descriptions
+- [x] **FakePlatformDependencies** — `generateUUID()` produces valid UUID v4 format
+- [x] **Tests updated** — T1 LedgerEntryCard, T1 SessionManagerView, T1 SessionView, T2 CoreTest (two-phase creation, UUID folder deletion, two-level loading, Identity-format JSON, new coverage for `activeUserId`, persist path, `resolveSessionId`)
+
+#### Remaining Phase 4 Work
 - [ ] Migrate `CommandBotFeature` from `ExposedActions.*` → `ActionRegistry.*`
 - [ ] Delete `CommandBotFeature.knownAgentIds` and `knownAgentNames`; read from `AppState.identityRegistry` (filter by parentHandle == "agent")
 - [ ] Migrate agent prompt builder from `ExposedActions.documentation` → `ActionRegistry.byActionName`
 - [ ] Deprecate then delete `SessionState.identityNames`; read from `AppState.identityRegistry` in views
 - [ ] Deprecate `agent.AGENT_NAMES_UPDATED`; agents use `core.REGISTER_IDENTITY` instead
-- [ ] ⚠️ **SessionFeature: migrate from UUIDs to handles** — `Session.id`, `subscribedSessionIds`, `privateSessionId`, `contextSessionId` resolution in cognitive pipeline all use UUIDs; migrate to use handles (`session.chat1`) as canonical identifiers matching IdentityRegistry
 - [ ] ⚠️ **AgentRuntimeFeature: migrate from UUIDs to handles** — `Agent.id`, `agentStatuses`, `pendingCommandResponses`, `correlationId` fields in targeted response payloads all use UUIDs; migrate to use handles (`agent.gemini-coder`) as canonical identifiers matching IdentityRegistry
 - [ ] Delete `ExposedActions.kt` deprecated delegation shim
 - [ ] Delete `ActionNames.kt` typealias shim
