@@ -60,7 +60,8 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
         val agent = testAgent("a1", "Sovereign", "kg1", "p", "m", privateSessionId = "broken-id-123")
         val state = AgentRuntimeState(
             agents = mapOf("a1" to agent),
-            sessionNames = emptyMap() // Session is truly missing from the list
+            sessionNames = emptyMap(), // Session is truly missing from the list
+            hkgReservedIds = setOf("kg1")  // ← add this
         )
 
         SovereignHKGResourceLogic.ensureSovereignSessions(fakeStore, state)
@@ -76,7 +77,8 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
         val agent = testAgent("a1", "Sovereign", "kg1", "p", "m", privateSessionId = "s1")
         val state = AgentRuntimeState(
             agents = mapOf("a1" to agent),
-            sessionNames = mapOf("s1" to "p-cognition: Sovereign (a1)")
+            sessionNames = mapOf("s1" to "p-cognition: Sovereign (a1)"),
+            hkgReservedIds = setOf("kg1")  // ← add this
         )
 
         SovereignHKGResourceLogic.ensureSovereignSessions(fakeStore, state)

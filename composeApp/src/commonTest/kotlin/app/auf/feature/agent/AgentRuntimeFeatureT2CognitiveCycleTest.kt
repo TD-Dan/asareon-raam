@@ -84,8 +84,8 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // === PHASE 2: LEDGER RESPONSE ===
             harness.store.dispatch("session", Action(
-                ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
-                buildJsonObject {
+                name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("messages", buildJsonArray {
                         add(buildJsonObject {
@@ -94,7 +94,8 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                             put("timestamp", 1000L)
                         })
                     })
-                }
+                },
+                targetRecipient = "agent"
             ))
 
             // ASSERT: Turn context staged
@@ -119,11 +120,12 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             // For sovereign agents, HKG context is also required.
             // Simulate HKG context response arrival:
             harness.store.dispatch("knowledgegraph", Action(
-                ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
-                buildJsonObject {
+                name = ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("context", buildJsonObject { put("persona", "test") })
-                }
+                },
+                targetRecipient = "agent"
             ))
 
             // ASSERT: Gate passed — Gateway request dispatched with Sentinel in System Prompt
@@ -140,12 +142,13 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // === PHASE 4: GATEWAY SUCCESS RESPONSE ===
             harness.store.dispatch("gateway", Action(
-                ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
-                buildJsonObject {
+                name = ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+                payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("rawContent", "Boot sequence complete. I am now awake and ready to serve.")
                     put("errorMessage", JsonNull)
-                }
+                },
+                targetRecipient = "agent"
             ))
 
             // ASSERT: State transition to AWAKE
@@ -183,12 +186,13 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
         harness.runAndLogOnFailure {
             // Simulate a gateway failure response with sentinel failure token
             harness.store.dispatch("gateway", Action(
-                ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
-                buildJsonObject {
+                name = ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+                payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("rawContent", "[${SovereignDefaults.SENTINEL_FAILURE_TOKEN}: NO_AGENT_PRESENT]")
                     put("errorMessage", JsonNull)
-                }
+                },
+                targetRecipient = "agent"
             ))
 
             // ASSERT: No state update (remains BOOTING)
@@ -238,8 +242,8 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // === DELIVER LEDGER ===
             harness.store.dispatch("session", Action(
-                ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
-                buildJsonObject {
+                name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("messages", buildJsonArray {
                         add(buildJsonObject {
@@ -248,7 +252,8 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                             put("timestamp", 2000L)
                         })
                     })
-                }
+                },
+                targetRecipient = "agent"
             ))
 
             // Trigger evaluation (parallel context gathering)
@@ -257,11 +262,12 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             // Workspace context arrives automatically via FileSystemFeature.
             // Sovereign agent also needs HKG context:
             harness.store.dispatch("knowledgegraph", Action(
-                ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
-                buildJsonObject {
+                name = ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("context", buildJsonObject { put("persona", "test") })
-                }
+                },
+                targetRecipient = "agent"
             ))
 
             // === VERIFY NO SENTINEL ===
@@ -278,12 +284,13 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // === DELIVER NORMAL RESPONSE ===
             harness.store.dispatch("gateway", Action(
-                ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
-                buildJsonObject {
+                name = ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+                payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("rawContent", "2+2 equals 4.")
                     put("errorMessage", JsonNull)
-                }
+                },
+                targetRecipient = "agent"
             ))
 
             // === VERIFY POST ===
@@ -324,8 +331,8 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             }))
 
             harness.store.dispatch("session", Action(
-                ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
-                buildJsonObject {
+                name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("messages", buildJsonArray {
                         add(buildJsonObject {
@@ -334,7 +341,8 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                             put("timestamp", 3000L)
                         })
                     })
-                }
+                },
+                targetRecipient = "agent"
             ))
 
             // Trigger evaluation (parallel context gathering starts)
@@ -343,11 +351,12 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             // Workspace listing arrives via FileSystemFeature automatically.
             // Sovereign agent also needs HKG context for gate to pass:
             harness.store.dispatch("knowledgegraph", Action(
-                ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
-                buildJsonObject {
+                name = ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("context", buildJsonObject { put("persona", "test") })
-                }
+                },
+                targetRecipient = "agent"
             ))
 
             // Gate passes → executeTurn fires → resource validation fails → ERROR

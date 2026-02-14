@@ -362,7 +362,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         ))
 
         // Verify the System Instruction dropdown is visible
-        composeTestRule.onNodeWithText("System Instruction").assertIsDisplayed()
+        composeTestRule.onNodeWithText("System Instructions").assertIsDisplayed()
 
         // Verify sovereign selectors are NOT visible
         composeTestRule.onNodeWithText("Constitution").assertDoesNotExist()
@@ -382,10 +382,10 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
         // Verify sovereign selectors are visible
         composeTestRule.onNodeWithText("Constitution").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Bootloader").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Bootloader (Sentinel)").assertIsDisplayed()
 
         // Verify vanilla selector is NOT visible
-        composeTestRule.onNodeWithText("System Instruction").assertDoesNotExist()
+        composeTestRule.onNodeWithText("System Instructions").assertDoesNotExist()
     }
 
     @Test
@@ -400,7 +400,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         fakeStore.dispatchedActions.clear()
 
         // 1. Open the System Instruction dropdown and select a resource
-        composeTestRule.onNodeWithText("System Instruction").performClick()
+        composeTestRule.onNodeWithText("System Instructions").performClick()
         composeTestRule.onNodeWithText("My Instruction").performClick()
 
         // 2. Verify: no action dispatched yet
