@@ -240,8 +240,8 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
             }
             else -> message
         }
-
-        val logLine = "[${displayFormatter.format(Date())}] [${level.name.padEnd(5)}] [${tag.padEndTo(5)}] $fullMessage"
+        val pad = " ".repeat(4 - level.ordinal)
+        val logLine = "[${displayFormatter.format(Date())}] [${level.name.padEnd(5)}] [${tag.padEndTo(5)}]$pad $fullMessage"
 
         if (level >= LogLevel.ERROR) {
             System.err.println(logLine)

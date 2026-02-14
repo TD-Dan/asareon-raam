@@ -44,7 +44,7 @@ class SettingsFeature(
                     val loadedValues = payload["content"]?.jsonPrimitive?.contentOrNull?.let {
                         try { Json.decodeFromString<Map<String, String>>(it) } catch (e: Exception) { emptyMap() }
                     } ?: emptyMap()
-                    store.dispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_LOADED, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_LOADED, buildJsonObject {
                         loadedValues.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
                     }))
                 }

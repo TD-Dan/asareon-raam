@@ -40,7 +40,7 @@ open class GatewayFeature(
             ActionRegistry.Names.SYSTEM_INITIALIZING -> {
                 // Each provider registers its own settings, making the system extensible.
                 providerMap.values.forEach { provider ->
-                    provider.registerSettings { actionToDispatch -> store.dispatch(identity.handle, actionToDispatch) }
+                    provider.registerSettings { actionToDispatch -> store.deferredDispatch(identity.handle, actionToDispatch) }
                 }
             }
 
@@ -66,7 +66,7 @@ open class GatewayFeature(
 
             ActionRegistry.Names.GATEWAY_REQUEST_AVAILABLE_MODELS -> {
                 val payload = Json.encodeToJsonElement(gatewayState.availableModels).jsonObject
-                store.dispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_AVAILABLE_MODELS_UPDATED, payload))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_AVAILABLE_MODELS_UPDATED, payload))
             }
 
             ActionRegistry.Names.GATEWAY_GENERATE_CONTENT -> {

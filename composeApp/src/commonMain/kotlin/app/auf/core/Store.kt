@@ -128,7 +128,7 @@ open class Store(
         platformDependencies.log(
             level = LogLevel.DEBUG,
             tag = "Store",
-            message = "  Deferring: $stampedAction"
+            message = "Deferring: $stampedAction"
         )
         deferredActionQueue.add(stampedAction)
         ensureProcessingLoop()
@@ -152,7 +152,7 @@ open class Store(
             platformDependencies.log(
                 level = LogLevel.WARN,
                 tag = "Store",
-                message = "Re-entrant dispatch detected for $stampedAction. This relies on the queue safety net. Prefer 'deferredDispatch' for internal chaining."
+                message = "Re-entrant dispatch detected for $stampedAction. Auto deferring to the queue. Use 'deferredDispatch' instead."
             )
         }
         deferredActionQueue.add(stampedAction)
@@ -264,7 +264,7 @@ open class Store(
         platformDependencies.log(
             level = LogLevel.INFO,
             tag = "Store",
-            message = " Processing (queued:${deferredActionQueue.size}): $action"
+            message = "Processing (queued:${deferredActionQueue.size}): $action"
         )
 
         val isActionAllowed = when (currentLifecycle) {
