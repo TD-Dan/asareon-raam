@@ -19,6 +19,10 @@ import kotlin.test.assertNotNull
  *
  * Mandate (P-TEST-001, T1): To test the UI component's rendering and action dispatching
  * in isolation, using a FakeStore to intercept dispatched actions.
+ *
+ * Phase 2.1 FIX: FakeStore constructor no longer accepts validActionNames: Set<String>.
+ * The Store now validates actions against AppState.actionDescriptors, which is
+ * pre-populated from ActionRegistry.byActionName by default.
  */
 class FileSystemFeatureT1ViewComponentTest {
 
@@ -34,8 +38,10 @@ class FileSystemFeatureT1ViewComponentTest {
     fun setUp() {
         fakePlatform = FakePlatformDependencies(testAppVersion)
         feature = FileSystemFeature(fakePlatform)
-        val validActions = setOf(ActionRegistry.Names.FILESYSTEM_TOGGLE_ITEM_SELECTED)
-        fakeStore = FakeStore(AppState(), fakePlatform, validActions)
+        // Phase 2.1 FIX: FakeStore's 3rd parameter is now List<Feature>, not Set<String>.
+        // Action validation is handled via AppState.actionDescriptors (defaults to ActionRegistry.byActionName).
+        // FakeStore overrides dispatch() to capture without calling super, so no validation occurs anyway.
+        fakeStore = FakeStore(AppState(), fakePlatform)
     }
 
     private fun setViewState(state: FileSystemState) {

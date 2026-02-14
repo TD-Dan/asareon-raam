@@ -27,7 +27,15 @@ open class GatewayFeature(
     private val activeRequests = mutableMapOf<String, Job>()
 
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
-        val gatewayState = newState as? GatewayState ?: return
+        val gatewayState = newState as? GatewayState
+        if (gatewayState == null) {
+            // This should never happen in normal operation — it means the reducer returned
+            // a non-GatewayState or null. Log at WARN to surface configuration issues.
+            if (newState != null) {
+                platformDependencies.log(LogLevel.WARN, identity.handle, "handleSideEffects received unexpected state type: ${newState::class.simpleName}. Skipping.")
+            }
+            return
+        }
         when (action.name) {
             ActionRegistry.Names.SYSTEM_INITIALIZING -> {
                 // Each provider registers its own settings, making the system extensible.
@@ -44,7 +52,11 @@ open class GatewayFeature(
             }
 
             ActionRegistry.Names.SETTINGS_VALUE_CHANGED -> {
-                val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
+                val key = action.payload?.get("key")?.jsonPrimitive?.content
+                if (key == null) {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "SETTINGS_VALUE_CHANGED received with missing 'key' field. Ignoring.")
+                    return
+                }
                 // If one of our known API keys changed, trigger a model refresh for that provider.
                 if (key in providerApiKeys) {
                     val providerId = key.split('.')[1]
@@ -77,7 +89,11 @@ open class GatewayFeature(
     }
 
     private fun handleCancelRequest(action: Action) {
-        val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull ?: return
+        val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+        if (correlationId == null) {
+            platformDependencies.log(LogLevel.WARN, identity.handle, "CANCEL_REQUEST received with missing or null correlationId. Ignoring.")
+            return
+        }
         val job = activeRequests[correlationId]
         if (job != null) {
             platformDependencies.log(LogLevel.INFO, identity.handle, "Cancelling gateway request with correlationId: $correlationId")
@@ -90,30 +106,46 @@ open class GatewayFeature(
     }
 
     private fun handleRequestCompleted(action: Action) {
-        val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull ?: return
+        val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+        if (correlationId == null) {
+            platformDependencies.log(LogLevel.WARN, identity.handle, "REQUEST_COMPLETED received with missing or null correlationId. Ignoring.")
+            return
+        }
         if (activeRequests.containsKey(correlationId)) {
             activeRequests.remove(correlationId)
         }
     }
 
     private fun handleGenerateContent(action: Action, gatewayState: GatewayState, store: Store) {
-        val payload = action.payload ?: return
-
-        // SAFETY: Check for missing originator (Silent Drop Prevention)
+        val payload = action.payload
         val originator = action.originator
-        if (originator == null) {
-            platformDependencies.log(LogLevel.ERROR, identity.handle, "DROPPED REQUEST: GENERATE_CONTENT received without an originator. Cannot reply.")
-            return
+        val providerId = payload?.get("providerId")?.jsonPrimitive?.contentOrNull
+        val modelName = payload?.get("modelName")?.jsonPrimitive?.contentOrNull
+        val correlationId = payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+        val systemPrompt = payload?.get("systemPrompt")?.jsonPrimitive?.contentOrNull
+
+        val contents = try {
+            payload?.get("contents")?.jsonArray?.let {
+                json.decodeFromJsonElement<List<GatewayMessage>>(it)
+            }
+        } catch (e: Exception) {
+            platformDependencies.log(
+                LogLevel.ERROR, identity.handle,
+                "DROPPED GENERATE_CONTENT: failed to deserialize 'contents' field. Error: ${e.message}"
+            )
+            null
         }
 
-        val providerId = payload["providerId"]?.jsonPrimitive?.contentOrNull ?: return
-        val modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: return
-        val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
-        val systemPrompt = payload["systemPrompt"]?.jsonPrimitive?.contentOrNull
-
-        val contents = payload["contents"]?.jsonArray?.let {
-            json.decodeFromJsonElement<List<GatewayMessage>>(it)
-        } ?: return
+        if (payload == null || originator == null || providerId == null ||
+            modelName == null || correlationId == null || contents == null) {
+            platformDependencies.log(
+                LogLevel.ERROR, identity.handle,
+                "DROPPED GENERATE_CONTENT: malformed or incomplete payload. " +
+                        "payload=${payload != null}, originator=$originator, providerId=$providerId, " +
+                        "modelName=$modelName, correlationId=$correlationId, contentsPresent=${contents != null}"
+            )
+            return
+        }
 
         val provider = providerMap[providerId]
         if (provider == null) {
@@ -177,18 +209,35 @@ open class GatewayFeature(
     }
 
     private fun handlePreparePreview(action: Action, gatewayState: GatewayState, store: Store) {
-        val payload = action.payload ?: return
+        val payload = action.payload
         val originator = action.originator
-        if (originator == null) {
-            platformDependencies.log(LogLevel.ERROR, identity.handle, "DROPPED REQUEST: PREPARE_PREVIEW received without an originator.")
-            return
+        val providerId = payload?.get("providerId")?.jsonPrimitive?.contentOrNull
+        val modelName = payload?.get("modelName")?.jsonPrimitive?.contentOrNull
+        val correlationId = payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+        val systemPrompt = payload?.get("systemPrompt")?.jsonPrimitive?.contentOrNull
+
+        val contents = try {
+            payload?.get("contents")?.jsonArray?.let {
+                json.decodeFromJsonElement<List<GatewayMessage>>(it)
+            }
+        } catch (e: Exception) {
+            platformDependencies.log(
+                LogLevel.ERROR, identity.handle,
+                "DROPPED PREPARE_PREVIEW: failed to deserialize 'contents' field. Error: ${e.message}"
+            )
+            null
         }
 
-        val providerId = payload["providerId"]?.jsonPrimitive?.contentOrNull ?: return
-        val modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: return
-        val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
-        val systemPrompt = payload["systemPrompt"]?.jsonPrimitive?.contentOrNull
-        val contents = payload["contents"]?.jsonArray?.let { json.decodeFromJsonElement<List<GatewayMessage>>(it) } ?: return
+        if (payload == null || originator == null || providerId == null ||
+            modelName == null || correlationId == null || contents == null) {
+            platformDependencies.log(
+                LogLevel.ERROR, identity.handle,
+                "DROPPED PREPARE_PREVIEW: malformed or incomplete payload. " +
+                        "payload=${payload != null}, originator=$originator, providerId=$providerId, " +
+                        "modelName=$modelName, correlationId=$correlationId, contentsPresent=${contents != null}"
+            )
+            return
+        }
 
         val provider = providerMap[providerId]
         if (provider == null) {
@@ -244,7 +293,11 @@ open class GatewayFeature(
 
 
     private fun refreshProviderModels(providerId: String, gatewayState: GatewayState, store: Store) {
-        val provider = providerMap[providerId] ?: return
+        val provider = providerMap[providerId]
+        if (provider == null) {
+            platformDependencies.log(LogLevel.WARN, identity.handle, "refreshProviderModels called for unknown provider '$providerId'. Ignoring.")
+            return
+        }
 
         coroutineScope.launch {
             val models = provider.listAvailableModels(gatewayState.apiKeys)

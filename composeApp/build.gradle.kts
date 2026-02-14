@@ -770,7 +770,7 @@ kotlin {
             //kotlin.exclude("**/feature/commandbot/**")
             //kotlin.exclude("**/feature/core/**")
             //kotlin.exclude("**/feature/filesystem/**")
-            kotlin.exclude("**/feature/gateway/**")
+            //kotlin.exclude("**/feature/gateway/**")
             kotlin.exclude("**/feature/knowledgegraph/**")
             //kotlin.exclude("**/feature/session/**")
             //kotlin.exclude("**/feature/settings/**")

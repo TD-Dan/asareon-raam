@@ -7,6 +7,8 @@ import app.auf.util.LogLevel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import kotlin.test.*
@@ -227,5 +229,78 @@ class GatewayFeatureT1GeminiProviderTest {
             })
         }
         assertEquals(expectedPayload, actual)
+    }
+
+    @Test
+    fun `parseResponse logs warning when successful response has no token usage`() {
+        // ARRANGE: Parity with Anthropic/OpenAI token usage warning tests.
+        val responseBody = """{ "candidates": [{ "content": { "parts": [{ "text": "Response" }] } }] }"""
+        val correlationId = "corr-no-tokens"
+
+        // ACT
+        val response = provider.parseResponse(responseBody, correlationId)
+
+        // ASSERT
+        assertEquals("Response", response.rawContent)
+        assertNull(response.inputTokens)
+        assertNull(response.outputTokens)
+        val warnLog = platform.capturedLogs.find { it.level == LogLevel.WARN && it.tag == "gemini" }
+        assertNotNull(warnLog, "A warning should be logged when token usage is missing from a successful response.")
+        assertTrue(warnLog.message.contains("no token usage data"))
+    }
+
+    @Test
+    fun `generatePreview includes system prompt when provided`() = kotlinx.coroutines.test.runTest {
+        // ARRANGE
+        val request = GatewayRequest(
+            modelName = "gemini-pro",
+            contents = listOf(GatewayMessage("user", "Hello", "u1", "User", 1000L)),
+            correlationId = "123",
+            systemPrompt = "You are helpful."
+        )
+
+        // ACT
+        val preview = provider.generatePreview(request, emptyMap())
+
+        // ASSERT
+        assertTrue(preview.contains("system_instruction"), "Should contain system_instruction block")
+        assertTrue(preview.contains("You are helpful."), "Should contain system prompt text")
+    }
+
+    @Test
+    fun `buildRequestPayload omits system_instruction when no system prompt provided`() {
+        // ARRANGE
+        val request = GatewayRequest(
+            modelName = "gemini-pro",
+            contents = listOf(GatewayMessage("user", "Hello", "user-1", "User", 1000L)),
+            correlationId = "corr-123"
+        )
+
+        // ACT
+        val actual = provider.buildRequestPayload(request)
+
+        // ASSERT
+        assertFalse(
+            actual.jsonObject.containsKey("system_instruction"),
+            "The 'system_instruction' key should not be present when no system prompt is provided."
+        )
+    }
+
+    @Test
+    fun `buildRequestPayload handles empty contents list`() {
+        // ARRANGE
+        val request = GatewayRequest(
+            modelName = "gemini-pro",
+            contents = emptyList(),
+            correlationId = "corr-empty"
+        )
+
+        // ACT
+        val actual = provider.buildRequestPayload(request)
+        val contents = actual.jsonObject["contents"]?.jsonArray
+
+        // ASSERT
+        assertNotNull(contents)
+        assertEquals(0, contents.size, "Contents array should be empty when contents list is empty.")
     }
 }

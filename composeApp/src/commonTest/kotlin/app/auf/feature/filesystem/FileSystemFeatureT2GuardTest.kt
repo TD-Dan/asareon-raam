@@ -17,6 +17,11 @@ import kotlin.test.assertTrue
  *
  * Mandate (P-TEST-001, T2): To test that the feature's guards correctly intercept
  * invalid requests *before* they can trigger side effects.
+ *
+ * Phase 3 FIX: Replaced vacuously-true `deliveredPrivateData.size == 0` assertions
+ * with meaningful checks on processedActions. Since production code now dispatches
+ * targeted Actions (not PrivateDataEnvelopes), the old assertion was always true
+ * regardless of whether the guard fired.
  */
 class FileSystemFeatureT2GuardTest {
     private val originator = "test-feature"
@@ -54,7 +59,10 @@ class FileSystemFeatureT2GuardTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch(originator, action)
 
-            assertEquals(0, harness.deliveredPrivateData.size, "No private data should be delivered for a rejected read.")
+            // Phase 3 FIX: Assert that no RESPONSE_READ targeted action was dispatched.
+            // The old check (deliveredPrivateData.size == 0) was vacuously true post-migration.
+            val responseAction = harness.processedActions.none { it.name == ActionRegistry.Names.FILESYSTEM_RESPONSE_READ }
+            assertTrue(responseAction, "No RESPONSE_READ action should be dispatched for a rejected read.")
             val log = harness.platform.capturedLogs.find { it.message.contains("SECURITY: Refused path with directory traversal") }
             assertNotNull(log, "A specific security error should be logged for '..' characters.")
         }
@@ -94,10 +102,49 @@ class FileSystemFeatureT2GuardTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch(originator, action)
 
-            assertEquals(0, harness.deliveredPrivateData.size, "No directory listing should be delivered.")
+            // Phase 3 FIX: Assert that no RESPONSE_LIST targeted action was dispatched.
+            val responseAction = harness.processedActions.none { it.name == ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST }
+            assertTrue(responseAction, "No RESPONSE_LIST action should be dispatched for a rejected path.")
             val log =
                 harness.platform.capturedLogs.find { it.message.contains("SECURITY: Refused path with directory traversal") }
             assertNotNull(log, "A specific security error should be logged for '..' characters in directory operations.")
+        }
+    }
+
+    @Test
+    fun `filepathGuard rejects directory traversal for delete directory operations`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val subpath = "legit/../../../etc"
+        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
+            put("subpath", subpath)
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch(originator, action)
+
+            val log = harness.platform.capturedLogs.find { it.message.contains("SECURITY: Refused path with directory traversal") }
+            assertNotNull(log, "A specific security error should be logged for '..' in delete directory.")
+        }
+    }
+
+    @Test
+    fun `filenameGuard rejects directory traversal in write operations`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+            put("subpath", "../../etc/passwd.txt")
+            put("content", "pwned")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch(originator, action)
+
+            assertTrue(harness.platform.writtenFiles.isEmpty(), "No file should have been written.")
+            val log = harness.platform.capturedLogs.find { it.message.contains("SECURITY: Refused path with directory traversal") }
+            assertNotNull(log, "A specific security error should be logged for '..' in write operations.")
         }
     }
 }

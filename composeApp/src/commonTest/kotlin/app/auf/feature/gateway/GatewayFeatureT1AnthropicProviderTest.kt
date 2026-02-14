@@ -7,6 +7,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.*
 
@@ -364,5 +365,107 @@ class GatewayFeatureT1AnthropicProviderTest {
         // ASSERT
         assertNotNull(content)
         assertEquals(enrichedContent, content, "Provider should pass through pre-enriched content unchanged")
+    }
+
+    @Test
+    fun `buildRequestPayload omits system key when no system prompt provided`() {
+        // ARRANGE
+        val request = GatewayRequest(
+            modelName = "claude-3-5-sonnet-20241022",
+            contents = listOf(GatewayMessage("user", "Hello", "user-1", "User", 1000L)),
+            correlationId = "corr-123"
+        )
+
+        // ACT
+        val actual = provider.buildRequestPayload(request)
+
+        // ASSERT
+        assertFalse(
+            actual.jsonObject.containsKey("system"),
+            "The 'system' key should not be present when no system prompt is provided."
+        )
+    }
+
+    @Test
+    fun `buildRequestPayload handles empty contents list`() {
+        // ARRANGE
+        val request = GatewayRequest(
+            modelName = "claude-3-5-sonnet-20241022",
+            contents = emptyList(),
+            correlationId = "corr-empty"
+        )
+
+        // ACT
+        val actual = provider.buildRequestPayload(request)
+        val messages = actual.jsonObject["messages"]?.jsonArray
+
+        // ASSERT
+        assertNotNull(messages)
+        assertEquals(0, messages.size, "Messages array should be empty when contents list is empty.")
+    }
+
+    @Test
+    fun `buildCountTokensPayload excludes max_tokens`() {
+        // ARRANGE: The count_tokens endpoint must NOT include max_tokens.
+        val request = GatewayRequest(
+            modelName = "claude-3-5-sonnet-20241022",
+            contents = listOf(GatewayMessage("user", "Hello", "user-1", "User", 1000L)),
+            correlationId = "corr-count"
+        )
+
+        // ACT
+        val actual = provider.buildCountTokensPayload(request)
+
+        // ASSERT
+        assertFalse(
+            actual.jsonObject.containsKey("max_tokens"),
+            "count_tokens payload must NOT include max_tokens."
+        )
+        assertTrue(
+            actual.jsonObject.containsKey("model"),
+            "count_tokens payload must include model."
+        )
+        assertTrue(
+            actual.jsonObject.containsKey("messages"),
+            "count_tokens payload must include messages."
+        )
+    }
+
+    @Test
+    fun `buildCountTokensPayload includes system prompt when provided`() {
+        // ARRANGE
+        val request = GatewayRequest(
+            modelName = "claude-3-5-sonnet-20241022",
+            contents = listOf(GatewayMessage("user", "Hello", "user-1", "User", 1000L)),
+            correlationId = "corr-count-sys",
+            systemPrompt = "You are helpful."
+        )
+
+        // ACT
+        val actual = provider.buildCountTokensPayload(request)
+
+        // ASSERT
+        assertFalse(actual.jsonObject.containsKey("max_tokens"))
+        assertTrue(actual.jsonObject.containsKey("system"), "System prompt should be included in count_tokens payload.")
+        assertEquals(
+            "You are helpful.",
+            actual.jsonObject["system"]?.jsonPrimitive?.content
+        )
+    }
+
+    @Test
+    fun `buildCountTokensPayload omits system key when no system prompt`() {
+        // ARRANGE
+        val request = GatewayRequest(
+            modelName = "claude-3-5-sonnet-20241022",
+            contents = listOf(GatewayMessage("user", "Hello", "user-1", "User", 1000L)),
+            correlationId = "corr-count-nosys"
+        )
+
+        // ACT
+        val actual = provider.buildCountTokensPayload(request)
+
+        // ASSERT
+        assertFalse(actual.jsonObject.containsKey("system"))
     }
 }

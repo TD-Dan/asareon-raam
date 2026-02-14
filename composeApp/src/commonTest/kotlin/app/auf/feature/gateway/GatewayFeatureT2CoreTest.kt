@@ -182,11 +182,17 @@ class GatewayFeatureT2CoreTest {
             assertEquals(0, fakeProvider1.generateContentCallCount)
             assertEquals(1, fakeProvider2.generateContentCallCount)
 
-            val privateData = harness.deliveredPrivateData.firstOrNull()
-            assertNotNull(privateData)
-            assertEquals(originatorId, privateData.recipient)
-            assertEquals("gateway.RESPONSE_RESPONSE", privateData.envelope.type)
-            assertEquals(correlationId, privateData.envelope.payload["correlationId"]?.jsonPrimitive?.content)
+            // Phase 3 migration: GatewayFeature now dispatches targeted Actions via
+            // deferredDispatch, not the deprecated deliverPrivateData. Assert on
+            // processedActions instead.
+            val responseAction = harness.processedActions.find {
+                it.name == ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE
+            }
+            assertNotNull(responseAction, "A targeted RESPONSE_RESPONSE action should have been dispatched.")
+            assertEquals(originatorId, responseAction.targetRecipient, "targetRecipient should be the original dispatcher.")
+            assertEquals(correlationId, responseAction.payload?.get("correlationId")?.jsonPrimitive?.content)
+            // Verify the response content from the fake provider is present
+            assertNotNull(responseAction.payload?.get("rawContent")?.jsonPrimitive?.content)
         }
     }
 
@@ -211,11 +217,14 @@ class GatewayFeatureT2CoreTest {
 
         // ASSERT
         harness.runAndLogOnFailure {
-            val privateData = harness.deliveredPrivateData.firstOrNull()
-            assertNotNull(privateData, "Private data for preview should have been delivered.")
-            assertEquals("gateway.RESPONSE_PREVIEW", privateData.envelope.type)
+            // Phase 3 migration: Assert on processedActions for the targeted action.
+            val responseAction = harness.processedActions.find {
+                it.name == ActionRegistry.Names.GATEWAY_RESPONSE_PREVIEW
+            }
+            assertNotNull(responseAction, "A targeted RESPONSE_PREVIEW action should have been dispatched.")
+            assertEquals(originatorId, responseAction.targetRecipient, "targetRecipient should be the original dispatcher.")
 
-            val rawJson = privateData.envelope.payload["rawRequestJson"]?.jsonPrimitive?.content
+            val rawJson = responseAction.payload?.get("rawRequestJson")?.jsonPrimitive?.content
             // Verify we got the string from FakeProvider.generatePreview, NOT empty map
             assertEquals("Fake Preview for model-1", rawJson)
         }
@@ -264,7 +273,114 @@ class GatewayFeatureT2CoreTest {
             assertEquals(correlationId, cleanupAction.payload?.get("correlationId")?.jsonPrimitive?.content)
 
             // 6. Verify NO response envelope was sent (job was cancelled)
-            assertTrue(harness.deliveredPrivateData.isEmpty(), "No response should be delivered for cancelled request")
+            val responseAction = harness.processedActions.find {
+                it.name == ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE
+            }
+            assertNull(responseAction, "No RESPONSE_RESPONSE action should be dispatched for a cancelled request")
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `GENERATE_CONTENT with unknown provider logs error and does not crash`() = testScope.runTest {
+        val harness = createHarness(this)
+        val action = Action(ActionRegistry.Names.GATEWAY_GENERATE_CONTENT, buildJsonObject {
+            put("providerId", "nonexistent-provider"); put("modelName", "some-model")
+            put("correlationId", "corr-unknown")
+            put("contents", buildJsonArray { add(Json.encodeToJsonElement(GatewayMessage("user", "hi", "u1", "U", 1L))) })
+        })
+
+        // ACT
+        harness.store.dispatch("agent-feature-1", action)
+        runCurrent()
+
+        // ASSERT
+        harness.runAndLogOnFailure {
+            assertEquals(0, fakeProvider1.generateContentCallCount, "No provider should be called.")
+            assertEquals(0, fakeProvider2.generateContentCallCount, "No provider should be called.")
+            val errorLog = harness.platform.capturedLogs.find {
+                it.level == app.auf.util.LogLevel.ERROR && it.message.contains("nonexistent-provider")
+            }
+            assertNotNull(errorLog, "An error should be logged for an unknown provider ID.")
+
+            val responseAction = harness.processedActions.find {
+                it.name == ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE
+            }
+            assertNull(responseAction, "No response should be dispatched for an unknown provider.")
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `REQUEST_AVAILABLE_MODELS broadcasts current model state`() = testScope.runTest {
+        val harness = createHarness(this, initialLifecycle = AppLifecycle.INITIALIZING)
+        // Pre-load some API keys and trigger model refresh
+        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_LOADED, buildJsonObject {
+            put("gateway.provider-1.apiKey", "k1")
+        }))
+        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+        runCurrent()
+
+        // ACT: Request the current model list
+        harness.store.dispatch("some-feature", Action(ActionRegistry.Names.GATEWAY_REQUEST_AVAILABLE_MODELS))
+        runCurrent()
+
+        // ASSERT
+        harness.runAndLogOnFailure {
+            val updateAction = harness.processedActions.find {
+                it.name == ActionRegistry.Names.GATEWAY_AVAILABLE_MODELS_UPDATED
+            }
+            assertNotNull(updateAction, "AVAILABLE_MODELS_UPDATED should be broadcast in response.")
+            assertNotNull(updateAction.payload, "Payload should contain the models map.")
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `GENERATE_CONTENT passes system prompt through to provider`() = testScope.runTest {
+        val harness = createHarness(this)
+        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_LOADED, buildJsonObject {
+            put("gateway.provider-1.apiKey", "k1")
+        }))
+        val systemPrompt = "You are a test assistant with special instructions."
+        val action = Action(ActionRegistry.Names.GATEWAY_GENERATE_CONTENT, buildJsonObject {
+            put("providerId", "provider-1"); put("modelName", "model-1")
+            put("correlationId", "corr-sysprompt")
+            put("systemPrompt", systemPrompt)
+            put("contents", buildJsonArray { add(Json.encodeToJsonElement(GatewayMessage("user", "hi", "u1", "U", 1L))) })
+        })
+
+        // ACT
+        harness.store.dispatch("agent-feature-1", action)
+        runCurrent()
+
+        // ASSERT
+        harness.runAndLogOnFailure {
+            assertEquals(1, fakeProvider1.generateContentCallCount)
+            val lastRequest = fakeProvider1.lastRequest
+            assertNotNull(lastRequest, "Provider should have received the request.")
+            assertEquals(systemPrompt, lastRequest.systemPrompt, "System prompt should be passed through to the provider.")
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `CANCEL_REQUEST for unknown correlationId logs warning`() = testScope.runTest {
+        val harness = createHarness(this)
+        val cancelAction = Action(ActionRegistry.Names.GATEWAY_CANCEL_REQUEST, buildJsonObject {
+            put("correlationId", "nonexistent-correlation-id")
+        })
+
+        // ACT
+        harness.store.dispatch("system", cancelAction)
+        runCurrent()
+
+        // ASSERT
+        harness.runAndLogOnFailure {
+            val warnLog = harness.platform.capturedLogs.find {
+                it.level == app.auf.util.LogLevel.WARN && it.message.contains("nonexistent-correlation-id")
+            }
+            assertNotNull(warnLog, "A warning should be logged when cancelling an unknown correlationId.")
         }
     }
 }

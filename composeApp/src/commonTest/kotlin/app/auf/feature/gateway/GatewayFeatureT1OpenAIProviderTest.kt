@@ -231,4 +231,139 @@ class GatewayFeatureT1OpenAIProviderTest {
         assertNotNull(content)
         assertEquals(enrichedContent, content, "Provider should pass through pre-enriched content unchanged")
     }
+
+    @Test
+    fun `generatePreview includes system prompt when provided`() = kotlinx.coroutines.test.runTest {
+        // ARRANGE
+        val request = GatewayRequest(
+            modelName = "gpt-4o",
+            contents = listOf(GatewayMessage("user", "Hello", "u1", "User", 1000L)),
+            correlationId = "123",
+            systemPrompt = "You are a pirate."
+        )
+
+        // ACT
+        val preview = provider.generatePreview(request, emptyMap())
+
+        // ASSERT
+        assertTrue(preview.contains("\"role\": \"system\""), "Should contain system role")
+        assertTrue(preview.contains("You are a pirate."), "Should contain system prompt text")
+    }
+
+    @Test
+    fun `buildRequestPayload omits system message when no system prompt provided`() {
+        // ARRANGE
+        val request = GatewayRequest(
+            modelName = "gpt-4o",
+            contents = listOf(GatewayMessage("user", "Hello", "user-1", "User", 1000L)),
+            correlationId = "corr-123"
+        )
+
+        // ACT
+        val actual = provider.buildRequestPayload(request)
+        val messages = actual.jsonObject["messages"]?.jsonArray
+
+        // ASSERT
+        assertNotNull(messages)
+        assertEquals(1, messages.size, "Only the user message should be present, no system message.")
+        assertEquals("user", messages[0].jsonObject["role"]?.toString()?.trim('"'))
+    }
+
+    @Test
+    fun `buildRequestPayload handles empty contents list`() {
+        // ARRANGE
+        val request = GatewayRequest(
+            modelName = "gpt-4o",
+            contents = emptyList(),
+            correlationId = "corr-empty"
+        )
+
+        // ACT
+        val actual = provider.buildRequestPayload(request)
+        val messages = actual.jsonObject["messages"]?.jsonArray
+
+        // ASSERT
+        assertNotNull(messages)
+        assertEquals(0, messages.size, "Messages array should be empty when contents list is empty.")
+    }
+
+    @Test
+    fun `buildRequestPayload handles empty contents with system prompt`() {
+        // ARRANGE: System prompt should still produce one message even with empty contents.
+        val request = GatewayRequest(
+            modelName = "gpt-4o",
+            contents = emptyList(),
+            correlationId = "corr-empty-sys",
+            systemPrompt = "You are helpful."
+        )
+
+        // ACT
+        val actual = provider.buildRequestPayload(request)
+        val messages = actual.jsonObject["messages"]?.jsonArray
+
+        // ASSERT
+        assertNotNull(messages)
+        assertEquals(1, messages.size, "Only the system message should be present.")
+        assertEquals("system", messages[0].jsonObject["role"]?.toString()?.trim('"'))
+    }
+
+    @Test
+    fun `sanitized name handles special characters`() {
+        // ARRANGE: Name with characters outside [a-zA-Z0-9_-] should be sanitized.
+        val request = GatewayRequest(
+            modelName = "gpt-4o",
+            contents = listOf(
+                GatewayMessage("user", "Hello", "user-1", "José García!", 1000L)
+            ),
+            correlationId = "corr-special"
+        )
+
+        // ACT
+        val actual = provider.buildRequestPayload(request)
+        val messages = actual.jsonObject["messages"]?.jsonArray
+        val nameField = messages?.get(0)?.jsonObject?.get("name")?.toString()?.trim('"')
+
+        // ASSERT
+        assertNotNull(nameField)
+        assertTrue(nameField.matches(Regex("^[a-zA-Z0-9_-]{1,64}$")), "Name should be sanitized: $nameField")
+    }
+
+    @Test
+    fun `sanitized name truncates to 64 characters`() {
+        // ARRANGE: Name + senderId longer than 64 characters should be truncated.
+        val longName = "A".repeat(50)
+        val longId = "B".repeat(50)
+        val request = GatewayRequest(
+            modelName = "gpt-4o",
+            contents = listOf(
+                GatewayMessage("user", "Hello", longId, longName, 1000L)
+            ),
+            correlationId = "corr-long"
+        )
+
+        // ACT
+        val actual = provider.buildRequestPayload(request)
+        val messages = actual.jsonObject["messages"]?.jsonArray
+        val nameField = messages?.get(0)?.jsonObject?.get("name")?.toString()?.trim('"')
+
+        // ASSERT
+        assertNotNull(nameField)
+        assertTrue(nameField.length <= 64, "Name should be truncated to 64 chars, was ${nameField.length}: $nameField")
+        assertTrue(nameField.matches(Regex("^[a-zA-Z0-9_-]{1,64}$")), "Name should remain valid after truncation: $nameField")
+    }
+
+    @Test
+    fun `parseResponse handles choice with null content field`() {
+        // ARRANGE: The `content` field in a choice message can be null (e.g., function call responses).
+        val responseBody = """{ "choices": [{ "message": { "role": "assistant", "content": null } }] }"""
+        val correlationId = "corr-null-content"
+
+        // ACT
+        val response = provider.parseResponse(responseBody, correlationId)
+
+        // ASSERT
+        assertNull(response.rawContent)
+        assertEquals("Unrecognised response format from OpenAI API.", response.errorMessage)
+        assertEquals(correlationId, response.correlationId)
+    }
 }
