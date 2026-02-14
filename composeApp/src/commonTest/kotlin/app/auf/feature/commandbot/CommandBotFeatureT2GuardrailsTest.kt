@@ -33,7 +33,7 @@ import kotlin.test.assertTrue
  *
  * Complements [CommandBotFeatureT2CoreTest] with coverage of:
  * - Agent identity tracking lifecycle (Proactive Broadcast pattern)
- * - CAG-004: Agent action restriction (ExposedActions allowlist)
+ * - CAG-004: Agent action restriction (ActionRegistry.agentAllowedNames)
  * - CAG-007: Auto-fill injection (senderId for session.POST)
  * - Command processing edge cases (empty payload, no blocks, non-auf blocks, multi-block)
  * - Approval card PartialView metadata verification
@@ -44,8 +44,8 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class CommandBotFeatureT2GuardrailsTest {
 
-    private val testUser = Identity("user-1", "Test User")
-    private val testSession = Session("session-1", "Test Session", emptyList(), 1L)
+    private val testUser = Identity(uuid = "user-1", localHandle = "test-user", handle = "core.test-user", name = "Test User", parentHandle = "core")
+    private val testSession = Session(identity = Identity(uuid = "session-1", localHandle = "test-session", handle = "session.test-session", name = "Test Session", parentHandle = "session"), ledger = emptyList(), createdAt = 1L)
 
     // ========================================================================
     // Helpers
@@ -53,7 +53,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
     /**
      * Builds a standard harness with Core, Session, and CommandBot.
-     * No agents registered — sender IDs not in knownAgentIds are treated as human.
+     * No agents registered — sender IDs not in identityRegistry are treated as human.
      */
     private fun TestScope.buildStandardHarness(
         platform: FakePlatformDependencies = FakePlatformDependencies("test")
@@ -64,23 +64,29 @@ class CommandBotFeatureT2GuardrailsTest {
             .withFeature(CommandBotFeature(platform))
             .withInitialState("core", CoreState(
                 userIdentities = listOf(testUser),
-                activeUserId = testUser.id,
+                activeUserId = testUser.handle,
                 lifecycle = AppLifecycle.RUNNING
             ))
             .withInitialState("session", SessionState(
-                sessions = mapOf(testSession.id to testSession),
-                activeSessionId = testSession.id
+                sessions = mapOf(testSession.identity.localHandle to testSession),
+                activeSessionLocalHandle = testSession.identity.localHandle
             ))
             .build(platform = platform)
     }
 
+    /** The full bus handle for the default test agent, derived from the identity hierarchy. */
+    private val testAgentHandle = "agent.test-agent-1"
+
     /**
-     * Builds a harness and registers one agent via Proactive Broadcast.
+     * Builds a harness and registers one agent in the identity registry.
      * This makes the agent visible to CAG-004/006/007 enforcement.
+     *
+     * Phase 4: Seeds the identity registry directly instead of the former
+     * Proactive Broadcast (AGENT_NAMES_UPDATED) pattern.
      */
     private fun TestScope.buildHarnessWithKnownAgent(
         platform: FakePlatformDependencies = FakePlatformDependencies("test"),
-        agentId: String = "agent-1",
+        agentHandle: String = testAgentHandle,
         agentName: String = "Test Agent"
     ): TestHarness {
         val harness = TestEnvironment.create()
@@ -89,20 +95,26 @@ class CommandBotFeatureT2GuardrailsTest {
             .withFeature(CommandBotFeature(platform))
             .withInitialState("core", CoreState(
                 userIdentities = listOf(testUser),
-                activeUserId = testUser.id,
+                activeUserId = testUser.handle,
                 lifecycle = AppLifecycle.RUNNING
             ))
             .withInitialState("session", SessionState(
-                sessions = mapOf(testSession.id to testSession),
-                activeSessionId = testSession.id
+                sessions = mapOf(testSession.identity.localHandle to testSession),
+                activeSessionLocalHandle = testSession.identity.localHandle
             ))
             .withInitialState("commandbot", CommandBotState())
             .build(platform = platform)
 
-        harness.store.dispatch("agent", Action(
-            ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED,
-            buildJsonObject { put("names", buildJsonObject { put(agentId, agentName) }) }
-        ))
+        // Seed the identity registry with the agent identity.
+        harness.store.updateIdentityRegistry { registry ->
+            registry + (agentHandle to Identity(
+                uuid = platform.generateUUID(),
+                localHandle = agentHandle.substringAfterLast('.'),
+                handle = agentHandle,
+                name = agentName,
+                parentHandle = "agent"
+            ))
+        }
         // Note: caller is responsible for runCurrent() after setup.
 
         return harness
@@ -115,7 +127,7 @@ class CommandBotFeatureT2GuardrailsTest {
      */
     private fun postRawMessage(harness: TestHarness, senderId: String, message: String) {
         harness.store.dispatch("test", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-            put("session", testSession.id)
+            put("session", testSession.identity.localHandle)
             put("senderId", senderId)
             put("message", message)
         }))
@@ -129,27 +141,27 @@ class CommandBotFeatureT2GuardrailsTest {
     fun `agent tracking - unregistered sender is treated as human and unrestricted`() = runTest {
         val harness = buildStandardHarness()
 
-        // "agent-1" is NOT in knownAgentIds → human path → unrestricted
-        postRawMessage(harness, "agent-1", "```auf_core.SHOW_TOAST\n{ \"message\": \"Hi\" }\n```")
+        // "some-unknown-sender" is NOT in identityRegistry → human path → unrestricted
+        postRawMessage(harness, "some-unknown-sender", "```auf_core.SHOW_TOAST\n{ \"message\": \"Hi\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
             val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertNotNull(toast,
                 "An unregistered sender should be treated as human and bypass agent restrictions.")
-            assertEquals("agent-1", toast.originator,
+            assertEquals("some-unknown-sender", toast.originator,
                 "CAG-002: originator should be the original senderId.")
         }
     }
 
     @Test
-    fun `agent tracking - AGENT_NAMES_UPDATED makes sender subject to agent enforcement`() = runTest {
+    fun `agent tracking - registered agent identity is subject to agent enforcement`() = runTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        // After registration, agent-1 is in knownAgentIds.
-        // core.SHOW_TOAST is not in ExposedActions → should be blocked (CAG-004).
-        postRawMessage(harness, "agent-1", "```auf_core.SHOW_TOAST\n{ \"message\": \"Blocked\" }\n```")
+        // After registration, testAgentHandle is in identityRegistry with parentHandle="agent".
+        // core.SHOW_TOAST is not in agentAllowedNames → should be blocked (CAG-004).
+        postRawMessage(harness, testAgentHandle, "```auf_core.SHOW_TOAST\n{ \"message\": \"Blocked\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -160,19 +172,17 @@ class CommandBotFeatureT2GuardrailsTest {
     }
 
     @Test
-    fun `agent tracking - AGENT_DELETED reverts sender to human treatment`() = runTest {
+    fun `agent tracking - removing agent from registry reverts sender to human treatment`() = runTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        // Delete the agent
-        harness.store.dispatch("agent", Action(
-            ActionRegistry.Names.AGENT_AGENT_DELETED,
-            buildJsonObject { put("agentId", "agent-1") }
-        ))
-        runCurrent()
+        // Remove the agent from the identity registry (simulates UNREGISTER_IDENTITY)
+        harness.store.updateIdentityRegistry { registry ->
+            registry - testAgentHandle
+        }
 
-        // Now agent-1 is no longer tracked → human path → unrestricted
-        postRawMessage(harness, "agent-1", "```auf_core.SHOW_TOAST\n{ \"message\": \"Allowed\" }\n```")
+        // Now testAgentHandle is no longer in the registry → human path → unrestricted
+        postRawMessage(harness, testAgentHandle, "```auf_core.SHOW_TOAST\n{ \"message\": \"Allowed\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -181,37 +191,40 @@ class CommandBotFeatureT2GuardrailsTest {
                         it.payload?.get("message")?.jsonPrimitive?.contentOrNull == "Allowed"
             }
             assertNotNull(toast,
-                "After AGENT_DELETED, the sender is no longer tracked and should be unrestricted.")
+                "After removal from registry, the sender is no longer tracked and should be unrestricted.")
         }
     }
 
     @Test
-    fun `agent tracking - second NAMES_UPDATED replaces entire agent set`() = runTest {
+    fun `agent tracking - registry replacement removes deregistered agents`() = runTest {
         val harness = buildStandardHarness()
 
+        val agentOneHandle = "agent.agent-one"
+        val agentTwoHandle = "agent.agent-two"
+
         // Register two agents
-        harness.store.dispatch("agent", Action(
-            ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED,
-            buildJsonObject {
-                put("names", buildJsonObject {
-                    put("agent-1", "Agent One")
-                    put("agent-2", "Agent Two")
-                })
-            }
-        ))
+        harness.store.updateIdentityRegistry { registry ->
+            registry + mapOf(
+                agentOneHandle to Identity(
+                    uuid = "uuid-1", localHandle = "agent-one", handle = agentOneHandle,
+                    name = "Agent One", parentHandle = "agent"
+                ),
+                agentTwoHandle to Identity(
+                    uuid = "uuid-2", localHandle = "agent-two", handle = agentTwoHandle,
+                    name = "Agent Two", parentHandle = "agent"
+                )
+            )
+        }
         runCurrent()
 
-        // Second broadcast replaces with only agent-2
-        harness.store.dispatch("agent", Action(
-            ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED,
-            buildJsonObject {
-                put("names", buildJsonObject { put("agent-2", "Agent Two") })
-            }
-        ))
+        // Remove agent-one from registry (simulates deletion)
+        harness.store.updateIdentityRegistry { registry ->
+            registry - agentOneHandle
+        }
         runCurrent()
 
-        // agent-1 should now be treated as human (unrestricted)
-        postRawMessage(harness, "agent-1", "```auf_core.SHOW_TOAST\n{ \"message\": \"From ex-agent\" }\n```")
+        // agent-one should now be treated as human (unrestricted)
+        postRawMessage(harness, agentOneHandle, "```auf_core.SHOW_TOAST\n{ \"message\": \"From ex-agent\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -220,7 +233,7 @@ class CommandBotFeatureT2GuardrailsTest {
                         it.payload?.get("message")?.jsonPrimitive?.contentOrNull == "From ex-agent"
             }
             assertNotNull(toast,
-                "agent-1 was removed from the set by the second broadcast and should be unrestricted.")
+                "agent-one was removed from the registry and should be unrestricted.")
         }
     }
 
@@ -233,7 +246,7 @@ class CommandBotFeatureT2GuardrailsTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        postRawMessage(harness, "agent-1", "```auf_core.SHOW_TOAST\n{ \"message\": \"Blocked\" }\n```")
+        postRawMessage(harness, testAgentHandle, "```auf_core.SHOW_TOAST\n{ \"message\": \"Blocked\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -261,13 +274,13 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         // Human user sends the exact same command that would be blocked for an agent
-        postRawMessage(harness, testUser.id, "```auf_core.SHOW_TOAST\n{ \"message\": \"Human OK\" }\n```")
+        postRawMessage(harness, testUser.handle, "```auf_core.SHOW_TOAST\n{ \"message\": \"Human OK\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
             val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertNotNull(toast, "Human users bypass CAG-004 and can dispatch any action.")
-            assertEquals(testUser.id, toast.originator, "CAG-002: originator should be the human user.")
+            assertEquals(testUser.handle, toast.originator, "CAG-002: originator should be the human user.")
         }
     }
 
@@ -283,8 +296,8 @@ class CommandBotFeatureT2GuardrailsTest {
         // Agent sends a session.POST command — the auto-fill rule should inject senderId.
         // Note: the payload deliberately omits senderId.
         postRawMessage(
-            harness, "agent-1",
-            "```auf_session.POST\n{ \"session\": \"${testSession.id}\", \"message\": \"Agent message\" }\n```"
+            harness, testAgentHandle,
+            "```auf_session.POST\n{ \"session\": \"${testSession.identity.localHandle}\", \"message\": \"Agent message\" }\n```"
         )
         runCurrent()
 
@@ -301,8 +314,8 @@ class CommandBotFeatureT2GuardrailsTest {
             assertNotNull(actionPayload, "ACTION_CREATED must include an actionPayload.")
 
             val senderId = actionPayload["senderId"]?.jsonPrimitive?.contentOrNull
-            assertEquals("agent-1", senderId,
-                "CAG-007 should auto-fill senderId with the requesting agent's ID in the actionPayload.")
+            assertEquals(testAgentHandle, senderId,
+                "CAG-007 should auto-fill senderId with the requesting agent's handle in the actionPayload.")
         }
     }
 
@@ -315,7 +328,7 @@ class CommandBotFeatureT2GuardrailsTest {
         val harness = buildStandardHarness()
 
         // Code block with auf_ prefix but empty body
-        postRawMessage(harness, testUser.id, "```auf_core.SHOW_TOAST\n```")
+        postRawMessage(harness, testUser.handle, "```auf_core.SHOW_TOAST\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -334,16 +347,16 @@ class CommandBotFeatureT2GuardrailsTest {
 
         val actionCountBefore = harness.processedActions.size
 
-        postRawMessage(harness, testUser.id, "This is just a regular chat message with no commands.")
+        postRawMessage(harness, testUser.handle, "This is just a regular chat message with no commands.")
         runCurrent()
 
         harness.runAndLogOnFailure {
             // Only the SESSION_POST and its side-effects should be present — no command dispatches.
-            // SessionFeature also emits filesystem.SYSTEM_WRITE for persistence, so we exclude those.
+            // SessionFeature emits MESSAGE_POSTED, SESSION_UPDATED, and filesystem.SYSTEM_WRITE
+            // as standard pipeline side-effects. We exclude all of those.
             val commandActions = harness.processedActions.drop(actionCountBefore).filter {
                 it.name != ActionRegistry.Names.SESSION_POST &&
-                        !it.name.startsWith("session.publish.") &&
-                        !it.name.startsWith("session.internal.") &&
+                        !it.name.startsWith("session.") &&
                         !it.name.startsWith("filesystem.")
             }
             assertTrue(commandActions.isEmpty(),
@@ -359,14 +372,13 @@ class CommandBotFeatureT2GuardrailsTest {
         val actionCountBefore = harness.processedActions.size
 
         // A standard code block with language "json" — should not trigger CommandBot
-        postRawMessage(harness, testUser.id, "```json\n{ \"not\": \"a command\" }\n```")
+        postRawMessage(harness, testUser.handle, "```json\n{ \"not\": \"a command\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
             val commandActions = harness.processedActions.drop(actionCountBefore).filter {
                 it.name != ActionRegistry.Names.SESSION_POST &&
-                        !it.name.startsWith("session.publish.") &&
-                        !it.name.startsWith("session.internal.") &&
+                        !it.name.startsWith("session.") &&
                         !it.name.startsWith("filesystem.")
             }
             assertTrue(commandActions.isEmpty(),
@@ -390,7 +402,7 @@ class CommandBotFeatureT2GuardrailsTest {
             ```
         """.trimIndent()
 
-        postRawMessage(harness, testUser.id, multiBlockMessage)
+        postRawMessage(harness, testUser.handle, multiBlockMessage)
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -419,7 +431,7 @@ class CommandBotFeatureT2GuardrailsTest {
             ```
         """.trimIndent()
 
-        postRawMessage(harness, testUser.id, mixedMessage)
+        postRawMessage(harness, testUser.handle, mixedMessage)
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -441,7 +453,7 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         // session.CREATE requires approval → stages approval + posts card entry
-        postRawMessage(harness, "agent-1", "```auf_session.CREATE\n{ \"name\": \"New Session\" }\n```")
+        postRawMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"New Session\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -482,7 +494,7 @@ class CommandBotFeatureT2GuardrailsTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        postRawMessage(harness, "agent-1", "```auf_session.CREATE\n{ \"name\": \"Test\" }\n```")
+        postRawMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Test\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -508,7 +520,7 @@ class CommandBotFeatureT2GuardrailsTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        postRawMessage(harness, "agent-1", "```auf_session.CREATE\n{ \"name\": \"Test\" }\n```")
+        postRawMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Test\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -563,12 +575,13 @@ class CommandBotFeatureT2GuardrailsTest {
     // ========================================================================
 
     @Test
-    fun `staged approval uses display name from agent tracking`() = runTest {
+    fun `staged approval uses display name from identity registry`() = runTest {
         val platform = FakePlatformDependencies("test")
-        val harness = buildHarnessWithKnownAgent(platform, agentId = "agent-x", agentName = "Research Bot")
+        val researchBotHandle = "agent.research-bot"
+        val harness = buildHarnessWithKnownAgent(platform, agentHandle = researchBotHandle, agentName = "Research Bot")
         runCurrent()
 
-        postRawMessage(harness, "agent-x", "```auf_session.CREATE\n{ \"name\": \"Test\" }\n```")
+        postRawMessage(harness, researchBotHandle, "```auf_session.CREATE\n{ \"name\": \"Test\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -576,8 +589,8 @@ class CommandBotFeatureT2GuardrailsTest {
             val pending = commandBotState.pendingApprovals.values.firstOrNull()
             assertNotNull(pending)
             assertEquals("Research Bot", pending.requestingAgentName,
-                "The staged approval should use the display name from AGENT_NAMES_UPDATED.")
-            assertEquals("agent-x", pending.requestingAgentId)
+                "The staged approval should use the display name from the identity registry.")
+            assertEquals(researchBotHandle, pending.requestingAgentId)
         }
     }
 }

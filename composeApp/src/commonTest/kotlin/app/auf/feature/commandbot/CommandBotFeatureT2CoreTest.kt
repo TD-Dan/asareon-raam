@@ -50,8 +50,8 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class CommandBotFeatureT2CoreTest {
 
-    private val testUser = Identity("user-1", "Test User")
-    private val testSession = Session("session-1", "Test Session", emptyList(), 1L)
+    private val testUser = Identity(uuid = "user-1", localHandle = "test-user", handle = "core.test-user", name = "Test User", parentHandle = "core")
+    private val testSession = Session(identity = Identity(uuid = "session-1", localHandle = "test-session", handle = "session.test-session", name = "Test Session", parentHandle = "session"), ledger = emptyList(), createdAt = 1L)
 
     // ========================================================================
     // Helpers
@@ -70,24 +70,32 @@ class CommandBotFeatureT2CoreTest {
             .withFeature(CommandBotFeature(platform))
             .withInitialState("core", CoreState(
                 userIdentities = listOf(testUser),
-                activeUserId = testUser.id,
+                activeUserId = testUser.handle,
                 lifecycle = AppLifecycle.RUNNING
             ))
             .withInitialState("session", SessionState(
-                sessions = mapOf(testSession.id to testSession),
-                activeSessionId = testSession.id
+                sessions = mapOf(testSession.identity.localHandle to testSession),
+                activeSessionLocalHandle = testSession.identity.localHandle
             ))
             .build(platform = platform)
     }
 
+    /** The full bus handle for the default test agent, derived from the identity hierarchy. */
+    private val testAgentHandle = "agent.test-agent-1"
+
     /**
-     * Builds a harness with a known agent registered via Proactive Broadcast.
-     * This makes the agent visible to CommandBot's approval gate (CAG-006).
+     * Builds a harness with a known agent registered in the identity registry.
+     * This makes the agent visible to CommandBot's guardrails (CAG-004/006/007).
+     *
+     * Phase 4: Seeds the identity registry directly instead of the former
+     * Proactive Broadcast (AGENT_NAMES_UPDATED) pattern. The registry is now
+     * the single source of truth for agent identity.
+     *
      * Caller is responsible for [runCurrent] after setup.
      */
     private fun TestScope.buildHarnessWithKnownAgent(
         platform: FakePlatformDependencies = FakePlatformDependencies("test"),
-        agentId: String = "agent-1",
+        agentHandle: String = testAgentHandle,
         agentName: String = "Test Agent"
     ): TestHarness {
         val harness = TestEnvironment.create()
@@ -96,21 +104,27 @@ class CommandBotFeatureT2CoreTest {
             .withFeature(CommandBotFeature(platform))
             .withInitialState("core", CoreState(
                 userIdentities = listOf(testUser),
-                activeUserId = testUser.id,
+                activeUserId = testUser.handle,
                 lifecycle = AppLifecycle.RUNNING
             ))
             .withInitialState("session", SessionState(
-                sessions = mapOf(testSession.id to testSession),
-                activeSessionId = testSession.id
+                sessions = mapOf(testSession.identity.localHandle to testSession),
+                activeSessionLocalHandle = testSession.identity.localHandle
             ))
             .withInitialState("commandbot", CommandBotState())
             .build(platform = platform)
 
-        // Simulate agent registration via Proactive Broadcast
-        harness.store.dispatch("agent", Action(
-            ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED,
-            buildJsonObject { put("names", buildJsonObject { put(agentId, agentName) }) }
-        ))
+        // Seed the identity registry with the agent identity.
+        // In production, this happens via REGISTER_IDENTITY dispatched by AgentRuntimeFeature.
+        harness.store.updateIdentityRegistry { registry ->
+            registry + (agentHandle to Identity(
+                uuid = platform.generateUUID(),
+                localHandle = agentHandle.substringAfterLast('.'),
+                handle = agentHandle,
+                name = agentName,
+                parentHandle = "agent"
+            ))
+        }
 
         return harness
     }
@@ -121,7 +135,7 @@ class CommandBotFeatureT2CoreTest {
      */
     private fun postMessage(harness: TestHarness, senderId: String, message: String) {
         harness.store.dispatch(senderId, Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-            put("session", testSession.id)
+            put("session", testSession.identity.localHandle)
             put("senderId", senderId)
             put("message", message)
         }))
@@ -143,14 +157,14 @@ class CommandBotFeatureT2CoreTest {
         """.trimIndent()
 
         // ACT
-        postMessage(harness, testUser.id, commandMessage)
+        postMessage(harness, testUser.handle, commandMessage)
         runCurrent()
 
         // ASSERT
         harness.runAndLogOnFailure {
             val dispatchedToastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertNotNull(dispatchedToastAction, "The command bot should have dispatched a CORE_SHOW_TOAST action.")
-            assertEquals(testUser.id, dispatchedToastAction.originator,
+            assertEquals(testUser.handle, dispatchedToastAction.originator,
                 "CAG-002: The originator of the dispatched action must be the original message sender.")
             val payloadMessage = dispatchedToastAction.payload?.get("message")?.jsonPrimitive?.content
             assertEquals("Hello from the bot!", payloadMessage)
@@ -168,19 +182,19 @@ class CommandBotFeatureT2CoreTest {
         """.trimIndent()
 
         // ACT
-        postMessage(harness, testUser.id, commandMessage)
+        postMessage(harness, testUser.handle, commandMessage)
         runCurrent()
 
         // ASSERT
         harness.runAndLogOnFailure {
             val dispatchedCreateAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_CREATE }
             assertNotNull(dispatchedCreateAction, "The command bot should have dispatched a SESSION_CREATE action.")
-            assertEquals(testUser.id, dispatchedCreateAction.originator, "Originator must be the original user.")
+            assertEquals(testUser.handle, dispatchedCreateAction.originator, "Originator must be the original user.")
 
             val finalSessionState = harness.store.state.value.featureStates["session"] as SessionState
             assertEquals(2, finalSessionState.sessions.size, "There should now be two sessions.")
             assertNotNull(
-                finalSessionState.sessions.values.find { it.name == "Created By Bot" },
+                finalSessionState.sessions.values.find { it.identity.name == "Created By Bot" },
                 "The new session should exist with the correct name."
             )
         }
@@ -198,7 +212,7 @@ class CommandBotFeatureT2CoreTest {
 
         // ACT: Post with senderId = "commandbot" (the feature's own name)
         harness.store.dispatch("some-other-feature", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-            put("session", testSession.id)
+            put("session", testSession.identity.localHandle)
             put("senderId", "commandbot")
             put("message", selfOriginatedCommand)
         }))
@@ -222,7 +236,7 @@ class CommandBotFeatureT2CoreTest {
         val malformedCommand = "```auf_core.SHOW_TOAST\n{ this is not valid json }\n```"
 
         // ACT
-        postMessage(harness, testUser.id, malformedCommand)
+        postMessage(harness, testUser.handle, malformedCommand)
         runCurrent()
 
         // ASSERT
@@ -234,7 +248,7 @@ class CommandBotFeatureT2CoreTest {
             assertNotNull(feedbackAction, "A new session.POST action should be dispatched as feedback.")
             assertEquals("commandbot", feedbackAction.originator)
             assertEquals("commandbot", feedbackAction.payload?.get("senderId")?.jsonPrimitive?.content)
-            assertEquals(testSession.id, feedbackAction.payload?.get("session")?.jsonPrimitive?.content)
+            assertEquals(testSession.identity.localHandle, feedbackAction.payload?.get("session")?.jsonPrimitive?.content)
 
             val feedbackMessage = feedbackAction.payload?.get("message")?.jsonPrimitive?.content ?: ""
             assertTrue(feedbackMessage.contains("[COMMAND BOT ERROR]"), "The feedback message should contain an error.")
@@ -255,7 +269,7 @@ class CommandBotFeatureT2CoreTest {
         val commandMessage = "```auf_session.CREATE\n{ \"name\": \"Agent Session\" }\n```"
 
         // ACT: Agent posts the command
-        postMessage(harness, "agent-1", commandMessage)
+        postMessage(harness, testAgentHandle, commandMessage)
         runCurrent()
 
         // ASSERT
@@ -266,7 +280,7 @@ class CommandBotFeatureT2CoreTest {
             assertEquals(1, commandBotState.pendingApprovals.size, "Exactly one pending approval should be staged.")
             val approval = commandBotState.pendingApprovals.values.first()
             assertEquals("session.CREATE", approval.actionName)
-            assertEquals("agent-1", approval.requestingAgentId)
+            assertEquals(testAgentHandle, approval.requestingAgentId)
             assertEquals("Test Agent", approval.requestingAgentName)
 
             // 2. No ACTION_CREATED should be published while pending approval
@@ -288,7 +302,7 @@ class CommandBotFeatureT2CoreTest {
         runCurrent()
 
         // Stage an approval
-        postMessage(harness, "agent-1", "```auf_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
+        postMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
         runCurrent()
 
         val commandBotState = harness.store.state.value.featureStates["commandbot"] as CommandBotState
@@ -319,7 +333,7 @@ class CommandBotFeatureT2CoreTest {
             assertNotNull(actionCreated, "ACTION_CREATED should be published after approval.")
             assertEquals("session.CREATE", actionCreated.payload?.get("actionName")?.jsonPrimitive?.content,
                 "ACTION_CREATED should carry the staged action name.")
-            assertEquals("agent-1", actionCreated.payload?.get("originatorId")?.jsonPrimitive?.content,
+            assertEquals(testAgentHandle, actionCreated.payload?.get("originatorId")?.jsonPrimitive?.content,
                 "ACTION_CREATED should identify the requesting agent as originator.")
 
             // 4. SESSION_CREATE is NOT dispatched directly by CommandBot — the owning feature would handle that
@@ -334,7 +348,7 @@ class CommandBotFeatureT2CoreTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        postMessage(harness, "agent-1", "```auf_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
+        postMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
         runCurrent()
 
         val commandBotState = harness.store.state.value.featureStates["commandbot"] as CommandBotState
@@ -372,7 +386,7 @@ class CommandBotFeatureT2CoreTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        postMessage(harness, "agent-1", "```auf_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
+        postMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
         runCurrent()
 
         val commandBotState = harness.store.state.value.featureStates["commandbot"] as CommandBotState
@@ -381,7 +395,7 @@ class CommandBotFeatureT2CoreTest {
 
         // Verify pre-condition: card has doNotClear = true
         val preClearSession = (harness.store.state.value.featureStates["session"] as SessionState)
-            .sessions[testSession.id]!!
+            .sessions[testSession.identity.localHandle]!!
         val cardEntryBefore = preClearSession.ledger.find { it.id == cardMessageId }
         assertNotNull(cardEntryBefore, "Card entry should exist in ledger.")
         assertTrue(cardEntryBefore.doNotClear, "Card should have doNotClear=true before resolution.")
@@ -403,7 +417,7 @@ class CommandBotFeatureT2CoreTest {
 
             // Verify ground truth: the entry's doNotClear is now false
             val sessionState = harness.store.state.value.featureStates["session"] as SessionState
-            val session = sessionState.sessions[testSession.id]!!
+            val session = sessionState.sessions[testSession.identity.localHandle]!!
             val cardEntryAfter = session.ledger.find { it.id == cardMessageId }
             assertNotNull(cardEntryAfter, "Card entry should still exist.")
             assertTrue(!cardEntryAfter.doNotClear,
@@ -417,7 +431,7 @@ class CommandBotFeatureT2CoreTest {
         runCurrent()
 
         // First command (will be approved → clearable)
-        postMessage(harness, "agent-1", "```auf_session.CREATE\n{ \"name\": \"Session A\" }\n```")
+        postMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Session A\" }\n```")
         runCurrent()
 
         val stateAfterFirst = harness.store.state.value.featureStates["commandbot"] as CommandBotState
@@ -431,22 +445,22 @@ class CommandBotFeatureT2CoreTest {
         runCurrent()
 
         // Second command (will stay pending → doNotClear=true → survives CLEAR)
-        postMessage(harness, "agent-1", "```auf_session.CREATE\n{ \"name\": \"Session B\" }\n```")
+        postMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Session B\" }\n```")
         runCurrent()
 
         val stateAfterSecond = harness.store.state.value.featureStates["commandbot"] as CommandBotState
         val secondCardId = stateAfterSecond.pendingApprovals.values.first().cardMessageId
 
         // ACT: Clear the session
-        harness.store.dispatch(testUser.id, Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject {
-            put("session", testSession.id)
+        harness.store.dispatch(testUser.handle, Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject {
+            put("session", testSession.identity.localHandle)
         }))
         runCurrent()
 
         // ASSERT
         harness.runAndLogOnFailure {
             val sessionState = harness.store.state.value.featureStates["session"] as SessionState
-            val session = sessionState.sessions[testSession.id]!!
+            val session = sessionState.sessions[testSession.identity.localHandle]!!
 
             // Resolved card (doNotClear=false) should be removed by CLEAR
             val resolvedCard = session.ledger.find { it.id == firstCardId }
@@ -463,7 +477,7 @@ class CommandBotFeatureT2CoreTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        postMessage(harness, "agent-1", "```auf_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
+        postMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
         runCurrent()
 
         val commandBotState = harness.store.state.value.featureStates["commandbot"] as CommandBotState
@@ -482,7 +496,7 @@ class CommandBotFeatureT2CoreTest {
 
         // ACT: Delete the card message (simulates Dismiss button)
         harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
-            put("session", testSession.id)
+            put("session", testSession.identity.localHandle)
             put("messageId", cardMessageId)
         }))
         runCurrent()
@@ -531,7 +545,7 @@ class CommandBotFeatureT2CoreTest {
         runCurrent()
 
         // Agent sends LIST_SESSIONS with no payload
-        postMessage(harness, "agent-1", "```auf_session.LIST_SESSIONS\n```")
+        postMessage(harness, testAgentHandle, "```auf_session.LIST_SESSIONS\n```")
         runCurrent()
 
         // ASSERT
@@ -546,7 +560,7 @@ class CommandBotFeatureT2CoreTest {
             val actionPayload = actionCreated.payload?.get("actionPayload")?.jsonObject
             assertNotNull(actionPayload, "ACTION_CREATED must include an actionPayload.")
             val responseSession = actionPayload["responseSession"]?.jsonPrimitive?.content
-            assertEquals(testSession.id, responseSession,
+            assertEquals(testSession.identity.localHandle, responseSession,
                 "The responseSession should be auto-filled with the originating session ID in actionPayload.")
         }
     }
@@ -557,8 +571,8 @@ class CommandBotFeatureT2CoreTest {
 
         // Human user sends LIST_SESSIONS with explicit responseSession
         postMessage(
-            harness, testUser.id,
-            "```auf_session.LIST_SESSIONS\n{ \"responseSession\": \"${testSession.id}\" }\n```"
+            harness, testUser.handle,
+            "```auf_session.LIST_SESSIONS\n{ \"responseSession\": \"${testSession.identity.localHandle}\" }\n```"
         )
         runCurrent()
 
@@ -568,11 +582,11 @@ class CommandBotFeatureT2CoreTest {
             assertNotNull(listAction, "CommandBot should dispatch SESSION_LIST_SESSIONS for human users.")
 
             // CAG-002: originator is the human user
-            assertEquals(testUser.id, listAction.originator)
+            assertEquals(testUser.handle, listAction.originator)
 
             // The explicit responseSession should be preserved
             val responseSession = listAction.payload?.get("responseSession")?.jsonPrimitive?.content
-            assertEquals(testSession.id, responseSession)
+            assertEquals(testSession.identity.localHandle, responseSession)
         }
     }
 }

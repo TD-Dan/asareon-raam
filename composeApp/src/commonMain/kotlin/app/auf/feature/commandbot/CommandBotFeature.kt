@@ -3,7 +3,6 @@ package app.auf.feature.commandbot
 import androidx.compose.runtime.Composable
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
-import app.auf.core.generated.ExposedActions
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.Json
@@ -29,10 +28,10 @@ import kotlinx.serialization.json.put
  * - **CAG-002 (Causality Tracking)**: Attributes dispatched actions to the original sender.
  * - **CAG-003 (Robust Error Handling)**: Posts parse errors back to the session.
  * - **CAG-004 (Agent Action Restriction)**: Agent-originated commands are restricted to the
- *   build-time [ExposedActions.allowedActionNames] allowlist. Human users are unrestricted.
- * - **CAG-006 (Approval Gate)**: Actions in [ExposedActions.requiresApproval] are staged
+ *   build-time [ActionRegistry.agentAllowedNames] allowlist. Human users are unrestricted.
+ * - **CAG-006 (Approval Gate)**: Actions in [ActionRegistry.agentRequiresApproval] are staged
  *   and require explicit user approval before dispatch.
- * - **CAG-007 (Auto-Fill)**: Payload fields declared in [ExposedActions.autoFillRules] are
+ * - **CAG-007 (Auto-Fill)**: Payload fields declared in [ActionRegistry.agentAutoFillRules] are
  *   injected before publishing (e.g., senderId = agentId for session.POST).
  *
  * ## Decoupling
@@ -49,17 +48,25 @@ class CommandBotFeature(
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
 
     /**
-     * Tracks known agent IDs, updated via the Proactive Broadcast pattern.
-     * Used to distinguish agent-originated commands from human-originated commands
-     * for enforcement of [ExposedActions] restrictions (CAG-004).
+     * Resolves whether a senderId belongs to a known agent by consulting the
+     * identity registry. An identity is an agent if its parentHandle is "agent".
+     *
+     * Phase 4: Replaces the former knownAgentIds mutable set that was maintained
+     * via the Proactive Broadcast pattern (AGENT_NAMES_UPDATED / AGENT_DELETED).
+     * The identity registry is now the single source of truth.
      */
-    private val knownAgentIds = mutableSetOf<String>()
+    private fun isAgent(senderId: String, store: Store): Boolean {
+        val identity = store.state.value.identityRegistry[senderId] ?: return false
+        return identity.parentHandle == "agent"
+    }
 
     /**
-     * Tracks known agent names, keyed by agent ID.
-     * Used for display in approval cards and ACTION_CREATED attribution.
+     * Resolves a display name for a senderId by consulting the identity registry.
+     * Falls back to the raw senderId if not found.
      */
-    private val knownAgentNames = mutableMapOf<String, String>()
+    private fun resolveAgentName(senderId: String, store: Store): String {
+        return store.state.value.identityRegistry[senderId]?.name ?: senderId
+    }
 
     // ========================================================================
     // Slice 2: ComposableProvider — renders approval cards via PartialView
@@ -152,26 +159,6 @@ class CommandBotFeature(
 
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         when (action.name) {
-            // --- Track known agents via Proactive Broadcast ---
-            ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED -> {
-                val namesMap = action.payload?.get("names")?.jsonObject ?: return
-                knownAgentIds.clear()
-                knownAgentIds.addAll(namesMap.keys)
-                knownAgentNames.clear()
-                namesMap.forEach { (id, nameElement) ->
-                    knownAgentNames[id] = nameElement.jsonPrimitive.contentOrNull ?: id
-                }
-                platformDependencies.log(
-                    LogLevel.DEBUG, identity.handle,
-                    "Updated known agent IDs: ${knownAgentIds.joinToString(", ")}"
-                )
-            }
-            ActionRegistry.Names.AGENT_AGENT_DELETED -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.content ?: return
-                knownAgentIds.remove(agentId)
-                knownAgentNames.remove(agentId)
-            }
-
             // --- Approval Resolution ---
             ActionRegistry.Names.COMMANDBOT_APPROVE -> {
                 val approvalId = action.payload?.get("approvalId")?.jsonPrimitive?.contentOrNull ?: return
@@ -279,7 +266,7 @@ class CommandBotFeature(
         store: Store
     ) {
         val actionName = language.removePrefix("auf_")
-        val isAgent = knownAgentIds.contains(originalSenderId)
+        val isAgent = isAgent(originalSenderId, store)
 
         try {
             var payloadJson = if (code.isNotBlank()) {
@@ -291,7 +278,7 @@ class CommandBotFeature(
             // === AGENT ENFORCEMENT ===
             if (isAgent) {
                 // Guardrail (CAG-004): Agent Action Restriction
-                if (actionName !in ExposedActions.allowedActionNames) {
+                if (actionName !in ActionRegistry.agentAllowedNames) {
                     platformDependencies.log(
                         LogLevel.WARN, identity.handle,
                         "Agent '$originalSenderId' attempted disallowed action '$actionName'. Blocked."
@@ -305,7 +292,7 @@ class CommandBotFeature(
                 }
 
                 // --- CAG-007: Auto-Fill ---
-                val autoFill = ExposedActions.autoFillRules[actionName]
+                val autoFill = ActionRegistry.agentAutoFillRules[actionName]
                 if (autoFill != null) {
                     val mutablePayload = payloadJson.toMutableMap()
                     autoFill.forEach { (key, template) ->
@@ -318,7 +305,7 @@ class CommandBotFeature(
                 }
 
                 // --- CAG-006: Approval Gate ---
-                if (actionName in ExposedActions.requiresApproval) {
+                if (actionName in ActionRegistry.agentRequiresApproval) {
                     stageApproval(actionName, payloadJson, sessionId, originalSenderId, store)
                     return
                 }
@@ -369,7 +356,7 @@ class CommandBotFeature(
         store: Store
     ) {
         val correlationId = platformDependencies.generateUUID()
-        val agentName = knownAgentNames[originatorId] ?: originatorId
+        val agentName = resolveAgentName(originatorId, store)
 
         store.deferredDispatch(identity.handle, Action(
             ActionRegistry.Names.COMMANDBOT_ACTION_CREATED,
@@ -406,7 +393,7 @@ class CommandBotFeature(
     ) {
         val approvalId = "approval-${platformDependencies.generateUUID()}"
         val cardMessageId = platformDependencies.generateUUID()
-        val agentName = knownAgentNames[agentId] ?: agentId
+        val agentName = resolveAgentName(agentId, store)
 
         // 1. Post the approval card as a PartialView entry in the session
         val cardMetadata = buildJsonObject {
