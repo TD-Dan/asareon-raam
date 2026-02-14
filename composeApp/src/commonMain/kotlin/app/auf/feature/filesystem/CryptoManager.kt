@@ -66,12 +66,13 @@ internal class CryptoManager(
      * the original input string, assuming it was plaintext.
      *
      * @param ciphertext The string to decrypt.
+     * @param returnPlaintextSilently Don't warn if the ciphertext was not encrypted.
      * @return The decrypted plaintext string, or the original input if it's not encrypted.
      */
-    fun decrypt(ciphertext: String): String {
+    fun decrypt(ciphertext: String, returnPlaintextSilently : Boolean = false): String {
         if (!isEncrypted(ciphertext)) {
             // Not our encrypted data, return as-is.
-            platformDependencies.log(LogLevel.WARN, "CryptoManager", "Decryption failed: not a valid cipher.")
+            if (!returnPlaintextSilently) { platformDependencies.log(LogLevel.WARN, "CryptoManager", "Decryption failed: not a valid cipher.") }
             return ciphertext
         }
 

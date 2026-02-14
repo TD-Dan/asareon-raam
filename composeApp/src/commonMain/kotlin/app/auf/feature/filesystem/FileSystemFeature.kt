@@ -360,7 +360,7 @@ class FileSystemFeature(
                 try {
                     val responsePayload = buildJsonObject {
                         put("subpath", payload.subpath)
-                        put("content", cryptoManager.decrypt(platformDependencies.readFileContent(fullPath)))
+                        put("content", cryptoManager.decrypt(platformDependencies.readFileContent(fullPath),true))
                     }
                     store.deferredDispatch(identity.handle, Action(
 
