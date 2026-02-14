@@ -35,10 +35,15 @@ class CoreFeature(
     // --- Identity registration payload classes ---
     // Note: no parentHandle field — the originator IS the parent (enforced by design).
     @Serializable private data class RegisterIdentityPayload(
-        val localHandle: String,
-        val name: String
+        val localHandle: String? = null,
+        val name: String,
+        val uuid: String? = null
     )
     @Serializable private data class UnregisterIdentityPayload(val handle: String)
+    @Serializable private data class UpdateIdentityPayload(
+        val handle: String,
+        val newName: String
+    )
 
     private val settingKeyWidth = "core.window.width"
     private val settingKeyHeight = "core.window.height"
@@ -54,6 +59,24 @@ class CoreFeature(
 
         fun isValidLocalHandle(localHandle: String): Boolean =
             LOCAL_HANDLE_REGEX.matches(localHandle)
+
+        /**
+         * Converts a human-readable name into a valid localHandle slug.
+         * Rules: lowercase, replace non-[a-z0-9] with hyphens, collapse
+         * consecutive hyphens, strip leading/trailing hyphens, ensure starts
+         * with a letter. Falls back to "unnamed" if result is empty.
+         */
+        fun slugifyName(name: String): String {
+            val slug = name.lowercase()
+                .replace(Regex("[^a-z0-9]"), "-")
+                .replace(Regex("-+"), "-")
+                .trim('-')
+            // Ensure starts with a letter (localHandle rule: [a-z][a-z0-9-]*)
+            val safe = if (slug.isEmpty()) "unnamed"
+            else if (!slug[0].isLetter()) "s-$slug"
+            else slug
+            return safe
+        }
     }
 
     /**
@@ -83,12 +106,26 @@ class CoreFeature(
     }
 
     /** Sends a failure response for REGISTER_IDENTITY back to the originator. */
-    private fun sendRegistrationFailure(store: Store, originator: String, requestedLocalHandle: String, error: String) {
+    private fun sendRegistrationFailure(store: Store, originator: String, requestedLocalHandle: String, error: String, uuid: String? = null) {
         store.deferredDispatch(identity.handle, Action(
             ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY,
             buildJsonObject {
                 put("success", false)
                 put("requestedLocalHandle", requestedLocalHandle)
+                put("error", error)
+                uuid?.let { put("uuid", it) }
+            },
+            targetRecipient = originator
+        ))
+    }
+
+    /** Sends a failure response for UPDATE_IDENTITY back to the originator. */
+    private fun sendUpdateFailure(store: Store, originator: String, handle: String, error: String) {
+        store.deferredDispatch(identity.handle, Action(
+            ActionRegistry.Names.CORE_RESPONSE_UPDATE_IDENTITY,
+            buildJsonObject {
+                put("success", false)
+                put("oldHandle", handle)
                 put("error", error)
             },
             targetRecipient = originator
@@ -218,20 +255,41 @@ class CoreFeature(
                 val payload = action.payload?.let {
                     Json.decodeFromJsonElement<RegisterIdentityPayload>(it)
                 }
-                if (payload == null) {
+                if (payload == null || payload.name.isBlank()) {
                     platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
-                        "REGISTER_IDENTITY: missing or invalid payload")
+                        "REGISTER_IDENTITY: missing or invalid payload (name is required)")
                     sendRegistrationFailure(store, originator, "", "Missing or invalid payload")
                     return
                 }
 
-                // Validate localHandle format: [a-z][a-z0-9-]*
-                if (!isValidLocalHandle(payload.localHandle)) {
-                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
-                        "REGISTER_IDENTITY: invalid localHandle '${payload.localHandle}' — " +
-                                "must match [a-z][a-z0-9-]* (start with letter, then letters/digits/hyphens)")
-                    sendRegistrationFailure(store, originator, payload.localHandle, "Invalid localHandle format")
-                    return
+                // Derive or validate localHandle
+                val requestedLocalHandle: String
+                if (payload.localHandle != null) {
+                    // Explicit localHandle provided — validate format
+                    if (!isValidLocalHandle(payload.localHandle)) {
+                        platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                            "REGISTER_IDENTITY: invalid localHandle '${payload.localHandle}' — " +
+                                    "must match [a-z][a-z0-9-]* (start with letter, then letters/digits/hyphens)")
+                        sendRegistrationFailure(store, originator, payload.localHandle, "Invalid localHandle format", payload.uuid)
+                        return
+                    }
+                    requestedLocalHandle = payload.localHandle
+                } else {
+                    // No localHandle — generate from name
+                    requestedLocalHandle = slugifyName(payload.name)
+                }
+
+                // Validate caller-provided UUID if present
+                if (payload.uuid != null) {
+                    try {
+                        require(Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+                            .matches(payload.uuid))
+                    } catch (_: Exception) {
+                        platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                            "REGISTER_IDENTITY: invalid UUID '${payload.uuid}'")
+                        sendRegistrationFailure(store, originator, requestedLocalHandle, "Invalid UUID format", payload.uuid)
+                        return
+                    }
                 }
 
                 // The originator IS the parent — enforced by design.
@@ -242,16 +300,16 @@ class CoreFeature(
                 if (parentHandle != null && parentHandle !in registry) {
                     platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
                         "REGISTER_IDENTITY: originator '${parentHandle}' not found in identity registry")
-                    sendRegistrationFailure(store, originator, payload.localHandle, "Parent not found in registry")
+                    sendRegistrationFailure(store, originator, requestedLocalHandle, "Parent not found in registry", payload.uuid)
                     return
                 }
 
                 // Deduplicate among siblings (same parent namespace)
-                val finalLocalHandle = deduplicateLocalHandle(payload.localHandle, parentHandle, registry)
+                val finalLocalHandle = deduplicateLocalHandle(requestedLocalHandle, parentHandle, registry)
                 val fullHandle = constructHandle(parentHandle, finalLocalHandle)
 
                 val newIdentity = Identity(
-                    uuid = platformDependencies.generateUUID(),
+                    uuid = payload.uuid ?: platformDependencies.generateUUID(),
                     localHandle = finalLocalHandle,
                     handle = fullHandle,
                     name = payload.name,
@@ -267,7 +325,7 @@ class CoreFeature(
                     ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY,
                     buildJsonObject {
                         put("success", true)
-                        put("requestedLocalHandle", payload.localHandle)
+                        put("requestedLocalHandle", requestedLocalHandle)
                         put("approvedLocalHandle", newIdentity.localHandle)
                         put("handle", newIdentity.handle)
                         put("uuid", newIdentity.uuid)
@@ -320,6 +378,90 @@ class CoreFeature(
                 }.toSet()
 
                 store.updateIdentityRegistry { it - handlesToRemove }
+
+                // Broadcast registry update
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+                ))
+            }
+            ActionRegistry.Names.CORE_UPDATE_IDENTITY -> {
+                val originator = action.originator ?: return
+                val payload = action.payload?.let {
+                    Json.decodeFromJsonElement<UpdateIdentityPayload>(it)
+                }
+                if (payload == null || payload.handle.isBlank() || payload.newName.isBlank()) {
+                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                        "UPDATE_IDENTITY: missing or invalid payload")
+                    sendUpdateFailure(store, originator, payload?.handle ?: "", "Missing or invalid payload")
+                    return
+                }
+
+                val registry = store.state.value.identityRegistry
+                val existingIdentity = registry[payload.handle]
+
+                if (existingIdentity == null) {
+                    platformDependencies.log(app.auf.util.LogLevel.WARN, identity.handle,
+                        "UPDATE_IDENTITY: handle '${payload.handle}' not in registry")
+                    sendUpdateFailure(store, originator, payload.handle, "Handle not found in registry")
+                    return
+                }
+
+                // Namespace enforcement: originator can only update identities within its namespace
+                val isOwnNamespace = payload.handle == originator ||
+                        payload.handle.startsWith("$originator.")
+                if (!isOwnNamespace) {
+                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                        "UPDATE_IDENTITY: originator '$originator' cannot update " +
+                                "'${payload.handle}' — outside its namespace")
+                    sendUpdateFailure(store, originator, payload.handle, "Outside originator namespace")
+                    return
+                }
+
+                // Compute new slug from new name
+                val newLocalHandle = slugifyName(payload.newName)
+                val parentHandle = existingIdentity.parentHandle
+                val finalLocalHandle = deduplicateLocalHandle(newLocalHandle, parentHandle, registry - payload.handle)
+                val newFullHandle = constructHandle(parentHandle, finalLocalHandle)
+
+                val updatedIdentity = existingIdentity.copy(
+                    localHandle = finalLocalHandle,
+                    handle = newFullHandle,
+                    name = payload.newName
+                )
+
+                // Atomic swap: remove old handle, add new handle (may be the same if name→slug didn't change)
+                val updatedRegistry = (registry - payload.handle) + (newFullHandle to updatedIdentity)
+
+                // Cascade: update children whose parentHandle == old handle
+                val cascadedRegistry = updatedRegistry.toMutableMap()
+                updatedRegistry.forEach { (childHandle, childIdentity) ->
+                    if (childIdentity.parentHandle == payload.handle) {
+                        val newChildHandle = "$newFullHandle.${childIdentity.localHandle}"
+                        val updatedChild = childIdentity.copy(
+                            parentHandle = newFullHandle,
+                            handle = newChildHandle
+                        )
+                        cascadedRegistry.remove(childHandle)
+                        cascadedRegistry[newChildHandle] = updatedChild
+                    }
+                }
+
+                store.updateIdentityRegistry { cascadedRegistry }
+
+                // Targeted response to the originator
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.CORE_RESPONSE_UPDATE_IDENTITY,
+                    buildJsonObject {
+                        put("success", true)
+                        put("oldHandle", payload.handle)
+                        put("newHandle", newFullHandle)
+                        put("oldLocalHandle", existingIdentity.localHandle)
+                        put("newLocalHandle", finalLocalHandle)
+                        put("name", payload.newName)
+                        put("uuid", updatedIdentity.uuid)
+                    },
+                    targetRecipient = originator
+                ))
 
                 // Broadcast registry update
                 store.deferredDispatch(identity.handle, Action(
@@ -416,7 +558,7 @@ class CoreFeature(
             }
             ActionRegistry.Names.CORE_ADD_USER_IDENTITY -> {
                 val payload = action.payload?.let { Json.decodeFromJsonElement<AddUserIdentityPayload>(it) } ?: return coreState
-                val localHandle = payload.name.lowercase().replace(Regex("[^a-z0-9-]"), "-").trimStart('-').ifEmpty { "user" }
+                val localHandle = slugifyName(payload.name)
                 // Dedup against existing user identities (registry sync is handled in handleSideEffects).
                 @Suppress("DEPRECATION")
                 val existingAsMap = coreState.userIdentities.associateBy { it.handle }

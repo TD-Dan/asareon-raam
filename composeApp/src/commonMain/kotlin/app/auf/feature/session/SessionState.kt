@@ -1,6 +1,7 @@
 package app.auf.feature.session
 
 import app.auf.core.FeatureState
+import app.auf.core.Identity
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
@@ -50,12 +51,27 @@ data class MessageUiState(
 )
 
 /**
+ * Transient record of a session creation that is awaiting identity approval from CoreFeature.
+ * Keyed by UUID in SessionState.pendingCreations.
+ */
+@Serializable
+data class PendingSessionCreation(
+    val uuid: String,
+    val requestedName: String,
+    val isHidden: Boolean = false,
+    val isAgentPrivate: Boolean = false,
+    val createdAt: Long,
+    /** For clones: the localHandle of the source session to copy the ledger from. */
+    val cloneSourceLocalHandle: String? = null
+)
+
+/**
  * Represents a single, continuous session transcript.
+ * Phase 4: Session identity is now a full Identity object instead of separate id/name fields.
  */
 @Serializable
 data class Session(
-    val id: String,
-    val name: String,
+    val identity: Identity,
     val ledger: List<LedgerEntry>,
     val createdAt: Long,
     /** A map of message IDs to their persistent UI state. */
@@ -80,15 +96,15 @@ data class Session(
  */
 @Serializable
 data class SessionState(
-    /** A map of all active sessions, keyed by their unique ID. */
+    /** A map of all active sessions, keyed by their identity.localHandle. */
     val sessions: Map<String, Session> = emptyMap(),
 
     /** A unified local cache of all identity IDs (user and agent) to their display names. */
     // ADDITION: Initialize with a default "system" identity for sentinel messages.
     val identityNames: Map<String, String> = mapOf("system" to "SYSTEM SENTINEL"),
 
-    /** The ID of the session currently visible in the main view. */
-    val activeSessionId: String? = null,
+    /** The localHandle of the session currently visible in the main view. */
+    val activeSessionLocalHandle: String? = null,
 
     /**
      * The canonical display ordering of sessions, derived from each Session's persisted orderIndex.
@@ -112,9 +128,9 @@ data class SessionState(
     @Transient
     val hideHiddenInManager: Boolean = true,
 
-    /** TRANSIENT UI STATE: The ID of the session whose name is being edited. */
+    /** TRANSIENT UI STATE: The localHandle of the session whose name is being edited. */
     @Transient
-    val editingSessionId: String? = null,
+    val editingSessionLocalHandle: String? = null,
 
     /** TRANSIENT UI STATE: The ID of the message being edited. */
     @Transient
@@ -124,13 +140,22 @@ data class SessionState(
     @Transient
     val editingMessageContent: String? = null,
 
+    /** Cached from core.IDENTITIES_UPDATED broadcast — the active user's handle for sender attribution. */
+    @Transient
+    val activeUserId: String? = null,
+
     /** A transient error message for display in the UI. */
     @Transient
     val error: String? = null,
 
-    /** THE FIX: A transient field to reliably pass the ID of a deleted session from the reducer to the onAction handler. */
+    /** A transient field to reliably pass the localHandle of a deleted session from the reducer to the side effects handler. */
     @Transient
-    val lastDeletedSessionId: String? = null
+    val lastDeletedSessionLocalHandle: String? = null,
+
+    /** Pending session creations awaiting identity approval, keyed by UUID. */
+    @Transient
+    val pendingCreations: Map<String, PendingSessionCreation> = emptyMap()
+
 ) : FeatureState {
 
     companion object {
@@ -150,7 +175,7 @@ data class SessionState(
                     compareBy<Session> { it.orderIndex }
                         .thenByDescending { it.createdAt }
                 )
-                .map { it.id }
+                .map { it.identity.localHandle }
         }
 
         /**
@@ -165,10 +190,10 @@ data class SessionState(
             val ordered = deriveSessionOrder(sessions)
             var changed = false
             val normalized = sessions.toMutableMap()
-            ordered.forEachIndexed { index, id ->
-                val session = normalized[id] ?: return@forEachIndexed
+            ordered.forEachIndexed { index, localHandle ->
+                val session = normalized[localHandle] ?: return@forEachIndexed
                 if (session.orderIndex != index) {
-                    normalized[id] = session.copy(orderIndex = index)
+                    normalized[localHandle] = session.copy(orderIndex = index)
                     changed = true
                 }
             }

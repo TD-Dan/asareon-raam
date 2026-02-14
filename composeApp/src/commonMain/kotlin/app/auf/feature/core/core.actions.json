@@ -292,7 +292,7 @@
     },
     {
       "action_name": "core.REGISTER_IDENTITY",
-      "summary": "Register a new identity in the universal registry. The originator automatically becomes the parent — no feature can register identities outside its own namespace. CoreFeature validates localHandle format ([a-z][a-z0-9-]*), deduplicates among siblings (appends -2, -3 etc.), and generates a UUID. The full bus address is constructed as originator.localHandle. Only delivered to CoreFeature (non-broadcast); the caller receives a targeted core.RESPONSE_REGISTER_IDENTITY with the result.",
+      "summary": "Register a new identity in the universal registry. If localHandle is omitted, CoreFeature generates one from the name via slugification. If a UUID is provided and valid, it is used instead of auto-generating one (useful for correlation). The originator automatically becomes the parent. CoreFeature validates localHandle format if provided, deduplicates among siblings, and returns the approved identity via a targeted RESPONSE_REGISTER_IDENTITY.",
       "open": true,
       "broadcast": false,
       "targeted": false,
@@ -300,20 +300,24 @@
         "type": "object",
         "properties": {
           "localHandle": {
-            "type": "string",
-            "description": "Leaf-level handle for this identity. Must match [a-z][a-z0-9-]*. The full bus address is constructed as originator.localHandle."
+            "type": ["string", "null"],
+            "description": "Optional leaf-level handle. If provided, must match [a-z][a-z0-9-]*. If omitted, generated from name."
           },
           "name": {
             "type": "string",
-            "description": "Human-readable display name (full Unicode allowed)."
+            "description": "Human-readable display name (full Unicode allowed). Required."
+          },
+          "uuid": {
+            "type": ["string", "null"],
+            "description": "Optional caller-provided UUID. Must be valid UUID format (8-4-4-4-12 hex). If omitted, auto-generated."
           }
         },
-        "required": ["localHandle", "name"]
+        "required": ["name"]
       }
     },
     {
       "action_name": "core.RESPONSE_REGISTER_IDENTITY",
-      "summary": "Targeted response to a core.REGISTER_IDENTITY request. Contains the approved identity (possibly with a deduplicated localHandle) on success, or an error on failure. The caller should match this to their request by comparing the requestedLocalHandle field.",
+      "summary": "Targeted response to a core.REGISTER_IDENTITY request. Contains the approved identity on success, or an error on failure. The caller can correlate by UUID (if one was provided in the request) or by requestedLocalHandle.",
       "open": false,
       "broadcast": false,
       "targeted": true,
@@ -338,7 +342,7 @@
           },
           "uuid": {
             "type": "string",
-            "description": "The system-assigned UUID. Only present on success."
+            "description": "The UUID of the registered identity. Matches caller-provided UUID if one was given. Only present on success."
           },
           "name": {
             "type": "string",
@@ -353,7 +357,7 @@
             "description": "Error message explaining why registration was rejected. Only present on failure."
           }
         },
-        "required": ["success", "requestedLocalHandle"]
+        "required": ["success"]
       }
     },
     {
@@ -379,6 +383,48 @@
       "open": false,
       "broadcast": true,
       "targeted": false
+    },
+    {
+      "action_name": "core.UPDATE_IDENTITY",
+      "summary": "Update the name (and consequently the handle/slug) of an existing identity. The UUID and parent are preserved. Namespace enforcement: the originator can only update identities within its own namespace. Cascading: children's parentHandle and handle are updated. A targeted RESPONSE_UPDATE_IDENTITY is sent to the caller.",
+      "open": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string",
+            "description": "Full handle of the identity to update."
+          },
+          "newName": {
+            "type": "string",
+            "description": "The new display name. A new localHandle/slug will be derived from this."
+          }
+        },
+        "required": ["handle", "newName"]
+      }
+    },
+    {
+      "action_name": "core.RESPONSE_UPDATE_IDENTITY",
+      "summary": "Targeted response to a core.UPDATE_IDENTITY request. Sent to the original caller with the updated identity details, and also sent as cascading notifications to features owning child identities whose handles changed.",
+      "open": false,
+      "broadcast": false,
+      "targeted": true,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "oldHandle": { "type": "string", "description": "The handle before the update." },
+          "newHandle": { "type": "string", "description": "The handle after the update. Only present on success." },
+          "oldLocalHandle": { "type": "string", "description": "Only present on success." },
+          "newLocalHandle": { "type": "string", "description": "Only present on success." },
+          "name": { "type": "string", "description": "The new display name. Only present on success." },
+          "uuid": { "type": "string", "description": "The UUID (unchanged). Only present on success." },
+          "error": { "type": "string", "description": "Only present on failure." }
+        },
+        "required": ["success", "oldHandle"]
+      }
     }
   ]
 }

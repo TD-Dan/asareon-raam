@@ -59,7 +59,7 @@ fun LedgerEntryCard(
                         enabled = !isEditingThisMessage,
                         onClick = {
                             store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_COLLAPSED, buildJsonObject {
-                                put("sessionId", session.id); put("messageId", entry.id)
+                                put("sessionId", session.identity.localHandle); put("messageId", entry.id)
                             }))
                         }
                     ),
@@ -96,7 +96,7 @@ fun LedgerEntryCard(
                     ) {
                         IconButton(onClick = {
                             store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_RAW_VIEW, buildJsonObject {
-                                put("sessionId", session.id); put("messageId", entry.id)
+                                put("sessionId", session.identity.localHandle); put("messageId", entry.id)
                             }))
                         }, modifier = Modifier.size(24.dp)) {
                             Icon(
@@ -137,7 +137,7 @@ fun LedgerEntryCard(
                                 text = { Text(if (entry.isLocked) "Unlock" else "Lock") },
                                 onClick = {
                                     store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_LOCKED, buildJsonObject {
-                                        put("sessionId", session.id); put("messageId", entry.id)
+                                        put("sessionId", session.identity.localHandle); put("messageId", entry.id)
                                     }))
                                     showMenu = false
                                 },
@@ -167,7 +167,7 @@ fun LedgerEntryCard(
                                 text = { Text("Delete") },
                                 onClick = {
                                     store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
-                                        put("session", session.id); put("messageId", entry.id)
+                                        put("session", session.identity.localHandle); put("messageId", entry.id)
                                     }))
                                     showMenu = false
                                 },
@@ -220,7 +220,7 @@ private fun MessageEditor(store: Store, session: Session, entry: LedgerEntry, ed
             Spacer(Modifier.width(8.dp))
             Button(onClick = {
                 store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_UPDATE_MESSAGE, buildJsonObject {
-                    put("session", session.id)
+                    put("session", session.identity.localHandle)
                     put("messageId", entry.id)
                     put("newContent", text)
                 }))

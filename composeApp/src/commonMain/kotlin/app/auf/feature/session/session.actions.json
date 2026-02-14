@@ -40,7 +40,7 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The ID of the session to clone."
+            "description": "The session's localHandle, full handle, or display name."
           }
         },
         "required": [
@@ -62,7 +62,7 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The ID or name of the session to update."
+            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to update."
           },
           "name": {
             "type": "string",
@@ -88,7 +88,7 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The ID or name of the session to delete."
+            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to delete."
           }
         },
         "required": [
@@ -110,7 +110,7 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The ID or name of the target session."
+            "description": "The session's localHandle, full handle, or display name."
           },
           "senderId": {
             "type": "string"
@@ -162,7 +162,7 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The ID or name of the target session."
+            "description": "The session's localHandle, full handle, or display name."
           },
           "messageId": {
             "type": "string"
@@ -191,7 +191,7 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The ID or name of the session to delete."
+            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to delete."
           },
           "messageId": {
             "type": "string"
@@ -239,7 +239,7 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The ID or name of the session to make active."
+            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to make active."
           }
         },
         "required": [
@@ -338,7 +338,7 @@
         "properties": {
           "sessionId": {
             "type": "string",
-            "description": "The ID of the session to move."
+            "description": "The session's localHandle."
           },
           "toIndex": {
             "type": "integer",
@@ -384,7 +384,7 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The ID or name of the session to toggle."
+            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to toggle."
           }
         },
         "required": [
@@ -425,7 +425,7 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The ID or name of the session to clear."
+            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to clear."
           }
         },
         "required": [
@@ -469,7 +469,7 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The ID or name of the target session."
+            "description": "The session's localHandle, full handle, or display name."
           },
           "senderId": {
             "type": "string",
@@ -501,7 +501,7 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The ID or name of the target session."
+            "description": "The session's localHandle, full handle, or display name."
           },
           "senderId": {
             "type": "string",

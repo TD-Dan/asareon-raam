@@ -41,7 +41,7 @@ private fun deriveOrderedSessionsForManager(
 ): List<Session> {
     val ordered = sessionOrder.mapNotNull { sessionsMap[it] }
     val unordered = sessionsMap.values
-        .filter { it.id !in sessionOrder }
+        .filter { it.identity.localHandle !in sessionOrder }
         .sortedByDescending { it.createdAt }
     val all = ordered + unordered
     return if (hideHidden) all.filter { !it.isHidden } else all
@@ -98,7 +98,7 @@ private class DragReorderState(
     }
 
     fun onDragEnd() {
-        val finalOrder = getList().map { it.id }
+        val finalOrder = getList().map { it.identity.localHandle }
         draggedIndex = null
         dragOffset = 0f
         onDragFinished(finalOrder)
@@ -144,7 +144,7 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
             hideHidden
         )
     }
-    val editingSessionId = sessionState?.editingSessionId
+    val editingSessionLocalHandle = sessionState?.editingSessionLocalHandle
 
     // --- Drag-reorderable list state ---
     // This is a local mutable copy that the drag gesture manipulates.
@@ -169,11 +169,11 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
         AlertDialog(
             onDismissRequest = { sessionToDelete = null },
             title = { Text("Delete Session?") },
-            text = { Text("Are you sure you want to permanently delete '${session.name}'? This action cannot be undone.") },
+            text = { Text("Are you sure you want to permanently delete '${session.identity.name}'? This action cannot be undone.") },
             confirmButton = {
                 Button(
                     onClick = {
-                        store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_DELETE, buildJsonObject { put("session", session.id) }))
+                        store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_DELETE, buildJsonObject { put("session", session.identity.localHandle) }))
                         sessionToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -194,11 +194,11 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
         AlertDialog(
             onDismissRequest = { sessionToClear = null },
             title = { Text("Clear Session?") },
-            text = { Text("Clear '${session.name}'? $detail") },
+            text = { Text("Clear '${session.identity.name}'? $detail") },
             confirmButton = {
                 Button(
                     onClick = {
-                        store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject { put("session", session.id) }))
+                        store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject { put("session", session.identity.localHandle) }))
                         sessionToClear = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -271,7 +271,7 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
                 contentPadding = PaddingValues(vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                itemsIndexed(reorderableList, key = { _, session -> session.id }) { index, session ->
+                itemsIndexed(reorderableList, key = { _, session -> session.identity.localHandle }) { index, session ->
                     val isDraggingThis = dragState.draggedIndex == index
                     val elevation by animateDpAsState(if (isDraggingThis) 8.dp else 0.dp)
 
@@ -281,7 +281,7 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
                     //
                     // When the user drags item A past item B, DragReorderState
                     // swaps them in reorderableList, which triggers recomposition.
-                    // Because itemsIndexed uses key = session.id, Compose keeps
+                    // Because itemsIndexed uses key = session.identity.localHandle, Compose keeps
                     // each composable associated with its session — but 'index'
                     // changes (e.g. 0 → 1). If the pointerInput key were 'index',
                     // Compose would restart the coroutine and cancel the gesture
@@ -322,7 +322,7 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
                             }
                             .shadow(elevation, shape = MaterialTheme.shapes.medium)
                     ) {
-                        if (session.id == editingSessionId) {
+                        if (session.identity.localHandle == editingSessionLocalHandle) {
                             SessionManagerCardEditor(session, store)
                         } else {
                             SessionManagerCard(
@@ -383,8 +383,8 @@ private fun SessionManagerCard(
             }
 
             Column(modifier = Modifier.weight(1f)) {
-                Text(session.name, style = MaterialTheme.typography.titleMedium)
-                Text("ID: ${session.id}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(session.identity.name, style = MaterialTheme.typography.titleMedium)
+                Text("Handle: ${session.identity.localHandle}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Messages: ${session.ledger.size}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     val lockedCount = session.ledger.count { it.isLocked }
@@ -396,7 +396,7 @@ private fun SessionManagerCard(
 
             // Visibility toggle
             IconButton(onClick = {
-                store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_TOGGLE_SESSION_HIDDEN, buildJsonObject { put("session", session.id) }))
+                store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_TOGGLE_SESSION_HIDDEN, buildJsonObject { put("session", session.identity.localHandle) }))
             }) {
                 Icon(
                     imageVector = if (session.isHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
@@ -405,7 +405,7 @@ private fun SessionManagerCard(
             }
             // Edit Button
             IconButton(onClick = {
-                val payload = buildJsonObject { put("sessionId", session.id) }
+                val payload = buildJsonObject { put("sessionId", session.identity.localHandle) }
                 store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, payload))
             }) {
                 Icon(Icons.Default.Edit, contentDescription = "Edit Session Name")
@@ -422,7 +422,7 @@ private fun SessionManagerCard(
                     DropdownMenuItem(
                         text = { Text("Clone") },
                         onClick = {
-                            store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_CLONE, buildJsonObject { put("session", session.id) }))
+                            store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_CLONE, buildJsonObject { put("session", session.identity.localHandle) }))
                             menuExpanded = false
                         },
                         leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) }
@@ -459,7 +459,7 @@ private fun SessionManagerCard(
 
 @Composable
 private fun SessionManagerCardEditor(session: Session, store: Store) {
-    var name by remember(session.id) { mutableStateOf(session.name) }
+    var name by remember(session.identity.localHandle) { mutableStateOf(session.identity.name) }
 
     val cancelAction = {
         val payload = buildJsonObject { put("sessionId", null as String?) }
@@ -467,7 +467,7 @@ private fun SessionManagerCardEditor(session: Session, store: Store) {
     }
     val saveAction = {
         val payload = buildJsonObject {
-            put("session", session.id)
+            put("session", session.identity.localHandle)
             put("name", name)
         }
         store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_UPDATE_CONFIG, payload))

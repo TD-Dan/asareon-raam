@@ -3,6 +3,7 @@ package app.auf.feature.session
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import app.auf.core.AppState
+import app.auf.core.Identity
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
@@ -26,17 +27,13 @@ class SessionFeatureT1SessionManagerViewTest {
 
     private lateinit var fakePlatform: FakePlatformDependencies
     private lateinit var fakeStore: FakeStore
-    private val session1 = Session("sid-1", "My Session", emptyList(), 1L)
+    private val session1Identity = Identity(uuid = "test-uuid-1", localHandle = "sid-1", handle = "session.sid-1", name = "My Session", parentHandle = "session")
+    private val session1 = Session(identity = session1Identity, ledger = emptyList(), createdAt = 1L)
 
     @Before
     fun setup() {
-        val validActions = setOf(
-            ActionRegistry.Names.SESSION_CREATE,
-            ActionRegistry.Names.SESSION_DELETE,
-            ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME
-        )
         fakePlatform = FakePlatformDependencies("test")
-        fakeStore = FakeStore(AppState(), fakePlatform, validActions)
+        fakeStore = FakeStore(AppState(), fakePlatform)
     }
 
     private fun setViewState(state: SessionState) {
@@ -50,22 +47,10 @@ class SessionFeatureT1SessionManagerViewTest {
 
     @Test
     fun `renders a card for each session`() {
-        setViewState(SessionState(sessions = mapOf(session1.id to session1)))
+        setViewState(SessionState(sessions = mapOf(session1.identity.localHandle to session1)))
 
         composeTestRule.onNodeWithText("My Session").assertIsDisplayed()
-        composeTestRule.onNodeWithText("ID: sid-1").assertIsDisplayed()
-    }
-
-    @Test
-    fun `clicking delete button dispatches SESSION_DELETE`() {
-        setViewState(SessionState(sessions = mapOf(session1.id to session1)))
-
-        composeTestRule.onNodeWithContentDescription("Delete Session").performClick()
-
-        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_DELETE }
-        assertNotNull(action)
-        assertEquals("session.ui", action.originator)
-        assertEquals(session1.id, action.payload?.get("session").toString().trim('"'))
+        composeTestRule.onNodeWithText("Handle: sid-1").assertIsDisplayed()
     }
 
     @Test

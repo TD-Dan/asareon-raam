@@ -17,7 +17,6 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
-import app.auf.feature.core.CoreState
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.booleanOrNull
@@ -37,7 +36,7 @@ private fun deriveOrderedSessions(
 ): List<Session> {
     val ordered = sessionOrder.mapNotNull { sessionsMap[it] }
     val unordered = sessionsMap.values
-        .filter { it.id !in sessionOrder }
+        .filter { it.identity.localHandle !in sessionOrder }
         .sortedByDescending { it.createdAt }
     val all = ordered + unordered
     return if (hideHidden) all.filter { !it.isHidden } else all
@@ -47,7 +46,6 @@ private fun deriveOrderedSessions(
 fun SessionView(store: Store, features: List<Feature>, platformDependencies: PlatformDependencies) {
     val appState by store.state.collectAsState()
     val sessionState = appState.featureStates["session"] as? SessionState
-    val coreState = appState.featureStates["core"] as? CoreState
 
     val hideHidden = sessionState?.hideHiddenInViewer ?: true
     val sessions = remember(sessionState?.sessions, sessionState?.sessionOrder, hideHidden) {
@@ -57,8 +55,8 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
             hideHidden
         )
     }
-    val activeSession = remember(sessionState?.activeSessionId, sessions) {
-        sessions.find { it.id == sessionState?.activeSessionId }
+    val activeSession = remember(sessionState?.activeSessionLocalHandle, sessions) {
+        sessions.find { it.identity.localHandle == sessionState?.activeSessionLocalHandle }
     }
     val activeTabIndex = remember(activeSession, sessions) {
         sessions.indexOf(activeSession).coerceAtLeast(0)
@@ -69,7 +67,7 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
             if (sessions.isNotEmpty()) {
                 TabRow(selectedTabIndex = activeTabIndex, modifier = Modifier.weight(1f)) {
                     sessions.forEach { session ->
-                        SessionTab(store, session, session.id == activeSession?.id, session.id == sessionState?.editingSessionId)
+                        SessionTab(store, session, session.identity.localHandle == activeSession?.identity?.localHandle, session.identity.localHandle == sessionState?.editingSessionLocalHandle)
                     }
                 }
             } else {
@@ -97,11 +95,11 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
         if (activeSession == null) {
             Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No active session. Create one to begin.") }
         } else {
-            LedgerPane(store, activeSession, sessionState, coreState, features, platformDependencies, Modifier.weight(1f))
+            LedgerPane(store, activeSession, sessionState, features, platformDependencies, Modifier.weight(1f))
             MessageInput(store, activeSession, platformDependencies) { message ->
-                val activeUserId = coreState?.activeUserId ?: "user"
+                val activeUserId = sessionState?.activeUserId ?: "user"
                 store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                    put("session", activeSession.id); put("senderId", activeUserId); put("message", message)
+                    put("session", activeSession.identity.localHandle); put("senderId", activeUserId); put("message", message)
                 }))
             }
         }
@@ -112,7 +110,7 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
 @Composable
 private fun SessionTab(store: Store, session: Session, isSelected: Boolean, isEditing: Boolean) {
     if (isEditing) {
-        var text by remember(session.id) { mutableStateOf(session.name) }
+        var text by remember(session.identity.localHandle) { mutableStateOf(session.identity.name) }
         OutlinedTextField(
             value = text, onValueChange = { text = it },
             modifier = Modifier.padding(4.dp).onKeyEvent { event ->
@@ -120,7 +118,7 @@ private fun SessionTab(store: Store, session: Session, isSelected: Boolean, isEd
                     when (event.key) {
                         Key.Enter -> {
                             store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_UPDATE_CONFIG, buildJsonObject {
-                                put("session", session.id); put("name", text)
+                                put("session", session.identity.localHandle); put("name", text)
                             }))
                             return@onKeyEvent true
                         }
@@ -141,12 +139,12 @@ private fun SessionTab(store: Store, session: Session, isSelected: Boolean, isEd
         val tabTextColor = if (session.isHidden) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f) else LocalContentColor.current
         Tab(
             selected = isSelected,
-            onClick = { store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.id) })) },
+            onClick = { store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.identity.localHandle) })) },
             modifier = Modifier.combinedClickable(
-                onClick = { store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.id) })) },
-                onDoubleClick = { store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, buildJsonObject { put("sessionId", session.id) })) }
+                onClick = { store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.identity.localHandle) })) },
+                onDoubleClick = { store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, buildJsonObject { put("sessionId", session.identity.localHandle) })) }
             )
-        ) { Text(session.name, maxLines = 1, modifier = Modifier.padding(vertical = 12.dp), color = tabTextColor) }
+        ) { Text(session.identity.name, maxLines = 1, modifier = Modifier.padding(vertical = 12.dp), color = tabTextColor) }
     }
 }
 
@@ -155,7 +153,6 @@ private fun LedgerPane(
     store: Store,
     activeSession: Session,
     sessionState: SessionState?,
-    coreState: CoreState?,
     features: List<Feature>,
     platformDependencies: PlatformDependencies,
     modifier: Modifier = Modifier
@@ -163,7 +160,7 @@ private fun LedgerPane(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val identityNames = sessionState?.identityNames ?: emptyMap()
-    val activeUserId = coreState?.activeUserId
+    val activeUserId = sessionState?.activeUserId
 
     // --- SLICE 1 CHANGE: Build a lookup map of feature name → feature for PartialView routing ---
     val featuresByName = remember(features) { features.associateBy { it.identity.handle } }
@@ -240,11 +237,11 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
         AlertDialog(
             onDismissRequest = { sessionToClear = null },
             title = { Text("Clear Session?") },
-            text = { Text("Clear '${session.name}'? $detail") },
+            text = { Text("Clear '${session.identity.name}'? $detail") },
             confirmButton = {
                 Button(
                     onClick = {
-                        store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject { put("session", session.id) }))
+                        store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject { put("session", session.identity.localHandle) }))
                         sessionToClear = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)

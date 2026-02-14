@@ -14,6 +14,7 @@ import app.auf.util.LogLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import kotlin.test.*
 
@@ -23,7 +24,10 @@ import kotlin.test.*
  * Mandate (P-TEST-001, T2): To test the feature's reducer and onAction handlers working
  * together within a realistic TestEnvironment that includes the real Store.
  *
- * Modernization (P-TEST-005): All verifications wrapped in runAndLogOnFailure.
+ * Phase 4 updates: Session creation is now two-phase (SESSION_CREATE → pending →
+ * RESPONSE_REGISTER_IDENTITY → actual session). Tests updated accordingly.
+ * Session data model uses Identity instead of id/name fields.
+ * File paths use uuid/localHandle.json folder structure.
  */
 class SessionFeatureT2CoreTest {
 
@@ -32,8 +36,40 @@ class SessionFeatureT2CoreTest {
     private val sessionFeature = SessionFeature(platform, scope)
     private val fileSystemFeature = FileSystemFeature(platform)
 
+    private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
+
+    /** Helper to build a test Session with a properly constructed Identity. */
+    private fun testSession(
+        localHandle: String,
+        name: String,
+        ledger: List<LedgerEntry> = emptyList(),
+        createdAt: Long = 1L,
+        uuid: String = "test-uuid-$localHandle",
+        isHidden: Boolean = false,
+        isAgentPrivate: Boolean = false,
+        orderIndex: Int = 0,
+        messageUiState: Map<String, MessageUiState> = emptyMap()
+    ): Session {
+        val identity = Identity(
+            uuid = uuid,
+            localHandle = localHandle,
+            handle = "session.$localHandle",
+            name = name,
+            parentHandle = "session"
+        )
+        return Session(
+            identity = identity,
+            ledger = ledger,
+            createdAt = createdAt,
+            isHidden = isHidden,
+            isAgentPrivate = isAgentPrivate,
+            orderIndex = orderIndex,
+            messageUiState = messageUiState
+        )
+    }
+
     @Test
-    fun `when a session is created it should be added to the state, set active, and persisted`() = runTest {
+    fun `when a session is created it should go through two-phase flow and be added to state`() = runTest {
         val harness = TestEnvironment.create()
             .withFeature(sessionFeature)
             .withFeature(fileSystemFeature)
@@ -46,23 +82,31 @@ class SessionFeatureT2CoreTest {
 
             val sessionState = harness.store.state.value.featureStates["session"] as? SessionState
             assertNotNull(sessionState)
-            assertEquals(1, sessionState.sessions.size)
-            val newSession = sessionState.sessions.values.first()
-            assertEquals("New Session", newSession.name)
-            assertEquals(newSession.id, sessionState.activeSessionId)
 
+            // Phase 4: Session creation is two-phase. After SESSION_CREATE, a pending is stashed.
+            // CoreFeature processes REGISTER_IDENTITY and sends RESPONSE_REGISTER_IDENTITY.
+            // The session should now exist in state (assuming CoreFeature is in the harness via TestEnvironment).
+            assertEquals(1, sessionState.sessions.size, "Session should exist after two-phase creation")
+            val newSession = sessionState.sessions.values.first()
+            assertEquals("New Session", newSession.identity.name)
+            assertEquals(newSession.identity.localHandle, sessionState.activeSessionLocalHandle)
+
+            // Pending should be cleared
+            assertTrue(sessionState.pendingCreations.isEmpty(), "Pending creations should be cleared after approval")
+
+            // Verify persistence and broadcast
             assertNotNull(harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE })
             assertNotNull(harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED })
         }
     }
 
     @Test
-    fun `when a session is deleted it should be removed from state and its file should be deleted`() = runTest {
-        val session = Session("sid-1", "To Delete", emptyList(), 1L)
+    fun `when a session is deleted it should be removed from state and its folder should be deleted`() = runTest {
+        val session = testSession("sid-1", "To Delete")
         val harness = TestEnvironment.create()
             .withFeature(sessionFeature)
             .withFeature(fileSystemFeature)
-            .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
+            .withInitialState("session", SessionState(sessions = mapOf(session.identity.localHandle to session)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
@@ -74,9 +118,11 @@ class SessionFeatureT2CoreTest {
             assertNotNull(sessionState)
             assertTrue(sessionState.sessions.isEmpty())
 
+            // Phase 4: Delete now removes the UUID folder, not a flat .json file
             val deleteAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE }
             assertNotNull(deleteAction)
-            assertEquals("sid-1.json", deleteAction.payload?.get("subpath")?.jsonPrimitive?.content)
+            assertEquals("test-uuid-sid-1", deleteAction.payload?.get("subpath")?.jsonPrimitive?.content,
+                "Should delete the UUID-named folder")
 
             val publishAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED }
             assertNotNull(publishAction)
@@ -95,9 +141,9 @@ class SessionFeatureT2CoreTest {
 
         harness.runAndLogOnFailure {
             // ACT 1: Broadcast user identities from CoreFeature
-            val userIdentities = listOf(Identity("user-1", "User Alpha"))
+            val userIdentities = listOf(Identity(uuid = "user-1", localHandle = "user-alpha", handle = "user-1", name = "User Alpha"))
             val coreBroadcast = Action(ActionRegistry.Names.CORE_IDENTITIES_UPDATED, buildJsonObject {
-                put("identities", Json.encodeToJsonElement(userIdentities))
+                put("identities", Json.encodeToJsonElement<List<Identity>>(userIdentities))
             })
             harness.store.dispatch("core", coreBroadcast)
             testScheduler.advanceUntilIdle()
@@ -126,12 +172,32 @@ class SessionFeatureT2CoreTest {
     }
 
     @Test
+    fun `CORE_IDENTITIES_UPDATED caches activeUserId on SessionState`() = runTest {
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            val userIdentities = listOf(Identity(uuid = "user-1", localHandle = "alice", handle = "user-1", name = "Alice"))
+            harness.store.dispatch("core", Action(ActionRegistry.Names.CORE_IDENTITIES_UPDATED, buildJsonObject {
+                put("identities", Json.encodeToJsonElement<List<Identity>>(userIdentities))
+                put("activeId", "user-1")
+            }))
+            testScheduler.advanceUntilIdle()
+
+            val sessionState = harness.store.state.value.featureStates["session"] as SessionState
+            assertEquals("user-1", sessionState.activeUserId, "activeUserId should be cached from broadcast")
+        }
+    }
+
+    @Test
     fun `when a transient message is posted it should not be included in the persisted file`() = runTest {
-        val session = Session("sid-1", "Test", emptyList(), 1L)
+        val session = testSession("sid-1", "Test")
         val harness = TestEnvironment.create()
             .withFeature(sessionFeature)
             .withFeature(fileSystemFeature)
-            .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
+            .withInitialState("session", SessionState(sessions = mapOf(session.identity.localHandle to session)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
@@ -151,7 +217,7 @@ class SessionFeatureT2CoreTest {
             assertEquals(2, writeActions.size)
             val finalWriteContent = writeActions.last().payload?.get("content")?.jsonPrimitive?.content
             assertNotNull(finalWriteContent)
-            val persistedSession = Json.decodeFromString<Session>(finalWriteContent)
+            val persistedSession = json.decodeFromString<Session>(finalWriteContent)
             assertEquals(1, persistedSession.ledger.size)
             assertEquals("persistent", persistedSession.ledger.first().rawContent)
 
@@ -164,11 +230,11 @@ class SessionFeatureT2CoreTest {
     fun `when posting with a valid afterMessageId it should insert the message at the correct position`() = runTest {
         val entry1 = LedgerEntry("msg-1", 1L, "user", "First")
         val entry2 = LedgerEntry("msg-2", 2L, "user", "Third")
-        val session = Session("sid-1", "Test", listOf(entry1, entry2), 1L)
+        val session = testSession("sid-1", "Test", listOf(entry1, entry2))
         val harness = TestEnvironment.create()
             .withFeature(sessionFeature)
             .withFeature(fileSystemFeature)
-            .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
+            .withInitialState("session", SessionState(sessions = mapOf(session.identity.localHandle to session)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
@@ -196,11 +262,11 @@ class SessionFeatureT2CoreTest {
     @Test
     fun `when posting with a non-existent afterMessageId it should append the message to the end`() = runTest {
         val entry1 = LedgerEntry("msg-1", 1L, "user", "First")
-        val session = Session("sid-1", "Test", listOf(entry1), 1L)
+        val session = testSession("sid-1", "Test", listOf(entry1))
         val harness = TestEnvironment.create()
             .withFeature(sessionFeature)
             .withFeature(fileSystemFeature)
-            .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
+            .withInitialState("session", SessionState(sessions = mapOf(session.identity.localHandle to session)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
@@ -226,11 +292,11 @@ class SessionFeatureT2CoreTest {
     @Test
     fun `when posting without an afterMessageId it should append the message to the end`() = runTest {
         val entry1 = LedgerEntry("msg-1", 1L, "user", "First")
-        val session = Session("sid-1", "Test", listOf(entry1), 1L)
+        val session = testSession("sid-1", "Test", listOf(entry1))
         val harness = TestEnvironment.create()
             .withFeature(sessionFeature)
             .withFeature(fileSystemFeature)
-            .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
+            .withInitialState("session", SessionState(sessions = mapOf(session.identity.localHandle to session)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
@@ -255,11 +321,11 @@ class SessionFeatureT2CoreTest {
     @Test
     fun `when a message is deleted it should publish a MESSAGE_DELETED event`() = runTest {
         val entry = LedgerEntry("msg-1", 1L, "user", "Hello")
-        val session = Session("sid-1", "Test", listOf(entry), 1L)
+        val session = testSession("sid-1", "Test", listOf(entry))
         val harness = TestEnvironment.create()
             .withFeature(sessionFeature)
             .withFeature(fileSystemFeature)
-            .withInitialState("session", SessionState(sessions = mapOf(session.id to session)))
+            .withInitialState("session", SessionState(sessions = mapOf(session.identity.localHandle to session)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
@@ -293,27 +359,31 @@ class SessionFeatureT2CoreTest {
     }
 
     @Test
-    fun `when it receives a file list it should dispatch SYSTEM_READ for each json file`() = runTest {
+    fun `when it receives a file list with UUID folders it should list their contents`() = runTest {
         val harness = TestEnvironment.create().withFeature(sessionFeature).build(platform = platform)
 
         harness.runAndLogOnFailure {
+            // Phase 4: File structure is now uuid-folders containing .json files
             val fileList = listOf(
-                FileEntry("/app/session/session-1.json", false),
-                FileEntry("/app.auf/session/session-2.json", false),
+                FileEntry("/app/session/28c273db-aaef-4791-b184-11fea21db4cf", true),
+                FileEntry("/app/session/9a1b2c3d-4e5f-6789-abcd-ef0123456789", true),
                 FileEntry("/app/session/notes.txt", false)
             )
             val payload = buildJsonObject { put("listing", Json.encodeToJsonElement<List<FileEntry>>(fileList)) }
-            val envelope = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_LIST, payload)
 
-            // FIX: Use store.deliverPrivateData instead of calling onPrivateData directly.
-            // This ensures that the Store's event loop is triggered to process deferred actions.
-            harness.store.deliverPrivateData("filesystem", "session", envelope)
+            // Use the targeted action path (Phase 3 migration)
+            harness.store.dispatch("filesystem", Action(
+                ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                payload,
+                targetRecipient = "session"
+            ))
             testScheduler.advanceUntilIdle()
 
-            val readActions = harness.processedActions.filter { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_READ }
-            assertEquals(2, readActions.size)
-            assertEquals("session-1.json", readActions[0].payload?.get("subpath")?.jsonPrimitive?.content)
-            assertEquals("session-2.json", readActions[1].payload?.get("subpath")?.jsonPrimitive?.content)
+            // Should dispatch SYSTEM_LIST for each UUID folder to list its contents
+            val listActions = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST && it.originator == "session"
+            }
+            assertEquals(2, listActions.size, "Should list contents of each UUID folder")
         }
     }
 
@@ -322,21 +392,37 @@ class SessionFeatureT2CoreTest {
         val harness = TestEnvironment.create().withFeature(sessionFeature).build(platform = platform)
 
         harness.runAndLogOnFailure {
-            val sessionJsonContent = """{"id":"loaded-1","name":"Loaded Session","ledger":[],"createdAt":1}"""
+            // Phase 4: Session JSON now uses identity object instead of id/name fields
+            val testIdentity = Identity(
+                uuid = "loaded-uuid-1",
+                localHandle = "loaded-1",
+                handle = "session.loaded-1",
+                name = "Loaded Session",
+                parentHandle = "session"
+            )
+            val testSession = Session(
+                identity = testIdentity,
+                ledger = emptyList(),
+                createdAt = 1L
+            )
+            val sessionJsonContent = json.encodeToString(testSession)
+
             val payload = buildJsonObject {
-                put("subpath", "loaded-1.json")
+                put("subpath", "loaded-uuid-1/loaded-1.json")
                 put("content", sessionJsonContent)
             }
-            val envelope = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_READ, payload)
 
-            // FIX: Use store.deliverPrivateData to pump the event loop.
-            harness.store.deliverPrivateData("filesystem", "session", envelope)
+            harness.store.dispatch("filesystem", Action(
+                ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                payload,
+                targetRecipient = "session"
+            ))
             testScheduler.advanceUntilIdle()
 
             val finalState = harness.store.state.value.featureStates["session"] as? SessionState
             assertNotNull(finalState)
-            assertTrue(finalState.sessions.containsKey("loaded-1"), "Session map should contain the new session.")
-            assertEquals("Loaded Session", finalState.sessions["loaded-1"]?.name)
+            assertTrue(finalState.sessions.containsKey("loaded-1"), "Session map should contain the new session keyed by localHandle.")
+            assertEquals("Loaded Session", finalState.sessions["loaded-1"]?.identity?.name)
         }
     }
 
@@ -345,15 +431,17 @@ class SessionFeatureT2CoreTest {
         val harness = TestEnvironment.create().withFeature(sessionFeature).build(platform = platform)
 
         harness.runAndLogOnFailure {
-            val corruptedJsonContent = """{"id":"bad-1","name":"Bad Session",}"""
+            val corruptedJsonContent = """{"identity":{"uuid":"bad-1","localHandle":"bad","handle":"session.bad","name":"Bad",}"""
             val payload = buildJsonObject {
-                put("subpath", "bad-1.json")
+                put("subpath", "bad-uuid/bad.json")
                 put("content", corruptedJsonContent)
             }
-            val envelope = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_READ, payload)
 
-            // FIX: Use store.deliverPrivateData for consistency, though expecting no dispatch.
-            harness.store.deliverPrivateData("filesystem", "session", envelope)
+            harness.store.dispatch("filesystem", Action(
+                ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                payload,
+                targetRecipient = "session"
+            ))
             testScheduler.advanceUntilIdle()
 
             val loadedAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_LOADED }
@@ -381,6 +469,60 @@ class SessionFeatureT2CoreTest {
             val log = harness.platform.capturedLogs.find { it.level == LogLevel.ERROR }
             assertNotNull(log)
             assertTrue(log.message.contains("Could not resolve session with identifier 'unknown-session-id'"))
+        }
+    }
+
+    @Test
+    fun `persistSession writes to uuid-slash-localHandle-dot-json path`() = runTest {
+        val session = testSession("my-chat", "My Chat")
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withFeature(fileSystemFeature)
+            .withInitialState("session", SessionState(sessions = mapOf(session.identity.localHandle to session)))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            // Post a message to trigger persistence
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+                put("session", "my-chat"); put("senderId", "user"); put("message", "hello")
+            }))
+            testScheduler.advanceUntilIdle()
+
+            val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
+            assertNotNull(writeAction)
+            val subpath = writeAction.payload?.get("subpath")?.jsonPrimitive?.content
+            assertEquals("test-uuid-my-chat/my-chat.json", subpath,
+                "File path should be uuid/localHandle.json")
+        }
+    }
+
+    @Test
+    fun `resolveSessionId resolves by localHandle, full handle, and display name`() = runTest {
+        val session = testSession("my-chat", "My Chat Room")
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withFeature(fileSystemFeature)
+            .withInitialState("session", SessionState(sessions = mapOf(session.identity.localHandle to session)))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            // Resolve by localHandle
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+                put("session", "my-chat"); put("senderId", "user"); put("message", "by localHandle")
+            }))
+            testScheduler.advanceUntilIdle()
+            var postAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.SESSION_MESSAGE_POSTED }
+            assertNotNull(postAction, "Should resolve by localHandle")
+
+            // Resolve by display name
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+                put("session", "My Chat Room"); put("senderId", "user"); put("message", "by name")
+            }))
+            testScheduler.advanceUntilIdle()
+            postAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.SESSION_MESSAGE_POSTED }
+            assertNotNull(postAction, "Should resolve by display name")
         }
     }
 }

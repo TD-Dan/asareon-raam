@@ -1,10 +1,10 @@
-
 package app.auf.feature.session
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import app.auf.core.Action
 import app.auf.core.AppState
+import app.auf.core.Identity
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
@@ -29,23 +29,19 @@ class SessionFeatureT1LedgerEntryCardTest {
     val composeTestRule = createComposeRule()
 
     private lateinit var fakeStore: FakeStore
-    private val platform = FakePlatformDependencies("test") // FIX: Instantiate platform dependencies for the test
-    private val session = Session("sid-1", "Test", emptyList(), 1L)
+    private val platform = FakePlatformDependencies("test")
+    private val testIdentity = Identity(uuid = "test-uuid-1", localHandle = "sid-1", handle = "session.sid-1", name = "Test", parentHandle = "session")
+    private val session = Session(identity = testIdentity, ledger = emptyList(), createdAt = 1L)
     private val userEntry = LedgerEntry("msg-1", 1L, "user", "Hello World")
 
     @Before
     fun setup() {
-        val validActions = setOf(
-            ActionRegistry.Names.SESSION_DELETE_MESSAGE,
-            ActionRegistry.Names.SESSION_SET_EDITING_MESSAGE,
-            ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD
-        )
-        fakeStore = FakeStore(AppState(), platform, validActions) // FIX: Use the platform dependency
+        fakeStore = FakeStore(AppState(), platform)
     }
 
     private fun setViewState(entry: LedgerEntry, isEditing: Boolean = false, editingContent: String? = null) {
         val sessionState = SessionState(
-            sessions = mapOf(session.id to session.copy(ledger = listOf(entry))),
+            sessions = mapOf(session.identity.localHandle to session.copy(ledger = listOf(entry))),
             editingMessageId = if (isEditing) entry.id else null,
             editingMessageContent = editingContent
         )
@@ -53,16 +49,15 @@ class SessionFeatureT1LedgerEntryCardTest {
 
         composeTestRule.setContent {
             AppTheme {
-                // THE FIX: Align the component call with the new, refactored signature.
                 LedgerEntryCard(
                     store = fakeStore,
                     session = session,
                     entry = entry,
-                    senderName = "User", // Pass the universal sender name
-                    isCurrentUserMessage = true, // Pass the new boolean flag
+                    senderName = "User",
+                    isCurrentUserMessage = true,
                     isEditingThisMessage = isEditing,
                     editingContent = editingContent,
-                    platformDependencies = platform // FIX: Pass the required parameter
+                    platformDependencies = platform
                 )
             }
         }
@@ -92,13 +87,12 @@ class SessionFeatureT1LedgerEntryCardTest {
         setViewState(userEntry)
 
         composeTestRule.onNodeWithContentDescription("More options").performClick()
-        // Wait for menu to appear
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Delete").performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_DELETE_MESSAGE }
         assertNotNull(action)
-        assertEquals(session.id, action.payload?.get("session").toString().trim('"'))
+        assertEquals(session.identity.localHandle, action.payload?.get("session").toString().trim('"'))
         assertEquals(userEntry.id, action.payload?.get("messageId").toString().trim('"'))
     }
 }
