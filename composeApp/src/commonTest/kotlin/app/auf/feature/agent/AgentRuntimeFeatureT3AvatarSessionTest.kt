@@ -3,6 +3,8 @@ package app.auf.feature.agent
 import app.auf.core.Action
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.feature.core.AppLifecycle
+import app.auf.feature.core.CoreState
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.feature.session.SessionFeature
 import app.auf.feature.session.SessionState
@@ -10,6 +12,7 @@ import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import kotlin.test.*
 
@@ -17,7 +20,7 @@ import kotlin.test.*
  * ## Tier 3 Integration Test: Agent Avatar Lifecycle x Session Feature
  *
  * **Mandate:** Verify cross-feature integration between AgentRuntimeFeature and SessionFeature
- * for avatar card posting, updating, and cleanup.
+ * for avatar card posting, updating, cleanup, and session startup readiness.
  *
  * **Test Scope:**
  * 1. Avatar posted to session when updateAgentAvatars fires with valid session state
@@ -26,6 +29,7 @@ import kotlin.test.*
  * 4. Avatar senderId uses agent's identity handle (Phase 4 compliance)
  * 5. Graceful no-op when subscribed session doesn't exist in SessionState
  * 6. Avatar posted to multiple subscribed sessions
+ * 7. SESSION_FEATURE_READY fires exactly once (zero sessions, multiple sessions)
  *
  * **Cross-Feature Flow:**
  * - AgentAvatarLogic.updateAgentAvatars → SESSION_POST (deferred)
@@ -470,6 +474,172 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
             val cardIds = agentState?.agentAvatarCardIds?.get(agentId)
             assertNotNull(cardIds, "Agent should have avatar card IDs tracked")
             assertEquals(trackedMessageId, cardIds[sessionLocalHandle], "Tracked message ID should match AVATAR_MOVED payload")
+        }
+    }
+
+    // ========================================================================
+    // TEST 12: SESSION_FEATURE_READY fires exactly once — no sessions on disk
+    // ========================================================================
+
+    @Test
+    fun `SESSION_FEATURE_READY fires once when no sessions exist on disk`() = runTest {
+        // Harness with SessionFeature only (no FileSystemFeature — we simulate responses).
+        // Lifecycle set to INITIALIZING so SYSTEM_STARTING is permitted by the Store.
+        val harness = TestEnvironment.create()
+            .withFeature(SessionFeature(platform, scope))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            // 1. Trigger startup — SessionFeature sets startupLoadingActive, pendingStartupOps = 1
+            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+
+            // 2. Simulate filesystem response: empty root listing (no UUID folders, no files)
+            harness.store.dispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                payload = buildJsonObject {
+                    putJsonArray("listing") {} // empty directory
+                },
+                targetRecipient = "session"
+            ))
+
+            // ASSERT: Exactly one SESSION_FEATURE_READY
+            val readyEvents = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.SESSION_SESSION_FEATURE_READY
+            }
+            assertEquals(
+                1, readyEvents.size,
+                "SESSION_FEATURE_READY should fire exactly once with an empty disk, got ${readyEvents.size}"
+            )
+
+            // ASSERT: Payload reports 0 sessions
+            assertEquals(
+                0,
+                readyEvents.first().payload?.get("sessionCount")?.jsonPrimitive?.int,
+                "sessionCount should be 0 when no sessions exist on disk"
+            )
+        }
+    }
+
+    // ========================================================================
+    // TEST 13: SESSION_FEATURE_READY fires exactly once — multiple disk sessions
+    // ========================================================================
+
+    @Test
+    fun `SESSION_FEATURE_READY fires once when multiple sessions loaded from disk`() = runTest {
+        // Same minimal harness — we replay the full filesystem conversation manually.
+        val harness = TestEnvironment.create()
+            .withFeature(SessionFeature(platform, scope))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            // Pre-serialize the two test sessions for file-read simulation.
+            val session1Content = json.encodeToString(testSession)
+            val session2Content = json.encodeToString(testSession2)
+
+            // 1. Trigger startup
+            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+
+            // 2. Root listing → two UUID folders (no dots → treated as directories)
+            harness.store.dispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                payload = buildJsonObject {
+                    putJsonArray("listing") {
+                        add(buildJsonObject { put("path", "session-uuid-1"); put("isDirectory", true) })
+                        add(buildJsonObject { put("path", "session-uuid-2"); put("isDirectory", true) })
+                    }
+                },
+                targetRecipient = "session"
+            ))
+
+            // 3. Sub-listing for folder 1 → one .json session file
+            harness.store.dispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                payload = buildJsonObject {
+                    putJsonArray("listing") {
+                        add(buildJsonObject {
+                            put("path", "session-uuid-1/$sessionLocalHandle.json")
+                            put("isDirectory", false)
+                        })
+                    }
+                },
+                targetRecipient = "session"
+            ))
+
+            // 4. Sub-listing for folder 2 → one .json session file
+            harness.store.dispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                payload = buildJsonObject {
+                    putJsonArray("listing") {
+                        add(buildJsonObject {
+                            put("path", "session-uuid-2/$session2LocalHandle.json")
+                            put("isDirectory", false)
+                        })
+                    }
+                },
+                targetRecipient = "session"
+            ))
+
+            // No SESSION_FEATURE_READY yet — two file reads are still pending
+            val prematureReady = harness.processedActions.count {
+                it.name == ActionRegistry.Names.SESSION_SESSION_FEATURE_READY
+            }
+            assertEquals(0, prematureReady, "SESSION_FEATURE_READY must not fire while file reads are pending")
+
+            // 5. File read for session 1
+            harness.store.dispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                payload = buildJsonObject {
+                    put("subpath", "session-uuid-1/$sessionLocalHandle.json")
+                    put("content", session1Content)
+                },
+                targetRecipient = "session"
+            ))
+
+            // Still not ready — one file read remains
+            val afterFirstRead = harness.processedActions.count {
+                it.name == ActionRegistry.Names.SESSION_SESSION_FEATURE_READY
+            }
+            assertEquals(0, afterFirstRead, "SESSION_FEATURE_READY must not fire until ALL file reads complete")
+
+            // 6. File read for session 2
+            harness.store.dispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                payload = buildJsonObject {
+                    put("subpath", "session-uuid-2/$session2LocalHandle.json")
+                    put("content", session2Content)
+                },
+                targetRecipient = "session"
+            ))
+
+            // ASSERT: Exactly one SESSION_FEATURE_READY after all files loaded
+            val readyEvents = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.SESSION_SESSION_FEATURE_READY
+            }
+            assertEquals(
+                1, readyEvents.size,
+                "SESSION_FEATURE_READY must fire exactly once after all disk sessions load, got ${readyEvents.size}"
+            )
+
+            // ASSERT: Payload reports both sessions
+            assertEquals(
+                2,
+                readyEvents.first().payload?.get("sessionCount")?.jsonPrimitive?.int,
+                "sessionCount should reflect all loaded sessions"
+            )
+
+            // ASSERT: Both sessions are in SessionState
+            val sessionState = harness.store.state.value.featureStates["session"] as? SessionState
+            assertNotNull(sessionState, "Session state should exist")
+            assertTrue(
+                sessionState.sessions.containsKey(sessionLocalHandle),
+                "Session 1 should be in state"
+            )
+            assertTrue(
+                sessionState.sessions.containsKey(session2LocalHandle),
+                "Session 2 should be in state"
+            )
         }
     }
 }

@@ -879,7 +879,17 @@ class AgentRuntimeFeature(
             }
             val appState by store.state.collectAsState()
             val state = appState.featureStates[identity.handle] as? AgentRuntimeState ?: return
-            val agent = state.agents[agentId] ?: return
+            // Context may be a UUID (direct call) or a handle like "agent.flash"
+            // (from SessionView which passes entry.senderId). Try UUID first, then
+            // fall back to searching by identity handle.
+            val agent = state.agents[agentId]
+                ?: state.agents.values.find { it.identity.handle == agentId }
+            if (agent == null) {
+                platformDependencies.log(LogLevel.ERROR, identity.handle,
+                    "PartialView: Could not resolve agent for context '$agentId'. " +
+                            "Known UUIDs: ${state.agents.keys}, known handles: ${state.agents.values.map { it.identity.handle }}")
+                return
+            }
             AgentAvatarCard(agent = agent, store = store, platformDependencies = platformDependencies)
         }
     }

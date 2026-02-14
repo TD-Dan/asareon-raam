@@ -34,10 +34,8 @@ class AgentRuntimeFeatureT2StartupTest {
 
         val environment = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(app.auf.fakes.FakePlatformDependencies("1.0"), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)))
-            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
 
-        // Access the harness to inject files BEFORE build (if supported) or use the platform directly
-        // Since we build first, we use the harness platform.
         val harness = environment.build()
 
         // Inject the file into the fake FS
@@ -47,29 +45,23 @@ class AgentRuntimeFeatureT2StartupTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
 
-            // The feature dispatches SYSTEM_LIST, then the Store (via logic not shown but assumed in FakeStore integration)
-            // or the harness needs to process the side effects.
-            // NOTE: In T2 tests with TestEnvironment + RecordingStore, we usually need to manually pump
-            // the "FakeFileSystem" responses if the environment doesn't auto-wire them.
-            // Assuming the standard TestEnvironment auto-wires Feature <-> FakePlatform interactions is risky.
-            // Let's check `TestEnvironment`: it wires Real Store + Real Features + Fake Platform.
-            // Real Features call `platformDependencies`.
-            // BUT `AgentRuntimeFeature` uses `deferredDispatch` for FS actions.
-            // We need to simulate the FileSystemFeature's response because we didn't include FileSystemFeature in the `.withFeature()`.
-
-            // Simulating FileSystem Response for "resources" listing
-            // The feature listens for ENVELOPE: FILESYSTEM_RESPONSE_LIST
+            // Simulating FileSystem Response for "resources" listing.
+            // Targeted action — must include targetRecipient.
             val listPayload = kotlinx.serialization.json.buildJsonObject {
                 put("subpath", kotlinx.serialization.json.JsonPrimitive("resources"))
                 put("listing", kotlinx.serialization.json.buildJsonArray {
                     add(kotlinx.serialization.json.buildJsonObject {
-                        put("path", kotlinx.serialization.json.JsonPrimitive("$resourceId.json")) // Simulating relative path return
+                        put("path", kotlinx.serialization.json.JsonPrimitive("$resourceId.json"))
                         put("isDirectory", kotlinx.serialization.json.JsonPrimitive(false))
                     })
                 })
             }
 
-            harness.store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST, listPayload))
+            harness.store.dispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                payload = listPayload,
+                targetRecipient = "agent"
+            ))
 
             // Now the feature should have dispatched a READ request.
             // Let's verify that request looks correct.
@@ -79,9 +71,7 @@ class AgentRuntimeFeatureT2StartupTest {
             }
             assertNotNull(readAction, "Should have dispatched a READ action for the resource")
 
-            // Simulate the READ response
-            // CRITICAL: This is where the bug manifests. If the feature requested just "$resourceId.json",
-            // we mirror that back.
+            // Simulate the READ response — mirror back the exact subpath.
             val requestedPath = readAction.payload!!["subpath"]!!.toString().replace("\"", "")
 
             val readPayload = kotlinx.serialization.json.buildJsonObject {
@@ -89,7 +79,11 @@ class AgentRuntimeFeatureT2StartupTest {
                 put("content", kotlinx.serialization.json.JsonPrimitive(resourceContent))
             }
 
-            harness.store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_RESPONSE_READ, readPayload))
+            harness.store.dispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                payload = readPayload,
+                targetRecipient = "agent"
+            ))
 
             // 3. Assert: Resource is loaded into state
             val agentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
@@ -120,7 +114,7 @@ class AgentRuntimeFeatureT2StartupTest {
 
         val environment = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(app.auf.fakes.FakePlatformDependencies("1.0"), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)))
-            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
         val harness = environment.build()
 
         harness.platform.writtenFiles["$agentId/agent.json"] = agentConfigJson
@@ -143,7 +137,11 @@ class AgentRuntimeFeatureT2StartupTest {
                 })
             }
 
-            harness.store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST, listPayload))
+            harness.store.dispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                payload = listPayload,
+                targetRecipient = "agent"
+            ))
 
             // Verify the feature dispatched a READ for "agent-abc/agent.json"
             val readAction = harness.processedActions.find {
@@ -158,7 +156,11 @@ class AgentRuntimeFeatureT2StartupTest {
                 put("content", kotlinx.serialization.json.JsonPrimitive(agentConfigJson))
             }
 
-            harness.store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_RESPONSE_READ, readPayload))
+            harness.store.dispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                payload = readPayload,
+                targetRecipient = "agent"
+            ))
 
             // Assert: Agent loaded into state
             val agentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
@@ -183,7 +185,7 @@ class AgentRuntimeFeatureT2StartupTest {
 
         val environment = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(app.auf.fakes.FakePlatformDependencies("1.0"), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)))
-            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
         val harness = environment.build()
 
         harness.runAndLogOnFailure {
@@ -204,7 +206,11 @@ class AgentRuntimeFeatureT2StartupTest {
                 })
             }
 
-            harness.store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST, listPayload))
+            harness.store.dispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                payload = listPayload,
+                targetRecipient = "agent"
+            ))
 
             // Deliver an UNKNOWN file read response (e.g. a stale log file)
             val unknownPayload = kotlinx.serialization.json.buildJsonObject {
@@ -212,7 +218,11 @@ class AgentRuntimeFeatureT2StartupTest {
                 put("content", kotlinx.serialization.json.JsonPrimitive("garbage data"))
             }
 
-            harness.store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_RESPONSE_READ, unknownPayload))
+            harness.store.dispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                payload = unknownPayload,
+                targetRecipient = "agent"
+            ))
 
             // AGENTS_LOADED should NOT have fired (agentLoadCount is still 1)
             val prematureLoaded = harness.processedActions.find {
@@ -226,7 +236,11 @@ class AgentRuntimeFeatureT2StartupTest {
                 put("content", kotlinx.serialization.json.JsonPrimitive(agentConfigJson))
             }
 
-            harness.store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_RESPONSE_READ, realPayload))
+            harness.store.dispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                payload = realPayload,
+                targetRecipient = "agent"
+            ))
 
             // NOW AGENTS_LOADED should fire
             val agentsLoaded = harness.processedActions.find {

@@ -72,6 +72,30 @@ class SessionFeature(
     private val blockParser = BlockSeparatingParser()
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
 
+    // --- Startup Loading Tracking ---
+    // Tracks outstanding filesystem operations during startup so that
+    // SESSION_FEATURE_READY fires exactly once after all disk-loaded sessions
+    // are in the sessions map — not per-file.
+    private var startupLoadingActive = false
+    private var pendingStartupOps = 0
+
+    /**
+     * Fires [SESSION_FEATURE_READY] once when all startup filesystem operations
+     * (folder listings + file reads) have completed. Resets the loading flag so
+     * subsequent runtime operations are unaffected.
+     */
+    private fun checkStartupLoadComplete(store: Store, sessionState: SessionState) {
+        if (startupLoadingActive && pendingStartupOps <= 0) {
+            startupLoadingActive = false
+            store.deferredDispatch(identity.handle, Action(
+                ActionRegistry.Names.SESSION_SESSION_FEATURE_READY,
+                buildJsonObject {
+                    put("sessionCount", sessionState.sessions.size)
+                }
+            ))
+        }
+    }
+
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val sessionState = newState as? SessionState ?: return
 
@@ -95,15 +119,21 @@ class SessionFeature(
                 val data = action.payload ?: return
                 val fileList = data["listing"]?.jsonArray?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
 
+                if (startupLoadingActive) pendingStartupOps--
+
                 fileList.forEach { entry ->
                     if (entry.path.endsWith(".json")) {
                         // It's a session file inside a UUID folder — read it
+                        if (startupLoadingActive) pendingStartupOps++
                         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", entry.path) }))
                     } else if (!entry.path.contains(".")) {
                         // Looks like a UUID folder — list its contents
+                        if (startupLoadingActive) pendingStartupOps++
                         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST, buildJsonObject { put("subpath", platformDependencies.getFileName(entry.path)) }))
                     }
                 }
+
+                if (startupLoadingActive) checkStartupLoadComplete(store, sessionState)
             }
             ActionRegistry.Names.FILESYSTEM_RESPONSE_READ -> {
                 val data = action.payload ?: return
@@ -111,15 +141,25 @@ class SessionFeature(
                     val content = data["content"]?.jsonPrimitive?.content ?: ""
                     if (content.isBlank()) {
                         platformDependencies.log(LogLevel.WARN, identity.handle, "Received empty session file content for ${data["subpath"]}")
+                        if (startupLoadingActive) {
+                            pendingStartupOps--
+                            checkStartupLoadComplete(store, sessionState)
+                        }
                         return
                     }
                     val session = json.decodeFromString<Session>(content)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.identity.localHandle to session))) as JsonObject))
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse session file: ${data["subpath"]}. Error: ${e.message}")
+                    if (startupLoadingActive) {
+                        pendingStartupOps--
+                        checkStartupLoadComplete(store, sessionState)
+                    }
                 }
             }
             ActionRegistry.Names.SYSTEM_STARTING -> {
+                startupLoadingActive = true
+                pendingStartupOps = 1 // the root listing dispatched below
                 store.dispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST))
                 // Register hide-hidden settings with the Settings feature for persistence.
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
@@ -177,8 +217,9 @@ class SessionFeature(
                     broadcastSessionNames(sessionState, store)
                 }
                 // Signal readiness when all pending identity registrations have completed.
-                // At startup this fires after the last file-loaded session is approved.
-                // At runtime this fires after each SESSION_CREATE/CLONE completes.
+                // This covers runtime SESSION_CREATE and SESSION_CLONE only — disk-loaded
+                // sessions are tracked by the startup loading counter (pendingStartupOps)
+                // and fire SESSION_FEATURE_READY from checkStartupLoadComplete instead.
                 val prevPending = (previousState as? SessionState)?.pendingCreations ?: emptyMap()
                 if (prevPending.isNotEmpty() && sessionState.pendingCreations.isEmpty()) {
                     store.deferredDispatch(identity.handle, Action(
@@ -286,15 +327,12 @@ class SessionFeature(
                         }
                     ))
                 }
-                // Signal that sessions are available for cross-feature operations.
-                // Fires per-file during startup; handlers must be idempotent.
-                if (newLocalHandles.isNotEmpty()) {
-                    store.deferredDispatch(identity.handle, Action(
-                        ActionRegistry.Names.SESSION_SESSION_FEATURE_READY,
-                        buildJsonObject {
-                            put("sessionCount", sessionState.sessions.size)
-                        }
-                    ))
+                // Startup tracking: decrement once per SESSION_LOADED (one per file read).
+                // SESSION_FEATURE_READY fires from checkStartupLoadComplete when all
+                // pending filesystem ops drain to zero — exactly once.
+                if (startupLoadingActive) {
+                    pendingStartupOps--
+                    checkStartupLoadComplete(store, sessionState)
                 }
             }
 
