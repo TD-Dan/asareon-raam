@@ -1,8 +1,8 @@
 # Unified Action Bus v2.0 — Complete Implementation Outline
 
-**Version**: 5.1 — Phase 4 CommandBot migration complete
-**Status**: Phase 1 ✅ / Phase 2.1 ✅ / Phase 2.2 ✅ / Phase 3 ✅ / Phase 4 Session ✅ / Phase 4 Agent Production ✅ / Phase 4 Agent Tests 🔧 (11 failing, parked as tech debt) / Phase 4 CommandBot ✅ / Identity Consolidation & Cleanup Remaining
-**Last Updated**: 2026-02-14 — CommandBot migrated from ExposedActions → ActionRegistry and from knownAgentIds/knownAgentNames → IdentityRegistry
+**Version**: 5.2 — KnowledgeGraph audit & test migration complete
+**Status**: Phase 1 ✅ / Phase 2.1 ✅ / Phase 2.2 ✅ / Phase 3 ✅ / Phase 4 Session ✅ / Phase 4 Agent Production ✅ / Phase 4 Agent Tests 🔧 (11 failing, parked as tech debt) / Phase 4 CommandBot ✅ / Phase 4 KnowledgeGraph ✅ / Identity Consolidation & Cleanup Remaining
+**Last Updated**: 2026-02-14 — KnowledgeGraph feature audited for v2.0 compatibility; production code hardened with 17 warning logs; 3 broken tests migrated from deprecated APIs; 15 new tests added for coverage gaps
 
 ## Executive Summary
 
@@ -31,7 +31,7 @@ The work is organized into **6 phases**, each independently shippable. The final
 3. [Phase 1 — Manifest Schema Unification & ActionRegistry Codegen ✅](#3-phase-1--manifest-schema-unification--actionregistry-codegen)
 4. [Phase 2 — IdentityRegistry & Hierarchical Originators (2.1 ✅ / 2.2 ✅)](#4-phase-2--identityregistry--hierarchical-originators)
 5. [Phase 3 — Targeted Delivery & Private Envelope Absorption ✅](#5-phase-3--targeted-delivery--private-envelope-absorption)
-6. [Phase 4 — Migrate Consumers (CommandBot ✅, Agent, Session) — Session ✅, Agent Production ✅, Agent Tests 🔧, CommandBot ✅](#6-phase-4--migrate-consumers-commandbot-agent-session)
+6. [Phase 4 — Migrate Consumers (CommandBot ✅, Agent, Session, KnowledgeGraph ✅) — Session ✅, Agent Production ✅, Agent Tests 🔧, CommandBot ✅, KnowledgeGraph ✅](#6-phase-4--migrate-consumers-commandbot-agent-session)
 7. [Phase 5 — Runtime-Extensible Registry](#7-phase-5--runtime-extensible-registry)
 8. [Phase 6 — Slash-Command Autocomplete UI](#8-phase-6--slash-command-autocomplete-ui)
 9. [Future: Permissions System (Paved, Not Built)](#9-future-permissions-system-paved-not-built)
@@ -1259,7 +1259,7 @@ Private data envelopes now flow through the same pipeline as every other action:
 | `SessionFeature.kt` | Deleted `onPrivateData` override; moved `FILESYSTEM_RESPONSE_LIST` and `FILESYSTEM_RESPONSE_READ` handlers into `handleSideEffects`; migrated `SESSION_RESPONSE_LEDGER` to targeted dispatch |
 | `FileSystemFeature.kt` | Deleted `onPrivateData` override; moved `CORE_RESPONSE_CONFIRMATION` handler into `handleSideEffects` (reads from `newState` parameter instead of `store.state.value`); migrated all 6 `deliverPrivateData` calls to targeted dispatch via regex-assisted bulk replacement |
 | `GatewayFeature.kt` | Migrated 2 `deliverPrivateData` calls (inside coroutines) to targeted dispatch; no `onPrivateData` to migrate (sender only) |
-| `KnowledgeGraphFeature.kt` | Deleted `onPrivateData` override; moved `FILESYSTEM_RESPONSE_LIST` and `FILESYSTEM_RESPONSE_FILES_CONTENT` handlers into `handleSideEffects`; migrated `KNOWLEDGEGRAPH_RESPONSE_CONTEXT` to targeted dispatch |
+| `KnowledgeGraphFeature.kt` | Phase 3: Deleted `onPrivateData` override; moved `FILESYSTEM_RESPONSE_LIST` and `FILESYSTEM_RESPONSE_FILES_CONTENT` handlers into `handleSideEffects`; migrated `KNOWLEDGEGRAPH_RESPONSE_CONTEXT` to targeted dispatch. Phase 4: Added 17 `LogLevel.WARN` logs to silent `?: return` guard clauses in `handleSideEffects` (missing payload fields, missing state lookups, null originator). Reducer left unchanged (pure functions — no logging). |
 | `AgentRuntimeFeature.kt` | Deleted `onPrivateData` override; created private `handleTargetedResponse()` method with correlation-based routing for command responses; added 7 targeted action name cases to `handleSideEffects` when-block; updated `postCommandResponse()` and `formatResponseForSession()` signatures from `PrivateDataEnvelope` to `Action` |
 | `AgentCognitivePipeline.kt` | Renamed `handlePrivateData()` → `handleTargetedAction()`; replaced `envelope.type` / `envelope.payload` with `action.name` / `action.payload`; replaced `ActionNames.Envelopes.*` with `ActionRegistry.Names.*` |
 | `ActionNames.kt` | No changes needed — `Envelopes` object already has `@Deprecated` annotations from Phase 1 |
@@ -1270,7 +1270,7 @@ Private data envelopes now flow through the same pipeline as every other action:
 
 ---
 
-## 6. Phase 4 — Migrate Consumers (CommandBot, Agent, Session) — Session ✅
+## 6. Phase 4 — Migrate Consumers (CommandBot, Agent, Session, KnowledgeGraph) — Session ✅, KnowledgeGraph ✅
 
 **Goal**: All features read from `ActionRegistry` instead of `ExposedActions`, and from `AppState.identityRegistry` instead of their private name caches. Old parallel systems and compatibility shims are deleted.
 
@@ -1980,7 +1980,7 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
 - [x] Migrate `SettingsFeature.onPrivateData` → `handleSideEffects`
   - **Done.** 1 `onPrivateData` handler moved (`FILESYSTEM_RESPONSE_READ` — settings file load). `onPrivateData` override deleted entirely. Tests migrated: T2 `onPrivateData` test replaced with targeted action dispatch through the Store (`originator = "filesystem"`, `targetRecipient = "settings"`); T5 platform test updated to use `Store(AppState(), features, platform)` constructor (removed deleted `validActionNames` param) and `store.initFeatureLifecycles()` (replaces manual `features.forEach { it.init(store) }`). 3 new T2 tests added for previously uncovered side-effect branches (`FILESYSTEM_RESPONSE_READ` ignores non-settings files, `UPDATE` broadcasts `VALUE_CHANGED`, `OPEN_FOLDER` dispatches `FILESYSTEM_OPEN_SYSTEM_FOLDER`).
 - [ ] Phase 3b: Remove deprecated types and methods from `Feature.kt`, `Store.kt`, `AppCore.kt`
-  - **Deferred.** All features now migrated (including SettingsFeature — the last holdout). Deprecated code retained for one release cycle. Cleanup items: delete `onPrivateData` from `Feature.kt`, delete `deliverPrivateData` from `Store.kt`, delete `PrivateDataEnvelope` from `AppCore.kt`, delete `Envelopes` object from `ActionNames.kt`. No remaining callers of `onPrivateData` or `PrivateDataEnvelope` in production or test code.
+  - **Deferred.** All features now migrated (including SettingsFeature — the last holdout). All test files now migrated (KnowledgeGraph tests were the last to use `deliverPrivateData`/`Envelopes.*`). Deprecated code retained for one release cycle. Cleanup items: delete `onPrivateData` from `Feature.kt`, delete `deliverPrivateData` from `Store.kt`, delete `PrivateDataEnvelope` from `AppCore.kt`, delete `Envelopes` object from `ActionNames.kt`. No remaining callers of `onPrivateData`, `deliverPrivateData`, or `PrivateDataEnvelope` in production or test code.
 - [x] Integration tests: targeted delivery through full pipeline with security checks; originator enforcement; rejection of misused targetRecipient
   - **Done.** 7 new tests in StoreT1RoutingTest (recipient delivery, self-targeting, authorization rejection, Step 1b validation ×2, hierarchical resolution, side-effect scope). Bridge verification test in StoreT1GuardTest. 4 migrated tests in CoreFeatureT3PeerTest (filesystem identity loading ×2, confirmation dialog ×2).
 
@@ -2005,6 +2005,8 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
 **Test migration** required a `TestAgentFactory.kt` helper with `testAgent()` and `testSession()` functions that wrap the new Identity-based constructors, minimizing churn across 17 test files. Phase 3b cleanup was performed opportunistically in tests: all `PrivateDataEnvelope`/`deliverPrivateData`/`onPrivateData`/`Envelopes.*` references were replaced with direct `harness.store.dispatch()` calls using promoted action names (e.g., `ActionRegistry.Names.SESSION_RESPONSE_LEDGER` instead of `ActionRegistry.Names.Envelopes.SESSION_RESPONSE_LEDGER`). The `FakeStore` constructor signature change (removal of `validActionNames` parameter from Phase 2.1) was caught and fixed in 4 test files. 11 tests remain failing (parked as tech debt), likely due to `SessionState.sessions` being keyed by `identity.localHandle` while test code uses `session.identity.uuid!!` as the map key.
 
 **Phase 4 CommandBot Migration (2026-02-14)**: CommandBotFeature was the last consumer of both `ExposedActions` and the `AGENT_NAMES_UPDATED` Proactive Broadcast pattern. The migration had two parts. First, all `ExposedActions.*` references were replaced with `ActionRegistry` derived views: `allowedActionNames` → `agentAllowedNames` (CAG-004), `autoFillRules` → `agentAutoFillRules` (CAG-007), `requiresApproval` → `agentRequiresApproval` (CAG-006). These are computed at codegen time from the same manifest data, so behavior is identical. Second, the mutable `knownAgentIds`/`knownAgentNames` fields and their `AGENT_NAMES_UPDATED`/`AGENT_DELETED` subscription handlers were deleted entirely. They were replaced by two stateless helper methods that read `store.state.value.identityRegistry` at side-effect time: `isAgent()` checks `parentHandle == "agent"`, and `resolveAgentName()` reads `identity.name`. This eliminates 25 lines of mutable state tracking in favor of 2 pure lookups against the single source of truth. The T2 test files required three layers of updates: (1) data model migration (`Identity`/`Session`/`SessionState` constructors updated to post-Phase 4 shapes), (2) identity registry seeding (test helpers now call `store.updateIdentityRegistry()` directly instead of dispatching `AGENT_NAMES_UPDATED`), and (3) hierarchical handle alignment (all `senderId` references changed from bare `"agent-1"` to proper `"agent.test-agent-1"` handles). Two pre-existing test failures were also fixed: action name filter predicates in edge-case tests used stale `session.publish.*`/`session.internal.*` prefixes that no longer match the flattened post-Phase 4 action names. The agent prompt builder migration item was marked N/A — prompt content is dynamically generated by LLMs, not read from a static `ExposedActions.documentation` field. With CommandBot decoupled, `ExposedActions.kt` is now safe to delete.
+
+**Phase 4 KnowledgeGraph Audit & Migration (2026-02-14)**: A four-task audit assessed KnowledgeGraphFeature's full compatibility with the v2.0 action bus architecture. **Task 1 (Compatibility Audit)** confirmed production code was already v2-compliant from Phase 3 — all action manifest flags correct, targeted delivery implemented, no deprecated API usage in production. **Task 2 (Silent Return Logging)** identified 17 guard clauses in `handleSideEffects` that silently returned on bad input (missing payload fields, null originator, holon-not-found lookups). Each was hardened with a `LogLevel.WARN` log before returning. The reducer's `?: return currentFeatureState` guards were intentionally left unchanged — pure functions should not perform I/O. **Task 3 (Test Coverage Analysis)** mapped all production code paths against 6 test files and identified ~20 missing/broken scenarios, prioritized by impact. **Task 4 (Test Updates)** fixed 3 broken/deprecated T2 tests (the last tests in the codebase still using `deliverPrivateData`/`Envelopes.*`/`PrivateDataEnvelope`), and added 15 new tests across T1 and T2 tiers. The T2CoreTest `REQUEST_CONTEXT` test was the most critical fix: it was asserting on `deliveredPrivateData` (a capture list that was empty because production code had already been migrated to targeted dispatch in Phase 3) — effectively a passing-but-broken test that would have passed vacuously if the feature returned nothing at all. Net result: T1 tests 13→21, T2 tests 8→16, zero deprecated API references remaining in any test file.
 
 ### Known Issues (Phase 4)
 
@@ -2088,6 +2090,58 @@ CommandBotFeature fully decoupled from `ExposedActions` and `knownAgentIds`/`kno
 - Test helpers seed the identity registry directly via `store.updateIdentityRegistry()` rather than dispatching `REGISTER_IDENTITY` through CoreFeature — this avoids coupling test setup to CoreFeature's async response flow while still testing the correct behavioral contract.
 
 #### Remaining Phase 4 Work
+
+#### KnowledgeGraph Audit & Migration ✅
+
+Full v2.0 compatibility audit performed on KnowledgeGraphFeature. Production code was already v2-compliant from Phase 3. This phase addressed test migration, silent error logging, and coverage gaps.
+
+**Audit Results — Production Code:**
+- Feature interface v2 compliance: ✅ `Identity`, `reducer()`, `handleSideEffects()`, `composableProvider` all correct
+- Action manifest (`knowledgegraph_actions.json`): ✅ All `open`/`broadcast`/`targeted` flags correct; internal, broadcast, targeted, and open action categories all properly implemented
+- Authorization & routing: ✅ All restricted actions dispatched with correct originator; targeted delivery for `RESPONSE_CONTEXT` correctly implemented
+- No deprecated `onPrivateData()` references in production code
+
+**Production Code Hardening — Silent Return Logging (1 file, 17 changes):**
+- [x] **KnowledgeGraphFeature.kt** — 17 silent `?: return` guards in `handleSideEffects` replaced with `?: run { log(WARN, ...); return }` pattern. Categories: 1 null originator guard, 3 missing/malformed filesystem response fields, 10 missing required payload fields (`personaId`, `holonId`, `name`, `correlationId`, `newName`), 3 holon-not-found state lookups. Reducer left unchanged (pure functions should not perform I/O side effects — `?: return currentFeatureState` is the correct pattern).
+
+**Test Migration — Deprecated API Removal (1 file, 3 tests):**
+- [x] **KnowledgeGraphFeatureT2CoreTest.kt** — 3 tests migrated:
+  - `full load sequence correctly populates and synchronizes holons`: `deliverPrivateData("filesystem", "knowledgegraph", PrivateDataEnvelope(Envelopes.FILESYSTEM_RESPONSE_LIST, ...))` → `deferredDispatch("filesystem", Action(name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST, ..., targetRecipient = "knowledgegraph"))`
+  - `full load sequence handles empty directory gracefully`: Same migration pattern
+  - `REQUEST_CONTEXT should return full holon context via private data` (was **broken** — asserted on `deliveredPrivateData` list which was empty because production code sends via targeted dispatch): Assertion changed from `harness.store.deliveredPrivateData.find { it.recipient == "agent-alpha" }` → `harness.processedActions.find { it.name == KNOWLEDGEGRAPH_RESPONSE_CONTEXT && it.targetRecipient == "agent-alpha" }`
+- [x] Removed deprecated imports: `PrivateDataEnvelope`, `app.auf.core.PrivateDataEnvelope`
+- [x] All `Envelopes.*` references replaced with flat `ActionRegistry.Names.*`
+
+**New T2 Side-Effect Tests (7 tests):**
+- [x] `SYSTEM_STARTING should dispatch initial FILESYSTEM_SYSTEM_LIST` — boot sequence entry point (requires `AppLifecycle.INITIALIZING`)
+- [x] `PERSONA_LOADED should broadcast AVAILABLE_PERSONAS_UPDATED when roots change`
+- [x] `RELEASE_HKG should broadcast RESERVATIONS_UPDATED`
+- [x] `CREATE_PERSONA should write file and trigger filesystem reload`
+- [x] `DELETE_HOLON should delete directory, update parent, and confirm deletion` — full cascade test
+- [x] `RESPONSE_LIST non-recursive should discover persona directories and load each`
+- [x] `side effects with missing payload fields should log warnings` — validates Task 2 logging additions
+- [x] `DELETE_HOLON with nonexistent holonId should log warning and not crash`
+
+**New T1 Reducer Tests (8 tests):**
+- [x] `SET_IMPORT_EXECUTION_STATUS should set the isExecutingImport flag`
+- [x] `SET_PENDING_IMPORT_ID should set the pendingImportCorrelationId`
+- [x] `TOGGLE_HOLON_EXPANDED should collapse then expand a holon`
+- [x] `SET_VIEW_MODE to INSPECTOR should reset all import state`
+- [x] `START_IMPORT_ANALYSIS should reset import state and set loading`
+- [x] `SET_IMPORT_RECURSIVE should update flag and set loading`
+- [x] `TOGGLE_SHOW_ONLY_CHANGED should toggle the filter flag`
+- [x] `CONFIRM_DELETE_HOLON should remove holon and descendants and update parent sub_holons` — recursive removal + parent cleanup + active view clearing
+
+**Test Totals:**
+- T1ReducerTest: 13 → 21 tests
+- T2CoreTest: 8 → 16 tests (3 migrated + 7 new + 2 logging verification)
+- T1HolonOperationsTest, T1ViewComponentTest, T3FileSystemPeerTest, T3ImportPeerTest: unchanged (no deprecated API usage)
+
+**Remaining KnowledgeGraph Gaps (low priority):**
+- T1: `normalizeHolonId` with name < 3 alphanumerics, `prepareHolonForWriting` with execute section, `createHolonFromString` with invalid relationship targetId
+- T2: `handleFilesContentForLoad` error paths (all-malformed, partial errors), `COPY_ANALYSIS_TO_CLIPBOARD`, `UPDATE_HOLON_CONTENT` side effect
+- T1 View: tree expand/collapse, type filtering
+- T3 Import: UPDATE action, AssignParent with user overrides
 - [ ] **Fix 11 failing agent tests (tech debt)** — primary issue: `SessionState.sessions` keyed by `localHandle`, tests need `testSession(...).identity.localHandle` as map key instead of `.identity.uuid!!`; also check `activeSessionId` → `activeSessionLocalHandle`
 - [x] ~~Migrate `CommandBotFeature` from `ExposedActions.*` → `ActionRegistry.*`~~
 - [x] ~~Delete `CommandBotFeature.knownAgentIds` and `knownAgentNames`; read from `AppState.identityRegistry` (filter by parentHandle == "agent")~~
@@ -2099,8 +2153,8 @@ CommandBotFeature fully decoupled from `ExposedActions` and `knownAgentIds`/`kno
 - [x] ~~⚠️ **AgentRuntimeFeature: migrate from UUIDs to handles**~~ — Production code complete. `AgentInstance.identity: Identity` replaces `id`/`name`; registration via `REGISTER_IDENTITY`; rename via `UPDATE_IDENTITY`; bus-facing senderId uses handle
 - [ ] Delete `ExposedActions.kt` deprecated delegation shim — CommandBot was the last consumer; now safe to delete
 - [ ] Delete `ActionNames.kt` typealias shim
-- [x] ~~Phase 3b cleanup in tests~~: All test references to `onPrivateData`, `deliverPrivateData`, `PrivateDataEnvelope`, `Envelopes.*` eliminated
-- [ ] Phase 3b cleanup in production: Delete `onPrivateData` from `Feature.kt`, `deliverPrivateData` from `Store.kt`, `PrivateDataEnvelope` from `AppCore.kt`, `Envelopes` from `ActionNames.kt`
+- [x] ~~Phase 3b cleanup in tests~~: All test references to `onPrivateData`, `deliverPrivateData`, `PrivateDataEnvelope`, `Envelopes.*` eliminated (Agent tests: 5 files; KnowledgeGraph tests: 1 file — the final holdout)
+- [ ] Phase 3b cleanup in production: Delete `onPrivateData` from `Feature.kt`, `deliverPrivateData` from `Store.kt`, `PrivateDataEnvelope` from `AppCore.kt`, `Envelopes` from `ActionNames.kt`. **Ready to execute**: zero callers remain in production or test code after KnowledgeGraph test migration.
 - [ ] IDE-assisted batch rename: all old constant names (`SESSION_INTERNAL_LOADED` → `SESSION_LOADED`, etc.)
 - [ ] IDE-assisted batch rename: `ActionNames.` → `ActionRegistry.Names.`
 - [ ] Run full test suite
