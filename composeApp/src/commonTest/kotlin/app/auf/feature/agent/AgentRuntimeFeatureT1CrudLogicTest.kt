@@ -28,15 +28,15 @@ class AgentRuntimeFeatureT1CrudLogicTest {
 
         assertEquals(1, newState.agents.size)
         val agent = newState.agents.values.first()
-        assertEquals("My Agent", agent.name)
+        assertEquals("My Agent", agent.identity.name)
         assertEquals("gemini", agent.modelProvider) // Default
         assertEquals(false, agent.automaticMode) // Default
-        assertEquals(agent.id, newState.editingAgentId) // Auto-select for editing
+        assertEquals(agent.identity.uuid, newState.editingAgentId) // Auto-select for editing
     }
 
     @Test
     fun `UPDATE_CONFIG should filter out private sessions from subscriptions`() {
-        val agent = AgentInstance("a1", "Test", null, "p", "m", subscribedSessionIds = listOf("public-1"))
+        val agent = testAgent("a1", "Test", null, "p", "m", subscribedSessionIds = listOf("public-1"))
         val state = AgentRuntimeState(
             agents = mapOf("a1" to agent),
             sessionNames = mapOf(
@@ -62,7 +62,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
 
     @Test
     fun `TOGGLE_AUTOMATIC_MODE should flip the boolean flag`() {
-        val agent = AgentInstance("a1", "Test", null, "p", "m", automaticMode = false)
+        val agent = testAgent("a1", "Test", null, "p", "m", automaticMode = false)
         val state = AgentRuntimeState(agents = mapOf("a1" to agent))
 
         val action = Action(ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject { put("agentId", "a1") })
@@ -73,7 +73,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
 
     @Test
     fun `DELETE (internal confirm) should remove agent and avatar card info`() {
-        val agent = AgentInstance("a1", "Test", null, "p", "m")
+        val agent = testAgent("a1", "Test", null, "p", "m")
         val state = AgentRuntimeState(
             agents = mapOf("a1" to agent),
             agentAvatarCardIds = mapOf("a1" to mapOf("s-1" to "msg-1"))
@@ -144,7 +144,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
 
     @Test
     fun `UPDATE_CONFIG should update resources map`() {
-        val agent = AgentInstance("a1", "Test", null, "p", "m", resources = emptyMap())
+        val agent = testAgent("a1", "Test", null, "p", "m", resources = emptyMap())
         val state = AgentRuntimeState(agents = mapOf("a1" to agent))
 
         val action = Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
@@ -165,7 +165,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
 
     @Test
     fun `UPDATE_CONFIG without resources field preserves existing resources`() {
-        val agent = AgentInstance("a1", "Test", null, "p", "m", resources = mapOf("CONSTITUTION" to "res-existing"))
+        val agent = testAgent("a1", "Test", null, "p", "m", resources = mapOf("CONSTITUTION" to "res-existing"))
         val state = AgentRuntimeState(agents = mapOf("a1" to agent))
 
         val action = Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
@@ -176,7 +176,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
         val newState = AgentCrudLogic.reduce(state, action, platform)
         val updatedAgent = newState.agents["a1"]!!
 
-        assertEquals("Renamed", updatedAgent.name)
+        assertEquals("Renamed", updatedAgent.identity.name)
         assertEquals("res-existing", updatedAgent.resources["CONSTITUTION"])
     }
 

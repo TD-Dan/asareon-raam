@@ -51,16 +51,16 @@ fun AgentContextView(store: Store) {
     }
 
     val onDiscard = {
-        store.dispatch("ui.contextView", Action(ActionRegistry.Names.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agent.id) }))
+        store.dispatch("ui.contextView", Action(ActionRegistry.Names.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agent.identity.uuid) }))
     }
     val onExecute = {
-        store.dispatch("ui.contextView", Action(ActionRegistry.Names.AGENT_EXECUTE_PREVIEWED_TURN, buildJsonObject { put("agentId", agent.id) }))
+        store.dispatch("ui.contextView", Action(ActionRegistry.Names.AGENT_EXECUTE_PREVIEWED_TURN, buildJsonObject { put("agentId", agent.identity.uuid) }))
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Preview Turn: ${agent.name}") },
+                title = { Text("Preview Turn: ${agent.identity.name}") },
                 navigationIcon = {
                     IconButton(onClick = onDiscard) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")

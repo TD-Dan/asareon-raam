@@ -1,6 +1,6 @@
 package app.auf.feature.agent
 
-import app.auf.core.*
+import app.auf.core.Action
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.agent.strategies.SovereignDefaults
@@ -42,19 +42,18 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
     // Sovereign Agent in BOOTING phase
     private val agentId = "agent-sovereign"
     private val sessionId = "session-1"
-    private val agent = AgentInstance(
+    private val agent = testAgent(
         id = agentId,
         name = "Sovereign Test Agent",
         modelProvider = "mock",
         modelName = "mock-gpt",
         cognitiveStrategyId = "sovereign_v1",
-        cognitiveState = buildJsonObject { put("phase", "BOOTING") },
         subscribedSessionIds = listOf(sessionId),
         resources = mapOf(
             "constitution" to "const-default",
             "bootloader" to "boot-default"
         )
-    )
+    ).copy(cognitiveState = buildJsonObject { put("phase", "BOOTING") })
 
     @Test
     fun `full boot cycle with sentinel validation`() = runTest {
@@ -84,8 +83,8 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             assertEquals(agentId, ledgerRequest.payload?.get("correlationId")?.jsonPrimitive?.content)
 
             // === PHASE 2: LEDGER RESPONSE ===
-            val ledgerResponse = PrivateDataEnvelope(
-                ActionRegistry.Names.Envelopes.SESSION_RESPONSE_LEDGER,
+            harness.store.dispatch("session", Action(
+                ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("messages", buildJsonArray {
@@ -96,8 +95,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                         })
                     })
                 }
-            )
-            feature.onPrivateData(ledgerResponse, harness.store)
+            ))
 
             // ASSERT: Turn context staged
             val stageAction = harness.processedActions.find { action ->
@@ -120,14 +118,13 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // For sovereign agents, HKG context is also required.
             // Simulate HKG context response arrival:
-            val hkgResponse = PrivateDataEnvelope(
-                ActionRegistry.Names.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+            harness.store.dispatch("knowledgegraph", Action(
+                ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("context", buildJsonObject { put("persona", "test") })
                 }
-            )
-            feature.onPrivateData(hkgResponse, harness.store)
+            ))
 
             // ASSERT: Gate passed — Gateway request dispatched with Sentinel in System Prompt
             val gatewayRequest = harness.processedActions.find { action ->
@@ -142,15 +139,14 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             )
 
             // === PHASE 4: GATEWAY SUCCESS RESPONSE ===
-            val gatewaySuccess = PrivateDataEnvelope(
-                ActionRegistry.Names.Envelopes.GATEWAY_RESPONSE_RESPONSE,
+            harness.store.dispatch("gateway", Action(
+                ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("rawContent", "Boot sequence complete. I am now awake and ready to serve.")
                     put("errorMessage", JsonNull)
                 }
-            )
-            feature.onPrivateData(gatewaySuccess, harness.store)
+            ))
 
             // ASSERT: State transition to AWAKE
             val nvramUpdate = harness.processedActions.find { action ->
@@ -167,7 +163,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             }
             assertNotNull(sessionPost, "Should post response to session")
             assertEquals(sessionId, sessionPost.payload?.get("session")?.jsonPrimitive?.content)
-            assertEquals(agentId, sessionPost.payload?.get("senderId")?.jsonPrimitive?.content)
+            assertEquals(agent.identity.handle, sessionPost.payload?.get("senderId")?.jsonPrimitive?.content)
         }
     }
 
@@ -186,16 +182,14 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
         harness.runAndLogOnFailure {
             // Simulate a gateway failure response with sentinel failure token
-            val gatewayFailure = PrivateDataEnvelope(
-                ActionRegistry.Names.Envelopes.GATEWAY_RESPONSE_RESPONSE,
+            harness.store.dispatch("gateway", Action(
+                ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("rawContent", "[${SovereignDefaults.SENTINEL_FAILURE_TOKEN}: NO_AGENT_PRESENT]")
                     put("errorMessage", JsonNull)
                 }
-            )
-
-            feature.onPrivateData(gatewayFailure, harness.store)
+            ))
 
             // ASSERT: No state update (remains BOOTING)
             val nvramUpdate = harness.processedActions.find { action ->
@@ -243,8 +237,8 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             }))
 
             // === DELIVER LEDGER ===
-            val ledgerResponse = PrivateDataEnvelope(
-                ActionRegistry.Names.Envelopes.SESSION_RESPONSE_LEDGER,
+            harness.store.dispatch("session", Action(
+                ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("messages", buildJsonArray {
@@ -255,22 +249,20 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                         })
                     })
                 }
-            )
-            feature.onPrivateData(ledgerResponse, harness.store)
+            ))
 
             // Trigger evaluation (parallel context gathering)
             AgentCognitivePipeline.evaluateTurnContext(agentId, harness.store)
 
             // Workspace context arrives automatically via FileSystemFeature.
             // Sovereign agent also needs HKG context:
-            val hkgResponse = PrivateDataEnvelope(
-                ActionRegistry.Names.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+            harness.store.dispatch("knowledgegraph", Action(
+                ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("context", buildJsonObject { put("persona", "test") })
                 }
-            )
-            feature.onPrivateData(hkgResponse, harness.store)
+            ))
 
             // === VERIFY NO SENTINEL ===
             val gatewayRequest = harness.processedActions.find { action ->
@@ -285,15 +277,14 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             )
 
             // === DELIVER NORMAL RESPONSE ===
-            val gatewayResponse = PrivateDataEnvelope(
-                ActionRegistry.Names.Envelopes.GATEWAY_RESPONSE_RESPONSE,
+            harness.store.dispatch("gateway", Action(
+                ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("rawContent", "2+2 equals 4.")
                     put("errorMessage", JsonNull)
                 }
-            )
-            feature.onPrivateData(gatewayResponse, harness.store)
+            ))
 
             // === VERIFY POST ===
             val sessionPost = harness.processedActions.find { action ->
@@ -332,8 +323,8 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                 put("agentId", agentId)
             }))
 
-            val ledgerResponse = PrivateDataEnvelope(
-                ActionRegistry.Names.Envelopes.SESSION_RESPONSE_LEDGER,
+            harness.store.dispatch("session", Action(
+                ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("messages", buildJsonArray {
@@ -344,22 +335,20 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                         })
                     })
                 }
-            )
-            feature.onPrivateData(ledgerResponse, harness.store)
+            ))
 
             // Trigger evaluation (parallel context gathering starts)
             AgentCognitivePipeline.evaluateTurnContext(agentId, harness.store)
 
             // Workspace listing arrives via FileSystemFeature automatically.
             // Sovereign agent also needs HKG context for gate to pass:
-            val hkgResponse = PrivateDataEnvelope(
-                ActionRegistry.Names.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+            harness.store.dispatch("knowledgegraph", Action(
+                ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
                 buildJsonObject {
                     put("correlationId", agentId)
                     put("context", buildJsonObject { put("persona", "test") })
                 }
-            )
-            feature.onPrivateData(hkgResponse, harness.store)
+            ))
 
             // Gate passes → executeTurn fires → resource validation fails → ERROR
 

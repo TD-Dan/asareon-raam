@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
+import app.auf.core.Identity
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.*
@@ -23,9 +24,16 @@ object AgentCrudLogic {
         return when (action.name) {
             ActionRegistry.Names.AGENT_CREATE -> {
                 val payload = action.payload ?: return state
+                val uuid = platformDependencies.generateUUID()
+                val name = payload["name"]?.jsonPrimitive?.contentOrNull ?: "New Agent"
                 val newAgent = AgentInstance(
-                    id = platformDependencies.generateUUID(),
-                    name = payload["name"]?.jsonPrimitive?.contentOrNull ?: "New Agent",
+                    identity = Identity(
+                        uuid = uuid,
+                        localHandle = "",    // placeholder — filled on RESPONSE_REGISTER_IDENTITY
+                        handle = "",         // placeholder — filled on RESPONSE_REGISTER_IDENTITY
+                        name = name,
+                        parentHandle = "agent"
+                    ),
                     knowledgeGraphId = payload["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull,
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: "gemini",
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: "gemini-pro",
@@ -35,7 +43,7 @@ object AgentCrudLogic {
                     autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: 5,
                     autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: 30
                 )
-                state.copy(agents = state.agents + (newAgent.id to newAgent), editingAgentId = newAgent.id)
+                state.copy(agents = state.agents + (uuid to newAgent), editingAgentId = uuid)
             }
             ActionRegistry.Names.AGENT_UPDATE_CONFIG -> {
                 val payload = action.payload ?: return state
@@ -59,7 +67,9 @@ object AgentCrudLogic {
                 }
 
                 val updatedAgent = agentToUpdate.copy(
-                    name = payload["name"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.name,
+                    identity = agentToUpdate.identity.copy(
+                        name = payload["name"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.identity.name
+                    ),
                     knowledgeGraphId = if ("knowledgeGraphId" in payload) payload["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull else agentToUpdate.knowledgeGraphId,
                     privateSessionId = if ("privateSessionId" in payload) payload["privateSessionId"]?.jsonPrimitive?.contentOrNull else agentToUpdate.privateSessionId,
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelProvider,
@@ -102,7 +112,8 @@ object AgentCrudLogic {
             }
             ActionRegistry.Names.AGENT_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return state
-                if (!state.agents.containsKey(agent.id)) state.copy(agents = state.agents + (agent.id to agent)) else state
+                val uuid = agent.identity.uuid ?: return state
+                if (!state.agents.containsKey(uuid)) state.copy(agents = state.agents + (uuid to agent)) else state
             }
             // [NEW] Handle loading resources from disk
             ActionRegistry.Names.AGENT_RESOURCE_LOADED -> {

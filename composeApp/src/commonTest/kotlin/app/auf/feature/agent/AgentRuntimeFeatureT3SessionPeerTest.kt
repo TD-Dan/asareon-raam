@@ -27,19 +27,19 @@ class AgentRuntimeFeatureT3SessionPeerTest {
     private val agentFeature = AgentRuntimeFeature(platform, scope)
     private val sessionFeature = SessionFeature(platform, scope)
 
-    private val sessionA = Session("sid-A", "Session A", emptyList(), 1L)
-    private val agent1 = AgentInstance("aid-1", "Agent 1", "", "", "", subscribedSessionIds = listOf("sid-A"))
+    private val sessionA = testSession("sid-A", "Session A")
+    private val agent1 = testAgent("aid-1", "Agent 1", subscribedSessionIds = listOf("sid-A"))
 
     @Test
     fun `when a new message arrives an IDLE agent transitions to WAITING and moves its card`() = runTest {
         // REFACTOR FIX: Use Map<SessionId, MessageId> instead of AvatarCardInfo
-        val initialAvatarCards = mapOf(agent1.id to mapOf("sid-A" to "card-1"))
+        val initialAvatarCards = mapOf(agent1.identity.uuid!! to mapOf("sid-A" to "card-1"))
 
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(sessionFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent1.id to agent1), agentAvatarCardIds = initialAvatarCards))
-            .withInitialState("session", SessionState(sessions = mapOf(sessionA.id to sessionA)))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent1.identity.uuid!! to agent1), agentAvatarCardIds = initialAvatarCards))
+            .withInitialState("session", SessionState(sessions = mapOf(sessionA.identity.uuid!! to sessionA)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
@@ -53,12 +53,12 @@ class AgentRuntimeFeatureT3SessionPeerTest {
             // ASSERT (Agent State)
             val finalAgentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
 
-            assertEquals(AgentStatus.WAITING, finalAgentState.agentStatuses[agent1.id]?.status)
+            assertEquals(AgentStatus.WAITING, finalAgentState.agentStatuses[agent1.identity.uuid]?.status)
 
             // Verify awareness frontier
             val finalSessionState = harness.store.state.value.featureStates["session"] as SessionState
             val userMessageId = finalSessionState.sessions["sid-A"]?.ledger?.find { it.senderId == "user" }?.id
-            assertEquals(userMessageId, finalAgentState.agentStatuses[agent1.id]?.lastSeenMessageId)
+            assertEquals(userMessageId, finalAgentState.agentStatuses[agent1.identity.uuid]?.lastSeenMessageId)
         }
     }
 
@@ -69,30 +69,30 @@ class AgentRuntimeFeatureT3SessionPeerTest {
         // START STATE: Waiting
         val status = AgentStatusInfo(status = AgentStatus.WAITING, lastSeenMessageId = "msg-user-1")
         // REFACTOR FIX: Use Map<SessionId, MessageId> instead of AvatarCardInfo
-        val initialAvatarCards = mapOf(agentConfig.id to mapOf("sid-A" to "card-waiting"))
+        val initialAvatarCards = mapOf(agentConfig.identity.uuid!! to mapOf("sid-A" to "card-waiting"))
 
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(sessionFeature)
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agentConfig.id to agentConfig),
-                agentStatuses = mapOf(agentConfig.id to status),
+                agents = mapOf(agentConfig.identity.uuid!! to agentConfig),
+                agentStatuses = mapOf(agentConfig.identity.uuid!! to status),
                 agentAvatarCardIds = initialAvatarCards
             ))
-            .withInitialState("session", SessionState(sessions = mapOf(sessionA.id to sessionA.copy(ledger = listOf(initialUserMessage)))))
+            .withInitialState("session", SessionState(sessions = mapOf(sessionA.identity.uuid!! to sessionA.copy(ledger = listOf(initialUserMessage)))))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
             // ACT: Trigger the agent's turn
-            val triggerAction = Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agentConfig.id) })
+            val triggerAction = Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agentConfig.identity.uuid) })
             harness.store.dispatch("ui", triggerAction)
 
             // ASSERT (Agent State)
             val finalAgentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            assertEquals(AgentStatus.PROCESSING, finalAgentState.agentStatuses[agentConfig.id]?.status)
+            assertEquals(AgentStatus.PROCESSING, finalAgentState.agentStatuses[agentConfig.identity.uuid]?.status)
             // Check the commitment frontier
-            assertEquals("msg-user-1", finalAgentState.agentStatuses[agentConfig.id]?.processingFrontierMessageId)
+            assertEquals("msg-user-1", finalAgentState.agentStatuses[agentConfig.identity.uuid]?.processingFrontierMessageId)
         }
     }
 }

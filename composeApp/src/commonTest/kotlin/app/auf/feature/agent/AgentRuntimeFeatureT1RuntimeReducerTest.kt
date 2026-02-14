@@ -23,7 +23,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     fun `SET_STATUS should update status and timestamps correctly`() {
         val agentId = "agent-1"
         val initialState = AgentRuntimeState(
-            agents = mapOf(agentId to AgentInstance(agentId, "Test", "", "", "")),
+            agents = mapOf(agentId to testAgent(agentId, "Test")),
             agentStatuses = mapOf(agentId to AgentStatusInfo(status = AgentStatus.IDLE))
         )
 
@@ -43,7 +43,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     fun `SET_STATUS should clear errors when transitioning from ERROR`() {
         val agentId = "agent-1"
         val initialState = AgentRuntimeState(
-            agents = mapOf(agentId to AgentInstance(agentId, "Test", "", "", "")),
+            agents = mapOf(agentId to testAgent(agentId, "Test")),
             agentStatuses = mapOf(agentId to AgentStatusInfo(status = AgentStatus.ERROR, errorMessage = "Bad thing"))
         )
 
@@ -62,7 +62,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     fun `MESSAGE_POSTED should update lastSeenMessageId`() {
         val agentId = "agent-1"
         val sessionId = "session-1"
-        val agent = AgentInstance(agentId, "Test", "", "", "", subscribedSessionIds = listOf(sessionId))
+        val agent = testAgent(agentId, "Test", subscribedSessionIds = listOf(sessionId))
         val initialState = AgentRuntimeState(agents = mapOf(agentId to agent))
 
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
@@ -85,7 +85,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     fun `MESSAGE_POSTED from 'system' should NOT update lastSeenMessageId (Sentinel Fix)`() {
         val agentId = "agent-1"
         val sessionId = "session-1"
-        val agent = AgentInstance(agentId, "Test", "", "", "", subscribedSessionIds = listOf(sessionId))
+        val agent = testAgent(agentId, "Test", subscribedSessionIds = listOf(sessionId))
         val initialStatus = AgentStatusInfo(lastSeenMessageId = "msg-old")
         val initialState = AgentRuntimeState(
             agents = mapOf(agentId to agent),
@@ -186,7 +186,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     @Test
     fun `SESSION_DELETED should remove session from agent subscriptions and trigger persistence`() {
         // ARRANGE
-        val agent = AgentInstance("a1", "Test", null, "p", "m", subscribedSessionIds = listOf("s1", "s2"))
+        val agent = testAgent("a1", "Test", null, "p", "m", subscribedSessionIds = listOf("s1", "s2"))
         val state = AgentRuntimeState(agents = mapOf("a1" to agent))
 
         // ACT
@@ -288,7 +288,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             processingSinceTimestamp = 1000L
         )
         val state = AgentRuntimeState(
-            agents = mapOf(agentId to AgentInstance(agentId, "Test", "", "", "")),
+            agents = mapOf(agentId to testAgent(agentId, "Test")),
             agentStatuses = mapOf(agentId to initialStatus)
         )
 

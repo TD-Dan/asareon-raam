@@ -69,14 +69,7 @@ class AgentRuntimeFeatureT2StartupTest {
                 })
             }
 
-            harness.store.deliverPrivateData(
-                originator = "filesystem",
-                recipient = "agent",
-                envelope = app.auf.core.PrivateDataEnvelope(
-                    type = ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_LIST,
-                    payload = listPayload
-                )
-            )
+            harness.store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST, listPayload))
 
             // Now the feature should have dispatched a READ request.
             // Let's verify that request looks correct.
@@ -96,14 +89,7 @@ class AgentRuntimeFeatureT2StartupTest {
                 put("content", kotlinx.serialization.json.JsonPrimitive(resourceContent))
             }
 
-            harness.store.deliverPrivateData(
-                originator = "filesystem",
-                recipient = "agent",
-                envelope = app.auf.core.PrivateDataEnvelope(
-                    type = ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_READ,
-                    payload = readPayload
-                )
-            )
+            harness.store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_RESPONSE_READ, readPayload))
 
             // 3. Assert: Resource is loaded into state
             val agentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
@@ -120,8 +106,13 @@ class AgentRuntimeFeatureT2StartupTest {
         val agentId = "agent-abc"
         val agentConfigJson = """
             {
-                "id": "$agentId",
-                "name": "Restored Agent",
+                "identity": {
+                    "uuid": "$agentId",
+                    "localHandle": "restored-agent",
+                    "handle": "agent.restored-agent",
+                    "name": "Restored Agent",
+                    "parentHandle": "agent"
+                },
                 "modelProvider": "gemini",
                 "modelName": "gemini-1.5-pro"
             }
@@ -152,14 +143,7 @@ class AgentRuntimeFeatureT2StartupTest {
                 })
             }
 
-            harness.store.deliverPrivateData(
-                originator = "filesystem",
-                recipient = "agent",
-                envelope = app.auf.core.PrivateDataEnvelope(
-                    type = ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_LIST,
-                    payload = listPayload
-                )
-            )
+            harness.store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST, listPayload))
 
             // Verify the feature dispatched a READ for "agent-abc/agent.json"
             val readAction = harness.processedActions.find {
@@ -174,20 +158,13 @@ class AgentRuntimeFeatureT2StartupTest {
                 put("content", kotlinx.serialization.json.JsonPrimitive(agentConfigJson))
             }
 
-            harness.store.deliverPrivateData(
-                originator = "filesystem",
-                recipient = "agent",
-                envelope = app.auf.core.PrivateDataEnvelope(
-                    type = ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_READ,
-                    payload = readPayload
-                )
-            )
+            harness.store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_RESPONSE_READ, readPayload))
 
             // Assert: Agent loaded into state
             val agentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
             val loadedAgent = agentState.agents[agentId]
             assertNotNull(loadedAgent, "Agent should be present in state after loading")
-            assertEquals("Restored Agent", loadedAgent.name)
+            assertEquals("Restored Agent", loadedAgent.identity.name)
 
             // Assert: AGENTS_LOADED fired (agentLoadCount reached 0)
             val agentsLoadedAction = harness.processedActions.find {
@@ -202,7 +179,7 @@ class AgentRuntimeFeatureT2StartupTest {
         // Setup: The feature expects one agent config. We deliver an unknown file first,
         // then the real agent config. The unknown file should NOT decrement agentLoadCount.
         val agentId = "agent-xyz"
-        val agentConfigJson = """{"id":"$agentId","name":"Real Agent","modelProvider":"p","modelName":"m"}"""
+        val agentConfigJson = """{"identity":{"uuid":"$agentId","localHandle":"real-agent","handle":"agent.real-agent","name":"Real Agent","parentHandle":"agent"},"modelProvider":"p","modelName":"m"}"""
 
         val environment = TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(app.auf.fakes.FakePlatformDependencies("1.0"), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)))
@@ -227,14 +204,7 @@ class AgentRuntimeFeatureT2StartupTest {
                 })
             }
 
-            harness.store.deliverPrivateData(
-                originator = "filesystem",
-                recipient = "agent",
-                envelope = app.auf.core.PrivateDataEnvelope(
-                    type = ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_LIST,
-                    payload = listPayload
-                )
-            )
+            harness.store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST, listPayload))
 
             // Deliver an UNKNOWN file read response (e.g. a stale log file)
             val unknownPayload = kotlinx.serialization.json.buildJsonObject {
@@ -242,14 +212,7 @@ class AgentRuntimeFeatureT2StartupTest {
                 put("content", kotlinx.serialization.json.JsonPrimitive("garbage data"))
             }
 
-            harness.store.deliverPrivateData(
-                originator = "filesystem",
-                recipient = "agent",
-                envelope = app.auf.core.PrivateDataEnvelope(
-                    type = ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_READ,
-                    payload = unknownPayload
-                )
-            )
+            harness.store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_RESPONSE_READ, unknownPayload))
 
             // AGENTS_LOADED should NOT have fired (agentLoadCount is still 1)
             val prematureLoaded = harness.processedActions.find {
@@ -263,14 +226,7 @@ class AgentRuntimeFeatureT2StartupTest {
                 put("content", kotlinx.serialization.json.JsonPrimitive(agentConfigJson))
             }
 
-            harness.store.deliverPrivateData(
-                originator = "filesystem",
-                recipient = "agent",
-                envelope = app.auf.core.PrivateDataEnvelope(
-                    type = ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_READ,
-                    payload = realPayload
-                )
-            )
+            harness.store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_RESPONSE_READ, realPayload))
 
             // NOW AGENTS_LOADED should fire
             val agentsLoaded = harness.processedActions.find {

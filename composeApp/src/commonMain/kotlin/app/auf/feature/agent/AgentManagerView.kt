@@ -85,11 +85,11 @@ private fun AgentListView(
         AlertDialog(
             onDismissRequest = { agentToDelete = null },
             title = { Text("Delete Agent?") },
-            text = { Text("Are you sure you want to permanently delete '${agent.name}'? This action cannot be undone.") },
+            text = { Text("Are you sure you want to permanently delete '${agent.identity.name}'? This action cannot be undone.") },
             confirmButton = {
                 Button(
                     onClick = {
-                        store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_DELETE, buildJsonObject { put("agentId", agent.id) }))
+                        store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_DELETE, buildJsonObject { put("agentId", agent.identity.uuid) }))
                         agentToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -118,14 +118,14 @@ private fun AgentListView(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(agentState.agents.values.toList(), key = { it.id }) { agent ->
+                items(agentState.agents.values.toList(), key = { it.identity.uuid ?: "" }) { agent ->
                     AgentCard(
                         agent = agent,
-                        isEditing = agent.id == editingAgentId,
+                        isEditing = agent.identity.uuid == editingAgentId,
                         agentState = agentState,
                         store = store,
                         onDeleteRequest = { agentToDelete = it },
-                        onEditRequest = { store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.id) })) },
+                        onEditRequest = { store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.identity.uuid) })) },
                         platformDependencies = platformDependencies
                     )
                 }
@@ -158,7 +158,7 @@ private fun AgentCard(
                     IconButton(onClick = onEditRequest) {
                         Icon(Icons.Default.Edit, "Edit Agent")
                     }
-                    IconButton(onClick = { store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_CLONE, buildJsonObject { put("agentId", agent.id) })) }) {
+                    IconButton(onClick = { store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_CLONE, buildJsonObject { put("agentId", agent.identity.uuid) })) }) {
                         Icon(Icons.Default.ContentCopy, "Clone Agent")
                     }
                     IconButton(onClick = { onDeleteRequest(agent) }) {
@@ -180,7 +180,7 @@ private fun AgentReadOnlyView(
     val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.sessionNames[it] } ?: "Not Subscribed"
     val hkgName = agent.knowledgeGraphId?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG"
     val privateSessionName = agent.privateSessionId?.let { agentState.sessionNames[it] } ?: agent.privateSessionId ?: "None"
-    val statusInfo = agentState.agentStatuses[agent.id] ?: AgentStatusInfo()
+    val statusInfo = agentState.agentStatuses[agent.identity.uuid] ?: AgentStatusInfo()
 
     var showInternals by remember { mutableStateOf(false) }
     // Only consider Sovereign if HKG is assigned.
@@ -254,17 +254,17 @@ private fun AgentEditorView(
     store: Store
 ) {
     // Draft state: a local copy of the agent. Selectors mutate the draft, not the store.
-    var draftAgent by remember(agent.id) { mutableStateOf(agent) }
-    var agentNameInput by remember(agent.id) { mutableStateOf(agent.name) }
-    var autoWaitTimeInput by remember(agent.id) { mutableStateOf(agent.autoWaitTimeSeconds.toString()) }
-    var autoMaxWaitTimeInput by remember(agent.id) { mutableStateOf(agent.autoMaxWaitTimeSeconds.toString()) }
+    var draftAgent by remember(agent.identity.uuid) { mutableStateOf(agent) }
+    var agentNameInput by remember(agent.identity.uuid) { mutableStateOf(agent.identity.name) }
+    var autoWaitTimeInput by remember(agent.identity.uuid) { mutableStateOf(agent.autoWaitTimeSeconds.toString()) }
+    var autoMaxWaitTimeInput by remember(agent.identity.uuid) { mutableStateOf(agent.autoMaxWaitTimeSeconds.toString()) }
 
     val isVanilla = draftAgent.cognitiveStrategyId == VanillaStrategy.id
     val onDraftChanged: (AgentInstance) -> Unit = { draftAgent = it }
 
     val onSave = {
         store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
-            put("agentId", agent.id)
+            put("agentId", agent.identity.uuid)
             put("name", agentNameInput)
             put("cognitiveStrategyId", draftAgent.cognitiveStrategyId)
             put("modelProvider", draftAgent.modelProvider)

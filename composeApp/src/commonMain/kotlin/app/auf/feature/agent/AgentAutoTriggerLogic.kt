@@ -26,8 +26,9 @@ object AgentAutoTriggerLogic {
         val currentTime = platformDependencies.currentTimeMillis()
 
         state.agents.values.forEach { agent ->
+            val agentUuid = agent.identity.uuid ?: return@forEach
             // REF: Slice 3 - Access runtime status from `agentStatuses`
-            val statusInfo = state.agentStatuses[agent.id] ?: AgentStatusInfo()
+            val statusInfo = state.agentStatuses[agentUuid] ?: AgentStatusInfo()
 
             // Condition: Must be Automatic, Active, Waiting, and have valid timestamps
             if (agent.automaticMode &&
@@ -44,7 +45,7 @@ object AgentAutoTriggerLogic {
 
                 if (debounceTrigger || timeoutTrigger) {
                     store.deferredDispatch(featureName, Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
-                        put("agentId", agent.id)
+                        put("agentId", agentUuid)
                         put("preview", false)
                     }))
                 }

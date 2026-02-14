@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
+import app.auf.core.Identity
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.*
@@ -148,7 +149,7 @@ object AgentRuntimeReducer {
                 if (agentsToUpdate.isEmpty()) return state.copy(agentAvatarCardIds = newAvatarCards)
 
                 val newAgents = state.agents.mapValues { (_, agent) ->
-                    if (agentsToUpdate.any { it.id == agent.id }) {
+                    if (agentsToUpdate.any { it.identity.uuid == agent.identity.uuid }) {
                         agent.copy(
                             subscribedSessionIds = agent.subscribedSessionIds - deletedSessionId,
                             privateSessionId = if (agent.privateSessionId == deletedSessionId) null else agent.privateSessionId
@@ -158,7 +159,7 @@ object AgentRuntimeReducer {
                     }
                 }
                 // Note: We set agentsToPersist so the Feature knows to save these changes
-                state.copy(agents = newAgents, agentAvatarCardIds = newAvatarCards, agentsToPersist = agentsToUpdate.map { it.id }.toSet())
+                state.copy(agents = newAgents, agentAvatarCardIds = newAvatarCards, agentsToPersist = agentsToUpdate.mapNotNull { it.identity.uuid }.toSet())
             }
 
             ActionRegistry.Names.GATEWAY_AVAILABLE_MODELS_UPDATED -> {
@@ -184,6 +185,51 @@ object AgentRuntimeReducer {
             ActionRegistry.Names.CORE_IDENTITIES_UPDATED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<IdentitiesUpdatedPayload>(it) }
                 if (payload != null) state.copy(userIdentities = payload.identities) else state
+            }
+
+            // --- Identity Registration Responses ---
+            ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY -> {
+                val payload = action.payload ?: return state
+                val success = payload["success"]?.jsonPrimitive?.booleanOrNull ?: false
+                val uuid = payload["uuid"]?.jsonPrimitive?.contentOrNull ?: return state
+                if (!success) return state
+
+                val approvedLocalHandle = payload["approvedLocalHandle"]?.jsonPrimitive?.contentOrNull ?: return state
+                val handle = payload["handle"]?.jsonPrimitive?.contentOrNull ?: return state
+                val name = payload["name"]?.jsonPrimitive?.contentOrNull ?: return state
+                val parentHandle = payload["parentHandle"]?.jsonPrimitive?.contentOrNull
+
+                val agent = state.agents[uuid] ?: return state
+                val updatedAgent = agent.copy(
+                    identity = agent.identity.copy(
+                        localHandle = approvedLocalHandle,
+                        handle = handle,
+                        name = name,
+                        parentHandle = parentHandle
+                    )
+                )
+                state.copy(agents = state.agents + (uuid to updatedAgent))
+            }
+
+            ActionRegistry.Names.CORE_RESPONSE_UPDATE_IDENTITY -> {
+                val payload = action.payload ?: return state
+                val success = payload["success"]?.jsonPrimitive?.booleanOrNull ?: false
+                if (!success) return state
+
+                val uuid = payload["uuid"]?.jsonPrimitive?.contentOrNull ?: return state
+                val newLocalHandle = payload["newLocalHandle"]?.jsonPrimitive?.contentOrNull ?: return state
+                val newHandle = payload["newHandle"]?.jsonPrimitive?.contentOrNull ?: return state
+                val name = payload["name"]?.jsonPrimitive?.contentOrNull ?: return state
+
+                val agent = state.agents[uuid] ?: return state
+                val updatedAgent = agent.copy(
+                    identity = agent.identity.copy(
+                        localHandle = newLocalHandle,
+                        handle = newHandle,
+                        name = name
+                    )
+                )
+                state.copy(agents = state.agents + (uuid to updatedAgent))
             }
 
             else -> state
@@ -243,10 +289,15 @@ object AgentRuntimeReducer {
         if (isAvatar) {
             // Track avatar cards: Map<AgentId, Map<SessionId, MessageId>>
             val avatarAgentId = entry["senderId"]?.jsonPrimitive?.contentOrNull
-            if (avatarAgentId != null && state.agents.containsKey(avatarAgentId)) {
-                val currentSessionMap = state.agentAvatarCardIds[avatarAgentId] ?: emptyMap()
-                val newSessionMap = currentSessionMap + (sessionId to messageId)
-                return state.copy(agentAvatarCardIds = state.agentAvatarCardIds + (avatarAgentId to newSessionMap))
+            if (avatarAgentId != null) {
+                // Resolve to UUID: senderId may be UUID (old) or handle (new)
+                val resolvedUuid = state.agents[avatarAgentId]?.identity?.uuid  // direct UUID key match
+                    ?: state.agents.values.find { it.identity.handle == avatarAgentId }?.identity?.uuid
+                if (resolvedUuid != null) {
+                    val currentSessionMap = state.agentAvatarCardIds[resolvedUuid] ?: emptyMap()
+                    val newSessionMap = currentSessionMap + (sessionId to messageId)
+                    return state.copy(agentAvatarCardIds = state.agentAvatarCardIds + (resolvedUuid to newSessionMap))
+                }
             }
             return state
         }
@@ -256,23 +307,25 @@ object AgentRuntimeReducer {
 
         val updatedStatuses = state.agentStatuses.toMutableMap()
         state.agents.values.forEach { agent ->
-            val currentStatus = updatedStatuses[agent.id] ?: AgentStatusInfo()
+            val agentUuid = agent.identity.uuid ?: return@forEach
+            val currentStatus = updatedStatuses[agentUuid] ?: AgentStatusInfo()
             val isRelevant = (agent.subscribedSessionIds.contains(sessionId) || agent.privateSessionId == sessionId)
+            val isSelf = (agentUuid == senderId || agent.identity.handle == senderId)
 
-            if (isRelevant && agent.id != senderId) {
+            if (isRelevant && !isSelf) {
                 // NEW: Auto-Waiting Logic (Synchronous)
                 val newStatus = if (currentStatus.status == AgentStatus.IDLE) AgentStatus.WAITING else currentStatus.status
 
-                updatedStatuses[agent.id] = currentStatus.copy(
+                updatedStatuses[agentUuid] = currentStatus.copy(
                     status = newStatus,
                     lastSeenMessageId = messageId,
                     lastMessageReceivedTimestamp = currentTime,
                     // Only set waiting timestamp if not already waiting
                     waitingSinceTimestamp = currentStatus.waitingSinceTimestamp ?: currentTime
                 )
-            } else if (agent.id == senderId) {
+            } else if (isSelf) {
                 // Agent saw its own message
-                updatedStatuses[agent.id] = currentStatus.copy(lastSeenMessageId = messageId)
+                updatedStatuses[agentUuid] = currentStatus.copy(lastSeenMessageId = messageId)
             }
         }
 

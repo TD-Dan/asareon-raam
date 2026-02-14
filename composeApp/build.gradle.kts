@@ -766,7 +766,7 @@ kotlin {
         }
         // TEMPORARY DISABLING OF NON COMPILING TESTS:
         named("commonTest") {
-            kotlin.exclude("**/feature/agent/**")
+            //kotlin.exclude("**/feature/agent/**")
             kotlin.exclude("**/feature/commandbot/**")
             //kotlin.exclude("**/feature/core/**")
             kotlin.exclude("**/feature/filesystem/**")

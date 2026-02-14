@@ -38,7 +38,7 @@ class AgentRuntimeFeatureT1AvatarTest {
     @Before
     fun setUp() {
         fakePlatform = FakePlatformDependencies("test")
-        fakeStore = FakeStore(AppState(), fakePlatform, ActionRegistry.Names.allActionNames)
+        fakeStore = FakeStore(AppState(), fakePlatform)
     }
 
     // --- 1. Logic Verification (AgentAvatarLogic) ---
@@ -52,7 +52,7 @@ class AgentRuntimeFeatureT1AvatarTest {
         val oldCard1 = "msg-old-1"
 
         // Agent subscribed to 2 sessions, only has card in 1 currently
-        val agent = AgentInstance(agentId, "Test", null, "p", "m", subscribedSessionIds = listOf(session1, session2))
+        val agent = testAgent(agentId, "Test", null, "p", "m", subscribedSessionIds = listOf(session1, session2))
 
         val statusInfo = AgentStatusInfo(
             lastSeenMessageId = "msg-last",
@@ -99,7 +99,7 @@ class AgentRuntimeFeatureT1AvatarTest {
         val oldZombieSession = "s-zombie"
 
         // Agent ONLY subscribed to s1. But state thinks card exists in s-zombie.
-        val agent = AgentInstance(agentId, "Test", null, "p", "m", subscribedSessionIds = listOf(activeSession))
+        val agent = testAgent(agentId, "Test", null, "p", "m", subscribedSessionIds = listOf(activeSession))
 
         val state = AgentRuntimeState(
             agents = mapOf(agentId to agent),
@@ -126,7 +126,7 @@ class AgentRuntimeFeatureT1AvatarTest {
     @Test
     fun `updateAgentAvatars should target private session if sovereign`() {
         // ARRANGE
-        val agent = AgentInstance("a1", "Sovereign", "kg1", "p", "m",
+        val agent = testAgent("a1", "Sovereign", "kg1", "p", "m",
             privateSessionId = "private-1",
             subscribedSessionIds = listOf("public-1")
         )
@@ -148,8 +148,8 @@ class AgentRuntimeFeatureT1AvatarTest {
 
     private fun renderAgentCard(agent: AgentInstance, status: AgentStatusInfo) {
         val state = AgentRuntimeState(
-            agents = mapOf(agent.id to agent),
-            agentStatuses = mapOf(agent.id to status)
+            agents = mapOf(agent.identity.uuid!! to agent),
+            agentStatuses = mapOf(agent.identity.uuid!! to status)
         )
         fakeStore.setState(AppState(featureStates = mapOf("agent" to state)))
 
@@ -162,7 +162,7 @@ class AgentRuntimeFeatureT1AvatarTest {
 
     @Test
     fun `primary button triggers INITIATE_TURN when IDLE`() {
-        val agent = AgentInstance("a1", "Test", null, "p", "m", subscribedSessionIds = listOf("s1"))
+        val agent = testAgent("a1", "Test", null, "p", "m", subscribedSessionIds = listOf("s1"))
         renderAgentCard(agent, AgentStatusInfo(status = AgentStatus.IDLE))
 
         // Click the Play arrow
@@ -176,7 +176,7 @@ class AgentRuntimeFeatureT1AvatarTest {
 
     @Test
     fun `primary button triggers CANCEL_TURN when PROCESSING`() {
-        val agent = AgentInstance("a1", "Test", null, "p", "m", subscribedSessionIds = listOf("s1"))
+        val agent = testAgent("a1", "Test", null, "p", "m", subscribedSessionIds = listOf("s1"))
         renderAgentCard(agent, AgentStatusInfo(status = AgentStatus.PROCESSING))
 
         // Click the Cancel icon

@@ -37,7 +37,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
         // [FIX] Use the TestScope's backgroundScope so that delays are controllable by advanceTimeBy
         val agentFeature = AgentRuntimeFeature(platform, this.backgroundScope)
         val session1 = "session-1"
-        val agent = AgentInstance(
+        val agent = testAgent(
             id = "agent-1",
             name = "Test Agent",
             modelProvider = "test",
@@ -48,7 +48,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
             // Initial state: Agent is IDLE
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identity.uuid!! to agent)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
@@ -80,7 +80,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
             // ASSERT
             val avatarPostActions = harness.processedActions.filter {
                 it.name == ActionRegistry.Names.SESSION_POST &&
-                        it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.id
+                        it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.identity.handle
             }
 
             // Expected: 1 (The first trigger is cancelled, only second runs)
@@ -94,7 +94,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
         val agentFeature = AgentRuntimeFeature(platform, this.backgroundScope)
         val session1 = "session-1"
         val session2 = "session-2"
-        val agent = AgentInstance(
+        val agent = testAgent(
             id = "agent-multi",
             name = "Multi Agent",
             modelProvider = "test",
@@ -104,7 +104,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
 
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identity.uuid!! to agent)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
@@ -123,7 +123,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
             // ASSERT
             // We expect avatar cards posted to BOTH session-1 and session-2
             val postedSessions = harness.processedActions
-                .filter { it.name == ActionRegistry.Names.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.id }
+                .filter { it.name == ActionRegistry.Names.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.identity.handle }
                 .mapNotNull { it.payload?.get("session")?.jsonPrimitive?.contentOrNull }
                 .toSet()
 
@@ -140,7 +140,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
         val privateSession = "p-cognition: Sovereign (sov-1)"
         val publicSession = "public-session"
 
-        val agent = AgentInstance(
+        val agent = testAgent(
             id = "sov-1",
             name = "Sovereign",
             knowledgeGraphId = "kg-1",
@@ -152,7 +152,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
 
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identity.uuid!! to agent)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
@@ -172,7 +172,7 @@ class AgentRuntimeFeatureT2AvatarLifecycleTest {
 
             // ASSERT
             val postedSessions = harness.processedActions
-                .filter { it.name == ActionRegistry.Names.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.id }
+                .filter { it.name == ActionRegistry.Names.SESSION_POST && it.payload?.get("senderId")?.jsonPrimitive?.contentOrNull == agent.identity.handle }
                 .mapNotNull { it.payload?.get("session")?.jsonPrimitive?.contentOrNull }
                 .toSet()
 

@@ -33,7 +33,7 @@ class AgentRuntimeFeatureT1ContextViewTest {
     @Before
     fun setUp() {
         fakePlatform = FakePlatformDependencies("test")
-        fakeStore = FakeStore(AppState(), fakePlatform, ActionRegistry.Names.allActionNames)
+        fakeStore = FakeStore(AppState(), fakePlatform)
     }
 
     private fun setPreviewState(
@@ -41,7 +41,7 @@ class AgentRuntimeFeatureT1ContextViewTest {
         rawJson: String = "{}"
     ) {
         val agentId = "a1"
-        val agent = AgentInstance(agentId, "Test Agent", null, "p", "m")
+        val agent = testAgent(agentId, "Test Agent", null, "p", "m")
 
         val messages = listOf(
             GatewayMessage("user", "Hello Agent", "u1", "User", 1000L)

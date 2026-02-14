@@ -90,8 +90,7 @@ data class StagedPreviewData(
  */
 @Serializable
 data class AgentInstance(
-    val id: String,
-    val name: String,
+    val identity: Identity,
     val knowledgeGraphId: String? = null,
     val modelProvider: String,
     val modelName: String,
@@ -144,8 +143,10 @@ data class AgentStatusInfo(
 
 @Serializable
 data class AgentRuntimeState(
+    /** Key = identity.uuid. Agents are always keyed by UUID internally. */
     val agents: Map<String, AgentInstance> = emptyMap(),
     @Transient
+    /** Key = identity.uuid. */
     val agentStatuses: Map<String, AgentStatusInfo> = emptyMap(),
     val sessionNames: Map<String, String> = emptyMap(),
     val availableModels: Map<String, List<String>> = emptyMap(),
@@ -159,12 +160,13 @@ data class AgentRuntimeState(
     @Transient
     val hkgReservedIds: Set<String> = emptySet(),
     @Transient
-    val editingAgentId: String? = null,
+    val editingAgentId: String? = null,   // UUID
     @Transient
     val editingResourceId: String? = null,
     @Transient
     val activeManagerTab: Int = 0, // 0 = Agents, 1 = Resources
     @Transient
+    /** Key = identity.uuid → Map<SessionId, MessageId> */
     val agentAvatarCardIds: Map<String, Map<String, String>> = emptyMap(),
     @Transient
     val agentsToPersist: Set<String>? = null,

@@ -1,7 +1,6 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
-import app.auf.core.PrivateDataEnvelope
 import app.auf.core.Store
 import app.auf.core.generated.ActionRegistry
 import app.auf.feature.core.AppLifecycle
@@ -44,10 +43,9 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
                     put("correlationId", correlationId)
                     put("rawContent", "Response from the Gateway.")
                 }
-                store.deliverPrivateData(
+                store.dispatch(
                     identity.handle,
-                    "agent",
-                    PrivateDataEnvelope(ActionRegistry.Names.Envelopes.GATEWAY_RESPONSE_RESPONSE, responsePayload)
+                    Action(ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE, responsePayload)
                 )
             }
         }
@@ -73,17 +71,17 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
         platform.createDirectories(personaId)
         platform.writeFileContent(path, hkgContent)
 
-        val privateSession = Session("private-session-1", "p-cognition: Philosopher", emptyList(), 1L)
-        val publicSession = Session("public-session-1", "Public Discussion", emptyList(), 2L)
+        val privateSession = testSession("private-session-1", "p-cognition: Philosopher")
+        val publicSession = testSession("public-session-1", "Public Discussion", timestamp = 2L)
 
-        val philosopherAgent = AgentInstance(
+        val philosopherAgent = testAgent(
             id = "philosopher-1",
             name = "Philosopher",
             knowledgeGraphId = personaId,
             modelProvider = "fake",
             modelName = "fake",
-            privateSessionId = privateSession.id,
-            subscribedSessionIds = listOf(publicSession.id)
+            privateSessionId = privateSession.identity.uuid!!,
+            subscribedSessionIds = listOf(publicSession.identity.uuid!!)
         )
 
         return TestEnvironment.create()
@@ -94,15 +92,14 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
             .withFeature(FakeGatewayFeature(platform, scope))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(philosopherAgent.id to philosopherAgent),
+                agents = mapOf(philosopherAgent.identity.uuid!! to philosopherAgent),
                 sessionNames = mapOf(
-                    privateSession.id to privateSession.name,
-                    publicSession.id to publicSession.name
+                    privateSession.identity.uuid!! to privateSession.identity.name,
+                    publicSession.identity.uuid!! to publicSession.identity.name
                 )
             ))
             .withInitialState("session", SessionState(
-                sessions = mapOf(privateSession.id to privateSession, publicSession.id to publicSession),
-                activeSessionId = publicSession.id
+                sessions = mapOf(privateSession.identity.uuid!! to privateSession, publicSession.identity.uuid!! to publicSession)
             ))
             .withInitialState("knowledgegraph", KnowledgeGraphState())
             .withInitialState("gateway", GatewayState())

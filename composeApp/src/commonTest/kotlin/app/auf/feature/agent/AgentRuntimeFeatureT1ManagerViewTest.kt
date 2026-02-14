@@ -50,7 +50,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     @Before
     fun setUp() {
         fakePlatform = FakePlatformDependencies("test")
-        fakeStore = FakeStore(AppState(), fakePlatform, ActionRegistry.Names.allActionNames)
+        fakeStore = FakeStore(AppState(), fakePlatform)
     }
 
     private fun setViewState(state: AgentRuntimeState) {
@@ -82,7 +82,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
     @Test
     fun `clicking 'Delete' icon shows dialog and confirming dispatches AGENT_DELETE`() {
-        val agent = AgentInstance("a1", "Test Agent", null, "p", "m")
+        val agent = testAgent("a1", "Test Agent", null, "p", "m")
         setViewState(AgentRuntimeState(agents = mapOf("a1" to agent)))
 
         composeTestRule.onNodeWithContentDescription("Delete Agent").performClick()
@@ -96,7 +96,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
     @Test
     fun `clicking 'Clone' icon dispatches AGENT_CLONE`() {
-        val agent = AgentInstance("a1", "Test Agent", null, "p", "m")
+        val agent = testAgent("a1", "Test Agent", null, "p", "m")
         setViewState(AgentRuntimeState(agents = mapOf("a1" to agent)))
 
         composeTestRule.onNodeWithContentDescription("Clone Agent").performClick()
@@ -110,7 +110,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
     @Test
     fun `clicking 'Edit' icon dispatches AGENT_SET_EDITING`() {
-        val agent = AgentInstance("a1", "Test Agent", null, "p", "m")
+        val agent = testAgent("a1", "Test Agent", null, "p", "m")
         setViewState(AgentRuntimeState(agents = mapOf("a1" to agent)))
 
         composeTestRule.onNodeWithContentDescription("Edit Agent").performClick()
@@ -122,7 +122,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
     @Test
     fun `canceling edit dispatches AGENT_SET_EDITING with null id`() {
-        val agent = AgentInstance("a1", "Test Agent", null, "p", "m")
+        val agent = testAgent("a1", "Test Agent", null, "p", "m")
         setViewState(AgentRuntimeState(
             agents = mapOf("a1" to agent),
             editingAgentId = "a1"
@@ -139,7 +139,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
     @Test
     fun `saving agent dispatches AGENT_UPDATE_CONFIG with full draft payload`() {
-        val agent = AgentInstance("a1", "Old Name", null, "p", "m", autoWaitTimeSeconds = 5, autoMaxWaitTimeSeconds = 30)
+        val agent = testAgent("a1", "Old Name", null, "p", "m", autoWaitTimeSeconds = 5, autoMaxWaitTimeSeconds = 30)
         setViewState(AgentRuntimeState(
             agents = mapOf("a1" to agent),
             editingAgentId = "a1"
@@ -172,7 +172,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
     @Test
     fun `toggling automatic mode is captured in draft and dispatched on save`() {
-        val agent = AgentInstance("a1", "Test Agent", null, "p", "m", automaticMode = false)
+        val agent = testAgent("a1", "Test Agent", null, "p", "m", automaticMode = false)
         setViewState(AgentRuntimeState(
             agents = mapOf("a1" to agent),
             editingAgentId = "a1"
@@ -197,7 +197,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
     @Test
     fun `cancel discards draft changes and dispatches no UPDATE_CONFIG`() {
-        val agent = AgentInstance("a1", "Original", null, "p", "m")
+        val agent = testAgent("a1", "Original", null, "p", "m")
         setViewState(AgentRuntimeState(
             agents = mapOf("a1" to agent),
             editingAgentId = "a1"
@@ -222,7 +222,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
     @Test
     fun `agent editor displays available knowledge graphs for sovereign agent`() {
-        val agent = AgentInstance("agent-1", "Test Agent", knowledgeGraphId = "p1", modelProvider = "p", modelName = "m", cognitiveStrategyId = "sovereign_v1")
+        val agent = testAgent("agent-1", "Test Agent", knowledgeGraphId = "p1", modelProvider = "p", modelName = "m", cognitiveStrategyId = "sovereign_v1")
         val state = AgentRuntimeState(
             agents = mapOf("agent-1" to agent),
             knowledgeGraphNames = mapOf("p1" to "Keel", "p2" to "Sage"),
@@ -237,7 +237,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
     @Test
     fun `selecting knowledge graph updates draft and save includes it in payload`() {
-        val agent = AgentInstance("agent-1", "Test Agent", knowledgeGraphId = "p1", modelProvider = "p", modelName = "m", cognitiveStrategyId = "sovereign_v1")
+        val agent = testAgent("agent-1", "Test Agent", knowledgeGraphId = "p1", modelProvider = "p", modelName = "m", cognitiveStrategyId = "sovereign_v1")
         val state = AgentRuntimeState(
             agents = mapOf("agent-1" to agent),
             knowledgeGraphNames = mapOf("p1" to "Keel", "p2" to "Sage"),
@@ -269,14 +269,13 @@ class AgentRuntimeFeatureT1ManagerViewTest {
             put("phase", "BOOTING")
             put("sentinel_check", "PENDING")
         }
-        val agent = AgentInstance(
+        val agent = testAgent(
             id = "a1",
             name = "Sovereign Agent",
             modelProvider = "p",
             modelName = "m",
-            cognitiveStrategyId = "sovereign_v1",
-            cognitiveState = stateJson
-        )
+            cognitiveStrategyId = "sovereign_v1"
+        ).copy(cognitiveState = stateJson)
         setViewState(AgentRuntimeState(agents = mapOf("a1" to agent)))
 
         composeTestRule.onNodeWithText("phase", substring = true).assertDoesNotExist()
@@ -355,7 +354,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
             content = "Be helpful.",
             isBuiltIn = false
         )
-        val agent = AgentInstance("a1", "Vanilla Bot", null, "p", "m", cognitiveStrategyId = "vanilla_v1")
+        val agent = testAgent("a1", "Vanilla Bot", null, "p", "m", cognitiveStrategyId = "vanilla_v1")
         setViewState(AgentRuntimeState(
             agents = mapOf("a1" to agent),
             resources = listOf(resource),
@@ -374,7 +373,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     fun `sovereign agent editor shows constitution and bootloader selectors`() {
         val constitution = AgentResource("c1", AgentResourceType.CONSTITUTION, "Const v1", "<xml/>", isBuiltIn = false)
         val bootloader = AgentResource("b1", AgentResourceType.BOOTLOADER, "Boot v1", "<boot/>", isBuiltIn = false)
-        val agent = AgentInstance("a1", "Sovereign Bot", null, "p", "m", cognitiveStrategyId = "sovereign_v1")
+        val agent = testAgent("a1", "Sovereign Bot", null, "p", "m", cognitiveStrategyId = "sovereign_v1")
         setViewState(AgentRuntimeState(
             agents = mapOf("a1" to agent),
             resources = listOf(constitution, bootloader),
@@ -392,7 +391,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     @Test
     fun `selecting a resource slot updates draft and save includes resources in payload`() {
         val resource = AgentResource("si-1", AgentResourceType.SYSTEM_INSTRUCTION, "My Instruction", "content", isBuiltIn = false)
-        val agent = AgentInstance("a1", "Vanilla Bot", null, "p", "m", cognitiveStrategyId = "vanilla_v1")
+        val agent = testAgent("a1", "Vanilla Bot", null, "p", "m", cognitiveStrategyId = "vanilla_v1")
         setViewState(AgentRuntimeState(
             agents = mapOf("a1" to agent),
             resources = listOf(resource),

@@ -135,14 +135,15 @@ class AgentRuntimeFeature(
             }
             ActionRegistry.Names.AGENT_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
-                AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE)
+                val uuid = agent.identity.uuid ?: return
+                AgentAvatarLogic.updateAgentAvatars(uuid, store, AgentStatus.IDLE)
                 broadcastAgentNames(agentState, store)
                 // Register agent identity
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.CORE_REGISTER_IDENTITY,
                     buildJsonObject {
-                        put("localHandle", agent.id)
-                        put("name", agent.name)
+                        put("uuid", uuid)
+                        put("name", agent.identity.name)
                     }
                 ))
             }
@@ -159,12 +160,12 @@ class AgentRuntimeFeature(
                 saveAgentConfig(agentToSave, store)
                 broadcastAgentNames(agentState, store)
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
-                // Register agent identity
+                // Register agent identity (no localHandle — CoreFeature generates via slugifyName)
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.CORE_REGISTER_IDENTITY,
                     buildJsonObject {
-                        put("localHandle", agentToSave.id)
-                        put("name", agentToSave.name)
+                        put("uuid", agentToSave.identity.uuid)
+                        put("name", agentToSave.identity.name)
                     }
                 ))
             }
@@ -175,7 +176,7 @@ class AgentRuntimeFeature(
                     return
                 }
                 val createPayload = buildJsonObject {
-                    put("name", "${agentToClone.name} (Copy)")
+                    put("name", "${agentToClone.identity.name} (Copy)")
                     agentToClone.knowledgeGraphId?.let { put("knowledgeGraphId", it) }
                     put("modelProvider", agentToClone.modelProvider)
                     put("modelName", agentToClone.modelName)
@@ -210,19 +211,18 @@ class AgentRuntimeFeature(
                 broadcastAgentNames(agentState, store)
                 AgentAvatarLogic.updateAgentAvatars(agentId, store)
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
-                // If agent name changed, re-register identity with updated name
-                if (oldAgent != null && oldAgent.name != newAgent.name) {
-                    store.deferredDispatch(identity.handle, Action(
-                        ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
-                        buildJsonObject { put("handle", "agent.$agentId") }
-                    ))
-                    store.deferredDispatch(identity.handle, Action(
-                        ActionRegistry.Names.CORE_REGISTER_IDENTITY,
-                        buildJsonObject {
-                            put("localHandle", agentId)
-                            put("name", newAgent.name)
-                        }
-                    ))
+                // If agent name changed, update identity atomically
+                if (oldAgent != null && oldAgent.identity.name != newAgent.identity.name) {
+                    val currentHandle = newAgent.identity.handle
+                    if (currentHandle.isNotBlank()) {
+                        store.deferredDispatch(identity.handle, Action(
+                            ActionRegistry.Names.CORE_UPDATE_IDENTITY,
+                            buildJsonObject {
+                                put("handle", currentHandle)
+                                put("newName", newAgent.identity.name)
+                            }
+                        ))
+                    }
                 }
             }
             ActionRegistry.Names.AGENT_NVRAM_LOADED -> {
@@ -258,10 +258,14 @@ class AgentRuntimeFeature(
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
                 broadcastAgentNames(agentState, store)
                 // Unregister agent identity (cascades any sub-identities)
-                store.deferredDispatch(identity.handle, Action(
-                    ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
-                    buildJsonObject { put("handle", "agent.$agentId") }
-                ))
+                val agentToDelete = (previousState as? AgentRuntimeState)?.agents?.get(agentId)
+                val deleteHandle = agentToDelete?.identity?.handle
+                if (!deleteHandle.isNullOrBlank()) {
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
+                        buildJsonObject { put("handle", deleteHandle) }
+                    ))
+                }
             }
 
             // --- Resource CRUD Side Effects ---
@@ -400,6 +404,22 @@ class AgentRuntimeFeature(
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
             }
 
+            // --- Identity Registration Response Side Effects ---
+            ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY -> {
+                // Reducer already updated the agent's identity — re-save config with full identity
+                val uuid = action.payload?.get("uuid")?.jsonPrimitive?.contentOrNull ?: return
+                val agent = agentState.agents[uuid] ?: return
+                saveAgentConfig(agent, store)
+                broadcastAgentNames(agentState, store)
+            }
+            ActionRegistry.Names.CORE_RESPONSE_UPDATE_IDENTITY -> {
+                // Reducer already updated the agent's identity — re-save config with new identity
+                val uuid = action.payload?.get("uuid")?.jsonPrimitive?.contentOrNull ?: return
+                val agent = agentState.agents[uuid] ?: return
+                saveAgentConfig(agent, store)
+                broadcastAgentNames(agentState, store)
+            }
+
             // ========================================================================
             // ACTION_CREATED: Handle validated commands from CommandBot
             // ========================================================================
@@ -484,14 +504,14 @@ class AgentRuntimeFeature(
         // Exclude cognitiveState - it's saved separately in nvram.json
         val agentWithoutNvram = agent.copy(cognitiveState = JsonNull)
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-            put("subpath", "${agent.id}/$agentConfigFILENAME")
+            put("subpath", "${agent.identity.uuid}/$agentConfigFILENAME")
             put("content", json.encodeToString(agentWithoutNvram))
         }))
     }
 
     private fun saveAgentNvram(agent: AgentInstance, store: Store) {
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-            put("subpath", "${agent.id}/$nvramFILENAME")
+            put("subpath", "${agent.identity.uuid}/$nvramFILENAME")
             put("content", json.encodeToString(agent.cognitiveState))
         }))
     }
@@ -506,7 +526,7 @@ class AgentRuntimeFeature(
     }
 
     private fun broadcastAgentNames(state: AgentRuntimeState, store: Store) {
-        val nameMap = state.agents.mapValues { it.value.name }
+        val nameMap = state.agents.values.associate { it.identity.handle to it.identity.name }
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED, buildJsonObject {
             put("names", Json.encodeToJsonElement(nameMap))
         }))
@@ -695,7 +715,7 @@ class AgentRuntimeFeature(
                 }
                 val targetSessionId = getAgentResponseSessionId(agent) ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle,
-                        "Agent '${agent.id}' has no session for workspace list response.")
+                        "Agent '${agent.identity.uuid}' has no session for workspace list response.")
                     return
                 }
 
@@ -758,7 +778,7 @@ class AgentRuntimeFeature(
                 }
                 val targetSessionId = getAgentResponseSessionId(agent) ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle,
-                        "Agent '${agent.id}' has no session for workspace read response.")
+                        "Agent '${agent.identity.uuid}' has no session for workspace read response.")
                     return
                 }
 

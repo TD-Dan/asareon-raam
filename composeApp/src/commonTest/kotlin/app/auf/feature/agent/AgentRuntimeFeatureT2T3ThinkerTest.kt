@@ -1,6 +1,6 @@
 package app.auf.feature.agent
 
-import app.auf.core.*
+import app.auf.core.Action
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.filesystem.FileSystemFeature
@@ -21,18 +21,18 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
     private val scope = CoroutineScope(Dispatchers.Unconfined)
     private val platform = FakePlatformDependencies("test")
     private val feature = AgentRuntimeFeature(platform, scope)
-    private val agent = AgentInstance("agent-1", "Test", "", "p", "m", subscribedSessionIds = listOf("session-1"))
+    private val agent = testAgent("agent-1", "Test", modelProvider = "p", modelName = "m", subscribedSessionIds = listOf("session-1"))
 
     @Test
     fun `INITIATE_TURN dispatches REQUEST_LEDGER_CONTENT`() = runTest {
         val harness = TestEnvironment.create()
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identity.uuid!! to agent)))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            val action = Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.id) })
+            val action = Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.identity.uuid) })
             harness.store.dispatch("ui", action)
 
             val request = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT }
@@ -51,12 +51,12 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
         val harness = TestEnvironment.create()
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identity.uuid!! to agent)))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            val response = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.SESSION_RESPONSE_LEDGER, buildJsonObject {
-                put("correlationId", agent.id)
+            val response = Action(ActionRegistry.Names.SESSION_RESPONSE_LEDGER, buildJsonObject {
+                put("correlationId", agent.identity.uuid)
                 put("messages", buildJsonArray {
                     add(buildJsonObject {
                         put("senderId", "user")
@@ -67,7 +67,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             })
 
             // ACT
-            feature.onPrivateData(response, harness.store)
+            harness.store.dispatch("session", response)
 
             // ASSERT 1: STAGE_TURN_CONTEXT dispatched
             val stageAction = harness.processedActions.find { it.name == ActionRegistry.Names.AGENT_STAGE_TURN_CONTEXT }
@@ -87,7 +87,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
         val harness = TestEnvironment.create()
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identity.uuid!! to agent)))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
@@ -105,7 +105,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
 
             // ASSERT: Agent status remains IDLE (null/default)
             val state = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            val status = state.agentStatuses[agent.id]?.status ?: AgentStatus.IDLE
+            val status = state.agentStatuses[agent.identity.uuid]?.status ?: AgentStatus.IDLE
             assertEquals(AgentStatus.IDLE, status)
         }
     }
@@ -114,22 +114,22 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
     @Test
     fun `startCognitiveCycle should fail gracefully and set ERROR status if agent has no sessions`() = runTest {
         // ARRANGE
-        val orphanAgent = AgentInstance("orphan-1", "Orphan", "", "p", "m", subscribedSessionIds = emptyList(), privateSessionId = null)
+        val orphanAgent = testAgent("orphan-1", "Orphan", modelProvider = "p", modelName = "m", subscribedSessionIds = emptyList(), privateSessionId = null)
         val harness = TestEnvironment.create()
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(orphanAgent.id to orphanAgent)))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(orphanAgent.identity.uuid!! to orphanAgent)))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
             // ACT
             harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
-                put("agentId", orphanAgent.id)
+                put("agentId", orphanAgent.identity.uuid)
             }))
 
             // ASSERT
             val state = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            val status = state.agentStatuses[orphanAgent.id]
+            val status = state.agentStatuses[orphanAgent.identity.uuid]
 
             // Should be ERROR status
             assertEquals(AgentStatus.ERROR, status?.status)
@@ -146,22 +146,20 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
         val harness = TestEnvironment.create()
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.id to agent)))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identity.uuid!! to agent)))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
             // ACT: Send malformed payload in envelope
-            val malformedResponse = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.SESSION_RESPONSE_LEDGER, buildJsonObject {
-                put("correlationId", agent.id)
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_RESPONSE_LEDGER, buildJsonObject {
+                put("correlationId", agent.identity.uuid)
                 // Missing "messages" array, or other schema violation
                 put("invalid_key", "invalid_value")
-            })
-
-            feature.onPrivateData(malformedResponse, harness.store)
+            }))
 
             // ASSERT
             val state = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            val status = state.agentStatuses[agent.id]
+            val status = state.agentStatuses[agent.identity.uuid]
 
             // Should transition to ERROR
             assertEquals(AgentStatus.ERROR, status?.status)
@@ -178,22 +176,21 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agent.id to agent),
-                agentStatuses = mapOf(agent.id to status)
+                agents = mapOf(agent.identity.uuid!! to agent),
+                agentStatuses = mapOf(agent.identity.uuid!! to status)
             ))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
             // ACT: Trigger a context arrival (e.g. workspace or HKG) without staged ledger
-            val hkgResponse = PrivateDataEnvelope(ActionRegistry.Names.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, buildJsonObject {
-                put("correlationId", agent.id)
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, buildJsonObject {
+                put("correlationId", agent.identity.uuid)
                 put("context", buildJsonObject { put("some", "data") })
-            })
-            feature.onPrivateData(hkgResponse, harness.store)
+            }))
 
             // ASSERT
             val state = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            val finalStatus = state.agentStatuses[agent.id]
+            val finalStatus = state.agentStatuses[agent.identity.uuid]
 
             // Should abort and set ERROR
             assertEquals(AgentStatus.ERROR, finalStatus?.status)

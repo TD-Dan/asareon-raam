@@ -27,7 +27,7 @@ object SovereignHKGResourceLogic {
         if (justBecameVanilla) {
             val truncatedSubscriptions = oldAgent.subscribedSessionIds.take(1)
             store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
-                put("agentId", newAgent.id)
+                put("agentId", newAgent.identity.uuid)
                 put("privateSessionId", JsonNull)
                 put("subscribedSessionIds", buildJsonArray { truncatedSubscriptions.forEach { add(it) } })
             }))
@@ -63,7 +63,7 @@ object SovereignHKGResourceLogic {
             }
 
             // [RULE 2] The Void (Bootstrap)
-            val expectedSessionName = "p-cognition: ${agent.name} (${agent.id})"
+            val expectedSessionName = "p-cognition: ${agent.identity.name} (${agent.identity.uuid})"
 
             // A. Check for Name Match (To link an existing but unlinked session)
             val existingSessionEntry = agentState.sessionNames.entries.find { it.value == expectedSessionName }
@@ -71,7 +71,7 @@ object SovereignHKGResourceLogic {
             if (existingSessionEntry != null) {
                 // FOUND: Link it.
                 store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
-                    put("agentId", agent.id)
+                    put("agentId", agent.identity.uuid)
                     put("privateSessionId", existingSessionEntry.key)
                 }))
             } else {
@@ -89,16 +89,17 @@ object SovereignHKGResourceLogic {
     fun requestContextIfSovereign(store: Store, agent: AgentInstance): Boolean {
         val kgId = agent.knowledgeGraphId
         val kgFeatureExists = store.features.any { it.identity.handle == "knowledgegraph" }
+        val agentUuid = agent.identity.uuid ?: return false
 
         if (kgId != null && kgFeatureExists) {
             store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
-                put("agentId", agent.id); put("step", "Requesting HKG")
+                put("agentId", agentUuid); put("step", "Requesting HKG")
             }))
 
             store.deferredDispatch("agent", Action(
                 name = ActionRegistry.Names.KNOWLEDGEGRAPH_REQUEST_CONTEXT,
                 payload = buildJsonObject {
-                    put("correlationId", agent.id)
+                    put("correlationId", agentUuid)
                     put("personaId", kgId)
                 }
             ))
@@ -106,7 +107,7 @@ object SovereignHKGResourceLogic {
         }
 
         if (kgId != null && !kgFeatureExists) {
-            store.platformDependencies.log(LogLevel.WARN, "agent", "Agent '${agent.id}' has HKG but KnowledgeGraphFeature is missing.")
+            store.platformDependencies.log(LogLevel.WARN, "agent", "Agent '$agentUuid' has HKG but KnowledgeGraphFeature is missing.")
         }
         return false
     }

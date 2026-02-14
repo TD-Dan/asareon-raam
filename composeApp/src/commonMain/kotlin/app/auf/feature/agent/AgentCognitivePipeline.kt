@@ -115,9 +115,14 @@ object AgentCognitivePipeline {
                 val timestamp = entryJson["timestamp"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
 
                 val user = state.userIdentities.find { it.handle == senderId }
+                // Dual check: senderId may be UUID (old ledger entries) or handle (new entries)
+                val isSelf = (senderId == agent.identity.uuid || senderId == agent.identity.handle)
                 val (senderName, role) = when {
-                    senderId == agent.id -> agent.name to "model"
-                    state.agents.containsKey(senderId) -> state.agents[senderId]!!.name to "user"
+                    isSelf -> agent.identity.name to "model"
+                    state.agents.values.any { it.identity.uuid == senderId || it.identity.handle == senderId } -> {
+                        val otherAgent = state.agents.values.first { it.identity.uuid == senderId || it.identity.handle == senderId }
+                        otherAgent.identity.name to "user"
+                    }
                     user != null -> user.name to "user"
                     else -> "Unknown" to "user"
                 }
@@ -133,7 +138,7 @@ object AgentCognitivePipeline {
         }
 
         store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_STAGE_TURN_CONTEXT, buildJsonObject {
-            put("agentId", agent.id)
+            put("agentId", agent.identity.uuid)
             put("messages", json.encodeToJsonElement(enrichedMessages))
         }))
     }
@@ -297,14 +302,15 @@ object AgentCognitivePipeline {
         agentState: AgentRuntimeState,
         store: Store
     ) {
-        val statusInfo = agentState.agentStatuses[agent.id] ?: AgentStatusInfo()
+        val agentUuid = agent.identity.uuid ?: return
+        val statusInfo = agentState.agentStatuses[agentUuid] ?: AgentStatusInfo()
         val platformDependencies = store.platformDependencies
 
         val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
         val cognitiveState = if (agent.cognitiveState !is JsonNull) agent.cognitiveState else strategy.getInitialState()
 
         platformDependencies.log(LogLevel.DEBUG, LOG_TAG,
-            "Assembling prompt for '${agent.id}' using strategy '${strategy.id}' (State: ${abbreviate(cognitiveState.toString(),30)}).")
+            "Assembling prompt for '${agentUuid}' using strategy '${strategy.id}' (State: ${abbreviate(cognitiveState.toString(),30)}).")
 
         // === RESOURCE RESOLUTION ===
         val resolvedResources = resolveAgentResources(agent, agentState.resources, strategy, platformDependencies, store)
@@ -341,7 +347,8 @@ object AgentCognitivePipeline {
             You are running on platform: 'AUF App ${Version.APP_VERSION} (Windows), a multi-agent, multi-session agent/chat platform.'
             Your Host LLM (API connection): '${agent.modelProvider}' / '${agent.modelName}'
             You are currently participating in a multi-party chat session: '${sessionName}', id: '${sessionId}'
-            Your chat id is: '${agent.id}'
+            Your agent handle is: '${agent.identity.handle}'
+            Your agent id (internal): '${agentUuid}'
             Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())}
         """.trimIndent()
         contextMap["SESSION_METADATA"]+= tokenUsageContext
@@ -380,9 +387,10 @@ object AgentCognitivePipeline {
                 appendLine("\n--- MULTI-AGENT ENVIRONMENT ---")
                 appendLine("This is a multi-agent conversation with the following participants:")
                 participants.forEach { (id, name) ->
+                    val isSelf = (id == agentUuid || id == agent.identity.handle)
                     val type = when {
-                        id == agent.id -> "YOU (this agent)"
-                        agentState.agents.containsKey(id) -> "AI Agent"
+                        isSelf -> "YOU (this agent)"
+                        agentState.agents.values.any { it.identity.uuid == id || it.identity.handle == id } -> "AI Agent"
                         agentState.userIdentities.any { it.handle == id } -> "Human User"
                         else -> "User/System"
                     }
@@ -398,7 +406,7 @@ object AgentCognitivePipeline {
         }
 
         val context = AgentTurnContext(
-            agentName = agent.name,
+            agentName = agent.identity.name,
             resolvedResources = resolvedResources,
             gatheredContexts = contextMap
         )
@@ -409,13 +417,13 @@ object AgentCognitivePipeline {
         val step = if (statusInfo.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"
 
         store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
-            put("agentId", agent.id); put("step", step)
+            put("agentId", agentUuid); put("step", step)
         }))
 
         store.deferredDispatch("agent", Action(requestActionName, buildJsonObject {
             put("providerId", agent.modelProvider)
             put("modelName", agent.modelName)
-            put("correlationId", agent.id)
+            put("correlationId", agentUuid)
             put("contents", json.encodeToJsonElement(formattedMessages))  // CHANGED: Use formatted messages
             put("systemPrompt", systemPrompt)
         }))
@@ -449,7 +457,7 @@ object AgentCognitivePipeline {
             val resource = loadedResources.find { it.id == resourceId }
             if (resource == null) {
                 platformDeps.log(LogLevel.ERROR, LOG_TAG,
-                    "Agent '${agent.id}' references unknown resource '$resourceId' for slot '${slot.slotId}'.")
+                    "Agent '${agent.identity.uuid}' references unknown resource '$resourceId' for slot '${slot.slotId}'.")
                 missingRequired.add("${slot.displayName} (broken reference: $resourceId)")
                 continue
             }
@@ -459,10 +467,10 @@ object AgentCognitivePipeline {
 
         if (missingRequired.isNotEmpty()) {
             val errorMsg = "Missing required resources: ${missingRequired.joinToString(", ")}"
-            platformDeps.log(LogLevel.ERROR, LOG_TAG, "Agent '${agent.id}': $errorMsg")
-            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.ERROR, errorMsg)
+            platformDeps.log(LogLevel.ERROR, LOG_TAG, "Agent '${agent.identity.uuid}': $errorMsg")
+            AgentAvatarLogic.updateAgentAvatars(agent.identity.uuid!!, store, AgentStatus.ERROR, errorMsg)
             store.dispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject {
-                put("message", "Agent '${agent.name}': $errorMsg")
+                put("message", "Agent '${agent.identity.name}': $errorMsg")
             }))
             return null
         }
@@ -492,7 +500,7 @@ object AgentCognitivePipeline {
         }
 
         store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PREVIEW_DATA, buildJsonObject {
-            put("agentId", agent.id)
+            put("agentId", agent.identity.uuid)
             put("agnosticRequest", json.encodeToJsonElement(decoded.agnosticRequest))
             put("rawRequestJson", decoded.rawRequestJson)
             decoded.estimatedInputTokens?.let { put("estimatedInputTokens", it) }
@@ -526,14 +534,15 @@ object AgentCognitivePipeline {
             store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "handleGatewayResponse: Agent '${decoded.correlationId}' not found. May have been deleted during generation.")
             return
         }
+        val agentUuid = agent.identity.uuid ?: return
         val targetSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
-            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleGatewayResponse: Agent '${agent.id}' has no target session to post response to.")
-            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.ERROR, "No target session for response.")
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleGatewayResponse: Agent '$agentUuid' has no target session to post response to.")
+            AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.ERROR, "No target session for response.")
             return
         }
 
         if (decoded.errorMessage != null) {
-            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
+            AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
             return
         }
 
@@ -555,8 +564,8 @@ object AgentCognitivePipeline {
 
         // 2. Handle Sentinel Actions
         if (result.action == SentinelAction.HALT_AND_SILENCE) {
-            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "Agent '${agent.id}' halted by Cognitive Strategy (Sentinel Action).")
-            AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE, "Halted by Internal Sentinel.")
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "Agent '$agentUuid' halted by Cognitive Strategy (Sentinel Action).")
+            AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.IDLE, "Halted by Internal Sentinel.")
             return
         }
 
@@ -568,20 +577,20 @@ object AgentCognitivePipeline {
             store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", targetSessionId)
                 put("senderId", "system")
-                put("message", """SYSTEM SENTINEL (llm-output-sanitizer): Warning for [${agent.name}]: Please do not include the standard system "name (id) @timestamp:" part in your output. The host system adds this automatically.""")
+                put("message", """SYSTEM SENTINEL (llm-output-sanitizer): Warning for [${agent.identity.name}]: Please do not include the standard system "name (id) @timestamp:" part in your output. The host system adds this automatically.""")
             }))
         }
 
-        // 4. Proceed to Post
+        // 4. Proceed to Post — senderId is now the agent's handle for bus addressing
         store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-            put("session", targetSessionId); put("senderId", agent.id); put("message", contentToPost)
+            put("session", targetSessionId); put("senderId", agent.identity.handle); put("message", contentToPost)
         }))
-        AgentAvatarLogic.updateAgentAvatars(agent.id, store, AgentStatus.IDLE)
+        AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.IDLE)
 
         // Forward token usage to agent state for display on the avatar card
         if (decoded.inputTokens != null || decoded.outputTokens != null) {
             store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_STATUS, buildJsonObject {
-                put("agentId", agent.id)
+                put("agentId", agentUuid)
                 put("status", AgentStatus.IDLE.name)
                 decoded.inputTokens?.let { put("lastInputTokens", it) }
                 decoded.outputTokens?.let { put("lastOutputTokens", it) }
@@ -590,7 +599,7 @@ object AgentCognitivePipeline {
             // LOGGING: Warn when gateway response contains no token usage
             store.platformDependencies.log(
                 LogLevel.WARN, LOG_TAG,
-                "Gateway response for agent '${agent.id}' contained no token usage data. " +
+                "Gateway response for agent '$agentUuid' contained no token usage data. " +
                         "Provider '${agent.modelProvider}' may not support usage reporting or there is a deserialization issue."
             )
         }

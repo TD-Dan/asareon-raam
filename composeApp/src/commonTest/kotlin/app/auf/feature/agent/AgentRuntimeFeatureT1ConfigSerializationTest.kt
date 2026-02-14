@@ -20,12 +20,13 @@ class AgentRuntimeFeatureT1ConfigSerializationTest {
             put("boot_count", 1)
         }
 
-        val original = AgentInstance(
+        val original = testAgent(
             id = "agent-123",
             name = "Test Agent",
             modelProvider = "openai",
             modelName = "gpt-4",
-            cognitiveStrategyId = "sovereign_v1",
+            cognitiveStrategyId = "sovereign_v1"
+        ).copy(
             cognitiveState = cognitiveState,
             resources = mapOf("constitution" to "const_v1")
         )
@@ -47,7 +48,7 @@ class AgentRuntimeFeatureT1ConfigSerializationTest {
     @Test
     fun `should handle null cognitive state (Vanilla default)`() {
         // Arrange
-        val original = AgentInstance(
+        val original = testAgent(
             id = "agent-vanilla",
             name = "Vanilla Agent",
             modelProvider = "openai",

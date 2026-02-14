@@ -29,7 +29,8 @@ import kotlin.time.Duration.Companion.milliseconds
 object AgentAvatarLogic {
 
     fun touchAgentAvatarCard(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
-        val sessionMap = agentState.agentAvatarCardIds[agent.id] ?: return
+        val agentUuid = agent.identity.uuid ?: return
+        val sessionMap = agentState.agentAvatarCardIds[agentUuid] ?: return
         sessionMap.forEach { (sessionId, messageId) ->
             store.deferredDispatch("agent", Action(
                 name = ActionRegistry.Names.SESSION_UPDATE_MESSAGE,
@@ -81,7 +82,7 @@ object AgentAvatarLogic {
         // DIAGNOSTIC LOG
         platformDependencies.log(
             LogLevel.INFO, "agent-avatar",
-            "Updating avatars for ${agent.name}. Targets: $targetSessions. CurrentCards: $currentCards. AfterMsg: $afterMessageId")
+            "Updating avatars for ${agent.identity.name}. Targets: $targetSessions. CurrentCards: $currentCards. AfterMsg: $afterMessageId")
 
         // 5. Cleanup Zombies (Sessions we are no longer subscribed to)
         val zombies = currentCards.keys - targetSessions.toSet()
@@ -128,7 +129,7 @@ object AgentAvatarLogic {
 
             store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", sessionId)
-                put("senderId", agentId)
+                put("senderId", agent.identity.handle)
                 put("messageId", newMessageId)
                 put("metadata", metadata)
                 put("doNotClear", true)
@@ -158,7 +159,7 @@ fun AgentAvatarCard(
     val appState by store.state.collectAsState()
     val agentState = appState.featureStates["agent"] as? AgentRuntimeState
     // REF: Slice 3 - Resolve status
-    val statusInfo = agentState?.agentStatuses?.get(agent.id) ?: AgentStatusInfo()
+    val statusInfo = agentState?.agentStatuses?.get(agent.identity.uuid) ?: AgentStatusInfo()
 
     OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -214,7 +215,7 @@ fun AgentControlCard(
         )
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(agent.name, style = MaterialTheme.typography.titleMedium)
+            Text(agent.identity.name, style = MaterialTheme.typography.titleMedium)
             Text("Status: $statusText", style = MaterialTheme.typography.bodyMedium)
             if (statusInfo.status == AgentStatus.ERROR && statusInfo.errorMessage != null) {
                 Text(
@@ -257,7 +258,7 @@ fun AgentControlCard(
                         text = { Text("Edit Agent") },
                         onClick = {
                             store.dispatch("ui.controls", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.manager") }))
-                            store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.id) }))
+                            store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.identity.uuid) }))
                             menuExpanded = false
                         },
                         leadingIcon = { Icon(Icons.Default.Edit, null) }
@@ -266,7 +267,7 @@ fun AgentControlCard(
                         text = { Text("Preview Turn") },
                         onClick = {
                             store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
-                                put("agentId", agent.id)
+                                put("agentId", agent.identity.uuid)
                                 put("preview", true)
                             }))
                             menuExpanded = false
@@ -285,7 +286,7 @@ fun AgentControlCard(
             ) {
                 IconButton(
                     onClick = {
-                        store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_TOGGLE_ACTIVE, buildJsonObject { put("agentId", agent.id) }))
+                        store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_TOGGLE_ACTIVE, buildJsonObject { put("agentId", agent.identity.uuid) }))
                     }
                 ) {
                     Icon(
@@ -304,7 +305,7 @@ fun AgentControlCard(
             ) {
                 IconButton(
                     onClick = {
-                        store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject { put("agentId", agent.id) }))
+                        store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject { put("agentId", agent.identity.uuid) }))
                     }
                 ) {
                     Icon(
@@ -317,7 +318,7 @@ fun AgentControlCard(
 
             if (statusInfo.status == AgentStatus.PROCESSING) {
                 Button(
-                    onClick = { store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agent.id) })) },
+                    onClick = { store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agent.identity.uuid) })) },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                 ) {
                     Icon(Icons.Default.Cancel, contentDescription = "Cancel Turn")
@@ -325,7 +326,7 @@ fun AgentControlCard(
             } else {
                 Button(
                     onClick = { store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
-                        put("agentId", agent.id)
+                        put("agentId", agent.identity.uuid)
                         put("preview", false) // Direct execution
                     })) },
                     enabled = canInitiateTurn

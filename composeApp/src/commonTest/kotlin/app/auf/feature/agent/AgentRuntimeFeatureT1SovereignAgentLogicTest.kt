@@ -19,14 +19,14 @@ import kotlin.test.assertTrue
 class AgentRuntimeFeatureT1SovereignAgentLogicTest {
 
     private val platform = FakePlatformDependencies("test")
-    private val fakeStore = FakeStore(AppState(), platform, ActionRegistry.Names.allActionNames)
+    private val fakeStore = FakeStore(AppState(), platform)
 
     // ... [Other tests remain] ...
 
     @Test
     fun `ensureSovereignSessions should dispatch CREATE if session missing and ID is null`() {
         fakeStore.dispatchedActions.clear()
-        val agent = AgentInstance("a1", "Sovereign", "kg1", "p", "m", privateSessionId = null)
+        val agent = testAgent("a1", "Sovereign", "kg1", "p", "m", privateSessionId = null)
         val state = AgentRuntimeState(agents = mapOf("a1" to agent))
 
         SovereignHKGResourceLogic.ensureSovereignSessions(fakeStore, state)
@@ -39,7 +39,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
     @Test
     fun `ensureSovereignSessions should dispatch UPDATE if session exists but unlinked`() {
         fakeStore.dispatchedActions.clear()
-        val agent = AgentInstance("a1", "Sovereign", "kg1", "p", "m", privateSessionId = null)
+        val agent = testAgent("a1", "Sovereign", "kg1", "p", "m", privateSessionId = null)
         val state = AgentRuntimeState(
             agents = mapOf("a1" to agent),
             sessionNames = mapOf("s-new" to "p-cognition: Sovereign (a1)")
@@ -57,7 +57,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
     fun `ensureSovereignSessions should DO NOTHING if privateSessionId is set but session is missing`() {
         // [CRITICAL TEST]: This verifies the "Broken Link" tolerance.
         fakeStore.dispatchedActions.clear()
-        val agent = AgentInstance("a1", "Sovereign", "kg1", "p", "m", privateSessionId = "broken-id-123")
+        val agent = testAgent("a1", "Sovereign", "kg1", "p", "m", privateSessionId = "broken-id-123")
         val state = AgentRuntimeState(
             agents = mapOf("a1" to agent),
             sessionNames = emptyMap() // Session is truly missing from the list
@@ -73,7 +73,7 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
     @Test
     fun `ensureSovereignSessions should DO NOTHING if privateSessionId is set and valid`() {
         fakeStore.dispatchedActions.clear()
-        val agent = AgentInstance("a1", "Sovereign", "kg1", "p", "m", privateSessionId = "s1")
+        val agent = testAgent("a1", "Sovereign", "kg1", "p", "m", privateSessionId = "s1")
         val state = AgentRuntimeState(
             agents = mapOf("a1" to agent),
             sessionNames = mapOf("s1" to "p-cognition: Sovereign (a1)")
