@@ -30,7 +30,7 @@ class SessionFeatureT1LedgerEntryCardTest {
 
     private lateinit var fakeStore: FakeStore
     private val platform = FakePlatformDependencies("test")
-    private val testIdentity = Identity(uuid = "test-uuid-1", localHandle = "sid-1", handle = "session.sid-1", name = "Test", parentHandle = "session")
+    private val testIdentity = Identity(uuid = "00000000-0000-4000-a000-000000000001", localHandle = "sid-1", handle = "session.sid-1", name = "Test", parentHandle = "session")
     private val session = Session(identity = testIdentity, ledger = emptyList(), createdAt = 1L)
     private val userEntry = LedgerEntry("msg-1", 1L, "user", "Hello World")
 

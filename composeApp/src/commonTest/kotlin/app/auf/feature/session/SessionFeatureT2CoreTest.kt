@@ -44,7 +44,7 @@ class SessionFeatureT2CoreTest {
         name: String,
         ledger: List<LedgerEntry> = emptyList(),
         createdAt: Long = 1L,
-        uuid: String = "test-uuid-$localHandle",
+        uuid: String = "00000000-0000-4000-a000-${localHandle.hashCode().toUInt().toString(16).padStart(12, '0')}",
         isHidden: Boolean = false,
         isAgentPrivate: Boolean = false,
         orderIndex: Int = 0,
@@ -121,7 +121,7 @@ class SessionFeatureT2CoreTest {
             // Phase 4: Delete now removes the UUID folder, not a flat .json file
             val deleteAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE }
             assertNotNull(deleteAction)
-            assertEquals("test-uuid-sid-1", deleteAction.payload?.get("subpath")?.jsonPrimitive?.content,
+            assertEquals(session.identity.uuid, deleteAction.payload?.get("subpath")?.jsonPrimitive?.content,
                 "Should delete the UUID-named folder")
 
             val publishAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED }
@@ -394,7 +394,7 @@ class SessionFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             // Phase 4: Session JSON now uses identity object instead of id/name fields
             val testIdentity = Identity(
-                uuid = "loaded-uuid-1",
+                uuid = "00000000-0000-4000-a000-00000000000a",
                 localHandle = "loaded-1",
                 handle = "session.loaded-1",
                 name = "Loaded Session",
@@ -408,7 +408,7 @@ class SessionFeatureT2CoreTest {
             val sessionJsonContent = json.encodeToString(testSession)
 
             val payload = buildJsonObject {
-                put("subpath", "loaded-uuid-1/loaded-1.json")
+                put("subpath", "00000000-0000-4000-a000-00000000000a/loaded-1.json")
                 put("content", sessionJsonContent)
             }
 
@@ -492,8 +492,9 @@ class SessionFeatureT2CoreTest {
             val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
             assertNotNull(writeAction)
             val subpath = writeAction.payload?.get("subpath")?.jsonPrimitive?.content
-            assertEquals("test-uuid-my-chat/my-chat.json", subpath,
-                "File path should be uuid/localHandle.json")
+            assertNotNull(subpath)
+            assertTrue(subpath.endsWith("/my-chat.json"), "File path should end with /localHandle.json, got: $subpath")
+            assertTrue(subpath.startsWith(session.identity.uuid!!), "File path should start with UUID, got: $subpath")
         }
     }
 

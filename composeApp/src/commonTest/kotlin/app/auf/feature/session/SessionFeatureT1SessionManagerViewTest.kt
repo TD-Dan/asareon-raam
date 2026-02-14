@@ -27,7 +27,7 @@ class SessionFeatureT1SessionManagerViewTest {
 
     private lateinit var fakePlatform: FakePlatformDependencies
     private lateinit var fakeStore: FakeStore
-    private val session1Identity = Identity(uuid = "test-uuid-1", localHandle = "sid-1", handle = "session.sid-1", name = "My Session", parentHandle = "session")
+    private val session1Identity = Identity(uuid = "00000000-0000-4000-a000-000000000001", localHandle = "sid-1", handle = "session.sid-1", name = "My Session", parentHandle = "session")
     private val session1 = Session(identity = session1Identity, ledger = emptyList(), createdAt = 1L)
 
     @Before

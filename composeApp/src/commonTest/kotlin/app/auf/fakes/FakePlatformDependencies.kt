@@ -148,7 +148,10 @@ open class FakePlatformDependencies(
     override fun currentTimeMillis(): Long = currentTime
     override fun generateUUID(): String {
         uuidCounter++
-        return "fake-uuid-$uuidCounter"
+        // Produce a valid UUID v4 format: 8-4-4-4-12 hex digits.
+        // The counter is embedded in the last segment for easy identification in tests.
+        val hex = uuidCounter.toString(16).padStart(12, '0')
+        return "00000000-0000-4000-a000-$hex"
     }
     override fun formatIsoTimestamp(timestamp: Long): String = "ISO_TIMESTAMP_$timestamp"
     override fun parseIsoTimestamp(timestamp: String): Long? {
