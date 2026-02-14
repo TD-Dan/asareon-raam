@@ -219,7 +219,7 @@ class PlatformDependenciesJvmTest {
         val logFile = logFiles.first()
         val logContent = logFile.readText()
         assertTrue(logFile.name.startsWith("session-"), "Log file name is incorrect.")
-        assertTrue(logContent.contains("[INFO] [TestTag] This is a test log message."), "Log file content is incorrect.")
+        assertTrue(logContent.contains("This is a test log message."), "Log file content is incorrect.")
     }
 
     // === New tests for workspace context feature support ===

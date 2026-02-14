@@ -61,7 +61,10 @@ class KnowledgeGraphFeature(
 
 
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
-        val originator = action.originator ?: return
+        val originator = action.originator ?: run {
+            platformDependencies.log(LogLevel.WARN, identity.handle, "${action.name}: Received action with null originator. Ignoring.")
+            return
+        }
         val kgState = newState as? KnowledgeGraphState ?: return
         val prevKgState = previousState as? KnowledgeGraphState
         val payload = action.payload
@@ -69,7 +72,10 @@ class KnowledgeGraphFeature(
         when (action.name) {
             // Phase 3: Targeted responses from FilesystemFeature — migrated from onPrivateData.
             ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST -> {
-                val listing = action.payload?.get("listing")?.let { json.decodeFromJsonElement<List<FileEntry>>(it) } ?: return
+                val listing = action.payload?.get("listing")?.let { json.decodeFromJsonElement<List<FileEntry>>(it) } ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "RESPONSE_LIST: Missing or malformed 'listing' field. Ignoring.")
+                    return
+                }
                 val isRecursiveResponse = action.payload["subpath"]?.jsonPrimitive?.content?.isNotEmpty() == true
 
                 if (isRecursiveResponse) {
@@ -92,7 +98,11 @@ class KnowledgeGraphFeature(
             }
             ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
                 try {
-                    val fileData = json.decodeFromJsonElement<FilesContentPayload>(action.payload ?: return)
+                    val rawPayload = action.payload ?: run {
+                        platformDependencies.log(LogLevel.WARN, identity.handle, "RESPONSE_FILES_CONTENT: Received action with null payload. Ignoring.")
+                        return
+                    }
+                    val fileData = json.decodeFromJsonElement<FilesContentPayload>(rawPayload)
 
                     if (kgState.isExecutingImport == true) {
                         store.dispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_IMPORT_EXECUTION_STATUS, buildJsonObject { put("isExecuting", false) }))
@@ -128,7 +138,10 @@ class KnowledgeGraphFeature(
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG, ActionRegistry.Names.KNOWLEDGEGRAPH_RELEASE_HKG -> {
                 if (action.name == ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG) {
-                    val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: return
+                    val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: run {
+                        platformDependencies.log(LogLevel.WARN, identity.handle, "RESERVE_HKG: Missing required 'personaId' field. Ignoring.")
+                        return
+                    }
                     if (prevKgState?.reservations?.containsKey(personaId) == true) {
                         val owner = prevKgState.reservations[personaId]
                         val errorMsg = "'$originator' failed to reserve HKG '$personaId': already reserved by '$owner'."
@@ -149,15 +162,24 @@ class KnowledgeGraphFeature(
                 }
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA -> {
-                val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: return
+                val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "LOAD_PERSONA: Missing required 'personaId' field. Ignoring.")
+                    return
+                }
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
                     put("subpath", personaId)
                     put("recursive", true)
                 }))
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_REQUEST_CONTEXT -> {
-                val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: return
-                val correlationId = payload["correlationId"]?.jsonPrimitive?.content ?: return
+                val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "REQUEST_CONTEXT: Missing required 'personaId' field. Ignoring.")
+                    return
+                }
+                val correlationId = payload["correlationId"]?.jsonPrimitive?.content ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "REQUEST_CONTEXT: Missing required 'correlationId' field. Ignoring.")
+                    return
+                }
                 val contextMap = buildContextForPersona(personaId, kgState)
                 val responsePayload = buildJsonObject {
                     put("correlationId", correlationId)
@@ -229,7 +251,10 @@ class KnowledgeGraphFeature(
                 }))
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_CREATE_PERSONA -> {
-                val name = payload?.get("name")?.jsonPrimitive?.content ?: return
+                val name = payload?.get("name")?.jsonPrimitive?.content ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_PERSONA: Missing required 'name' field. Ignoring.")
+                    return
+                }
                 val timestamp = platformDependencies.currentTimeMillis()
                 val isoTimestamp = platformDependencies.formatIsoTimestamp(timestamp)
                 val fileSafeTimestamp = isoTimestamp.replace(":", "").replace("-", "")
@@ -252,10 +277,16 @@ class KnowledgeGraphFeature(
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST))
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT -> {
-                val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: return
+                val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "UPDATE_HOLON_CONTENT: Missing required 'holonId' field. Ignoring.")
+                    return
+                }
                 if (isModificationLocked(holonId = holonId, originator = originator, kgState = kgState, store = store)) return
 
-                val holonToUpdate = kgState.holons[holonId] ?: return
+                val holonToUpdate = kgState.holons[holonId] ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "UPDATE_HOLON_CONTENT: Holon '$holonId' not found in state. Ignoring.")
+                    return
+                }
                 val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())
                 val updatedHeader = holonToUpdate.header.copy(modifiedAt = newTimestamp)
                 val intermediateHolon = holonToUpdate.copy(
@@ -273,11 +304,20 @@ class KnowledgeGraphFeature(
                 }
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON -> {
-                val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: return
+                val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "RENAME_HOLON: Missing required 'holonId' field. Ignoring.")
+                    return
+                }
                 if (isModificationLocked(holonId = holonId, originator = originator, kgState = kgState, store = store)) return
 
-                val newName = payload["newName"]?.jsonPrimitive?.content ?: return
-                val holonToUpdate = kgState.holons[holonId] ?: return
+                val newName = payload["newName"]?.jsonPrimitive?.content ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "RENAME_HOLON: Missing required 'newName' field. Ignoring.")
+                    return
+                }
+                val holonToUpdate = kgState.holons[holonId] ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "RENAME_HOLON: Holon '$holonId' not found in state. Ignoring.")
+                    return
+                }
                 val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())
                 val updatedHeader = holonToUpdate.header.copy(name = newName, modifiedAt = newTimestamp)
                 val intermediateHolon = holonToUpdate.copy(header = updatedHeader)
@@ -291,7 +331,10 @@ class KnowledgeGraphFeature(
                 }
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_PERSONA -> {
-                val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: return
+                val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "DELETE_PERSONA: Missing required 'personaId' field. Ignoring.")
+                    return
+                }
                 if (isModificationLocked(personaId = personaId, originator = originator, kgState = kgState, store = store)) return
 
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
@@ -302,17 +345,26 @@ class KnowledgeGraphFeature(
                 }))
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON -> {
-                val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: return
+                val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "DELETE_HOLON: Missing required 'holonId' field. Ignoring.")
+                    return
+                }
                 if (isModificationLocked(holonId = holonId, originator = originator, kgState = kgState, store = store)) return
 
-                val holonToDelete = kgState.holons[holonId] ?: return
+                val holonToDelete = kgState.holons[holonId] ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "DELETE_HOLON: Holon '$holonId' not found in state. Ignoring.")
+                    return
+                }
                 val parentId = holonToDelete.header.parentId
                 val parentHolon = parentId?.let { kgState.holons[it] }
 
-                platformDependencies.getParentDirectory(holonToDelete.header.filePath)?.let { holonDir ->
+                val holonDir = platformDependencies.getParentDirectory(holonToDelete.header.filePath)
+                if (holonDir != null) {
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
                         put("subpath", holonDir)
                     }))
+                } else {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "DELETE_HOLON: Could not resolve parent directory for holon '$holonId' at path '${holonToDelete.header.filePath}'. Directory deletion skipped.")
                 }
 
                 if (parentHolon != null) {

@@ -160,7 +160,7 @@ class SessionFeature(
             ActionRegistry.Names.SYSTEM_STARTING -> {
                 startupLoadingActive = true
                 pendingStartupOps = 1 // the root listing dispatched below
-                store.dispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST))
                 // Register hide-hidden settings with the Settings feature for persistence.
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", SessionState.SETTING_HIDE_HIDDEN_VIEWER)

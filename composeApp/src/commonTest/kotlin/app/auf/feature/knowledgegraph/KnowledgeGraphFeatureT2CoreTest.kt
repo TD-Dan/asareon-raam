@@ -1,9 +1,10 @@
 package app.auf.feature.knowledgegraph
 
 import app.auf.core.Action
-import app.auf.core.PrivateDataEnvelope
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.feature.core.AppLifecycle
+import app.auf.feature.core.CoreState
 import app.auf.test.TestEnvironment
 import app.auf.util.FileEntry
 import app.auf.util.LogLevel
@@ -22,10 +23,16 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
  * Tier 2 Core Test for KnowledgeGraphFeature.
+ *
+ * [MIGRATION] Tests updated for Action Bus v2.0:
+ *   - Replaced all `deliverPrivateData` calls with targeted `deferredDispatch`.
+ *   - Replaced all `Envelopes.*` references with flat `ActionRegistry.Names.*`.
+ *   - Updated assertions from `deliveredPrivateData` to `processedActions` for targeted actions.
  */
 class KnowledgeGraphFeatureT2CoreTest {
 
@@ -47,26 +54,40 @@ class KnowledgeGraphFeatureT2CoreTest {
         }
     """.trimIndent()
 
+    // ========================================================================================
+    // LOAD SEQUENCE — Migrated from deliverPrivateData to targeted deferredDispatch
+    // ========================================================================================
 
     @Test
     fun `full load sequence correctly populates and synchronizes holons`() {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         harness.runAndLogOnFailure {
             harness.store.dispatch("system", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "persona-1-20251112T190000Z") }))
-            harness.store.deliverPrivateData("filesystem", "knowledgegraph", PrivateDataEnvelope(ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_LIST, buildJsonObject {
-                put("subpath", "persona-1-20251112T190000Z")
-                put("listing", buildJsonArray {
-                    add(json.encodeToJsonElement(FileEntry("persona-1-20251112T190000Z/persona-1-20251112T190000Z.json", false)))
-                    add(json.encodeToJsonElement(FileEntry("persona-1-20251112T190000Z/holon-a-20251112T190000Z/holon-a-20251112T190000Z.json", false)))
-                })
-            }))
-            harness.store.deliverPrivateData("filesystem", "knowledgegraph", PrivateDataEnvelope(ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_FILES_CONTENT, buildJsonObject {
-                put("correlationId", JsonNull)
-                put("contents", buildJsonObject {
-                    put("persona-1-20251112T190000Z/persona-1-20251112T190000Z.json", persona1Content)
-                    put("persona-1-20251112T190000Z/holon-a-20251112T190000Z/holon-a-20251112T190000Z.json", holonAContent)
-                })
-            }))
+
+            // [MIGRATED] Targeted dispatch replaces deliverPrivateData
+            harness.store.deferredDispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                payload = buildJsonObject {
+                    put("subpath", "persona-1-20251112T190000Z")
+                    put("listing", buildJsonArray {
+                        add(json.encodeToJsonElement(FileEntry("persona-1-20251112T190000Z/persona-1-20251112T190000Z.json", false)))
+                        add(json.encodeToJsonElement(FileEntry("persona-1-20251112T190000Z/holon-a-20251112T190000Z/holon-a-20251112T190000Z.json", false)))
+                    })
+                },
+                targetRecipient = "knowledgegraph"
+            ))
+
+            harness.store.deferredDispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT,
+                payload = buildJsonObject {
+                    put("correlationId", JsonNull)
+                    put("contents", buildJsonObject {
+                        put("persona-1-20251112T190000Z/persona-1-20251112T190000Z.json", persona1Content)
+                        put("persona-1-20251112T190000Z/holon-a-20251112T190000Z/holon-a-20251112T190000Z.json", holonAContent)
+                    })
+                },
+                targetRecipient = "knowledgegraph"
+            ))
 
             val finalState = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
 
@@ -89,11 +110,15 @@ class KnowledgeGraphFeatureT2CoreTest {
             // ACT 1: Initiate load
             harness.store.dispatch("system", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "empty-persona") }))
 
-            // ACT 2: Simulate empty recursive listing response from FileSystem
-            harness.store.deliverPrivateData("filesystem", "knowledgegraph", PrivateDataEnvelope(ActionRegistry.Names.Envelopes.FILESYSTEM_RESPONSE_LIST, buildJsonObject {
-                put("subpath", "empty-persona")
-                put("listing", buildJsonArray { }) // Empty list
-            }))
+            // ACT 2: Simulate empty recursive listing response — targeted dispatch
+            harness.store.deferredDispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                payload = buildJsonObject {
+                    put("subpath", "empty-persona")
+                    put("listing", buildJsonArray { }) // Empty list
+                },
+                targetRecipient = "knowledgegraph"
+            ))
 
             // ASSERT
             val finalState = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
@@ -106,13 +131,16 @@ class KnowledgeGraphFeatureT2CoreTest {
         }
     }
 
+    // ========================================================================================
+    // REQUEST_CONTEXT — Fixed: assert on processedActions instead of deliveredPrivateData
+    // ========================================================================================
+
     @Test
-    fun `REQUEST_CONTEXT should return full holon context via private data`() {
+    fun `REQUEST_CONTEXT should return full holon context via targeted dispatch`() {
         // Arrange: Populate state with a persona and child holon
-        // [FIX] Ensure the source filenames match the IDs to pass createHolonFromString validation
         val p1 = createHolonFromString(persona1Content, "persona-1-20251112T190000Z.json", platform)
         val h1 = createHolonFromString(holonAContent, "holon-a-20251112T190000Z.json", platform)
-        val h1Enriched = h1.copy(header = h1.header.copy(parentId = p1.header.id)) // Simplified enrichment
+        val h1Enriched = h1.copy(header = h1.header.copy(parentId = p1.header.id))
 
         val initialState = KnowledgeGraphState(
             holons = mapOf(p1.header.id to p1, h1Enriched.header.id to h1Enriched),
@@ -130,13 +158,14 @@ class KnowledgeGraphFeatureT2CoreTest {
                 put("correlationId", "req-123")
             }))
 
-            // ASSERT
-            val delivery = harness.store.deliveredPrivateData.find {
-                it.recipient == "agent-alpha" && it.envelope.type == ActionRegistry.Names.Envelopes.KNOWLEDGEGRAPH_RESPONSE_CONTEXT
+            // ASSERT — [MIGRATED] Check processedActions for the targeted response action
+            val responseAction = harness.processedActions.find {
+                it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT &&
+                        it.targetRecipient == "agent-alpha"
             }
-            assertNotNull(delivery, "A private response should be delivered to the agent.")
+            assertNotNull(responseAction, "A targeted RESPONSE_CONTEXT should be dispatched to the requesting agent.")
 
-            val payload = delivery.envelope.payload
+            val payload = responseAction.payload!!
             assertEquals("req-123", payload["correlationId"]?.jsonPrimitive?.content)
             assertEquals(p1.header.id, payload["personaId"]?.jsonPrimitive?.content)
 
@@ -148,11 +177,12 @@ class KnowledgeGraphFeatureT2CoreTest {
         }
     }
 
+    // ========================================================================================
+    // RENAME HOLON (existing test — no migration needed)
+    // ========================================================================================
+
     @Test
-    fun `RENAME_HOLON should update name, timestamp, and synchronize rawContent before writing`() {
-        // [FIX] Create a parent root holon in the state.
-        // This is necessary because KnowledgeGraphFeature.kt checks `findRootPersonaId`
-        // before dispatching the LOAD_PERSONA action that this test implicitly relies on.
+    fun `RENAME_HOLON should update name, timestamp, rawContent and trigger reload`() {
         val rootId = "p1-20250101T000000Z"
         val parentRoot = Holon(
             header = HolonHeader(id = rootId, type = "AI_Persona_Root", name = "Root"),
@@ -190,6 +220,10 @@ class KnowledgeGraphFeatureT2CoreTest {
             assertTrue(harness.processedActions.any { it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA })
         }
     }
+
+    // ========================================================================================
+    // RESERVATION TESTS (existing — no migration needed)
+    // ========================================================================================
 
     @Test
     fun `onAction RESERVE_HKG should broadcast the updated reservations list`() {
@@ -299,6 +333,235 @@ class KnowledgeGraphFeatureT2CoreTest {
             assertEquals("agent-alpha", finalState.reservations["persona-1"], "Reservation owner should not have changed.")
             assertTrue(harness.processedActions.any { it.name == ActionRegistry.Names.CORE_SHOW_TOAST })
             assertTrue(platform.capturedLogs.any { it.level == LogLevel.WARN && it.message.contains("already reserved") })
+        }
+    }
+
+    // ========================================================================================
+    // NEW TESTS — Side-effect coverage gaps identified in Task 3
+    // ========================================================================================
+
+    @Test
+    fun `SYSTEM_STARTING should dispatch initial FILESYSTEM_SYSTEM_LIST`() {
+        // SYSTEM_STARTING is only allowed during INITIALIZING lifecycle
+        val harness = TestEnvironment.create()
+            .withFeature(feature)
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+
+            val listAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST }
+            assertNotNull(listAction, "SYSTEM_STARTING should trigger an initial FILESYSTEM_SYSTEM_LIST to discover personas.")
+        }
+    }
+
+    @Test
+    fun `PERSONA_LOADED should broadcast AVAILABLE_PERSONAS_UPDATED when roots change`() {
+        val p1 = Holon(HolonHeader("p1", "AI_Persona_Root", "Persona One"), buildJsonObject {})
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            // ACT: Dispatch PERSONA_LOADED with a new persona
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_PERSONA_LOADED, buildJsonObject {
+                put("holons", json.encodeToJsonElement(mapOf("p1" to p1)))
+            }))
+
+            // ASSERT: A broadcast should have been dispatched
+            val broadcast = harness.processedActions.find { it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_AVAILABLE_PERSONAS_UPDATED }
+            assertNotNull(broadcast, "PERSONA_LOADED should broadcast AVAILABLE_PERSONAS_UPDATED when persona roots change.")
+
+            val namesMap = broadcast.payload?.get("names")?.jsonObject
+            assertNotNull(namesMap)
+            // The map is id→name, so key=p1, value=Persona One
+            assertEquals("Persona One", namesMap["p1"]?.jsonPrimitive?.content)
+        }
+    }
+
+    @Test
+    fun `RELEASE_HKG should broadcast RESERVATIONS_UPDATED`() {
+        val initialState = KnowledgeGraphState(reservations = mapOf("persona-1" to "agent-alpha"))
+        val harness = TestEnvironment.create()
+            .withFeature(feature)
+            .withInitialState("knowledgegraph", initialState)
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("agent-alpha", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RELEASE_HKG, buildJsonObject {
+                put("personaId", "persona-1")
+            }))
+
+            val broadcast = harness.processedActions.find { it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVATIONS_UPDATED }
+            assertNotNull(broadcast, "RELEASE_HKG should broadcast RESERVATIONS_UPDATED.")
+
+            val reservedIds = broadcast.payload?.get("reservedIds")?.jsonArray
+            assertNotNull(reservedIds)
+            assertEquals(0, reservedIds.size, "Reserved IDs list should be empty after release.")
+        }
+    }
+
+    @Test
+    fun `CREATE_PERSONA should write file and trigger filesystem reload`() {
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_CREATE_PERSONA, buildJsonObject {
+                put("name", "Test Persona")
+            }))
+
+            // Assert a FILESYSTEM_SYSTEM_WRITE was dispatched
+            val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
+            assertNotNull(writeAction, "CREATE_PERSONA should dispatch FILESYSTEM_SYSTEM_WRITE.")
+
+            val writtenContent = writeAction.payload?.get("content")?.jsonPrimitive?.content
+            assertNotNull(writtenContent)
+            val parsedContent = json.parseToJsonElement(writtenContent).jsonObject
+            assertEquals("Test Persona", parsedContent["header"]!!.jsonObject["name"]!!.jsonPrimitive.content)
+            assertEquals("AI_Persona_Root", parsedContent["header"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+
+            // Assert a FILESYSTEM_SYSTEM_LIST reload was triggered
+            val reloadAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST }
+            assertNotNull(reloadAction, "CREATE_PERSONA should trigger a FILESYSTEM_SYSTEM_LIST reload.")
+
+            // Assert a toast was shown
+            assertTrue(harness.processedActions.any { it.name == ActionRegistry.Names.CORE_SHOW_TOAST })
+        }
+    }
+
+    @Test
+    fun `DELETE_HOLON should delete directory, update parent, and confirm deletion`() {
+        val rootId = "p1-20250101T000000Z"
+        val childId = "h1-20250101T000000Z"
+
+        val parentRoot = Holon(
+            header = HolonHeader(
+                id = rootId, type = "AI_Persona_Root", name = "Root",
+                filePath = "$rootId/$rootId.json",
+                subHolons = listOf(SubHolonRef(childId, "T", "S"))
+            ),
+            payload = buildJsonObject { },
+            rawContent = "{}"
+        )
+        val childHolon = Holon(
+            header = HolonHeader(
+                id = childId, type = "TestHolon", name = "Child",
+                filePath = "$rootId/$childId/$childId.json",
+                parentId = rootId
+            ),
+            payload = buildJsonObject { },
+            rawContent = "{}"
+        )
+        val initialState = KnowledgeGraphState(holons = mapOf(rootId to parentRoot, childId to childHolon))
+        val harness = TestEnvironment.create()
+            .withFeature(feature)
+            .withInitialState("knowledgegraph", initialState)
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject {
+                put("holonId", childId)
+            }))
+
+            // Assert directory deletion was dispatched
+            val deleteDir = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY }
+            assertNotNull(deleteDir, "DELETE_HOLON should dispatch FILESYSTEM_SYSTEM_DELETE_DIRECTORY.")
+            assertEquals("$rootId/$childId", deleteDir.payload?.get("subpath")?.jsonPrimitive?.content)
+
+            // Assert parent holon was updated to remove the child from sub_holons
+            val parentWrite = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
+            assertNotNull(parentWrite, "DELETE_HOLON should dispatch FILESYSTEM_SYSTEM_WRITE to update parent.")
+            val writtenContent = parentWrite.payload?.get("content")?.jsonPrimitive?.content
+            assertNotNull(writtenContent)
+            val parsedParent = json.parseToJsonElement(writtenContent).jsonObject
+            val subHolons = parsedParent["header"]!!.jsonObject["sub_holons"]!!.jsonArray
+            assertTrue(subHolons.isEmpty(), "Parent's sub_holons should be empty after child deletion.")
+
+            // Assert CONFIRM_DELETE_HOLON was dispatched to clean up state
+            val confirmDelete = harness.processedActions.find { it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_CONFIRM_DELETE_HOLON }
+            assertNotNull(confirmDelete, "DELETE_HOLON should dispatch CONFIRM_DELETE_HOLON.")
+            assertEquals(childId, confirmDelete.payload?.get("holonId")?.jsonPrimitive?.content)
+
+            // Assert the reducer actually removed the holon from state
+            val finalState = harness.store.state.value.featureStates["knowledgegraph"] as KnowledgeGraphState
+            assertFalse(finalState.holons.containsKey(childId), "Child holon should be removed from state.")
+            assertTrue(finalState.holons.containsKey(rootId), "Parent should still exist.")
+        }
+    }
+
+    @Test
+    fun `RESPONSE_LIST non-recursive should discover persona directories and load each`() {
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            // Simulate a non-recursive listing response (no subpath = top-level discovery)
+            harness.store.deferredDispatch("filesystem", Action(
+                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                payload = buildJsonObject {
+                    // No "subpath" field means non-recursive
+                    put("listing", buildJsonArray {
+                        add(json.encodeToJsonElement(FileEntry("persona-alpha", true)))
+                        add(json.encodeToJsonElement(FileEntry("persona-beta", true)))
+                    })
+                },
+                targetRecipient = "knowledgegraph"
+            ))
+
+            // Assert a LOAD_PERSONA was dispatched for each directory
+            val loadActions = harness.processedActions.filter { it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA }
+            assertEquals(2, loadActions.size, "A LOAD_PERSONA should be dispatched for each discovered persona directory.")
+
+            val loadedIds = loadActions.map { it.payload?.get("personaId")?.jsonPrimitive?.content }.toSet()
+            assertTrue(loadedIds.contains("persona-alpha"))
+            assertTrue(loadedIds.contains("persona-beta"))
+        }
+    }
+
+    // ========================================================================================
+    // SILENT RETURN LOGGING — Verify Task 2 logging additions
+    // ========================================================================================
+
+    @Test
+    fun `side effects with missing payload fields should log warnings`() {
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            // Dispatch actions with missing required fields
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_CREATE_PERSONA, buildJsonObject { }))
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { }))
+            harness.store.dispatch("agent-alpha", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_REQUEST_CONTEXT, buildJsonObject { }))
+
+            // Assert warnings were logged for each
+            assertTrue(platform.capturedLogs.any {
+                it.level == LogLevel.WARN && it.message.contains("CREATE_PERSONA") && it.message.contains("'name'")
+            }, "Missing 'name' in CREATE_PERSONA should be logged.")
+
+            assertTrue(platform.capturedLogs.any {
+                it.level == LogLevel.WARN && it.message.contains("LOAD_PERSONA") && it.message.contains("'personaId'")
+            }, "Missing 'personaId' in LOAD_PERSONA should be logged.")
+
+            assertTrue(platform.capturedLogs.any {
+                it.level == LogLevel.WARN && it.message.contains("REQUEST_CONTEXT") && it.message.contains("'personaId'")
+            }, "Missing 'personaId' in REQUEST_CONTEXT should be logged.")
+        }
+    }
+
+    @Test
+    fun `DELETE_HOLON with nonexistent holonId should log warning and not crash`() {
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject {
+                put("holonId", "nonexistent-holon")
+            }))
+
+            // Should not dispatch any filesystem actions
+            assertFalse(harness.processedActions.any { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY },
+                "No filesystem actions should be dispatched for a nonexistent holon.")
+
+            // Should log a warning
+            assertTrue(platform.capturedLogs.any {
+                it.level == LogLevel.WARN && it.message.contains("DELETE_HOLON") && it.message.contains("nonexistent-holon") && it.message.contains("not found")
+            }, "A warning should be logged when trying to delete a nonexistent holon.")
         }
     }
 }
