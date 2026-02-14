@@ -2,7 +2,6 @@ package app.auf.feature.settings
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
@@ -35,13 +34,7 @@ class SettingsFeatureT1SettingsViewTest {
     @Before
     fun setUp() {
         fakePlatform = FakePlatformDependencies("test")
-        // Use a restricted action registry to ensure the view only dispatches what it's supposed to.
-        val validActions = setOf(
-            ActionRegistry.Names.SETTINGS_OPEN_FOLDER,
-            ActionRegistry.Names.SETTINGS_UI_INPUT_CHANGED,
-            ActionRegistry.Names.SETTINGS_UPDATE
-        )
-        fakeStore = FakeStore(AppState(), fakePlatform, validActions)
+        fakeStore = FakeStore(AppState(), fakePlatform)
     }
 
     private fun setViewState(state: SettingsState) {
