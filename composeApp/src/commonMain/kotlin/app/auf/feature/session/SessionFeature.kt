@@ -176,6 +176,18 @@ class SessionFeature(
                 if (newLocalHandles.isNotEmpty()) {
                     broadcastSessionNames(sessionState, store)
                 }
+                // Signal readiness when all pending identity registrations have completed.
+                // At startup this fires after the last file-loaded session is approved.
+                // At runtime this fires after each SESSION_CREATE/CLONE completes.
+                val prevPending = (previousState as? SessionState)?.pendingCreations ?: emptyMap()
+                if (prevPending.isNotEmpty() && sessionState.pendingCreations.isEmpty()) {
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.SESSION_SESSION_FEATURE_READY,
+                        buildJsonObject {
+                            put("sessionCount", sessionState.sessions.size)
+                        }
+                    ))
+                }
             }
 
             ActionRegistry.Names.SESSION_UPDATE_CONFIG -> {
@@ -271,6 +283,16 @@ class SessionFeature(
                             put("uuid", session.identity.uuid)
                             // localHandle from the loaded file — pass it to ensure consistency
                             put("localHandle", session.identity.localHandle)
+                        }
+                    ))
+                }
+                // Signal that sessions are available for cross-feature operations.
+                // Fires per-file during startup; handlers must be idempotent.
+                if (newLocalHandles.isNotEmpty()) {
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.SESSION_SESSION_FEATURE_READY,
+                        buildJsonObject {
+                            put("sessionCount", sessionState.sessions.size)
                         }
                     ))
                 }

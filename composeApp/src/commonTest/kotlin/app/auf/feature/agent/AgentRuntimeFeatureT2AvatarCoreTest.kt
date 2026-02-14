@@ -6,8 +6,6 @@ import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
@@ -27,7 +25,7 @@ import kotlin.test.assertTrue
  * 2. Multisession presence (Multisession Limitation).
  * 3. Sovereign presence (Avatar in Public + Private).
  */
-class AgentRuntimeFeatureT2AvatarLifecycleTest {
+class AgentRuntimeFeatureT2AvatarCoreTest {
 
     private val platform = FakePlatformDependencies("test")
 

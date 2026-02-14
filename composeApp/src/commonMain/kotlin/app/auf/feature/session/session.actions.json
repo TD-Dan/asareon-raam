@@ -624,6 +624,25 @@
       }
     },
     {
+      "action_name": "session.SESSION_FEATURE_READY",
+      "summary": "Broadcast once when all pending session identity registrations have completed and the sessions map is stable. Fired at startup after the last file-loaded session finishes identity approval, and at runtime after any session creation completes. Other features should use this — not SESSION_NAMES_UPDATED — as the signal that sessions are available for cross-feature operations like avatar posting.",
+      "open": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionCount": {
+            "type": "integer",
+            "description": "The number of sessions now available in the sessions map."
+          }
+        },
+        "required": [
+          "sessionCount"
+        ]
+      }
+    },
+    {
       "action_name": "session.LOADED",
       "summary": "[INTERNAL] Dispatched after all session transcripts have been loaded from disk.",
       "open": false,

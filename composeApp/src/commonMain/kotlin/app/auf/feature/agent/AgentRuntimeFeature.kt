@@ -136,7 +136,10 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.AGENT_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
                 val uuid = agent.identity.uuid ?: return
-                AgentAvatarLogic.updateAgentAvatars(uuid, store, AgentStatus.IDLE)
+                // NOTE: Avatar posting deferred to SESSION_SESSION_FEATURE_READY.
+                // At startup, agent files may load before session files. The session feature
+                // broadcasts SESSION_FEATURE_READY once sessions are in its map, at which point
+                // we reconcile avatars for all active agents.
                 broadcastAgentNames(agentState, store)
                 // Register agent identity
                 store.deferredDispatch(identity.handle, Action(
@@ -402,6 +405,16 @@ class AgentRuntimeFeature(
             }
             ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED -> {
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+            }
+            ActionRegistry.Names.SESSION_SESSION_FEATURE_READY -> {
+                // Sessions are now in the sessions map and resolvable. Post avatar cards
+                // for all active agents. This is idempotent — updateAgentAvatars deletes
+                // old cards before posting new ones, so duplicate signals are harmless.
+                agentState.agents.forEach { (agentId, agent) ->
+                    if (agent.isAgentActive) {
+                        AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.IDLE)
+                    }
+                }
             }
 
             // --- Identity Registration Response Side Effects ---
