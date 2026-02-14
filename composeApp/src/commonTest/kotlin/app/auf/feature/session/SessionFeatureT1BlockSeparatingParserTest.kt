@@ -77,4 +77,52 @@ class SessionFeatureT1BlockSeparatingParserTest {
         val result = parser.parse("")
         assertTrue(result.isEmpty())
     }
+
+    // ---- LLM robustness: malformed fence patterns ----
+
+    @Test
+    fun `should handle leading whitespace with closing fence on same line as content`() {
+        // LLM sometimes indents the opening fence and puts the closing fence inline.
+        val rawResponse = "  ```foo.txt\ntext```"
+        val result = parser.parse(rawResponse)
+        val codeBlocks = result.filterIsInstance<ContentBlock.CodeBlock>()
+        assertEquals(1, codeBlocks.size, "Expected exactly one code block")
+        assertEquals("foo.txt", codeBlocks[0].language)
+        assertTrue(codeBlocks[0].code.contains("text"), "Code body should contain 'text'")
+    }
+
+    @Test
+    fun `should handle closing fence on same line without leading whitespace`() {
+        // Variant without indentation – closing ``` glued to content.
+        val rawResponse = "```foo.txt\ntext```"
+        val result = parser.parse(rawResponse)
+        val codeBlocks = result.filterIsInstance<ContentBlock.CodeBlock>()
+        assertEquals(1, codeBlocks.size, "Expected exactly one code block")
+        assertEquals("foo.txt", codeBlocks[0].language)
+        assertTrue(codeBlocks[0].code.contains("text"), "Code body should contain 'text'")
+    }
+
+    @Test
+    fun `should handle no language name with text immediately after closing fence`() {
+        // LLM forgets the language and appends text right after the closing fence.
+        val rawResponse = "  ```\ntext\n```here"
+        val result = parser.parse(rawResponse)
+        val codeBlocks = result.filterIsInstance<ContentBlock.CodeBlock>()
+        assertEquals(1, codeBlocks.size, "Expected exactly one code block")
+        assertEquals("text", codeBlocks[0].language) // no language → defaults to "text"
+        val textBlocks = result.filterIsInstance<ContentBlock.Text>()
+        assertTrue(textBlocks.any { it.text.contains("here") }, "Trailing text 'here' should appear in a text block")
+    }
+
+    @Test
+    fun `should handle language name with text immediately after closing fence`() {
+        // LLM provides a language tag but glues trailing prose onto the closing fence.
+        val rawResponse = "```kotlin\nval x = 1\n```and then"
+        val result = parser.parse(rawResponse)
+        val codeBlocks = result.filterIsInstance<ContentBlock.CodeBlock>()
+        assertEquals(1, codeBlocks.size, "Expected exactly one code block")
+        assertEquals("kotlin", codeBlocks[0].language)
+        val textBlocks = result.filterIsInstance<ContentBlock.Text>()
+        assertTrue(textBlocks.any { it.text.contains("and then") }, "Trailing text should appear in a text block")
+    }
 }
