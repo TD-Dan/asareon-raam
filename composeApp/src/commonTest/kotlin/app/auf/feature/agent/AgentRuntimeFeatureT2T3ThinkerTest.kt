@@ -55,16 +55,20 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            val response = Action(ActionRegistry.Names.SESSION_RESPONSE_LEDGER, buildJsonObject {
-                put("correlationId", agent.identity.uuid)
-                put("messages", buildJsonArray {
-                    add(buildJsonObject {
-                        put("senderId", "user")
-                        put("rawContent", "Hello")
-                        put("timestamp", 1000L)
+            val response = Action(
+                name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                payload = buildJsonObject {
+                    put("correlationId", agent.identity.uuid)
+                    put("messages", buildJsonArray {
+                        add(buildJsonObject {
+                            put("senderId", "user")
+                            put("rawContent", "Hello")
+                            put("timestamp", 1000L)
+                        })
                     })
-                })
-            })
+                },
+                targetRecipient = "agent"
+            )
 
             // ACT
             harness.store.dispatch("session", response)
@@ -151,11 +155,15 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
 
         harness.runAndLogOnFailure {
             // ACT: Send malformed payload in envelope
-            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_RESPONSE_LEDGER, buildJsonObject {
-                put("correlationId", agent.identity.uuid)
-                // Missing "messages" array, or other schema violation
-                put("invalid_key", "invalid_value")
-            }))
+            harness.store.dispatch("session", Action(
+                name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                payload = buildJsonObject {
+                    put("correlationId", agent.identity.uuid)
+                    // Missing "messages" array, or other schema violation
+                    put("invalid_key", "invalid_value")
+                },
+                targetRecipient = "agent"
+            ))
 
             // ASSERT
             val state = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
@@ -183,10 +191,14 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
 
         harness.runAndLogOnFailure {
             // ACT: Trigger a context arrival (e.g. workspace or HKG) without staged ledger
-            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT, buildJsonObject {
-                put("correlationId", agent.identity.uuid)
-                put("context", buildJsonObject { put("some", "data") })
-            }))
+            harness.store.dispatch("knowledgegraph", Action(
+                name = ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                payload = buildJsonObject {
+                    put("correlationId", agent.identity.uuid)
+                    put("context", buildJsonObject { put("some", "data") })
+                },
+                targetRecipient = "agent"
+            ))
 
             // ASSERT
             val state = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
