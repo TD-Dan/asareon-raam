@@ -126,9 +126,9 @@ open class Store(
     open fun deferredDispatch(originator: String, action: Action) {
         val stampedAction = action.copy(originator = originator)
         platformDependencies.log(
-            level = LogLevel.INFO,
+            level = LogLevel.DEBUG,
             tag = "Store",
-            message = "Deferring: $stampedAction"
+            message = "  Deferring: $stampedAction"
         )
         deferredActionQueue.add(stampedAction)
         ensureProcessingLoop()
@@ -264,7 +264,7 @@ open class Store(
         platformDependencies.log(
             level = LogLevel.INFO,
             tag = "Store",
-            message = "Processing (queued:${deferredActionQueue.size}): $action"
+            message = " Processing (queued:${deferredActionQueue.size}): $action"
         )
 
         val isActionAllowed = when (currentLifecycle) {

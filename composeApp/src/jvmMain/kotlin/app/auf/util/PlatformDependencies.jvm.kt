@@ -221,7 +221,7 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
     @Synchronized
     actual open fun log(level: LogLevel, tag: String, message: String, throwable: Throwable?) {
         val fullMessage : String = when (level) {
-            // For ERROR and FATAL include full stack trace, and warn if exception details are provided
+            // For ERROR and FATAL include full stack trace, and warn if exception details are not provided
             LogLevel.ERROR, LogLevel.FATAL -> {
                 if (throwable != null) {
                     "$message\n${throwable.stackTraceToString()}"
@@ -241,7 +241,7 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
             else -> message
         }
 
-        val logLine = "[${displayFormatter.format(Date())}] [${level.name}] [$tag] $fullMessage"
+        val logLine = "[${displayFormatter.format(Date())}] [${level.name.padEnd(5)}] [${tag.padEndTo(5)}] $fullMessage"
 
         if (level >= LogLevel.ERROR) {
             System.err.println(logLine)
@@ -255,3 +255,5 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
         }
     }
 }
+
+fun String.padEndTo(increment: Int) = padEnd((length + increment - 1) / increment * increment)

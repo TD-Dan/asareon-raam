@@ -81,7 +81,7 @@ object AgentAvatarLogic {
 
         // DIAGNOSTIC LOG
         platformDependencies.log(
-            LogLevel.INFO, "agent-avatar",
+            LogLevel.DEBUG, "agent-avatar",
             "Updating avatars for ${agent.identity.name}. Targets: $targetSessions. CurrentCards: $currentCards. AfterMsg: $afterMessageId")
 
         // 5. Cleanup Zombies (Sessions we are no longer subscribed to)
