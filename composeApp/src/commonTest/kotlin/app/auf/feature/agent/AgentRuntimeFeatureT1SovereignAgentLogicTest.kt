@@ -1,12 +1,9 @@
 package app.auf.feature.agent
 
 import app.auf.core.AppState
-import app.auf.core.Feature
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals

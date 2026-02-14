@@ -1,7 +1,6 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
-import app.auf.core.Identity
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.*
