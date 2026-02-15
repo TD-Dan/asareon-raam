@@ -39,9 +39,9 @@ class AgentRuntimeFeatureT1CrudLogicTest {
         val agent = testAgent("a1", "Test", null, "p", "m", subscribedSessionIds = listOf("public-1"))
         val state = AgentRuntimeState(
             agents = mapOf("a1" to agent),
-            sessionNames = mapOf(
-                "public-1" to "Public Chat",
-                "private-1" to "p-cognition: Secret"
+            subscribableSessionNames = mapOf(
+                "public-1" to "Public Chat"
+                // Note: private sessions are excluded from subscribableSessionNames by design
             )
         )
 

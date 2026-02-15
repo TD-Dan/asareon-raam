@@ -132,44 +132,10 @@ class SessionFeatureT2CoreTest {
         }
     }
 
-    @Test
-    fun `reducer correctly merges user and agent identity broadcasts`() = runTest {
-        val harness = TestEnvironment.create()
-            .withFeature(sessionFeature)
-            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
-            .build(platform = platform)
-
-        harness.runAndLogOnFailure {
-            // ACT 1: Broadcast user identities from CoreFeature
-            val userIdentities = listOf(Identity(uuid = "user-1", localHandle = "user-alpha", handle = "user-1", name = "User Alpha"))
-            val coreBroadcast = Action(ActionRegistry.Names.CORE_IDENTITIES_UPDATED, buildJsonObject {
-                put("identities", Json.encodeToJsonElement<List<Identity>>(userIdentities))
-            })
-            harness.store.dispatch("core", coreBroadcast)
-            testScheduler.advanceUntilIdle()
-
-            // ASSERT 1
-            val stateAfterCore = harness.store.state.value.featureStates["session"] as SessionState
-            // Size is 2 because "system" is default + "user-1"
-            assertEquals(2, stateAfterCore.identityNames.size)
-            assertEquals("User Alpha", stateAfterCore.identityNames["user-1"])
-
-            // ACT 2: Broadcast agent identities from AgentRuntimeFeature
-            val agentNames = mapOf("agent-1" to "Agent Beta")
-            val agentBroadcast = Action(ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED, buildJsonObject {
-                put("names", Json.encodeToJsonElement(agentNames))
-            })
-            harness.store.dispatch("agent", agentBroadcast)
-            testScheduler.advanceUntilIdle()
-
-            // ASSERT 2
-            val finalState = harness.store.state.value.featureStates["session"] as SessionState
-            // Size is 3: system, user-1, agent-1
-            assertEquals(3, finalState.identityNames.size, "Should contain system, user, and agent identities.")
-            assertEquals("User Alpha", finalState.identityNames["user-1"])
-            assertEquals("Agent Beta", finalState.identityNames["agent-1"])
-        }
-    }
+    // [REMOVED] Test `reducer correctly merges user and agent identity broadcasts` was deleted.
+    // The identityNames field was removed from SessionState and AGENT_AGENT_NAMES_UPDATED
+    // was replaced by CORE_IDENTITY_REGISTRY_UPDATED. Identity resolution now goes through
+    // the centralized identity registry in CoreFeature.
 
     @Test
     fun `CORE_IDENTITIES_UPDATED caches activeUserId on SessionState`() = runTest {

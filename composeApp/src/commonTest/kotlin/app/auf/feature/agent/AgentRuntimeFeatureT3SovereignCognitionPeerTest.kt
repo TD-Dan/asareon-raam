@@ -93,7 +93,7 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .withInitialState("agent", AgentRuntimeState(
                 agents = mapOf(philosopherAgent.identity.uuid!! to philosopherAgent),
-                sessionNames = mapOf(
+                subscribableSessionNames = mapOf(
                     privateSession.identity.uuid!! to privateSession.identity.name,
                     publicSession.identity.uuid!! to publicSession.identity.name
                 )
