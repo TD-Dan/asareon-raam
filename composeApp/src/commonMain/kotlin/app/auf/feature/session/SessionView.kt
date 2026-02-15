@@ -15,6 +15,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.PlatformDependencies
@@ -222,14 +225,127 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
     var text by remember { mutableStateOf("") }
     var menuExpanded by remember { mutableStateOf(false) }
 
-    // Clear session confirmation dialog — mirrors the pattern used in SessionsManagerView.
+    // ── Autocomplete state ──
+    val appState by store.state.collectAsState()
+    val sessionState = appState.featureStates["session"] as? SessionState
+    var acState by remember { mutableStateOf<SlashCommandEngine.AutocompleteState?>(null) }
+
+    val engine = remember(
+        appState.identityRegistry,
+        sessionState?.activeSessionLocalHandle,
+        sessionState?.activeUserId
+    ) {
+        SlashCommandEngine(
+            featureDescriptors = ActionRegistry.features,
+            identityRegistry = appState.identityRegistry,
+            activeSessionLocalHandle = sessionState?.activeSessionLocalHandle,
+            activeUserId = sessionState?.activeUserId
+        )
+    }
+
+    /**
+     * Parses the current text field content to sync the autocomplete state.
+     * Text-driven stage resolution:
+     *   "/ses"           → FEATURE stage, query="ses"
+     *   "/session."      → ACTION stage for "session", query=""
+     *   "/session.PO"    → ACTION stage, query="PO"
+     *   "//agent.SET"    → ACTION stage (admin), query="SET"
+     *   PARAMS stage     → text changes ignored (form has taken over)
+     */
+    fun syncAutocompleteFromText(newText: String) {
+        // Don't interfere with params form
+        if (acState?.stage == SlashCommandEngine.Stage.PARAMS) return
+
+        val isAdmin = newText.startsWith("//")
+        val prefix = if (isAdmin) "//" else "/"
+
+        if (!newText.startsWith("/")) {
+            acState = null
+            return
+        }
+
+        val body = newText.removePrefix(prefix)
+        val dotIndex = body.indexOf('.')
+
+        if (dotIndex >= 0) {
+            // Has dot → ACTION stage
+            val featureName = body.substring(0, dotIndex)
+            val actionQuery = body.substring(dotIndex + 1)
+
+            // Ensure we're in ACTION stage for this feature
+            if (acState == null || acState?.adminMode != isAdmin || acState?.selectedFeature != featureName) {
+                var s = engine.initialState(adminMode = isAdmin)
+                s = engine.selectFeature(s, featureName)
+                acState = engine.updateQuery(s, actionQuery)
+            } else {
+                acState = engine.updateQuery(acState!!, actionQuery)
+            }
+        } else {
+            // No dot → FEATURE stage
+            if (acState == null || acState?.adminMode != isAdmin || acState?.stage != SlashCommandEngine.Stage.FEATURE) {
+                acState = engine.initialState(adminMode = isAdmin)
+            }
+            acState = engine.updateQuery(acState!!, body)
+        }
+    }
+
+    /**
+     * Returns the current candidate count for the active stage, used by
+     * highlight navigation to clamp bounds.
+     */
+    fun currentCandidateCount(): Int {
+        val s = acState ?: return 0
+        return when (s.stage) {
+            SlashCommandEngine.Stage.FEATURE ->
+                engine.featureCandidates(s.query, s.adminMode).size
+            SlashCommandEngine.Stage.ACTION ->
+                engine.actionCandidates(s.selectedFeature ?: "", s.query, s.adminMode).size
+            SlashCommandEngine.Stage.PARAMS -> 0
+        }
+    }
+
+    /**
+     * Handles Tab/Enter selection in the candidate list.
+     * FEATURE → completes feature name in text, advances to ACTION.
+     * ACTION → enters PARAMS stage with auto-fill.
+     */
+    fun handleCandidateSelection(): Boolean {
+        val s = acState ?: return false
+        val prefix = if (s.adminMode) "//" else "/"
+
+        when (s.stage) {
+            SlashCommandEngine.Stage.FEATURE -> {
+                val candidates = engine.featureCandidates(s.query, s.adminMode)
+                val index = s.highlightedIndex.coerceIn(0, candidates.lastIndex)
+                if (candidates.isEmpty()) return false
+
+                val selected = candidates[index]
+                text = "$prefix${selected.name}."
+                acState = engine.selectFeature(s, selected.name)
+                return true
+            }
+            SlashCommandEngine.Stage.ACTION -> {
+                val feature = s.selectedFeature ?: return false
+                val candidates = engine.actionCandidates(feature, s.query, s.adminMode)
+                val index = s.highlightedIndex.coerceIn(0, candidates.lastIndex)
+                if (candidates.isEmpty()) return false
+
+                val selected = candidates[index]
+                acState = engine.selectAction(s, selected.descriptor)
+                // Text stays as-is; PARAMS stage ignores text field
+                return true
+            }
+            SlashCommandEngine.Stage.PARAMS -> return false
+        }
+    }
+
+    // ── Clear session confirmation dialog (unchanged from original) ──
     var sessionToClear by remember { mutableStateOf<Session?>(null) }
 
     sessionToClear?.let { session ->
         val survivorCount = session.ledger.count { it.isLocked || it.doNotClear }
         val removedCount = session.ledger.size - survivorCount
         val detail = if (survivorCount > 0) {
-            //TODO: report this as "x locked messages and y other will be preserved"
             "$removedCount message(s) will be removed. $survivorCount protected message(s) will be preserved."
         } else {
             "All ${session.ledger.size} message(s) will be removed."
@@ -251,54 +367,125 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
         )
     }
 
-    Surface(modifier = Modifier.fillMaxWidth(), shadowElevation = 8.dp) {
-        Row(Modifier.padding(8.dp), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
+    // ── Layout: autocomplete panel above input ──
+    Column(modifier = Modifier.fillMaxWidth()) {
 
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.weight(1f).onKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && (event.isCtrlPressed || event.isMetaPressed)) {
-                        if (text.isNotBlank()) { onSend(text); text = "" }
-                        return@onKeyEvent true
+        // Autocomplete panel (renders above the input bar)
+        AnimatedVisibility(
+            visible = acState != null,
+            enter = expandVertically(),
+            exit = shrinkVertically()
+        ) {
+            acState?.let { state ->
+                SlashCommandPanel(
+                    engine = engine,
+                    state = state,
+                    onStateChange = { newState ->
+                        acState = newState
+                        if (newState == null) text = ""
+                    },
+                    onInsert = { codeBlock ->
+                        text = codeBlock
+                        acState = null
+                        // Auto-send the code block
+                        onSend(codeBlock)
+                        text = ""
                     }
-                    false
-                },
-                placeholder = { Text("Enter message (Ctrl+Enter to send)...") }
-            )
-            Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(Icons.Default.MoreVert, "More options")
-                }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Copy Transcript") },
-                        onClick = {
-                            val transcript = activeSession.ledger.joinToString("\n\n") { entry ->
-                                val timestamp = platformDependencies.formatIsoTimestamp(entry.timestamp)
-                                val senderName = store.state.value.identityRegistry[entry.senderId]?.name ?: entry.senderId
-                                "$senderName @ $timestamp:\n${entry.rawContent}"
-                            }
-                            store.dispatch("ui.session.input", Action(ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", transcript) }))
-                            menuExpanded = false
-                        },
-                        leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Clear Session") },
-                        onClick = {
-                            sessionToClear = activeSession
-                            menuExpanded = false
-                        },
-                        leadingIcon = { Icon(Icons.Default.ClearAll, null) }
-                    )
-                }
+                )
             }
-            IconButton(onClick = { if (text.isNotBlank()) { onSend(text); text = "" } }, enabled = text.isNotBlank()) {
-                Icon(Icons.AutoMirrored.Filled.Send, "Send")
+        }
+
+        // Input bar
+        Surface(modifier = Modifier.fillMaxWidth(), shadowElevation = 8.dp) {
+            Row(Modifier.padding(8.dp), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
+
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { newText ->
+                        text = newText
+                        syncAutocompleteFromText(newText)
+                    },
+                    modifier = Modifier.weight(1f).onKeyEvent { event ->
+                        if (event.type == KeyEventType.KeyDown) {
+                            // ── Autocomplete key handling (highest priority when active) ──
+                            if (acState != null && acState?.stage != SlashCommandEngine.Stage.PARAMS) {
+                                when (event.key) {
+                                    Key.DirectionUp -> {
+                                        acState = engine.moveHighlight(acState!!, -1, currentCandidateCount())
+                                        return@onKeyEvent true
+                                    }
+                                    Key.DirectionDown -> {
+                                        acState = engine.moveHighlight(acState!!, 1, currentCandidateCount())
+                                        return@onKeyEvent true
+                                    }
+                                    Key.Tab -> {
+                                        return@onKeyEvent handleCandidateSelection()
+                                    }
+                                    Key.Enter -> {
+                                        // Plain Enter selects candidate; Ctrl+Enter still sends
+                                        if (!event.isCtrlPressed && !event.isMetaPressed) {
+                                            return@onKeyEvent handleCandidateSelection()
+                                        }
+                                    }
+                                    Key.Escape -> {
+                                        acState = null
+                                        text = ""
+                                        return@onKeyEvent true
+                                    }
+                                }
+                            }
+
+                            // ── Escape during PARAMS stage dismisses autocomplete ──
+                            if (acState?.stage == SlashCommandEngine.Stage.PARAMS && event.key == Key.Escape) {
+                                acState = null
+                                text = ""
+                                return@onKeyEvent true
+                            }
+
+                            // ── Ctrl+Enter to send (original behavior) ──
+                            if (event.key == Key.Enter && (event.isCtrlPressed || event.isMetaPressed)) {
+                                if (text.isNotBlank()) { onSend(text); text = ""; acState = null }
+                                return@onKeyEvent true
+                            }
+                        }
+                        false
+                    },
+                    placeholder = { Text("Enter message (Ctrl+Enter to send, / for commands)...") }
+                )
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Default.MoreVert, "More options")
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Copy Transcript") },
+                            onClick = {
+                                val transcript = activeSession.ledger.joinToString("\n\n") { entry ->
+                                    val timestamp = platformDependencies.formatIsoTimestamp(entry.timestamp)
+                                    val senderName = store.state.value.identityRegistry[entry.senderId]?.name ?: entry.senderId
+                                    "$senderName @ $timestamp:\n${entry.rawContent}"
+                                }
+                                store.dispatch("ui.session.input", Action(ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", transcript) }))
+                                menuExpanded = false
+                            },
+                            leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Clear Session") },
+                            onClick = {
+                                sessionToClear = activeSession
+                                menuExpanded = false
+                            },
+                            leadingIcon = { Icon(Icons.Default.ClearAll, null) }
+                        )
+                    }
+                }
+                IconButton(onClick = { if (text.isNotBlank()) { onSend(text); text = ""; acState = null } }, enabled = text.isNotBlank()) {
+                    Icon(Icons.AutoMirrored.Filled.Send, "Send")
+                }
             }
         }
     }
