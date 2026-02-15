@@ -387,9 +387,6 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                     onInsert = { codeBlock ->
                         text = codeBlock
                         acState = null
-                        // Auto-send the code block
-                        onSend(codeBlock)
-                        text = ""
                     }
                 )
             }
@@ -405,32 +402,32 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                         text = newText
                         syncAutocompleteFromText(newText)
                     },
-                    modifier = Modifier.weight(1f).onKeyEvent { event ->
+                    modifier = Modifier.weight(1f).onPreviewKeyEvent { event ->
                         if (event.type == KeyEventType.KeyDown) {
                             // ── Autocomplete key handling (highest priority when active) ──
                             if (acState != null && acState?.stage != SlashCommandEngine.Stage.PARAMS) {
                                 when (event.key) {
                                     Key.DirectionUp -> {
                                         acState = engine.moveHighlight(acState!!, -1, currentCandidateCount())
-                                        return@onKeyEvent true
+                                        return@onPreviewKeyEvent true
                                     }
                                     Key.DirectionDown -> {
                                         acState = engine.moveHighlight(acState!!, 1, currentCandidateCount())
-                                        return@onKeyEvent true
+                                        return@onPreviewKeyEvent true
                                     }
                                     Key.Tab -> {
-                                        return@onKeyEvent handleCandidateSelection()
+                                        return@onPreviewKeyEvent handleCandidateSelection()
                                     }
                                     Key.Enter -> {
                                         // Plain Enter selects candidate; Ctrl+Enter still sends
                                         if (!event.isCtrlPressed && !event.isMetaPressed) {
-                                            return@onKeyEvent handleCandidateSelection()
+                                            return@onPreviewKeyEvent handleCandidateSelection()
                                         }
                                     }
                                     Key.Escape -> {
                                         acState = null
                                         text = ""
-                                        return@onKeyEvent true
+                                        return@onPreviewKeyEvent true
                                     }
                                 }
                             }
@@ -439,13 +436,13 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                             if (acState?.stage == SlashCommandEngine.Stage.PARAMS && event.key == Key.Escape) {
                                 acState = null
                                 text = ""
-                                return@onKeyEvent true
+                                return@onPreviewKeyEvent true
                             }
 
                             // ── Ctrl+Enter to send (original behavior) ──
                             if (event.key == Key.Enter && (event.isCtrlPressed || event.isMetaPressed)) {
                                 if (text.isNotBlank()) { onSend(text); text = ""; acState = null }
-                                return@onKeyEvent true
+                                return@onPreviewKeyEvent true
                             }
                         }
                         false
