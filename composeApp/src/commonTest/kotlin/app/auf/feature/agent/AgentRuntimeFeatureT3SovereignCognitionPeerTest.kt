@@ -81,7 +81,8 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
             modelProvider = "fake",
             modelName = "fake",
             privateSessionId = privateSession.identity.uuid!!,
-            subscribedSessionIds = listOf(publicSession.identity.uuid!!)
+            subscribedSessionIds = listOf(publicSession.identity.uuid!!),
+            resources = mapOf("system_instruction" to "res-sys-instruction-v1")
         )
 
         return TestEnvironment.create()
@@ -96,7 +97,8 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
                 subscribableSessionNames = mapOf(
                     privateSession.identity.uuid!! to privateSession.identity.name,
                     publicSession.identity.uuid!! to publicSession.identity.name
-                )
+                ),
+                resources = AgentDefaults.builtInResources
             ))
             .withInitialState("session", SessionState(
                 sessions = mapOf(privateSession.identity.uuid!! to privateSession, publicSession.identity.uuid!! to publicSession)

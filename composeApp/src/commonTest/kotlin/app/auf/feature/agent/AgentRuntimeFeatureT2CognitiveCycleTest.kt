@@ -50,8 +50,8 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
         cognitiveStrategyId = "sovereign_v1",
         subscribedSessionIds = listOf(sessionId),
         resources = mapOf(
-            "constitution" to "const-default",
-            "bootloader" to "boot-default"
+            "constitution" to "res-sovereign-constitution-v1",
+            "bootloader" to "res-boot-sentinel-v1"
         )
     ).copy(cognitiveState = buildJsonObject { put("phase", "BOOTING") })
 
@@ -201,9 +201,10 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             }
             assertNull(nvramUpdate, "Should NOT update NVRAM on sentinel failure")
 
-            // ASSERT: No session post
+            // ASSERT: No content post (avatar cards are ok, but no agent response should be posted)
             val sessionPost = harness.processedActions.find { action ->
-                action.name == ActionRegistry.Names.SESSION_POST
+                action.name == ActionRegistry.Names.SESSION_POST &&
+                        action.payload?.containsKey("message") == true
             }
             assertNull(sessionPost, "Should NOT post to session on sentinel failure")
 

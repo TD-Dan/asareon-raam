@@ -4,6 +4,7 @@ import app.auf.core.Action
 import app.auf.core.generated.ActionRegistry
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
+import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
@@ -30,7 +31,10 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
     private lateinit var harness: app.auf.test.TestHarness
     private lateinit var feature: AgentRuntimeFeature
     private lateinit var platform: FakePlatformDependencies
-    private val agent = testAgent("agent-1", "Test", modelProvider = "test-provider", modelName = "test-model", subscribedSessionIds = listOf("session-1"))
+    private val agent = testAgent("agent-1", "Test", modelProvider = "test-provider", modelName = "test-model",
+        subscribedSessionIds = listOf("session-1"),
+        resources = mapOf("system_instruction" to "res-sys-instruction-v1")
+    )
 
     @BeforeTest
     fun setup() {
@@ -38,8 +42,12 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
         feature = AgentRuntimeFeature(platform, scope)
         harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(FileSystemFeature(platform))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identity.uuid!! to agent)))
+            .withInitialState("agent", AgentRuntimeState(
+                agents = mapOf(agent.identity.uuid!! to agent),
+                resources = AgentDefaults.builtInResources
+            ))
             .build(platform = platform)
     }
 
@@ -54,13 +62,21 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
             assertEquals(AgentStatus.PROCESSING, stateAfterTrigger.agentStatuses[agent.identity.uuid]?.status)
 
             // Mock response sequence...
-            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_RESPONSE_LEDGER, buildJsonObject {
-                put("correlationId", agent.identity.uuid); put("messages", buildJsonArray { })
-            }))
+            harness.store.dispatch("session", Action(
+                name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                payload = buildJsonObject {
+                    put("correlationId", agent.identity.uuid); put("messages", buildJsonArray { })
+                },
+                targetRecipient = "agent"
+            ))
 
-            harness.store.dispatch("gateway", Action(ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE, buildJsonObject {
-                put("correlationId", agent.identity.uuid); put("rawContent", "Success")
-            }))
+            harness.store.dispatch("gateway", Action(
+                name = ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+                payload = buildJsonObject {
+                    put("correlationId", agent.identity.uuid); put("rawContent", "Success")
+                },
+                targetRecipient = "agent"
+            ))
 
             val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
             // ASSERT final status
@@ -72,9 +88,23 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
     fun `full cognitive cycle transitions agent to ERROR on gateway failure`() = runTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.identity.uuid) }))
-            harness.store.dispatch("gateway", Action(ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE, buildJsonObject {
-                put("correlationId", agent.identity.uuid); put("errorMessage", "Fail")
-            }))
+
+            // Deliver ledger so the pipeline can progress to gateway
+            harness.store.dispatch("session", Action(
+                name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                payload = buildJsonObject {
+                    put("correlationId", agent.identity.uuid); put("messages", buildJsonArray { })
+                },
+                targetRecipient = "agent"
+            ))
+
+            harness.store.dispatch("gateway", Action(
+                name = ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+                payload = buildJsonObject {
+                    put("correlationId", agent.identity.uuid); put("errorMessage", "Fail")
+                },
+                targetRecipient = "agent"
+            ))
 
             val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
             assertEquals(AgentStatus.ERROR, finalState.agentStatuses[agent.identity.uuid]?.status)
@@ -89,9 +119,11 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
         // Re-build harness to inject specific status
         harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
                 agents = mapOf(agent.identity.uuid!! to agent),
-                agentStatuses = mapOf(agent.identity.uuid!! to status)
+                agentStatuses = mapOf(agent.identity.uuid!! to status),
+                resources = AgentDefaults.builtInResources
             ))
             .build(platform = platform)
 
@@ -102,7 +134,11 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
         }
         harness.runAndLogOnFailure {
             // ACT: Deliver the response
-            harness.store.dispatch("gateway", Action(ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE, gatewayResponsePayload))
+            harness.store.dispatch("gateway", Action(
+                name = ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+                payload = gatewayResponsePayload,
+                targetRecipient = "agent"
+            ))
 
             // ASSERT 1: Sentinel Warning Posted
             val sentinelAction = harness.processedActions.find {
