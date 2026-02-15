@@ -125,7 +125,7 @@ class AgentRuntimeFeature(
                         saveAgentNvram(agent, store)
                     }
                 }
-                if (agentState.sessionNames.isNotEmpty()) {
+                if (store.state.value.identityRegistry.values.any { it.parentHandle == "session" }) {
                     SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
                 }
             }
@@ -135,10 +135,10 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.AGENT_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
                 val uuid = agent.identity.uuid ?: return
+                // NOTE: Avatar posting deferred to SESSION_SESSION_FEATURE_READY.
                 // At startup, agent files may load before session files. The session feature
                 // broadcasts SESSION_FEATURE_READY once sessions are in its map, at which point
                 // we reconcile avatars for all active agents.
-                broadcastAgentNames(agentState, store)
                 // Register agent identity
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.CORE_REGISTER_IDENTITY,
@@ -159,7 +159,6 @@ class AgentRuntimeFeature(
                     return
                 }
                 saveAgentConfig(agentToSave, store)
-                broadcastAgentNames(agentState, store)
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
                 // Register agent identity (no localHandle — CoreFeature generates via slugifyName)
                 store.deferredDispatch(identity.handle, Action(
@@ -209,7 +208,6 @@ class AgentRuntimeFeature(
                 SovereignHKGResourceLogic.handleSovereignRevocation(store, oldAgent, newAgent)
 
                 saveAgentConfig(newAgent, store)
-                broadcastAgentNames(agentState, store)
                 AgentAvatarLogic.updateAgentAvatars(agentId, store)
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
                 // If agent name changed, update identity atomically
@@ -257,7 +255,6 @@ class AgentRuntimeFeature(
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject { put("subpath", agentId) }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_CONFIRM_DELETE, buildJsonObject { put("agentId", agentId) }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
-                broadcastAgentNames(agentState, store)
                 // Unregister agent identity (cascades any sub-identities)
                 val agentToDelete = (previousState as? AgentRuntimeState)?.agents?.get(agentId)
                 val deleteHandle = agentToDelete?.identity?.handle
@@ -421,14 +418,12 @@ class AgentRuntimeFeature(
                 val uuid = action.payload?.get("uuid")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[uuid] ?: return
                 saveAgentConfig(agent, store)
-                broadcastAgentNames(agentState, store)
             }
             ActionRegistry.Names.CORE_RESPONSE_UPDATE_IDENTITY -> {
                 // Reducer already updated the agent's identity — re-save config with new identity
                 val uuid = action.payload?.get("uuid")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[uuid] ?: return
                 saveAgentConfig(agent, store)
-                broadcastAgentNames(agentState, store)
             }
 
             // ========================================================================
@@ -534,13 +529,6 @@ class AgentRuntimeFeature(
                 put("content", json.encodeToString(resource))
             }))
         }
-    }
-
-    private fun broadcastAgentNames(state: AgentRuntimeState, store: Store) {
-        val nameMap = state.agents.values.associate { it.identity.handle to it.identity.name }
-        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED, buildJsonObject {
-            put("names", Json.encodeToJsonElement(nameMap))
-        }))
     }
 
     // ========================================================================

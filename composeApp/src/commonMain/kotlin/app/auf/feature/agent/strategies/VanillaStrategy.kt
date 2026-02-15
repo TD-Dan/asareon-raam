@@ -1,6 +1,6 @@
 package app.auf.feature.agent.strategies
 
-import app.auf.feature.agent.*
+import app.auf.feature.agent.* // Allowed: this is inter-feature import
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 

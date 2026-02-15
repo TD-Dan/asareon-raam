@@ -2,7 +2,7 @@ package app.auf.feature.gateway.openai
 
 import app.auf.core.Action
 import app.auf.core.generated.ActionRegistry
-import app.auf.feature.gateway.*
+import app.auf.feature.gateway.* // Allowed: this is inter-feature import
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import io.ktor.client.*

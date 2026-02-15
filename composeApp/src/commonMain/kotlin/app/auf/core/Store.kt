@@ -1,8 +1,8 @@
 package app.auf.core
 
 import app.auf.core.generated.ActionRegistry
-import app.auf.feature.core.AppLifecycle
-import app.auf.feature.core.CoreState
+import app.auf.feature.core.AppLifecycle // Allowed: system and core are interconnected
+import app.auf.feature.core.CoreState // Allowed: system and core are interconnected
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.flow.MutableStateFlow

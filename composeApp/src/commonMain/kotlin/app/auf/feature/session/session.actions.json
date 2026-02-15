@@ -606,7 +606,7 @@
     },
     {
       "action_name": "session.SESSION_NAMES_UPDATED",
-      "summary": "Broadcasts the verified map of session IDs to their names. Can only be dispatched by the SessionFeature.",
+      "summary": "Broadcasts the verified map of session IDs to their names, plus the set of agent-private session IDs. Can only be dispatched by the SessionFeature.",
       "open": false,
       "broadcast": true,
       "targeted": false,
@@ -615,11 +615,17 @@
         "properties": {
           "names": {
             "type": "object",
-            "description": "A map where the key is the session ID and the value is the session's name."
+            "description": "A map where the key is the session localHandle and the value is the session's display name."
+          },
+          "agentPrivateIds": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "The localHandles of sessions marked as agent-private cognition sessions (isAgentPrivate = true). Used by AgentCrudLogic to prevent agents subscribing to private sessions."
           }
         },
         "required": [
-          "names"
+          "names",
+          "agentPrivateIds"
         ]
       }
     },

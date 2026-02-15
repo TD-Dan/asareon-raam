@@ -65,14 +65,16 @@ object SovereignHKGResourceLogic {
             // [RULE 2] The Void (Bootstrap)
             val expectedSessionName = "p-cognition: ${agent.identity.name} (${agent.identity.uuid})"
 
-            // A. Check for Name Match (To link an existing but unlinked session)
-            val existingSessionEntry = agentState.sessionNames.entries.find { it.value == expectedSessionName }
+            // A. Check for Name Match in the identity registry (To link an existing but unlinked session)
+            val existingSessionIdentity = store.state.value.identityRegistry.values.find {
+                it.parentHandle == "session" && it.name == expectedSessionName
+            }
 
-            if (existingSessionEntry != null) {
-                // FOUND: Link it.
+            if (existingSessionIdentity != null) {
+                // FOUND: Link it by localHandle.
                 store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
                     put("agentId", agent.identity.uuid)
-                    put("privateSessionId", existingSessionEntry.key)
+                    put("privateSessionId", existingSessionIdentity.localHandle)
                 }))
             } else {
                 // NOT FOUND: Create it.

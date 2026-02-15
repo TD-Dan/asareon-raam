@@ -329,7 +329,7 @@ object AgentCognitivePipeline {
 
         // === SESSION METADATA (with token usage context) ===
         val sessionId = agent.subscribedSessionIds.firstOrNull()
-        val sessionName = sessionId?.let { agentState.sessionNames[it] } ?: "Unknown Session"
+        val sessionName = sessionId?.let { store.state.value.identityRegistry["session.$it"]?.name } ?: "Unknown Session"
         val lastInput = statusInfo.lastInputTokens
         val lastOutput = statusInfo.lastOutputTokens
         val tokenUsageContext = if (lastInput != null || lastOutput != null) {

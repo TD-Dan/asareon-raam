@@ -33,8 +33,6 @@ class SessionFeature(
     @Serializable private data class SetEditingMessagePayload(val messageId: String?)
     @Serializable private data class ToggleMessageUiPayload(val sessionId: String, val messageId: String)
     @Serializable internal data class InternalSessionLoadedPayload(val sessions: Map<String, Session>)
-    @Serializable private data class IdentityNamesUpdatedPayload(val names: Map<String, String>)
-    @Serializable private data class AgentDeletedPayload(val agentId: String)
     @Serializable private data class RequestLedgerPayload(val sessionId: String, val correlationId: String)
     @Serializable private data class GatewayMessage(val role: String, val content: String, val senderId: String, val senderName: String)
     @Serializable private data class ReorderPayload(val sessionId: String, val toIndex: Int)
@@ -577,6 +575,9 @@ class SessionFeature(
     private fun broadcastSessionNames(state: SessionState, store: Store) {
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED, buildJsonObject {
             put("names", Json.encodeToJsonElement(state.sessions.mapValues { it.value.identity.name }))
+            put("agentPrivateIds", Json.encodeToJsonElement(
+                state.sessions.values.filter { it.isAgentPrivate }.map { it.identity.localHandle }
+            ))
         }))
     }
 
@@ -625,23 +626,10 @@ class SessionFeature(
 
         var newState: SessionState = when (action.name) {
             ActionRegistry.Names.CORE_IDENTITIES_UPDATED -> {
-                val identities = payload?.get("identities")?.jsonArray?.map { json.decodeFromJsonElement<Identity>(it) } ?: return currentFeatureState
-                val userNames = identities.associate { it.handle to it.name }
-                val agentNames = currentFeatureState.identityNames.filterKeys { it !in userNames.keys }
                 val activeId = payload?.get("activeId")?.jsonPrimitive?.contentOrNull
                 currentFeatureState.copy(
-                    identityNames = agentNames + userNames,
                     activeUserId = activeId ?: currentFeatureState.activeUserId
                 )
-            }
-            ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED -> {
-                val agentNames = payload?.let { json.decodeFromJsonElement<IdentityNamesUpdatedPayload>(it) }?.names ?: emptyMap()
-                val userNames = currentFeatureState.identityNames.filterKeys { it !in agentNames.keys }
-                currentFeatureState.copy(identityNames = userNames + agentNames)
-            }
-            ActionRegistry.Names.AGENT_AGENT_DELETED -> {
-                val agentId = payload?.let { json.decodeFromJsonElement<AgentDeletedPayload>(it) }?.agentId ?: return currentFeatureState
-                currentFeatureState.copy(identityNames = currentFeatureState.identityNames - agentId)
             }
 
             // Phase 4: SESSION_CREATE stashes a PendingSessionCreation — no session in the map yet

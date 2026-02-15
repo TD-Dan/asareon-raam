@@ -2,8 +2,8 @@ package app.auf.feature.agent
 
 import app.auf.core.FeatureState
 import app.auf.core.Identity
-import app.auf.feature.agent.strategies.SovereignDefaults // TODO: illegal import! No feature should know of another feature!
-import app.auf.feature.agent.strategies.VanillaStrategy // TODO: illegal import! No feature should know of another feature!
+import app.auf.feature.agent.strategies.SovereignDefaults // Allowed: this is inter-feature import
+import app.auf.feature.agent.strategies.VanillaStrategy // Allowed: this is inter-feature import
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
@@ -148,7 +148,9 @@ data class AgentRuntimeState(
     @Transient
     /** Key = identity.uuid. */
     val agentStatuses: Map<String, AgentStatusInfo> = emptyMap(),
-    val sessionNames: Map<String, String> = emptyMap(),
+    /** localHandles of sessions marked as agent-private cognition sessions.
+     *  Used by AgentCrudLogic to prevent agents subscribing to private sessions. */
+    val agentPrivateSessionIds: Set<String> = emptySet(),
     val availableModels: Map<String, List<String>> = emptyMap(),
     val knowledgeGraphNames: Map<String, String> = emptyMap(),
 

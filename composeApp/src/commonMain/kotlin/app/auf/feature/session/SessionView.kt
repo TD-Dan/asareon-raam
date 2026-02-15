@@ -159,7 +159,7 @@ private fun LedgerPane(
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-    val identityNames = sessionState?.identityNames ?: emptyMap()
+    val identityRegistry = store.state.collectAsState().value.identityRegistry
     val activeUserId = sessionState?.activeUserId
 
     // --- SLICE 1 CHANGE: Build a lookup map of feature name → feature for PartialView routing ---
@@ -197,8 +197,8 @@ private fun LedgerPane(
                     agentFeature?.composableProvider?.PartialView(store, "agent.avatar", entry.senderId)
                 }
             } else {
-                val senderName = remember(entry.senderId, identityNames) {
-                    identityNames[entry.senderId] ?: entry.senderId
+                val senderName = remember(entry.senderId, identityRegistry) {
+                    identityRegistry[entry.senderId]?.name ?: entry.senderId
                 }
                 val isCurrentUserMessage = entry.senderId == activeUserId
                 LedgerEntryCard(
@@ -279,7 +279,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                         onClick = {
                             val transcript = activeSession.ledger.joinToString("\n\n") { entry ->
                                 val timestamp = platformDependencies.formatIsoTimestamp(entry.timestamp)
-                                val senderName = (store.state.value.featureStates["session"] as? SessionState)?.identityNames?.get(entry.senderId) ?: entry.senderId
+                                val senderName = store.state.value.identityRegistry[entry.senderId]?.name ?: entry.senderId
                                 "$senderName @ $timestamp:\n${entry.rawContent}"
                             }
                             store.dispatch("ui.session.input", Action(ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", transcript) }))

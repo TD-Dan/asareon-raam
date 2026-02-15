@@ -19,7 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
-import app.auf.feature.agent.strategies.VanillaStrategy // TODO: This is a violation of absolute decoupling
+import app.auf.feature.agent.strategies.VanillaStrategy // Allowed: this is inter-feature import
 import app.auf.ui.components.CodeEditor
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
@@ -177,9 +177,10 @@ private fun AgentReadOnlyView(
     store: Store,
     platformDependencies: app.auf.util.PlatformDependencies
 ) {
-    val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.sessionNames[it] } ?: "Not Subscribed"
+    val identityRegistry = store.state.collectAsState().value.identityRegistry
+    val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { identityRegistry["session.$it"]?.name } ?: "Not Subscribed"
     val hkgName = agent.knowledgeGraphId?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG"
-    val privateSessionName = agent.privateSessionId?.let { agentState.sessionNames[it] } ?: agent.privateSessionId ?: "None"
+    val privateSessionName = agent.privateSessionId?.let { identityRegistry["session.$it"]?.name } ?: agent.privateSessionId ?: "None"
     val statusInfo = agentState.agentStatuses[agent.identity.uuid] ?: AgentStatusInfo()
 
     var showInternals by remember { mutableStateOf(false) }
@@ -307,9 +308,9 @@ private fun AgentEditorView(
         // --- ROW 3: Context (Subscriptions) ---
         Row(Modifier.fillMaxWidth()) {
             if (draftAgent.knowledgeGraphId == null) {
-                SingleSessionSelector(draftAgent, agentState, onDraftChanged)
+                SingleSessionSelector(draftAgent, agentState, store, onDraftChanged)
             } else {
-                MultiSessionSelector(draftAgent, agentState, onDraftChanged)
+                MultiSessionSelector(draftAgent, agentState, store, onDraftChanged)
             }
         }
 
@@ -683,15 +684,18 @@ private fun CreateResourceDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SingleSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, onUpdate: (AgentInstance) -> Unit) {
-    val availableSessions = remember(agentState.sessionNames) {
-        agentState.sessionNames.entries.toList().filter { !it.value.startsWith("p-cognition:") }
+private fun SingleSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store, onUpdate: (AgentInstance) -> Unit) {
+    val identityRegistry = store.state.collectAsState().value.identityRegistry
+    val availableSessions = remember(identityRegistry, agentState.agentPrivateSessionIds) {
+        identityRegistry.values
+            .filter { it.parentHandle == "session" && it.localHandle !in agentState.agentPrivateSessionIds }
+            .map { it.localHandle to it.name }
     }
     var isExpanded by remember { mutableStateOf(false) }
 
     ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
         OutlinedTextField(
-            value = agent.subscribedSessionIds.firstOrNull()?.let { agentState.sessionNames[it] } ?: "Not Subscribed",
+            value = agent.subscribedSessionIds.firstOrNull()?.let { identityRegistry["session.$it"]?.name } ?: "Not Subscribed",
             onValueChange = {}, readOnly = true, label = { Text("Session") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth()
@@ -713,15 +717,18 @@ private fun SingleSessionSelector(agent: AgentInstance, agentState: AgentRuntime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MultiSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, onUpdate: (AgentInstance) -> Unit) {
-    val availableSessions = remember(agentState.sessionNames) {
-        agentState.sessionNames.entries.toList().filter { !it.value.startsWith("p-cognition:") }
+private fun MultiSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, store: Store, onUpdate: (AgentInstance) -> Unit) {
+    val identityRegistry = store.state.collectAsState().value.identityRegistry
+    val availableSessions = remember(identityRegistry, agentState.agentPrivateSessionIds) {
+        identityRegistry.values
+            .filter { it.parentHandle == "session" && it.localHandle !in agentState.agentPrivateSessionIds }
+            .map { it.localHandle to it.name }
     }
     var isExpanded by remember { mutableStateOf(false) }
 
     val selectionText = when (agent.subscribedSessionIds.size) {
         0 -> "Not Subscribed"
-        1 -> agentState.sessionNames[agent.subscribedSessionIds.first()] ?: "1 Session"
+        1 -> identityRegistry["session.${agent.subscribedSessionIds.first()}"]?.name ?: "1 Session"
         else -> "${agent.subscribedSessionIds.size} Sessions"
     }
 

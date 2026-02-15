@@ -424,24 +424,6 @@
       }
     },
     {
-      "action_name": "agent.AGENT_NAMES_UPDATED",
-      "summary": "Broadcasts the verified map of agent IDs to their names.",
-      "open": false,
-      "broadcast": true,
-      "targeted": false,
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "names": {
-            "type": "object"
-          }
-        },
-        "required": [
-          "names"
-        ]
-      }
-    },
-    {
       "action_name": "agent.AGENT_DELETED",
       "summary": "Broadcasts that an agent has been deleted, so other features can clean up their state.",
       "open": false,

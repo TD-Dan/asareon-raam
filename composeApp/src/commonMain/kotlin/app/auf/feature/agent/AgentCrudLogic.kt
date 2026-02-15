@@ -57,7 +57,7 @@ object AgentCrudLogic {
                     agentToUpdate.subscribedSessionIds
                 }
                 val filteredSubscribedSessionIds = newSubscribedSessionIds.filter { sessionId ->
-                    state.sessionNames[sessionId]?.startsWith("p-cognition:") == false
+                    sessionId !in state.agentPrivateSessionIds
                 }
 
                 val updatedResources = if ("resources" in payload) {

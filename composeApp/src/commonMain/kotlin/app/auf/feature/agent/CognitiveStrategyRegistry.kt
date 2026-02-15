@@ -1,7 +1,7 @@
 package app.auf.feature.agent
 
-import app.auf.feature.agent.strategies.SovereignStrategy
-import app.auf.feature.agent.strategies.VanillaStrategy
+import app.auf.feature.agent.strategies.SovereignStrategy  // Allowed: this is inter-feature import
+import app.auf.feature.agent.strategies.VanillaStrategy // Allowed: this is inter-feature import
 
 /**
  * The Lookup Table for Cognitive Architectures.
