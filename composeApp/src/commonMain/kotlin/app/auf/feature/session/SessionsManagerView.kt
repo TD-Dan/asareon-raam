@@ -373,7 +373,7 @@ private fun SessionManagerCard(
             )
 
             // Lightning bolt icon for agent-private (p-cognition) sessions
-            if (session.isAgentPrivate) {
+            if (session.isPrivate) {
                 Icon(
                     imageVector = Icons.Default.FlashOn,
                     contentDescription = "Agent Private Session",

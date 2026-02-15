@@ -59,7 +59,7 @@ data class PendingSessionCreation(
     val uuid: String,
     val requestedName: String,
     val isHidden: Boolean = false,
-    val isAgentPrivate: Boolean = false,
+    val isPrivate: Boolean = false,
     val createdAt: Long,
     /** For clones: the localHandle of the source session to copy the ledger from. */
     val cloneSourceLocalHandle: String? = null
@@ -79,7 +79,7 @@ data class Session(
     /** When true, this session is hidden from the default view in both the tab bar and manager. */
     val isHidden: Boolean = false,
     /** When true, this session is an agent's private cognition session (shown with a lightning bolt icon). */
-    val isAgentPrivate: Boolean = false,
+    val isPrivate: Boolean = false,
     /**
      * Persistent ordering index for this session.
      * Lower values sort first. Ties are broken by createdAt descending (newest first).

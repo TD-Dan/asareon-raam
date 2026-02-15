@@ -1,8 +1,8 @@
 # Unified Action Bus v2.0 — Complete Implementation Outline
 
-**Version**: 5.2 — KnowledgeGraph audit & test migration complete
-**Status**: Phase 1 ✅ / Phase 2.1 ✅ / Phase 2.2 ✅ / Phase 3 ✅ / Phase 4 Session ✅ / Phase 4 Agent Production ✅ / Phase 4 Agent Tests 🔧 (11 failing, parked as tech debt) / Phase 4 CommandBot ✅ / Phase 4 KnowledgeGraph ✅ / Identity Consolidation & Cleanup Remaining
-**Last Updated**: 2026-02-14 — KnowledgeGraph feature audited for v2.0 compatibility; production code hardened with 17 warning logs; 3 broken tests migrated from deprecated APIs; 15 new tests added for coverage gaps
+**Version**: 5.3 — Identity consolidation & legacy shim deletion complete
+**Status**: Phase 1 ✅ / Phase 2.1 ✅ / Phase 2.2 ✅ / Phase 3 ✅ / Phase 4 Session ✅ / Phase 4 Agent Production ✅ / Phase 4 Agent Tests 🔧 (11 failing, parked as tech debt) / Phase 4 CommandBot ✅ / Phase 4 KnowledgeGraph ✅ / Phase 4 Identity Consolidation ✅ / Phase 4 Legacy Shim Deletion ✅ / Phase 4 Test Migration Remaining
+**Last Updated**: 2026-02-15 — Deleted ExposedActions shim, ActionNames shim, and Phase 3b deprecated APIs; deleted SessionState.identityNames (views read AppState.identityRegistry); deleted AgentRuntimeState.sessionNames (replaced by subscribableSessionNames filtered at source); deleted broadcastAgentNames + agent.AGENT_NAMES_UPDATED action; eliminated startsWith("p-cognition:") pattern; SovereignHKGResourceLogic reads identity registry directly
 
 ## Executive Summary
 
@@ -31,7 +31,7 @@ The work is organized into **6 phases**, each independently shippable. The final
 3. [Phase 1 — Manifest Schema Unification & ActionRegistry Codegen ✅](#3-phase-1--manifest-schema-unification--actionregistry-codegen)
 4. [Phase 2 — IdentityRegistry & Hierarchical Originators (2.1 ✅ / 2.2 ✅)](#4-phase-2--identityregistry--hierarchical-originators)
 5. [Phase 3 — Targeted Delivery & Private Envelope Absorption ✅](#5-phase-3--targeted-delivery--private-envelope-absorption)
-6. [Phase 4 — Migrate Consumers (CommandBot ✅, Agent, Session, KnowledgeGraph ✅) — Session ✅, Agent Production ✅, Agent Tests 🔧, CommandBot ✅, KnowledgeGraph ✅](#6-phase-4--migrate-consumers-commandbot-agent-session)
+6. [Phase 4 — Migrate Consumers & Identity Consolidation — All Production ✅, Tests Remaining](#6-phase-4--migrate-consumers-commandbot-agent-session)
 7. [Phase 5 — Runtime-Extensible Registry](#7-phase-5--runtime-extensible-registry)
 8. [Phase 6 — Slash-Command Autocomplete UI](#8-phase-6--slash-command-autocomplete-ui)
 9. [Future: Permissions System (Paved, Not Built)](#9-future-permissions-system-paved-not-built)
@@ -732,7 +732,7 @@ The `generateActionRegistry` task in `build.gradle.kts` is rewritten to:
 | `session.CLONE` | `exposedToAgents` uses `sourceSession`; `listensFor` uses `session` | `listensFor` is canonical — migrated manifest uses `session` |
 | `session.DELETE_MESSAGE` | `exposedToAgents` uses `senderId`+`timestamp`; `listensFor` uses `messageId` | `listensFor` is canonical — **requires manual review** of CommandBot translation path |
 | `session.POST` | `exposedToAgents` missing 5 fields (`messageId`, `metadata`, etc.) | `listensFor` superset — no issue |
-| `session.CREATE` | `exposedToAgents` missing `isHidden`, `isAgentPrivate` | Superset — no issue |
+| `session.CREATE` | `exposedToAgents` missing `isHidden`, `isPrivate` | Superset — no issue |
 | `session.LIST_SESSIONS` | `exposedToAgents` missing `responseSession` | Auto-filled by CommandBot — no issue |
 | `filesystem.SYSTEM_WRITE` | `listensFor` has `encrypt` not in agent schema | Sandboxing rewrites `encrypt` → `"false"` — no issue |
 | `filesystem.SYSTEM_LIST` | `listensFor` has `correlationId` not in agent schema | Optional field — no issue |
@@ -1309,7 +1309,7 @@ The mutable `knownAgentIds` and `knownAgentNames` sets are deleted entirely. Com
 
 Session creation is now a two-phase flow mediated by CoreFeature's identity registry:
 
-1. **SESSION_CREATE** reducer stashes a `PendingSessionCreation` (uuid, requestedName, isHidden, isAgentPrivate, createdAt). No session is added to state yet.
+1. **SESSION_CREATE** reducer stashes a `PendingSessionCreation` (uuid, requestedName, isHidden, isPrivate, createdAt). No session is added to state yet.
 2. **SESSION_CREATE** side effect dispatches `core.REGISTER_IDENTITY` with `name` and `uuid` (localHandle is null — CoreFeature generates it via `slugifyName()`).
 3. **CoreFeature** processes the registration: generates localHandle slug, deduplicates, adds to registry, sends targeted `RESPONSE_REGISTER_IDENTITY` back to session.
 4. **RESPONSE_REGISTER_IDENTITY** reducer: on success, creates the actual `Session` from the pending data with the approved `Identity`, adds to `sessions` map, sets active. On failure, removes pending, sets error.
@@ -2142,22 +2142,57 @@ Full v2.0 compatibility audit performed on KnowledgeGraphFeature. Production cod
 - T2: `handleFilesContentForLoad` error paths (all-malformed, partial errors), `COPY_ANALYSIS_TO_CLIPBOARD`, `UPDATE_HOLON_CONTENT` side effect
 - T1 View: tree expand/collapse, type filtering
 - T3 Import: UPDATE action, AssignParent with user overrides
-- [ ] **Fix 11 failing agent tests (tech debt)** — primary issue: `SessionState.sessions` keyed by `localHandle`, tests need `testSession(...).identity.localHandle` as map key instead of `.identity.uuid!!`; also check `activeSessionId` → `activeSessionLocalHandle`
+- [ ] **Fix 11 failing agent tests (tech debt)** — primary issue: `SessionState.sessions` keyed by `localHandle`, tests need `testSession(...).identity.localHandle` as map key instead of `.identity.uuid!!`; also check `activeSessionId` → `activeSessionLocalHandle`. Additionally: `AgentRuntimeState.sessionNames` → `subscribableSessionNames`, `agentState.sessionNames[x]` → `agentState.subscribableSessionNames[x]` in any test helpers.
 - [x] ~~Migrate `CommandBotFeature` from `ExposedActions.*` → `ActionRegistry.*`~~
 - [x] ~~Delete `CommandBotFeature.knownAgentIds` and `knownAgentNames`; read from `AppState.identityRegistry` (filter by parentHandle == "agent")~~
 - [x] ~~Migrate agent prompt builder from `ExposedActions.documentation` → `ActionRegistry.byActionName`~~ — N/A: prompt content is dynamically generated by LLMs, not read from a static ExposedActions field
-- [ ] Deprecate then delete `SessionState.identityNames`; read from `AppState.identityRegistry` in views
-- [ ] Deprecate `agent.AGENT_NAMES_UPDATED`; agents use `core.REGISTER_IDENTITY` instead (currently emits handle→name map as interim). CommandBot no longer subscribes — only SessionFeature's `identityNames` cache remains as consumer.
+- [x] ~~Deprecate then delete `SessionState.identityNames`; read from `AppState.identityRegistry` in views~~
+- [x] ~~Deprecate `agent.AGENT_NAMES_UPDATED`; agents use `core.REGISTER_IDENTITY` instead~~ — Action deleted from `agent_actions.json`; `broadcastAgentNames()` method and all 6 call sites removed; SessionFeature reducer cases for `AGENT_NAMES_UPDATED` and `AGENT_DELETED` (identity cache consumers) removed
 - [ ] Migrate `subscribedSessionIds`/`privateSessionId` from session UUIDs to session localHandles
-- [ ] Delete `AgentRuntimeState.sessionNames` map (replaced by identity registry lookups)
+- [x] ~~Delete `AgentRuntimeState.sessionNames` map (replaced by identity registry lookups)~~ — Replaced by `subscribableSessionNames: Map<String, String>` populated from `SESSION_NAMES_UPDATED` (which now excludes `isAgentPrivate` sessions at source)
 - [x] ~~⚠️ **AgentRuntimeFeature: migrate from UUIDs to handles**~~ — Production code complete. `AgentInstance.identity: Identity` replaces `id`/`name`; registration via `REGISTER_IDENTITY`; rename via `UPDATE_IDENTITY`; bus-facing senderId uses handle
-- [ ] Delete `ExposedActions.kt` deprecated delegation shim — CommandBot was the last consumer; now safe to delete
-- [ ] Delete `ActionNames.kt` typealias shim
+- [x] ~~Delete `ExposedActions.kt` deprecated delegation shim~~ — Codegen block removed from `build_gradle.kts`; `ExposedActionsContextProvider.kt` migrated to `ActionRegistry`; `AgentRuntimeFeature.applySandboxRewrite` migrated to `ActionRegistry.agentSandboxRules`
+- [x] ~~Delete `ActionNames.kt` typealias shim~~
 - [x] ~~Phase 3b cleanup in tests~~: All test references to `onPrivateData`, `deliverPrivateData`, `PrivateDataEnvelope`, `Envelopes.*` eliminated (Agent tests: 5 files; KnowledgeGraph tests: 1 file — the final holdout)
-- [ ] Phase 3b cleanup in production: Delete `onPrivateData` from `Feature.kt`, `deliverPrivateData` from `Store.kt`, `PrivateDataEnvelope` from `AppCore.kt`, `Envelopes` from `ActionNames.kt`. **Ready to execute**: zero callers remain in production or test code after KnowledgeGraph test migration.
-- [ ] IDE-assisted batch rename: all old constant names (`SESSION_INTERNAL_LOADED` → `SESSION_LOADED`, etc.)
-- [ ] IDE-assisted batch rename: `ActionNames.` → `ActionRegistry.Names.`
+- [x] ~~Phase 3b cleanup in production: Delete `onPrivateData` from `Feature.kt`, `deliverPrivateData` from `Store.kt`, `PrivateDataEnvelope` from `AppCore.kt`, `Envelopes` from `ActionNames.kt`~~
+- [x] ~~IDE-assisted batch rename: all old constant names (`SESSION_INTERNAL_LOADED` → `SESSION_LOADED`, etc.)~~
+- [x] ~~IDE-assisted batch rename: `ActionNames.` → `ActionRegistry.Names.`~~
 - [ ] Run full test suite
+
+#### Identity Consolidation ✅
+
+Eliminated four fragmented identity/name caches, replacing them with reads from `AppState.identityRegistry` (single source of truth) or source-filtered broadcasts.
+
+**Deleted: `SessionState.identityNames`** (5 files)
+- [x] **SessionState.kt** — Removed `identityNames: Map<String, String>` field
+- [x] **SessionFeature.kt** — Removed `CORE_IDENTITIES_UPDATED` identity name merge (kept `activeUserId` extraction); removed `AGENT_AGENT_NAMES_UPDATED` reducer case; removed `AGENT_AGENT_DELETED` reducer case; removed `IdentityNamesUpdatedPayload` and `AgentDeletedPayload` classes
+- [x] **SessionView.kt** — `LedgerPane`: sender name resolution via `store.state.collectAsState().value.identityRegistry[entry.senderId]?.name`; "Copy Transcript" lambda: same pattern via `store.state.value.identityRegistry`
+
+**Deleted: `broadcastAgentNames()` + `agent.AGENT_NAMES_UPDATED` action** (2 files)
+- [x] **AgentRuntimeFeature.kt** — Deleted `broadcastAgentNames()` method and all 6 call sites (AGENT_LOADED, AGENT_CREATE, UPDATE_CONFIG, DELETE, RESPONSE_REGISTER_IDENTITY, RESPONSE_UPDATE_IDENTITY)
+- [x] **agent_actions.json** — Deleted `agent.AGENT_NAMES_UPDATED` action declaration (zero producers, zero consumers)
+
+**Replaced: `AgentRuntimeState.sessionNames` → `subscribableSessionNames`** (7 files)
+- [x] **SessionFeature.kt** — `broadcastSessionNames` now filters out `isAgentPrivate` sessions at source, emitting only subscribable sessions in the `names` map
+- [x] **session_actions.json** — Updated `SESSION_NAMES_UPDATED` summary to document the `isAgentPrivate` exclusion
+- [x] **AgentState.kt** — `sessionNames: Map<String, String>` → `subscribableSessionNames: Map<String, String>` with doc comment
+- [x] **AgentRuntimeReducer.kt** — `SESSION_SESSION_NAMES_UPDATED` case stores pre-filtered names map into `subscribableSessionNames`
+- [x] **AgentCrudLogic.kt** — Subscription guard changed from `state.sessionNames[sessionId]?.startsWith("p-cognition:") == false` → `sessionId in state.subscribableSessionNames` (positive allowlist)
+- [x] **AgentManagerView.kt** — `SingleSessionSelector` and `MultiSessionSelector` use `agentState.subscribableSessionNames.entries.toList()` directly (zero filtering); `AgentReadOnlyView` uses `subscribableSessionNames` for subscribed session display, identity registry for private session name display
+- [x] **SovereignHKGResourceLogic.kt** — `ensureSovereignSessions` session name-matching reads from `store.state.value.identityRegistry` (filtered by `parentHandle == "session"`) instead of `agentState.sessionNames`
+- [x] **AgentRuntimeFeature.kt** — `AGENTS_LOADED` guard changed from `agentState.sessionNames.isNotEmpty()` → `store.state.value.identityRegistry.values.any { it.parentHandle == "session" }`
+
+**Also migrated: `ExposedActions` → `ActionRegistry`** (3 files)
+- [x] **ExposedActionsContextProvider.kt** — Import and reads changed from `ExposedActions.documentation` → `ActionRegistry.agentAllowedNames` / `ActionRegistry.byActionName`
+- [x] **AgentRuntimeFeature.kt** — `ExposedActions.sandboxRules` → `ActionRegistry.agentSandboxRules`; import removed
+- [x] **build_gradle.kts** — Entire ExposedActions.kt codegen block (~70 lines) removed; task description and header updated
+- [x] **AgentCognitivePipeline.kt** — `agentState.sessionNames[it]` → `store.state.value.identityRegistry["session.$it"]?.name`
+
+**Design Decisions:**
+- Views read identity names from `AppState.identityRegistry` — the single source of truth. No feature-local caches needed.
+- `SESSION_NAMES_UPDATED` now serves as the subscribable session catalog by filtering `isAgentPrivate` sessions at source. The `startsWith("p-cognition:")` naming convention hack is eliminated. Consumers receive a clean list and use it directly.
+- `SovereignHKGResourceLogic` reads the identity registry for session name-matching (it needs ALL sessions including private). `AgentCrudLogic` reads `subscribableSessionNames` for the subscription guard (it needs only subscribable sessions). Each consumer uses the appropriate data source.
+- `broadcastAgentNames()` and `agent.AGENT_NAMES_UPDATED` are dead code — agents register via `core.REGISTER_IDENTITY`, and the identity registry is the canonical name source. Deleted entirely.
 
 ### Phase 5 — Runtime-Extensible Registry
 - [ ] Create `registry.actions.json` with REGISTER_ACTION, UNREGISTER_ACTION, CATALOG_UPDATED

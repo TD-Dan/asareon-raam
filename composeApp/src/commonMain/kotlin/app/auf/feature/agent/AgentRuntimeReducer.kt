@@ -167,10 +167,10 @@ object AgentRuntimeReducer {
             }
 
             ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED -> {
-                val privateIds = try {
-                    action.payload?.get("agentPrivateIds")?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }?.toSet()
+                val names = try {
+                    action.payload?.get("names")?.jsonObject?.mapValues { it.value.jsonPrimitive.content }
                 } catch (e: Exception) { null }
-                if (privateIds != null) state.copy(agentPrivateSessionIds = privateIds) else state
+                if (names != null) state.copy(subscribableSessionNames = names) else state
             }
 
             ActionRegistry.Names.KNOWLEDGEGRAPH_AVAILABLE_PERSONAS_UPDATED -> {

@@ -17,11 +17,11 @@
           },
           "isHidden": {
             "type": "boolean",
-            "description": "If true, the session is created in a hidden state (e.g., for agent p-cognition). Defaults to false."
+            "description": "If true, the session is created in a hidden state. Defaults to false."
           },
-          "isAgentPrivate": {
+          "isPrivate": {
             "type": "boolean",
-            "description": "If true, the session is marked as an agent's private cognition session. Defaults to false."
+            "description": "If true, the session is marked as an private session. Defaults to false."
           }
         }
       },
@@ -606,7 +606,7 @@
     },
     {
       "action_name": "session.SESSION_NAMES_UPDATED",
-      "summary": "Broadcasts the verified map of session IDs to their names, plus the set of agent-private session IDs. Can only be dispatched by the SessionFeature.",
+      "summary": "Broadcasts the map of subscribable (non-private) session localHandles to their display names. Private sessions are excluded. Can only be dispatched by the SessionFeature.",
       "open": false,
       "broadcast": true,
       "targeted": false,
@@ -615,17 +615,11 @@
         "properties": {
           "names": {
             "type": "object",
-            "description": "A map where the key is the session localHandle and the value is the session's display name."
-          },
-          "agentPrivateIds": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "The localHandles of sessions marked as agent-private cognition sessions (isAgentPrivate = true). Used by AgentCrudLogic to prevent agents subscribing to private sessions."
+            "description": "A map where the key is the session localHandle and the value is the session's display name. Excludes private sessions."
           }
         },
         "required": [
-          "names",
-          "agentPrivateIds"
+          "names"
         ]
       }
     },

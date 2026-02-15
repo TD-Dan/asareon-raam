@@ -82,7 +82,7 @@ object SovereignHKGResourceLogic {
                 store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_CREATE, buildJsonObject {
                     put("name", expectedSessionName)
                     put("isHidden", true)
-                    put("isAgentPrivate", true)
+                    put("isPrivate", true)
                 }))
             }
         }

@@ -57,7 +57,7 @@ object AgentCrudLogic {
                     agentToUpdate.subscribedSessionIds
                 }
                 val filteredSubscribedSessionIds = newSubscribedSessionIds.filter { sessionId ->
-                    sessionId !in state.agentPrivateSessionIds
+                    sessionId in state.subscribableSessionNames
                 }
 
                 val updatedResources = if ("resources" in payload) {

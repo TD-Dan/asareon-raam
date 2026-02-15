@@ -22,7 +22,7 @@ class SessionFeature(
     override val identity: Identity = Identity(uuid = null, handle = "session", localHandle = "session", name="Session Manager")
 
     // --- Private, serializable data classes for decoding action payloads safely. ---
-    @Serializable private data class CreatePayload(val name: String? = null, val isHidden: Boolean = false, val isAgentPrivate: Boolean = false)
+    @Serializable private data class CreatePayload(val name: String? = null, val isHidden: Boolean = false, val isPrivate: Boolean = false)
     @Serializable private data class ClonePayload(val session: String)
     @Serializable private data class UpdateConfigPayload(val session: String, val name: String)
     @Serializable private data class SessionTargetPayload(val session: String)
@@ -573,11 +573,11 @@ class SessionFeature(
     }
 
     private fun broadcastSessionNames(state: SessionState, store: Store) {
+        val subscribableNames = state.sessions
+            .filterValues { !it.isPrivate }
+            .mapValues { it.value.identity.name }
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED, buildJsonObject {
-            put("names", Json.encodeToJsonElement(state.sessions.mapValues { it.value.identity.name }))
-            put("agentPrivateIds", Json.encodeToJsonElement(
-                state.sessions.values.filter { it.isAgentPrivate }.map { it.identity.localHandle }
-            ))
+            put("names", Json.encodeToJsonElement(subscribableNames))
         }))
     }
 
@@ -643,7 +643,7 @@ class SessionFeature(
                     uuid = uuid,
                     requestedName = uniqueName,
                     isHidden = decoded.isHidden,
-                    isAgentPrivate = decoded.isAgentPrivate,
+                    isPrivate = decoded.isPrivate,
                     createdAt = platformDependencies.currentTimeMillis()
                 )
                 currentFeatureState.copy(
@@ -664,7 +664,7 @@ class SessionFeature(
                     uuid = uuid,
                     requestedName = newName,
                     isHidden = false,
-                    isAgentPrivate = false,
+                    isPrivate = false,
                     createdAt = platformDependencies.currentTimeMillis(),
                     cloneSourceLocalHandle = sourceLocalHandle
                 )
@@ -700,7 +700,7 @@ class SessionFeature(
                             createdAt = pending.createdAt,
                             messageUiState = source?.messageUiState ?: emptyMap(),
                             isHidden = pending.isHidden,
-                            isAgentPrivate = pending.isAgentPrivate,
+                            isPrivate = pending.isPrivate,
                             orderIndex = 0
                         )
                     } else {
@@ -710,7 +710,7 @@ class SessionFeature(
                             ledger = emptyList(),
                             createdAt = pending.createdAt,
                             isHidden = pending.isHidden,
-                            isAgentPrivate = pending.isAgentPrivate,
+                            isPrivate = pending.isPrivate,
                             orderIndex = 0
                         )
                     }

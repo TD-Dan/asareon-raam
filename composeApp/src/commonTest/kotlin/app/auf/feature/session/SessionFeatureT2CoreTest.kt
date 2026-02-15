@@ -46,7 +46,7 @@ class SessionFeatureT2CoreTest {
         createdAt: Long = 1L,
         uuid: String = "00000000-0000-4000-a000-${localHandle.hashCode().toUInt().toString(16).padStart(12, '0')}",
         isHidden: Boolean = false,
-        isAgentPrivate: Boolean = false,
+        isPrivate: Boolean = false,
         orderIndex: Int = 0,
         messageUiState: Map<String, MessageUiState> = emptyMap()
     ): Session {
@@ -62,7 +62,7 @@ class SessionFeatureT2CoreTest {
             ledger = ledger,
             createdAt = createdAt,
             isHidden = isHidden,
-            isAgentPrivate = isAgentPrivate,
+            isPrivate = isPrivate,
             orderIndex = orderIndex,
             messageUiState = messageUiState
         )
