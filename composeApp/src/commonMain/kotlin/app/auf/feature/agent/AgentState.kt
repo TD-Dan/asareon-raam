@@ -2,8 +2,8 @@ package app.auf.feature.agent
 
 import app.auf.core.FeatureState
 import app.auf.core.Identity
-import app.auf.feature.agent.strategies.SovereignDefaults
-import app.auf.feature.agent.strategies.VanillaStrategy
+import app.auf.feature.agent.strategies.SovereignDefaults // TODO: illegal import! No feature should know of another feature!
+import app.auf.feature.agent.strategies.VanillaStrategy // TODO: illegal import! No feature should know of another feature!
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
