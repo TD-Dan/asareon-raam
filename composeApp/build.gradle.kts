@@ -33,10 +33,9 @@ plugins {
 // Drop-in replacement for the old task in build.gradle.kts (lines 29–346).
 //
 // Reads the unified *.actions.json format (actions[] with open/broadcast/targeted)
-// and generates three files:
-//   1. ActionRegistry.kt — the new unified registry
+// and generates two files:
+//   1. ActionRegistry.kt — the unified registry (single source of truth)
 //   2. ActionNames.kt — typealias + old→new name compat shim
-//   3. ExposedActions.kt — deprecated delegation shim
 //
 // IMPORTANT: No data classes inside doLast{} — Gradle script closures don't
 // support them reliably. Uses plain Map<String, Any> throughout, matching the
@@ -44,7 +43,7 @@ plugins {
 // ============================================================================
 
 tasks.register("generateActionRegistry") {
-    description = "Generates ActionRegistry.kt (unified action catalog), ActionNames.kt (compat shim), and ExposedActions.kt (deprecated delegation) from *.actions.json manifests."
+    description = "Generates ActionRegistry.kt (unified action catalog) and ActionNames.kt (compat shim) from *.actions.json manifests."
     group = "auf"
 
     // --- Configuration ---
@@ -52,13 +51,11 @@ tasks.register("generateActionRegistry") {
     val generatedDir = layout.buildDirectory.dir("generated/kotlin/app/auf/core/generated")
     val actionRegistryOutputFile = generatedDir.map { it.file("ActionRegistry.kt") }
     val actionNamesOutputFile = generatedDir.map { it.file("ActionNames.kt") }
-    val exposedActionsOutputFile = generatedDir.map { it.file("ExposedActions.kt") }
 
     // --- Gradle Inputs/Outputs ---
     inputs.dir(inputDir)
     outputs.file(actionRegistryOutputFile)
     outputs.file(actionNamesOutputFile)
-    outputs.file(exposedActionsOutputFile)
 
     // --- Task Action ---
     doLast {
@@ -334,7 +331,6 @@ tasks.register("generateActionRegistry") {
             | * THIS IS A GENERATED FILE. DO NOT EDIT.
             | *
             | * The unified action registry — single source of truth for every action in the system.
-            | * Replaces both ActionNames.kt and ExposedActions.kt.
             | * Generated from the 'actions[]' arrays in *.actions.json manifests.
             | */
             |object ActionRegistry {
@@ -441,212 +437,8 @@ tasks.register("generateActionRegistry") {
         registryOut.parentFile.mkdirs()
         registryOut.writeText(actionRegistryContent)
 
-        // ============================================================
-        // Generate ActionNames.kt (compatibility shim)
-        // ============================================================
-
-        // Old→new name mappings for renamed actions
-        val oldToNewNames = mapOf(
-            "agent.internal.AGENTS_LOADED" to "agent.AGENTS_LOADED",
-            "agent.internal.AGENT_LOADED" to "agent.AGENT_LOADED",
-            "agent.internal.AVATAR_MOVED" to "agent.AVATAR_MOVED",
-            "agent.internal.CHECK_AUTOMATIC_TRIGGERS" to "agent.CHECK_AUTOMATIC_TRIGGERS",
-            "agent.internal.CONFIRM_DELETE" to "agent.CONFIRM_DELETE",
-            "agent.internal.CONTEXT_GATHERING_TIMEOUT" to "agent.CONTEXT_GATHERING_TIMEOUT",
-            "agent.internal.NVRAM_LOADED" to "agent.NVRAM_LOADED",
-            "agent.internal.RESOURCE_LOADED" to "agent.RESOURCE_LOADED",
-            "agent.internal.SET_CONTEXT_GATHERING_STARTED" to "agent.SET_CONTEXT_GATHERING_STARTED",
-            "agent.internal.SET_HKG_CONTEXT" to "agent.SET_HKG_CONTEXT",
-            "agent.internal.SET_PREVIEW_DATA" to "agent.SET_PREVIEW_DATA",
-            "agent.internal.SET_PROCESSING_STEP" to "agent.SET_PROCESSING_STEP",
-            "agent.internal.SET_STATUS" to "agent.SET_STATUS",
-            "agent.internal.SET_WORKSPACE_CONTEXT" to "agent.SET_WORKSPACE_CONTEXT",
-            "agent.internal.STAGE_TURN_CONTEXT" to "agent.STAGE_TURN_CONTEXT",
-            "agent.internal.UPDATE_AUTO_TRIGGER_INDEX" to "agent.UPDATE_AUTO_TRIGGER_INDEX",
-            "agent.internal.VALIDATE_SOVEREIGN_STATE" to "agent.VALIDATE_SOVEREIGN_STATE",
-            "agent.publish.AGENT_DELETED" to "agent.AGENT_DELETED",
-            "agent.publish.AGENT_NAMES_UPDATED" to "agent.AGENT_NAMES_UPDATED",
-            "commandbot.internal.RESOLVE_APPROVAL" to "commandbot.RESOLVE_APPROVAL",
-            "commandbot.internal.STAGE_APPROVAL" to "commandbot.STAGE_APPROVAL",
-            "commandbot.publish.ACTION_CREATED" to "commandbot.ACTION_CREATED",
-            "core.internal.IDENTITIES_LOADED" to "core.IDENTITIES_LOADED",
-            "core.publish.IDENTITIES_UPDATED" to "core.IDENTITIES_UPDATED",
-            "filesystem.internal.DIRECTORY_LOADED" to "filesystem.DIRECTORY_LOADED",
-            "filesystem.internal.EXECUTE_SCOPED_READ" to "filesystem.EXECUTE_SCOPED_READ",
-            "filesystem.internal.FINALIZE_SCOPED_READ" to "filesystem.FINALIZE_SCOPED_READ",
-            "filesystem.internal.LOAD_CHILDREN" to "filesystem.LOAD_CHILDREN",
-            "filesystem.internal.STAGE_SCOPED_READ" to "filesystem.STAGE_SCOPED_READ",
-            "gateway.internal.MODELS_UPDATED" to "gateway.MODELS_UPDATED",
-            "gateway.internal.REQUEST_COMPLETED" to "gateway.REQUEST_COMPLETED",
-            "gateway.publish.AVAILABLE_MODELS_UPDATED" to "gateway.AVAILABLE_MODELS_UPDATED",
-            "gateway.publish.CONTENT_GENERATED" to "gateway.CONTENT_GENERATED",
-            "knowledgegraph.internal.ANALYSIS_COMPLETE" to "knowledgegraph.ANALYSIS_COMPLETE",
-            "knowledgegraph.internal.CONFIRM_DELETE_HOLON" to "knowledgegraph.CONFIRM_DELETE_HOLON",
-            "knowledgegraph.internal.CONFIRM_DELETE_PERSONA" to "knowledgegraph.CONFIRM_DELETE_PERSONA",
-            "knowledgegraph.internal.LOAD_FAILED" to "knowledgegraph.LOAD_FAILED",
-            "knowledgegraph.internal.PERSONA_LOADED" to "knowledgegraph.PERSONA_LOADED",
-            "knowledgegraph.internal.SET_IMPORT_EXECUTION_STATUS" to "knowledgegraph.SET_IMPORT_EXECUTION_STATUS",
-            "knowledgegraph.internal.SET_PENDING_IMPORT_ID" to "knowledgegraph.SET_PENDING_IMPORT_ID",
-            "knowledgegraph.publish.AVAILABLE_PERSONAS_UPDATED" to "knowledgegraph.AVAILABLE_PERSONAS_UPDATED",
-            "knowledgegraph.publish.RESERVATIONS_UPDATED" to "knowledgegraph.RESERVATIONS_UPDATED",
-            "session.internal.LOADED" to "session.LOADED",
-            "session.publish.MESSAGE_DELETED" to "session.MESSAGE_DELETED",
-            "session.publish.MESSAGE_POSTED" to "session.MESSAGE_POSTED",
-            "session.publish.SESSION_DELETED" to "session.SESSION_DELETED",
-            "session.publish.SESSION_NAMES_UPDATED" to "session.SESSION_NAMES_UPDATED",
-            "session.publish.SESSION_UPDATED" to "session.SESSION_UPDATED",
-            "settings.internal.LOAD" to "settings.LOAD",
-            "settings.publish.LOADED" to "settings.LOADED",
-            "settings.publish.VALUE_CHANGED" to "settings.VALUE_CHANGED",
-            "settings.ui.internal.INPUT_CHANGED" to "settings.UI_INPUT_CHANGED",
-            "system.publish.CLOSING" to "system.CLOSING",
-            "system.publish.INITIALIZING" to "system.INITIALIZING",
-            "system.publish.STARTING" to "system.STARTING"
-        )
-
-        // Old envelope type_names → new action names
-        val oldToNewEnvelopes = mapOf(
-            "core.response.CONFIRMATION" to "core.RESPONSE_CONFIRMATION",
-            "filesystem.response.FILES_CONTENT" to "filesystem.RESPONSE_FILES_CONTENT",
-            "filesystem.response.LIST" to "filesystem.RESPONSE_LIST",
-            "filesystem.response.READ" to "filesystem.RESPONSE_READ",
-            "gateway.response.PREVIEW" to "gateway.RESPONSE_PREVIEW",
-            "gateway.response.RESPONSE" to "gateway.RESPONSE_RESPONSE",
-            "knowledgegraph.response.CONTEXT" to "knowledgegraph.RESPONSE_CONTEXT",
-            "session.response.ledger" to "session.RESPONSE_LEDGER"
-        )
-
-        // Build the current-name constants (delegate to ActionRegistry.Names)
-        val currentNameConstants = allActions.joinToString("\n") { action ->
-            val constName = toConstName(action["fullName"] as String)
-            "    const val $constName = ActionRegistry.Names.$constName"
-        }
-
-        // Build deprecated old-name constants that map to new names (only where const name changed)
-        val deprecatedRenames = oldToNewNames.entries.sortedBy { it.key }
-            .filter { toConstName(it.key) != toConstName(it.value) }
-            .joinToString("\n") { (old, new) ->
-                val oldConst = toConstName(old)
-                val newConst = toConstName(new)
-                "    /** @deprecated Renamed to $newConst. Use ActionRegistry.Names.$newConst. */\n    @Deprecated(\"Renamed\", ReplaceWith(\"ActionRegistry.Names.$newConst\", \"app.auf.core.generated.ActionRegistry\"))\n    const val $oldConst = ActionRegistry.Names.$newConst"
-            }
-
-        // Build deprecated envelope constants
-        val deprecatedEnvelopeConstants = oldToNewEnvelopes.entries.sortedBy { it.key }.joinToString("\n") { (old, new) ->
-            val oldConst = toConstName(old)
-            val newConst = toConstName(new)
-            "        /** @deprecated Use ActionRegistry.Names.$newConst instead. */\n        @Deprecated(\"Use ActionRegistry.Names.$newConst\", ReplaceWith(\"ActionRegistry.Names.$newConst\", \"app.auf.core.generated.ActionRegistry\"))\n        const val $oldConst = ActionRegistry.Names.$newConst"
-        }
-
-        val actionNamesContent = """
-            |package app.auf.core.generated
-            |
-            |/**
-            | * THIS IS A GENERATED FILE. DO NOT EDIT.
-            | *
-            | * COMPATIBILITY SHIM — delegates all constants to ActionRegistry.Names.
-            | * Old constant names that were renamed (e.g., SESSION_INTERNAL_LOADED → SESSION_LOADED)
-            | * are provided as @Deprecated aliases.
-            | *
-            | * Will be removed in Phase 4.
-            | */
-            |@Suppress("DEPRECATION")
-            |object ActionNames {
-            |    // --- Current names: delegate to ActionRegistry.Names ---
-            |$currentNameConstants
-            |
-            |    // --- Renamed constants: old name → new ActionRegistry.Names constant ---
-            |$deprecatedRenames
-            |
-            |    /**
-            |     * Envelope types are now regular targeted actions in ActionRegistry.Names.
-            |     */
-            |    object Envelopes {
-            |$deprecatedEnvelopeConstants
-            |    }
-            |
-            |    /**
-            |     * A set of all valid action names for runtime validation in the Store.
-            |     */
-            |    val allActionNames: Set<String> get() = ActionRegistry.Names.allActionNames
-            |}
-        """.trimMargin()
-
-        val actionNamesOut = actionNamesOutputFile.get().asFile
-        actionNamesOut.parentFile.mkdirs()
-        actionNamesOut.writeText(actionNamesContent)
-
-        // ============================================================
-        // Generate ExposedActions.kt (deprecated delegation shim)
-        // ============================================================
-
-        val exposedActionsContent = """
-            |package app.auf.core.generated
-            |
-            |/**
-            | * THIS IS A GENERATED FILE. DO NOT EDIT.
-            | *
-            | * DEPRECATED DELEGATION SHIM — delegates to ActionRegistry derived views.
-            | * Preserved so that CommandBotFeature.kt continues to compile during Phase 1–3.
-            | *
-            | * Will be removed in Phase 4.
-            | */
-            |@Suppress("DEPRECATION")
-            |object ExposedActions {
-            |
-            |    val allowedActionNames: Set<String> get() = ActionRegistry.agentAllowedNames
-            |
-            |    data class SandboxRule(
-            |        val strategy: String,
-            |        val subpathPrefixTemplate: String,
-            |        val payloadRewrites: Map<String, String> = emptyMap()
-            |    )
-            |
-            |    val sandboxRules: Map<String, SandboxRule> get() = ActionRegistry.agentSandboxRules.mapValues {
-            |        SandboxRule(it.value.strategy, it.value.subpathPrefixTemplate, it.value.payloadRewrites)
-            |    }
-            |
-            |    val requiresApproval: Set<String> get() = ActionRegistry.agentRequiresApproval
-            |
-            |    val autoFillRules: Map<String, Map<String, String>> get() = ActionRegistry.agentAutoFillRules
-            |
-            |    data class PayloadField(
-            |        val name: String,
-            |        val type: String,
-            |        val description: String,
-            |        val required: Boolean,
-            |        val default: String? = null
-            |    )
-            |
-            |    data class ExposedActionDoc(
-            |        val actionName: String,
-            |        val summary: String,
-            |        val payloadFields: List<PayloadField>
-            |    )
-            |
-            |    val documentation: List<ExposedActionDoc> get() = ActionRegistry.agentAllowedNames
-            |        .mapNotNull { name -> ActionRegistry.byActionName[name] }
-            |        .sortedBy { it.fullName }
-            |        .map { desc ->
-            |            ExposedActionDoc(
-            |                actionName = desc.fullName,
-            |                summary = desc.summary,
-            |                payloadFields = desc.payloadFields.map { f ->
-            |                    PayloadField(f.name, f.type, f.description, f.required, f.default)
-            |                }
-            |            )
-            |        }
-            |}
-        """.trimMargin()
-
-        val exposedActionsOut = exposedActionsOutputFile.get().asFile
-        exposedActionsOut.parentFile.mkdirs()
-        exposedActionsOut.writeText(exposedActionsContent)
-
         // Summary
         println("Generated ActionRegistry.kt with ${allActions.size} actions across ${featureMap.size} features.")
-        println("Generated ActionNames.kt compatibility shim with ${oldToNewNames.size} renamed action constants + ${oldToNewEnvelopes.size} envelope mappings.")
-        println("Generated ExposedActions.kt deprecated delegation shim.")
     }
 }
 
@@ -778,7 +570,7 @@ kotlin {
         }
         named("jvmTest") {
             kotlin.exclude(
-          //      "**"
+                //      "**"
             )
         }
     }

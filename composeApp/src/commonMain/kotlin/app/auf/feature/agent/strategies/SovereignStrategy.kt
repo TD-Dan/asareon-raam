@@ -86,8 +86,6 @@ object SovereignStrategy : CognitiveStrategy {
                 return PostProcessResult(currentState, SentinelAction.HALT_AND_SILENCE)
             }
 
-            // NOTE: State transition to AWAKE is now handled by the agent itself via UPDATE_NVRAM
-            // We just proceed with the current state. The agent will dispatch the action.
             return PostProcessResult(currentState, SentinelAction.PROCEED_WITH_UPDATE)
         }
 

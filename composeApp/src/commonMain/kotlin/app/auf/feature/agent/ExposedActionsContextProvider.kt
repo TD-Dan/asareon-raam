@@ -1,12 +1,12 @@
 package app.auf.feature.agent
 
-import app.auf.core.generated.ExposedActions
+import app.auf.core.generated.ActionRegistry
 
 /**
  * ## Mandate
  * Generates the "Available System Actions" context block for injection into an agent's
  * system prompt. This is fully data-driven: it reads from the build-time generated
- * [ExposedActions] registry, ensuring the prompt always matches the actual allowlist.
+ * [ActionRegistry], ensuring the prompt always matches the actual allowlist.
  *
  * The context teaches the agent:
  * 1. The `auf_` code block invocation syntax.
@@ -48,7 +48,11 @@ object ExposedActionsContextProvider {
         appendLine("```")
         appendLine()
 
-        if (ExposedActions.documentation.isEmpty()) {
+        val agentActions = ActionRegistry.agentAllowedNames
+            .mapNotNull { name -> ActionRegistry.byActionName[name] }
+            .sortedBy { it.fullName }
+
+        if (agentActions.isEmpty()) {
             appendLine("No system actions are currently available.")
             return@buildString
         }
@@ -56,13 +60,13 @@ object ExposedActionsContextProvider {
         appendLine("AVAILABLE ACTIONS:")
         appendLine()
 
-        ExposedActions.documentation.forEach { doc ->
-            appendLine("### ${doc.actionName}")
-            appendLine(doc.summary)
+        agentActions.forEach { desc ->
+            appendLine("### ${desc.fullName}")
+            appendLine(desc.summary)
 
-            if (doc.payloadFields.isNotEmpty()) {
+            if (desc.payloadFields.isNotEmpty()) {
                 appendLine("Payload fields:")
-                doc.payloadFields.forEach { field ->
+                desc.payloadFields.forEach { field ->
                     val requiredTag = if (field.required) " (REQUIRED)" else ""
                     val defaultTag = field.default?.let { " [default: $it]" } ?: ""
                     appendLine("  - \"${field.name}\" (${field.type})$requiredTag$defaultTag: ${field.description}")

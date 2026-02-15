@@ -11,7 +11,6 @@ import androidx.compose.runtime.getValue
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
 import app.auf.core.generated.ActionRegistry
-import app.auf.core.generated.ExposedActions
 import app.auf.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -136,7 +135,6 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.AGENT_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
                 val uuid = agent.identity.uuid ?: return
-                // NOTE: Avatar posting deferred to SESSION_SESSION_FEATURE_READY.
                 // At startup, agent files may load before session files. The session feature
                 // broadcasts SESSION_FEATURE_READY once sessions are in its map, at which point
                 // we reconcile avatars for all active agents.
@@ -487,12 +485,12 @@ class AgentRuntimeFeature(
      * Applies workspace sandboxing to an agent's action payload.
      * The agent feature owns the "{agentId}/workspace/" path convention.
      *
-     * For actions with sandbox rules defined in ExposedActions, the subpath field
+     * For actions with sandbox rules defined in ActionRegistry, the subpath field
      * is prefixed with the agent's workspace path. For other actions, the payload
      * is returned unchanged.
      */
     private fun applySandboxRewrite(actionName: String, payload: JsonObject, agentId: String): JsonObject {
-        val rule = ExposedActions.sandboxRules[actionName] ?: return payload
+        val rule = ActionRegistry.agentSandboxRules[actionName] ?: return payload
         if (rule.strategy != "AGENT_WORKSPACE") return payload
 
         val mutablePayload = payload.toMutableMap()

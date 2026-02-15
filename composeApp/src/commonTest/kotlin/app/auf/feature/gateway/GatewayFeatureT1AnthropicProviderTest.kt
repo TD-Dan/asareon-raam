@@ -17,7 +17,7 @@ import kotlin.test.*
  * Mandate (P-TEST-001, T1): To test the provider's pure data transformation logic
  * without any network dependencies.
  *
- * ARCHITECTURE NOTE: Content enrichment (adding sender info, timestamps) is the
+ * ARCHITECTURE: Content enrichment (adding sender info, timestamps) is the
  * responsibility of AgentCognitivePipeline.executeTurn, NOT the providers.
  * Providers receive pre-enriched content and pass it through unchanged.
  * These tests verify that pass-through behaviour.

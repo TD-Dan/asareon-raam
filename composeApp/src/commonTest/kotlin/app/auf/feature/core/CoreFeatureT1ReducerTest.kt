@@ -2,7 +2,6 @@ package app.auf.feature.core
 
 import app.auf.core.Action
 import app.auf.core.Identity
-import app.auf.core.generated.ActionNames
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.buildJsonArray
@@ -21,9 +20,6 @@ import kotlin.test.assertFalse
  * Mandate (P-TEST-001, T1): To test the reducer as a pure function in complete isolation.
  * No TestEnvironment or real Store is used.
  *
- * NOTE: Identity registry management (REGISTER_IDENTITY, UNREGISTER_IDENTITY) moved from
- * the reducer to handleSideEffects in the "Eliminate Identity Registry Dual-Ownership" change.
- * Those operations are now tested through the Store in T2 and T3 tests.
  */
 class CoreFeatureT1ReducerTest {
 
@@ -35,25 +31,25 @@ class CoreFeatureT1ReducerTest {
     // ================================================================
 
     @Test
-    fun `reducer transitions from BOOTING to INITIALIZING on SYSTEM_PUBLISH_INITIALIZING`() {
+    fun `reducer transitions from BOOTING to INITIALIZING on SYSTEM_INITIALIZING`() {
         val initialState = CoreState(lifecycle = AppLifecycle.BOOTING)
-        val action = Action(ActionNames.SYSTEM_PUBLISH_INITIALIZING)
+        val action = Action(ActionRegistry.Names.SYSTEM_INITIALIZING)
         val newState = feature.reducer(initialState, action) as? CoreState
         assertEquals(AppLifecycle.INITIALIZING, newState?.lifecycle)
     }
 
     @Test
-    fun `reducer transitions from INITIALIZING to RUNNING on SYSTEM_PUBLISH_STARTING`() {
+    fun `reducer transitions from INITIALIZING to RUNNING on SYSTEM_STARTING`() {
         val initialState = CoreState(lifecycle = AppLifecycle.INITIALIZING)
-        val action = Action(ActionNames.SYSTEM_PUBLISH_STARTING)
+        val action = Action(ActionRegistry.Names.SYSTEM_STARTING)
         val newState = feature.reducer(initialState, action) as? CoreState
         assertEquals(AppLifecycle.RUNNING, newState?.lifecycle)
     }
 
     @Test
-    fun `reducer transitions to CLOSING on SYSTEM_PUBLISH_CLOSING`() {
+    fun `reducer transitions to CLOSING on SYSTEM_CLOSING`() {
         val initialState = CoreState(lifecycle = AppLifecycle.RUNNING)
-        val action = Action(ActionNames.SYSTEM_PUBLISH_CLOSING)
+        val action = Action(ActionRegistry.Names.SYSTEM_CLOSING)
         val newState = feature.reducer(initialState, action) as? CoreState
         assertEquals(AppLifecycle.CLOSING, newState?.lifecycle)
     }
@@ -66,7 +62,7 @@ class CoreFeatureT1ReducerTest {
     fun `reducer correctly handles SET_ACTIVE_VIEW`() {
         val initialState = CoreState(activeViewKey = "old.key")
         val payload = buildJsonObject { put("key", "new.key") }
-        val action = Action(ActionNames.CORE_SET_ACTIVE_VIEW, payload)
+        val action = Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, payload)
         val newState = feature.reducer(initialState, action) as? CoreState
         assertNotNull(newState)
         assertEquals("new.key", newState.activeViewKey)
@@ -76,7 +72,7 @@ class CoreFeatureT1ReducerTest {
     fun `reducer correctly handles SHOW_TOAST`() {
         val initialState = CoreState(toastMessage = null)
         val payload = buildJsonObject { put("message", "Hello") }
-        val action = Action(ActionNames.CORE_SHOW_TOAST, payload)
+        val action = Action(ActionRegistry.Names.CORE_SHOW_TOAST, payload)
         val newState = feature.reducer(initialState, action) as? CoreState
         assertNotNull(newState)
         assertEquals("Hello", newState.toastMessage)
@@ -85,7 +81,7 @@ class CoreFeatureT1ReducerTest {
     @Test
     fun `reducer correctly handles CLEAR_TOAST`() {
         val initialState = CoreState(toastMessage = "Something")
-        val action = Action(ActionNames.CORE_CLEAR_TOAST)
+        val action = Action(ActionRegistry.Names.CORE_CLEAR_TOAST)
         val newState = feature.reducer(initialState, action) as? CoreState
         assertNotNull(newState)
         assertNull(newState.toastMessage)
@@ -106,22 +102,19 @@ class CoreFeatureT1ReducerTest {
     @Test
     fun `reducer on CORE_ADD_USER_IDENTITY adds a new identity`() {
         val initialState = CoreState(userIdentities = emptyList())
-        val action = Action(ActionNames.CORE_ADD_USER_IDENTITY, buildJsonObject { put("name", "New User") })
+        val action = Action(ActionRegistry.Names.CORE_ADD_USER_IDENTITY, buildJsonObject { put("name", "New User") })
         val newState = feature.reducer(initialState, action) as? CoreState
         assertNotNull(newState)
         assertEquals(1, newState.userIdentities.size)
         assertEquals("New User", newState.userIdentities.first().name)
     }
 
-    // NOTE: ADD_USER_IDENTITY identity registry sync is now handled in handleSideEffects
-    // via store.updateIdentityRegistry(). Covered by T2 tests.
-
     @Test
     fun `reducer on CORE_REMOVE_USER_IDENTITY removes the specified identity`() {
         val user1 = Identity("id-1", localHandle = "user-1", handle = "user-1", name = "User 1")
         val user2 = Identity("id-2", localHandle = "user-2", handle = "user-2", name = "User 2")
         val initialState = CoreState(userIdentities = listOf(user1, user2), activeUserId = "user-1")
-        val action = Action(ActionNames.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", "user-1") })
+        val action = Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", "user-1") })
         val newState = feature.reducer(initialState, action) as? CoreState
         assertNotNull(newState)
         assertEquals(1, newState.userIdentities.size)
@@ -133,7 +126,7 @@ class CoreFeatureT1ReducerTest {
         val user1 = Identity("id-1", localHandle = "user-1", handle = "user-1", name = "User 1")
         val user2 = Identity("id-2", localHandle = "user-2", handle = "user-2", name = "User 2")
         val initialState = CoreState(userIdentities = listOf(user1, user2), activeUserId = "user-1")
-        val action = Action(ActionNames.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", "user-1") })
+        val action = Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", "user-1") })
         val newState = feature.reducer(initialState, action) as? CoreState
         assertNotNull(newState)
         assertEquals("user-2", newState.activeUserId, "Active user should be reassigned to the next available user.")
@@ -143,7 +136,7 @@ class CoreFeatureT1ReducerTest {
     fun `reducer on CORE_REMOVE_USER_IDENTITY correctly handles removing the last user`() {
         val user1 = Identity("id-1", localHandle = "the-last-user", handle = "the-last-user", name = "The Last User")
         val initialState = CoreState(userIdentities = listOf(user1), activeUserId = "the-last-user")
-        val action = Action(ActionNames.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", "the-last-user") })
+        val action = Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", "the-last-user") })
         val newState = feature.reducer(initialState, action) as? CoreState
         assertNotNull(newState)
         assertTrue(newState.userIdentities.isEmpty(), "The user identities list should be empty.")
@@ -155,7 +148,7 @@ class CoreFeatureT1ReducerTest {
         val user1 = Identity("id-1", localHandle = "user-1", handle = "user-1", name = "User 1")
         val user2 = Identity("id-2", localHandle = "user-2", handle = "user-2", name = "User 2")
         val initialState = CoreState(userIdentities = listOf(user1, user2), activeUserId = "user-1")
-        val action = Action(ActionNames.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", "user-2") })
+        val action = Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", "user-2") })
         val newState = feature.reducer(initialState, action) as? CoreState
         assertNotNull(newState)
         assertEquals("user-2", newState.activeUserId)
@@ -165,7 +158,7 @@ class CoreFeatureT1ReducerTest {
     fun `reducer on CORE_SET_ACTIVE_USER_IDENTITY ignores non-existent identity`() {
         val user1 = Identity("id-1", localHandle = "user-1", handle = "user-1", name = "User 1")
         val initialState = CoreState(userIdentities = listOf(user1), activeUserId = "user-1")
-        val action = Action(ActionNames.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", "non-existent") })
+        val action = Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", "non-existent") })
         val newState = feature.reducer(initialState, action) as? CoreState
         assertNotNull(newState)
         assertEquals("user-1", newState.activeUserId, "Active user should remain unchanged for a non-existent ID.")
@@ -175,7 +168,7 @@ class CoreFeatureT1ReducerTest {
     fun `reducer on CORE_INTERNAL_IDENTITIES_LOADED creates a default user if loaded list is empty`() {
         platform.uuidCounter = 0 // Reset for predictable ID
         val initialState = CoreState(userIdentities = emptyList())
-        val action = Action(ActionNames.CORE_INTERNAL_IDENTITIES_LOADED, buildJsonObject { put("identities", buildJsonArray {}) })
+        val action = Action(ActionRegistry.Names.CORE_IDENTITIES_LOADED, buildJsonObject { put("identities", buildJsonArray {}) })
         val newState = feature.reducer(initialState, action) as? CoreState
         assertNotNull(newState)
         assertEquals(1, newState.userIdentities.size)
@@ -183,13 +176,10 @@ class CoreFeatureT1ReducerTest {
         assertNotNull(newState.activeUserId, "The new default user should be active.")
     }
 
-    // NOTE: CORE_INTERNAL_IDENTITIES_LOADED identity registry migration is now handled
-    // in handleSideEffects via store.updateIdentityRegistry(). Covered by T2/T3 tests.
-
     @Test
     fun `reducer on CORE_INTERNAL_IDENTITIES_LOADED sets active user to first if saved active ID is invalid`() {
         val initialState = CoreState()
-        val action = Action(ActionNames.CORE_INTERNAL_IDENTITIES_LOADED, buildJsonObject {
+        val action = Action(ActionRegistry.Names.CORE_IDENTITIES_LOADED, buildJsonObject {
             put("identities", buildJsonArray {
                 add(buildJsonObject { put("uuid", "uuid-1"); put("localHandle", "user-1"); put("handle", "user-1"); put("name", "User 1") })
                 add(buildJsonObject { put("uuid", "uuid-2"); put("localHandle", "user-2"); put("handle", "user-2"); put("name", "User 2") })
