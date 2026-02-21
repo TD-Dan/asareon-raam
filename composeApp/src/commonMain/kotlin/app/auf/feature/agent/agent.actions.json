@@ -753,6 +753,58 @@
           "startedAt"
         ]
       }
+    },
+    {
+      "action_name": "agent.REGISTER_PENDING_COMMAND",
+      "summary": "[INTERNAL] Records a correlationId \u2192 session mapping when AgentRuntimeFeature dispatches a domain action on behalf of an agent command. Used to route targeted RETURN_* data back to the session via commandbot.DELIVER_TO_SESSION.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "actionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "correlationId",
+          "agentId",
+          "agentName",
+          "sessionId",
+          "actionName"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.CLEAR_PENDING_COMMAND",
+      "summary": "[INTERNAL] Removes a pending command entry after the result has been forwarded to the session, or on TTL expiry.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "correlationId"
+        ]
+      }
     }
   ]
 }

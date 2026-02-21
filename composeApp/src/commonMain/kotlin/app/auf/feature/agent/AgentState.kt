@@ -85,6 +85,24 @@ data class StagedPreviewData(
 )
 
 /**
+ * Tracks an agent command dispatched via ACTION_CREATED so that AgentRuntimeFeature
+ * can route targeted RETURN_* data back to the originating session via
+ * commandbot.DELIVER_TO_SESSION.
+ *
+ * Mirrors CoreState.PendingCommand but lives in agent state because agent commands
+ * require sandbox-aware formatting that CoreFeature doesn't own.
+ */
+@Serializable
+data class AgentPendingCommand(
+    val correlationId: String,
+    val agentId: String,
+    val agentName: String,
+    val sessionId: String,
+    val actionName: String,
+    val createdAt: Long
+)
+
+/**
  * [PURE CONFIGURATION]
  * Defines the persistent identity and settings of an agent.
  */
@@ -177,4 +195,10 @@ data class AgentRuntimeState(
     val viewingContextForAgentId: String? = null,
     @Transient
     val lastAutoTriggerAgentIndex: Int = 0,
+
+    // --- Transient State for Command Result Routing ---
+    /** Maps correlationId → AgentPendingCommand for in-flight agent commands.
+     *  Used to route targeted RETURN_* data to the session via DELIVER_TO_SESSION. */
+    @Transient
+    val pendingCommands: Map<String, AgentPendingCommand> = emptyMap()
 ) : FeatureState

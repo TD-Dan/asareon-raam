@@ -25,3 +25,13 @@ import kotlinx.serialization.json.JsonObject
 @Serializable internal data class StageTurnContextPayload(val agentId: String, val messages: List<GatewayMessage>)
 @Serializable internal data class SetHkgContextPayload(val agentId: String, val context: JsonObject)
 @Serializable internal data class AvatarMovedPayload(val agentId: String, val sessionId: String, val messageId: String)
+
+// --- Pending Command Tracking payload classes ---
+@Serializable internal data class RegisterPendingCommandPayload(
+    val correlationId: String,
+    val agentId: String,
+    val agentName: String,
+    val sessionId: String,
+    val actionName: String
+)
+@Serializable internal data class ClearPendingCommandPayload(val correlationId: String)

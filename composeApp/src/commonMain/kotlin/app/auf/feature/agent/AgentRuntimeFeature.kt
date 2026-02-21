@@ -28,7 +28,8 @@ import kotlinx.serialization.json.*
  * - Side Effects -> AgentAvatarLogic / Self
  *
  * Subscribes to ACTION_CREATED from CommandBot to handle validated agent commands:
- * applies workspace sandboxing, dispatches domain actions, and posts attributed results.
+ * applies workspace sandboxing, dispatches domain actions, and routes results
+ * back to the session via the DELIVER_TO_SESSION / ACTION_RESULT protocol.
  */
 class AgentRuntimeFeature(
     private val platformDependencies: PlatformDependencies,
@@ -48,24 +49,10 @@ class AgentRuntimeFeature(
     private val avatarUpdateJobs = mutableMapOf<String, Job>()
     private var agentLoadCount = 0
 
-    // ========================================================================
-    // ACTION_CREATED: Pending command response tracking
-    // ========================================================================
-
-    /**
-     * Tracks commands dispatched on behalf of agents, keyed by correlationId.
-     * Used to attribute PrivateData responses back to the requesting agent.
-     */
-    private data class PendingCommandResponse(
-        val correlationId: String,
-        val agentId: String,
-        val agentName: String,
-        val sessionId: String,
-        val actionName: String,
-        val dispatchedAt: Long
-    )
-
-    private val pendingCommandResponses = mutableMapOf<String, PendingCommandResponse>()
+    companion object {
+        /** TTL for pending command entries: 5 minutes. */
+        const val PENDING_COMMAND_TTL_MS = 5 * 60 * 1000L
+    }
 
     override fun init(store: Store) {
         coroutineScope.launch {
@@ -100,7 +87,7 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
             ActionRegistry.Names.FILESYSTEM_RETURN_READ,
             ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT -> {
-                handleTargetedResponse(action, store)
+                handleTargetedResponse(action, store, agentState)
             }
             // --- Startup ---
             ActionRegistry.Names.SYSTEM_STARTING -> {
@@ -438,36 +425,57 @@ class AgentRuntimeFeature(
                 val actionPayload = payload["actionPayload"]?.jsonObject ?: buildJsonObject {}
                 val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
 
-                // Check if this originator is one of our managed agents
-                if (originatorId !in agentState.agents.keys) return  // Not our agent — ignore
+                // Resolve originator: originatorId may be a UUID (direct key match)
+                // or a handle like "agent.flash" (identity registry format).
+                // Agents are keyed by UUID internally, so we must resolve handles.
+                val agent = agentState.agents[originatorId]
+                    ?: agentState.agents.values.find { it.identity.handle == originatorId }
+                if (agent == null) return  // Not our agent — ignore
+                val agentUuid = agent.identity.uuid ?: return
 
                 platformDependencies.log(
                     LogLevel.INFO, identity.handle,
-                    "ACTION_CREATED: Handling '$actionName' for agent '$originatorId' (correlationId=$correlationId)."
+                    "ACTION_CREATED: Handling '$actionName' for agent '$originatorId' (uuid=$agentUuid, correlationId=$correlationId)."
                 )
 
-                // Apply sandbox rewrite for actions that need it
-                val finalPayload = applySandboxRewrite(actionName, actionPayload, originatorId)
+                // Apply sandbox rewrite for actions that need it.
+                // Uses UUID because workspace paths are "{uuid}/workspace/".
+                val finalPayload = applySandboxRewrite(actionName, actionPayload, agentUuid)
 
-                // Inject correlationId into the payload so it survives the round-trip
-                // through PrivateData. Receiving features MUST use ignoreUnknownKeys = true.
-                val payloadWithCorrelation = buildJsonObject {
-                    finalPayload.forEach { (key, value) -> put(key, value) }
-                    put("correlationId", correlationId)
+                // Inject correlationId into the payload so the handling feature can thread it
+                // to ACTION_RESULT and RETURN_* responses.
+                // Guard: don't overwrite a correlationId the agent explicitly included.
+                val enrichedPayload = if (finalPayload["correlationId"] == null) {
+                    JsonObject(finalPayload + ("correlationId" to JsonPrimitive(correlationId)))
+                } else {
+                    finalPayload
                 }
 
-                // Track for response attribution
-                pendingCommandResponses[correlationId] = PendingCommandResponse(
-                    correlationId = correlationId,
-                    agentId = originatorId,
-                    agentName = originatorName,
-                    sessionId = sessionId,
-                    actionName = actionName,
-                    dispatchedAt = platformDependencies.currentTimeMillis()
-                )
+                // Dispatch the domain action attributed to the agent.
+                store.deferredDispatch(identity.handle, Action(name = actionName, payload = enrichedPayload))
 
-                // Dispatch the domain action — originator is "agent" because WE ARE the agent feature
-                store.deferredDispatch(identity.handle, Action(name = actionName, payload = payloadWithCorrelation))
+                // Track the pending command in state so we can route RETURN_* data
+                // to the session via DELIVER_TO_SESSION.
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.AGENT_REGISTER_PENDING_COMMAND,
+                    buildJsonObject {
+                        put("correlationId", correlationId)
+                        put("agentId", agentUuid)
+                        put("agentName", originatorName)
+                        put("sessionId", sessionId)
+                        put("actionName", actionName)
+                    }
+                ))
+                // Schedule TTL cleanup.
+                store.scheduleDelayed(PENDING_COMMAND_TTL_MS, identity.handle, Action(
+                    ActionRegistry.Names.AGENT_CLEAR_PENDING_COMMAND,
+                    buildJsonObject { put("correlationId", correlationId) }
+                ))
+
+                platformDependencies.log(
+                    LogLevel.INFO, identity.handle,
+                    "Dispatched '$actionName' on behalf of agent '$originatorId' (uuid=$agentUuid, session=$sessionId, correlationId=$correlationId)."
+                )
             }
         }
     }
@@ -538,21 +546,25 @@ class AgentRuntimeFeature(
     /**
      * Handles all targeted responses delivered to the agent feature.
      * Called from handleSideEffects for any action whose name matches a targeted response type.
+     *
+     * Command-originated responses (those with a correlationId matching a pending command)
+     * are routed to the session via DELIVER_TO_SESSION. All other targeted responses
+     * are routed to their existing handlers (cognitive pipeline, workspace reads, etc.).
      */
-    private fun handleTargetedResponse(action: Action, store: Store) {
+    private fun handleTargetedResponse(action: Action, store: Store, agentState: AgentRuntimeState) {
         val payload = action.payload ?: return
 
         // Check if this is a response to a pending command (ACTION_CREATED flow)
         val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
         if (correlationId != null) {
-            val pending = pendingCommandResponses.remove(correlationId)
-            if (pending != null) {
-                postCommandResponse(pending, action, store)
+            val pendingCommand = agentState.pendingCommands[correlationId]
+            if (pendingCommand != null) {
+                routeCommandResponseToSession(pendingCommand, action, store)
                 return
             }
         }
 
-        // Route to appropriate handler
+        // Route to appropriate handler (non-command responses)
         when (action.name) {
             ActionRegistry.Names.SESSION_RETURN_LEDGER,
             ActionRegistry.Names.KNOWLEDGEGRAPH_RETURN_CONTEXT,
@@ -579,29 +591,41 @@ class AgentRuntimeFeature(
     }
 
     // ========================================================================
-    // ACTION_CREATED: Attributed response posting
+    // ACTION_CREATED: DELIVER_TO_SESSION routing
     // ========================================================================
 
     /**
-     * Posts an attributed command response to the originating session.
+     * Routes a command-originated targeted response to the originating session
+     * via the DELIVER_TO_SESSION protocol.
+     *
+     * This replaces the old postCommandResponse/formatResponseForSession approach:
+     * instead of posting directly via SESSION_POST, we dispatch to CommandBot's
+     * DELIVER_TO_SESSION channel, which provides consistent formatting and attribution.
      */
-    private fun postCommandResponse(
-        pending: PendingCommandResponse,
+    private fun routeCommandResponseToSession(
+        pending: AgentPendingCommand,
         action: Action,
         store: Store
     ) {
-        val resultContent = formatResponseForSession(pending.actionName, action)
+        val payload = action.payload ?: return
+        val formatted = formatResponseForSession(pending.actionName, action)
 
-        val message = "Responding to '${pending.actionName}' invoked by '${pending.agentName}':\n$resultContent"
-        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-            put("session", pending.sessionId)
-            put("senderId", commandBotSenderId)
-            put("message", message)
-        }))
+        store.deferredDispatch(identity.handle, Action(
+            ActionRegistry.Names.COMMANDBOT_DELIVER_TO_SESSION,
+            buildJsonObject {
+                put("correlationId", pending.correlationId)
+                put("sessionId", pending.sessionId)
+                put("message", formatted)
+            }
+        ))
+        store.deferredDispatch(identity.handle, Action(
+            ActionRegistry.Names.AGENT_CLEAR_PENDING_COMMAND,
+            buildJsonObject { put("correlationId", pending.correlationId) }
+        ))
 
         platformDependencies.log(
             LogLevel.INFO, identity.handle,
-            "Posted attributed response for '${pending.actionName}' (correlationId=${pending.correlationId}) to session '${pending.sessionId}'."
+            "Routed response for '${pending.actionName}' (correlationId=${pending.correlationId}) to session '${pending.sessionId}' via DELIVER_TO_SESSION."
         )
     }
 
@@ -626,7 +650,8 @@ class AgentRuntimeFeature(
                 val subpath = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
                 val content = payload["content"]?.jsonPrimitive?.contentOrNull
                 if (content != null) {
-                    "File: `$subpath`\n```\n$content\n```"
+                    val ext = subpath.substringAfterLast('.', "")
+                    "```$ext \"$subpath\"\n$content\n```"
                 } else {
                     "File not found: `$subpath`"
                 }
@@ -635,7 +660,8 @@ class AgentRuntimeFeature(
                 val contents = payload["contents"]?.jsonObject
                 if (contents != null && contents.isNotEmpty()) {
                     contents.entries.joinToString("\n\n") { (path, content) ->
-                        "File: `$path`\n```\n${content.jsonPrimitive.content}\n```"
+                        val ext = path.substringAfterLast('.', "")
+                        "```$ext \"$path\"\n${content.jsonPrimitive.content}\n```"
                     }
                 } else {
                     "No file contents returned."
@@ -649,7 +675,7 @@ class AgentRuntimeFeature(
     }
 
     // ========================================================================
-    // Existing filesystem response handlers
+    // Existing filesystem response handlers (non-command paths)
     // ========================================================================
 
     private fun handleFileSystemListResponse(payload: JsonObject, store: Store) {

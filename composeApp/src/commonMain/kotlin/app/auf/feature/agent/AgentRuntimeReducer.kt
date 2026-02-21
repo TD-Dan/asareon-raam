@@ -233,6 +233,30 @@ object AgentRuntimeReducer {
                 state.copy(agents = state.agents + (uuid to updatedAgent))
             }
 
+            // ================================================================
+            // Pending Command Tracking (ACTION_RESULT / DELIVER_TO_SESSION)
+            // ================================================================
+            ActionRegistry.Names.AGENT_REGISTER_PENDING_COMMAND -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<RegisterPendingCommandPayload>(it) } ?: return state
+                val pending = AgentPendingCommand(
+                    correlationId = payload.correlationId,
+                    agentId = payload.agentId,
+                    agentName = payload.agentName,
+                    sessionId = payload.sessionId,
+                    actionName = payload.actionName,
+                    createdAt = platformDependencies.currentTimeMillis()
+                )
+                state.copy(
+                    pendingCommands = state.pendingCommands + (payload.correlationId to pending)
+                )
+            }
+            ActionRegistry.Names.AGENT_CLEAR_PENDING_COMMAND -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<ClearPendingCommandPayload>(it) } ?: return state
+                state.copy(
+                    pendingCommands = state.pendingCommands - payload.correlationId
+                )
+            }
+
             else -> state
         }
     }

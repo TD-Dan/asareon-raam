@@ -333,7 +333,7 @@ class CommandBotFeature(
                 val summary = payload["summary"]?.jsonPrimitive?.contentOrNull
                 val error = payload["error"]?.jsonPrimitive?.contentOrNull
 
-                val icon = if (success) "✓" else "✗"
+                val icon = if (success) "OK ✓" else "ERROR ✗"
                 val detail = when {
                     success && summary != null -> summary
                     !success && error != null -> error
