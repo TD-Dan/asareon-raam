@@ -1,0 +1,7 @@
+
+
+- FileSystem is writing to core_daniel instead of the right directory "core". Lets evaluate this behaviour. Interfeature access and permissions are the responsibility of the feature? Or do we want to enforce filesystem access by the identity always even inside the features?
+
+- simplify the subscribed sessions / cognitive session to just primarysession and subscribedsessions list of Agent can change its primarysession with a command "agent.SET_PRIMARY_SESSION". primarysession is just a pointer and subscribed sessions alway contains the primarysession. = primarysession always needs to be also subscribed.
+
+- settings.ADD: add a new parameter "private" that blocks the public displaying of this variable everywhere (ui *** and droppped from action payload), only targeted delivery of this setting allowed to the original owner via settings.PRIVATE_VALUE_CHANGED.
