@@ -373,7 +373,7 @@ class FileSystemFeature(
                         error = "Listing failed: ${sanitizeErrorForBroadcast(e.message)}")
                 }
             }
-            ActionRegistry.Names.FILESYSTEM_READ_FILES_CONTENT -> {
+            ActionRegistry.Names.FILESYSTEM_READ_MULTIPLE -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<ReadFilesContentPayload>(it) } ?: return
                 val sandboxPath = getSandboxPathFor(originator)
                 val contentMap = mutableMapOf<String, String>()
@@ -457,7 +457,7 @@ class FileSystemFeature(
                         error = "Write failed: ${sanitizeErrorForBroadcast(e.message)}")
                 }
             }
-            ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE -> {
+            ActionRegistry.Names.FILESYSTEM_DELETE_FILE -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SystemDeletePayload>(it) } ?: return
                 if (!filenameGuard(payload.path, originator, "delete")) return
                 val fullPath = "${getSandboxPathFor(originator)}${platformDependencies.pathSeparator}${payload.path}"
@@ -476,7 +476,7 @@ class FileSystemFeature(
                         error = "Delete failed: ${sanitizeErrorForBroadcast(e.message)}")
                 }
             }
-            ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY -> {
+            ActionRegistry.Names.FILESYSTEM_DELETE_DIRECTORY -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SystemDeleteDirectoryPayload>(it) } ?: return
                 if (!filepathGuard(payload.path, originator, "delete directory")) return
                 val fullPath = "${getSandboxPathFor(originator)}${platformDependencies.pathSeparator}${payload.path}"

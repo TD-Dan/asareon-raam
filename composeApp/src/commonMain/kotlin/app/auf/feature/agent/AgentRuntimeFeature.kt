@@ -239,7 +239,7 @@ class AgentRuntimeFeature(
                         put("messageId", messageId)
                     }))
                 }
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject { put("path", agentId) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_DELETE_DIRECTORY, buildJsonObject { put("path", agentId) }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_CONFIRM_DELETE, buildJsonObject { put("agentId", agentId) }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
                 // Unregister agent identity (cascades any sub-identities)
@@ -276,7 +276,7 @@ class AgentRuntimeFeature(
                     return
                 }
                 resourceToDelete.path?.let { path ->
-                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_DELETE_FILE, buildJsonObject {
                         put("path", path)
                     }))
                 }

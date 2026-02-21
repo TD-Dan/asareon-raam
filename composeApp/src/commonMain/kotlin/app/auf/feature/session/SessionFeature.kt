@@ -296,7 +296,7 @@ class SessionFeature(
                 if (oldLocalHandle != newLocalHandle) {
                     // Handle changed — delete old JSON file inside the UUID folder
                     store.deferredDispatch(identity.handle, Action(
-                        ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE,
+                        ActionRegistry.Names.FILESYSTEM_DELETE_FILE,
                         buildJsonObject { put("path", "$uuid/$oldLocalHandle.json") }
                     ))
                 }
@@ -316,7 +316,7 @@ class SessionFeature(
 
                     // Delete the session folder (uuid-named)
                     if (uuid != null) {
-                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE, buildJsonObject { put("path", uuid) }))
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_DELETE_FILE, buildJsonObject { put("path", uuid) }))
                     }
                     broadcastSessionNames(sessionState, store)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_DELETED, buildJsonObject { put("sessionId", localHandleToDelete) }))

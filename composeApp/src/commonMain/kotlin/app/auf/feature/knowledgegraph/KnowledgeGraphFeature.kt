@@ -81,7 +81,7 @@ class KnowledgeGraphFeature(
                 if (isRecursiveResponse) {
                     val filePaths = listing.filter { !it.isDirectory }.map { it.path }
                     if (filePaths.isNotEmpty()) {
-                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ_MULTIPLE, buildJsonObject {
                             put("paths", Json.encodeToJsonElement(filePaths))
                         }))
                     } else {
@@ -221,7 +221,7 @@ class KnowledgeGraphFeature(
                 if (parentHolonFilePaths.isNotEmpty()) {
                     // [FIX] Explicitly signal that the next read response is for execution context.
                     store.dispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_IMPORT_EXECUTION_STATUS, buildJsonObject { put("isExecuting", true) }))
-                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ_MULTIPLE, buildJsonObject {
                         put("paths", Json.encodeToJsonElement(parentHolonFilePaths))
                     }))
                 } else {
@@ -337,7 +337,7 @@ class KnowledgeGraphFeature(
                 }
                 if (isModificationLocked(personaId = personaId, originator = originator, kgState = kgState, store = store)) return
 
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_DELETE_DIRECTORY, buildJsonObject {
                     put("path", personaId)
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_CONFIRM_DELETE_PERSONA, buildJsonObject {
@@ -360,7 +360,7 @@ class KnowledgeGraphFeature(
 
                 val holonDir = platformDependencies.getParentDirectory(holonToDelete.header.filePath)
                 if (holonDir != null) {
-                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_DELETE_DIRECTORY, buildJsonObject {
                         put("path", holonDir)
                     }))
                 } else {

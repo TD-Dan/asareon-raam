@@ -74,7 +74,7 @@ class FileSystemFeatureT2GuardTest {
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val path = "some-folder/a-file-with-no-extension"
-        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_DELETE_FILE, buildJsonObject {
             put("path", path)
         })
         val fullPath = "${platform.getBasePathFor(BasePath.APP_ZONE)}/$originator/$path"
@@ -117,7 +117,7 @@ class FileSystemFeatureT2GuardTest {
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val path = "legit/../../../etc"
-        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILEDELETE_FILE_DIRECTORY, buildJsonObject {
             put("path", path)
         })
 

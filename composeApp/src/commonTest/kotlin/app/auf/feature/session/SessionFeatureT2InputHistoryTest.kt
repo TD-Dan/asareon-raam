@@ -801,7 +801,7 @@ class SessionFeatureT2InputHistoryTest {
 
     @Test
     fun `SESSION_DELETE does not separately delete input dot json — the UUID folder deletion covers it`() = runTest {
-        // The UUID folder deletion (filesystem.SYSTEM_DELETE with path = uuid) removes the
+        // The UUID folder deletion (filesystem.DELETE_FILE with path = uuid) removes the
         // entire folder including input.json. This test confirms no redundant per-file deletion
         // is dispatched (which would fail if the folder delete ran first).
         val session = testSession("sid-1", "To Delete")
@@ -824,7 +824,7 @@ class SessionFeatureT2InputHistoryTest {
             testScheduler.advanceUntilIdle()
 
             val deleteActions = harness.processedActions.filter {
-                it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE
+                it.name == ActionRegistry.Names.FILESYSTEM_DELETE_FILE
             }
             // There should be exactly one delete: the UUID folder, not a separate input.json delete
             val inputJsonDeletes = deleteActions.filter {

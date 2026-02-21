@@ -27,7 +27,7 @@ Not every action needs ACTION_RESULT. Use this checklist:
 
 | Action type | ACTION_RESULT? | correlationId threading? | Example |
 |-------------|---------------|--------------------------|---------|
-| Command-dispatchable mutation | **Yes** | Yes | `WRITE`, `SYSTEM_DELETE` |
+| Command-dispatchable mutation | **Yes** | Yes | `WRITE`, `DELETE_FILE` |
 | Command-dispatchable query | **Yes** | Yes | `READ`, `LIST` |
 | Internal/UI-only action | No | No | `TOGGLE_ITEM_EXPANDED`, `NAVIGATE` |
 | Targeted response (`RETURN_*`) | No | Thread it through | `RETURN_READ`, `RETURN_LIST` |
@@ -335,8 +335,8 @@ The filesystem implementation is the reference. It covers all the patterns:
 | `READ` | Query | `"Read 1 file (N bytes)"` | File content in code fence |
 | `LIST` | Query | `"Listed N items"` | Directory listing in code fence |
 | `WRITE` | Mutation | `"Wrote 1 file (N bytes)"` | Not needed |
-| `SYSTEM_DELETE` | Mutation | `"Deleted 1 file"` | Not needed |
-| `SYSTEM_DELETE_DIRECTORY` | Mutation | `"Deleted directory"` | Not needed |
+| `DELETE_FILE` | Mutation | `"Deleted 1 file"` | Not needed |
+| `DELETE_DIRECTORY` | Mutation | `"Deleted directory"` | Not needed |
 
 Mutations: ACTION_RESULT only (status feedback).
 Queries: ACTION_RESULT (status) + RETURN_* with correlationId (data delivery via Core).

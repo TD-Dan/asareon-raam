@@ -152,7 +152,7 @@ class FileSystemFeatureT2CoreTest {
     }
 
     @Test
-    fun `SYSTEM_DELETE_DIRECTORY recursively deletes a directory and its contents`() {
+    fun `DELETE_DIRECTORY recursively deletes a directory and its contents`() {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
@@ -166,7 +166,7 @@ class FileSystemFeatureT2CoreTest {
         platform.writeFileContent(fullFilePath, "{}")
         assertTrue(platform.fileExists(fullDirPath), "Precondition: Directory should exist.")
         assertTrue(platform.fileExists(fullFilePath), "Precondition: File inside directory should exist.")
-        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILEDELETE_FILE_DIRECTORY, buildJsonObject {
             put("path", dirPath)
         })
 
@@ -308,7 +308,7 @@ class FileSystemFeatureT2CoreTest {
     }
 
     @Test
-    fun `SYSTEM_DELETE happy path removes the file from the sandbox`() {
+    fun `DELETE_FILE happy path removes the file from the sandbox`() {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
@@ -319,7 +319,7 @@ class FileSystemFeatureT2CoreTest {
         platform.writeFileContent(fullPath, "{}")
         assertTrue(platform.fileExists(fullPath), "Precondition: File should exist.")
 
-        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_DELETE_FILE, buildJsonObject {
             put("path", path)
         })
 
@@ -330,7 +330,7 @@ class FileSystemFeatureT2CoreTest {
     }
 
     @Test
-    fun `READ_FILES_CONTENT happy path returns content for multiple files via targeted action`() {
+    fun `READ_MULTIPLE happy path returns content for multiple files via targeted action`() {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
@@ -339,7 +339,7 @@ class FileSystemFeatureT2CoreTest {
         platform.writeFileContent("$sandboxPath/file1.txt", "content-one")
         platform.writeFileContent("$sandboxPath/file2.md", "content-two")
 
-        val action = Action(ActionRegistry.Names.FILEREAD_FILES_CONTENT, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILEREAD_MULTIPLE, buildJsonObject {
             putJsonArray("paths") {
                 add(JsonPrimitive("file1.txt"))
                 add(JsonPrimitive("file2.md"))
@@ -617,7 +617,7 @@ class FileSystemFeatureT2CoreTest {
     }
 
     @Test
-    fun `READ_FILES_CONTENT skips files that fail filenameGuard`() {
+    fun `READ_MULTIPLE skips files that fail filenameGuard`() {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
@@ -625,7 +625,7 @@ class FileSystemFeatureT2CoreTest {
         val sandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator"
         platform.writeFileContent("$sandboxPath/good.txt", "good-content")
 
-        val action = Action(ActionRegistry.Names.FILEREAD_FILES_CONTENT, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILEREAD_MULTIPLE, buildJsonObject {
             putJsonArray("paths") {
                 add(JsonPrimitive("good.txt"))
                 add(JsonPrimitive("../escape.txt"))   // traversal — should be rejected

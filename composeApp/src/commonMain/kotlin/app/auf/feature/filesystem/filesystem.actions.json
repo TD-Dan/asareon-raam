@@ -1,11 +1,11 @@
 {
   "feature_name": "filesystem",
-  "summary": "Acts as the sole, transactional, and secure gateway to the file system.",
-  "permissions": ["read", "write", "delete", "workspace", "system-files", "ui"],
+  "summary": "Acts as the sole secure gateway to the file system. Consumers are sandboxed to their own private folders according to their identity.",
+  "permissions": ["read", "write", "delete", "workspace", "system-files", "ui", "clipboard"],
   "actions": [
     {
       "action_name": "filesystem.LIST",
-      "summary": "List files and directories in callers own private sandbox.",
+      "summary": "List files and directories in your own workspace.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -42,7 +42,7 @@
     },
     {
       "action_name": "filesystem.READ",
-      "summary": "A sandboxed service action for other features to read a file from their private sandbox. The response is delivered via the private channel.",
+      "summary": "Read a file from your own workspace.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -67,8 +67,30 @@
       "required_permissions": ["read", "workspace"]
     },
     {
+      "action_name": "filesystem.READ_MULTIPLE",
+      "summary": "Read multiple files from your own workspace.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "paths"
+        ]
+      },
+      "required_permissions": ["read", "workspace"]
+    },
+    {
       "action_name": "filesystem.WRITE",
-      "summary": "A sandboxed service action for other features to write a file to their private sandbox.",
+      "summary": "Write a file to your own workspace. Overwrites existing files.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -101,11 +123,12 @@
             "encrypt": "False"
           }
         }
-      }
+      },
+      "required_permissions": ["write", "workspace"]
     },
     {
-      "action_name": "filesystem.SYSTEM_DELETE",
-      "summary": "A sandboxed service action for other features to delete a file from their private sandbox.",
+      "action_name": "filesystem.DELETE_FILE",
+      "summary": "Delete a file from your own workspace.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -126,11 +149,12 @@
           "strategy": "AGENT_WORKSPACE",
           "path_prefix_template": "{agentId}/workspace"
         }
-      }
+      },
+      "required_permissions": ["delete", "workspace"]
     },
     {
-      "action_name": "filesystem.SYSTEM_DELETE_DIRECTORY",
-      "summary": "A sandboxed service action for other features to recursively delete a directory from their private sandbox.",
+      "action_name": "filesystem.DELETE_DIRECTORY",
+      "summary": "Delete a directory and all its contents from your own private sandboxed workspace.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -151,7 +175,8 @@
           "strategy": "AGENT_WORKSPACE",
           "path_prefix_template": "{agentId}/workspace"
         }
-      }
+      },
+      "required_permissions": ["delete", "workspace"]
     },
     {
       "action_name": "filesystem.REQUEST_SCOPED_READ_UI",
@@ -182,27 +207,6 @@
         }
       },
       "required_permissions": ["read", "system-files", "ui"]
-    },
-    {
-      "action_name": "filesystem.READ_FILES_CONTENT",
-      "summary": "A sandboxed service action for other features to request the content of multiple files at once.",
-      "public": true,
-      "broadcast": true,
-      "targeted": false,
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "paths": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "paths"
-        ]
-      }
     },
     {
       "action_name": "filesystem.OPEN_WORKSPACE_FOLDER",
@@ -265,7 +269,8 @@
         "required": [
           "path"
         ]
-      }
+      },
+      "required_permissions": ["write", "ui"]
     },
     {
       "action_name": "filesystem.COLLAPSE_ALL",
@@ -283,7 +288,8 @@
         "required": [
           "path"
         ]
-      }
+      },
+      "required_permissions": ["write", "ui"]
     },
     {
       "action_name": "filesystem.ADD_WHITELIST_PATH",
@@ -301,7 +307,8 @@
         "required": [
           "path"
         ]
-      }
+      },
+      "required_permissions": ["write", "system-files", "ui"]
     },
     {
       "action_name": "filesystem.REMOVE_WHITELIST_PATH",
@@ -319,7 +326,8 @@
         "required": [
           "path"
         ]
-      }
+      },
+      "required_permissions": ["delete", "system-files", "ui"]
     },
     {
       "action_name": "filesystem.ADD_FAVORITE_PATH",
@@ -337,7 +345,8 @@
         "required": [
           "path"
         ]
-      }
+      },
+      "required_permissions": ["write", "system-files", "ui"]
     },
     {
       "action_name": "filesystem.REMOVE_FAVORITE_PATH",
@@ -355,7 +364,8 @@
         "required": [
           "path"
         ]
-      }
+      },
+      "required_permissions": ["delete", "system-files", "ui"]
     },
     {
       "action_name": "filesystem.TOGGLE_ITEM_EXPANDED",
@@ -373,7 +383,8 @@
         "required": [
           "path"
         ]
-      }
+      },
+      "required_permissions": ["write", "ui"]
     },
     {
       "action_name": "filesystem.TOGGLE_ITEM_SELECTED",
@@ -395,18 +406,20 @@
         "required": [
           "path"
         ]
-      }
+      },
+      "required_permissions": ["write", "ui"]
     },
     {
       "action_name": "filesystem.COPY_SELECTION_TO_CLIPBOARD",
       "summary": "Initiates the process of reading selected files and copying their formatted content to the clipboard.",
       "public": true,
       "broadcast": true,
-      "targeted": false
+      "targeted": false,
+      "required_permissions": ["write", "ui", "clipboard"]
     },
     {
       "action_name": "filesystem.LOAD_CHILDREN",
-      "summary": "[INTERNAL] Triggers a side-effect to load a directory's children from disk.",
+      "summary": "Triggers a side-effect to load a directory's children from disk.",
       "public": false,
       "broadcast": false,
       "targeted": false,
@@ -424,7 +437,7 @@
     },
     {
       "action_name": "filesystem.DIRECTORY_LOADED",
-      "summary": "[INTERNAL] Dispatched after a directory's children have been read from disk. Used to update the UI.",
+      "summary": "Dispatched after a directory's children have been read from disk. Used to update the UI.",
       "public": false,
       "broadcast": false,
       "targeted": false,
@@ -449,7 +462,7 @@
     },
     {
       "action_name": "filesystem.EXECUTE_SCOPED_READ",
-      "summary": "[INTERNAL] Triggers the side-effect of showing the OS file picker after the user has confirmed the 'Danger Zone' prompt.",
+      "summary": "Triggers the side-effect of showing the OS file picker after the user has confirmed the 'Danger Zone' prompt.",
       "public": false,
       "broadcast": false,
       "targeted": false,
@@ -473,7 +486,7 @@
     },
     {
       "action_name": "filesystem.STAGE_SCOPED_READ",
-      "summary": "[INTERNAL] Stores the details of a pending scoped read request while awaiting user confirmation.",
+      "summary": "Stores the details of a pending scoped read request while awaiting user confirmation.",
       "public": false,
       "broadcast": false,
       "targeted": false,
@@ -499,7 +512,7 @@
     },
     {
       "action_name": "filesystem.FINALIZE_SCOPED_READ",
-      "summary": "[INTERNAL] Clears the pending scoped read request from the state after the workflow is complete.",
+      "summary": "Clears the pending scoped read request from the state after the workflow is complete.",
       "public": false,
       "broadcast": false,
       "targeted": false
