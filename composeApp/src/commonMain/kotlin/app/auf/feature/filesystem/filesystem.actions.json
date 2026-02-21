@@ -5,7 +5,7 @@
     {
       "action_name": "filesystem.NAVIGATE",
       "summary": "Requests to change the currently viewed directory path.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -23,14 +23,14 @@
     {
       "action_name": "filesystem.SELECT_DIRECTORY_UI",
       "summary": "Triggers the native OS file chooser to select a directory.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false
     },
     {
       "action_name": "filesystem.REQUEST_SCOPED_READ_UI",
       "summary": "Orchestrates a user-mediated, one-time read of a directory outside the originator's sandbox. The response is delivered via the private channel.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -59,7 +59,7 @@
     {
       "action_name": "filesystem.SYSTEM_LIST",
       "summary": "A sandboxed service action for other features to request a listing of files/directories in their private sandbox. The response is delivered via the private channel.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -95,7 +95,7 @@
     {
       "action_name": "filesystem.READ_FILES_CONTENT",
       "summary": "A sandboxed service action for other features to request the content of multiple files at once. The response is delivered via the private channel.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -116,7 +116,7 @@
     {
       "action_name": "filesystem.SYSTEM_READ",
       "summary": "A sandboxed service action for other features to read a file from their private sandbox. The response is delivered via the private channel.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -141,7 +141,7 @@
     {
       "action_name": "filesystem.SYSTEM_WRITE",
       "summary": "A sandboxed service action for other features to write a file to their private sandbox.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -178,7 +178,7 @@
     {
       "action_name": "filesystem.SYSTEM_DELETE",
       "summary": "A sandboxed service action for other features to delete a file from their private sandbox.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -203,7 +203,7 @@
     {
       "action_name": "filesystem.SYSTEM_DELETE_DIRECTORY",
       "summary": "A sandboxed service action for other features to recursively delete a directory from their private sandbox.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -228,14 +228,14 @@
     {
       "action_name": "filesystem.OPEN_SYSTEM_FOLDER",
       "summary": "A sandboxed service action for other features to open their private sandbox in the OS file explorer.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false
     },
     {
       "action_name": "filesystem.OPEN_APP_SUBFOLDER",
       "summary": "A service action to open a well-known subfolder within the app's secure data zone (e.g., 'logs').",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -253,7 +253,7 @@
     {
       "action_name": "filesystem.EXPAND_ALL",
       "summary": "Recursively expands a directory in the tree view to a safe depth.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -271,7 +271,7 @@
     {
       "action_name": "filesystem.COLLAPSE_ALL",
       "summary": "Recursively collapses a directory and all its children in the tree view.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -289,7 +289,7 @@
     {
       "action_name": "filesystem.ADD_WHITELIST_PATH",
       "summary": "Adds a new directory path to the security whitelist.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -307,7 +307,7 @@
     {
       "action_name": "filesystem.REMOVE_WHITELIST_PATH",
       "summary": "Removes a directory path from the security whitelist.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -325,7 +325,7 @@
     {
       "action_name": "filesystem.ADD_FAVORITE_PATH",
       "summary": "Adds a new directory path to the user's favorites.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -343,7 +343,7 @@
     {
       "action_name": "filesystem.REMOVE_FAVORITE_PATH",
       "summary": "Removes a directory path from the user's favorites.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -361,7 +361,7 @@
     {
       "action_name": "filesystem.TOGGLE_ITEM_EXPANDED",
       "summary": "Toggles the expanded/collapsed state of a directory in the tree view.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -379,7 +379,7 @@
     {
       "action_name": "filesystem.TOGGLE_ITEM_SELECTED",
       "summary": "Toggles the selected/deselected state of a file or directory.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -401,14 +401,14 @@
     {
       "action_name": "filesystem.COPY_SELECTION_TO_CLIPBOARD",
       "summary": "Initiates the process of reading selected files and copying their formatted content to the clipboard.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false
     },
     {
       "action_name": "filesystem.LOAD_CHILDREN",
       "summary": "[INTERNAL] Triggers a side-effect to load a directory's children from disk.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -426,7 +426,7 @@
     {
       "action_name": "filesystem.DIRECTORY_LOADED",
       "summary": "[INTERNAL] Dispatched after a directory's children have been read from disk. Used to update the UI.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -451,7 +451,7 @@
     {
       "action_name": "filesystem.EXECUTE_SCOPED_READ",
       "summary": "[INTERNAL] Triggers the side-effect of showing the OS file picker after the user has confirmed the 'Danger Zone' prompt.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -475,7 +475,7 @@
     {
       "action_name": "filesystem.STAGE_SCOPED_READ",
       "summary": "[INTERNAL] Stores the details of a pending scoped read request while awaiting user confirmation.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -501,14 +501,14 @@
     {
       "action_name": "filesystem.FINALIZE_SCOPED_READ",
       "summary": "[INTERNAL] Clears the pending scoped read request from the state after the workflow is complete.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false
     },
     {
       "action_name": "filesystem.RETURN_LIST",
       "summary": "The response envelope containing a directory listing (as subpaths), delivered to the original requester.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": true,
       "payload_schema": {
@@ -542,7 +542,7 @@
     {
       "action_name": "filesystem.RETURN_READ",
       "summary": "The response envelope containing the content of a file, delivered to the original requester.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": true,
       "payload_schema": {
@@ -566,7 +566,7 @@
     {
       "action_name": "filesystem.RETURN_FILES_CONTENT",
       "summary": "The response envelope containing the content of multiple files. Paths MUST be relative to the root of the read operation.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": true,
       "payload_schema": {

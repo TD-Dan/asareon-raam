@@ -235,7 +235,7 @@ Every action in the system falls into one of five semantic types. These types ar
 | **Internal** | `false` | `false` | `false` | Owner only | Owner only | `session.LOADED` |
 | **Response** | `false` | `false` | `true` | Owner only | Specified recipient | `filesystem.RETURN_READ` |
 
-A targeted command (`open: true, targeted: true`) is also valid — it means "anyone can invoke, delivered to a specific recipient." No current action uses this, but it's a reasonable future pattern.
+A targeted command (`public: true, targeted: true`) is also valid — it means "anyone can invoke, delivered to a specific recipient." No current action uses this, but it's a reasonable future pattern.
 
 **Open Non-Broadcast** is the pattern used by `core.REGISTER_IDENTITY` and `core.UNREGISTER_IDENTITY`: any feature can dispatch the request, but only CoreFeature's reducer and side-effects receive it. This avoids wasting reducer cycles across all features for what is essentially a service call. The caller receives results via a targeted response (`core.RETURN_REGISTER_IDENTITY`).
 
@@ -274,12 +274,12 @@ processAction(action):
   6. For each target: handleSideEffects(action, store, prev, new)
 ```
 
-**Key insight — authorization ≠ routing**: The `open` flag controls *who can dispatch* (step 2). The `broadcast`/`targeted` flags control *who receives* (step 4). These are independent. An action can be `open: true, broadcast: false` (anyone can dispatch, only the owning feature receives) — used by `core.REGISTER_IDENTITY` where any feature can request registration but only CoreFeature processes it.
+**Key insight — authorization ≠ routing**: The `open` flag controls *who can dispatch* (step 2). The `broadcast`/`targeted` flags control *who receives* (step 4). These are independent. An action can be `public: true, broadcast: false` (anyone can dispatch, only the owning feature receives) — used by `core.REGISTER_IDENTITY` where any feature can request registration but only CoreFeature processes it.
 
 **Why this is better than name parsing**:
 - A typo in an action name (`session.interal.LOADED`) no longer silently changes routing — the descriptor's boolean flags are the single source of truth
 - Routing rules are explicit, auditable, and visible in the manifest
-- No special-case parsing for `system.*` actions — system actions are just `open: false` actions owned by feature `"system"`
+- No special-case parsing for `system.*` actions — system actions are just `public: false` actions owned by feature `"system"`
 
 **Action naming convention** (cosmetic, not parsed):
 - All actions: `feature.ACTION_NAME` (e.g., `session.POST`, `session.LOADED`, `session.MESSAGE_POSTED`)
@@ -365,7 +365,7 @@ summary
         {
             "action_name": "session.POST",
             "summary": "Post a message to a session.",
-            "open": true,
+            "public": true,
             "broadcast": true,
             "targeted": false,
             "payload_schema": {
@@ -384,7 +384,7 @@ summary
         {
             "action_name": "session.INTERNAL_LOADED",
             "summary": "Dispatched internally after all session transcripts have been loaded from disk.",
-            "open": false,
+            "public": false,
             "broadcast": false,
             "targeted": false,
             "payload_schema": {
@@ -395,7 +395,7 @@ summary
         {
             "action_name": "session.MESSAGE_POSTED",
             "summary": "Broadcasts that a new message has been successfully posted to a session.",
-            "open": false,
+            "public": false,
             "broadcast": true,
             "targeted": false,
             "payload_schema": { "...": "..." }
@@ -403,7 +403,7 @@ summary
         {
             "action_name": "session.RETURN_LEDGER",
             "summary": "Delivers formatted ledger content to the requester in response to session.REQUEST_LEDGER.",
-            "open": false,
+            "public": false,
             "broadcast": false,
             "targeted": true,
             "payload_schema": { "...": "..." }
@@ -427,8 +427,8 @@ Field definitions:
 | `required_permissions` | string[]? | **FUTURE HOOK** (manifest-only for now): Permission types required to dispatch. null = unrestricted |
 
 **Routing derivation from flags**:
-- `open: false, broadcast: false, targeted: false` → INTERNAL (replaces old `internal.*` convention)
-- `open: true/false, broadcast: true` → BROADCAST (replaces old `publish.*` and public actions)
+- `public: false, broadcast: false, targeted: false` → INTERNAL (replaces old `internal.*` convention)
+- `public: true/false, broadcast: true` → BROADCAST (replaces old `publish.*` and public actions)
 - `targeted: true` → TARGETED (replaces old private envelopes). `open` flag controls authorization only.
 
 **Validation rules** (enforced by codegen and Store):
@@ -445,7 +445,7 @@ Former `private_envelopes` entries become actions with `"targeted": true`:
 {
     "action_name": "filesystem.RETURN_READ",
     "summary": "Delivers file content to the requesting feature.",
-    "open": false,
+    "public": false,
     "broadcast": false,
     "targeted": true,
     "payload_schema": { "...": "..." }
@@ -458,15 +458,15 @@ All action names are flattened to the `feature.ACTION_NAME` convention. The old 
 
 | Old Name | New Name | Notes |
 |---|---|---|
-| `session.internal.LOADED` | `session.LOADED` | `open: false, broadcast: false` replaces `internal.` |
-| `session.publish.MESSAGE_POSTED` | `session.MESSAGE_POSTED` | `open: false, broadcast: true` replaces `publish.` |
+| `session.internal.LOADED` | `session.LOADED` | `public: false, broadcast: false` replaces `internal.` |
+| `session.publish.MESSAGE_POSTED` | `session.MESSAGE_POSTED` | `public: false, broadcast: true` replaces `publish.` |
 | `session.publish.SESSION_UPDATED` | `session.SESSION_UPDATED` | Same |
-| `system.publish.INITIALIZING` | `system.INITIALIZING` | `open: false, broadcast: true` (system is just a feature) |
+| `system.publish.INITIALIZING` | `system.INITIALIZING` | `public: false, broadcast: true` (system is just a feature) |
 | `system.publish.STARTING` | `system.STARTING` | Same |
 | `system.publish.CLOSING` | `system.CLOSING` | Same |
-| `commandbot.internal.STAGE_APPROVAL` | `commandbot.STAGE_APPROVAL` | `open: false, broadcast: false` |
-| `commandbot.internal.RESOLVE_APPROVAL` | `commandbot.RESOLVE_APPROVAL` | `open: false, broadcast: false` |
-| `commandbot.publish.ACTION_CREATED` | `commandbot.ACTION_CREATED` | `open: false, broadcast: true` |
+| `commandbot.internal.STAGE_APPROVAL` | `commandbot.STAGE_APPROVAL` | `public: false, broadcast: false` |
+| `commandbot.internal.RESOLVE_APPROVAL` | `commandbot.RESOLVE_APPROVAL` | `public: false, broadcast: false` |
+| `commandbot.publish.ACTION_CREATED` | `commandbot.ACTION_CREATED` | `public: false, broadcast: true` |
 | `filesystem.response.read` | `filesystem.RETURN_READ` | `targeted: true` |
 | `core.response.CONFIRMATION` | `core.RETURN_CONFIRMATION` | `targeted: true` |
 | `session.response.ledger` | `session.RETURN_LEDGER` | `targeted: true` |
@@ -480,9 +480,9 @@ The generated `ActionNames` constants update accordingly. The typealias shim (Se
 A one-time script that:
 
 1. Reads each `*.actions.json`
-2. Merges `listensFor` → `actions` with `open: true, broadcast: true` (Commands), or `open: false, broadcast: false` for actions that were previously `internal`
-3. Merges `publishes` → `actions` — those with `internal.` prefix get `open: false, broadcast: false`; those with `publish.` prefix get `open: false, broadcast: true`
-4. Merges `private_envelopes` → `actions` with `open: false, broadcast: false, targeted: true`
+2. Merges `listensFor` → `actions` with `public: true, broadcast: true` (Commands), or `public: false, broadcast: false` for actions that were previously `internal`
+3. Merges `publishes` → `actions` — those with `internal.` prefix get `public: false, broadcast: false`; those with `publish.` prefix get `public: false, broadcast: true`
+4. Merges `private_envelopes` → `actions` with `public: false, broadcast: false, targeted: true`
 5. For each entry in `exposedToAgents`, finds the matching action by name and injects `agent_exposure`
 6. Renames all action names: replaces `.internal.`, `.publish.`, `.response.` infixes with `INTERNAL_`, ``, `RESPONSE`
 7. renames the old top-level arrays as deprecated: `publishes` → `deprecated-publishes`
@@ -556,7 +556,7 @@ object ActionRegistry {
         val featureName: String,
         val suffix: String,
         val summary: String,
-        val open: Boolean,
+        val public: Boolean,
         val broadcast: Boolean,
         val targeted: Boolean,
         val payloadFields: List<PayloadField>,
@@ -598,7 +598,7 @@ object ActionRegistry {
                     featureName = "session",
                     suffix = "POST",
                     summary = "Post a message to a session.",
-                    open = true,
+                    public = true,
                     broadcast = true,
                     targeted = false,
                     payloadFields = listOf(
@@ -616,7 +616,7 @@ object ActionRegistry {
                     featureName = "session",
                     suffix = "LOADED",
                     summary = "Dispatched after session transcripts loaded from disk.",
-                    open = false,
+                    public = false,
                     broadcast = false,
                     targeted = false,
                     payloadFields = emptyList(),
@@ -828,7 +828,7 @@ Four new actions added to `core.actions.json`:
 {
     "action_name": "core.REGISTER_IDENTITY",
     "summary": "Register a new identity in the universal registry. The originator automatically becomes the parent — no feature can register identities outside its own namespace. CoreFeature validates localHandle format, deduplicates among siblings, generates UUID, and constructs the full handle as originator.localHandle.",
-    "open": true,
+    "public": true,
     "broadcast": false,
     "targeted": false,
     "payload_schema": {
@@ -843,7 +843,7 @@ Four new actions added to `core.actions.json`:
 {
     "action_name": "core.RETURN_REGISTER_IDENTITY",
     "summary": "Targeted response to a REGISTER_IDENTITY request. Contains the approved identity on success, or error on failure. Caller matches by requestedLocalHandle.",
-    "open": false,
+    "public": false,
     "broadcast": false,
     "targeted": true,
     "payload_schema": {
@@ -864,7 +864,7 @@ Four new actions added to `core.actions.json`:
 {
     "action_name": "core.UNREGISTER_IDENTITY",
     "summary": "Remove an identity from the registry. Cascades: all descendants (by handle prefix) are also removed. Namespace enforcement: originator can only unregister within its own namespace.",
-    "open": true,
+    "public": true,
     "broadcast": false,
     "targeted": false,
     "payload_schema": {
@@ -878,7 +878,7 @@ Four new actions added to `core.actions.json`:
 {
     "action_name": "core.IDENTITY_REGISTRY_UPDATED",
     "summary": "Broadcast after any change to the identity registry. Replaces both core.IDENTITIES_UPDATED and agent.AGENT_NAMES_UPDATED for registry consumers.",
-    "open": false,
+    "public": false,
     "broadcast": true,
     "targeted": false
 }
@@ -890,7 +890,7 @@ Four new actions added to `core.actions.json`:
 
 2. **CoreFeature owns all business logic (Approach B)** — The Store stays clean of identity management logic. CoreFeature's reducer handles validation, deduplication, UUID generation. The Store only performs a mechanical lift of `CoreState.identityRegistry` → `AppState.identityRegistry` after each reduce cycle.
 
-3. **REGISTER and UNREGISTER are `open: true, broadcast: false`** — Any feature can dispatch them, but only CoreFeature receives and processes them. This avoids wasting reducer cycles across all 8 features for what is essentially a service call to CoreFeature.
+3. **REGISTER and UNREGISTER are `public: true, broadcast: false`** — Any feature can dispatch them, but only CoreFeature receives and processes them. This avoids wasting reducer cycles across all 8 features for what is essentially a service call to CoreFeature.
 
 4. **RETURN_REGISTER_IDENTITY is `targeted: true`** — The caller needs to know if its localHandle was approved, modified (dedup), or rejected. Targeted delivery to the originator is deferred to Phase 3; for now the response is dispatched but not yet routed to the caller.
 
@@ -1480,7 +1480,7 @@ when (action.name) {
         {
             "action_name": "registry.REGISTER_ACTION",
             "summary": "Registers a new action descriptor at runtime. Cannot override build-time actions.",
-            "open": true,
+            "public": true,
             "broadcast": true,
             "targeted": false,
             "payload_schema": {
@@ -1490,17 +1490,17 @@ when (action.name) {
                     "actionName": { "type": "string" },
                     "suffix": { "type": "string" },
                     "summary": { "type": "string" },
-                    "open": { "type": "boolean" },
+                    "public": { "type": "boolean" },
                     "broadcast": { "type": "boolean" },
                     "targeted": { "type": "boolean" }
                 },
-                "required": ["featureName", "actionName", "suffix", "open", "broadcast", "targeted"]
+                "required": ["featureName", "actionName", "suffix", "public", "broadcast", "targeted"]
             }
         },
         {
             "action_name": "registry.UNREGISTER_ACTION",
             "summary": "Removes a runtime-registered action. Cannot remove build-time actions.",
-            "open": true,
+            "public": true,
             "broadcast": true,
             "targeted": false,
             "payload_schema": {
@@ -1514,7 +1514,7 @@ when (action.name) {
         {
             "action_name": "registry.CATALOG_UPDATED",
             "summary": "Broadcast after any runtime registration or unregistration.",
-            "open": false,
+            "public": false,
             "broadcast": true,
             "targeted": false
         }
@@ -1545,7 +1545,7 @@ store.deferredDispatch("agent.gemini-x", Action(
         put("featureName", "agent")
         put("actionName", "agent.SUMMARIZE")
         put("suffix", "SUMMARIZE")
-        put("open", true)
+        put("public", true)
         put("broadcast", true)
         put("targeted", false)
         put("summary", "Ask this agent to summarize a document.")
@@ -1898,7 +1898,7 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
 - [x] IDE-assisted global rename: `feature.name` → `feature.identity.handle`; `this.name` → `identity.handle` (as originator)
   - **Done.** Verified: `featureStates` map keys remain unchanged (handles equal old names).
 - [x] Add 4 new actions to `core.actions.json`: `REGISTER_IDENTITY` (open, non-broadcast), `RETURN_REGISTER_IDENTITY` (targeted), `UNREGISTER_IDENTITY` (open, non-broadcast), `IDENTITY_REGISTRY_UPDATED` (event broadcast)
-  - **Done.** REGISTER/UNREGISTER are `open: true, broadcast: false` — anyone can dispatch, only CoreFeature receives. Response is targeted (delivery deferred to Phase 3).
+  - **Done.** REGISTER/UNREGISTER are `public: true, broadcast: false` — anyone can dispatch, only CoreFeature receives. Response is targeted (delivery deferred to Phase 3).
 - [x] Implement CoreFeature reducer for `REGISTER_IDENTITY`: validate `localHandle` format (`[a-z][a-z0-9-]*`), originator IS the parent (no parentHandle field), deduplicate among siblings (append -2, -3), generate UUID, construct full handle
   - **Done.** Deduplication works on `localHandle` within parent namespace. Cascade deletion in UNREGISTER uses handle prefix matching.
 - [x] Implement CoreFeature reducer for `UNREGISTER_IDENTITY`: namespace enforcement (originator can only unregister within own namespace), cascade deletion by handle prefix
@@ -1906,7 +1906,7 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
 - [x] Implement CoreFeature `onAction` (renamed to `handleSideEffects` in Phase 2.2) to dispatch `IDENTITY_REGISTRY_UPDATED` and `RETURN_REGISTER_IDENTITY` after each change
   - **Done.** Response compares prev vs new registry to determine success/failure. Targeted delivery of response deferred to Phase 3.
 - [x] Add `extractFeatureHandle()` to Store; update authorization to schema-driven routing using `open`/`broadcast`/`targeted` as orthogonal concerns
-  - **Done.** `open` controls authorization (who can dispatch). `broadcast`/`targeted` control delivery (who receives). These are independent — enables the new "open non-broadcast command" pattern (`open: true, broadcast: false`) used by REGISTER/UNREGISTER.
+  - **Done.** `open` controls authorization (who can dispatch). `broadcast`/`targeted` control delivery (who receives). These are independent — enables the new "open non-broadcast command" pattern (`public: true, broadcast: false`) used by REGISTER/UNREGISTER.
 - [x] Remove `ParsedActionName` and name-parsing from Store
   - **Done.** All routing now driven by `ActionDescriptor` boolean flags from the manifest.
 - [x] Remove `validActionNames` constructor param from Store; validate via `AppState.actionDescriptors`
@@ -1926,9 +1926,9 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
 
 **"The originator IS the parent"**: REGISTER_IDENTITY has no `parentHandle` payload field. The originator of the dispatch call automatically becomes the parent. This means `"agent"` registering `{ localHandle: "gemini-coder" }` produces `"agent.gemini-coder"` — and there is literally no code path to register outside your own namespace. Namespace enforcement is structural, not validation.
 
-**Authorization ≠ Routing (orthogonal)**: The old Store conflated these — `isInternal` (`!open && !broadcast && !targeted`) was used for routing, but it excluded `open` actions from owner-only delivery. The fix separates them: `open` flag controls authorization (step 2), `broadcast`/`targeted` flags control delivery (step 4). This enables `open: true, broadcast: false` (REGISTER_IDENTITY: anyone can dispatch, only CoreFeature receives).
+**Authorization ≠ Routing (orthogonal)**: The old Store conflated these — `isInternal` (`!open && !broadcast && !targeted`) was used for routing, but it excluded `open` actions from owner-only delivery. The fix separates them: `open` flag controls authorization (step 2), `broadcast`/`targeted` flags control delivery (step 4). This enables `public: true, broadcast: false` (REGISTER_IDENTITY: anyone can dispatch, only CoreFeature receives).
 
-**New action type discovered**: "Open Non-Broadcast Command" — `open: true, broadcast: false, targeted: false`. The action type quick reference table (section 10.5) updated accordingly.
+**New action type discovered**: "Open Non-Broadcast Command" — `public: true, broadcast: false, targeted: false`. The action type quick reference table (section 10.5) updated accordingly.
 
 ### Phase 2.2 — Consumer Wiring & Rename ✅ COMPLETE
 - [x] Rename `onAction` → `handleSideEffects` across all Feature implementations and Feature.kt interface
@@ -1964,7 +1964,7 @@ Old code is marked `@Deprecated` with migration guidance and removed in a subseq
 - [x] Add validation: reject `targetRecipient` on non-targeted actions; reject targeted actions without `targetRecipient`
   - **Done.** Step 1b added after schema lookup. Both invariants enforced with ERROR-level logging and early return.
 - [x] Add originator enforcement: only the declaring feature can dispatch targeted actions
-  - **Done.** No additional code needed — targeted actions have `open: false`, and the existing Step 2 authorization check (`extractFeatureHandle(action.originator) == descriptor.featureName`) already enforces this. Verified by new test `targeted action rejects foreign originator`.
+  - **Done.** No additional code needed — targeted actions have `public: false`, and the existing Step 2 authorization check (`extractFeatureHandle(action.originator) == descriptor.featureName`) already enforces this. Verified by new test `targeted action rejects foreign originator`.
 - [x] Phase 3a: Deprecate `deliverPrivateData`, `PrivateDataEnvelope`, `onPrivateData`
   - **Done.** `deliverPrivateData` → bridge that logs WARN and internally calls `deferredDispatch` with `targetRecipient` (all 12 call sites gain full validation immediately). `PrivateDataEnvelope` → `@Deprecated` annotation. `onPrivateData` → `@Deprecated` with migration KDoc.
 - [x] Migrate `CoreFeature.onPrivateData` → `handleSideEffects`

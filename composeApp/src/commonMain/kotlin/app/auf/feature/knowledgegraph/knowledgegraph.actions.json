@@ -5,7 +5,7 @@
     {
       "action_name": "knowledgegraph.SET_VIEW_MODE",
       "summary": "Switches the primary view of the Knowledge Graph feature (e.g., to Inspector, Import, Export).",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -23,7 +23,7 @@
     {
       "action_name": "knowledgegraph.LOAD_PERSONA",
       "summary": "Initiates the loading or reloading of a single, complete Holon Knowledge Graph from its root persona ID.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -41,7 +41,7 @@
     {
       "action_name": "knowledgegraph.REQUEST_CONTEXT",
       "summary": "The public, universal action for any feature to request the full context of a specific HKG. The response will be delivered privately to the originator.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -65,7 +65,7 @@
     {
       "action_name": "knowledgegraph.RESERVE_HKG",
       "summary": "An action to acquire an exclusive lock on an HKG, preventing modification by others.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -83,7 +83,7 @@
     {
       "action_name": "knowledgegraph.RELEASE_HKG",
       "summary": "An action to release an exclusive lock on an HKG.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -101,7 +101,7 @@
     {
       "action_name": "knowledgegraph.SET_ACTIVE_VIEW_HOLON",
       "summary": "A UI-facing action to select a specific holon for detailed inspection within the active view.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -119,7 +119,7 @@
     {
       "action_name": "knowledgegraph.TOGGLE_HOLON_EXPANDED",
       "summary": "Toggles the collapsed/expanded state of a single holon in the tree view.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -137,14 +137,14 @@
     {
       "action_name": "knowledgegraph.TOGGLE_SHOW_SUMMARIES",
       "summary": "Toggles the visibility of summary text in the holon tree view.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false
     },
     {
       "action_name": "knowledgegraph.SET_TYPE_FILTERS",
       "summary": "Sets the set of holon types to display in the tree view. An empty set means show all.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -165,14 +165,14 @@
     {
       "action_name": "knowledgegraph.START_IMPORT_ANALYSIS",
       "summary": "Initiates the user-facing workflow to select and analyze a directory for HKG import.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false
     },
     {
       "action_name": "knowledgegraph.SET_IMPORT_RECURSIVE",
       "summary": "Sets whether the import analysis should search sub-folders recursively.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -190,14 +190,14 @@
     {
       "action_name": "knowledgegraph.TOGGLE_SHOW_ONLY_CHANGED",
       "summary": "Toggles whether the import view should only show files with a proposed change.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false
     },
     {
       "action_name": "knowledgegraph.UPDATE_IMPORT_ACTION",
       "summary": "Allows the user to override the automatically determined import action for a specific file.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -219,21 +219,21 @@
     {
       "action_name": "knowledgegraph.EXECUTE_IMPORT",
       "summary": "Triggers the execution of the currently staged import plan.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false
     },
     {
       "action_name": "knowledgegraph.COPY_ANALYSIS_TO_CLIPBOARD",
       "summary": "Formats the current import analysis into a string and copies it to the clipboard.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false
     },
     {
       "action_name": "knowledgegraph.CREATE_PERSONA",
       "summary": "Creates a new AI Persona Root holon, establishing a new, empty HKG.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -251,7 +251,7 @@
     {
       "action_name": "knowledgegraph.DELETE_PERSONA",
       "summary": "Deletes an entire HKG by deleting its root persona directory.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -269,7 +269,7 @@
     {
       "action_name": "knowledgegraph.SET_PERSONA_TO_DELETE",
       "summary": "A UI action to stage a persona for deletion, triggering a confirmation dialog.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -287,7 +287,7 @@
     {
       "action_name": "knowledgegraph.SET_CREATING_PERSONA",
       "summary": "A UI action to toggle the visibility of the 'Create New Persona' dialog.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -305,7 +305,7 @@
     {
       "action_name": "knowledgegraph.UPDATE_HOLON_CONTENT",
       "summary": "Updates the user-editable 'payload' and 'execute' sections of a holon. This action protects the holon's header from direct modification.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -331,7 +331,7 @@
     {
       "action_name": "knowledgegraph.RENAME_HOLON",
       "summary": "A managed command to safely update the 'name' field in a holon's header.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -353,7 +353,7 @@
     {
       "action_name": "knowledgegraph.DELETE_HOLON",
       "summary": "Deletes a holon file from a loaded HKG.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -371,7 +371,7 @@
     {
       "action_name": "knowledgegraph.SET_HOLON_TO_DELETE",
       "summary": "A UI action to stage a single holon for deletion, triggering a confirmation dialog.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -389,7 +389,7 @@
     {
       "action_name": "knowledgegraph.SET_HOLON_TO_EDIT",
       "summary": "A UI action to enter or exit the holon editor view.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -407,7 +407,7 @@
     {
       "action_name": "knowledgegraph.SET_HOLON_TO_RENAME",
       "summary": "A UI action to show or hide the holon rename dialog.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -425,7 +425,7 @@
     {
       "action_name": "knowledgegraph.AVAILABLE_PERSONAS_UPDATED",
       "summary": "Broadcasts the list of all discovered, valid AI_Persona_Root holon headers, allowing other features (like the UI) to know which HKGs are available.",
-      "open": false,
+      "public": false,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -443,7 +443,7 @@
     {
       "action_name": "knowledgegraph.RESERVATIONS_UPDATED",
       "summary": "Broadcasts the set of all currently reserved persona IDs.",
-      "open": false,
+      "public": false,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -464,7 +464,7 @@
     {
       "action_name": "knowledgegraph.SET_PENDING_IMPORT_ID",
       "summary": "[INTERNAL] Dispatched to store the correlation ID for a pending import analysis workflow.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -482,7 +482,7 @@
     {
       "action_name": "knowledgegraph.SET_IMPORT_EXECUTION_STATUS",
       "summary": "[INTERNAL] Sets a flag indicating that the feature is waiting for parent file content to execute an import.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -500,7 +500,7 @@
     {
       "action_name": "knowledgegraph.PERSONA_LOADED",
       "summary": "[INTERNAL] Dispatched after a full persona HKG has been constructed in memory. Atomically merges the new/updated holons into the main state.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -519,7 +519,7 @@
     {
       "action_name": "knowledgegraph.CONFIRM_DELETE_PERSONA",
       "summary": "[INTERNAL] Dispatched after the deletion side-effect is complete to commit the state change.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -537,7 +537,7 @@
     {
       "action_name": "knowledgegraph.CONFIRM_DELETE_HOLON",
       "summary": "[INTERNAL] Dispatched after a holon's deletion side-effect is complete to commit the state change.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -555,7 +555,7 @@
     {
       "action_name": "knowledgegraph.ANALYSIS_COMPLETE",
       "summary": "[INTERNAL] Dispatched after an import analysis is complete, containing the list of proposed actions.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -577,7 +577,7 @@
     {
       "action_name": "knowledgegraph.LOAD_FAILED",
       "summary": "[INTERNAL] Dispatched when loading or parsing fails fatally.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -595,7 +595,7 @@
     {
       "action_name": "knowledgegraph.RETURN_CONTEXT",
       "summary": "The private response envelope sent to a feature that dispatched 'knowledgegraph.REQUEST_CONTEXT'. Contains the compiled HKG content.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": true,
       "payload_schema": {

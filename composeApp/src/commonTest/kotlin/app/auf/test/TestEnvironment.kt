@@ -126,7 +126,7 @@ data class TestHarness(
  * The Store now validates actions against AppState.actionDescriptors. To override,
  * use withActionDescriptors() to merge additional descriptors, or withActionRegistry()
  * to provide a complete override set of action names (which will be converted to
- * open+broadcast descriptors for backward compatibility).
+ * public+broadcast descriptors for backward compatibility).
  *
  * # USAGE WARNING: LIFECYCLE STATE
  *
@@ -259,7 +259,7 @@ fun testDescriptorsFor(actionNames: Set<String>): Map<String, ActionRegistry.Act
             featureName = parts.firstOrNull() ?: "test",
             suffix = parts.getOrElse(1) { name },
             summary = "Test action",
-            open = true,
+            public = true,
             broadcast = true,
             targeted = false,
             payloadFields = emptyList(),

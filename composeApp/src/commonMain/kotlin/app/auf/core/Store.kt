@@ -14,7 +14,7 @@ import kotlinx.serialization.json.put
 /**
  * The central state container for the Unidirectional Data Flow (UDF) architecture.
  *
- * - Authorization is schema-driven via the `open` flag (who can dispatch).
+ * - Authorization is schema-driven via the `public` flag (who can dispatch).
  * - Routing is schema-driven via `broadcast`/`targeted` flags (who receives).
  *   These two concerns are orthogonal.
  * - Feature identities are seeded at boot in initFeatureLifecycles().
@@ -179,20 +179,20 @@ open class Store(
      * The core logic for processing a single action.
      *
      * Authorization and routing are schema-driven via ActionDescriptor flags:
-     *   - `open` controls AUTHORIZATION: who can dispatch the action
+     *   - `public` controls AUTHORIZATION: who can dispatch the action
      *   - `broadcast`/`targeted` control DELIVERY: who receives the action
      * These two concerns are orthogonal.
      *
      * Authorization (step 2):
-     *   open: true  → any originator
-     *   open: false → originator's feature handle must match action's owning feature
+     *   public: true  → any originator
+     *   public: false → originator's feature handle must match action's owning feature
      *
      * Routing (step 4):
      *   targeted: true     → deliver to targetRecipient only (Phase 3)
      *   broadcast: true    → deliver to all features
      *   else (!broadcast)  → deliver to owning feature only
      *
-     * This means `open: true, broadcast: false` is valid: "anyone can dispatch, only
+     * This means `public: true, broadcast: false` is valid: "anyone can dispatch, only
      * the owning feature receives." Used for commands like REGISTER_IDENTITY where
      * any feature can request, but only CoreFeature processes.
      */
@@ -228,12 +228,12 @@ open class Store(
             return
         }
 
-        // --- STEP 2: AUTHORIZATION (open flag) ---
-        // `open` answers: "who is allowed to dispatch this?"
-        // open: true  → any originator
-        // open: false → only the owning feature (via hierarchical prefix match)
+        // --- STEP 2: AUTHORIZATION (public flag) ---
+        // `public` answers: "who is allowed to dispatch this?"
+        // public: true  → any originator
+        // public: false → only the owning feature (via hierarchical prefix match)
         val isAuthorized = when {
-            descriptor.open -> true
+            descriptor.public -> true
             else -> extractFeatureHandle(action.originator) == descriptor.featureName
         }
 
@@ -291,12 +291,12 @@ open class Store(
             val previousState = _state.value
             val newState: AppState
 
-            // Routing: `broadcast` and `targeted` control delivery (orthogonal to `open`).
+            // Routing: `broadcast` and `targeted` control delivery (orthogonal to `public`).
             //   targeted: true     → deliver to targetRecipient only (Phase 3)
             //   broadcast: true    → deliver to all features
             //   !broadcast         → deliver to owning feature only
             //
-            // This means open+!broadcast (e.g., REGISTER_IDENTITY) is correctly routed
+            // This means public+!broadcast (e.g., REGISTER_IDENTITY) is correctly routed
             // to the owning feature only, even though anyone can dispatch it.
             if (descriptor.targeted) {
                 // Targeted delivery: deliver to the feature identified by targetRecipient.
@@ -321,8 +321,8 @@ open class Store(
                 }
             } else if (!descriptor.broadcast) {
                 // Non-broadcast: deliver to owning feature only.
-                // This covers both internal actions (!open, !broadcast) and
-                // open non-broadcast commands (open, !broadcast) like REGISTER_IDENTITY.
+                // This covers both internal actions (!public, !broadcast) and
+                // public non-broadcast commands (public, !broadcast) like REGISTER_IDENTITY.
                 val targetFeature = features.find { it.identity.handle == descriptor.featureName }
                 if (targetFeature != null) {
                     val oldFeatureState = previousState.featureStates[targetFeature.identity.handle]

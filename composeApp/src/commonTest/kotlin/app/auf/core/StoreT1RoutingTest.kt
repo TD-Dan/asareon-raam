@@ -108,7 +108,7 @@ class StoreT1RoutingTest {
     private fun descriptor(
         name: String,
         featureName: String,
-        open: Boolean,
+        public: Boolean,
         broadcast: Boolean,
         targeted: Boolean = false
     ): Pair<String, ActionRegistry.ActionDescriptor> {
@@ -117,7 +117,7 @@ class StoreT1RoutingTest {
             featureName = featureName,
             suffix = name.substringAfter("."),
             summary = "Test descriptor",
-            open = open,
+            public = public,
             broadcast = broadcast,
             targeted = targeted,
             payloadFields = emptyList(),
@@ -143,7 +143,7 @@ class StoreT1RoutingTest {
             }.toSet()
             testDescriptorsFor(markerNames).map { (k, v) ->
                 // Marker actions are internal to the feature that dispatches them
-                k to v.copy(featureName = k.removePrefix("marker.").substringBefore("."), open = false, broadcast = false)
+                k to v.copy(featureName = k.removePrefix("marker.").substringBefore("."), public = false, broadcast = false)
             }.toMap()
         } else emptyMap()
 
@@ -171,7 +171,7 @@ class StoreT1RoutingTest {
     @Test
     fun `open action allows any originator`() {
         val store = createRoutingStore(
-            descriptor("test.OPEN_CMD", featureName = "alpha", open = true, broadcast = true)
+            descriptor("test.OPEN_CMD", featureName = "alpha", public = true, broadcast = true)
         )
 
         // Dispatch from a completely unrelated originator
@@ -185,7 +185,7 @@ class StoreT1RoutingTest {
     @Test
     fun `restricted action allows owning feature as originator`() {
         val store = createRoutingStore(
-            descriptor("alpha.INTERNAL", featureName = "alpha", open = false, broadcast = false)
+            descriptor("alpha.INTERNAL", featureName = "alpha", public = false, broadcast = false)
         )
 
         store.dispatch("alpha", Action("alpha.INTERNAL"))
@@ -197,7 +197,7 @@ class StoreT1RoutingTest {
     @Test
     fun `restricted action allows hierarchical child of owning feature`() {
         val store = createRoutingStore(
-            descriptor("alpha.INTERNAL", featureName = "alpha", open = false, broadcast = false)
+            descriptor("alpha.INTERNAL", featureName = "alpha", public = false, broadcast = false)
         )
 
         // "alpha.sub-entity-123" should resolve to feature "alpha" via extractFeatureHandle
@@ -211,7 +211,7 @@ class StoreT1RoutingTest {
     fun `restricted action rejects foreign originator`() {
         platform.capturedLogs.clear()
         val store = createRoutingStore(
-            descriptor("alpha.INTERNAL", featureName = "alpha", open = false, broadcast = false)
+            descriptor("alpha.INTERNAL", featureName = "alpha", public = false, broadcast = false)
         )
 
         store.dispatch("beta", Action("alpha.INTERNAL"))
@@ -229,7 +229,7 @@ class StoreT1RoutingTest {
     fun `restricted action rejects hierarchical child of foreign feature`() {
         platform.capturedLogs.clear()
         val store = createRoutingStore(
-            descriptor("alpha.INTERNAL", featureName = "alpha", open = false, broadcast = false)
+            descriptor("alpha.INTERNAL", featureName = "alpha", public = false, broadcast = false)
         )
 
         // "beta.some-agent" should resolve to feature "beta", not "alpha"
@@ -246,7 +246,7 @@ class StoreT1RoutingTest {
     @Test
     fun `broadcast action is delivered to all features`() {
         val store = createRoutingStore(
-            descriptor("test.BROADCAST", featureName = "alpha", open = true, broadcast = true)
+            descriptor("test.BROADCAST", featureName = "alpha", public = true, broadcast = true)
         )
 
         store.dispatch("anyone", Action("test.BROADCAST"))
@@ -260,7 +260,7 @@ class StoreT1RoutingTest {
     @Test
     fun `non-broadcast action is delivered to owning feature only`() {
         val store = createRoutingStore(
-            descriptor("alpha.PRIVATE", featureName = "alpha", open = false, broadcast = false)
+            descriptor("alpha.PRIVATE", featureName = "alpha", public = false, broadcast = false)
         )
 
         store.dispatch("alpha", Action("alpha.PRIVATE"))
@@ -275,7 +275,7 @@ class StoreT1RoutingTest {
     fun `open non-broadcast action is delivered to owner only despite any-originator auth`() {
         // This is the REGISTER_IDENTITY pattern: anyone can dispatch, but only CoreFeature receives.
         val store = createRoutingStore(
-            descriptor("alpha.OPEN_PRIVATE", featureName = "alpha", open = true, broadcast = false)
+            descriptor("alpha.OPEN_PRIVATE", featureName = "alpha", public = true, broadcast = false)
         )
 
         // Beta dispatches, but only alpha should receive
@@ -291,7 +291,7 @@ class StoreT1RoutingTest {
     fun `restricted broadcast (event) is delivered to all features`() {
         // Events: only the owner can dispatch, but all features receive
         val store = createRoutingStore(
-            descriptor("alpha.EVENT", featureName = "alpha", open = false, broadcast = true)
+            descriptor("alpha.EVENT", featureName = "alpha", public = false, broadcast = true)
         )
 
         store.dispatch("alpha", Action("alpha.EVENT"))
@@ -306,7 +306,7 @@ class StoreT1RoutingTest {
     fun `restricted broadcast (event) rejects foreign originator`() {
         platform.capturedLogs.clear()
         val store = createRoutingStore(
-            descriptor("alpha.EVENT", featureName = "alpha", open = false, broadcast = true)
+            descriptor("alpha.EVENT", featureName = "alpha", public = false, broadcast = true)
         )
 
         store.dispatch("beta", Action("alpha.EVENT"))
@@ -318,7 +318,7 @@ class StoreT1RoutingTest {
     @Test
     fun `targeted action is delivered to recipient feature only`() {
         val store = createRoutingStore(
-            descriptor("alpha.RESPONSE", featureName = "alpha", open = false, broadcast = false, targeted = true)
+            descriptor("alpha.RESPONSE", featureName = "alpha", public = false, broadcast = false, targeted = true)
         )
 
         // Alpha dispatches a targeted response to beta
@@ -333,7 +333,7 @@ class StoreT1RoutingTest {
     @Test
     fun `targeted action delivered to self when recipient is owning feature`() {
         val store = createRoutingStore(
-            descriptor("alpha.RESPONSE", featureName = "alpha", open = false, broadcast = false, targeted = true)
+            descriptor("alpha.RESPONSE", featureName = "alpha", public = false, broadcast = false, targeted = true)
         )
 
         // Alpha dispatches a targeted response to itself
@@ -349,7 +349,7 @@ class StoreT1RoutingTest {
     fun `targeted action rejects foreign originator`() {
         platform.capturedLogs.clear()
         val store = createRoutingStore(
-            descriptor("alpha.RESPONSE", featureName = "alpha", open = false, broadcast = false, targeted = true)
+            descriptor("alpha.RESPONSE", featureName = "alpha", public = false, broadcast = false, targeted = true)
         )
 
         // Beta tries to dispatch alpha's targeted action — should be rejected by authorization
@@ -365,7 +365,7 @@ class StoreT1RoutingTest {
     fun `targeted action without targetRecipient is rejected`() {
         platform.capturedLogs.clear()
         val store = createRoutingStore(
-            descriptor("alpha.RESPONSE", featureName = "alpha", open = false, broadcast = false, targeted = true)
+            descriptor("alpha.RESPONSE", featureName = "alpha", public = false, broadcast = false, targeted = true)
         )
 
         // Dispatch without targetRecipient — should be rejected at Step 1b
@@ -384,7 +384,7 @@ class StoreT1RoutingTest {
     fun `non-targeted action with targetRecipient is rejected`() {
         platform.capturedLogs.clear()
         val store = createRoutingStore(
-            descriptor("alpha.INTERNAL", featureName = "alpha", open = false, broadcast = false, targeted = false)
+            descriptor("alpha.INTERNAL", featureName = "alpha", public = false, broadcast = false, targeted = false)
         )
 
         // Dispatch a non-targeted action with targetRecipient — should be rejected at Step 1b
@@ -402,7 +402,7 @@ class StoreT1RoutingTest {
     @Test
     fun `targeted action resolves hierarchical recipient to feature level`() {
         val store = createRoutingStore(
-            descriptor("alpha.RESPONSE", featureName = "alpha", open = false, broadcast = false, targeted = true)
+            descriptor("alpha.RESPONSE", featureName = "alpha", public = false, broadcast = false, targeted = true)
         )
 
         // Target "beta.sub-entity" — Store should resolve to feature "beta"
@@ -422,7 +422,7 @@ class StoreT1RoutingTest {
     @Test
     fun `handleSideEffects called on all features for broadcast action`() {
         val store = createRoutingStore(
-            descriptor("test.BROADCAST", featureName = "alpha", open = true, broadcast = true),
+            descriptor("test.BROADCAST", featureName = "alpha", public = true, broadcast = true),
             useSideEffectTracking = true
         )
 
@@ -438,7 +438,7 @@ class StoreT1RoutingTest {
     @Test
     fun `handleSideEffects called only on owner for non-broadcast action`() {
         val store = createRoutingStore(
-            descriptor("alpha.PRIVATE", featureName = "alpha", open = false, broadcast = false),
+            descriptor("alpha.PRIVATE", featureName = "alpha", public = false, broadcast = false),
             useSideEffectTracking = true
         )
 
@@ -453,7 +453,7 @@ class StoreT1RoutingTest {
     @Test
     fun `handleSideEffects called only on owner for open non-broadcast action`() {
         val store = createRoutingStore(
-            descriptor("alpha.OPEN_PRIVATE", featureName = "alpha", open = true, broadcast = false),
+            descriptor("alpha.OPEN_PRIVATE", featureName = "alpha", public = true, broadcast = false),
             useSideEffectTracking = true
         )
 
@@ -468,7 +468,7 @@ class StoreT1RoutingTest {
     @Test
     fun `handleSideEffects called only on recipient for targeted action`() {
         val store = createRoutingStore(
-            descriptor("alpha.RESPONSE", featureName = "alpha", open = false, broadcast = false, targeted = true),
+            descriptor("alpha.RESPONSE", featureName = "alpha", public = false, broadcast = false, targeted = true),
             useSideEffectTracking = true
         )
 

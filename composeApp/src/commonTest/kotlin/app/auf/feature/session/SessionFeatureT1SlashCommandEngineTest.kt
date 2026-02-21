@@ -41,7 +41,7 @@ class SlashCommandEngineTest {
         featureName = "session",
         suffix = "POST",
         summary = "Posts a message to a session ledger.",
-        open = true, broadcast = true, targeted = false,
+        public = true, broadcast = true, targeted = false,
         payloadFields = listOf(
             field("session", required = true, desc = "Target session localHandle"),
             field("senderId", required = true, desc = "Sender identity handle"),
@@ -57,7 +57,7 @@ class SlashCommandEngineTest {
         featureName = "session",
         suffix = "CREATE",
         summary = "Creates a new session.",
-        open = true, broadcast = true, targeted = false,
+        public = true, broadcast = true, targeted = false,
         payloadFields = listOf(
             field("name", desc = "Session display name"),
             field("isHidden", type = "boolean", desc = "Whether the session is hidden")
@@ -71,7 +71,7 @@ class SlashCommandEngineTest {
         featureName = "session",
         suffix = "LOADED",
         summary = "Dispatched after sessions are read from disk.",
-        open = false, broadcast = false, targeted = false,
+        public = false, broadcast = false, targeted = false,
         payloadFields = emptyList(), requiredFields = emptyList(), agentExposure = null
     )
 
@@ -80,7 +80,7 @@ class SlashCommandEngineTest {
         featureName = "session",
         suffix = "MESSAGE_POSTED",
         summary = "Broadcast after a message is added to a session.",
-        open = false, broadcast = true, targeted = false,
+        public = false, broadcast = true, targeted = false,
         payloadFields = emptyList(), requiredFields = emptyList(), agentExposure = null
     )
 
@@ -89,7 +89,7 @@ class SlashCommandEngineTest {
         featureName = "session",
         suffix = "RETURN_LEDGER",
         summary = "Returns ledger content to the requester.",
-        open = false, broadcast = false, targeted = true,
+        public = false, broadcast = false, targeted = true,
         payloadFields = emptyList(), requiredFields = emptyList(), agentExposure = null
     )
 
@@ -98,7 +98,7 @@ class SlashCommandEngineTest {
         featureName = "agent",
         suffix = "INITIATE_TURN",
         summary = "Starts a cognitive turn for an agent.",
-        open = true, broadcast = true, targeted = false,
+        public = true, broadcast = true, targeted = false,
         payloadFields = listOf(
             field("agentHandle", required = true, desc = "The agent's identity handle"),
             field("sessionId", required = true, desc = "Session to respond in")
@@ -112,7 +112,7 @@ class SlashCommandEngineTest {
         featureName = "agent",
         suffix = "SET_STATUS",
         summary = "Updates an agent's processing status.",
-        open = false, broadcast = false, targeted = false,
+        public = false, broadcast = false, targeted = false,
         payloadFields = emptyList(), requiredFields = emptyList(), agentExposure = null
     )
 
@@ -121,7 +121,7 @@ class SlashCommandEngineTest {
         featureName = "system",
         suffix = "INITIALIZING",
         summary = "The first action dispatched at startup.",
-        open = false, broadcast = true, targeted = false,
+        public = false, broadcast = true, targeted = false,
         payloadFields = emptyList(), requiredFields = emptyList(), agentExposure = null
     )
 
@@ -130,7 +130,7 @@ class SlashCommandEngineTest {
         featureName = "system",
         suffix = "STARTING",
         summary = "Second startup action.",
-        open = false, broadcast = true, targeted = false,
+        public = false, broadcast = true, targeted = false,
         payloadFields = emptyList(), requiredFields = emptyList(), agentExposure = null
     )
 
@@ -139,7 +139,7 @@ class SlashCommandEngineTest {
         featureName = "settings",
         suffix = "UPDATE",
         summary = "Commits a new value for a setting.",
-        open = true, broadcast = true, targeted = false,
+        public = true, broadcast = true, targeted = false,
         payloadFields = listOf(
             field("key", required = true, desc = "The setting key"),
             field("value", required = true, desc = "The new value")
@@ -153,7 +153,7 @@ class SlashCommandEngineTest {
         featureName = "commandbot",
         suffix = "APPROVE",
         summary = "User approves a pending agent action.",
-        open = true, broadcast = true, targeted = false,
+        public = true, broadcast = true, targeted = false,
         payloadFields = listOf(field("approvalId", required = true)),
         requiredFields = listOf("approvalId"),
         agentExposure = null

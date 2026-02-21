@@ -5,7 +5,7 @@
     {
       "action_name": "commandbot.APPROVE",
       "summary": "User approves a pending agent action. Publishes ACTION_CREATED with the staged action.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -24,7 +24,7 @@
     {
       "action_name": "commandbot.DENY",
       "summary": "User denies a pending agent action. Posts denial feedback to the originating session.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -43,7 +43,7 @@
     {
       "action_name": "commandbot.ACTION_CREATED",
       "summary": "Published after CommandBot validates an agent command from an auf_* code block. Any feature that manages the originator entity should subscribe, apply its own sandboxing/routing, and dispatch the domain action. CommandBot does NOT dispatch domain actions itself.",
-      "open": false,
+      "public": false,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -87,7 +87,7 @@
     {
       "action_name": "commandbot.STAGE_APPROVAL",
       "summary": "[INTERNAL] Adds a pending approval to CommandBotState.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -128,7 +128,7 @@
     {
       "action_name": "commandbot.RESOLVE_APPROVAL",
       "summary": "[INTERNAL] Moves a pending approval to the resolved map and records the resolution.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {

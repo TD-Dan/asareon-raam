@@ -15,7 +15,7 @@ import kotlinx.serialization.json.*
  * - Three-stage state machine (FEATURE → ACTION → PARAMS)
  *
  * Two modes:
- * - **Normal** (single `/`): Only shows `open: true` actions the user can invoke.
+ * - **Normal** (single `/`): Only shows `public: true` actions the user can invoke.
  * - **Admin** (double `//`): Shows ALL actions regardless of flags. Debug tool.
  */
 class SlashCommandEngine(
@@ -125,7 +125,7 @@ class SlashCommandEngine(
     /**
      * Returns features that have at least one visible action, filtered by [query].
      * In admin mode, all features are shown. In normal mode, only features with
-     * at least one `open: true` action are shown.
+     * at least one `public: true` action are shown.
      */
     fun featureCandidates(query: String, adminMode: Boolean): List<FeatureCandidate> {
         return featureDescriptors.values
@@ -233,7 +233,7 @@ class SlashCommandEngine(
      * Determines whether an action should be visible in normal (non-admin) mode.
      * Only open (command) actions are user-invocable.
      */
-    private fun isUserInvocable(descriptor: ActionDescriptor): Boolean = descriptor.open
+    private fun isUserInvocable(descriptor: ActionDescriptor): Boolean = descriptor.public
 
     /**
      * Counts actions visible to the user within a feature.

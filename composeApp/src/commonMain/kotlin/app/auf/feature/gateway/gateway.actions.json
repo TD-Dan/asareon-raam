@@ -5,7 +5,7 @@
     {
       "action_name": "gateway.GENERATE_CONTENT",
       "summary": "Requests content generation from a specific provider.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -54,7 +54,7 @@
     {
       "action_name": "gateway.PREPARE_PREVIEW",
       "summary": "Requests the compilation of a raw, provider-specific request payload for user preview, without executing the request. If the provider supports token counting, the response will include an estimated input token count.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -103,14 +103,14 @@
     {
       "action_name": "gateway.REQUEST_AVAILABLE_MODELS",
       "summary": "Requests that the GatewayFeature broadcast the current list of available models.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false
     },
     {
       "action_name": "gateway.CANCEL_REQUEST",
       "summary": "Cancels an in-flight content generation request identified by its correlation ID.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -128,7 +128,7 @@
     {
       "action_name": "gateway.CONTENT_GENERATED",
       "summary": "Broadcasts the result of a content generation request.",
-      "open": false,
+      "public": false,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -172,7 +172,7 @@
     {
       "action_name": "gateway.AVAILABLE_MODELS_UPDATED",
       "summary": "Broadcasts the list of currently available providers and their models.",
-      "open": false,
+      "public": false,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -191,7 +191,7 @@
     {
       "action_name": "gateway.MODELS_UPDATED",
       "summary": "[INTERNAL] Dispatched after a provider's model list has been fetched. Used to update the feature's internal state.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -216,7 +216,7 @@
     {
       "action_name": "gateway.REQUEST_COMPLETED",
       "summary": "[INTERNAL] Dispatched when a generation job completes (success, failure, or cancellation). Used to safely clean up the active job map.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -234,7 +234,7 @@
     {
       "action_name": "gateway.RETURN_RESPONSE",
       "summary": "The standard response envelope from the GatewayFeature, containing either generated content or an error, plus optional token usage.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": true,
       "payload_schema": {
@@ -278,7 +278,7 @@
     {
       "action_name": "gateway.RETURN_PREVIEW",
       "summary": "The response envelope containing the data for a turn preview, plus an optional token count estimate.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": true,
       "payload_schema": {

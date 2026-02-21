@@ -5,7 +5,7 @@
     {
       "action_name": "agent.CREATE",
       "summary": "Creates a new agent instance with the specified configuration.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -54,7 +54,7 @@
     {
       "action_name": "agent.CLONE",
       "summary": "Creates a new agent instance by cloning an existing one.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -72,7 +72,7 @@
     {
       "action_name": "agent.UPDATE_CONFIG",
       "summary": "Updates the configuration of an existing agent instance. All payload properties are optional.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -129,7 +129,7 @@
     {
       "action_name": "agent.DELETE",
       "summary": "Deletes an agent instance.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -147,7 +147,7 @@
     {
       "action_name": "agent.TOGGLE_AUTOMATIC_MODE",
       "summary": "Toggles the automatic processing mode for a specific agent.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -165,7 +165,7 @@
     {
       "action_name": "agent.TOGGLE_ACTIVE",
       "summary": "Toggles the master active/paused state for a specific agent.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -183,7 +183,7 @@
     {
       "action_name": "agent.INITIATE_TURN",
       "summary": "A unified action to start an agent's turn, either directly or by first entering a preview mode.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -205,7 +205,7 @@
     {
       "action_name": "agent.EXECUTE_PREVIEWED_TURN",
       "summary": "Executes the turn that was previously staged for preview.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -223,7 +223,7 @@
     {
       "action_name": "agent.DISCARD_PREVIEW",
       "summary": "Discards a turn that was staged for preview and navigates back.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -241,7 +241,7 @@
     {
       "action_name": "agent.CANCEL_TURN",
       "summary": "Cancels an agent's currently in-flight, processing turn.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -259,7 +259,7 @@
     {
       "action_name": "agent.SET_EDITING",
       "summary": "Sets which agent is currently being edited in the UI.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -277,7 +277,7 @@
     {
       "action_name": "agent.SET_MANAGER_TAB",
       "summary": "Switches the active tab in the Agent Manager View.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -295,7 +295,7 @@
     {
       "action_name": "agent.SELECT_RESOURCE",
       "summary": "Selects a system resource for viewing/editing.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -313,7 +313,7 @@
     {
       "action_name": "agent.SAVE_RESOURCE",
       "summary": "Saves changes to a system resource.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -335,7 +335,7 @@
     {
       "action_name": "agent.CREATE_RESOURCE",
       "summary": "Creates a new user-defined system resource.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -363,7 +363,7 @@
     {
       "action_name": "agent.RENAME_RESOURCE",
       "summary": "Renames a user-defined system resource.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -385,7 +385,7 @@
     {
       "action_name": "agent.DELETE_RESOURCE",
       "summary": "Deletes a user-defined system resource.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -403,7 +403,7 @@
     {
       "action_name": "agent.UPDATE_NVRAM",
       "summary": "Updates the agent's cognitive state (NVRAM). Can be dispatched by the agent itself via CommandBot or by users. Updates are merged into existing state.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -426,7 +426,7 @@
     {
       "action_name": "agent.AGENT_DELETED",
       "summary": "Broadcasts that an agent has been deleted, so other features can clean up their state.",
-      "open": false,
+      "public": false,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -444,7 +444,7 @@
     {
       "action_name": "agent.AGENT_LOADED",
       "summary": "[INTERNAL] Dispatched after an agent's configuration has been read from its sandbox.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -454,14 +454,14 @@
     {
       "action_name": "agent.AGENTS_LOADED",
       "summary": "[INTERNAL] Dispatched after all agent configurations have been read from disk.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false
     },
     {
       "action_name": "agent.RESOURCE_LOADED",
       "summary": "[INTERNAL] Dispatched after a user-defined resource has been read from disk.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -471,21 +471,21 @@
     {
       "action_name": "agent.VALIDATE_SOVEREIGN_STATE",
       "summary": "[INTERNAL] Triggers the validation of sovereign agent requirements on startup.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false
     },
     {
       "action_name": "agent.CHECK_AUTOMATIC_TRIGGERS",
       "summary": "[INTERNAL] Dispatched by a timer to check if any automatic agents should start their cognitive cycle.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false
     },
     {
       "action_name": "agent.UPDATE_AUTO_TRIGGER_INDEX",
       "summary": "[INTERNAL] Updates the index for the round-robin automatic trigger.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -503,7 +503,7 @@
     {
       "action_name": "agent.STAGE_TURN_CONTEXT",
       "summary": "[INTERNAL] Caches the ledger messages while the HKG context is being fetched.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -525,7 +525,7 @@
     {
       "action_name": "agent.SET_PREVIEW_DATA",
       "summary": "[INTERNAL] Saves the complete preview data.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -551,7 +551,7 @@
     {
       "action_name": "agent.CONFIRM_DELETE",
       "summary": "[INTERNAL] Dispatched after cleanup side effects are complete.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -569,7 +569,7 @@
     {
       "action_name": "agent.SET_STATUS",
       "summary": "[INTERNAL] Updates the transient status and optional error message.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -597,7 +597,7 @@
     {
       "action_name": "agent.SET_PROCESSING_STEP",
       "summary": "[INTERNAL] Updates the human-readable description of the agent's current processing activity.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -621,7 +621,7 @@
     {
       "action_name": "agent.SET_HKG_CONTEXT",
       "summary": "[INTERNAL] Caches the fetched HKG context.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -643,7 +643,7 @@
     {
       "action_name": "agent.AVATAR_MOVED",
       "summary": "[INTERNAL] Updates the feature state to reflect that an avatar card has been moved.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -669,7 +669,7 @@
     {
       "action_name": "agent.NVRAM_LOADED",
       "summary": "[INTERNAL] Dispatched after NVRAM has been loaded from disk during startup.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -691,7 +691,7 @@
     {
       "action_name": "agent.SET_WORKSPACE_CONTEXT",
       "summary": "[INTERNAL] Stages the formatted workspace file listing string on the agent's status.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -713,7 +713,7 @@
     {
       "action_name": "agent.SET_CONTEXT_GATHERING_STARTED",
       "summary": "[INTERNAL] Records the timestamp when parallel context gathering began. Used for timeout validation.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -735,7 +735,7 @@
     {
       "action_name": "agent.CONTEXT_GATHERING_TIMEOUT",
       "summary": "[INTERNAL] Fired by a delayed dispatch after 10s. Carries the startedAt timestamp for stale-timeout validation.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {

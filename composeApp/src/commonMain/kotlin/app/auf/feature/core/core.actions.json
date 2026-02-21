@@ -5,7 +5,7 @@
     {
       "action_name": "core.SET_ACTIVE_VIEW",
       "summary": "Changes the main view displayed in the UI.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -23,14 +23,14 @@
     {
       "action_name": "core.SHOW_DEFAULT_VIEW",
       "summary": "Changes the main view to whatever is configured as the default view.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false
     },
     {
       "action_name": "core.UPDATE_WINDOW_SIZE",
       "summary": "Updates the application state with the new window dimensions, typically after a user resize.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -52,7 +52,7 @@
     {
       "action_name": "core.SHOW_TOAST",
       "summary": "Displays a short-lived message at the bottom of the screen.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -70,21 +70,21 @@
     {
       "action_name": "core.CLEAR_TOAST",
       "summary": "Immediately hides the currently displayed toast message.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false
     },
     {
       "action_name": "core.OPEN_LOGS_FOLDER",
       "summary": "Requests that the application's logs folder be opened in the native file explorer.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false
     },
     {
       "action_name": "core.COPY_TO_CLIPBOARD",
       "summary": "Copies the provided text to the system clipboard.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -102,7 +102,7 @@
     {
       "action_name": "core.ADD_USER_IDENTITY",
       "summary": "Adds a new user identity to the application.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -120,7 +120,7 @@
     {
       "action_name": "core.REMOVE_USER_IDENTITY",
       "summary": "Removes an existing user identity.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -138,7 +138,7 @@
     {
       "action_name": "core.SET_ACTIVE_USER_IDENTITY",
       "summary": "Sets the specified user identity as the active one for the application.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -156,7 +156,7 @@
     {
       "action_name": "core.SHOW_CONFIRMATION_DIALOG",
       "summary": "Requests the Core feature to display a generic, modal confirmation dialog.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -197,7 +197,7 @@
     {
       "action_name": "core.DISMISS_CONFIRMATION_DIALOG",
       "summary": "Clears any active confirmation dialog from the UI. Dispatches a private response if it was a confirmation.",
-      "open": true,
+      "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -216,7 +216,7 @@
     {
       "action_name": "core.IDENTITIES_UPDATED",
       "summary": "Broadcasts the complete state of user identities after any change.",
-      "open": false,
+      "public": false,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -244,7 +244,7 @@
     {
       "action_name": "core.IDENTITIES_LOADED",
       "summary": "[INTERNAL] Dispatched after user identities have been loaded from disk.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -271,7 +271,7 @@
     {
       "action_name": "core.RETURN_CONFIRMATION",
       "summary": "The private response envelope sent to the original feature that requested a confirmation dialog.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": true,
       "payload_schema": {
@@ -293,7 +293,7 @@
     {
       "action_name": "core.REGISTER_IDENTITY",
       "summary": "Register a new identity in the universal registry. If localHandle is omitted, CoreFeature generates one from the name via slugification. If a UUID is provided and valid, it is used instead of auto-generating one (useful for correlation). The originator automatically becomes the parent. CoreFeature validates localHandle format if provided, deduplicates among siblings, and returns the approved identity via a targeted RETURN_REGISTER_IDENTITY.",
-      "open": true,
+      "public": true,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -318,7 +318,7 @@
     {
       "action_name": "core.RETURN_REGISTER_IDENTITY",
       "summary": "Targeted response to a core.REGISTER_IDENTITY request. Contains the approved identity on success, or an error on failure. The caller can correlate by UUID (if one was provided in the request) or by requestedLocalHandle.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": true,
       "payload_schema": {
@@ -363,7 +363,7 @@
     {
       "action_name": "core.UNREGISTER_IDENTITY",
       "summary": "Remove an identity from the registry. Cascades: all descendants (by handle prefix) are also removed. Namespace enforcement: the originator can only unregister identities within its own namespace. Only delivered to CoreFeature (non-broadcast); a core.IDENTITY_REGISTRY_UPDATED event follows on success.",
-      "open": true,
+      "public": true,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -380,14 +380,14 @@
     {
       "action_name": "core.IDENTITY_REGISTRY_UPDATED",
       "summary": "Broadcast after any change to the identity registry. Features that need to react to identity changes (e.g., updating UI, refreshing name caches) should listen for this. Replaces both core.IDENTITIES_UPDATED and agent.AGENT_NAMES_UPDATED for registry consumers.",
-      "open": false,
+      "public": false,
       "broadcast": true,
       "targeted": false
     },
     {
       "action_name": "core.UPDATE_IDENTITY",
       "summary": "Update the name (and consequently the handle/slug) of an existing identity. The UUID and parent are preserved. Namespace enforcement: the originator can only update identities within its own namespace. Cascading: children's parentHandle and handle are updated. A targeted RETURN_UPDATE_IDENTITY is sent to the caller.",
-      "open": true,
+      "public": true,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -408,7 +408,7 @@
     {
       "action_name": "core.RETURN_UPDATE_IDENTITY",
       "summary": "Targeted response to a core.UPDATE_IDENTITY request. Sent to the original caller with the updated identity details, and also sent as cascading notifications to features owning child identities whose handles changed.",
-      "open": false,
+      "public": false,
       "broadcast": false,
       "targeted": true,
       "payload_schema": {

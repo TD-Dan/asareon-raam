@@ -274,7 +274,7 @@ private fun ActionStage(
                                 fontWeight = FontWeight.Medium
                             )
                             // Type badge for admin mode — helps identify internal/event/response
-                            if (state.adminMode && !descriptor.open) {
+                            if (state.adminMode && !descriptor.public) {
                                 val label = when {
                                     descriptor.isInternal -> "internal"
                                     descriptor.isEvent -> "event"

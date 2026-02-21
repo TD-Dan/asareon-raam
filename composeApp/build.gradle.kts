@@ -32,7 +32,7 @@ plugins {
 // ============================================================================
 // Drop-in replacement for the old task in build.gradle.kts (lines 29–346).
 //
-// Reads the unified *.actions.json format (actions[] with open/broadcast/targeted)
+// Reads the unified *.actions.json format (actions[] with public/broadcast/targeted)
 // and generates two files:
 //   1. ActionRegistry.kt — the unified registry (single source of truth)
 //   2. ActionNames.kt — typealias + old→new name compat shim
@@ -107,7 +107,7 @@ tasks.register("generateActionRegistry") {
                         val obj = actionsArray[i] as? JsonObject ?: continue
                         val actionName = obj["action_name"]?.jsonPrimitive?.content ?: continue
                         val summary = obj["summary"]?.jsonPrimitive?.content ?: ""
-                        val openFlag = obj["open"]?.jsonPrimitive?.content?.toBoolean() ?: false
+                        val publicFlag = obj["public"]?.jsonPrimitive?.content?.toBoolean() ?: false
                         val broadcastFlag = obj["broadcast"]?.jsonPrimitive?.content?.toBoolean() ?: false
                         val targetedFlag = obj["targeted"]?.jsonPrimitive?.content?.toBoolean() ?: false
 
@@ -203,7 +203,7 @@ tasks.register("generateActionRegistry") {
                             "featureName" to actionFeature,
                             "suffix" to suffix,
                             "summary" to summary,
-                            "open" to openFlag,
+                            "public" to publicFlag,
                             "broadcast" to broadcastFlag,
                             "targeted" to targetedFlag,
                             "payloadFields" to payloadFields,
@@ -299,7 +299,7 @@ tasks.register("generateActionRegistry") {
                 |                    featureName = "${action["featureName"]}",
                 |                    suffix = "${action["suffix"]}",
                 |                    summary = "${(action["summary"] as String).escKt()}",
-                |                    open = ${action["open"]},
+                |                    public = ${action["public"]},
                 |                    broadcast = ${action["broadcast"]},
                 |                    targeted = ${action["targeted"]},
                 |                    payloadFields = $fieldsStr,
@@ -374,7 +374,7 @@ tasks.register("generateActionRegistry") {
             |        val featureName: String,
             |        val suffix: String,
             |        val summary: String,
-            |        val open: Boolean,
+            |        val public: Boolean,
             |        val broadcast: Boolean,
             |        val targeted: Boolean,
             |        val payloadFields: List<PayloadField>,
@@ -382,14 +382,14 @@ tasks.register("generateActionRegistry") {
             |        val agentExposure: AgentExposure?,
             |        val requiredPermissions: List<String>? = null
             |    ) {
-            |        /** A Command is any action open to all originators. */
-            |        val isCommand: Boolean get() = open
+            |        /** A Command is any action public to all originators. */
+            |        val isCommand: Boolean get() = public
             |        /** An Event is a restricted-origin broadcast (feature announces something happened). */
-            |        val isEvent: Boolean get() = !open && broadcast
+            |        val isEvent: Boolean get() = !public && broadcast
             |        /** An Internal action is restricted to the owning feature only. */
-            |        val isInternal: Boolean get() = !open && !broadcast && !targeted
+            |        val isInternal: Boolean get() = !public && !broadcast && !targeted
             |        /** A Response is a restricted-origin targeted delivery (reply to a requester). */
-            |        val isResponse: Boolean get() = !open && targeted
+            |        val isResponse: Boolean get() = !public && targeted
             |    }
             |
             |    data class FeatureDescriptor(
