@@ -238,6 +238,12 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
     val sessionLocalHandle = activeSession.identity.localHandle
     val storeText = sessionState?.draftInputs?.get(sessionLocalHandle) ?: ""
 
+    // ── Two-mode input: history mode vs edit mode ──
+    // History mode (false): Up/Down cycle through sent-message history.
+    // Edit mode (true): Up/Down move the caret within multiline text.
+    // Engages on any user interaction other than Up/Down. Resets when input is empty.
+    var editMode by remember(sessionLocalHandle) { mutableStateOf(false) }
+
     // Local TextFieldValue state — allows cursor (selection) control.
     // Initialized with cursor at end; re-keyed when switching sessions.
     var textFieldValue by remember(sessionLocalHandle) {
@@ -462,6 +468,11 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                     onValueChange = { newValue ->
                         val textChanged = newValue.text != textFieldValue.text
                         textFieldValue = newValue
+                        // Any direct user interaction engages edit mode (typing,
+                        // clicking to reposition cursor, selecting text, etc.).
+                        // Empty input resets back to history mode so Up immediately
+                        // recalls previous entries.
+                        editMode = newValue.text.isNotEmpty()
                         // Always dispatch so that any user interaction (including cursor
                         // movement) commits the current text as the draft and exits
                         // history navigation mode if active.
@@ -525,8 +536,17 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                                 }
                             }
 
-                            // ── History navigation (Up/Down when autocomplete is not active) ──
-                            if (acState == null) {
+                            // ── Edit-mode engagement: any key other than Up/Down switches to edit mode ──
+                            if (acState == null && event.key != Key.DirectionUp && event.key != Key.DirectionDown) {
+                                editMode = true
+                            }
+
+                            // ── History navigation (Up/Down in history mode only) ──
+                            // In history mode (!editMode), Up/Down cycle through sent-message
+                            // history. Once the user interacts with the text in any other way
+                            // (typing, caret movement, clicking), edit mode engages and
+                            // Up/Down revert to normal caret movement within multiline text.
+                            if (acState == null && !editMode) {
                                 when (event.key) {
                                     Key.DirectionUp -> {
                                         store.dispatch("session.ui", Action(
@@ -554,7 +574,17 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
 
                             // ── Ctrl+Enter to send ──
                             if (event.key == Key.Enter && (event.isCtrlPressed || event.isMetaPressed)) {
-                                if (textFieldValue.text.isNotBlank()) { onSend(textFieldValue.text); acState = null }
+                                if (textFieldValue.text.isNotBlank()) { onSend(textFieldValue.text); acState = null; editMode = false }
+                                return@onPreviewKeyEvent true
+                            }
+
+                            // ── Shift+Enter inserts a newline (same as bare Enter) ──
+                            if (event.key == Key.Enter && event.isShiftPressed) {
+                                val sel = textFieldValue.selection
+                                val newText = textFieldValue.text.replaceRange(sel.min, sel.max, "\n")
+                                val newCursor = sel.min + 1
+                                textFieldValue = TextFieldValue(newText, TextRange(newCursor))
+                                dispatchDraftChange(newText)
                                 return@onPreviewKeyEvent true
                             }
                         }
@@ -593,7 +623,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                         )
                     }
                 }
-                IconButton(onClick = { if (textFieldValue.text.isNotBlank()) { onSend(textFieldValue.text); acState = null } }, enabled = textFieldValue.text.isNotBlank()) {
+                IconButton(onClick = { if (textFieldValue.text.isNotBlank()) { onSend(textFieldValue.text); acState = null; editMode = false } }, enabled = textFieldValue.text.isNotBlank()) {
                     Icon(Icons.AutoMirrored.Filled.Send, "Send")
                 }
             }
