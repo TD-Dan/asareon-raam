@@ -2221,10 +2221,10 @@ Eliminated four fragmented identity/name caches, replacing them with reads from 
 - [ ] Add test: build-time actions cannot be overridden or removed
 
 ### Phase 6 — Slash-Command Autocomplete
-- [ ] Create `SlashCommandAutocomplete.kt` (popup composable + state machine + keyboard handling)
-- [ ] Modify `MessageInput` in `SessionView.kt` to detect `/` prefix and host autocomplete
-- [ ] Implement three-stage state machine (FEATURE → ACTION → PARAMS)
-- [ ] Implement keyboard navigation (↑↓ Tab Enter Escape Backspace)
-- [ ] Implement `auf_` code block generation with context auto-fill (session handle, etc.)
-- [ ] Manual UX testing on desktop and mobile
+- [x] Create `SlashCommandAutocomplete.kt` (popup composable + state machine + keyboard handling)
+- [x] Modify `MessageInput` in `SessionView.kt` to detect `/` prefix and host autocomplete
+- [x] Implement three-stage state machine (FEATURE → ACTION → PARAMS)
+- [x] Implement keyboard navigation (↑↓ Tab Enter Escape Backspace)
+- [x] Implement `auf_` code block generation with context auto-fill (session handle, etc.)
+- [x] Manual UX testing on desktop
 - [ ] Verify generated code blocks are parsed correctly by CommandBot
