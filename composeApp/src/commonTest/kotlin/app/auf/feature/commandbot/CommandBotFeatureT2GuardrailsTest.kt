@@ -32,12 +32,18 @@ import kotlin.test.assertTrue
  * Tier 2 Guardrail & Edge-Case Tests for CommandBotFeature.
  *
  * Complements [CommandBotFeatureT2CoreTest] with coverage of:
- * - Agent identity tracking lifecycle (Proactive Broadcast pattern)
+ * - Agent identity tracking lifecycle (identity registry)
  * - CAG-004: Agent action restriction (ActionRegistry.agentAllowedNames)
  * - CAG-007: Auto-fill injection (senderId for session.POST)
  * - Command processing edge cases (empty payload, no blocks, non-auf blocks, multi-block)
  * - Approval card PartialView metadata verification
  * - DENY unknown-approvalId no-op
+ *
+ * ## Architecture Note
+ * CommandBot publishes ACTION_CREATED for ALL valid commands (human and agent).
+ * CoreFeature claims ACTION_CREATED events where the originator's parentHandle == "core"
+ * and dispatches the domain action. Senders not in the identity registry are not claimed
+ * by any feature, so their ACTION_CREATED events are published but no domain action follows.
  *
  * All assertions wrapped in `runAndLogOnFailure` per P-TEST-005.
  */
@@ -53,12 +59,16 @@ class CommandBotFeatureT2GuardrailsTest {
 
     /**
      * Builds a standard harness with Core, Session, and CommandBot.
-     * No agents registered — sender IDs not in identityRegistry are treated as human.
+     * No agents registered — sender IDs not in identityRegistry are treated as human
+     * by CommandBot (no agent guardrails applied).
+     *
+     * Seeds the identity registry with the test user so that CoreFeature can
+     * claim ACTION_CREATED events and dispatch domain actions.
      */
     private fun TestScope.buildStandardHarness(
         platform: FakePlatformDependencies = FakePlatformDependencies("test")
     ): TestHarness {
-        return TestEnvironment.create()
+        val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
             .withFeature(SessionFeature(platform, this))
             .withFeature(CommandBotFeature(platform))
@@ -72,6 +82,13 @@ class CommandBotFeatureT2GuardrailsTest {
                 activeSessionLocalHandle = testSession.identity.localHandle
             ))
             .build(platform = platform)
+
+        // Seed the identity registry with the test user identity.
+        harness.store.updateIdentityRegistry { registry ->
+            registry + (testUser.handle to testUser)
+        }
+
+        return harness
     }
 
     /** The full bus handle for the default test agent, derived from the identity hierarchy. */
@@ -83,6 +100,9 @@ class CommandBotFeatureT2GuardrailsTest {
      *
      * Phase 4: Seeds the identity registry directly instead of the former
      * Proactive Broadcast (AGENT_NAMES_UPDATED) pattern.
+     *
+     * Also seeds the test user identity so CoreFeature can claim human-originated
+     * ACTION_CREATED events.
      */
     private fun TestScope.buildHarnessWithKnownAgent(
         platform: FakePlatformDependencies = FakePlatformDependencies("test"),
@@ -105,15 +125,18 @@ class CommandBotFeatureT2GuardrailsTest {
             .withInitialState("commandbot", CommandBotState())
             .build(platform = platform)
 
-        // Seed the identity registry with the agent identity.
+        // Seed the identity registry with both the test user and the agent identity.
         harness.store.updateIdentityRegistry { registry ->
-            registry + (agentHandle to Identity(
-                uuid = platform.generateUUID(),
-                localHandle = agentHandle.substringAfterLast('.'),
-                handle = agentHandle,
-                name = agentName,
-                parentHandle = "agent"
-            ))
+            registry + mapOf(
+                testUser.handle to testUser,
+                agentHandle to Identity(
+                    uuid = platform.generateUUID(),
+                    localHandle = agentHandle.substringAfterLast('.'),
+                    handle = agentHandle,
+                    name = agentName,
+                    parentHandle = "agent"
+                )
+            )
         }
         // Note: caller is responsible for runCurrent() after setup.
 
@@ -138,19 +161,27 @@ class CommandBotFeatureT2GuardrailsTest {
     // ========================================================================
 
     @Test
-    fun `agent tracking - unregistered sender is treated as human and unrestricted`() = runTest {
+    fun `agent tracking - unregistered sender publishes ACTION_CREATED but no feature claims it`() = runTest {
         val harness = buildStandardHarness()
 
-        // "some-unknown-sender" is NOT in identityRegistry → human path → unrestricted
+        // "some-unknown-sender" is NOT in identityRegistry → CommandBot treats as non-agent
+        // → publishes ACTION_CREATED → but CoreFeature won't claim it (parentHandle != "core")
+        // and no agent feature claims it either → domain action is never dispatched.
         postRawMessage(harness, "some-unknown-sender", "```auf_core.SHOW_TOAST\n{ \"message\": \"Hi\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
+            // CommandBot's job: publish ACTION_CREATED with the unregistered sender as originator
+            val actionCreated = harness.processedActions.find { it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED }
+            assertNotNull(actionCreated,
+                "CommandBot should publish ACTION_CREATED even for unregistered senders (treated as non-agent).")
+            assertEquals("some-unknown-sender", actionCreated.payload?.get("originatorId")?.jsonPrimitive?.content,
+                "CAG-002: originatorId should be the original senderId.")
+
+            // No feature claims this ACTION_CREATED, so the domain action is NOT dispatched
             val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
-            assertNotNull(toast,
-                "An unregistered sender should be treated as human and bypass agent restrictions.")
-            assertEquals("some-unknown-sender", toast.originator,
-                "CAG-002: originator should be the original senderId.")
+            assertNull(toast,
+                "No feature should claim the ACTION_CREATED for an unregistered sender — domain action should not be dispatched.")
         }
     }
 
@@ -172,27 +203,37 @@ class CommandBotFeatureT2GuardrailsTest {
     }
 
     @Test
-    fun `agent tracking - removing agent from registry reverts sender to human treatment`() = runTest {
+    fun `agent tracking - removing agent from registry blocks that agent entirely`() = runTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
-        // TODO: The premise of this test is wrong. removing agent from registry should block that agent from doing anything as it no longer exists.
 
-        // Remove the agent from the identity registry (simulates UNREGISTER_IDENTITY)
+        // Remove the agent from the identity registry (simulates UNREGISTER_IDENTITY).
+        // A deregistered agent no longer exists — CommandBot treats it as non-agent,
+        // publishes ACTION_CREATED, but no feature claims it (parentHandle is neither
+        // "core" nor "agent" in the registry). The command effectively goes nowhere.
         harness.store.updateIdentityRegistry { registry ->
             registry - testAgentHandle
         }
 
-        // Now testAgentHandle is no longer in the registry → human path → unrestricted
         postRawMessage(harness, testAgentHandle, "```auf_core.SHOW_TOAST\n{ \"message\": \"Allowed\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
+            // CommandBot publishes ACTION_CREATED (treats as non-agent)
+            val actionCreated = harness.processedActions.find {
+                it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED &&
+                        it.payload?.get("originatorId")?.jsonPrimitive?.contentOrNull == testAgentHandle
+            }
+            assertNotNull(actionCreated,
+                "CommandBot should still publish ACTION_CREATED for the deregistered agent sender.")
+
+            // But no feature claims it — domain action is NOT dispatched
             val toast = harness.processedActions.find {
                 it.name == ActionRegistry.Names.CORE_SHOW_TOAST &&
                         it.payload?.get("message")?.jsonPrimitive?.contentOrNull == "Allowed"
             }
-            assertNotNull(toast,
-                "After removal from registry, the sender is no longer tracked and should be unrestricted.")
+            assertNull(toast,
+                "A deregistered agent's ACTION_CREATED should not be claimed by any feature.")
         }
     }
 
@@ -218,24 +259,34 @@ class CommandBotFeatureT2GuardrailsTest {
         }
         runCurrent()
 
-        // Remove agent-one from registry (simulates deletion)
+        // Remove agent-one from registry (simulates deletion).
+        // A deregistered agent no longer exists — it should not be able to execute commands.
         harness.store.updateIdentityRegistry { registry ->
             registry - agentOneHandle
         }
         runCurrent()
 
-        // agent-one should now be treated as human (unrestricted)
-        // TODO: NO. agent-one should now not exist and it should not be allowed to post anything.
+        // agent-one is no longer registered: CommandBot treats as non-agent, publishes ACTION_CREATED,
+        // but no feature claims it (not a core user, not a registered agent).
         postRawMessage(harness, agentOneHandle, "```auf_core.SHOW_TOAST\n{ \"message\": \"From ex-agent\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
+            // ACTION_CREATED is published (CommandBot's responsibility)
+            val actionCreated = harness.processedActions.find {
+                it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED &&
+                        it.payload?.get("originatorId")?.jsonPrimitive?.contentOrNull == agentOneHandle
+            }
+            assertNotNull(actionCreated,
+                "CommandBot publishes ACTION_CREATED for the deregistered agent (treated as non-agent).")
+
+            // But the domain action should NOT be dispatched — nobody claims it
             val toast = harness.processedActions.find {
                 it.name == ActionRegistry.Names.CORE_SHOW_TOAST &&
                         it.payload?.get("message")?.jsonPrimitive?.contentOrNull == "From ex-agent"
             }
-            assertNotNull(toast,
-                "agent-one was removed from the registry and should be unrestricted.")
+            assertNull(toast,
+                "A deregistered agent's ACTION_CREATED should not be claimed — domain action must not be dispatched.")
         }
     }
 
@@ -275,13 +326,14 @@ class CommandBotFeatureT2GuardrailsTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        // Human user sends the exact same command that would be blocked for an agent
+        // Human user sends the exact same command that would be blocked for an agent.
+        // CommandBot publishes ACTION_CREATED → CoreFeature claims it → dispatches domain action.
         postRawMessage(harness, testUser.handle, "```auf_core.SHOW_TOAST\n{ \"message\": \"Human OK\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
             val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
-            assertNotNull(toast, "Human users bypass CAG-004 and can dispatch any action.")
+            assertNotNull(toast, "Human users bypass CAG-004 — CoreFeature should dispatch the domain action.")
             assertEquals(testUser.handle, toast.originator, "CAG-002: originator should be the human user.")
         }
     }
@@ -334,12 +386,20 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         harness.runAndLogOnFailure {
-            val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
-            assertNotNull(toast, "A command with an empty code block body should still be dispatched.")
+            // Verify CommandBot published ACTION_CREATED with empty actionPayload
+            val actionCreated = harness.processedActions.find { it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED }
+            assertNotNull(actionCreated, "A command with an empty code block body should still be published as ACTION_CREATED.")
 
-            // Payload should be an empty JsonObject, not null
-            assertNotNull(toast.payload, "Payload should be a non-null empty JsonObject.")
-            assertTrue(toast.payload!!.isEmpty(), "Payload should be empty when the code block body is empty.")
+            val actionPayload = actionCreated.payload?.get("actionPayload")?.jsonObject
+            assertNotNull(actionPayload, "ACTION_CREATED must include an actionPayload.")
+            // The original payload should be empty (CoreFeature may inject correlationId later)
+            val keysExcludingCorrelation = actionPayload.keys.filter { it != "correlationId" }
+            assertTrue(keysExcludingCorrelation.isEmpty(),
+                "actionPayload should have no user-specified keys when the code block body is empty.")
+
+            // CoreFeature should claim it and dispatch the domain action
+            val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
+            assertNotNull(toast, "CoreFeature should dispatch the domain action even for an empty payload.")
         }
     }
 
@@ -408,9 +468,10 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         harness.runAndLogOnFailure {
+            // CommandBot publishes two ACTION_CREATED events; CoreFeature dispatches two domain actions
             val toasts = harness.processedActions.filter { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertEquals(2, toasts.size,
-                "Both auf_ code blocks in a single message should be processed.")
+                "Both auf_ code blocks in a single message should be processed into domain actions.")
 
             val messages = toasts.mapNotNull { it.payload?.get("message")?.jsonPrimitive?.contentOrNull }
             assertTrue("Toast One" in messages, "First command payload should be dispatched.")

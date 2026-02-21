@@ -32,12 +32,18 @@ import kotlin.test.assertTrue
  * Mandate (P-TEST-001, T2): To test the feature's core logic and side effects
  * in response to events from its peers within a realistic TestEnvironment.
  *
+ * ## Architecture Note
+ * CommandBot publishes ACTION_CREATED for ALL valid commands (human and agent).
+ * CoreFeature subscribes to ACTION_CREATED and dispatches domain actions for
+ * commands originating from core user identities (parentHandle == "core").
+ * For agent commands, the owning agent feature handles ACTION_CREATED instead.
+ *
  * ## Coverage
- * - Baseline command processing: human user dispatch, originator attribution (CAG-002)
+ * - Baseline command processing: human user command → ACTION_CREATED → CoreFeature dispatches domain action
  * - CAG-001: Self-reaction prevention
+ * - CAG-002: Originator attribution preserved through ACTION_CREATED pipeline
  * - CAG-003: Robust error handling (JSON parse failure → feedback message)
- * - Cross-feature dispatch: CommandBot → SessionFeature (human user direct dispatch)
- * - ACTION_CREATED publishing: agent approval → ACTION_CREATED broadcast (not direct dispatch)
+ * - Cross-feature dispatch: CommandBot → ACTION_CREATED → CoreFeature → SessionFeature
  * - Approval workflow: stage → approve/deny → state transitions → clearability → cleanup
  * - Auto-fill: LIST_SESSIONS responseSession injection via ACTION_CREATED for agent vs. human pass-through
  *
@@ -60,11 +66,16 @@ class CommandBotFeatureT2CoreTest {
     /**
      * Builds a standard harness with Core, Session, and CommandBot.
      * No agents registered — all senders treated as human.
+     *
+     * Seeds the identity registry with the test user so that CoreFeature can
+     * claim ACTION_CREATED events and dispatch domain actions on behalf of
+     * the user. Without this, CoreFeature's `originatorIdentity?.parentHandle != "core"`
+     * guard would cause it to ignore the ACTION_CREATED.
      */
     private fun TestScope.buildStandardHarness(
         platform: FakePlatformDependencies = FakePlatformDependencies("test")
     ): TestHarness {
-        return TestEnvironment.create()
+        val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
             .withFeature(SessionFeature(platform, this))
             .withFeature(CommandBotFeature(platform))
@@ -78,6 +89,14 @@ class CommandBotFeatureT2CoreTest {
                 activeSessionLocalHandle = testSession.identity.localHandle
             ))
             .build(platform = platform)
+
+        // Seed the identity registry with the test user identity.
+        // In production, this happens via IDENTITIES_LOADED → handleSideEffects sync.
+        harness.store.updateIdentityRegistry { registry ->
+            registry + (testUser.handle to testUser)
+        }
+
+        return harness
     }
 
     /** The full bus handle for the default test agent, derived from the identity hierarchy. */
@@ -90,6 +109,9 @@ class CommandBotFeatureT2CoreTest {
      * Phase 4: Seeds the identity registry directly instead of the former
      * Proactive Broadcast (AGENT_NAMES_UPDATED) pattern. The registry is now
      * the single source of truth for agent identity.
+     *
+     * Also seeds the test user identity so CoreFeature can claim human-originated
+     * ACTION_CREATED events.
      *
      * Caller is responsible for [runCurrent] after setup.
      */
@@ -114,16 +136,18 @@ class CommandBotFeatureT2CoreTest {
             .withInitialState("commandbot", CommandBotState())
             .build(platform = platform)
 
-        // Seed the identity registry with the agent identity.
-        // In production, this happens via REGISTER_IDENTITY dispatched by AgentRuntimeFeature.
+        // Seed the identity registry with both the test user and the agent.
         harness.store.updateIdentityRegistry { registry ->
-            registry + (agentHandle to Identity(
-                uuid = platform.generateUUID(),
-                localHandle = agentHandle.substringAfterLast('.'),
-                handle = agentHandle,
-                name = agentName,
-                parentHandle = "agent"
-            ))
+            registry + mapOf(
+                testUser.handle to testUser,
+                agentHandle to Identity(
+                    uuid = platform.generateUUID(),
+                    localHandle = agentHandle.substringAfterLast('.'),
+                    handle = agentHandle,
+                    name = agentName,
+                    parentHandle = "agent"
+                )
+            )
         }
 
         return harness
@@ -162,8 +186,9 @@ class CommandBotFeatureT2CoreTest {
 
         // ASSERT
         harness.runAndLogOnFailure {
+            // CommandBot publishes ACTION_CREATED; CoreFeature claims it and dispatches the domain action.
             val dispatchedToastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
-            assertNotNull(dispatchedToastAction, "The command bot should have dispatched a CORE_SHOW_TOAST action.")
+            assertNotNull(dispatchedToastAction, "CoreFeature should dispatch CORE_SHOW_TOAST after CommandBot publishes ACTION_CREATED.")
             assertEquals(testUser.handle, dispatchedToastAction.originator,
                 "CAG-002: The originator of the dispatched action must be the original message sender.")
             val payloadMessage = dispatchedToastAction.payload?.get("message")?.jsonPrimitive?.content
@@ -187,8 +212,9 @@ class CommandBotFeatureT2CoreTest {
 
         // ASSERT
         harness.runAndLogOnFailure {
+            // CommandBot → ACTION_CREATED → CoreFeature dispatches SESSION_CREATE
             val dispatchedCreateAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_CREATE }
-            assertNotNull(dispatchedCreateAction, "The command bot should have dispatched a SESSION_CREATE action.")
+            assertNotNull(dispatchedCreateAction, "CoreFeature should dispatch SESSION_CREATE after CommandBot publishes ACTION_CREATED.")
             assertEquals(testUser.handle, dispatchedCreateAction.originator, "Originator must be the original user.")
 
             val finalSessionState = harness.store.state.value.featureStates["session"] as SessionState
@@ -566,7 +592,7 @@ class CommandBotFeatureT2CoreTest {
     }
 
     @Test
-    fun `LIST_SESSIONS from human user passes through without modification`() = runTest {
+    fun `LIST_SESSIONS from human user is published as ACTION_CREATED without modification`() = runTest {
         val harness = buildStandardHarness()
 
         // Human user sends LIST_SESSIONS with explicit responseSession
@@ -576,17 +602,26 @@ class CommandBotFeatureT2CoreTest {
         )
         runCurrent()
 
-        // ASSERT
+        // ASSERT: Verify the ACTION_CREATED pipeline and the resulting domain action
         harness.runAndLogOnFailure {
+            // CommandBot publishes ACTION_CREATED
+            val actionCreated = harness.processedActions.find { it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED }
+            assertNotNull(actionCreated, "CommandBot should publish ACTION_CREATED for human LIST_SESSIONS.")
+
+            // The explicit responseSession should be preserved in the actionPayload
+            val actionPayload = actionCreated.payload?.get("actionPayload")?.jsonObject
+            assertNotNull(actionPayload, "ACTION_CREATED must include an actionPayload.")
+            val responseSession = actionPayload["responseSession"]?.jsonPrimitive?.content
+            assertEquals(testSession.identity.localHandle, responseSession,
+                "Human user's explicit responseSession should be preserved in ACTION_CREATED.")
+
+            // CoreFeature claims the ACTION_CREATED and dispatches SESSION_LIST_SESSIONS
             val listAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_LIST_SESSIONS }
-            assertNotNull(listAction, "CommandBot should dispatch SESSION_LIST_SESSIONS for human users.")
+            assertNotNull(listAction, "CoreFeature should dispatch SESSION_LIST_SESSIONS after claiming the ACTION_CREATED.")
 
-            // CAG-002: originator is the human user
-            assertEquals(testUser.handle, listAction.originator)
-
-            // The explicit responseSession should be preserved
-            val responseSession = listAction.payload?.get("responseSession")?.jsonPrimitive?.content
-            assertEquals(testSession.identity.localHandle, responseSession)
+            // CAG-002: originator is the human user (preserved through ACTION_CREATED pipeline)
+            assertEquals(testUser.handle, listAction.originator,
+                "CAG-002: originator should be the human user, preserved through the ACTION_CREATED pipeline.")
         }
     }
 }
