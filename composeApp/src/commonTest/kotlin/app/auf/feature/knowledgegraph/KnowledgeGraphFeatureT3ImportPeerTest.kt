@@ -75,12 +75,12 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
             assertEquals(2, writeActions.size, "Expected writes for both the new holon and the updated parent.")
 
             // Assert new holon was written to correct subdirectory
-            val newHolonWrite = writeActions.find { it.payload?.get("subpath")?.jsonPrimitive?.content?.contains("hl1") == true }
+            val newHolonWrite = writeActions.find { it.payload?.get("path")?.jsonPrimitive?.content?.contains("hl1") == true }
             assertNotNull(newHolonWrite)
-            assertEquals("pl1-20251112T190000Z/hl1-20251112T190000Z/hl1-20251112T190000Z.json", newHolonWrite.payload?.get("subpath")?.jsonPrimitive?.content)
+            assertEquals("pl1-20251112T190000Z/hl1-20251112T190000Z/hl1-20251112T190000Z.json", newHolonWrite.payload?.get("path")?.jsonPrimitive?.content)
 
             // Assert parent was updated with new sub_holon reference
-            val parentUpdateWrite = writeActions.find { it.payload?.get("subpath")?.jsonPrimitive?.content == existingPersonaFilePath }
+            val parentUpdateWrite = writeActions.find { it.payload?.get("path")?.jsonPrimitive?.content == existingPersonaFilePath }
             assertNotNull(parentUpdateWrite)
             val finalParentContent = parentUpdateWrite.payload?.get("content")?.jsonPrimitive?.content
             assertNotNull(finalParentContent)
@@ -137,19 +137,19 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
             assertEquals(3, writeActions.size, "Expected 3 writes (Root, Mid, Leaf).")
 
             // Verify Root Path
-            val rootWrite = writeActions.find { it.payload?.get("subpath")?.jsonPrimitive?.content?.contains(rootId) == true && it.payload?.get("subpath")?.jsonPrimitive?.content?.endsWith(rootId + ".json") == true }
+            val rootWrite = writeActions.find { it.payload?.get("path")?.jsonPrimitive?.content?.contains(rootId) == true && it.payload?.get("path")?.jsonPrimitive?.content?.endsWith(rootId + ".json") == true }
             assertNotNull(rootWrite)
-            assertEquals("$rootId/$rootId.json", rootWrite.payload?.get("subpath")?.jsonPrimitive?.content)
+            assertEquals("$rootId/$rootId.json", rootWrite.payload?.get("path")?.jsonPrimitive?.content)
 
             // Verify Mid Path (Should be inside Root)
-            val midWrite = writeActions.find { it.payload?.get("subpath")?.jsonPrimitive?.content?.contains(midId) == true }
+            val midWrite = writeActions.find { it.payload?.get("path")?.jsonPrimitive?.content?.contains(midId) == true }
             assertNotNull(midWrite)
-            assertEquals("$rootId/$midId/$midId.json", midWrite.payload?.get("subpath")?.jsonPrimitive?.content)
+            assertEquals("$rootId/$midId/$midId.json", midWrite.payload?.get("path")?.jsonPrimitive?.content)
 
             // Verify Leaf Path (Should be inside Mid)
-            val leafWrite = writeActions.find { it.payload?.get("subpath")?.jsonPrimitive?.content?.contains(leafId) == true }
+            val leafWrite = writeActions.find { it.payload?.get("path")?.jsonPrimitive?.content?.contains(leafId) == true }
             assertNotNull(leafWrite)
-            assertEquals("$rootId/$midId/$leafId/$leafId.json", leafWrite.payload?.get("subpath")?.jsonPrimitive?.content)
+            assertEquals("$rootId/$midId/$leafId/$leafId.json", leafWrite.payload?.get("path")?.jsonPrimitive?.content)
 
             // Verify Content Linkage (Mid should contain Leaf ref)
             val writtenMidContent = midWrite.payload?.get("content")?.jsonPrimitive?.content!!

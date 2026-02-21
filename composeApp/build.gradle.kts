@@ -179,7 +179,7 @@ tasks.register("generateActionRegistry") {
                             if (sandboxObj != null) {
                                 val srMap = mutableMapOf<String, Any>()
                                 srMap["strategy"] = sandboxObj["strategy"]?.jsonPrimitive?.content ?: ""
-                                srMap["subpathPrefixTemplate"] = sandboxObj["subpath_prefix_template"]?.jsonPrimitive?.content ?: ""
+                                srMap["pathPrefixTemplate"] = sandboxObj["path_prefix_template"]?.jsonPrimitive?.content ?: ""
                                 val rewriteObj = sandboxObj["payload_rewrites"] as? JsonObject
                                 val rewrites = mutableMapOf<String, String>()
                                 if (rewriteObj != null) {
@@ -284,7 +284,7 @@ tasks.register("generateActionRegistry") {
                         val rw = sr["payloadRewrites"] as? Map<String, String> ?: emptyMap()
                         val rwStr = if (rw.isEmpty()) "emptyMap()"
                         else "mapOf(${rw.entries.joinToString(", ") { "\"${it.key}\" to \"${it.value}\"" }})"
-                        "SandboxRule(\n                        strategy = \"${sr["strategy"]}\",\n                        subpathPrefixTemplate = \"${sr["subpathPrefixTemplate"]}\",\n                        payloadRewrites = $rwStr\n                    )"
+                        "SandboxRule(\n                        strategy = \"${sr["strategy"]}\",\n                        pathPrefixTemplate = \"${sr["pathPrefixTemplate"]}\",\n                        payloadRewrites = $rwStr\n                    )"
                     }
                     "AgentExposure(\n                    requiresApproval = ${ae["requiresApproval"]},\n                    autoFillRules = $autoFillStr,\n                    sandboxRule = $sandboxStr\n                )"
                 }
@@ -359,7 +359,7 @@ tasks.register("generateActionRegistry") {
             |
             |    data class SandboxRule(
             |        val strategy: String,
-            |        val subpathPrefixTemplate: String,
+            |        val pathPrefixTemplate: String,
             |        val payloadRewrites: Map<String, String> = emptyMap()
             |    )
             |

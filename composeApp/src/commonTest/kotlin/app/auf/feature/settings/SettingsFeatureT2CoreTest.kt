@@ -36,7 +36,7 @@ class SettingsFeatureT2CoreTest {
         val readAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_READ }
         assertNotNull(readAction)
         assertEquals("settings", readAction.originator)
-        assertEquals("settings.json", readAction.payload?.get("subpath")?.jsonPrimitive?.content)
+        assertEquals("settings.json", readAction.payload?.get("path")?.jsonPrimitive?.content)
     }
 
     @Test
@@ -51,7 +51,7 @@ class SettingsFeatureT2CoreTest {
         val responseAction = Action(
             name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
             payload = buildJsonObject {
-                put("subpath", "settings.json")
+                put("path", "settings.json")
                 put("content", """{ "file.key": "file.value" }""")
             },
             originator = "filesystem",
@@ -74,7 +74,7 @@ class SettingsFeatureT2CoreTest {
         val responseAction = Action(
             name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
             payload = buildJsonObject {
-                put("subpath", "other_file.json")
+                put("path", "other_file.json")
                 put("content", """{ "other.key": "other.value" }""")
             },
             originator = "filesystem",
@@ -102,7 +102,7 @@ class SettingsFeatureT2CoreTest {
         val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
         assertNotNull(writeAction)
         assertEquals("settings", writeAction.originator)
-        assertEquals("settings.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
+        assertEquals("settings.json", writeAction.payload?.get("path")?.jsonPrimitive?.content)
         assertTrue(writeAction.payload?.get("encrypt")?.jsonPrimitive?.booleanOrNull == true, "Encryption must be enabled.")
     }
 
@@ -127,15 +127,15 @@ class SettingsFeatureT2CoreTest {
     }
 
     @Test
-    fun `handleSideEffects for OPEN_FOLDER dispatches FILESYSTEM_OPEN_SYSTEM_FOLDER`() = runTest {
+    fun `handleSideEffects for OPEN_FOLDER dispatches FILESYSTEM_OPEN_WORKSPACE_FOLDER`() = runTest {
         val harness = TestEnvironment.create()
             .withFeature(SettingsFeature(FakePlatformDependencies("test")))
             .build()
 
         harness.store.dispatch("settings.ui", Action(ActionRegistry.Names.SETTINGS_OPEN_FOLDER))
 
-        val openAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER }
-        assertNotNull(openAction, "OPEN_FOLDER should dispatch FILESYSTEM_OPEN_SYSTEM_FOLDER.")
+        val openAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER }
+        assertNotNull(openAction, "OPEN_FOLDER should dispatch FILESYSTEM_OPEN_WORKSPACE_FOLDER.")
         assertEquals("settings", openAction.originator)
     }
 }

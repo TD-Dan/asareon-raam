@@ -4,8 +4,45 @@
   "permissions": ["read", "write", "delete", "workspace", "system-files", "ui"],
   "actions": [
     {
-      "action_name": "filesystem.NAVIGATE",
-      "summary": "Requests to change the currently viewed directory path.",
+      "action_name": "filesystem.LIST",
+      "summary": "List files and directories in callers own private sandbox.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "An optional sub-directory within the sandbox to list.",
+            "default": ""
+          },
+          "recursive": {
+            "type": "boolean",
+            "default": false
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID passed through to the response envelope.",
+            "default": null
+          }
+        }
+      },
+      "agent_exposure": {
+        "requires_approval": false,
+        "sandbox_rule": {
+          "strategy": "AGENT_WORKSPACE",
+          "path_prefix_template": "{agentId}/workspace"
+        }
+      },
+      "required_permissions": ["read", "workspace"]
+    },
+    {
+      "action_name": "filesystem.SYSTEM_READ",
+      "summary": "A sandboxed service action for other features to read a file from their private sandbox. The response is delivered via the private channel.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -20,20 +57,104 @@
           "path"
         ]
       },
-      "required_permissions": ["write", "ui"]
-
+      "agent_exposure": {
+        "requires_approval": false,
+        "sandbox_rule": {
+          "strategy": "AGENT_WORKSPACE",
+          "path_prefix_template": "{agentId}/workspace"
+        }
+      }
     },
     {
-      "action_name": "filesystem.SELECT_DIRECTORY_UI",
-      "summary": "Triggers the native OS file chooser to select a directory.",
+      "action_name": "filesystem.SYSTEM_WRITE",
+      "summary": "A sandboxed service action for other features to write a file to their private sandbox.",
       "public": true,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": ["read", "system-files", "ui"]
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "encrypt": {
+            "type": "boolean",
+            "description": "If true, the content will be encrypted at rest. Defaults to false.",
+            "default": false
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ]
+      },
+      "agent_exposure": {
+        "requires_approval": false,
+        "sandbox_rule": {
+          "strategy": "AGENT_WORKSPACE",
+          "path_prefix_template": "{agentId}/workspace",
+          "payload_rewrites": {
+            "encrypt": "False"
+          }
+        }
+      }
+    },
+    {
+      "action_name": "filesystem.SYSTEM_DELETE",
+      "summary": "A sandboxed service action for other features to delete a file from their private sandbox.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "agent_exposure": {
+        "requires_approval": false,
+        "sandbox_rule": {
+          "strategy": "AGENT_WORKSPACE",
+          "path_prefix_template": "{agentId}/workspace"
+        }
+      }
+    },
+    {
+      "action_name": "filesystem.SYSTEM_DELETE_DIRECTORY",
+      "summary": "A sandboxed service action for other features to recursively delete a directory from their private sandbox.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "agent_exposure": {
+        "requires_approval": false,
+        "sandbox_rule": {
+          "strategy": "AGENT_WORKSPACE",
+          "path_prefix_template": "{agentId}/workspace"
+        }
+      }
     },
     {
       "action_name": "filesystem.REQUEST_SCOPED_READ_UI",
-      "summary": "Orchestrates a user-mediated, one-time read of a directory outside the originator's sandbox. The response is delivered via the private channel.",
+      "summary": "Orchestrates a user-mediated, one-time read of a directory outside the originator's sandbox.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -62,51 +183,15 @@
       "required_permissions": ["read", "system-files", "ui"]
     },
     {
-      "action_name": "filesystem.LIST",
-      "summary": "A sandboxed service action for other features to request a listing of files/directories in their private sandbox. The response is delivered via the private channel.",
-      "public": true,
-      "broadcast": true,
-      "targeted": false,
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "subpath": {
-            "type": "string",
-            "description": "An optional sub-directory within the sandbox to list.",
-            "default": ""
-          },
-          "recursive": {
-            "type": "boolean",
-            "default": false
-          },
-          "correlationId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Optional correlation ID passed through to the response envelope.",
-            "default": null
-          }
-        }
-      },
-      "agent_exposure": {
-        "requires_approval": false,
-        "sandbox_rule": {
-          "strategy": "AGENT_WORKSPACE",
-          "subpath_prefix_template": "{agentId}/workspace"
-        }
-      }
-    },
-    {
       "action_name": "filesystem.READ_FILES_CONTENT",
-      "summary": "A sandboxed service action for other features to request the content of multiple files at once. The response is delivered via the private channel.",
+      "summary": "A sandboxed service action for other features to request the content of multiple files at once.",
       "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "subpaths": {
+          "paths": {
             "type": "array",
             "items": {
               "type": "string"
@@ -114,146 +199,54 @@
           }
         },
         "required": [
-          "subpaths"
+          "paths"
         ]
       }
     },
     {
-      "action_name": "filesystem.SYSTEM_READ",
-      "summary": "A sandboxed service action for other features to read a file from their private sandbox. The response is delivered via the private channel.",
+      "action_name": "filesystem.OPEN_WORKSPACE_FOLDER",
+      "summary": "Open the sandboxed workspace in the native OS file explorer.",
       "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "subpath": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "subpath"
-        ]
-      },
-      "agent_exposure": {
-        "requires_approval": false,
-        "sandbox_rule": {
-          "strategy": "AGENT_WORKSPACE",
-          "subpath_prefix_template": "{agentId}/workspace"
-        }
-      }
-    },
-    {
-      "action_name": "filesystem.SYSTEM_WRITE",
-      "summary": "A sandboxed service action for other features to write a file to their private sandbox.",
-      "public": true,
-      "broadcast": true,
-      "targeted": false,
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "subpath": {
-            "type": "string"
-          },
-          "content": {
-            "type": "string"
-          },
-          "encrypt": {
-            "type": "boolean",
-            "description": "If true, the content will be encrypted at rest. Defaults to false.",
-            "default": false
-          }
-        },
-        "required": [
-          "subpath",
-          "content"
-        ]
-      },
-      "agent_exposure": {
-        "requires_approval": false,
-        "sandbox_rule": {
-          "strategy": "AGENT_WORKSPACE",
-          "subpath_prefix_template": "{agentId}/workspace",
-          "payload_rewrites": {
-            "encrypt": "False"
+          "path": {
+            "type": "string",
+            "description": "An optional sub-directory within the sandboxed workspace.",
+            "default": ""
           }
         }
-      }
+      },
+      "required_permissions": ["read", "workspace", "ui"]
     },
     {
-      "action_name": "filesystem.SYSTEM_DELETE",
-      "summary": "A sandboxed service action for other features to delete a file from their private sandbox.",
-      "public": true,
+      "action_name": "filesystem.NAVIGATE",
+      "summary": "Requests to change the currently viewed directory path.",
+      "public": false,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "subpath": {
+          "path": {
             "type": "string"
           }
         },
         "required": [
-          "subpath"
+          "path"
         ]
       },
-      "agent_exposure": {
-        "requires_approval": false,
-        "sandbox_rule": {
-          "strategy": "AGENT_WORKSPACE",
-          "subpath_prefix_template": "{agentId}/workspace"
-        }
-      }
+      "required_permissions": ["write", "ui"]
     },
     {
-      "action_name": "filesystem.SYSTEM_DELETE_DIRECTORY",
-      "summary": "A sandboxed service action for other features to recursively delete a directory from their private sandbox.",
-      "public": true,
+      "action_name": "filesystem.SELECT_DIRECTORY_UI",
+      "summary": "Triggers the native OS file chooser to select a directory.",
+      "public": false,
       "broadcast": true,
       "targeted": false,
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "subpath": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "subpath"
-        ]
-      },
-      "agent_exposure": {
-        "requires_approval": false,
-        "sandbox_rule": {
-          "strategy": "AGENT_WORKSPACE",
-          "subpath_prefix_template": "{agentId}/workspace"
-        }
-      }
-    },
-    {
-      "action_name": "filesystem.OPEN_SYSTEM_FOLDER",
-      "summary": "A sandboxed service action for other features to open their private sandbox in the OS file explorer.",
-      "public": true,
-      "broadcast": true,
-      "targeted": false
-    },
-    {
-      "action_name": "filesystem.OPEN_APP_SUBFOLDER",
-      "summary": "A service action to open a well-known subfolder within the app's secure data zone (e.g., 'logs').",
-      "public": true,
-      "broadcast": true,
-      "targeted": false,
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "folder": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "folder"
-        ]
-      }
+      "required_permissions": ["read", "system-files", "ui"]
     },
     {
       "action_name": "filesystem.EXPAND_ALL",
@@ -512,7 +505,7 @@
     },
     {
       "action_name": "filesystem.RETURN_LIST",
-      "summary": "The response envelope containing a directory listing (as subpaths), delivered to the original requester.",
+      "summary": "The response envelope containing a directory listing (as paths), delivered to the original requester.",
       "public": false,
       "broadcast": false,
       "targeted": true,
@@ -525,7 +518,7 @@
               "$ref": "#/definitions/FileEntry"
             }
           },
-          "subpath": {
+          "path": {
             "type": [
               "string",
               "null"
@@ -553,7 +546,7 @@
       "payload_schema": {
         "type": "object",
         "properties": {
-          "subpath": {
+          "path": {
             "type": "string"
           },
           "content": {
@@ -564,7 +557,7 @@
           }
         },
         "required": [
-          "subpath"
+          "path"
         ]
       }
     },
@@ -632,7 +625,7 @@
   "definitions": {
     "FileEntry": {
       "type": "object",
-      "description": "Represents a file or directory. The 'path' property MUST be a subpath relative to the originator's sandbox.",
+      "description": "Represents a file or directory. The 'path' property MUST be a path relative to the originator's sandbox.",
       "properties": {
         "path": {
           "type": "string"

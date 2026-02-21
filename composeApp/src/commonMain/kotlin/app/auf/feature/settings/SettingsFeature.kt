@@ -40,7 +40,7 @@ class SettingsFeature(
             // Phase 3: Targeted response from FilesystemFeature — migrated from onPrivateData.
             ActionRegistry.Names.FILESYSTEM_RETURN_READ -> {
                 val payload = action.payload ?: return
-                if (payload["subpath"]?.jsonPrimitive?.content == settingsFileName) {
+                if (payload["path"]?.jsonPrimitive?.content == settingsFileName) {
                     val loadedValues = payload["content"]?.jsonPrimitive?.contentOrNull?.let {
                         try { Json.decodeFromString<Map<String, String>>(it) } catch (e: Exception) { emptyMap() }
                     } ?: emptyMap()
@@ -49,7 +49,7 @@ class SettingsFeature(
                     }))
                 }
             }
-            ActionRegistry.Names.SYSTEM_INITIALIZING -> store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", settingsFileName) }))
+            ActionRegistry.Names.SYSTEM_INITIALIZING -> store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("path", settingsFileName) }))
             ActionRegistry.Names.SETTINGS_UI_INPUT_CHANGED -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
                 val value = action.payload.get("value")?.jsonPrimitive?.content ?: return
@@ -62,13 +62,13 @@ class SettingsFeature(
             ActionRegistry.Names.SETTINGS_UPDATE -> {
                 val latestSettingsState = newState as? SettingsState ?: return
                 store.dispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                    put("subpath", settingsFileName)
+                    put("path", settingsFileName)
                     put("content", Json.encodeToString(latestSettingsState.values))
                     put("encrypt", true)
                 }))
                 action.payload?.let { store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_VALUE_CHANGED, it)) }
             }
-            ActionRegistry.Names.SETTINGS_OPEN_FOLDER -> store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER))
+            ActionRegistry.Names.SETTINGS_OPEN_FOLDER -> store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER))
         }
     }
 

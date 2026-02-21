@@ -120,7 +120,7 @@ class CoreFeatureT2CoreTest {
         // ASSERT: Persistence
         val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
         assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
-        assertEquals("identities.json", writeAction.payload?.get("subpath")?.jsonPrimitive?.content)
+        assertEquals("identities.json", writeAction.payload?.get("path")?.jsonPrimitive?.content)
         assertTrue(writeAction.payload?.get("encrypt").toString().toBoolean(), "Persistence should be encrypted.")
         val content = writeAction.payload?.get("content")?.jsonPrimitive?.content
         assertNotNull(content)

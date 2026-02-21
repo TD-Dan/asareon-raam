@@ -41,7 +41,7 @@ class AgentRuntimeFeature(
     private val agentConfigFILENAME = "agent.json"
     private val nvramFILENAME = "nvram.json"
 
-    private val workspaceSubpathMarker = "/workspace/"
+    private val workspacePathMarker = "/workspace/"
 
     private val commandBotSenderId = "commandbot"
 
@@ -101,7 +101,7 @@ class AgentRuntimeFeature(
                 // Then load user-defined resources from disk
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LIST))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LIST, buildJsonObject {
-                    put("subpath", "resources")
+                    put("path", "resources")
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_REQUEST_AVAILABLE_MODELS))
             }
@@ -239,7 +239,7 @@ class AgentRuntimeFeature(
                         put("messageId", messageId)
                     }))
                 }
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject { put("subpath", agentId) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject { put("path", agentId) }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_CONFIRM_DELETE, buildJsonObject { put("agentId", agentId) }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
                 // Unregister agent identity (cascades any sub-identities)
@@ -277,7 +277,7 @@ class AgentRuntimeFeature(
                 }
                 resourceToDelete.path?.let { path ->
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE, buildJsonObject {
-                        put("subpath", path)
+                        put("path", path)
                     }))
                 }
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_SELECT_RESOURCE, buildJsonObject { put("resourceId", null as String?) }))
@@ -488,7 +488,7 @@ class AgentRuntimeFeature(
      * Applies workspace sandboxing to an agent's action payload.
      * The agent feature owns the "{agentId}/workspace/" path convention.
      *
-     * For actions with sandbox rules defined in ActionRegistry, the subpath field
+     * For actions with sandbox rules defined in ActionRegistry, the path field
      * is prefixed with the agent's workspace path. For other actions, the payload
      * is returned unchanged.
      */
@@ -498,10 +498,10 @@ class AgentRuntimeFeature(
 
         val mutablePayload = payload.toMutableMap()
 
-        val originalSubpath = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
-        val prefix = rule.subpathPrefixTemplate.replace("{agentId}", agentId)
-        val sandboxedSubpath = if (originalSubpath.isNotBlank()) "$prefix/$originalSubpath" else prefix
-        mutablePayload["subpath"] = JsonPrimitive(sandboxedSubpath)
+        val originalPath = payload["path"]?.jsonPrimitive?.contentOrNull ?: ""
+        val prefix = rule.pathPrefixTemplate.replace("{agentId}", agentId)
+        val sandboxedPath = if (originalPath.isNotBlank()) "$prefix/$originalPath" else prefix
+        mutablePayload["path"] = JsonPrimitive(sandboxedPath)
 
         rule.payloadRewrites.forEach { (key, jsonLiteralValue) ->
             mutablePayload[key] = Json.parseToJsonElement(jsonLiteralValue)
@@ -518,14 +518,14 @@ class AgentRuntimeFeature(
         // Exclude cognitiveState - it's saved separately in nvram.json
         val agentWithoutNvram = agent.copy(cognitiveState = JsonNull)
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-            put("subpath", "${agent.identity.uuid}/$agentConfigFILENAME")
+            put("path", "${agent.identity.uuid}/$agentConfigFILENAME")
             put("content", json.encodeToString(agentWithoutNvram))
         }))
     }
 
     private fun saveAgentNvram(agent: AgentInstance, store: Store) {
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-            put("subpath", "${agent.identity.uuid}/$nvramFILENAME")
+            put("path", "${agent.identity.uuid}/$nvramFILENAME")
             put("content", json.encodeToString(agent.cognitiveState))
         }))
     }
@@ -533,7 +533,7 @@ class AgentRuntimeFeature(
     private fun saveResourceConfig(resource: AgentResource, store: Store) {
         resource.path?.let { path ->
             store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                put("subpath", path)
+                put("path", path)
                 put("content", json.encodeToString(resource))
             }))
         }
@@ -652,22 +652,22 @@ class AgentRuntimeFeature(
                 val listing = payload["listing"]?.jsonArray
                 // Empty listing on error — ACTION_RESULT covers it
                 if (listing == null || listing.isEmpty()) return null
-                val subpath = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: "."
+                val path = payload["path"]?.jsonPrimitive?.contentOrNull ?: "."
                 val formatted = Json { prettyPrint = true }.encodeToString(
                     buildJsonObject {
-                        put("workspace_path", subpath.ifBlank { "." })
+                        put("workspace_path", path.ifBlank { "." })
                         put("entries", listing)
                     }
                 )
                 "```json\n$formatted\n```"
             }
             ActionRegistry.Names.FILESYSTEM_RETURN_READ -> {
-                val subpath = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
+                val path = payload["path"]?.jsonPrimitive?.contentOrNull ?: ""
                 val content = payload["content"]?.jsonPrimitive?.contentOrNull
                 // Null content = file not found / read error — ACTION_RESULT covers it
                 if (content == null) return null
-                val ext = subpath.substringAfterLast('.', "")
-                "```$ext \"$subpath\"\n$content\n```"
+                val ext = path.substringAfterLast('.', "")
+                "```$ext \"$path\"\n$content\n```"
             }
             ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT -> {
                 val contents = payload["contents"]?.jsonObject
@@ -690,7 +690,7 @@ class AgentRuntimeFeature(
     // ========================================================================
 
     private fun handleFileSystemListResponse(payload: JsonObject, store: Store) {
-        val path = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
+        val path = payload["path"]?.jsonPrimitive?.contentOrNull ?: ""
         val listing = payload["listing"]?.jsonArray
 
         // Normalize for matching
@@ -712,10 +712,10 @@ class AgentRuntimeFeature(
                         if (entry.isDirectory && entry.path != "resources") {
                             val agentDir = platformDependencies.getFileName(entry.path)
                             store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
-                                put("subpath", "$agentDir/$agentConfigFILENAME")
+                                put("path", "$agentDir/$agentConfigFILENAME")
                             }))
                             store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
-                                put("subpath", "$agentDir/$nvramFILENAME")
+                                put("path", "$agentDir/$nvramFILENAME")
                             }))
                         }
                     }
@@ -730,7 +730,7 @@ class AgentRuntimeFeature(
                         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
                             val fileName = platformDependencies.getFileName(entry.path)
                             val canonicalPath = "resources/$fileName"
-                            put("subpath", canonicalPath)
+                            put("path", canonicalPath)
                         }))
                     }
                 }
@@ -792,17 +792,17 @@ class AgentRuntimeFeature(
 
     private fun handleFileSystemReadResponse(payload: JsonObject, store: Store) {
         // Normalize separators to '/' to ensure cross-platform matching logic
-        val subpath = (payload["subpath"]?.jsonPrimitive?.contentOrNull ?: "").replace("\\", "/")
+        val path = (payload["path"]?.jsonPrimitive?.contentOrNull ?: "").replace("\\", "/")
         val content = payload["content"]?.jsonPrimitive?.contentOrNull ?: run {
-            platformDependencies.log(LogLevel.DEBUG, identity.handle, "handleFileSystemReadResponse: Missing content in read response for subpath='$subpath'.")
+            platformDependencies.log(LogLevel.DEBUG, identity.handle, "handleFileSystemReadResponse: Missing content in read response for path='$path'.")
             return
         }
 
         when {
             // ====== Agent workspace file responses ======
-            subpath.contains(workspaceSubpathMarker) -> {
-                val agentId = subpath.substringBefore(workspaceSubpathMarker)
-                val relativeSubpath = subpath.substringAfter(workspaceSubpathMarker)
+            path.contains(workspacePathMarker) -> {
+                val agentId = path.substringBefore(workspacePathMarker)
+                val relativePath = path.substringAfter(workspacePathMarker)
                 val state = store.state.value.featureStates[identity.handle] as? AgentRuntimeState ?: run {
                     platformDependencies.log(LogLevel.DEBUG, identity.handle, "handleFileSystemReadResponse: Agent state unavailable. Dropping file read for '$agentId'.")
                     return
@@ -819,9 +819,9 @@ class AgentRuntimeFeature(
                 }
 
                 val message = if (content != null) {
-                    "```text\n[WORKSPACE FILE: $relativeSubpath]\n$content\n```"
+                    "```text\n[WORKSPACE FILE: $relativePath]\n$content\n```"
                 } else {
-                    "```text\n[WORKSPACE ERROR] File not found: $relativeSubpath\n```"
+                    "```text\n[WORKSPACE ERROR] File not found: $relativePath\n```"
                 }
 
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
@@ -831,23 +831,23 @@ class AgentRuntimeFeature(
                 }))
             }
             // Shared Resource files live under the "resources/" directory
-            subpath.startsWith("resources/") -> {
+            path.startsWith("resources/") -> {
                 try {
                     val resource = json.decodeFromString<AgentResource>(content)
                     // Ensure the in-memory resource has a normalized path
-                    val resWithPath = resource.copy(path = subpath)
+                    val resWithPath = resource.copy(path = path)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_RESOURCE_LOADED, json.encodeToJsonElement(resWithPath) as JsonObject))
                 } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse resource: $subpath. Error: ${e.message}")
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse resource: $path. Error: ${e.message}")
                 }
             }
             // Agent config files
-            subpath.endsWith("/$agentConfigFILENAME") -> {
+            path.endsWith("/$agentConfigFILENAME") -> {
                 try {
                     val agent = json.decodeFromString<AgentInstance>(content)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
                 } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse agent config from file: $subpath. Error: ${e.message}")
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse agent config from file: $path. Error: ${e.message}")
                 } finally {
                     agentLoadCount--
                     if (agentLoadCount <= 0) {
@@ -856,11 +856,11 @@ class AgentRuntimeFeature(
                 }
             }
             // NVRAM files
-            subpath.endsWith("/$nvramFILENAME") -> {
+            path.endsWith("/$nvramFILENAME") -> {
                 try {
                     val nvramState = json.decodeFromString<JsonElement>(content)
                     // Extract agent ID from path (e.g., "agent-xyz/nvram.json" -> "agent-xyz")
-                    val agentId = subpath.substringBeforeLast("/")
+                    val agentId = path.substringBeforeLast("/")
 
                     // Dispatch to merge NVRAM into the agent's state
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_NVRAM_LOADED, buildJsonObject {
@@ -869,12 +869,12 @@ class AgentRuntimeFeature(
                     }))
                 } catch (e: Exception) {
                     // NVRAM file missing or corrupted is non-fatal - agent will use initial state
-                    platformDependencies.log(LogLevel.WARN, identity.handle, "Failed to load NVRAM from $subpath (agent will use initial state): ${e.message}")
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "Failed to load NVRAM from $path (agent will use initial state): ${e.message}")
                 }
             }
             // Unknown file — log and ignore, don't corrupt agent load tracking
             else -> {
-                platformDependencies.log(LogLevel.WARN, identity.handle, "Received unexpected file read response for: $subpath. Ignoring.")
+                platformDependencies.log(LogLevel.WARN, identity.handle, "Received unexpected file read response for: $path. Ignoring.")
             }
         }
     }

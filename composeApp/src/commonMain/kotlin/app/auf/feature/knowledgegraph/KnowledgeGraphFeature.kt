@@ -76,13 +76,13 @@ class KnowledgeGraphFeature(
                     platformDependencies.log(LogLevel.WARN, identity.handle, "RETURN_LIST: Missing or malformed 'listing' field. Ignoring.")
                     return
                 }
-                val isRecursiveResponse = action.payload["subpath"]?.jsonPrimitive?.content?.isNotEmpty() == true
+                val isRecursiveResponse = action.payload["path"]?.jsonPrimitive?.content?.isNotEmpty() == true
 
                 if (isRecursiveResponse) {
-                    val fileSubpaths = listing.filter { !it.isDirectory }.map { it.path }
-                    if (fileSubpaths.isNotEmpty()) {
+                    val filePaths = listing.filter { !it.isDirectory }.map { it.path }
+                    if (filePaths.isNotEmpty()) {
                         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
-                            put("subpaths", Json.encodeToJsonElement(fileSubpaths))
+                            put("paths", Json.encodeToJsonElement(filePaths))
                         }))
                     } else {
                         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_FAILED, buildJsonObject {
@@ -167,7 +167,7 @@ class KnowledgeGraphFeature(
                     return
                 }
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LIST, buildJsonObject {
-                    put("subpath", personaId)
+                    put("path", personaId)
                     put("recursive", true)
                 }))
             }
@@ -222,7 +222,7 @@ class KnowledgeGraphFeature(
                     // [FIX] Explicitly signal that the next read response is for execution context.
                     store.dispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_IMPORT_EXECUTION_STATUS, buildJsonObject { put("isExecuting", true) }))
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
-                        put("subpaths", Json.encodeToJsonElement(parentHolonFilePaths))
+                        put("paths", Json.encodeToJsonElement(parentHolonFilePaths))
                     }))
                 } else {
                     executeImportWrites(emptyMap(), kgState, store, platformDependencies)
@@ -268,9 +268,9 @@ class KnowledgeGraphFeature(
                 val newHolon = Holon(header = newHolonHeader, payload = buildJsonObject {})
                 val fullContent = prepareHolonForWriting(newHolon)
 
-                val destSubpath = "$newId/$newId.json"
+                val destPath = "$newId/$newId.json"
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                    put("subpath", destSubpath); put("content", fullContent)
+                    put("path", destPath); put("content", fullContent)
                 }))
 
                 store.dispatch("ui.kgView", Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject { put("message", "Created persona '$name'.") }))
@@ -296,7 +296,7 @@ class KnowledgeGraphFeature(
                 )
                 val finalSyncedHolon = synchronizeRawContent(intermediateHolon)
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                    put("subpath", finalSyncedHolon.header.filePath)
+                    put("path", finalSyncedHolon.header.filePath)
                     put("content", prepareHolonForWriting(finalSyncedHolon))
                 }))
                 findRootPersonaId(holonId, kgState)?.let {
@@ -323,7 +323,7 @@ class KnowledgeGraphFeature(
                 val intermediateHolon = holonToUpdate.copy(header = updatedHeader)
                 val finalSyncedHolon = synchronizeRawContent(intermediateHolon)
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                    put("subpath", finalSyncedHolon.header.filePath)
+                    put("path", finalSyncedHolon.header.filePath)
                     put("content", prepareHolonForWriting(finalSyncedHolon))
                 }))
                 findRootPersonaId(holonId, kgState)?.let {
@@ -338,7 +338,7 @@ class KnowledgeGraphFeature(
                 if (isModificationLocked(personaId = personaId, originator = originator, kgState = kgState, store = store)) return
 
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
-                    put("subpath", personaId)
+                    put("path", personaId)
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_CONFIRM_DELETE_PERSONA, buildJsonObject {
                     put("personaId", personaId)
@@ -361,7 +361,7 @@ class KnowledgeGraphFeature(
                 val holonDir = platformDependencies.getParentDirectory(holonToDelete.header.filePath)
                 if (holonDir != null) {
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
-                        put("subpath", holonDir)
+                        put("path", holonDir)
                     }))
                 } else {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "DELETE_HOLON: Could not resolve parent directory for holon '$holonId' at path '${holonToDelete.header.filePath}'. Directory deletion skipped.")
@@ -374,7 +374,7 @@ class KnowledgeGraphFeature(
                     val intermediateParent = parentHolon.copy(header = updatedParentHeader)
                     val finalSyncedParent = synchronizeRawContent(intermediateParent)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-                        put("subpath", finalSyncedParent.header.filePath)
+                        put("path", finalSyncedParent.header.filePath)
                         put("content", prepareHolonForWriting(finalSyncedParent))
                     }))
                 }

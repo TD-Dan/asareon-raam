@@ -33,7 +33,7 @@ class FileSystemFeatureT2GuardTest {
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-            put("subpath", "  ") // Blank path
+            put("path", "  ") // Blank path
             put("content", "some content")
         })
 
@@ -53,7 +53,7 @@ class FileSystemFeatureT2GuardTest {
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
-            put("subpath", "../secrets.json")
+            put("path", "../secrets.json")
         })
 
         harness.runAndLogOnFailure {
@@ -73,11 +73,11 @@ class FileSystemFeatureT2GuardTest {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
-        val subpath = "some-folder/a-file-with-no-extension"
+        val path = "some-folder/a-file-with-no-extension"
         val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE, buildJsonObject {
-            put("subpath", subpath)
+            put("path", path)
         })
-        val fullPath = "${platform.getBasePathFor(BasePath.APP_ZONE)}/$originator/$subpath"
+        val fullPath = "${platform.getBasePathFor(BasePath.APP_ZONE)}/$originator/$path"
         platform.writeFileContent(fullPath, "content")
 
 
@@ -96,7 +96,7 @@ class FileSystemFeatureT2GuardTest {
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val action = Action(ActionRegistry.Names.FILESYSTEM_LIST, buildJsonObject {
-            put("subpath", "some/../../other/path")
+            put("path", "some/../../other/path")
         })
 
         harness.runAndLogOnFailure {
@@ -116,9 +116,9 @@ class FileSystemFeatureT2GuardTest {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
-        val subpath = "legit/../../../etc"
+        val path = "legit/../../../etc"
         val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
-            put("subpath", subpath)
+            put("path", path)
         })
 
         harness.runAndLogOnFailure {
@@ -135,7 +135,7 @@ class FileSystemFeatureT2GuardTest {
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-            put("subpath", "../../etc/passwd.txt")
+            put("path", "../../etc/passwd.txt")
             put("content", "pwned")
         })
 

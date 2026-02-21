@@ -142,11 +142,11 @@ class SessionFeature(
                         // Both localHandle.json and input.json are handled this way;
                         // FILESYSTEM_RETURN_READ routes them based on the filename.
                         if (startupLoadingActive) pendingStartupOps++
-                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", entry.path) }))
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("path", entry.path) }))
                     } else if (!entry.path.contains(".")) {
                         // Looks like a UUID folder — list its contents
                         if (startupLoadingActive) pendingStartupOps++
-                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LIST, buildJsonObject { put("subpath", platformDependencies.getFileName(entry.path)) }))
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LIST, buildJsonObject { put("path", platformDependencies.getFileName(entry.path)) }))
                     }
                 }
 
@@ -154,13 +154,13 @@ class SessionFeature(
             }
             ActionRegistry.Names.FILESYSTEM_RETURN_READ -> {
                 val data = action.payload ?: return
-                val subpath = data["subpath"]?.jsonPrimitive?.content ?: ""
+                val path = data["path"]?.jsonPrimitive?.content ?: ""
                 val content = data["content"]?.jsonPrimitive?.content ?: ""
 
                 // Route input.json files to the input-state handler — they are not Session objects.
                 // Check both "/" and "\" separators for cross-platform compatibility (Windows uses "\").
-                if (subpath.endsWith("/input.json") || subpath.endsWith("\\input.json")) {
-                    if (content.isNotBlank()) handleInputJsonRead(subpath, content, store)
+                if (path.endsWith("/input.json") || path.endsWith("\\input.json")) {
+                    if (content.isNotBlank()) handleInputJsonRead(path, content, store)
                     if (startupLoadingActive) {
                         pendingStartupOps--
                         checkStartupLoadComplete(store, sessionState)
@@ -170,7 +170,7 @@ class SessionFeature(
 
                 try {
                     if (content.isBlank()) {
-                        platformDependencies.log(LogLevel.WARN, identity.handle, "Received empty session file content for $subpath")
+                        platformDependencies.log(LogLevel.WARN, identity.handle, "Received empty session file content for $path")
                         if (startupLoadingActive) {
                             pendingStartupOps--
                             checkStartupLoadComplete(store, sessionState)
@@ -180,7 +180,7 @@ class SessionFeature(
                     val session = json.decodeFromString<Session>(content)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.identity.localHandle to session))) as JsonObject))
                 } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse session file: $subpath. Error: ${e.message}", e)
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse session file: $path. Error: ${e.message}", e)
                     if (startupLoadingActive) {
                         pendingStartupOps--
                         checkStartupLoadComplete(store, sessionState)
@@ -238,7 +238,7 @@ class SessionFeature(
                     store.deferredDispatch(identity.handle, Action(
                         ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE,
                         buildJsonObject {
-                            put("subpath", "$uuid/workspace/.keep")
+                            put("path", "$uuid/workspace/.keep")
                             put("content", "")
                         }
                     ))
@@ -297,7 +297,7 @@ class SessionFeature(
                     // Handle changed — delete old JSON file inside the UUID folder
                     store.deferredDispatch(identity.handle, Action(
                         ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE,
-                        buildJsonObject { put("subpath", "$uuid/$oldLocalHandle.json") }
+                        buildJsonObject { put("path", "$uuid/$oldLocalHandle.json") }
                     ))
                 }
 
@@ -316,7 +316,7 @@ class SessionFeature(
 
                     // Delete the session folder (uuid-named)
                     if (uuid != null) {
-                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE, buildJsonObject { put("subpath", uuid) }))
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE, buildJsonObject { put("path", uuid) }))
                     }
                     broadcastSessionNames(sessionState, store)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_DELETED, buildJsonObject { put("sessionId", localHandleToDelete) }))
@@ -390,7 +390,7 @@ class SessionFeature(
                     store.dispatch(identity.handle, Action(
                         ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE,
                         buildJsonObject {
-                            put("subpath", "$uuid/input.json")
+                            put("path", "$uuid/input.json")
                             put("content", json.encodeToString(inputState))
                         }
                     ))
@@ -639,9 +639,9 @@ class SessionFeature(
             }
         )
         val uuid = sessionToSave.identity.uuid ?: return
-        val subpath = "$uuid/${sessionToSave.identity.localHandle}.json"
+        val path = "$uuid/${sessionToSave.identity.localHandle}.json"
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-            put("subpath", subpath); put("content", json.encodeToString(persistedSession))
+            put("path", path); put("content", json.encodeToString(persistedSession))
         }))
     }
 
@@ -687,7 +687,7 @@ class SessionFeature(
         store.deferredDispatch(identity.handle, Action(
             ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE,
             buildJsonObject {
-                put("subpath", "$uuid/input.json")
+                put("path", "$uuid/input.json")
                 put("content", json.encodeToString(inputState))
             }
         ))
@@ -697,16 +697,16 @@ class SessionFeature(
      * Parses a {uuid}/input.json file and dispatches INPUT_HISTORIES_LOADED.
      * Logs a warning on parse failure without crashing.
      */
-    private fun handleInputJsonRead(subpath: String, content: String, store: Store) {
+    private fun handleInputJsonRead(path: String, content: String, store: Store) {
         if (content.isBlank()) return
-        // subpath is always "{uuid}/input.json" (or "{uuid}\input.json" on Windows)
+        // path is always "{uuid}/input.json" (or "{uuid}\input.json" on Windows)
         // as a relative path inside the session folder, so the UUID is always the
         // second-to-last path segment. Replace backslashes for cross-platform compatibility.
-        val normalizedPath = subpath.replace('\\', '/')
+        val normalizedPath = path.replace('\\', '/')
         val uuid = normalizedPath.trimEnd('/').substringBeforeLast("/").substringAfterLast("/")
         if (uuid.isBlank()) {
             platformDependencies.log(LogLevel.WARN, identity.handle,
-                "Cannot extract UUID from input.json subpath: $subpath — ignoring.")
+                "Cannot extract UUID from input.json path: $path — ignoring.")
             return
         }
         try {

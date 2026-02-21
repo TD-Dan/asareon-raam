@@ -82,7 +82,7 @@ class CoreFeatureT3PeerTest {
         harness.store.dispatch("filesystem", Action(
             name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
             payload = buildJsonObject {
-                put("subpath", "identities.json")
+                put("path", "identities.json")
                 put("content", fileContent)
             },
             targetRecipient = "core"
@@ -129,7 +129,7 @@ class CoreFeatureT3PeerTest {
         harness.store.dispatch("filesystem", Action(
             name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
             payload = buildJsonObject {
-                put("subpath", "identities.json")
+                put("path", "identities.json")
                 put("content", fileContent)
             },
             targetRecipient = "core"

@@ -166,13 +166,13 @@ If your action returns data via a targeted `RETURN_*` action, include the `corre
 ```kotlin
 // BEFORE
 val responsePayload = buildJsonObject {
-    put("subpath", payload.subpath)
+    put("path", payload.path)
     put("content", result)
 }
 
 // AFTER
 val responsePayload = buildJsonObject {
-    put("subpath", payload.subpath)
+    put("path", payload.path)
     put("content", result)
     payload.correlationId?.let { put("correlationId", it) }  // ← Add this
 }
@@ -210,7 +210,7 @@ The `summary` field appears verbatim in the session transcript. It's also broadc
 
 ### Don't
 
-- Include file names, paths, or subpaths (sandbox-internal data)
+- Include file names, paths, or paths (sandbox-internal data)
 - Include file content or data excerpts
 - Include user names, agent names, or identity handles
 - Include anything that would let a plugin infer another feature's sandbox structure

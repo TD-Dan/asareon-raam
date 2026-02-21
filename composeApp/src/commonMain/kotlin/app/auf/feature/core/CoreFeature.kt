@@ -169,7 +169,7 @@ class CoreFeature(
                 }))
             }
             ActionRegistry.Names.SYSTEM_STARTING -> {
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", identitiesFileName)}))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("path", identitiesFileName)}))
             }
             ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<DismissConfirmationPayload>(it) } ?: return
@@ -196,8 +196,8 @@ class CoreFeature(
                 }
             }
             ActionRegistry.Names.CORE_OPEN_LOGS_FOLDER -> {
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_OPEN_APP_SUBFOLDER, buildJsonObject {
-                    put("folder", "logs")
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER, buildJsonObject {
+                    put("path", "logs")
                 }))
             }
             ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD -> {
@@ -211,7 +211,7 @@ class CoreFeature(
             // Migrated from onPrivateData.
             ActionRegistry.Names.FILESYSTEM_RETURN_READ -> {
                 val data = action.payload ?: return
-                val subpath = data["subpath"]?.jsonPrimitive?.contentOrNull
+                val path = data["path"]?.jsonPrimitive?.contentOrNull
                 val content = data["content"]?.jsonPrimitive?.contentOrNull
                 val correlationId = data["correlationId"]?.jsonPrimitive?.contentOrNull
 
@@ -220,8 +220,8 @@ class CoreFeature(
                     val pendingCommand = latestCoreState.pendingCommands[correlationId]
                     if (pendingCommand != null) {
                         if (content != null) {
-                            val ext = subpath?.substringAfterLast('.', "") ?: ""
-                            val label = subpath ?: "file"
+                            val ext = path?.substringAfterLast('.', "") ?: ""
+                            val label = path ?: "file"
                             val formatted = "```$ext \"$label\"\n$content\n```"
                             store.deferredDispatch(identity.handle, Action(
                                 ActionRegistry.Names.COMMANDBOT_DELIVER_TO_SESSION,
@@ -240,7 +240,7 @@ class CoreFeature(
                 }
 
                 // Existing: handle identities.json load (non-command read, no correlationId).
-                if (subpath == identitiesFileName) {
+                if (path == identitiesFileName) {
                     if (content != null) {
                         try {
                             val loaded = json.decodeFromString<IdentitiesLoadedPayload>(content)
@@ -264,9 +264,9 @@ class CoreFeature(
                 val pendingCommand = latestCoreState.pendingCommands[correlationId] ?: return
 
                 val listing = data["listing"]?.jsonArray
-                val subpath = data["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
+                val path = data["path"]?.jsonPrimitive?.contentOrNull ?: ""
 
-                val header = if (subpath.isNotBlank()) "Listing: $subpath" else "Listing: (root)"
+                val header = if (path.isNotBlank()) "Listing: $path" else "Listing: (root)"
                 val body = if (listing != null && listing.isNotEmpty()) {
                     listing.joinToString("\n") { entry ->
                         val entryObj = entry.jsonObject
@@ -608,7 +608,7 @@ class CoreFeature(
     private fun persistAndBroadcastIdentities(state: CoreState, store: Store) {
         val persistencePayload = IdentitiesLoadedPayload(state.userIdentities, state.activeUserId)
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-            put("subpath", identitiesFileName)
+            put("path", identitiesFileName)
             put("content", Json.encodeToString(persistencePayload))
             put("encrypt", true)
         }))

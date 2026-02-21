@@ -591,7 +591,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
             harness.store.dispatch("filesystem", Action(
                 name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 payload = buildJsonObject {
-                    put("subpath", "session-uuid-1/$sessionLocalHandle.json")
+                    put("path", "session-uuid-1/$sessionLocalHandle.json")
                     put("content", session1Content)
                 },
                 targetRecipient = "session"
@@ -607,7 +607,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
             harness.store.dispatch("filesystem", Action(
                 name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 payload = buildJsonObject {
-                    put("subpath", "session-uuid-2/$session2LocalHandle.json")
+                    put("path", "session-uuid-2/$session2LocalHandle.json")
                     put("content", session2Content)
                 },
                 targetRecipient = "session"

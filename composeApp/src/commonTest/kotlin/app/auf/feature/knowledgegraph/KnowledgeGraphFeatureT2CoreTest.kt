@@ -68,7 +68,7 @@ class KnowledgeGraphFeatureT2CoreTest {
             harness.store.deferredDispatch("filesystem", Action(
                 name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 payload = buildJsonObject {
-                    put("subpath", "persona-1-20251112T190000Z")
+                    put("path", "persona-1-20251112T190000Z")
                     put("listing", buildJsonArray {
                         add(json.encodeToJsonElement(FileEntry("persona-1-20251112T190000Z/persona-1-20251112T190000Z.json", false)))
                         add(json.encodeToJsonElement(FileEntry("persona-1-20251112T190000Z/holon-a-20251112T190000Z/holon-a-20251112T190000Z.json", false)))
@@ -114,7 +114,7 @@ class KnowledgeGraphFeatureT2CoreTest {
             harness.store.deferredDispatch("filesystem", Action(
                 name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 payload = buildJsonObject {
-                    put("subpath", "empty-persona")
+                    put("path", "empty-persona")
                     put("listing", buildJsonArray { }) // Empty list
                 },
                 targetRecipient = "knowledgegraph"
@@ -465,7 +465,7 @@ class KnowledgeGraphFeatureT2CoreTest {
             // Assert directory deletion was dispatched
             val deleteDir = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY }
             assertNotNull(deleteDir, "DELETE_HOLON should dispatch FILESYSTEM_SYSTEM_DELETE_DIRECTORY.")
-            assertEquals("$rootId/$childId", deleteDir.payload?.get("subpath")?.jsonPrimitive?.content)
+            assertEquals("$rootId/$childId", deleteDir.payload?.get("path")?.jsonPrimitive?.content)
 
             // Assert parent holon was updated to remove the child from sub_holons
             val parentWrite = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
@@ -493,11 +493,11 @@ class KnowledgeGraphFeatureT2CoreTest {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
 
         harness.runAndLogOnFailure {
-            // Simulate a non-recursive listing response (no subpath = top-level discovery)
+            // Simulate a non-recursive listing response (no path = top-level discovery)
             harness.store.deferredDispatch("filesystem", Action(
                 name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 payload = buildJsonObject {
-                    // No "subpath" field means non-recursive
+                    // No "path" field means non-recursive
                     put("listing", buildJsonArray {
                         add(json.encodeToJsonElement(FileEntry("persona-alpha", true)))
                         add(json.encodeToJsonElement(FileEntry("persona-beta", true)))

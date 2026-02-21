@@ -99,7 +99,7 @@ class FileSystemFeatureT2CoreTest {
         val originalContent = "secret-api-key"
         val originator = "settings"
         val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-            put("subpath", "test.json")
+            put("path", "test.json")
             put("content", originalContent)
             put("encrypt", true)
         })
@@ -130,12 +130,12 @@ class FileSystemFeatureT2CoreTest {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val originalContent = "secret-api-key"
         val originator = "settings"
-        val subpath = "test.json"
-        val sandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator/$subpath"
+        val path = "test.json"
+        val sandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator/$path"
         val encryptedContent = CryptoManager(platform).encrypt(originalContent)
         platform.writeFileContent(sandboxPath, encryptedContent)
         val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
-            put("subpath", subpath)
+            put("path", path)
         })
 
         harness.runAndLogOnFailure {
@@ -146,7 +146,7 @@ class FileSystemFeatureT2CoreTest {
             assertEquals(originator, responseAction.targetRecipient, "Response should be targeted to the originator.")
             val responsePayload = responseAction.payload
             assertNotNull(responsePayload)
-            assertEquals(subpath, responsePayload["subpath"]?.jsonPrimitive?.content)
+            assertEquals(path, responsePayload["path"]?.jsonPrimitive?.content)
             assertEquals(originalContent, responsePayload["content"]?.jsonPrimitive?.content, "Delivered content should be the decrypted original.")
         }
     }
@@ -157,17 +157,17 @@ class FileSystemFeatureT2CoreTest {
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val originator = "agent"
-        val dirSubpath = "agent-to-delete"
-        val fileSubpath = "$dirSubpath/agent.json"
+        val dirPath = "agent-to-delete"
+        val filePath = "$dirPath/agent.json"
         val sandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator"
-        val fullDirPath = "$sandboxPath/$dirSubpath"
-        val fullFilePath = "$sandboxPath/$fileSubpath"
+        val fullDirPath = "$sandboxPath/$dirPath"
+        val fullFilePath = "$sandboxPath/$filePath"
         platform.createDirectories(fullDirPath)
         platform.writeFileContent(fullFilePath, "{}")
         assertTrue(platform.fileExists(fullDirPath), "Precondition: Directory should exist.")
         assertTrue(platform.fileExists(fullFilePath), "Precondition: File inside directory should exist.")
         val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY, buildJsonObject {
-            put("subpath", dirSubpath)
+            put("path", dirPath)
         })
 
         harness.runAndLogOnFailure {
@@ -263,7 +263,7 @@ class FileSystemFeatureT2CoreTest {
         platform.writeFileContent("$sandboxPath/data.txt", "hello")
 
         val action = Action(ActionRegistry.Names.FILESYSTEM_LIST, buildJsonObject {
-            put("subpath", "")
+            put("path", "")
         })
 
         harness.runAndLogOnFailure {
@@ -293,7 +293,7 @@ class FileSystemFeatureT2CoreTest {
         platform.createDirectories(sandboxPath)
 
         val action = Action(ActionRegistry.Names.FILESYSTEM_LIST, buildJsonObject {
-            put("subpath", "")
+            put("path", "")
             put("correlationId", "corr-123")
         })
 
@@ -313,14 +313,14 @@ class FileSystemFeatureT2CoreTest {
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val originator = "settings"
-        val subpath = "old-config.json"
+        val path = "old-config.json"
         val sandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator"
-        val fullPath = "$sandboxPath/$subpath"
+        val fullPath = "$sandboxPath/$path"
         platform.writeFileContent(fullPath, "{}")
         assertTrue(platform.fileExists(fullPath), "Precondition: File should exist.")
 
         val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE, buildJsonObject {
-            put("subpath", subpath)
+            put("path", path)
         })
 
         harness.runAndLogOnFailure {
@@ -340,7 +340,7 @@ class FileSystemFeatureT2CoreTest {
         platform.writeFileContent("$sandboxPath/file2.md", "content-two")
 
         val action = Action(ActionRegistry.Names.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
-            putJsonArray("subpaths") {
+            putJsonArray("paths") {
                 add(JsonPrimitive("file1.txt"))
                 add(JsonPrimitive("file2.md"))
             }
@@ -366,13 +366,13 @@ class FileSystemFeatureT2CoreTest {
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val originator = "session"
-        val subpath = "config.json"
-        val sandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator/$subpath"
+        val path = "config.json"
+        val sandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator/$path"
         val originalContent = """{"key": "value"}"""
         platform.writeFileContent(sandboxPath, originalContent)
 
         val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
-            put("subpath", subpath)
+            put("path", path)
         })
 
         harness.runAndLogOnFailure {
@@ -394,7 +394,7 @@ class FileSystemFeatureT2CoreTest {
         val originator = "session"
         val originalContent = """{"sessions": []}"""
         val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
-            put("subpath", "sessions.json")
+            put("path", "sessions.json")
             put("content", originalContent)
         })
 
@@ -581,9 +581,9 @@ class FileSystemFeatureT2CoreTest {
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val originator = "settings"
-        val subpath = "nonexistent.json"
+        val path = "nonexistent.json"
         val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
-            put("subpath", subpath)
+            put("path", path)
         })
 
         harness.runAndLogOnFailure {
@@ -592,7 +592,7 @@ class FileSystemFeatureT2CoreTest {
             val responseAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_RETURN_READ }
             assertNotNull(responseAction, "A targeted RETURN_READ should still be dispatched on error.")
             assertEquals(originator, responseAction.targetRecipient)
-            assertEquals(subpath, responseAction.payload?.get("subpath")?.jsonPrimitive?.content)
+            assertEquals(path, responseAction.payload?.get("path")?.jsonPrimitive?.content)
             assertEquals("null", responseAction.payload?.get("content")?.toString(),
                 "Content should be null for a missing file.")
         }
@@ -626,7 +626,7 @@ class FileSystemFeatureT2CoreTest {
         platform.writeFileContent("$sandboxPath/good.txt", "good-content")
 
         val action = Action(ActionRegistry.Names.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
-            putJsonArray("subpaths") {
+            putJsonArray("paths") {
                 add(JsonPrimitive("good.txt"))
                 add(JsonPrimitive("../escape.txt"))   // traversal — should be rejected
                 add(JsonPrimitive("no-extension"))     // no extension — should be rejected

@@ -48,7 +48,7 @@ class AgentRuntimeFeatureT2StartupTest {
             // Simulating FileSystem Response for "resources" listing.
             // Targeted action — must include targetRecipient.
             val listPayload = kotlinx.serialization.json.buildJsonObject {
-                put("subpath", kotlinx.serialization.json.JsonPrimitive("resources"))
+                put("path", kotlinx.serialization.json.JsonPrimitive("resources"))
                 put("listing", kotlinx.serialization.json.buildJsonArray {
                     add(kotlinx.serialization.json.buildJsonObject {
                         put("path", kotlinx.serialization.json.JsonPrimitive("$resourceId.json"))
@@ -67,15 +67,15 @@ class AgentRuntimeFeatureT2StartupTest {
             // Let's verify that request looks correct.
             val readAction = harness.processedActions.find {
                 it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_READ &&
-                        it.payload?.get("subpath")?.toString()?.contains(resourceId) == true
+                        it.payload?.get("path")?.toString()?.contains(resourceId) == true
             }
             assertNotNull(readAction, "Should have dispatched a READ action for the resource")
 
-            // Simulate the READ response — mirror back the exact subpath.
-            val requestedPath = readAction.payload!!["subpath"]!!.toString().replace("\"", "")
+            // Simulate the READ response — mirror back the exact path.
+            val requestedPath = readAction.payload!!["path"]!!.toString().replace("\"", "")
 
             val readPayload = kotlinx.serialization.json.buildJsonObject {
-                put("subpath", kotlinx.serialization.json.JsonPrimitive(requestedPath))
+                put("path", kotlinx.serialization.json.JsonPrimitive(requestedPath))
                 put("content", kotlinx.serialization.json.JsonPrimitive(resourceContent))
             }
 
@@ -124,7 +124,7 @@ class AgentRuntimeFeatureT2StartupTest {
 
             // Simulate root listing: one agent directory
             val listPayload = kotlinx.serialization.json.buildJsonObject {
-                put("subpath", kotlinx.serialization.json.JsonPrimitive(""))
+                put("path", kotlinx.serialization.json.JsonPrimitive(""))
                 put("listing", kotlinx.serialization.json.buildJsonArray {
                     add(kotlinx.serialization.json.buildJsonObject {
                         put("path", kotlinx.serialization.json.JsonPrimitive(agentId))
@@ -146,13 +146,13 @@ class AgentRuntimeFeatureT2StartupTest {
             // Verify the feature dispatched a READ for "agent-abc/agent.json"
             val readAction = harness.processedActions.find {
                 it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_READ &&
-                        it.payload?.get("subpath")?.toString()?.contains("agent.json") == true
+                        it.payload?.get("path")?.toString()?.contains("agent.json") == true
             }
             assertNotNull(readAction, "Should have dispatched READ for agent.json")
 
             // Simulate READ response
             val readPayload = kotlinx.serialization.json.buildJsonObject {
-                put("subpath", kotlinx.serialization.json.JsonPrimitive("$agentId/agent.json"))
+                put("path", kotlinx.serialization.json.JsonPrimitive("$agentId/agent.json"))
                 put("content", kotlinx.serialization.json.JsonPrimitive(agentConfigJson))
             }
 
@@ -193,7 +193,7 @@ class AgentRuntimeFeatureT2StartupTest {
 
             // Root listing: one agent directory
             val listPayload = kotlinx.serialization.json.buildJsonObject {
-                put("subpath", kotlinx.serialization.json.JsonPrimitive(""))
+                put("path", kotlinx.serialization.json.JsonPrimitive(""))
                 put("listing", kotlinx.serialization.json.buildJsonArray {
                     add(kotlinx.serialization.json.buildJsonObject {
                         put("path", kotlinx.serialization.json.JsonPrimitive(agentId))
@@ -214,7 +214,7 @@ class AgentRuntimeFeatureT2StartupTest {
 
             // Deliver an UNKNOWN file read response (e.g. a stale log file)
             val unknownPayload = kotlinx.serialization.json.buildJsonObject {
-                put("subpath", kotlinx.serialization.json.JsonPrimitive("some/stale-file.txt"))
+                put("path", kotlinx.serialization.json.JsonPrimitive("some/stale-file.txt"))
                 put("content", kotlinx.serialization.json.JsonPrimitive("garbage data"))
             }
 
@@ -232,7 +232,7 @@ class AgentRuntimeFeatureT2StartupTest {
 
             // Now deliver the real agent config
             val realPayload = kotlinx.serialization.json.buildJsonObject {
-                put("subpath", kotlinx.serialization.json.JsonPrimitive("$agentId/agent.json"))
+                put("path", kotlinx.serialization.json.JsonPrimitive("$agentId/agent.json"))
                 put("content", kotlinx.serialization.json.JsonPrimitive(agentConfigJson))
             }
 

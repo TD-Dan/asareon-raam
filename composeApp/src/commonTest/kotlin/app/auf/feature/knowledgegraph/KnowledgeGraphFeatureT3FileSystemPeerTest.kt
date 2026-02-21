@@ -36,7 +36,7 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
         val initialTimestamp = "2025-01-01T12:00:00Z"
         val holonId = "hl1-20251112T190000Z"
         val personaId = "pl1-20251112T190000Z"
-        val holonFilePath = "$personaId/$holonId/$holonId.json" // This is a subpath relative to the sandbox
+        val holonFilePath = "$personaId/$holonId/$holonId.json" // This is a path relative to the sandbox
 
         val initialInMemoryHolon = Holon(
             header = HolonHeader(
@@ -64,7 +64,7 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
             }))
 
             // ASSERT
-            val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE && it.payload?.get("subpath")?.jsonPrimitive?.content == holonFilePath }
+            val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE && it.payload?.get("path")?.jsonPrimitive?.content == holonFilePath }
             assertNotNull(writeAction, "A SYSTEM_WRITE action for the correct file path should have been dispatched.")
 
             val writtenContent = writeAction.payload!!.jsonObject["content"]!!.jsonPrimitive.content

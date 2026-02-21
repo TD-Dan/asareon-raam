@@ -141,15 +141,15 @@ class SessionFeatureT2InputHistoryTest {
                 it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE
             }
             val inputWrite = writeActions.find {
-                it.payload?.get("subpath")?.jsonPrimitive?.content?.endsWith("/input.json") == true
+                it.payload?.get("path")?.jsonPrimitive?.content?.endsWith("/input.json") == true
             }
             assertNotNull(inputWrite,
-                "Should have written input.json after debounce. Writes: ${writeActions.map { it.payload?.get("subpath") }}")
+                "Should have written input.json after debounce. Writes: ${writeActions.map { it.payload?.get("path") }}")
 
             // Verify the path follows the {uuid}/input.json convention
-            val subpath = inputWrite.payload?.get("subpath")?.jsonPrimitive?.content!!
-            assertTrue(subpath.startsWith(session.identity.uuid!!),
-                "input.json path should start with the session UUID, got: $subpath")
+            val path = inputWrite.payload?.get("path")?.jsonPrimitive?.content!!
+            assertTrue(path.startsWith(session.identity.uuid!!),
+                "input.json path should start with the session UUID, got: $path")
         }
     }
 
@@ -181,7 +181,7 @@ class SessionFeatureT2InputHistoryTest {
 
             val inputWrites = harness.processedActions.filter {
                 it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE &&
-                        it.payload?.get("subpath")?.jsonPrimitive?.content?.endsWith("/input.json") == true
+                        it.payload?.get("path")?.jsonPrimitive?.content?.endsWith("/input.json") == true
             }
             assertEquals(1, inputWrites.size,
                 "Rapid changes should collapse into a single debounced write, got ${inputWrites.size}")
@@ -365,7 +365,7 @@ class SessionFeatureT2InputHistoryTest {
 
             val inputWrites = harness.processedActions.filter {
                 it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE &&
-                        it.payload?.get("subpath")?.jsonPrimitive?.content?.endsWith("/input.json") == true
+                        it.payload?.get("path")?.jsonPrimitive?.content?.endsWith("/input.json") == true
             }
             assertTrue(inputWrites.isNotEmpty(),
                 "input.json should be written immediately after a post, without waiting for debounce")
@@ -725,11 +725,11 @@ class SessionFeatureT2InputHistoryTest {
                 it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_READ && it.originator == "session"
             }
             val inputReadAction = readActions.find {
-                it.payload?.get("subpath")?.jsonPrimitive?.content?.endsWith("input.json") == true
+                it.payload?.get("path")?.jsonPrimitive?.content?.endsWith("input.json") == true
             }
             assertNotNull(inputReadAction,
                 "Should dispatch a SYSTEM_READ for input.json when found in listing. " +
-                        "Reads dispatched: ${readActions.map { it.payload?.get("subpath") }}")
+                        "Reads dispatched: ${readActions.map { it.payload?.get("path") }}")
         }
     }
 
@@ -750,7 +750,7 @@ class SessionFeatureT2InputHistoryTest {
             harness.store.dispatch("filesystem", Action(
                 ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 buildJsonObject {
-                    put("subpath", "00000000-0000-4000-a000-000000000001/input.json")
+                    put("path", "00000000-0000-4000-a000-000000000001/input.json")
                     put("content", inputJson)
                 },
                 targetRecipient = "session"
@@ -781,7 +781,7 @@ class SessionFeatureT2InputHistoryTest {
             harness.store.dispatch("filesystem", Action(
                 ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 buildJsonObject {
-                    put("subpath", "00000000-0000-4000-a000-000000000001/input.json")
+                    put("path", "00000000-0000-4000-a000-000000000001/input.json")
                     put("content", "{ totally: invalid json {{")
                 },
                 targetRecipient = "session"
@@ -801,7 +801,7 @@ class SessionFeatureT2InputHistoryTest {
 
     @Test
     fun `SESSION_DELETE does not separately delete input dot json — the UUID folder deletion covers it`() = runTest {
-        // The UUID folder deletion (filesystem.SYSTEM_DELETE with subpath = uuid) removes the
+        // The UUID folder deletion (filesystem.SYSTEM_DELETE with path = uuid) removes the
         // entire folder including input.json. This test confirms no redundant per-file deletion
         // is dispatched (which would fail if the folder delete ran first).
         val session = testSession("sid-1", "To Delete")
@@ -828,13 +828,13 @@ class SessionFeatureT2InputHistoryTest {
             }
             // There should be exactly one delete: the UUID folder, not a separate input.json delete
             val inputJsonDeletes = deleteActions.filter {
-                it.payload?.get("subpath")?.jsonPrimitive?.content?.endsWith("input.json") == true
+                it.payload?.get("path")?.jsonPrimitive?.content?.endsWith("input.json") == true
             }
             assertTrue(inputJsonDeletes.isEmpty(),
                 "input.json should NOT be individually deleted — the UUID folder delete covers it")
 
             val folderDelete = deleteActions.find {
-                it.payload?.get("subpath")?.jsonPrimitive?.content == session.identity.uuid
+                it.payload?.get("path")?.jsonPrimitive?.content == session.identity.uuid
             }
             assertNotNull(folderDelete, "UUID folder should still be deleted to remove all session files")
 

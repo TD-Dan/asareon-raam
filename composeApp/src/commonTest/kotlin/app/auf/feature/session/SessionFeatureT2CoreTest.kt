@@ -121,7 +121,7 @@ class SessionFeatureT2CoreTest {
             // Phase 4: Delete now removes the UUID folder, not a flat .json file
             val deleteAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE }
             assertNotNull(deleteAction)
-            assertEquals(session.identity.uuid, deleteAction.payload?.get("subpath")?.jsonPrimitive?.content,
+            assertEquals(session.identity.uuid, deleteAction.payload?.get("path")?.jsonPrimitive?.content,
                 "Should delete the UUID-named folder")
 
             val publishAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED }
@@ -183,7 +183,7 @@ class SessionFeatureT2CoreTest {
             // (draft/history persistence) — those are correct but irrelevant to this assertion.
             val writeActions = harness.processedActions.filter {
                 it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE &&
-                        it.payload?.get("subpath")?.jsonPrimitive?.content?.endsWith("/input.json") == false
+                        it.payload?.get("path")?.jsonPrimitive?.content?.endsWith("/input.json") == false
             }
             assertEquals(2, writeActions.size)
             val finalWriteContent = writeActions.last().payload?.get("content")?.jsonPrimitive?.content
@@ -379,7 +379,7 @@ class SessionFeatureT2CoreTest {
             val sessionJsonContent = json.encodeToString(testSession)
 
             val payload = buildJsonObject {
-                put("subpath", "00000000-0000-4000-a000-00000000000a/loaded-1.json")
+                put("path", "00000000-0000-4000-a000-00000000000a/loaded-1.json")
                 put("content", sessionJsonContent)
             }
 
@@ -404,7 +404,7 @@ class SessionFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             val corruptedJsonContent = """{"identity":{"uuid":"bad-1","localHandle":"bad","handle":"session.bad","name":"Bad",}"""
             val payload = buildJsonObject {
-                put("subpath", "bad-uuid/bad.json")
+                put("path", "bad-uuid/bad.json")
                 put("content", corruptedJsonContent)
             }
 
@@ -462,10 +462,10 @@ class SessionFeatureT2CoreTest {
 
             val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
             assertNotNull(writeAction)
-            val subpath = writeAction.payload?.get("subpath")?.jsonPrimitive?.content
-            assertNotNull(subpath)
-            assertTrue(subpath.endsWith("/my-chat.json"), "File path should end with /localHandle.json, got: $subpath")
-            assertTrue(subpath.startsWith(session.identity.uuid!!), "File path should start with UUID, got: $subpath")
+            val path = writeAction.payload?.get("path")?.jsonPrimitive?.content
+            assertNotNull(path)
+            assertTrue(path.endsWith("/my-chat.json"), "File path should end with /localHandle.json, got: $path")
+            assertTrue(path.startsWith(session.identity.uuid!!), "File path should start with UUID, got: $path")
         }
     }
 
