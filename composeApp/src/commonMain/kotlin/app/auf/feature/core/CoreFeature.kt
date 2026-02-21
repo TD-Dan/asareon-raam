@@ -54,6 +54,13 @@ class CoreFeature(
         val newName: String
     )
 
+    /**
+     * Lenient Json instance for decoding action payloads. Uses ignoreUnknownKeys
+     * because upstream features (e.g., CoreFeature's own handleSideEffects) may
+     * enrich payloads with extra fields like correlationId before dispatch.
+     */
+    private val json = Json { ignoreUnknownKeys = true }
+
     private val settingKeyWidth = "core.window.width"
     private val settingKeyHeight = "core.window.height"
     private val identitiesFileName = "identities.json"
@@ -165,7 +172,7 @@ class CoreFeature(
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", identitiesFileName)}))
             }
             ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<DismissConfirmationPayload>(it) } ?: return
+                val payload = action.payload?.let { json.decodeFromJsonElement<DismissConfirmationPayload>(it) } ?: return
                 val request = prevCoreState?.confirmationRequest ?: return
 
                 val responsePayload = buildJsonObject {
@@ -194,7 +201,7 @@ class CoreFeature(
                 }))
             }
             ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<CopyToClipboardPayload>(it) }
+                val payload = action.payload?.let { json.decodeFromJsonElement<CopyToClipboardPayload>(it) }
                 payload?.let {
                     platformDependencies.copyToClipboard(it.text)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject { put("message", "Copied to clipboard.") }))
@@ -236,7 +243,7 @@ class CoreFeature(
                 if (subpath == identitiesFileName) {
                     if (content != null) {
                         try {
-                            val loaded = Json.decodeFromString<IdentitiesLoadedPayload>(content)
+                            val loaded = json.decodeFromString<IdentitiesLoadedPayload>(content)
                             store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_IDENTITIES_LOADED, Json.encodeToJsonElement(loaded) as JsonObject))
                         } catch (e: Exception) {
                             platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle, "Failed to parse identities.json: ${e.message}")
@@ -330,7 +337,7 @@ class CoreFeature(
             ActionRegistry.Names.CORE_REGISTER_IDENTITY -> {
                 val originator = action.originator ?: return
                 val payload = action.payload?.let {
-                    Json.decodeFromJsonElement<RegisterIdentityPayload>(it)
+                    json.decodeFromJsonElement<RegisterIdentityPayload>(it)
                 }
                 if (payload == null || payload.name.isBlank()) {
                     platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
@@ -420,7 +427,7 @@ class CoreFeature(
             ActionRegistry.Names.CORE_UNREGISTER_IDENTITY -> {
                 val originator = action.originator ?: return
                 val payload = action.payload?.let {
-                    Json.decodeFromJsonElement<UnregisterIdentityPayload>(it)
+                    json.decodeFromJsonElement<UnregisterIdentityPayload>(it)
                 }
                 if (payload == null) {
                     platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
@@ -464,7 +471,7 @@ class CoreFeature(
             ActionRegistry.Names.CORE_UPDATE_IDENTITY -> {
                 val originator = action.originator ?: return
                 val payload = action.payload?.let {
-                    Json.decodeFromJsonElement<UpdateIdentityPayload>(it)
+                    json.decodeFromJsonElement<UpdateIdentityPayload>(it)
                 }
                 if (payload == null || payload.handle.isBlank() || payload.newName.isBlank()) {
                     platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
@@ -621,23 +628,23 @@ class CoreFeature(
             ActionRegistry.Names.SYSTEM_STARTING -> return coreState.copy(lifecycle = AppLifecycle.RUNNING)
             ActionRegistry.Names.SYSTEM_CLOSING -> return coreState.copy(lifecycle = AppLifecycle.CLOSING)
             ActionRegistry.Names.CORE_SET_ACTIVE_VIEW -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<SetActiveViewPayload>(it) }
+                val payload = action.payload?.let { json.decodeFromJsonElement<SetActiveViewPayload>(it) }
                 return payload?.let { coreState.copy(activeViewKey = it.key) } ?: coreState
             }
             ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW -> return coreState.copy(activeViewKey = coreState.defaultViewKey)
             ActionRegistry.Names.CORE_UPDATE_WINDOW_SIZE -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<UpdateWindowSizePayload>(it) }
+                val payload = action.payload?.let { json.decodeFromJsonElement<UpdateWindowSizePayload>(it) }
                 return payload?.let { coreState.copy(windowWidth = it.width, windowHeight = it.height) } ?: coreState
             }
             ActionRegistry.Names.CORE_SHOW_TOAST -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<ShowToastPayload>(it) }
+                val payload = action.payload?.let { json.decodeFromJsonElement<ShowToastPayload>(it) }
                 return payload?.let { coreState.copy(toastMessage = it.message) } ?: coreState
             }
             ActionRegistry.Names.CORE_CLEAR_TOAST -> return coreState.copy(toastMessage = null)
             ActionRegistry.Names.CORE_SHOW_CONFIRMATION_DIALOG -> {
                 val request = action.payload?.let {
                     try {
-                        Json.decodeFromJsonElement<ConfirmationDialogRequest>(it)
+                        json.decodeFromJsonElement<ConfirmationDialogRequest>(it)
                     } catch (e: Exception) {
                         platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle, "Failed to decode ConfirmationDialogRequest: ${e.message}")
                         null
@@ -664,7 +671,7 @@ class CoreFeature(
                 return newCoreState
             }
             ActionRegistry.Names.CORE_IDENTITIES_LOADED -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<IdentitiesLoadedPayload>(it) } ?: return coreState
+                val payload = action.payload?.let { json.decodeFromJsonElement<IdentitiesLoadedPayload>(it) } ?: return coreState
                 val identities: List<Identity>
                 val activeId: String?
                 if (payload.identities.isEmpty()) {
@@ -684,7 +691,7 @@ class CoreFeature(
                 )
             }
             ActionRegistry.Names.CORE_ADD_USER_IDENTITY -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<AddUserIdentityPayload>(it) } ?: return coreState
+                val payload = action.payload?.let { json.decodeFromJsonElement<AddUserIdentityPayload>(it) } ?: return coreState
                 val localHandle = slugifyName(payload.name)
                 // Dedup against existing user identities (registry sync is handled in handleSideEffects).
                 @Suppress("DEPRECATION")
@@ -706,7 +713,7 @@ class CoreFeature(
                 )
             }
             ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return coreState
+                val payload = action.payload?.let { json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return coreState
                 @Suppress("DEPRECATION")
                 val updatedIdentities = coreState.userIdentities.filterNot { it.handle == payload.id }
                 val updatedActiveId = if (coreState.activeUserId == payload.id) updatedIdentities.firstOrNull()?.handle else coreState.activeUserId
@@ -718,7 +725,7 @@ class CoreFeature(
                 )
             }
             ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return coreState
+                val payload = action.payload?.let { json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return coreState
                 @Suppress("DEPRECATION")
                 if (coreState.userIdentities.any { it.handle == payload.id }) {
                     return coreState.copy(activeUserId = payload.id)
@@ -735,7 +742,7 @@ class CoreFeature(
             // Pending Command Tracking (ACTION_RESULT / DELIVER_TO_SESSION)
             // ================================================================
             ActionRegistry.Names.CORE_REGISTER_PENDING_COMMAND -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<RegisterPendingCommandPayload>(it) } ?: return coreState
+                val payload = action.payload?.let { json.decodeFromJsonElement<RegisterPendingCommandPayload>(it) } ?: return coreState
                 val pending = PendingCommand(
                     correlationId = payload.correlationId,
                     sessionId = payload.sessionId,
@@ -748,7 +755,7 @@ class CoreFeature(
                 )
             }
             ActionRegistry.Names.CORE_CLEAR_PENDING_COMMAND -> {
-                val payload = action.payload?.let { Json.decodeFromJsonElement<ClearPendingCommandPayload>(it) } ?: return coreState
+                val payload = action.payload?.let { json.decodeFromJsonElement<ClearPendingCommandPayload>(it) } ?: return coreState
                 return coreState.copy(
                     pendingCommands = coreState.pendingCommands - payload.correlationId
                 )

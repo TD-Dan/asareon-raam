@@ -386,7 +386,7 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         harness.runAndLogOnFailure {
-            // Assert at CommandBot's contract boundary (ACTION_CREATED).
+            // Verify CommandBot published ACTION_CREATED with empty actionPayload
             val actionCreated = harness.processedActions.find { it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED }
             assertNotNull(actionCreated, "A command with an empty code block body should still be published as ACTION_CREATED.")
 
@@ -396,6 +396,10 @@ class CommandBotFeatureT2GuardrailsTest {
             val keysExcludingCorrelation = actionPayload.keys.filter { it != "correlationId" }
             assertTrue(keysExcludingCorrelation.isEmpty(),
                 "actionPayload should have no user-specified keys when the code block body is empty.")
+
+            // CoreFeature should claim it and dispatch the domain action
+            val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
+            assertNotNull(toast, "CoreFeature should dispatch the domain action even for an empty payload.")
         }
     }
 
@@ -464,19 +468,14 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         harness.runAndLogOnFailure {
-            // CommandBot's responsibility: publish one ACTION_CREATED per auf_ block.
-            // We assert at the ACTION_CREATED level (CommandBot's contract boundary).
-            val actionCreatedList = harness.processedActions.filter {
-                it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED
-            }
-            assertEquals(2, actionCreatedList.size,
-                "Both auf_ code blocks in a single message should produce ACTION_CREATED events.")
+            // CommandBot publishes two ACTION_CREATED events; CoreFeature dispatches two domain actions
+            val toasts = harness.processedActions.filter { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
+            assertEquals(2, toasts.size,
+                "Both auf_ code blocks in a single message should be processed into domain actions.")
 
-            val payloads = actionCreatedList.mapNotNull {
-                it.payload?.get("actionPayload")?.jsonObject?.get("message")?.jsonPrimitive?.contentOrNull
-            }
-            assertTrue("Toast One" in payloads, "First command payload should be in ACTION_CREATED.")
-            assertTrue("Toast Two" in payloads, "Second command payload should be in ACTION_CREATED.")
+            val messages = toasts.mapNotNull { it.payload?.get("message")?.jsonPrimitive?.contentOrNull }
+            assertTrue("Toast One" in messages, "First command payload should be dispatched.")
+            assertTrue("Toast Two" in messages, "Second command payload should be dispatched.")
         }
     }
 
@@ -499,14 +498,11 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         harness.runAndLogOnFailure {
-            // Assert at CommandBot's contract boundary (ACTION_CREATED).
-            val actionCreatedList = harness.processedActions.filter {
-                it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED
-            }
-            assertEquals(1, actionCreatedList.size,
-                "Only the auf_ block should produce an ACTION_CREATED; the json block should be ignored.")
+            val toasts = harness.processedActions.filter { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
+            assertEquals(1, toasts.size,
+                "Only the auf_ block should be processed; the json block should be ignored.")
             assertEquals("Only this one",
-                actionCreatedList.first().payload?.get("actionPayload")?.jsonObject?.get("message")?.jsonPrimitive?.contentOrNull)
+                toasts.first().payload?.get("message")?.jsonPrimitive?.contentOrNull)
         }
     }
 
