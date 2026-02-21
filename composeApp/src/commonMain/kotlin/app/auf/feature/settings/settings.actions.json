@@ -1,6 +1,6 @@
 {
   "feature_name": "settings",
-  "summary": "Manages the persistence, state, and UI for all application settings. Other features register their settings via settings.ADD and can read/write values via the published events and the settings.UPDATE command.",
+  "summary": "Manages the encrypted persistence, state, and UI for all application settings. Other features register their settings via settings.ADD and can read/write values via the published events and the settings.UPDATE command. None of this feature is exposed to agents",
   "actions": [
     {
       "action_name": "settings.ADD",
@@ -106,7 +106,7 @@
     },
     {
       "action_name": "settings.LOAD",
-      "summary": "[INTERNAL] Action dispatched by the feature to itself to trigger loading from disk.",
+      "summary": "Action dispatched by the feature to itself to trigger loading from disk.",
       "public": false,
       "broadcast": false,
       "targeted": false
