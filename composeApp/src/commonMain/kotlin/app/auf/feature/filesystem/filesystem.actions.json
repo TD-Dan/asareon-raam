@@ -63,7 +63,8 @@
           "strategy": "AGENT_WORKSPACE",
           "path_prefix_template": "{agentId}/workspace"
         }
-      }
+      },
+      "required_permissions": ["read", "workspace"]
     },
     {
       "action_name": "filesystem.SYSTEM_WRITE",

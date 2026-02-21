@@ -496,8 +496,11 @@ class FileSystemFeature(
                 }
             }
             ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<PathPayload>(it) } ?: return
-                platformDependencies.openFolderInExplorer("${platformDependencies.getBasePathFor(BasePath.APP_ZONE)}${platformDependencies.pathSeparator}${payload.path}")
+                val path = action.payload
+                    ?.let { json.decodeFromJsonElement<PathPayload>(it) }
+                    ?.path
+                    ?: ""
+                platformDependencies.openFolderInExplorer("${platformDependencies.getBasePathFor(BasePath.APP_ZONE)}${platformDependencies.pathSeparator}${path}")
             }
         }
     }
