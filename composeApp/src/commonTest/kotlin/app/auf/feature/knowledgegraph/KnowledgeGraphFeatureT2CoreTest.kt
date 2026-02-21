@@ -258,8 +258,8 @@ class KnowledgeGraphFeatureT2CoreTest {
         val actionsToTest = mapOf(
             Action(ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT, buildJsonObject { put("holonId", holonId) }) to ActionRegistry.Names.FILESYSTEM_WRITE,
             Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject { put("holonId", holonId); put("newName", "X") }) to ActionRegistry.Names.FILESYSTEM_WRITE,
-            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject { put("holonId", holonId) }) to ActionRegistry.Names.FILEDELETE_FILE_DIRECTORY,
-            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject { put("personaId", personaId) }) to ActionRegistry.Names.FILEDELETE_FILE_DIRECTORY
+            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject { put("holonId", holonId) }) to ActionRegistry.Names.FILESYSTEM_DELETE_DIRECTORY,
+            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject { put("personaId", personaId) }) to ActionRegistry.Names.FILESYSTEM_DELETE_DIRECTORY
         )
 
         actionsToTest.forEach { (actionToDispatch, forbiddenAction) ->
@@ -294,7 +294,7 @@ class KnowledgeGraphFeatureT2CoreTest {
 
         val actionsToTest = mapOf(
             Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject { put("holonId", holonId); put("newName", "X") }) to ActionRegistry.Names.FILESYSTEM_WRITE,
-            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject { put("personaId", personaId) }) to ActionRegistry.Names.FILEDELETE_FILE_DIRECTORY
+            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject { put("personaId", personaId) }) to ActionRegistry.Names.FILESYSTEM_DELETE_DIRECTORY
         )
 
         actionsToTest.forEach { (actionToDispatch, expectedAction) ->
@@ -463,8 +463,8 @@ class KnowledgeGraphFeatureT2CoreTest {
             }))
 
             // Assert directory deletion was dispatched
-            val deleteDir = harness.processedActions.find { it.name == ActionRegistry.Names.FILEDELETE_FILE_DIRECTORY }
-            assertNotNull(deleteDir, "DELETE_HOLON should dispatch FILEDELETE_FILE_DIRECTORY.")
+            val deleteDir = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_DELETE_DIRECTORY }
+            assertNotNull(deleteDir, "DELETE_HOLON should dispatch FILESYSTEM_DELETE_FILE_DIRECTORY.")
             assertEquals("$rootId/$childId", deleteDir.payload?.get("path")?.jsonPrimitive?.content)
 
             // Assert parent holon was updated to remove the child from sub_holons
@@ -555,7 +555,7 @@ class KnowledgeGraphFeatureT2CoreTest {
             }))
 
             // Should not dispatch any filesystem actions
-            assertFalse(harness.processedActions.any { it.name == ActionRegistry.Names.FILEDELETE_FILE_DIRECTORY },
+            assertFalse(harness.processedActions.any { it.name == ActionRegistry.Names.FILESYSTEM_DELETE_DIRECTORY },
                 "No filesystem actions should be dispatched for a nonexistent holon.")
 
             // Should log a warning
