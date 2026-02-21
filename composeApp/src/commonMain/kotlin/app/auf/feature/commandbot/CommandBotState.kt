@@ -22,7 +22,15 @@ data class CommandBotState(
      * after the PendingApproval has been consumed.
      * Cleaned up when the card's ledger entry is deleted or the session is cleared.
      */
-    val resolvedApprovals: Map<String, ApprovalResolution> = emptyMap()
+    val resolvedApprovals: Map<String, ApprovalResolution> = emptyMap(),
+
+    /**
+     * Pending command results, keyed by correlationId.
+     * Populated when CommandBot publishes ACTION_CREATED; consumed when a matching
+     * {feature}.ACTION_RESULT broadcast arrives. Entries are cleaned up on match
+     * or after a TTL (5 minutes).
+     */
+    val pendingResults: Map<String, PendingResult> = emptyMap()
 ) : FeatureState
 
 @Serializable
@@ -59,3 +67,21 @@ data class ApprovalResolution(
 
 @Serializable
 enum class Resolution { APPROVED, DENIED }
+
+/**
+ * Tracks a command that has been published via ACTION_CREATED and is awaiting
+ * a {feature}.ACTION_RESULT broadcast. Keyed by correlationId in CommandBotState.
+ */
+@Serializable
+data class PendingResult(
+    val correlationId: String,
+    /** The session where feedback should be posted. */
+    val sessionId: String,
+    /** Who issued the command (for display). */
+    val originatorId: String,
+    val originatorName: String,
+    /** The domain action name (for display and source-feature validation). */
+    val actionName: String,
+    /** For TTL-based cleanup of stale entries. */
+    val createdAt: Long
+)

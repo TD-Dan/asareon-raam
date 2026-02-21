@@ -32,6 +32,15 @@ class CoreFeature(
     @Serializable private data class IdentitiesLoadedPayload(val identities: List<Identity>, val activeId: String? = null)
     @Serializable private data class DismissConfirmationPayload(val confirmed: Boolean)
 
+    // --- Pending Command Tracking payload classes ---
+    @Serializable private data class RegisterPendingCommandPayload(
+        val correlationId: String,
+        val sessionId: String,
+        val actionName: String,
+        val originatorId: String
+    )
+    @Serializable private data class ClearPendingCommandPayload(val correlationId: String)
+
     // --- Identity registration payload classes ---
     // Note: no parentHandle field — the originator IS the parent (enforced by design).
     @Serializable private data class RegisterIdentityPayload(
@@ -50,6 +59,9 @@ class CoreFeature(
     private val identitiesFileName = "identities.json"
 
     companion object {
+        /** TTL for pending command entries: 5 minutes. */
+        const val PENDING_COMMAND_TTL_MS = 5 * 60 * 1000L
+
         /**
          * Validates that a localHandle matches [a-z][a-z0-9-]* — must start with a letter,
          * then only lowercase letters, digits, and hyphens. No dots (the dot is the
@@ -192,8 +204,36 @@ class CoreFeature(
             // Migrated from onPrivateData.
             ActionRegistry.Names.FILESYSTEM_RETURN_READ -> {
                 val data = action.payload ?: return
-                if (data["subpath"]?.jsonPrimitive?.content == identitiesFileName) {
-                    val content = data["content"]?.jsonPrimitive?.contentOrNull
+                val subpath = data["subpath"]?.jsonPrimitive?.contentOrNull
+                val content = data["content"]?.jsonPrimitive?.contentOrNull
+                val correlationId = data["correlationId"]?.jsonPrimitive?.contentOrNull
+
+                // Route command-originated read results to the session via DELIVER_TO_SESSION.
+                if (correlationId != null && latestCoreState != null) {
+                    val pendingCommand = latestCoreState.pendingCommands[correlationId]
+                    if (pendingCommand != null) {
+                        if (content != null) {
+                            val ext = subpath?.substringAfterLast('.', "") ?: ""
+                            val label = subpath ?: "file"
+                            val formatted = "```$ext \"$label\"\n$content\n```"
+                            store.deferredDispatch(identity.handle, Action(
+                                ActionRegistry.Names.COMMANDBOT_DELIVER_TO_SESSION,
+                                buildJsonObject {
+                                    put("correlationId", correlationId)
+                                    put("sessionId", pendingCommand.sessionId)
+                                    put("message", formatted)
+                                }
+                            ))
+                        }
+                        store.deferredDispatch(identity.handle, Action(
+                            ActionRegistry.Names.CORE_CLEAR_PENDING_COMMAND,
+                            buildJsonObject { put("correlationId", correlationId) }
+                        ))
+                    }
+                }
+
+                // Existing: handle identities.json load (non-command read, no correlationId).
+                if (subpath == identitiesFileName) {
                     if (content != null) {
                         try {
                             val loaded = Json.decodeFromString<IdentitiesLoadedPayload>(content)
@@ -207,6 +247,43 @@ class CoreFeature(
                         }))
                     }
                 }
+            }
+
+            // Route command-originated directory listings to the session via DELIVER_TO_SESSION.
+            ActionRegistry.Names.FILESYSTEM_RETURN_LIST -> {
+                val data = action.payload ?: return
+                val correlationId = data["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
+                if (latestCoreState == null) return
+                val pendingCommand = latestCoreState.pendingCommands[correlationId] ?: return
+
+                val listing = data["listing"]?.jsonArray
+                val subpath = data["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
+
+                val header = if (subpath.isNotBlank()) "Listing: $subpath" else "Listing: (root)"
+                val body = if (listing != null && listing.isNotEmpty()) {
+                    listing.joinToString("\n") { entry ->
+                        val entryObj = entry.jsonObject
+                        val path = entryObj["path"]?.jsonPrimitive?.contentOrNull ?: "?"
+                        val isDir = entryObj["isDirectory"]?.jsonPrimitive?.boolean ?: false
+                        if (isDir) "  $path/" else "  $path"
+                    }
+                } else {
+                    "  (empty)"
+                }
+                val formatted = "```text \"$header\"\n$body\n```"
+
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.COMMANDBOT_DELIVER_TO_SESSION,
+                    buildJsonObject {
+                        put("correlationId", correlationId)
+                        put("sessionId", pendingCommand.sessionId)
+                        put("message", formatted)
+                    }
+                ))
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.CORE_CLEAR_PENDING_COMMAND,
+                    buildJsonObject { put("correlationId", correlationId) }
+                ))
             }
             ActionRegistry.Names.CORE_ADD_USER_IDENTITY,
             ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY,
@@ -475,20 +552,47 @@ class CoreFeature(
                 val sessionId = acPayload["sessionId"]?.jsonPrimitive?.contentOrNull ?: return
                 val actionName = acPayload["actionName"]?.jsonPrimitive?.contentOrNull ?: return
                 val actionPayload = acPayload["actionPayload"]?.jsonObject ?: return
+                val correlationId = acPayload["correlationId"]?.jsonPrimitive?.contentOrNull
 
                 // Only claim actions from core user identities.
                 val originatorIdentity = store.state.value.identityRegistry[originatorId]
                 if (originatorIdentity?.parentHandle != "core") return
 
+                // Inject correlationId so the handling feature can thread it to ACTION_RESULT.
+                // Guard: don't overwrite a correlationId the user explicitly included.
+                val enrichedPayload = if (correlationId != null && actionPayload["correlationId"] == null) {
+                    JsonObject(actionPayload + ("correlationId" to JsonPrimitive(correlationId)))
+                } else {
+                    actionPayload
+                }
+
                 // Dispatch the domain action attributed to the user.
                 // Causality tracking is preserved — the originator on the bus
                 // is the actual user who typed the command.
-                val domainAction = Action(name = actionName, payload = actionPayload)
+                val domainAction = Action(name = actionName, payload = enrichedPayload)
                 store.deferredDispatch(originatorId, domainAction)
+
+                // Track the pending command so we can route RETURN_* data to the session.
+                if (correlationId != null) {
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.CORE_REGISTER_PENDING_COMMAND,
+                        buildJsonObject {
+                            put("correlationId", correlationId)
+                            put("sessionId", sessionId)
+                            put("actionName", actionName)
+                            put("originatorId", originatorId)
+                        }
+                    ))
+                    // Schedule TTL cleanup.
+                    store.scheduleDelayed(PENDING_COMMAND_TTL_MS, identity.handle, Action(
+                        ActionRegistry.Names.CORE_CLEAR_PENDING_COMMAND,
+                        buildJsonObject { put("correlationId", correlationId) }
+                    ))
+                }
 
                 platformDependencies.log(
                     app.auf.util.LogLevel.INFO, identity.handle,
-                    "Dispatched '$actionName' on behalf of user '$originatorId' (session=$sessionId)."
+                    "Dispatched '$actionName' on behalf of user '$originatorId' (session=$sessionId, correlationId=$correlationId)."
                 )
             }
         }
@@ -626,6 +730,29 @@ class CoreFeature(
             // Identity Registry Management (Phase 2)
             // Handled entirely in handleSideEffects via store.updateIdentityRegistry().
             // ================================================================
+
+            // ================================================================
+            // Pending Command Tracking (ACTION_RESULT / DELIVER_TO_SESSION)
+            // ================================================================
+            ActionRegistry.Names.CORE_REGISTER_PENDING_COMMAND -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<RegisterPendingCommandPayload>(it) } ?: return coreState
+                val pending = PendingCommand(
+                    correlationId = payload.correlationId,
+                    sessionId = payload.sessionId,
+                    actionName = payload.actionName,
+                    originatorId = payload.originatorId,
+                    createdAt = platformDependencies.currentTimeMillis()
+                )
+                return coreState.copy(
+                    pendingCommands = coreState.pendingCommands + (payload.correlationId to pending)
+                )
+            }
+            ActionRegistry.Names.CORE_CLEAR_PENDING_COMMAND -> {
+                val payload = action.payload?.let { Json.decodeFromJsonElement<ClearPendingCommandPayload>(it) } ?: return coreState
+                return coreState.copy(
+                    pendingCommands = coreState.pendingCommands - payload.correlationId
+                )
+            }
 
             else -> return coreState
         }

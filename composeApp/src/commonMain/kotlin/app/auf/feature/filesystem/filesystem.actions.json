@@ -590,6 +590,38 @@
           "contents"
         ]
       }
+    },
+    {
+      "action_name": "filesystem.ACTION_RESULT",
+      "summary": "Broadcast notification published after a command-dispatchable domain action completes. Carries a lightweight, privacy-safe summary — never raw data or sandbox-internal paths. CommandBot matches via correlationId to post feedback to the originating session. Other observers (logging plugins, usage monitors) may also subscribe.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": ["string", "null"],
+            "description": "From the domain action's payload. Null if not command-originated."
+          },
+          "requestAction": {
+            "type": "string",
+            "description": "The domain action name that produced this result, e.g. 'filesystem.SYSTEM_READ'."
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "summary": {
+            "type": ["string", "null"],
+            "description": "Human-readable, privacy-safe description of what happened. No sandbox paths."
+          },
+          "error": {
+            "type": ["string", "null"],
+            "description": "Human-readable error message. Present when success is false."
+          }
+        },
+        "required": ["requestAction", "success"]
+      }
     }
   ],
   "definitions": {

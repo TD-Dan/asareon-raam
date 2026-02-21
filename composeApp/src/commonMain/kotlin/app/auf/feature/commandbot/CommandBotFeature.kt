@@ -8,6 +8,7 @@ import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -46,6 +47,11 @@ class CommandBotFeature(
     override val identity: Identity = Identity(uuid = null, handle = "commandbot", localHandle = "commandbot", name="CommandBot")
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
+
+    companion object {
+        /** TTL for pending result entries: 5 minutes. */
+        const val PENDING_RESULT_TTL_MS = 5 * 60 * 1000L
+    }
 
     /**
      * Resolves whether a senderId belongs to a known agent by consulting the
@@ -149,6 +155,30 @@ class CommandBotFeature(
                 }
             }
 
+            // --- Pending Result Tracking ---
+            ActionRegistry.Names.COMMANDBOT_REGISTER_PENDING_RESULT -> {
+                val payload = action.payload ?: return currentState
+                val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return currentState
+                val pendingResult = PendingResult(
+                    correlationId = correlationId,
+                    sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: return currentState,
+                    originatorId = payload["originatorId"]?.jsonPrimitive?.contentOrNull ?: return currentState,
+                    originatorName = payload["originatorName"]?.jsonPrimitive?.contentOrNull ?: "Unknown",
+                    actionName = payload["actionName"]?.jsonPrimitive?.contentOrNull ?: return currentState,
+                    createdAt = platformDependencies.currentTimeMillis()
+                )
+                currentState.copy(
+                    pendingResults = currentState.pendingResults + (correlationId to pendingResult)
+                )
+            }
+
+            ActionRegistry.Names.COMMANDBOT_CLEAR_PENDING_RESULT -> {
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull ?: return currentState
+                currentState.copy(
+                    pendingResults = currentState.pendingResults - correlationId
+                )
+            }
+
             else -> currentState
         }
     }
@@ -250,6 +280,79 @@ class CommandBotFeature(
 
                     processCommandBlock(language, code, sessionId, senderId, store)
                 }
+            }
+
+            // --- TTL Scheduling for Pending Results ---
+            ActionRegistry.Names.COMMANDBOT_REGISTER_PENDING_RESULT -> {
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull ?: return
+                // Schedule TTL cleanup after 5 minutes.
+                store.scheduleDelayed(PENDING_RESULT_TTL_MS, identity.handle, Action(
+                    ActionRegistry.Names.COMMANDBOT_CLEAR_PENDING_RESULT,
+                    buildJsonObject { put("correlationId", correlationId) }
+                ))
+            }
+
+            // --- Data Delivery from Core/Agent ---
+            ActionRegistry.Names.COMMANDBOT_DELIVER_TO_SESSION -> {
+                val payload = action.payload ?: return
+                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: return
+                val message = payload["message"]?.jsonPrimitive?.contentOrNull ?: return
+                postRawToSession(sessionId, message, store)
+            }
+
+            // --- ACTION_RESULT Interception ---
+            else -> {
+                if (!action.name.endsWith(".ACTION_RESULT")) return
+                val payload = action.payload ?: return
+                val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
+                val commandBotState = newState as? CommandBotState ?: return
+                val pendingResult = commandBotState.pendingResults[correlationId] ?: return
+
+                // Security: validate source feature matches the feature that owns the action
+                val expectedFeature = pendingResult.actionName.substringBefore('.')
+                val sourceFeature = action.name.substringBefore('.')
+                if (sourceFeature != expectedFeature) {
+                    platformDependencies.log(
+                        LogLevel.WARN, identity.handle,
+                        "ACTION_RESULT from '$sourceFeature' but expected '$expectedFeature' for correlationId '$correlationId'. Ignoring."
+                    )
+                    return
+                }
+
+                // Security: validate requestAction matches
+                val requestAction = payload["requestAction"]?.jsonPrimitive?.contentOrNull
+                if (requestAction != null && requestAction != pendingResult.actionName) {
+                    platformDependencies.log(
+                        LogLevel.WARN, identity.handle,
+                        "ACTION_RESULT requestAction '$requestAction' doesn't match expected '${pendingResult.actionName}'. Ignoring."
+                    )
+                    return
+                }
+
+                val success = payload["success"]?.jsonPrimitive?.boolean ?: false
+                val summary = payload["summary"]?.jsonPrimitive?.contentOrNull
+                val error = payload["error"]?.jsonPrimitive?.contentOrNull
+
+                val icon = if (success) "✓" else "✗"
+                val detail = when {
+                    success && summary != null -> summary
+                    !success && error != null -> error
+                    success -> "completed."
+                    else -> "failed."
+                }
+                val feedbackMessage = "$icon ${pendingResult.actionName} — $detail"
+
+                postFeedbackToSession(pendingResult.sessionId, feedbackMessage, store)
+
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.COMMANDBOT_CLEAR_PENDING_RESULT,
+                    buildJsonObject { put("correlationId", correlationId) }
+                ))
+
+                platformDependencies.log(
+                    LogLevel.INFO, identity.handle,
+                    "ACTION_RESULT matched for '${pendingResult.actionName}' (correlationId=$correlationId, success=$success)."
+                )
             }
         }
     }
@@ -363,6 +466,18 @@ class CommandBotFeature(
             }
         ))
 
+        // Register the pending result so we can match the ACTION_RESULT broadcast later.
+        store.deferredDispatch(identity.handle, Action(
+            ActionRegistry.Names.COMMANDBOT_REGISTER_PENDING_RESULT,
+            buildJsonObject {
+                put("correlationId", correlationId)
+                put("sessionId", sessionId)
+                put("originatorId", originatorId)
+                put("originatorName", agentName)
+                put("actionName", actionName)
+            }
+        ))
+
         platformDependencies.log(
             LogLevel.INFO, identity.handle,
             "Published ACTION_CREATED for '$actionName' from '$originatorId' (correlationId=$correlationId)."
@@ -451,5 +566,20 @@ class CommandBotFeature(
             }
         )
         store.deferredDispatch(identity.handle, feedbackAction)
+    }
+
+    /**
+     * Posts a pre-formatted message to a session without additional wrapping.
+     * Used by DELIVER_TO_SESSION where the sender (Core/Agent) controls formatting.
+     */
+    private fun postRawToSession(sessionId: String, message: String, store: Store) {
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.SESSION_POST,
+            payload = buildJsonObject {
+                put("session", sessionId)
+                put("senderId", identity.handle)
+                put("message", message)
+            }
+        ))
     }
 }

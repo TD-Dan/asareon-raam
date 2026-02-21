@@ -32,6 +32,20 @@ data class ConfirmationDialogRequest(
     @Transient val originator: String = "" // THE FIX: Capture the original requester.
 )
 
+/**
+ * Tracks a user command dispatched via ACTION_CREATED so that CoreFeature can
+ * route targeted RETURN_* data back to the originating session via
+ * commandbot.DELIVER_TO_SESSION.
+ */
+@Serializable
+data class PendingCommand(
+    val correlationId: String,
+    val sessionId: String,
+    val actionName: String,
+    val originatorId: String,
+    val createdAt: Long
+)
+
 @Serializable
 data class CoreState(
     val toastMessage: String? = null,
@@ -55,5 +69,11 @@ data class CoreState(
 
     // --- Transient State for Global UI ---
     @Transient
-    val confirmationRequest: ConfirmationDialogRequest? = null
+    val confirmationRequest: ConfirmationDialogRequest? = null,
+
+    // --- Transient State for Command Result Routing ---
+    /** Maps correlationId → PendingCommand for in-flight user commands.
+     *  Used to route targeted RETURN_* data to the session via DELIVER_TO_SESSION. */
+    @Transient
+    val pendingCommands: Map<String, PendingCommand> = emptyMap()
 ) : FeatureState
