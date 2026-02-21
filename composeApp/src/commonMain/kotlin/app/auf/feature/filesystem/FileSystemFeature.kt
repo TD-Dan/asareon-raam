@@ -33,7 +33,6 @@ class FileSystemFeature(
     @Serializable private data class SystemWritePayload(val path: String, val content: String, val encrypt: Boolean = false, val correlationId: String? = null)
     @Serializable private data class SystemDeletePayload(val path: String, val correlationId: String? = null)
     @Serializable private data class SystemDeleteDirectoryPayload(val path: String, val correlationId: String? = null)
-    @Serializable private data class OpenAppSubfolderPayload(val path: String)
     @Serializable data class RequestScopedReadUiPayload(val correlationId: String? = null, val recursive: Boolean = true, val fileExtensions: List<String>? = null)
     @Serializable private data class StageScopedReadPayload(val requestId: String, val originator: String, val requestPayload: JsonObject)
     @Serializable private data class ExecuteScopedReadPayload(val clientOriginator: String, val requestPayload: JsonObject)
@@ -497,7 +496,7 @@ class FileSystemFeature(
                 }
             }
             ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<OpenAppSubfolderPayload>(it) } ?: return
+                val payload = action.payload?.let { json.decodeFromJsonElement<PathPayload>(it) } ?: return
                 platformDependencies.openFolderInExplorer("${platformDependencies.getBasePathFor(BasePath.APP_ZONE)}${platformDependencies.pathSeparator}${payload.path}")
             }
         }
