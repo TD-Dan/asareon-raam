@@ -327,7 +327,9 @@ private fun ParamsStage(
     // Focus the first parameter field when entering PARAMS stage
     val firstFieldFocusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) {
-        firstFieldFocusRequester.requestFocus()
+        if (descriptor.payloadFields.isNotEmpty()) {
+            firstFieldFocusRequester.requestFocus()
+        }
     }
 
     // Shared Insert action — used by both the button and Enter key on param fields

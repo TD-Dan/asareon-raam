@@ -590,7 +590,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                         }
                         false
                     },
-                    placeholder = { Text("Enter message (Ctrl+Enter to send)...") }
+                    placeholder = { Text("Enter message (Ctrl+Enter to send, / for commandline)...") }
                 )
                 Box {
                     IconButton(onClick = { menuExpanded = true }) {

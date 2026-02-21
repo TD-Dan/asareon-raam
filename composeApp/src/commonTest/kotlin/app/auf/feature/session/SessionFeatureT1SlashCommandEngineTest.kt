@@ -719,6 +719,54 @@ class SlashCommandEngineTest {
     }
 
     // ========================================================================
+    // 8b. Zero-Parameter Actions
+    // ========================================================================
+
+    @Test
+    fun `selectAction with zero-param descriptor produces empty paramValues`() {
+        val engine = createEngine()
+        var state = engine.initialState(adminMode = true)
+        state = engine.selectFeature(state, "session")
+        state = engine.selectAction(state, sessionLoadedDescriptor)
+
+        assertEquals(SlashCommandEngine.Stage.PARAMS, state.stage)
+        assertEquals(sessionLoadedDescriptor, state.selectedAction)
+        assertTrue(state.paramValues.isEmpty(), "Zero-param action should have empty paramValues")
+    }
+
+    @Test
+    fun `autoFillParams returns empty for zero-param action even with context`() {
+        val engine = createEngine(activeSessionLocalHandle = "my-chat", activeUserId = "core.alice")
+        val params = engine.autoFillParams(sessionLoadedDescriptor)
+
+        assertTrue(params.isEmpty(), "No fields to auto-fill when payloadFields is empty")
+    }
+
+    @Test
+    fun `generateCodeBlock for zero-param action produces empty auf_ block`() {
+        val engine = createEngine()
+        val result = engine.generateCodeBlock(sessionLoadedDescriptor, emptyMap())
+
+        assertEquals("```auf_session.LOADED\n```", result)
+    }
+
+    @Test
+    fun `full flow through zero-param action — feature to action to code generation`() {
+        val engine = createEngine()
+        var state = engine.initialState(adminMode = true)
+        state = engine.selectFeature(state, "session")
+        state = engine.selectAction(state, sessionLoadedDescriptor)
+
+        assertEquals(SlashCommandEngine.Stage.PARAMS, state.stage)
+        assertTrue(state.selectedAction!!.payloadFields.isEmpty())
+        assertTrue(state.paramValues.isEmpty())
+
+        // Simulates what the Insert button does — should work without any param fields
+        val codeBlock = engine.generateCodeBlock(state.selectedAction!!, state.paramValues)
+        assertEquals("```auf_session.LOADED\n```", codeBlock)
+    }
+
+    // ========================================================================
     // 9. Sorting
     // ========================================================================
 
