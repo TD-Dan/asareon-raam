@@ -112,9 +112,14 @@ class SessionFeatureT2InputHistoryTest {
 
     @Test
     fun `INPUT_DRAFT_CHANGED triggers a debounced write of input dot json`() = runTest {
+        // Must use THIS (TestScope) as the feature's coroutine scope so that delay(5_000)
+        // uses the virtual clock controlled by testScheduler.advanceTimeBy().
+        // The class-level sessionFeature uses Dispatchers.Unconfined whose delay() runs
+        // on the real clock and is unaffected by testScheduler.
+        val featureUnderTest = SessionFeature(platform, this)
         val session = testSession("sid-1", "Chat")
         val harness = TestEnvironment.create()
-            .withFeature(sessionFeature)
+            .withFeature(featureUnderTest)
             .withFeature(fileSystemFeature)
             .withInitialState("session", SessionState(
                 sessions = mapOf(session.identity.localHandle to session),
@@ -150,9 +155,11 @@ class SessionFeatureT2InputHistoryTest {
 
     @Test
     fun `multiple rapid INPUT_DRAFT_CHANGED dispatches produce only one debounced write`() = runTest {
+        // Same reason as the single-write test: delay() must use the virtual clock.
+        val featureUnderTest = SessionFeature(platform, this)
         val session = testSession("sid-1", "Chat")
         val harness = TestEnvironment.create()
-            .withFeature(sessionFeature)
+            .withFeature(featureUnderTest)
             .withFeature(fileSystemFeature)
             .withInitialState("session", SessionState(
                 sessions = mapOf(session.identity.localHandle to session),

@@ -179,7 +179,12 @@ class SessionFeatureT2CoreTest {
             harness.store.dispatch("ui", transientAction)
             testScheduler.advanceUntilIdle()
 
-            val writeActions = harness.processedActions.filter { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
+            // Filter to session ledger writes only. input.json is also written on user posts
+            // (draft/history persistence) — those are correct but irrelevant to this assertion.
+            val writeActions = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE &&
+                        it.payload?.get("subpath")?.jsonPrimitive?.content?.endsWith("/input.json") == false
+            }
             assertEquals(2, writeActions.size)
             val finalWriteContent = writeActions.last().payload?.get("content")?.jsonPrimitive?.content
             assertNotNull(finalWriteContent)

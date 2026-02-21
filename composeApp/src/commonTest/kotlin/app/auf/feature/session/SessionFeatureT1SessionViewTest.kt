@@ -2,6 +2,7 @@ package app.auf.feature.session
 
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -242,8 +243,12 @@ class SessionFeatureT1SessionViewTest {
             activeSessionLocalHandle = session1.identity.localHandle
         ))
 
-        composeTestRule
-            .onNodeWithText("Enter message (Ctrl+Enter to send)...")
+        // onNodeWithText(placeholder) finds the inner Text composable, NOT the focusable
+        // BasicTextField that has onPreviewKeyEvent attached. hasSetTextAction() matches
+        // the actual editable/focusable node that sits in the key-event dispatch path.
+        composeTestRule.onNode(hasSetTextAction()).performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNode(hasSetTextAction())
             .performKeyInput { keyDown(Key.DirectionUp) }
 
         val navAction = fakeStore.dispatchedActions.find {
@@ -263,8 +268,9 @@ class SessionFeatureT1SessionViewTest {
             historyNavIndex = mapOf("sid-1" to 0) // must be navigating for DOWN to be meaningful
         ))
 
-        composeTestRule
-            .onNodeWithText("Enter message (Ctrl+Enter to send)...")
+        composeTestRule.onNode(hasSetTextAction()).performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNode(hasSetTextAction())
             .performKeyInput { keyDown(Key.DirectionDown) }
 
         val navAction = fakeStore.dispatchedActions.find {
@@ -283,8 +289,9 @@ class SessionFeatureT1SessionViewTest {
             activeSessionLocalHandle = session1.identity.localHandle
         ))
 
-        composeTestRule
-            .onNodeWithText("Enter message (Ctrl+Enter to send)...")
+        composeTestRule.onNode(hasSetTextAction()).performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNode(hasSetTextAction())
             .performKeyInput { keyDown(Key.DirectionLeft) }
 
         val navActions = fakeStore.dispatchedActions.filter {

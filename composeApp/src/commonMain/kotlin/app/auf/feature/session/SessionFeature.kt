@@ -369,10 +369,30 @@ class SessionFeature(
                 val sessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return
                 if (!sessionState.sessions.containsKey(sessionId)) return
                 // Cancel any existing debounce job and start a fresh 5-second countdown.
+                // IMPORTANT: we read the CURRENT store state when the timer fires rather than
+                // capturing sessionState here — this ensures we write the most recent draft
+                // even if multiple changes arrived during the debounce window.
+                // We also call store.dispatch directly (not deferredDispatch) because this
+                // runs from a coroutine context, not from within the synchronous action
+                // processing pipeline. deferredDispatch uses the store's own internal scope,
+                // which is not the TestScope and therefore isn't controlled by testScheduler.
                 draftDebounceJobs[sessionId]?.cancel()
                 draftDebounceJobs[sessionId] = coroutineScope.launch {
                     delay(5_000)
-                    persistInputState(sessionId, sessionState, store)
+                    val latestState = store.state.value.featureStates["session"] as? SessionState ?: return@launch
+                    val session = latestState.sessions[sessionId] ?: return@launch
+                    val uuid = session.identity.uuid ?: return@launch
+                    val inputState = SessionInputState(
+                        draft = latestState.draftInputs[sessionId] ?: "",
+                        history = latestState.inputHistories[sessionId] ?: emptyList()
+                    )
+                    store.dispatch(identity.handle, Action(
+                        ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE,
+                        buildJsonObject {
+                            put("subpath", "$uuid/input.json")
+                            put("content", json.encodeToString(inputState))
+                        }
+                    ))
                 }
             }
 
@@ -678,7 +698,16 @@ class SessionFeature(
      */
     private fun handleInputJsonRead(subpath: String, content: String, store: Store) {
         if (content.isBlank()) return
-        val uuid = subpath.substringBefore("/")
+        // subpath is always "{uuid}/input.json" as a relative path inside the session folder,
+        // so the UUID is always the second-to-last path segment.
+        // substringBefore("/") would break on absolute paths (e.g. "/app/sessions/uuid/input.json")
+        // where it would return "". Using the parent segment is robust against any prefix.
+        val uuid = subpath.trimEnd('/').substringBeforeLast("/").substringAfterLast("/")
+        if (uuid.isBlank()) {
+            platformDependencies.log(LogLevel.WARN, identity.handle,
+                "Cannot extract UUID from input.json subpath: $subpath — ignoring.")
+            return
+        }
         try {
             val inputState = json.decodeFromString<SessionInputState>(content)
             store.deferredDispatch(identity.handle, Action(
