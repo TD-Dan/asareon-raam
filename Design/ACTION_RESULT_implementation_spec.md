@@ -1,4 +1,4 @@
-# Implementation Specification: `{feature}.ACTION_RESULT` and `RESPONSE_*` → `RETURN_*` Rename
+# Implementation Specification: `{feature}.ACTION_RESULT`
 
 ## Status
 **Ready for implementation.** This document captures the complete design rationale and specification. The implementer should read this fully before making any changes.
@@ -13,7 +13,7 @@ The application uses an event-driven architecture where users and AI agents can 
 
 - **Mutation actions** (e.g., `filesystem.SYSTEM_WRITE`) complete silently. The user who typed the command gets no feedback that it succeeded or failed.
 
-- **Query actions** (e.g., `filesystem.SYSTEM_READ`) produce targeted `RESPONSE_*` actions that are delivered only to the `originator` identity. This data reaches the requesting feature internally, but the user sees nothing in the session transcript. Agents see nothing in their next context window.
+- **Query actions** (e.g., `filesystem.SYSTEM_READ`) produce targeted `RETURN_*` actions that are delivered only to the `originator` identity. This data reaches the requesting feature internally, but the user sees nothing in the session transcript. Agents see nothing in their next context window.
 
 The result: commands feel like they disappear into a void. Users expect to see feedback in the session. Agents need results in the transcript to reason about on subsequent turns.
 
@@ -23,11 +23,11 @@ The result: commands feel like they disappear into a void. Users expect to see f
 
 Introduce a **lightweight broadcast report** — `{feature}.ACTION_RESULT` — that any feature publishes after completing a command-originated domain action. CommandBot subscribes to all `*.ACTION_RESULT` broadcasts, matches them to pending commands via `correlationId`, and posts formatted feedback into the originating session.
 
-This is a **complement** to the existing targeted data-delivery actions (being renamed from `RESPONSE_*` to `RETURN_*`), not a replacement. The two serve fundamentally different purposes.
+This is a **complement** to the existing targeted data-delivery actions, not a replacement. The two serve fundamentally different purposes.
 
 ### The Two Channels
 
-| Aspect | `{feature}.RETURN_{X}` (was `RESPONSE_*`) | `{feature}.ACTION_RESULT` (new) |
+| Aspect | `{feature}.RETURN_{X}` | `{feature}.ACTION_RESULT` (new) |
 |--------|-------------------------------------------|----------------------------------|
 | **Purpose** | Deliver requested data to the caller | Report that an action happened |
 | **Routing** | Targeted (`targetRecipient = originator`) | Broadcast (all features see it) |
@@ -264,59 +264,28 @@ If `summary` is null and `success` is true, CommandBot falls back to `"✓ {requ
 
 ---
 
-## 6. RESPONSE_* → RETURN_* Rename
-
-Independently of ACTION_RESULT, all `RESPONSE_*` actions are renamed to `RETURN_*` for semantic clarity:
-
-| Old Name | New Name |
-|----------|----------|
-| `filesystem.RESPONSE_READ` | `filesystem.RETURN_READ` |
-| `filesystem.RESPONSE_LIST` | `filesystem.RETURN_LIST` |
-| `filesystem.RESPONSE_FILES_CONTENT` | `filesystem.RETURN_FILES_CONTENT` |
-| `core.RESPONSE_CONFIRMATION` | `core.RETURN_CONFIRMATION` |
-| `core.RESPONSE_REGISTER_IDENTITY` | `core.RETURN_REGISTER_IDENTITY` |
-| `core.RESPONSE_UPDATE_IDENTITY` | `core.RETURN_UPDATE_IDENTITY` |
-| `gateway.RESPONSE_RESPONSE` | `gateway.RETURN_RESPONSE` |
-| `gateway.RESPONSE_PREVIEW` | `gateway.RETURN_PREVIEW` |
-| `knowledgegraph.RESPONSE_CONTEXT` | `knowledgegraph.RETURN_CONTEXT` |
-| `session.RESPONSE_LEDGER` | `session.RETURN_LEDGER` |
-
-**Rationale:** Now that ACTION_RESULT exists as the "report" channel, `RETURN_*` unambiguously means "here is the requested data, delivered to the caller." The naming mirrors a function call/return pattern: `SYSTEM_READ` → `RETURN_READ`.
-
-**Execution:** This is a mechanical find-and-replace across:
-- Action JSON manifests (`*.actions.json`)
-- ActionRegistry generated code
-- All feature Kotlin source files (dispatch sites and handler sites)
-- Any documentation or comments
-
-This rename can be done in the same commit as the ACTION_RESULT introduction, or as a separate commit. It has no functional dependencies on ACTION_RESULT.
-
----
-
 ## 7. Implementation Order
 
-### Step 1: RESPONSE → RETURN rename
-Codebase-wide find-and-replace. Purely mechanical. No functional change. Verify with a full build.
 
-### Step 2: ActionRegistry derived view
+### Step 1: ActionRegistry derived view
 Add `actionResultNames` to ActionRegistry. No consumers yet, so this is inert.
 
-### Step 3: CommandBotState + reducer additions
+### Step 2: CommandBotState + reducer additions
 Add `PendingResult` data class, `pendingResults` map, and the `REGISTER_PENDING_RESULT` / `CLEAR_PENDING_RESULT` reducer cases. No side effects yet — state management only.
 
-### Step 4: CommandBot — register pending results
+### Step 3: CommandBot — register pending results
 In `publishActionCreated`, dispatch `REGISTER_PENDING_RESULT` alongside `ACTION_CREATED`. Pending results now accumulate but aren't consumed yet.
 
-### Step 5: CoreFeature — correlationId injection
+### Step 4: CoreFeature — correlationId injection
 Thread `correlationId` from `ACTION_CREATED` into domain action payloads. This is a ~5 line change. Features now receive correlationId in their action payloads but don't use it yet.
 
-### Step 6: Feature-side ACTION_RESULT publishing
+### Step 5: Feature-side ACTION_RESULT publishing
 Add `{feature}.ACTION_RESULT` action to each feature's manifest. Add `publishActionResult` helper. Call it from each command-dispatchable handler. Start with FileSystemFeature as the reference implementation since it has the most visible command actions (`SYSTEM_READ`, `SYSTEM_LIST`, `SYSTEM_WRITE`, `SYSTEM_DELETE`, `SYSTEM_DELETE_DIRECTORY`). The action result broadcasts are now flowing but nobody consumes them yet.
 
-### Step 7: CommandBot — ACTION_RESULT interception
+### Step 6: CommandBot — ACTION_RESULT interception
 Add the `else` branch in `handleSideEffects` that checks `actionResultNames`, matches `correlationId`, formats feedback, posts to session, and clears the pending result. The feedback loop is now live.
 
-### Step 8: Expand to other features
+### Step 7: Expand to other features
 Add ACTION_RESULT publishing to session, knowledgegraph, gateway, and any other features that handle command-dispatchable actions. Each feature decides its own `summary` content.
 
 ---
