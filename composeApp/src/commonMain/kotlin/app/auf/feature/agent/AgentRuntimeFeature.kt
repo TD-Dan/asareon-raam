@@ -607,41 +607,56 @@ class AgentRuntimeFeature(
         action: Action,
         store: Store
     ) {
-        val payload = action.payload ?: return
-        val formatted = formatResponseForSession(pending.actionName, action)
+        // Format the response data. Returns null if the response indicates an error
+        // or contains no useful data — in that case, ACTION_RESULT already provides
+        // the error status line, so we skip DELIVER_TO_SESSION to avoid duplicates.
+        val formatted = formatResponseForSession(action)
 
-        store.deferredDispatch(identity.handle, Action(
-            ActionRegistry.Names.COMMANDBOT_DELIVER_TO_SESSION,
-            buildJsonObject {
-                put("correlationId", pending.correlationId)
-                put("sessionId", pending.sessionId)
-                put("message", formatted)
-            }
-        ))
+        if (formatted != null) {
+            store.deferredDispatch(identity.handle, Action(
+                ActionRegistry.Names.COMMANDBOT_DELIVER_TO_SESSION,
+                buildJsonObject {
+                    put("correlationId", pending.correlationId)
+                    put("sessionId", pending.sessionId)
+                    put("message", formatted)
+                }
+            ))
+            platformDependencies.log(
+                LogLevel.INFO, identity.handle,
+                "Routed data for '${pending.actionName}' (correlationId=${pending.correlationId}) to session '${pending.sessionId}' via DELIVER_TO_SESSION."
+            )
+        } else {
+            platformDependencies.log(
+                LogLevel.DEBUG, identity.handle,
+                "No data to deliver for '${pending.actionName}' (correlationId=${pending.correlationId}). ACTION_RESULT covers the status."
+            )
+        }
+
+        // Always clear the pending command — whether we delivered data or not.
         store.deferredDispatch(identity.handle, Action(
             ActionRegistry.Names.AGENT_CLEAR_PENDING_COMMAND,
             buildJsonObject { put("correlationId", pending.correlationId) }
         ))
-
-        platformDependencies.log(
-            LogLevel.INFO, identity.handle,
-            "Routed response for '${pending.actionName}' (correlationId=${pending.correlationId}) to session '${pending.sessionId}' via DELIVER_TO_SESSION."
-        )
     }
 
     /**
      * Formats a targeted response action into a human-readable session message.
+     * Returns null if the response indicates an error or contains no useful data —
+     * the caller should skip DELIVER_TO_SESSION in that case, since ACTION_RESULT
+     * already provides the error feedback to the session.
      */
-    private fun formatResponseForSession(actionName: String, action: Action): String {
-        val payload = action.payload ?: return "No payload in response."
+    private fun formatResponseForSession(action: Action): String? {
+        val payload = action.payload ?: return null
         return when (action.name) {
             ActionRegistry.Names.FILESYSTEM_RETURN_LIST -> {
                 val listing = payload["listing"]?.jsonArray
+                // Empty listing on error — ACTION_RESULT covers it
+                if (listing == null || listing.isEmpty()) return null
                 val subpath = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: "."
                 val formatted = Json { prettyPrint = true }.encodeToString(
                     buildJsonObject {
                         put("workspace_path", subpath.ifBlank { "." })
-                        put("entries", listing ?: JsonArray(emptyList()))
+                        put("entries", listing)
                     }
                 )
                 "```json\n$formatted\n```"
@@ -649,22 +664,18 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.FILESYSTEM_RETURN_READ -> {
                 val subpath = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
                 val content = payload["content"]?.jsonPrimitive?.contentOrNull
-                if (content != null) {
-                    val ext = subpath.substringAfterLast('.', "")
-                    "```$ext \"$subpath\"\n$content\n```"
-                } else {
-                    "File not found: `$subpath`"
-                }
+                // Null content = file not found / read error — ACTION_RESULT covers it
+                if (content == null) return null
+                val ext = subpath.substringAfterLast('.', "")
+                "```$ext \"$subpath\"\n$content\n```"
             }
             ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT -> {
                 val contents = payload["contents"]?.jsonObject
-                if (contents != null && contents.isNotEmpty()) {
-                    contents.entries.joinToString("\n\n") { (path, content) ->
-                        val ext = path.substringAfterLast('.', "")
-                        "```$ext \"$path\"\n${content.jsonPrimitive.content}\n```"
-                    }
-                } else {
-                    "No file contents returned."
+                // No contents = error — ACTION_RESULT covers it
+                if (contents == null || contents.isEmpty()) return null
+                contents.entries.joinToString("\n\n") { (path, content) ->
+                    val ext = path.substringAfterLast('.', "")
+                    "```$ext \"$path\"\n${content.jsonPrimitive.content}\n```"
                 }
             }
             else -> {

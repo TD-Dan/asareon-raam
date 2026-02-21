@@ -99,6 +99,26 @@ class FileSystemFeature(
     }
 
 
+    /**
+     * Strips absolute sandbox paths from exception messages before they are
+     * included in broadcast ACTION_RESULT payloads. Exception messages from
+     * file I/O routinely embed the full absolute path (e.g.
+     * "C:\Users\...\agent\uuid\workspace\file.txt (not found)").
+     * Broadcasting that leaks the sandbox structure to every feature on the bus.
+     *
+     * This replaces any occurrence of the APP_ZONE root with a generic placeholder
+     * so the user still gets a useful error without exposing internal paths.
+     */
+    private fun sanitizeErrorForBroadcast(message: String?): String {
+        if (message == null) return "Unknown error"
+        val appZoneRoot = platformDependencies.getBasePathFor(BasePath.APP_ZONE)
+        // Replace both forward-slash and backslash variants of the root path
+        return message
+            .replace(appZoneRoot, "<sandbox>")
+            .replace(appZoneRoot.replace("\\", "/"), "<sandbox>")
+            .replace(appZoneRoot.replace("/", "\\"), "<sandbox>")
+    }
+
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val originator = action.originator ?: return
         val fileSystemState = newState as? FileSystemState ?: return
@@ -351,7 +371,7 @@ class FileSystemFeature(
 
                     ))
                     publishActionResult(store, payload.correlationId, action.name, success = false,
-                        error = "Listing failed: ${e.message}")
+                        error = "Listing failed: ${sanitizeErrorForBroadcast(e.message)}")
                 }
             }
             ActionRegistry.Names.FILESYSTEM_READ_FILES_CONTENT -> {
@@ -420,7 +440,7 @@ class FileSystemFeature(
 
                     ))
                     publishActionResult(store, payload.correlationId, action.name, success = false,
-                        error = "Read failed: ${e.message}")
+                        error = "Read failed: ${sanitizeErrorForBroadcast(e.message)}")
                 }
             }
             ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE -> {
@@ -435,7 +455,7 @@ class FileSystemFeature(
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "Error writing system file", e)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject { put("message", "Error writing system file: ${e.message}") }))
                     publishActionResult(store, payload.correlationId, action.name, success = false,
-                        error = "Write failed: ${e.message}")
+                        error = "Write failed: ${sanitizeErrorForBroadcast(e.message)}")
                 }
             }
             ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE -> {
@@ -454,7 +474,7 @@ class FileSystemFeature(
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "Error deleting file '${payload.subpath}'", e)
                     publishActionResult(store, payload.correlationId, action.name, success = false,
-                        error = "Delete failed: ${e.message}")
+                        error = "Delete failed: ${sanitizeErrorForBroadcast(e.message)}")
                 }
             }
             ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY -> {
@@ -473,7 +493,7 @@ class FileSystemFeature(
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "Error deleting directory '${payload.subpath}'", e)
                     publishActionResult(store, payload.correlationId, action.name, success = false,
-                        error = "Delete directory failed: ${e.message}")
+                        error = "Delete directory failed: ${sanitizeErrorForBroadcast(e.message)}")
                 }
             }
             ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER -> platformDependencies.openFolderInExplorer(getSandboxPathFor(originator))
