@@ -13,6 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -230,6 +232,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
     val appState by store.state.collectAsState()
     val sessionState = appState.featureStates["session"] as? SessionState
     var acState by remember { mutableStateOf<SlashCommandEngine.AutocompleteState?>(null) }
+    val inputFocusRequester = remember { FocusRequester() }
 
     // ── Draft text is driven from the store — survives tab switches and app restarts ──
     val sessionLocalHandle = activeSession.identity.localHandle
@@ -444,6 +447,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                     onInsert = { codeBlock ->
                         setTextAndDispatch(codeBlock)
                         acState = null
+                        inputFocusRequester.requestFocus()
                     }
                 )
             }
@@ -466,7 +470,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                             syncAutocompleteFromText(newValue.text)
                         }
                     },
-                    modifier = Modifier.weight(1f).onPreviewKeyEvent { event ->
+                    modifier = Modifier.weight(1f).focusRequester(inputFocusRequester).onPreviewKeyEvent { event ->
                         if (event.type == KeyEventType.KeyDown) {
                             // ── Autocomplete key handling (highest priority when active) ──
                             if (acState != null && acState?.stage != SlashCommandEngine.Stage.PARAMS) {
@@ -512,6 +516,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                                                 val codeBlock = engine.generateCodeBlock(descriptor, paramValues)
                                                 setTextAndDispatch(codeBlock)
                                                 acState = null
+                                                inputFocusRequester.requestFocus()
                                             }
                                             return@onPreviewKeyEvent true
                                         }
