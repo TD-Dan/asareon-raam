@@ -17,6 +17,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -321,6 +324,18 @@ private fun ParamsStage(
         engine.autoFillParams(descriptor).keys
     }
 
+    // Focus the first parameter field when entering PARAMS stage
+    val firstFieldFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        firstFieldFocusRequester.requestFocus()
+    }
+
+    // Shared Insert action — used by both the button and Enter key on param fields
+    fun performInsert() {
+        val codeBlock = engine.generateCodeBlock(descriptor, state.paramValues)
+        onInsert(codeBlock)
+    }
+
     Column(
         modifier = Modifier.fillMaxWidth().padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -342,10 +357,11 @@ private fun ParamsStage(
             )
         } else {
             // Parameter fields
-            descriptor.payloadFields.forEach { field ->
+            descriptor.payloadFields.forEachIndexed { fieldIndex, field ->
                 val isRequired = field.name in descriptor.requiredFields
                 val isAutoFilled = field.name in autoFilledKeys
                 val currentValue = state.paramValues[field.name] ?: ""
+                val isFirstField = fieldIndex == 0
 
                 OutlinedTextField(
                     value = currentValue,
@@ -382,7 +398,17 @@ private fun ParamsStage(
                             }
                         }
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth()
+                        .then(if (isFirstField) Modifier.focusRequester(firstFieldFocusRequester) else Modifier)
+                        .onPreviewKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyDown && event.key == Key.Enter
+                                && !event.isCtrlPressed && !event.isMetaPressed
+                            ) {
+                                performInsert()
+                                return@onPreviewKeyEvent true
+                            }
+                            false
+                        },
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
                 )
@@ -400,10 +426,7 @@ private fun ParamsStage(
             }
             Spacer(Modifier.width(8.dp))
             Button(
-                onClick = {
-                    val codeBlock = engine.generateCodeBlock(descriptor, state.paramValues)
-                    onInsert(codeBlock)
-                }
+                onClick = { performInsert() }
             ) {
                 Text("Insert")
             }

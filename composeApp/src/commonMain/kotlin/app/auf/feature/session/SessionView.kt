@@ -289,8 +289,9 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
      *   PARAMS stage     → text changes ignored (form has taken over)
      */
     fun syncAutocompleteFromText(newText: String) {
-        // Don't interfere with params form
-        if (acState?.stage == SlashCommandEngine.Stage.PARAMS) return
+        // During PARAMS stage, if the user edits the main text field (e.g.
+        // backspaces), let the text re-parse naturally — it will regress
+        // the autocomplete back to ACTION or FEATURE stage as appropriate.
 
         val isAdmin = newText.startsWith("//")
         val prefix = if (isAdmin) "//" else "/"
@@ -368,8 +369,9 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                 if (candidates.isEmpty()) return false
 
                 val selected = candidates[index]
+                val newText = "$prefix${feature}.${selected.descriptor.suffix}"
+                setTextAndDispatch(newText)
                 acState = engine.selectAction(s, selected.descriptor)
-                // Text stays as-is; PARAMS stage ignores text field
                 return true
             }
             SlashCommandEngine.Stage.PARAMS -> return false
@@ -429,6 +431,14 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                             // Feature selected via mouse click — sync input text to match
                             val prefix = if (newState.adminMode) "//" else "/"
                             setTextAndDispatch("$prefix${newState.selectedFeature}.")
+                        } else if (newState.stage == SlashCommandEngine.Stage.PARAMS
+                            && prevStage == SlashCommandEngine.Stage.ACTION
+                            && newState.selectedFeature != null
+                            && newState.selectedAction != null
+                        ) {
+                            // Action selected via mouse click — sync input text to match
+                            val prefix = if (newState.adminMode) "//" else "/"
+                            setTextAndDispatch("$prefix${newState.selectedFeature}.${newState.selectedAction!!.suffix}")
                         }
                     },
                     onInsert = { codeBlock ->
@@ -486,11 +496,28 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                                 }
                             }
 
-                            // ── Escape during PARAMS stage dismisses autocomplete ──
-                            if (acState?.stage == SlashCommandEngine.Stage.PARAMS && event.key == Key.Escape) {
-                                acState = null
-                                setTextAndDispatch("")
-                                return@onPreviewKeyEvent true
+                            // ── PARAMS stage key handling ──
+                            if (acState?.stage == SlashCommandEngine.Stage.PARAMS) {
+                                when (event.key) {
+                                    Key.Escape -> {
+                                        acState = null
+                                        setTextAndDispatch("")
+                                        return@onPreviewKeyEvent true
+                                    }
+                                    Key.Enter -> {
+                                        if (!event.isCtrlPressed && !event.isMetaPressed) {
+                                            val descriptor = acState?.selectedAction
+                                            val paramValues = acState?.paramValues ?: emptyMap()
+                                            if (descriptor != null) {
+                                                val codeBlock = engine.generateCodeBlock(descriptor, paramValues)
+                                                setTextAndDispatch(codeBlock)
+                                                acState = null
+                                            }
+                                            return@onPreviewKeyEvent true
+                                        }
+                                    }
+                                    else -> {}
+                                }
                             }
 
                             // ── History navigation (Up/Down when autocomplete is not active) ──
