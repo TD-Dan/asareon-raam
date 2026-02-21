@@ -81,7 +81,7 @@ class FileSystemFeature(
         when (action.name) {
             // Phase 3: Targeted response from CoreFeature — confirmation dialog result.
             // Migrated from onPrivateData.
-            ActionRegistry.Names.CORE_RESPONSE_CONFIRMATION -> {
+            ActionRegistry.Names.CORE_RETURN_CONFIRMATION -> {
                 val confirmPayload = json.decodeFromJsonElement<ConfirmationResponsePayload>(action.payload ?: return)
                 val pendingRequest = fileSystemState.pendingScopedRead
                 if (pendingRequest?.requestId == confirmPayload.requestId) {
@@ -193,7 +193,7 @@ class FileSystemFeature(
                         }
                         store.deferredDispatch(identity.handle, Action(
 
-                            name = ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT,
+                            name = ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT,
 
                             payload = responsePayload,
 
@@ -301,7 +301,7 @@ class FileSystemFeature(
                     }
                     store.deferredDispatch(identity.handle, Action(
 
-                        name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                        name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
 
                         payload = responsePayload,
 
@@ -317,7 +317,7 @@ class FileSystemFeature(
                     }
                     store.deferredDispatch(identity.handle, Action(
 
-                        name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                        name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
 
                         payload = responsePayload,
 
@@ -345,7 +345,7 @@ class FileSystemFeature(
                 }
                 store.deferredDispatch(identity.handle, Action(
 
-                    name = ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT,
+                    name = ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT,
 
                     payload = responsePayload,
 
@@ -364,7 +364,7 @@ class FileSystemFeature(
                     }
                     store.deferredDispatch(identity.handle, Action(
 
-                        name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                        name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
 
                         payload = responsePayload,
 
@@ -379,7 +379,7 @@ class FileSystemFeature(
                     }
                     store.deferredDispatch(identity.handle, Action(
 
-                        name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                        name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
 
                         payload = responsePayload,
 

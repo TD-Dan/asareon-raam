@@ -59,10 +59,10 @@ class FileSystemFeatureT2GuardTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch(originator, action)
 
-            // Phase 3 FIX: Assert that no RESPONSE_READ targeted action was dispatched.
+            // Phase 3 FIX: Assert that no RETURN_READ targeted action was dispatched.
             // The old check (deliveredPrivateData.size == 0) was vacuously true post-migration.
-            val responseAction = harness.processedActions.none { it.name == ActionRegistry.Names.FILESYSTEM_RESPONSE_READ }
-            assertTrue(responseAction, "No RESPONSE_READ action should be dispatched for a rejected read.")
+            val responseAction = harness.processedActions.none { it.name == ActionRegistry.Names.FILESYSTEM_RETURN_READ }
+            assertTrue(responseAction, "No RETURN_READ action should be dispatched for a rejected read.")
             val log = harness.platform.capturedLogs.find { it.message.contains("SECURITY: Refused path with directory traversal") }
             assertNotNull(log, "A specific security error should be logged for '..' characters.")
         }
@@ -102,9 +102,9 @@ class FileSystemFeatureT2GuardTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch(originator, action)
 
-            // Phase 3 FIX: Assert that no RESPONSE_LIST targeted action was dispatched.
-            val responseAction = harness.processedActions.none { it.name == ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST }
-            assertTrue(responseAction, "No RESPONSE_LIST action should be dispatched for a rejected path.")
+            // Phase 3 FIX: Assert that no RETURN_LIST targeted action was dispatched.
+            val responseAction = harness.processedActions.none { it.name == ActionRegistry.Names.FILESYSTEM_RETURN_LIST }
+            assertTrue(responseAction, "No RETURN_LIST action should be dispatched for a rejected path.")
             val log =
                 harness.platform.capturedLogs.find { it.message.contains("SECURITY: Refused path with directory traversal") }
             assertNotNull(log, "A specific security error should be logged for '..' characters in directory operations.")

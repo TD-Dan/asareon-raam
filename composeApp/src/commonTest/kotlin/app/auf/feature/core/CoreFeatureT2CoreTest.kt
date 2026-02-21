@@ -238,9 +238,9 @@ class CoreFeatureT2CoreTest {
 
         // ASSERT: A success response should be dispatched
         val responseAction = harness.processedActions.find {
-            it.name == ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY
+            it.name == ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY
         }
-        assertNotNull(responseAction, "A RESPONSE_REGISTER_IDENTITY should be dispatched on success.")
+        assertNotNull(responseAction, "A RETURN_REGISTER_IDENTITY should be dispatched on success.")
         assertEquals("true", responseAction.payload?.get("success")?.jsonPrimitive?.content)
         assertEquals("chat-cats", responseAction.payload?.get("requestedLocalHandle")?.jsonPrimitive?.content)
         assertEquals("chat-cats", responseAction.payload?.get("approvedLocalHandle")?.jsonPrimitive?.content)
@@ -283,7 +283,7 @@ class CoreFeatureT2CoreTest {
 
         // ASSERT: Response should show the deduplicated handle
         val responseAction = harness.processedActions.find {
-            it.name == ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY
+            it.name == ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY
         }
         assertNotNull(responseAction)
         assertEquals("true", responseAction.payload?.get("success")?.jsonPrimitive?.content)
@@ -311,9 +311,9 @@ class CoreFeatureT2CoreTest {
 
         // ASSERT: A failure response should be dispatched
         val responseAction = harness.processedActions.find {
-            it.name == ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY
+            it.name == ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY
         }
-        assertNotNull(responseAction, "A RESPONSE_REGISTER_IDENTITY should be dispatched even on failure.")
+        assertNotNull(responseAction, "A RETURN_REGISTER_IDENTITY should be dispatched even on failure.")
         assertEquals("false", responseAction.payload?.get("success")?.jsonPrimitive?.content)
         assertNotNull(responseAction.payload?.get("error")?.jsonPrimitive?.content, "Error message should be present.")
 

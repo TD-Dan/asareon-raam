@@ -25,7 +25,7 @@ import kotlin.test.*
  * together within a realistic TestEnvironment that includes the real Store.
  *
  * Phase 4 updates: Session creation is now two-phase (SESSION_CREATE → pending →
- * RESPONSE_REGISTER_IDENTITY → actual session). Tests updated accordingly.
+ * RETURN_REGISTER_IDENTITY → actual session). Tests updated accordingly.
  * Session data model uses Identity instead of id/name fields.
  * File paths use uuid/localHandle.json folder structure.
  */
@@ -84,7 +84,7 @@ class SessionFeatureT2CoreTest {
             assertNotNull(sessionState)
 
             // Phase 4: Session creation is two-phase. After SESSION_CREATE, a pending is stashed.
-            // CoreFeature processes REGISTER_IDENTITY and sends RESPONSE_REGISTER_IDENTITY.
+            // CoreFeature processes REGISTER_IDENTITY and sends RETURN_REGISTER_IDENTITY.
             // The session should now exist in state (assuming CoreFeature is in the harness via TestEnvironment).
             assertEquals(1, sessionState.sessions.size, "Session should exist after two-phase creation")
             val newSession = sessionState.sessions.values.first()
@@ -344,7 +344,7 @@ class SessionFeatureT2CoreTest {
 
             // Use the targeted action path (Phase 3 migration)
             harness.store.dispatch("filesystem", Action(
-                ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 payload,
                 targetRecipient = "session"
             ))
@@ -384,7 +384,7 @@ class SessionFeatureT2CoreTest {
             }
 
             harness.store.dispatch("filesystem", Action(
-                ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 payload,
                 targetRecipient = "session"
             ))
@@ -409,7 +409,7 @@ class SessionFeatureT2CoreTest {
             }
 
             harness.store.dispatch("filesystem", Action(
-                ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 payload,
                 targetRecipient = "session"
             ))

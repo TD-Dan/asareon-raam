@@ -84,7 +84,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // === PHASE 2: LEDGER RESPONSE ===
             harness.store.dispatch("session", Action(
-                name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                name = ActionRegistry.Names.SESSION_RETURN_LEDGER,
                 payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("messages", buildJsonArray {
@@ -120,7 +120,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             // For sovereign agents, HKG context is also required.
             // Simulate HKG context response arrival:
             harness.store.dispatch("knowledgegraph", Action(
-                name = ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                name = ActionRegistry.Names.KNOWLEDGEGRAPH_RETURN_CONTEXT,
                 payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("context", buildJsonObject { put("persona", "test") })
@@ -142,7 +142,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // === PHASE 4: GATEWAY SUCCESS RESPONSE ===
             harness.store.dispatch("gateway", Action(
-                name = ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+                name = ActionRegistry.Names.GATEWAY_RETURN_RESPONSE,
                 payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("rawContent", "Boot sequence complete. I am now awake and ready to serve.")
@@ -186,7 +186,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
         harness.runAndLogOnFailure {
             // Simulate a gateway failure response with sentinel failure token
             harness.store.dispatch("gateway", Action(
-                name = ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+                name = ActionRegistry.Names.GATEWAY_RETURN_RESPONSE,
                 payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("rawContent", "[${SovereignDefaults.SENTINEL_FAILURE_TOKEN}: NO_AGENT_PRESENT]")
@@ -243,7 +243,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // === DELIVER LEDGER ===
             harness.store.dispatch("session", Action(
-                name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                name = ActionRegistry.Names.SESSION_RETURN_LEDGER,
                 payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("messages", buildJsonArray {
@@ -263,7 +263,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             // Workspace context arrives automatically via FileSystemFeature.
             // Sovereign agent also needs HKG context:
             harness.store.dispatch("knowledgegraph", Action(
-                name = ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                name = ActionRegistry.Names.KNOWLEDGEGRAPH_RETURN_CONTEXT,
                 payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("context", buildJsonObject { put("persona", "test") })
@@ -285,7 +285,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // === DELIVER NORMAL RESPONSE ===
             harness.store.dispatch("gateway", Action(
-                name = ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+                name = ActionRegistry.Names.GATEWAY_RETURN_RESPONSE,
                 payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("rawContent", "2+2 equals 4.")
@@ -332,7 +332,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             }))
 
             harness.store.dispatch("session", Action(
-                name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                name = ActionRegistry.Names.SESSION_RETURN_LEDGER,
                 payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("messages", buildJsonArray {
@@ -352,7 +352,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             // Workspace listing arrives via FileSystemFeature automatically.
             // Sovereign agent also needs HKG context for gate to pass:
             harness.store.dispatch("knowledgegraph", Action(
-                name = ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                name = ActionRegistry.Names.KNOWLEDGEGRAPH_RETURN_CONTEXT,
                 payload = buildJsonObject {
                     put("correlationId", agentId)
                     put("context", buildJsonObject { put("persona", "test") })

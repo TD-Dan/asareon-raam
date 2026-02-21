@@ -19,7 +19,7 @@ import kotlin.test.*
  *   session.CREATE        open=true,  broadcast=true,  targeted=false   (command)
  *   session.LOADED        open=false, broadcast=false, targeted=false   (internal)
  *   session.MESSAGE_POSTED open=false, broadcast=true, targeted=false   (event)
- *   session.RESPONSE_LEDGER open=false, broadcast=false, targeted=true  (response)
+ *   session.RETURN_LEDGER open=false, broadcast=false, targeted=true  (response)
  *   agent.INITIATE_TURN   open=true,  broadcast=true,  targeted=false   (command)
  *   agent.SET_STATUS      open=false, broadcast=false, targeted=false   (internal)
  *   system.INITIALIZING   open=false, broadcast=true,  targeted=false   (event)
@@ -85,9 +85,9 @@ class SlashCommandEngineTest {
     )
 
     private val sessionResponseLedgerDescriptor = ActionDescriptor(
-        fullName = "session.RESPONSE_LEDGER",
+        fullName = "session.RETURN_LEDGER",
         featureName = "session",
-        suffix = "RESPONSE_LEDGER",
+        suffix = "RETURN_LEDGER",
         summary = "Returns ledger content to the requester.",
         open = false, broadcast = false, targeted = true,
         payloadFields = emptyList(), requiredFields = emptyList(), agentExposure = null
@@ -169,7 +169,7 @@ class SlashCommandEngineTest {
                 "CREATE" to sessionCreateDescriptor,
                 "LOADED" to sessionLoadedDescriptor,
                 "MESSAGE_POSTED" to sessionMessagePostedDescriptor,
-                "RESPONSE_LEDGER" to sessionResponseLedgerDescriptor
+                "RETURN_LEDGER" to sessionResponseLedgerDescriptor
             )
         ),
         "agent" to FeatureDescriptor(
@@ -261,7 +261,7 @@ class SlashCommandEngineTest {
         assertTrue("CREATE" in suffixes, "CREATE is open → included")
         assertFalse("LOADED" in suffixes, "LOADED is internal → excluded")
         assertFalse("MESSAGE_POSTED" in suffixes, "MESSAGE_POSTED is event → excluded")
-        assertFalse("RESPONSE_LEDGER" in suffixes, "RESPONSE_LEDGER is response → excluded")
+        assertFalse("RETURN_LEDGER" in suffixes, "RETURN_LEDGER is response → excluded")
     }
 
     @Test
@@ -308,7 +308,7 @@ class SlashCommandEngineTest {
         assertTrue("CREATE" in suffixes)
         assertTrue("LOADED" in suffixes, "Admin mode shows internal actions")
         assertTrue("MESSAGE_POSTED" in suffixes, "Admin mode shows events")
-        assertTrue("RESPONSE_LEDGER" in suffixes, "Admin mode shows responses")
+        assertTrue("RETURN_LEDGER" in suffixes, "Admin mode shows responses")
     }
 
     @Test
@@ -734,8 +734,8 @@ class SlashCommandEngineTest {
     @Test
     fun `actionCandidates prefix matches come before substring matches`() {
         val engine = createEngine()
-        // In admin mode, session has: POST, CREATE, LOADED, MESSAGE_POSTED, RESPONSE_LEDGER
-        // Query "O" → POST (prefix via P? no... O is in POST as substring, LOADED as substring, RESPONSE_LEDGER as substring)
+        // In admin mode, session has: POST, CREATE, LOADED, MESSAGE_POSTED, RETURN_LEDGER
+        // Query "O" → POST (prefix via P? no... O is in POST as substring, LOADED as substring, RETURN_LEDGER as substring)
         // Better test: query "P" → POST (prefix), MESSAGE_POSTED (substring)
         val candidates = engine.actionCandidates("session", "P", adminMode = true)
         val suffixes = candidates.map { it.descriptor.suffix }

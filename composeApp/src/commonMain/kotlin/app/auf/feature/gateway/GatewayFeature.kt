@@ -187,7 +187,7 @@ open class GatewayFeature(
             store.deferredDispatch(this@GatewayFeature.identity.handle, Action(
 
 
-                name = ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+                name = ActionRegistry.Names.GATEWAY_RETURN_RESPONSE,
 
 
                 payload = responsePayload,
@@ -278,7 +278,7 @@ open class GatewayFeature(
             store.deferredDispatch(this@GatewayFeature.identity.handle, Action(
 
 
-                name = ActionRegistry.Names.GATEWAY_RESPONSE_PREVIEW,
+                name = ActionRegistry.Names.GATEWAY_RETURN_PREVIEW,
 
 
                 payload = responsePayload,

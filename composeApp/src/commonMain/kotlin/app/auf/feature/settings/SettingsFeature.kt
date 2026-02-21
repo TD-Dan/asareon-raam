@@ -38,7 +38,7 @@ class SettingsFeature(
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         when (action.name) {
             // Phase 3: Targeted response from FilesystemFeature — migrated from onPrivateData.
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_READ -> {
+            ActionRegistry.Names.FILESYSTEM_RETURN_READ -> {
                 val payload = action.payload ?: return
                 if (payload["subpath"]?.jsonPrimitive?.content == settingsFileName) {
                     val loadedValues = payload["content"]?.jsonPrimitive?.contentOrNull?.let {

@@ -496,7 +496,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
             // 2. Simulate filesystem response: empty root listing (no UUID folders, no files)
             harness.store.dispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 payload = buildJsonObject {
                     putJsonArray("listing") {} // empty directory
                 },
@@ -543,7 +543,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
             // 2. Root listing → two UUID folders (no dots → treated as directories)
             harness.store.dispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 payload = buildJsonObject {
                     putJsonArray("listing") {
                         add(buildJsonObject { put("path", "session-uuid-1"); put("isDirectory", true) })
@@ -555,7 +555,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
             // 3. Sub-listing for folder 1 → one .json session file
             harness.store.dispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 payload = buildJsonObject {
                     putJsonArray("listing") {
                         add(buildJsonObject {
@@ -569,7 +569,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
             // 4. Sub-listing for folder 2 → one .json session file
             harness.store.dispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 payload = buildJsonObject {
                     putJsonArray("listing") {
                         add(buildJsonObject {
@@ -589,7 +589,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
             // 5. File read for session 1
             harness.store.dispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 payload = buildJsonObject {
                     put("subpath", "session-uuid-1/$sessionLocalHandle.json")
                     put("content", session1Content)
@@ -605,7 +605,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
             // 6. File read for session 2
             harness.store.dispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 payload = buildJsonObject {
                     put("subpath", "session-uuid-2/$session2LocalHandle.json")
                     put("content", session2Content)

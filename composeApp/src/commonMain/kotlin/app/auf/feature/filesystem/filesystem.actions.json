@@ -506,7 +506,7 @@
       "targeted": false
     },
     {
-      "action_name": "filesystem.RESPONSE_LIST",
+      "action_name": "filesystem.RETURN_LIST",
       "summary": "The response envelope containing a directory listing (as subpaths), delivered to the original requester.",
       "open": false,
       "broadcast": false,
@@ -540,7 +540,7 @@
       }
     },
     {
-      "action_name": "filesystem.RESPONSE_READ",
+      "action_name": "filesystem.RETURN_READ",
       "summary": "The response envelope containing the content of a file, delivered to the original requester.",
       "open": false,
       "broadcast": false,
@@ -564,7 +564,7 @@
       }
     },
     {
-      "action_name": "filesystem.RESPONSE_FILES_CONTENT",
+      "action_name": "filesystem.RETURN_FILES_CONTENT",
       "summary": "The response envelope containing the content of multiple files. Paths MUST be relative to the root of the read operation.",
       "open": false,
       "broadcast": false,

@@ -71,9 +71,9 @@ class KnowledgeGraphFeature(
 
         when (action.name) {
             // Phase 3: Targeted responses from FilesystemFeature — migrated from onPrivateData.
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST -> {
+            ActionRegistry.Names.FILESYSTEM_RETURN_LIST -> {
                 val listing = action.payload?.get("listing")?.let { json.decodeFromJsonElement<List<FileEntry>>(it) } ?: run {
-                    platformDependencies.log(LogLevel.WARN, identity.handle, "RESPONSE_LIST: Missing or malformed 'listing' field. Ignoring.")
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "RETURN_LIST: Missing or malformed 'listing' field. Ignoring.")
                     return
                 }
                 val isRecursiveResponse = action.payload["subpath"]?.jsonPrimitive?.content?.isNotEmpty() == true
@@ -96,10 +96,10 @@ class KnowledgeGraphFeature(
                     }
                 }
             }
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
+            ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT -> {
                 try {
                     val rawPayload = action.payload ?: run {
-                        platformDependencies.log(LogLevel.WARN, identity.handle, "RESPONSE_FILES_CONTENT: Received action with null payload. Ignoring.")
+                        platformDependencies.log(LogLevel.WARN, identity.handle, "RETURN_FILES_CONTENT: Received action with null payload. Ignoring.")
                         return
                     }
                     val fileData = json.decodeFromJsonElement<FilesContentPayload>(rawPayload)
@@ -187,7 +187,7 @@ class KnowledgeGraphFeature(
                     put("context", Json.encodeToJsonElement(contextMap))
                 }
                 store.deferredDispatch(identity.handle, Action(
-                    name = ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                    name = ActionRegistry.Names.KNOWLEDGEGRAPH_RETURN_CONTEXT,
                     payload = responsePayload,
                     targetRecipient = originator
                 ))

@@ -63,7 +63,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
 
             // Mock response sequence...
             harness.store.dispatch("session", Action(
-                name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                name = ActionRegistry.Names.SESSION_RETURN_LEDGER,
                 payload = buildJsonObject {
                     put("correlationId", agent.identity.uuid); put("messages", buildJsonArray { })
                 },
@@ -71,7 +71,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
             ))
 
             harness.store.dispatch("gateway", Action(
-                name = ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+                name = ActionRegistry.Names.GATEWAY_RETURN_RESPONSE,
                 payload = buildJsonObject {
                     put("correlationId", agent.identity.uuid); put("rawContent", "Success")
                 },
@@ -91,7 +91,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
 
             // Deliver ledger so the pipeline can progress to gateway
             harness.store.dispatch("session", Action(
-                name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                name = ActionRegistry.Names.SESSION_RETURN_LEDGER,
                 payload = buildJsonObject {
                     put("correlationId", agent.identity.uuid); put("messages", buildJsonArray { })
                 },
@@ -99,7 +99,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
             ))
 
             harness.store.dispatch("gateway", Action(
-                name = ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+                name = ActionRegistry.Names.GATEWAY_RETURN_RESPONSE,
                 payload = buildJsonObject {
                     put("correlationId", agent.identity.uuid); put("errorMessage", "Fail")
                 },
@@ -135,7 +135,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
         harness.runAndLogOnFailure {
             // ACT: Deliver the response
             harness.store.dispatch("gateway", Action(
-                name = ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
+                name = ActionRegistry.Names.GATEWAY_RETURN_RESPONSE,
                 payload = gatewayResponsePayload,
                 targetRecipient = "agent"
             ))

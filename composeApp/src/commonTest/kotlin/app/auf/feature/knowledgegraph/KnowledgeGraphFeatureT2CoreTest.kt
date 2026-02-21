@@ -66,7 +66,7 @@ class KnowledgeGraphFeatureT2CoreTest {
 
             // [MIGRATED] Targeted dispatch replaces deliverPrivateData
             harness.store.deferredDispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 payload = buildJsonObject {
                     put("subpath", "persona-1-20251112T190000Z")
                     put("listing", buildJsonArray {
@@ -78,7 +78,7 @@ class KnowledgeGraphFeatureT2CoreTest {
             ))
 
             harness.store.deferredDispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT,
                 payload = buildJsonObject {
                     put("correlationId", JsonNull)
                     put("contents", buildJsonObject {
@@ -112,7 +112,7 @@ class KnowledgeGraphFeatureT2CoreTest {
 
             // ACT 2: Simulate empty recursive listing response — targeted dispatch
             harness.store.deferredDispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 payload = buildJsonObject {
                     put("subpath", "empty-persona")
                     put("listing", buildJsonArray { }) // Empty list
@@ -160,10 +160,10 @@ class KnowledgeGraphFeatureT2CoreTest {
 
             // ASSERT — [MIGRATED] Check processedActions for the targeted response action
             val responseAction = harness.processedActions.find {
-                it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT &&
+                it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_RETURN_CONTEXT &&
                         it.targetRecipient == "agent-alpha"
             }
-            assertNotNull(responseAction, "A targeted RESPONSE_CONTEXT should be dispatched to the requesting agent.")
+            assertNotNull(responseAction, "A targeted RETURN_CONTEXT should be dispatched to the requesting agent.")
 
             val payload = responseAction.payload!!
             assertEquals("req-123", payload["correlationId"]?.jsonPrimitive?.content)
@@ -489,13 +489,13 @@ class KnowledgeGraphFeatureT2CoreTest {
     }
 
     @Test
-    fun `RESPONSE_LIST non-recursive should discover persona directories and load each`() {
+    fun `RETURN_LIST non-recursive should discover persona directories and load each`() {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
 
         harness.runAndLogOnFailure {
             // Simulate a non-recursive listing response (no subpath = top-level discovery)
             harness.store.deferredDispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 payload = buildJsonObject {
                     // No "subpath" field means non-recursive
                     put("listing", buildJsonArray {

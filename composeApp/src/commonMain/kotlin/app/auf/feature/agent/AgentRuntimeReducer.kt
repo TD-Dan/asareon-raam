@@ -189,7 +189,7 @@ object AgentRuntimeReducer {
             }
 
             // --- Identity Registration Responses ---
-            ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY -> {
+            ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY -> {
                 val payload = action.payload ?: return state
                 val success = payload["success"]?.jsonPrimitive?.booleanOrNull ?: false
                 val uuid = payload["uuid"]?.jsonPrimitive?.contentOrNull ?: return state
@@ -212,7 +212,7 @@ object AgentRuntimeReducer {
                 state.copy(agents = state.agents + (uuid to updatedAgent))
             }
 
-            ActionRegistry.Names.CORE_RESPONSE_UPDATE_IDENTITY -> {
+            ActionRegistry.Names.CORE_RETURN_UPDATE_IDENTITY -> {
                 val payload = action.payload ?: return state
                 val success = payload["success"]?.jsonPrimitive?.booleanOrNull ?: false
                 if (!success) return state

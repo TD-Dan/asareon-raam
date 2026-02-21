@@ -59,7 +59,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
 
         harness.runAndLogOnFailure {
             val response = Action(
-                name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                name = ActionRegistry.Names.SESSION_RETURN_LEDGER,
                 payload = buildJsonObject {
                     put("correlationId", agent.identity.uuid)
                     put("messages", buildJsonArray {
@@ -159,7 +159,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
         harness.runAndLogOnFailure {
             // ACT: Send malformed payload in envelope
             harness.store.dispatch("session", Action(
-                name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                name = ActionRegistry.Names.SESSION_RETURN_LEDGER,
                 payload = buildJsonObject {
                     put("correlationId", agent.identity.uuid)
                     // Missing "messages" array, or other schema violation
@@ -202,7 +202,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
         harness.runAndLogOnFailure {
             // ACT: Trigger a context arrival (e.g. workspace or HKG) without staged ledger
             harness.store.dispatch("knowledgegraph", Action(
-                name = ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
+                name = ActionRegistry.Names.KNOWLEDGEGRAPH_RETURN_CONTEXT,
                 payload = buildJsonObject {
                     put("correlationId", agent.identity.uuid)
                     put("context", buildJsonObject { put("some", "data") })

@@ -697,7 +697,7 @@ class SessionFeatureT2InputHistoryTest {
     // ============================================================
 
     @Test
-    fun `when FILESYSTEM_RESPONSE_LIST includes an input dot json file it dispatches a read for it`() = runTest {
+    fun `when FILESYSTEM_RETURN_LIST includes an input dot json file it dispatches a read for it`() = runTest {
         val harness = TestEnvironment.create()
             .withFeature(sessionFeature)
             .build(platform = platform)
@@ -715,7 +715,7 @@ class SessionFeatureT2InputHistoryTest {
                 })
             }
             harness.store.dispatch("filesystem", Action(
-                ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 buildJsonObject { put("listing", fileList) },
                 targetRecipient = "session"
             ))
@@ -748,7 +748,7 @@ class SessionFeatureT2InputHistoryTest {
             // SessionInputState stored as { draft, history }
             val inputJson = """{"draft":"my saved draft","history":["last sent","earlier sent"]}"""
             harness.store.dispatch("filesystem", Action(
-                ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 buildJsonObject {
                     put("subpath", "00000000-0000-4000-a000-000000000001/input.json")
                     put("content", inputJson)
@@ -779,7 +779,7 @@ class SessionFeatureT2InputHistoryTest {
 
         harness.runAndLogOnFailure {
             harness.store.dispatch("filesystem", Action(
-                ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 buildJsonObject {
                     put("subpath", "00000000-0000-4000-a000-000000000001/input.json")
                     put("content", "{ totally: invalid json {{")

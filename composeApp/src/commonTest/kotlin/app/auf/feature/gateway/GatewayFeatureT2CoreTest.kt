@@ -186,9 +186,9 @@ class GatewayFeatureT2CoreTest {
             // deferredDispatch, not the deprecated deliverPrivateData. Assert on
             // processedActions instead.
             val responseAction = harness.processedActions.find {
-                it.name == ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE
+                it.name == ActionRegistry.Names.GATEWAY_RETURN_RESPONSE
             }
-            assertNotNull(responseAction, "A targeted RESPONSE_RESPONSE action should have been dispatched.")
+            assertNotNull(responseAction, "A targeted RETURN_RESPONSE action should have been dispatched.")
             assertEquals(originatorId, responseAction.targetRecipient, "targetRecipient should be the original dispatcher.")
             assertEquals(correlationId, responseAction.payload?.get("correlationId")?.jsonPrimitive?.content)
             // Verify the response content from the fake provider is present
@@ -219,9 +219,9 @@ class GatewayFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             // Phase 3 migration: Assert on processedActions for the targeted action.
             val responseAction = harness.processedActions.find {
-                it.name == ActionRegistry.Names.GATEWAY_RESPONSE_PREVIEW
+                it.name == ActionRegistry.Names.GATEWAY_RETURN_PREVIEW
             }
-            assertNotNull(responseAction, "A targeted RESPONSE_PREVIEW action should have been dispatched.")
+            assertNotNull(responseAction, "A targeted RETURN_PREVIEW action should have been dispatched.")
             assertEquals(originatorId, responseAction.targetRecipient, "targetRecipient should be the original dispatcher.")
 
             val rawJson = responseAction.payload?.get("rawRequestJson")?.jsonPrimitive?.content
@@ -274,9 +274,9 @@ class GatewayFeatureT2CoreTest {
 
             // 6. Verify NO response envelope was sent (job was cancelled)
             val responseAction = harness.processedActions.find {
-                it.name == ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE
+                it.name == ActionRegistry.Names.GATEWAY_RETURN_RESPONSE
             }
-            assertNull(responseAction, "No RESPONSE_RESPONSE action should be dispatched for a cancelled request")
+            assertNull(responseAction, "No RETURN_RESPONSE action should be dispatched for a cancelled request")
         }
     }
 
@@ -304,7 +304,7 @@ class GatewayFeatureT2CoreTest {
             assertNotNull(errorLog, "An error should be logged for an unknown provider ID.")
 
             val responseAction = harness.processedActions.find {
-                it.name == ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE
+                it.name == ActionRegistry.Names.GATEWAY_RETURN_RESPONSE
             }
             assertNull(responseAction, "No response should be dispatched for an unknown provider.")
         }

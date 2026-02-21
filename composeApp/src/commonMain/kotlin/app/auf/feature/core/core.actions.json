@@ -269,7 +269,7 @@
       }
     },
     {
-      "action_name": "core.RESPONSE_CONFIRMATION",
+      "action_name": "core.RETURN_CONFIRMATION",
       "summary": "The private response envelope sent to the original feature that requested a confirmation dialog.",
       "open": false,
       "broadcast": false,
@@ -292,7 +292,7 @@
     },
     {
       "action_name": "core.REGISTER_IDENTITY",
-      "summary": "Register a new identity in the universal registry. If localHandle is omitted, CoreFeature generates one from the name via slugification. If a UUID is provided and valid, it is used instead of auto-generating one (useful for correlation). The originator automatically becomes the parent. CoreFeature validates localHandle format if provided, deduplicates among siblings, and returns the approved identity via a targeted RESPONSE_REGISTER_IDENTITY.",
+      "summary": "Register a new identity in the universal registry. If localHandle is omitted, CoreFeature generates one from the name via slugification. If a UUID is provided and valid, it is used instead of auto-generating one (useful for correlation). The originator automatically becomes the parent. CoreFeature validates localHandle format if provided, deduplicates among siblings, and returns the approved identity via a targeted RETURN_REGISTER_IDENTITY.",
       "open": true,
       "broadcast": false,
       "targeted": false,
@@ -316,7 +316,7 @@
       }
     },
     {
-      "action_name": "core.RESPONSE_REGISTER_IDENTITY",
+      "action_name": "core.RETURN_REGISTER_IDENTITY",
       "summary": "Targeted response to a core.REGISTER_IDENTITY request. Contains the approved identity on success, or an error on failure. The caller can correlate by UUID (if one was provided in the request) or by requestedLocalHandle.",
       "open": false,
       "broadcast": false,
@@ -386,7 +386,7 @@
     },
     {
       "action_name": "core.UPDATE_IDENTITY",
-      "summary": "Update the name (and consequently the handle/slug) of an existing identity. The UUID and parent are preserved. Namespace enforcement: the originator can only update identities within its own namespace. Cascading: children's parentHandle and handle are updated. A targeted RESPONSE_UPDATE_IDENTITY is sent to the caller.",
+      "summary": "Update the name (and consequently the handle/slug) of an existing identity. The UUID and parent are preserved. Namespace enforcement: the originator can only update identities within its own namespace. Cascading: children's parentHandle and handle are updated. A targeted RETURN_UPDATE_IDENTITY is sent to the caller.",
       "open": true,
       "broadcast": false,
       "targeted": false,
@@ -406,7 +406,7 @@
       }
     },
     {
-      "action_name": "core.RESPONSE_UPDATE_IDENTITY",
+      "action_name": "core.RETURN_UPDATE_IDENTITY",
       "summary": "Targeted response to a core.UPDATE_IDENTITY request. Sent to the original caller with the updated identity details, and also sent as cascading notifications to features owning child identities whose handles changed.",
       "open": false,
       "broadcast": false,

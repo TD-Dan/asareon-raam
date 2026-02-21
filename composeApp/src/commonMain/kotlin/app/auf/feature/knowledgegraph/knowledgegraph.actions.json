@@ -593,7 +593,7 @@
       }
     },
     {
-      "action_name": "knowledgegraph.RESPONSE_CONTEXT",
+      "action_name": "knowledgegraph.RETURN_CONTEXT",
       "summary": "The private response envelope sent to a feature that dispatched 'knowledgegraph.REQUEST_CONTEXT'. Contains the compiled HKG content.",
       "open": false,
       "broadcast": false,

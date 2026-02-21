@@ -58,7 +58,7 @@ class AgentRuntimeFeatureT2StartupTest {
             }
 
             harness.store.dispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 payload = listPayload,
                 targetRecipient = "agent"
             ))
@@ -80,7 +80,7 @@ class AgentRuntimeFeatureT2StartupTest {
             }
 
             harness.store.dispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 payload = readPayload,
                 targetRecipient = "agent"
             ))
@@ -138,7 +138,7 @@ class AgentRuntimeFeatureT2StartupTest {
             }
 
             harness.store.dispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 payload = listPayload,
                 targetRecipient = "agent"
             ))
@@ -157,7 +157,7 @@ class AgentRuntimeFeatureT2StartupTest {
             }
 
             harness.store.dispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 payload = readPayload,
                 targetRecipient = "agent"
             ))
@@ -207,7 +207,7 @@ class AgentRuntimeFeatureT2StartupTest {
             }
 
             harness.store.dispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 payload = listPayload,
                 targetRecipient = "agent"
             ))
@@ -219,7 +219,7 @@ class AgentRuntimeFeatureT2StartupTest {
             }
 
             harness.store.dispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 payload = unknownPayload,
                 targetRecipient = "agent"
             ))
@@ -237,7 +237,7 @@ class AgentRuntimeFeatureT2StartupTest {
             }
 
             harness.store.dispatch("filesystem", Action(
-                name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+                name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 payload = realPayload,
                 targetRecipient = "agent"
             ))

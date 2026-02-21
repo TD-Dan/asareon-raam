@@ -108,7 +108,7 @@ class CoreFeature(
     /** Sends a failure response for REGISTER_IDENTITY back to the originator. */
     private fun sendRegistrationFailure(store: Store, originator: String, requestedLocalHandle: String, error: String, uuid: String? = null) {
         store.deferredDispatch(identity.handle, Action(
-            ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY,
+            ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY,
             buildJsonObject {
                 put("success", false)
                 put("requestedLocalHandle", requestedLocalHandle)
@@ -122,7 +122,7 @@ class CoreFeature(
     /** Sends a failure response for UPDATE_IDENTITY back to the originator. */
     private fun sendUpdateFailure(store: Store, originator: String, handle: String, error: String) {
         store.deferredDispatch(identity.handle, Action(
-            ActionRegistry.Names.CORE_RESPONSE_UPDATE_IDENTITY,
+            ActionRegistry.Names.CORE_RETURN_UPDATE_IDENTITY,
             buildJsonObject {
                 put("success", false)
                 put("oldHandle", handle)
@@ -161,7 +161,7 @@ class CoreFeature(
                     put("confirmed", payload.confirmed)
                 }
                 store.deferredDispatch(identity.handle, Action(
-                    name = ActionRegistry.Names.CORE_RESPONSE_CONFIRMATION,
+                    name = ActionRegistry.Names.CORE_RETURN_CONFIRMATION,
                     payload = responsePayload,
                     targetRecipient = request.originator
                 ))
@@ -190,7 +190,7 @@ class CoreFeature(
             }
             // Phase 3: Targeted response from FilesystemFeature — identity file loaded.
             // Migrated from onPrivateData.
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_READ -> {
+            ActionRegistry.Names.FILESYSTEM_RETURN_READ -> {
                 val data = action.payload ?: return
                 if (data["subpath"]?.jsonPrimitive?.content == identitiesFileName) {
                     val content = data["content"]?.jsonPrimitive?.contentOrNull
@@ -322,7 +322,7 @@ class CoreFeature(
 
                 // Targeted response to the originator: here's what was approved
                 store.deferredDispatch(identity.handle, Action(
-                    ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY,
+                    ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY,
                     buildJsonObject {
                         put("success", true)
                         put("requestedLocalHandle", requestedLocalHandle)
@@ -450,7 +450,7 @@ class CoreFeature(
 
                 // Targeted response to the originator
                 store.deferredDispatch(identity.handle, Action(
-                    ActionRegistry.Names.CORE_RESPONSE_UPDATE_IDENTITY,
+                    ActionRegistry.Names.CORE_RETURN_UPDATE_IDENTITY,
                     buildJsonObject {
                         put("success", true)
                         put("oldHandle", payload.handle)

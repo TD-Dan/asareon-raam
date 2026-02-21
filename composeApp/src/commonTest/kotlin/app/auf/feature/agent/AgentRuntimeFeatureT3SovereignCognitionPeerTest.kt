@@ -45,7 +45,7 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
                 }
                 store.dispatch(
                     identity.handle,
-                    Action(ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE, responsePayload)
+                    Action(ActionRegistry.Names.GATEWAY_RETURN_RESPONSE, responsePayload)
                 )
             }
         }

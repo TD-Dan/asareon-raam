@@ -40,16 +40,16 @@ class SettingsFeatureT2CoreTest {
     }
 
     @Test
-    fun `handleSideEffects for targeted FILESYSTEM_RESPONSE_READ dispatches settings LOADED`() = runTest {
+    fun `handleSideEffects for targeted FILESYSTEM_RETURN_READ dispatches settings LOADED`() = runTest {
         val platform = FakePlatformDependencies("test")
         val feature = SettingsFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
 
         // Phase 3: Dispatch targeted action through the store instead of calling onPrivateData directly.
-        // FilesystemFeature dispatches FILESYSTEM_RESPONSE_READ as a targeted action with
+        // FilesystemFeature dispatches FILESYSTEM_RETURN_READ as a targeted action with
         // targetRecipient set to the requesting feature's handle.
         val responseAction = Action(
-            name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+            name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
             payload = buildJsonObject {
                 put("subpath", "settings.json")
                 put("content", """{ "file.key": "file.value" }""")
@@ -66,13 +66,13 @@ class SettingsFeatureT2CoreTest {
     }
 
     @Test
-    fun `handleSideEffects for FILESYSTEM_RESPONSE_READ ignores non-settings files`() = runTest {
+    fun `handleSideEffects for FILESYSTEM_RETURN_READ ignores non-settings files`() = runTest {
         val platform = FakePlatformDependencies("test")
         val feature = SettingsFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
 
         val responseAction = Action(
-            name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+            name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
             payload = buildJsonObject {
                 put("subpath", "other_file.json")
                 put("content", """{ "other.key": "other.value" }""")

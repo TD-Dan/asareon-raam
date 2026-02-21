@@ -93,13 +93,13 @@ class AgentRuntimeFeature(
         }
         when (action.name) {
             // Phase 3: Targeted responses — migrated from onPrivateData.
-            ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
-            ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
-            ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
-            ActionRegistry.Names.GATEWAY_RESPONSE_PREVIEW,
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST,
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
+            ActionRegistry.Names.SESSION_RETURN_LEDGER,
+            ActionRegistry.Names.KNOWLEDGEGRAPH_RETURN_CONTEXT,
+            ActionRegistry.Names.GATEWAY_RETURN_RESPONSE,
+            ActionRegistry.Names.GATEWAY_RETURN_PREVIEW,
+            ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
+            ActionRegistry.Names.FILESYSTEM_RETURN_READ,
+            ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT -> {
                 handleTargetedResponse(action, store)
             }
             // --- Startup ---
@@ -413,13 +413,13 @@ class AgentRuntimeFeature(
             }
 
             // --- Identity Registration Response Side Effects ---
-            ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY -> {
+            ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY -> {
                 // Reducer already updated the agent's identity — re-save config with full identity
                 val uuid = action.payload?.get("uuid")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[uuid] ?: return
                 saveAgentConfig(agent, store)
             }
-            ActionRegistry.Names.CORE_RESPONSE_UPDATE_IDENTITY -> {
+            ActionRegistry.Names.CORE_RETURN_UPDATE_IDENTITY -> {
                 // Reducer already updated the agent's identity — re-save config with new identity
                 val uuid = action.payload?.get("uuid")?.jsonPrimitive?.contentOrNull ?: return
                 val agent = agentState.agents[uuid] ?: return
@@ -554,13 +554,13 @@ class AgentRuntimeFeature(
 
         // Route to appropriate handler
         when (action.name) {
-            ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
-            ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT,
-            ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE,
-            ActionRegistry.Names.GATEWAY_RESPONSE_PREVIEW -> {
+            ActionRegistry.Names.SESSION_RETURN_LEDGER,
+            ActionRegistry.Names.KNOWLEDGEGRAPH_RETURN_CONTEXT,
+            ActionRegistry.Names.GATEWAY_RETURN_RESPONSE,
+            ActionRegistry.Names.GATEWAY_RETURN_PREVIEW -> {
                 AgentCognitivePipeline.handleTargetedAction(action, store)
             }
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST -> {
+            ActionRegistry.Names.FILESYSTEM_RETURN_LIST -> {
                 // If the listing has a correlationId, it was requested by the cognitive pipeline
                 // for workspace context injection — route it to the pipeline.
                 val hasCorrelationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull != null
@@ -571,8 +571,8 @@ class AgentRuntimeFeature(
                     handleFileSystemListResponse(payload, store)
                 }
             }
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_READ -> handleFileSystemReadResponse(payload, store)
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
+            ActionRegistry.Names.FILESYSTEM_RETURN_READ -> handleFileSystemReadResponse(payload, store)
+            ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT -> {
                 // Currently only received via command responses — would have been handled above
             }
         }
@@ -611,7 +611,7 @@ class AgentRuntimeFeature(
     private fun formatResponseForSession(actionName: String, action: Action): String {
         val payload = action.payload ?: return "No payload in response."
         return when (action.name) {
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST -> {
+            ActionRegistry.Names.FILESYSTEM_RETURN_LIST -> {
                 val listing = payload["listing"]?.jsonArray
                 val subpath = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: "."
                 val formatted = Json { prettyPrint = true }.encodeToString(
@@ -622,7 +622,7 @@ class AgentRuntimeFeature(
                 )
                 "```json\n$formatted\n```"
             }
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_READ -> {
+            ActionRegistry.Names.FILESYSTEM_RETURN_READ -> {
                 val subpath = payload["subpath"]?.jsonPrimitive?.contentOrNull ?: ""
                 val content = payload["content"]?.jsonPrimitive?.contentOrNull
                 if (content != null) {
@@ -631,7 +631,7 @@ class AgentRuntimeFeature(
                     "File not found: `$subpath`"
                 }
             }
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT -> {
+            ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT -> {
                 val contents = payload["contents"]?.jsonObject
                 if (contents != null && contents.isNotEmpty()) {
                     contents.entries.joinToString("\n\n") { (path, content) ->

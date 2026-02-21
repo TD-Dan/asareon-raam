@@ -120,7 +120,7 @@ class FileSystemFeatureT2CoreTest {
      * Phase 3 FIX: Migrated from deliveredPrivateData/PrivateDataEnvelope assertions
      * to targeted Action assertions on processedActions.
      *
-     * The production code now dispatches FILESYSTEM_RESPONSE_READ as a targeted Action
+     * The production code now dispatches FILESYSTEM_RETURN_READ as a targeted Action
      * with targetRecipient = originator, instead of using deliverPrivateData.
      */
     @Test
@@ -141,8 +141,8 @@ class FileSystemFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch(originator, action)
 
-            val responseAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_RESPONSE_READ }
-            assertNotNull(responseAction, "A targeted RESPONSE_READ action should have been dispatched.")
+            val responseAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_RETURN_READ }
+            assertNotNull(responseAction, "A targeted RETURN_READ action should have been dispatched.")
             assertEquals(originator, responseAction.targetRecipient, "Response should be targeted to the originator.")
             val responsePayload = responseAction.payload
             assertNotNull(responsePayload)
@@ -182,7 +182,7 @@ class FileSystemFeatureT2CoreTest {
      * Phase 3 FIX: Migrated from PrivateDataEnvelope/deliverPrivateData to targeted Action.
      *
      * The confirmation response is now dispatched by CoreFeature as a targeted Action
-     * with name CORE_RESPONSE_CONFIRMATION and targetRecipient = "filesystem".
+     * with name CORE_RETURN_CONFIRMATION and targetRecipient = "filesystem".
      */
     @Test
     fun `REQUEST_SCOPED_READ_UI waits for confirmation and then executes file dialog`() {
@@ -216,7 +216,7 @@ class FileSystemFeatureT2CoreTest {
             // --- ACT 2: Simulate the user confirming the dialog via a targeted Action ---
             platform.selectedDirectoryPathToReturn = "/fake/selected/path"
             val confirmationAction = Action(
-                name = ActionRegistry.Names.CORE_RESPONSE_CONFIRMATION,
+                name = ActionRegistry.Names.CORE_RETURN_CONFIRMATION,
                 payload = buildJsonObject {
                     put("requestId", requestId)
                     put("confirmed", true)
@@ -269,8 +269,8 @@ class FileSystemFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch(originator, action)
 
-            val responseAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST }
-            assertNotNull(responseAction, "A targeted RESPONSE_LIST action should have been dispatched.")
+            val responseAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_RETURN_LIST }
+            assertNotNull(responseAction, "A targeted RETURN_LIST action should have been dispatched.")
             assertEquals(originator, responseAction.targetRecipient, "Response should be targeted to the originator.")
 
             val listing = responseAction.payload?.get("listing")
@@ -300,7 +300,7 @@ class FileSystemFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch(originator, action)
 
-            val responseAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST }
+            val responseAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_RETURN_LIST }
             assertNotNull(responseAction)
             assertEquals("corr-123", responseAction.payload?.get("correlationId")?.jsonPrimitive?.content,
                 "Correlation ID must be passed through to the response.")
@@ -349,8 +349,8 @@ class FileSystemFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch(originator, action)
 
-            val responseAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT }
-            assertNotNull(responseAction, "A targeted RESPONSE_FILES_CONTENT action should have been dispatched.")
+            val responseAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT }
+            assertNotNull(responseAction, "A targeted RETURN_FILES_CONTENT action should have been dispatched.")
             assertEquals(originator, responseAction.targetRecipient, "Response should be targeted to the originator.")
 
             val contents = responseAction.payload?.get("contents")?.jsonObject
@@ -378,8 +378,8 @@ class FileSystemFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch(originator, action)
 
-            val responseAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_RESPONSE_READ }
-            assertNotNull(responseAction, "A targeted RESPONSE_READ action should have been dispatched.")
+            val responseAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_RETURN_READ }
+            assertNotNull(responseAction, "A targeted RETURN_READ action should have been dispatched.")
             assertEquals(originator, responseAction.targetRecipient)
             assertEquals(originalContent, responseAction.payload?.get("content")?.jsonPrimitive?.content,
                 "Unencrypted content should be returned as-is.")
@@ -589,8 +589,8 @@ class FileSystemFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch(originator, action)
 
-            val responseAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_RESPONSE_READ }
-            assertNotNull(responseAction, "A targeted RESPONSE_READ should still be dispatched on error.")
+            val responseAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_RETURN_READ }
+            assertNotNull(responseAction, "A targeted RETURN_READ should still be dispatched on error.")
             assertEquals(originator, responseAction.targetRecipient)
             assertEquals(subpath, responseAction.payload?.get("subpath")?.jsonPrimitive?.content)
             assertEquals("null", responseAction.payload?.get("content")?.toString(),
@@ -636,7 +636,7 @@ class FileSystemFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch(originator, action)
 
-            val responseAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_RESPONSE_FILES_CONTENT }
+            val responseAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT }
             assertNotNull(responseAction)
             val contents = responseAction.payload?.get("contents")?.jsonObject
             assertNotNull(contents)

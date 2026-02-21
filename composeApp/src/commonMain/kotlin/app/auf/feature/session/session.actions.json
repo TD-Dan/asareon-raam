@@ -723,7 +723,7 @@
       }
     },
     {
-      "action_name": "session.RESPONSE_LEDGER",
+      "action_name": "session.RETURN_LEDGER",
       "summary": "The response envelope containing the formatted ledger content for an agent's cognitive cycle.",
       "open": false,
       "broadcast": false,

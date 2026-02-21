@@ -232,7 +232,7 @@
       }
     },
     {
-      "action_name": "gateway.RESPONSE_RESPONSE",
+      "action_name": "gateway.RETURN_RESPONSE",
       "summary": "The standard response envelope from the GatewayFeature, containing either generated content or an error, plus optional token usage.",
       "open": false,
       "broadcast": false,
@@ -276,7 +276,7 @@
       }
     },
     {
-      "action_name": "gateway.RESPONSE_PREVIEW",
+      "action_name": "gateway.RETURN_PREVIEW",
       "summary": "The response envelope containing the data for a turn preview, plus an optional token count estimate.",
       "open": false,
       "broadcast": false,

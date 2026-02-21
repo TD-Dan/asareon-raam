@@ -69,11 +69,11 @@ object AgentCognitivePipeline {
             return
         }
         when (action.name) {
-            ActionRegistry.Names.SESSION_RESPONSE_LEDGER -> handleLedgerResponse(payload, store)
-            ActionRegistry.Names.KNOWLEDGEGRAPH_RESPONSE_CONTEXT -> handleHkgContextResponse(payload, store)
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST -> handleWorkspaceListingResponse(payload, store)
-            ActionRegistry.Names.GATEWAY_RESPONSE_RESPONSE -> handleGatewayResponse(payload, store)
-            ActionRegistry.Names.GATEWAY_RESPONSE_PREVIEW -> handleGatewayPreviewResponse(payload, store)
+            ActionRegistry.Names.SESSION_RETURN_LEDGER -> handleLedgerResponse(payload, store)
+            ActionRegistry.Names.KNOWLEDGEGRAPH_RETURN_CONTEXT -> handleHkgContextResponse(payload, store)
+            ActionRegistry.Names.FILESYSTEM_RETURN_LIST -> handleWorkspaceListingResponse(payload, store)
+            ActionRegistry.Names.GATEWAY_RETURN_RESPONSE -> handleGatewayResponse(payload, store)
+            ActionRegistry.Names.GATEWAY_RETURN_PREVIEW -> handleGatewayPreviewResponse(payload, store)
             else -> {
                 store.platformDependencies.log(
                     LogLevel.WARN, LOG_TAG,

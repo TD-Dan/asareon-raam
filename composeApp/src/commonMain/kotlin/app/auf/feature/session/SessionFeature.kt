@@ -50,7 +50,7 @@ class SessionFeature(
     @Serializable private data class LockMessagePayload(val session: String, val senderId: String, val timestamp: String)
     @Serializable private data class DeleteMessageExtPayload(val session: String, val messageId: String? = null, val senderId: String? = null, val timestamp: String? = null)
 
-    // --- Phase 4: Payload for RESPONSE_REGISTER_IDENTITY (from CoreFeature) ---
+    // --- Phase 4: Payload for RETURN_REGISTER_IDENTITY (from CoreFeature) ---
     @Serializable private data class RegisterIdentityResponsePayload(
         val success: Boolean,
         val requestedLocalHandle: String? = null,
@@ -62,7 +62,7 @@ class SessionFeature(
         val error: String? = null
     )
 
-    // --- Phase 4: Payload for RESPONSE_UPDATE_IDENTITY (from CoreFeature) ---
+    // --- Phase 4: Payload for RETURN_UPDATE_IDENTITY (from CoreFeature) ---
     @Serializable private data class UpdateIdentityResponsePayload(
         val success: Boolean,
         val oldHandle: String,
@@ -130,7 +130,7 @@ class SessionFeature(
         when (action.name) {
             // Phase 3: Targeted responses from FilesystemFeature — migrated from onPrivateData.
             // Phase 4: Updated for new folder-based file structure (uuid/localHandle.json)
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_LIST -> {
+            ActionRegistry.Names.FILESYSTEM_RETURN_LIST -> {
                 val data = action.payload ?: return
                 val fileList = data["listing"]?.jsonArray?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
 
@@ -140,7 +140,7 @@ class SessionFeature(
                     if (entry.path.endsWith(".json")) {
                         // It's a JSON file inside a UUID folder — read it.
                         // Both localHandle.json and input.json are handled this way;
-                        // FILESYSTEM_RESPONSE_READ routes them based on the filename.
+                        // FILESYSTEM_RETURN_READ routes them based on the filename.
                         if (startupLoadingActive) pendingStartupOps++
                         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", entry.path) }))
                     } else if (!entry.path.contains(".")) {
@@ -152,7 +152,7 @@ class SessionFeature(
 
                 if (startupLoadingActive) checkStartupLoadComplete(store, sessionState)
             }
-            ActionRegistry.Names.FILESYSTEM_RESPONSE_READ -> {
+            ActionRegistry.Names.FILESYSTEM_RETURN_READ -> {
                 val data = action.payload ?: return
                 val subpath = data["subpath"]?.jsonPrimitive?.content ?: ""
                 val content = data["content"]?.jsonPrimitive?.content ?: ""
@@ -227,7 +227,7 @@ class SessionFeature(
             }
 
             // Phase 4: When identity is approved, persist the new session and broadcast
-            ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY -> {
+            ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY -> {
                 val prevSessions = (previousState as? SessionState)?.sessions ?: emptyMap()
                 val newLocalHandles = sessionState.sessions.keys - prevSessions.keys
                 newLocalHandles.forEach { localHandle ->
@@ -283,8 +283,8 @@ class SessionFeature(
                 broadcastSessionNames(sessionState, store)
             }
 
-            // Phase 4: Side effects for RESPONSE_UPDATE_IDENTITY — file rename + persist
-            ActionRegistry.Names.CORE_RESPONSE_UPDATE_IDENTITY -> {
+            // Phase 4: Side effects for RETURN_UPDATE_IDENTITY — file rename + persist
+            ActionRegistry.Names.CORE_RETURN_UPDATE_IDENTITY -> {
                 val resp = action.payload?.let { json.decodeFromJsonElement<UpdateIdentityResponsePayload>(it) }
                     ?: return
                 if (!resp.success) return
@@ -521,7 +521,7 @@ class SessionFeature(
                     putJsonArray("messages") { messages.forEach { add(it) } }
                 }
                 store.deferredDispatch(identity.handle, Action(
-                    name = ActionRegistry.Names.SESSION_RESPONSE_LEDGER,
+                    name = ActionRegistry.Names.SESSION_RETURN_LEDGER,
                     payload = responsePayload,
                     targetRecipient = action.originator ?: "unknown"
                 ))
@@ -799,8 +799,8 @@ class SessionFeature(
                 )
             }
 
-            // Phase 4: RESPONSE_REGISTER_IDENTITY — create session from pending or remove pending on failure
-            ActionRegistry.Names.CORE_RESPONSE_REGISTER_IDENTITY -> {
+            // Phase 4: RETURN_REGISTER_IDENTITY — create session from pending or remove pending on failure
+            ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY -> {
                 val resp = payload?.let { json.decodeFromJsonElement<RegisterIdentityResponsePayload>(it) }
                     ?: return currentFeatureState
                 val uuid = resp.uuid
@@ -863,8 +863,8 @@ class SessionFeature(
                 }
             }
 
-            // Phase 4: RESPONSE_UPDATE_IDENTITY — reconcile handle change
-            ActionRegistry.Names.CORE_RESPONSE_UPDATE_IDENTITY -> {
+            // Phase 4: RETURN_UPDATE_IDENTITY — reconcile handle change
+            ActionRegistry.Names.CORE_RETURN_UPDATE_IDENTITY -> {
                 val resp = payload?.let { json.decodeFromJsonElement<UpdateIdentityResponsePayload>(it) }
                     ?: return currentFeatureState
                 if (!resp.success) {

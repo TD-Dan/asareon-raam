@@ -29,8 +29,8 @@ object AgentCrudLogic {
                 val newAgent = AgentInstance(
                     identity = Identity(
                         uuid = uuid,
-                        localHandle = "",    // placeholder — filled on RESPONSE_REGISTER_IDENTITY
-                        handle = "",         // placeholder — filled on RESPONSE_REGISTER_IDENTITY
+                        localHandle = "",    // placeholder — filled on RETURN_REGISTER_IDENTITY
+                        handle = "",         // placeholder — filled on RETURN_REGISTER_IDENTITY
                         name = name,
                         parentHandle = "agent"
                     ),

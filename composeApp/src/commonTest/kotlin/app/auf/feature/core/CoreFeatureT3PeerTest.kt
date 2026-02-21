@@ -59,7 +59,7 @@ class CoreFeatureT3PeerTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `targeted FILESYSTEM_RESPONSE_READ correctly loads identities`() = runTest {
+    fun `targeted FILESYSTEM_RETURN_READ correctly loads identities`() = runTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -80,7 +80,7 @@ class CoreFeatureT3PeerTest {
 
         // ACT: Dispatch a targeted action (as FileSystemFeature would after Phase 3 migration).
         harness.store.dispatch("filesystem", Action(
-            name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+            name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
             payload = buildJsonObject {
                 put("subpath", "identities.json")
                 put("content", fileContent)
@@ -101,7 +101,7 @@ class CoreFeatureT3PeerTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `targeted FILESYSTEM_RESPONSE_READ migrates loaded identities into identity registry`() = runTest {
+    fun `targeted FILESYSTEM_RETURN_READ migrates loaded identities into identity registry`() = runTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -127,7 +127,7 @@ class CoreFeatureT3PeerTest {
 
         // ACT: Dispatch targeted action (replacing old deliverPrivateData call).
         harness.store.dispatch("filesystem", Action(
-            name = ActionRegistry.Names.FILESYSTEM_RESPONSE_READ,
+            name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
             payload = buildJsonObject {
                 put("subpath", "identities.json")
                 put("content", fileContent)
@@ -188,11 +188,11 @@ class CoreFeatureT3PeerTest {
         }))
         runCurrent()
 
-        // --- ASSERT 2: A targeted CORE_RESPONSE_CONFIRMATION action was dispatched ---
+        // --- ASSERT 2: A targeted CORE_RETURN_CONFIRMATION action was dispatched ---
         val responseAction = harness.processedActions.find {
-            it.name == ActionRegistry.Names.CORE_RESPONSE_CONFIRMATION
+            it.name == ActionRegistry.Names.CORE_RETURN_CONFIRMATION
         }
-        assertNotNull(responseAction, "A targeted CORE_RESPONSE_CONFIRMATION action should have been dispatched.")
+        assertNotNull(responseAction, "A targeted CORE_RETURN_CONFIRMATION action should have been dispatched.")
         assertEquals("core", responseAction.originator, "The response should originate from core.")
         assertEquals(originatorFeatureName, responseAction.targetRecipient, "The response should be targeted to the requesting feature.")
 
@@ -234,11 +234,11 @@ class CoreFeatureT3PeerTest {
         }))
         runCurrent()
 
-        // --- ASSERT: A targeted CORE_RESPONSE_CONFIRMATION action was dispatched ---
+        // --- ASSERT: A targeted CORE_RETURN_CONFIRMATION action was dispatched ---
         val responseAction = harness.processedActions.find {
-            it.name == ActionRegistry.Names.CORE_RESPONSE_CONFIRMATION
+            it.name == ActionRegistry.Names.CORE_RETURN_CONFIRMATION
         }
-        assertNotNull(responseAction, "A targeted CORE_RESPONSE_CONFIRMATION action should have been dispatched.")
+        assertNotNull(responseAction, "A targeted CORE_RETURN_CONFIRMATION action should have been dispatched.")
         assertEquals(originatorFeatureName, responseAction.targetRecipient, "The response should be targeted to the requesting feature.")
 
         val responsePayload = Json.decodeFromString<ConfirmationResponsePayload>(responseAction.payload.toString())
