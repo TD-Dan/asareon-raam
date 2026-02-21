@@ -400,7 +400,7 @@ class FileSystemFeature(
 
                 ))
             }
-            ActionRegistry.Names.FILESYSTEM_SYSTEM_READ -> {
+            ActionRegistry.Names.FILESYSTEM_READ -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SystemReadPayload>(it) } ?: return
                 if (!filenameGuard(payload.path, originator, "read")) return
                 val fullPath = "${getSandboxPathFor(originator)}${platformDependencies.pathSeparator}${payload.path}"
@@ -442,7 +442,7 @@ class FileSystemFeature(
                         error = "Read failed: ${sanitizeErrorForBroadcast(e.message)}")
                 }
             }
-            ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE -> {
+            ActionRegistry.Names.FILESYSTEM_WRITE -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SystemWritePayload>(it) } ?: return
                 if (!filenameGuard(payload.path, originator, "write")) return
                 val fullPath = "${getSandboxPathFor(originator)}${platformDependencies.pathSeparator}${payload.path}"

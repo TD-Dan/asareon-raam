@@ -71,7 +71,7 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
             harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
 
             // Assert: Find the two write actions
-            val writeActions = harness.processedActions.filter { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
+            val writeActions = harness.processedActions.filter { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
             assertEquals(2, writeActions.size, "Expected writes for both the new holon and the updated parent.")
 
             // Assert new holon was written to correct subdirectory
@@ -133,7 +133,7 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
             harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
 
             // ASSERT
-            val writeActions = harness.processedActions.filter { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
+            val writeActions = harness.processedActions.filter { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
             assertEquals(3, writeActions.size, "Expected 3 writes (Root, Mid, Leaf).")
 
             // Verify Root Path

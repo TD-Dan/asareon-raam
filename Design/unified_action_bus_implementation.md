@@ -734,7 +734,7 @@ The `generateActionRegistry` task in `build.gradle.kts` is rewritten to:
 | `session.POST` | `exposedToAgents` missing 5 fields (`messageId`, `metadata`, etc.) | `listensFor` superset — no issue |
 | `session.CREATE` | `exposedToAgents` missing `isHidden`, `isPrivate` | Superset — no issue |
 | `session.LIST_SESSIONS` | `exposedToAgents` missing `responseSession` | Auto-filled by CommandBot — no issue |
-| `filesystem.SYSTEM_WRITE` | `listensFor` has `encrypt` not in agent schema | Sandboxing rewrites `encrypt` → `"false"` — no issue |
+| `filesystem.WRITE` | `listensFor` has `encrypt` not in agent schema | Sandboxing rewrites `encrypt` → `"false"` — no issue |
 | `filesystem.LIST` | `listensFor` has `correlationId` not in agent schema | Optional field — no issue |
 
 **Statistics**: 168 total actions (105 commands, 18 events, 37 internal, 8 targeted). 63 action name renames. 15 agent-exposed actions preserved with full metadata.
@@ -1328,7 +1328,7 @@ The UUID folder is stable across renames. When a session is renamed, `UPDATE_IDE
 
 `FILESYSTEM_RETURN_LIST` now handles two levels:
 1. First response: top-level listing of UUID folders → dispatches `LIST` for each UUID folder
-2. Second response: contents of a UUID folder → dispatches `SYSTEM_READ` for each `.json` file inside
+2. Second response: contents of a UUID folder → dispatches `READ` for each `.json` file inside
 
 #### CoreFeature Additions
 

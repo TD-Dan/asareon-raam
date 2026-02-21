@@ -92,13 +92,13 @@ class FileSystemFeatureT2CoreTest {
     }
 
     @Test
-    fun `SYSTEM_WRITE with encrypt flag writes encrypted content`() {
+    fun `WRITE with encrypt flag writes encrypted content`() {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val originalContent = "secret-api-key"
         val originator = "settings"
-        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
             put("path", "test.json")
             put("content", originalContent)
             put("encrypt", true)
@@ -124,7 +124,7 @@ class FileSystemFeatureT2CoreTest {
      * with targetRecipient = originator, instead of using deliverPrivateData.
      */
     @Test
-    fun `SYSTEM_READ on encrypted file delivers decrypted content via targeted action`() {
+    fun `READ on encrypted file delivers decrypted content via targeted action`() {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
@@ -134,7 +134,7 @@ class FileSystemFeatureT2CoreTest {
         val sandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator/$path"
         val encryptedContent = CryptoManager(platform).encrypt(originalContent)
         platform.writeFileContent(sandboxPath, encryptedContent)
-        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject {
             put("path", path)
         })
 
@@ -339,7 +339,7 @@ class FileSystemFeatureT2CoreTest {
         platform.writeFileContent("$sandboxPath/file1.txt", "content-one")
         platform.writeFileContent("$sandboxPath/file2.md", "content-two")
 
-        val action = Action(ActionRegistry.Names.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILEREAD_FILES_CONTENT, buildJsonObject {
             putJsonArray("paths") {
                 add(JsonPrimitive("file1.txt"))
                 add(JsonPrimitive("file2.md"))
@@ -361,7 +361,7 @@ class FileSystemFeatureT2CoreTest {
     }
 
     @Test
-    fun `SYSTEM_READ on unencrypted file delivers plaintext content`() {
+    fun `READ on unencrypted file delivers plaintext content`() {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
@@ -371,7 +371,7 @@ class FileSystemFeatureT2CoreTest {
         val originalContent = """{"key": "value"}"""
         platform.writeFileContent(sandboxPath, originalContent)
 
-        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject {
             put("path", path)
         })
 
@@ -387,13 +387,13 @@ class FileSystemFeatureT2CoreTest {
     }
 
     @Test
-    fun `SYSTEM_WRITE without encrypt flag writes plaintext content`() {
+    fun `WRITE without encrypt flag writes plaintext content`() {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val originator = "session"
         val originalContent = """{"sessions": []}"""
-        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
             put("path", "sessions.json")
             put("content", originalContent)
         })
@@ -576,13 +576,13 @@ class FileSystemFeatureT2CoreTest {
     // ========================================================================
 
     @Test
-    fun `SYSTEM_READ on missing file delivers null content via targeted action`() {
+    fun `READ on missing file delivers null content via targeted action`() {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         val originator = "settings"
         val path = "nonexistent.json"
-        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject {
             put("path", path)
         })
 
@@ -625,7 +625,7 @@ class FileSystemFeatureT2CoreTest {
         val sandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator"
         platform.writeFileContent("$sandboxPath/good.txt", "good-content")
 
-        val action = Action(ActionRegistry.Names.FILESYSTEM_READ_FILES_CONTENT, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILEREAD_FILES_CONTENT, buildJsonObject {
             putJsonArray("paths") {
                 add(JsonPrimitive("good.txt"))
                 add(JsonPrimitive("../escape.txt"))   // traversal — should be rejected

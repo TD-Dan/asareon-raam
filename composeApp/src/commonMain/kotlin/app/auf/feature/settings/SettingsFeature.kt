@@ -49,7 +49,7 @@ class SettingsFeature(
                     }))
                 }
             }
-            ActionRegistry.Names.SYSTEM_INITIALIZING -> store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("path", settingsFileName) }))
+            ActionRegistry.Names.SYSTEM_INITIALIZING -> store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject { put("path", settingsFileName) }))
             ActionRegistry.Names.SETTINGS_UI_INPUT_CHANGED -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.content ?: return
                 val value = action.payload.get("value")?.jsonPrimitive?.content ?: return
@@ -61,7 +61,7 @@ class SettingsFeature(
             }
             ActionRegistry.Names.SETTINGS_UPDATE -> {
                 val latestSettingsState = newState as? SettingsState ?: return
-                store.dispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+                store.dispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
                     put("path", settingsFileName)
                     put("content", Json.encodeToString(latestSettingsState.values))
                     put("encrypt", true)

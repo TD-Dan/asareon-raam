@@ -261,7 +261,7 @@ internal fun executeImportWrites(
             )
             val finalHolon = synchronizeRawContent(holon.copy(header = headerWithMeta))
             val contentToWrite = prepareHolonForWriting(finalHolon)
-            store.deferredDispatch("knowledgegraph", Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+            store.deferredDispatch("knowledgegraph", Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
                 put("path", finalPath); put("content", contentToWrite)
             }))
         }

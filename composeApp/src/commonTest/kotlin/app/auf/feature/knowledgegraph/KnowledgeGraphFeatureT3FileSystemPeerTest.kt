@@ -64,8 +64,8 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
             }))
 
             // ASSERT
-            val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE && it.payload?.get("path")?.jsonPrimitive?.content == holonFilePath }
-            assertNotNull(writeAction, "A SYSTEM_WRITE action for the correct file path should have been dispatched.")
+            val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_WRITE && it.payload?.get("path")?.jsonPrimitive?.content == holonFilePath }
+            assertNotNull(writeAction, "A WRITE action for the correct file path should have been dispatched.")
 
             val writtenContent = writeAction.payload!!.jsonObject["content"]!!.jsonPrimitive.content
             // [REFACTOR] Use the canonical gateway to validate the written content,

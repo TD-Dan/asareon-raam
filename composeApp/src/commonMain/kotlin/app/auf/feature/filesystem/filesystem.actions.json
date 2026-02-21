@@ -41,7 +41,7 @@
       "required_permissions": ["read", "workspace"]
     },
     {
-      "action_name": "filesystem.SYSTEM_READ",
+      "action_name": "filesystem.READ",
       "summary": "A sandboxed service action for other features to read a file from their private sandbox. The response is delivered via the private channel.",
       "public": true,
       "broadcast": true,
@@ -67,7 +67,7 @@
       "required_permissions": ["read", "workspace"]
     },
     {
-      "action_name": "filesystem.SYSTEM_WRITE",
+      "action_name": "filesystem.WRITE",
       "summary": "A sandboxed service action for other features to write a file to their private sandbox.",
       "public": true,
       "broadcast": true,
@@ -605,7 +605,7 @@
           },
           "requestAction": {
             "type": "string",
-            "description": "The domain action name that produced this result, e.g. 'filesystem.SYSTEM_READ'."
+            "description": "The domain action name that produced this result, e.g. 'filesystem.READ'."
           },
           "success": {
             "type": "boolean"

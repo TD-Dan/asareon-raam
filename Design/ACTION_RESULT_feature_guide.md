@@ -27,8 +27,8 @@ Not every action needs ACTION_RESULT. Use this checklist:
 
 | Action type | ACTION_RESULT? | correlationId threading? | Example |
 |-------------|---------------|--------------------------|---------|
-| Command-dispatchable mutation | **Yes** | Yes | `SYSTEM_WRITE`, `SYSTEM_DELETE` |
-| Command-dispatchable query | **Yes** | Yes | `SYSTEM_READ`, `LIST` |
+| Command-dispatchable mutation | **Yes** | Yes | `WRITE`, `SYSTEM_DELETE` |
+| Command-dispatchable query | **Yes** | Yes | `READ`, `LIST` |
 | Internal/UI-only action | No | No | `TOGGLE_ITEM_EXPANDED`, `NAVIGATE` |
 | Targeted response (`RETURN_*`) | No | Thread it through | `RETURN_READ`, `RETURN_LIST` |
 
@@ -254,7 +254,7 @@ Here's what happens with your ACTION_RESULT, so you understand the end-to-end:
 2. **CommandBot** receives it in the `else` branch of `handleSideEffects`:
    - Checks `action.name.endsWith(".ACTION_RESULT")`
    - Extracts `correlationId`, looks up in `pendingResults`
-   - **Validates source feature** — the feature prefix of the ACTION_RESULT action must match the feature prefix of the original domain action. A `gateway.ACTION_RESULT` cannot match a pending `filesystem.SYSTEM_READ`. This prevents spoofing.
+   - **Validates source feature** — the feature prefix of the ACTION_RESULT action must match the feature prefix of the original domain action. A `gateway.ACTION_RESULT` cannot match a pending `filesystem.READ`. This prevents spoofing.
    - **Validates requestAction** — the `requestAction` field must match the stored `actionName`. This catches bugs where a feature accidentally publishes a result for the wrong action.
    - Formats: `[COMMAND BOT] ✓ {actionName} — {summary}` or `[COMMAND BOT] ✗ {actionName} — {error}`
    - Posts to the session
@@ -332,9 +332,9 @@ The filesystem implementation is the reference. It covers all the patterns:
 
 | Action | Type | ACTION_RESULT summary | DELIVER_TO_SESSION |
 |--------|------|----------------------|-------------------|
-| `SYSTEM_READ` | Query | `"Read 1 file (N bytes)"` | File content in code fence |
+| `READ` | Query | `"Read 1 file (N bytes)"` | File content in code fence |
 | `LIST` | Query | `"Listed N items"` | Directory listing in code fence |
-| `SYSTEM_WRITE` | Mutation | `"Wrote 1 file (N bytes)"` | Not needed |
+| `WRITE` | Mutation | `"Wrote 1 file (N bytes)"` | Not needed |
 | `SYSTEM_DELETE` | Mutation | `"Deleted 1 file"` | Not needed |
 | `SYSTEM_DELETE_DIRECTORY` | Mutation | `"Deleted directory"` | Not needed |
 

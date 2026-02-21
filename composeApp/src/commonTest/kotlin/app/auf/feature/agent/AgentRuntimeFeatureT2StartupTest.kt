@@ -66,7 +66,7 @@ class AgentRuntimeFeatureT2StartupTest {
             // Now the feature should have dispatched a READ request.
             // Let's verify that request looks correct.
             val readAction = harness.processedActions.find {
-                it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_READ &&
+                it.name == ActionRegistry.Names.FILESYSTEM_READ &&
                         it.payload?.get("path")?.toString()?.contains(resourceId) == true
             }
             assertNotNull(readAction, "Should have dispatched a READ action for the resource")
@@ -145,7 +145,7 @@ class AgentRuntimeFeatureT2StartupTest {
 
             // Verify the feature dispatched a READ for "agent-abc/agent.json"
             val readAction = harness.processedActions.find {
-                it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_READ &&
+                it.name == ActionRegistry.Names.FILESYSTEM_READ &&
                         it.payload?.get("path")?.toString()?.contains("agent.json") == true
             }
             assertNotNull(readAction, "Should have dispatched READ for agent.json")

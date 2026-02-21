@@ -269,7 +269,7 @@ class KnowledgeGraphFeature(
                 val fullContent = prepareHolonForWriting(newHolon)
 
                 val destPath = "$newId/$newId.json"
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
                     put("path", destPath); put("content", fullContent)
                 }))
 
@@ -295,7 +295,7 @@ class KnowledgeGraphFeature(
                     execute = payload["execute"] ?: holonToUpdate.execute
                 )
                 val finalSyncedHolon = synchronizeRawContent(intermediateHolon)
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
                     put("path", finalSyncedHolon.header.filePath)
                     put("content", prepareHolonForWriting(finalSyncedHolon))
                 }))
@@ -322,7 +322,7 @@ class KnowledgeGraphFeature(
                 val updatedHeader = holonToUpdate.header.copy(name = newName, modifiedAt = newTimestamp)
                 val intermediateHolon = holonToUpdate.copy(header = updatedHeader)
                 val finalSyncedHolon = synchronizeRawContent(intermediateHolon)
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
                     put("path", finalSyncedHolon.header.filePath)
                     put("content", prepareHolonForWriting(finalSyncedHolon))
                 }))
@@ -373,7 +373,7 @@ class KnowledgeGraphFeature(
                     val updatedParentHeader = parentHolon.header.copy(subHolons = updatedSubHolons, modifiedAt = newTimestamp)
                     val intermediateParent = parentHolon.copy(header = updatedParentHeader)
                     val finalSyncedParent = synchronizeRawContent(intermediateParent)
-                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
                         put("path", finalSyncedParent.header.filePath)
                         put("content", prepareHolonForWriting(finalSyncedParent))
                     }))

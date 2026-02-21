@@ -206,7 +206,7 @@ class KnowledgeGraphFeatureT2CoreTest {
                 put("newName", "New Name")
             }))
 
-            val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
+            val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
             assertNotNull(writeAction)
 
             val writtenContent = writeAction.payload!!.jsonObject["content"]!!.jsonPrimitive.content
@@ -256,8 +256,8 @@ class KnowledgeGraphFeatureT2CoreTest {
 
         // A map of the action to test and the forbidden action it would cause
         val actionsToTest = mapOf(
-            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT, buildJsonObject { put("holonId", holonId) }) to ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE,
-            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject { put("holonId", holonId); put("newName", "X") }) to ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE,
+            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT, buildJsonObject { put("holonId", holonId) }) to ActionRegistry.Names.FILESYSTEM_WRITE,
+            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject { put("holonId", holonId); put("newName", "X") }) to ActionRegistry.Names.FILESYSTEM_WRITE,
             Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject { put("holonId", holonId) }) to ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY,
             Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject { put("personaId", personaId) }) to ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY
         )
@@ -293,7 +293,7 @@ class KnowledgeGraphFeatureT2CoreTest {
         val holon = Holon(HolonHeader(id = holonId, name="H", type="T", parentId = personaId, filePath = "p1/h1.json"), buildJsonObject{})
 
         val actionsToTest = mapOf(
-            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject { put("holonId", holonId); put("newName", "X") }) to ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE,
+            Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject { put("holonId", holonId); put("newName", "X") }) to ActionRegistry.Names.FILESYSTEM_WRITE,
             Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject { put("personaId", personaId) }) to ActionRegistry.Names.FILESYSTEM_SYSTEM_DELETE_DIRECTORY
         )
 
@@ -409,9 +409,9 @@ class KnowledgeGraphFeatureT2CoreTest {
                 put("name", "Test Persona")
             }))
 
-            // Assert a FILESYSTEM_SYSTEM_WRITE was dispatched
-            val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
-            assertNotNull(writeAction, "CREATE_PERSONA should dispatch FILESYSTEM_SYSTEM_WRITE.")
+            // Assert a FILESYSTEM_WRITE was dispatched
+            val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
+            assertNotNull(writeAction, "CREATE_PERSONA should dispatch FILESYSTEM_WRITE.")
 
             val writtenContent = writeAction.payload?.get("content")?.jsonPrimitive?.content
             assertNotNull(writtenContent)
@@ -468,8 +468,8 @@ class KnowledgeGraphFeatureT2CoreTest {
             assertEquals("$rootId/$childId", deleteDir.payload?.get("path")?.jsonPrimitive?.content)
 
             // Assert parent holon was updated to remove the child from sub_holons
-            val parentWrite = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
-            assertNotNull(parentWrite, "DELETE_HOLON should dispatch FILESYSTEM_SYSTEM_WRITE to update parent.")
+            val parentWrite = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
+            assertNotNull(parentWrite, "DELETE_HOLON should dispatch FILESYSTEM_WRITE to update parent.")
             val writtenContent = parentWrite.payload?.get("content")?.jsonPrimitive?.content
             assertNotNull(writtenContent)
             val parsedParent = json.parseToJsonElement(writtenContent).jsonObject

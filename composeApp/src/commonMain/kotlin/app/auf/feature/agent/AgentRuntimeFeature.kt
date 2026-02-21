@@ -517,14 +517,14 @@ class AgentRuntimeFeature(
     private fun saveAgentConfig(agent: AgentInstance, store: Store) {
         // Exclude cognitiveState - it's saved separately in nvram.json
         val agentWithoutNvram = agent.copy(cognitiveState = JsonNull)
-        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
             put("path", "${agent.identity.uuid}/$agentConfigFILENAME")
             put("content", json.encodeToString(agentWithoutNvram))
         }))
     }
 
     private fun saveAgentNvram(agent: AgentInstance, store: Store) {
-        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
             put("path", "${agent.identity.uuid}/$nvramFILENAME")
             put("content", json.encodeToString(agent.cognitiveState))
         }))
@@ -532,7 +532,7 @@ class AgentRuntimeFeature(
 
     private fun saveResourceConfig(resource: AgentResource, store: Store) {
         resource.path?.let { path ->
-            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
                 put("path", path)
                 put("content", json.encodeToString(resource))
             }))
@@ -711,10 +711,10 @@ class AgentRuntimeFeature(
                     fileList.forEach { entry ->
                         if (entry.isDirectory && entry.path != "resources") {
                             val agentDir = platformDependencies.getFileName(entry.path)
-                            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+                            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject {
                                 put("path", "$agentDir/$agentConfigFILENAME")
                             }))
-                            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+                            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject {
                                 put("path", "$agentDir/$nvramFILENAME")
                             }))
                         }
@@ -727,7 +727,7 @@ class AgentRuntimeFeature(
                 listing?.forEach { element ->
                     val entry = json.decodeFromJsonElement<FileEntry>(element)
                     if (!entry.isDirectory && entry.path.endsWith(".json")) {
-                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject {
                             val fileName = platformDependencies.getFileName(entry.path)
                             val canonicalPath = "resources/$fileName"
                             put("path", canonicalPath)

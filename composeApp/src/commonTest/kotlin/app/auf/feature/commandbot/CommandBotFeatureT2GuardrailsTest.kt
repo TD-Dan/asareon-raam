@@ -414,7 +414,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
         harness.runAndLogOnFailure {
             // Only the SESSION_POST and its side-effects should be present — no command dispatches.
-            // SessionFeature emits MESSAGE_POSTED, SESSION_UPDATED, and filesystem.SYSTEM_WRITE
+            // SessionFeature emits MESSAGE_POSTED, SESSION_UPDATED, and filesystem.WRITE
             // as standard pipeline side-effects. We exclude all of those.
             val commandActions = harness.processedActions.drop(actionCountBefore).filter {
                 it.name != ActionRegistry.Names.SESSION_POST &&

@@ -33,7 +33,7 @@ object ExposedActionsContextProvider {
         appendLine("- You may invoke multiple actions in a single response by including multiple code blocks.")
         appendLine()
         appendLine("EXAMPLE — Writing a file:")
-        appendLine("```auf_filesystem.SYSTEM_WRITE")
+        appendLine("```auf_filesystem.WRITE")
         appendLine("{")
         appendLine("  \"path\": \"notes/summary.md\",")
         appendLine("  \"content\": \"# Meeting Summary\\nKey points discussed today...\"")

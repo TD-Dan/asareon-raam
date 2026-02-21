@@ -32,7 +32,7 @@ class FileSystemFeatureT2GuardTest {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
-        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
             put("path", "  ") // Blank path
             put("content", "some content")
         })
@@ -52,7 +52,7 @@ class FileSystemFeatureT2GuardTest {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
-        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject {
             put("path", "../secrets.json")
         })
 
@@ -134,7 +134,7 @@ class FileSystemFeatureT2GuardTest {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
-        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
             put("path", "../../etc/passwd.txt")
             put("content", "pwned")
         })

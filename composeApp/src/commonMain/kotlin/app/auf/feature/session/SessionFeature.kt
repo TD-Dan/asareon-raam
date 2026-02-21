@@ -142,7 +142,7 @@ class SessionFeature(
                         // Both localHandle.json and input.json are handled this way;
                         // FILESYSTEM_RETURN_READ routes them based on the filename.
                         if (startupLoadingActive) pendingStartupOps++
-                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("path", entry.path) }))
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject { put("path", entry.path) }))
                     } else if (!entry.path.contains(".")) {
                         // Looks like a UUID folder — list its contents
                         if (startupLoadingActive) pendingStartupOps++
@@ -236,7 +236,7 @@ class SessionFeature(
                     val session = sessionState.sessions[localHandle] ?: return@forEach
                     val uuid = session.identity.uuid ?: return@forEach
                     store.deferredDispatch(identity.handle, Action(
-                        ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE,
+                        ActionRegistry.Names.FILESYSTEM_WRITE,
                         buildJsonObject {
                             put("path", "$uuid/workspace/.keep")
                             put("content", "")
@@ -388,7 +388,7 @@ class SessionFeature(
                         history = latestState.inputHistories[sessionId] ?: emptyList()
                     )
                     store.dispatch(identity.handle, Action(
-                        ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE,
+                        ActionRegistry.Names.FILESYSTEM_WRITE,
                         buildJsonObject {
                             put("path", "$uuid/input.json")
                             put("content", json.encodeToString(inputState))
@@ -640,7 +640,7 @@ class SessionFeature(
         )
         val uuid = sessionToSave.identity.uuid ?: return
         val path = "$uuid/${sessionToSave.identity.localHandle}.json"
-        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
             put("path", path); put("content", json.encodeToString(persistedSession))
         }))
     }
@@ -685,7 +685,7 @@ class SessionFeature(
         val history = sessionState.inputHistories[localHandle] ?: emptyList()
         val inputState = SessionInputState(draft = draft, history = history)
         store.deferredDispatch(identity.handle, Action(
-            ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE,
+            ActionRegistry.Names.FILESYSTEM_WRITE,
             buildJsonObject {
                 put("path", "$uuid/input.json")
                 put("content", json.encodeToString(inputState))

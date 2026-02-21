@@ -138,7 +138,7 @@ class SessionFeatureT2InputHistoryTest {
             testScheduler.advanceUntilIdle()
 
             val writeActions = harness.processedActions.filter {
-                it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE
+                it.name == ActionRegistry.Names.FILESYSTEM_WRITE
             }
             val inputWrite = writeActions.find {
                 it.payload?.get("path")?.jsonPrimitive?.content?.endsWith("/input.json") == true
@@ -180,7 +180,7 @@ class SessionFeatureT2InputHistoryTest {
             testScheduler.advanceUntilIdle()
 
             val inputWrites = harness.processedActions.filter {
-                it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE &&
+                it.name == ActionRegistry.Names.FILESYSTEM_WRITE &&
                         it.payload?.get("path")?.jsonPrimitive?.content?.endsWith("/input.json") == true
             }
             assertEquals(1, inputWrites.size,
@@ -364,7 +364,7 @@ class SessionFeatureT2InputHistoryTest {
             testScheduler.advanceUntilIdle()
 
             val inputWrites = harness.processedActions.filter {
-                it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE &&
+                it.name == ActionRegistry.Names.FILESYSTEM_WRITE &&
                         it.payload?.get("path")?.jsonPrimitive?.content?.endsWith("/input.json") == true
             }
             assertTrue(inputWrites.isNotEmpty(),
@@ -722,13 +722,13 @@ class SessionFeatureT2InputHistoryTest {
             testScheduler.advanceUntilIdle()
 
             val readActions = harness.processedActions.filter {
-                it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_READ && it.originator == "session"
+                it.name == ActionRegistry.Names.FILESYSTEM_READ && it.originator == "session"
             }
             val inputReadAction = readActions.find {
                 it.payload?.get("path")?.jsonPrimitive?.content?.endsWith("input.json") == true
             }
             assertNotNull(inputReadAction,
-                "Should dispatch a SYSTEM_READ for input.json when found in listing. " +
+                "Should dispatch a READ for input.json when found in listing. " +
                         "Reads dispatched: ${readActions.map { it.payload?.get("path") }}")
         }
     }

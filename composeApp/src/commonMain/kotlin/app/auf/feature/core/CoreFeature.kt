@@ -169,7 +169,7 @@ class CoreFeature(
                 }))
             }
             ActionRegistry.Names.SYSTEM_STARTING -> {
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("path", identitiesFileName)}))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject { put("path", identitiesFileName)}))
             }
             ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<DismissConfirmationPayload>(it) } ?: return
@@ -607,7 +607,7 @@ class CoreFeature(
 
     private fun persistAndBroadcastIdentities(state: CoreState, store: Store) {
         val persistencePayload = IdentitiesLoadedPayload(state.userIdentities, state.activeUserId)
-        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE, buildJsonObject {
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
             put("path", identitiesFileName)
             put("content", Json.encodeToString(persistencePayload))
             put("encrypt", true)

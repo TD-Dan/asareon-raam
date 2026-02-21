@@ -25,7 +25,7 @@ import kotlin.test.assertTrue
 class SettingsFeatureT2CoreTest {
 
     @Test
-    fun `handleSideEffects for INITIALIZING dispatches filesystem SYSTEM_READ`() = runTest {
+    fun `handleSideEffects for INITIALIZING dispatches filesystem READ`() = runTest {
         val harness = TestEnvironment.create()
             .withFeature(SettingsFeature(FakePlatformDependencies("test")))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.BOOTING))
@@ -33,7 +33,7 @@ class SettingsFeatureT2CoreTest {
 
         harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
 
-        val readAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_READ }
+        val readAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_READ }
         assertNotNull(readAction)
         assertEquals("settings", readAction.originator)
         assertEquals("settings.json", readAction.payload?.get("path")?.jsonPrimitive?.content)
@@ -87,7 +87,7 @@ class SettingsFeatureT2CoreTest {
     }
 
     @Test
-    fun `handleSideEffects for UPDATE dispatches SYSTEM_WRITE with encryption`() = runTest {
+    fun `handleSideEffects for UPDATE dispatches WRITE with encryption`() = runTest {
         val harness = TestEnvironment.create()
             .withFeature(SettingsFeature(FakePlatformDependencies("test")))
             .withInitialState("settings", SettingsState(values = mapOf("key1" to "new_value")))
@@ -99,7 +99,7 @@ class SettingsFeatureT2CoreTest {
 
         harness.store.dispatch("settings", action)
 
-        val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
+        val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
         assertNotNull(writeAction)
         assertEquals("settings", writeAction.originator)
         assertEquals("settings.json", writeAction.payload?.get("path")?.jsonPrimitive?.content)

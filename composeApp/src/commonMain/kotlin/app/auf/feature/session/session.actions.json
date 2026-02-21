@@ -888,7 +888,7 @@
         },
         "language": {
           "type": "string",
-          "description": "The language tag from the fenced code block (e.g., 'kotlin', 'auf_filesystem.SYSTEM_WRITE')."
+          "description": "The language tag from the fenced code block (e.g., 'kotlin', 'auf_filesystem.WRITE')."
         },
         "code": {
           "type": "string",

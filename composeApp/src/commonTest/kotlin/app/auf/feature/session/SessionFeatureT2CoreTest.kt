@@ -95,7 +95,7 @@ class SessionFeatureT2CoreTest {
             assertTrue(sessionState.pendingCreations.isEmpty(), "Pending creations should be cleared after approval")
 
             // Verify persistence and broadcast
-            assertNotNull(harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE })
+            assertNotNull(harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_WRITE })
             assertNotNull(harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED })
         }
     }
@@ -182,7 +182,7 @@ class SessionFeatureT2CoreTest {
             // Filter to session ledger writes only. input.json is also written on user posts
             // (draft/history persistence) — those are correct but irrelevant to this assertion.
             val writeActions = harness.processedActions.filter {
-                it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE &&
+                it.name == ActionRegistry.Names.FILESYSTEM_WRITE &&
                         it.payload?.get("path")?.jsonPrimitive?.content?.endsWith("/input.json") == false
             }
             assertEquals(2, writeActions.size)
@@ -460,7 +460,7 @@ class SessionFeatureT2CoreTest {
             }))
             testScheduler.advanceUntilIdle()
 
-            val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
+            val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
             assertNotNull(writeAction)
             val path = writeAction.payload?.get("path")?.jsonPrimitive?.content
             assertNotNull(path)

@@ -118,7 +118,7 @@ class CoreFeatureT2CoreTest {
         runCurrent()
 
         // ASSERT: Persistence
-        val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
+        val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
         assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
         assertEquals("identities.json", writeAction.payload?.get("path")?.jsonPrimitive?.content)
         assertTrue(writeAction.payload?.get("encrypt").toString().toBoolean(), "Persistence should be encrypted.")
@@ -161,7 +161,7 @@ class CoreFeatureT2CoreTest {
         runCurrent()
 
         // ASSERT: Persistence
-        val writeAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
+        val writeAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
         assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
         val content = writeAction.payload?.get("content")?.jsonPrimitive?.content
         assertNotNull(content)
@@ -200,7 +200,7 @@ class CoreFeatureT2CoreTest {
         runCurrent()
 
         // ASSERT: Persistence
-        val writeAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE }
+        val writeAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
         assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
         val content = writeAction.payload?.get("content")?.jsonPrimitive?.content
         assertNotNull(content)
