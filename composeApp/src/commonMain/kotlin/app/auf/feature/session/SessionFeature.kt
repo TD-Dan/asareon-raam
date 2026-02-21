@@ -11,6 +11,9 @@ import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.*
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
@@ -38,6 +41,10 @@ class SessionFeature(
     @Serializable private data class ReorderPayload(val sessionId: String, val toIndex: Int)
     @Serializable private data class SetOrderPayload(val order: List<String>)
     @Serializable private data class ToggleMessageLockedPayload(val sessionId: String, val messageId: String)
+
+    // --- Input draft & history payload types ---
+    @Serializable private data class InputDraftChangedPayload(val sessionId: String, val draft: String)
+    @Serializable private data class HistoryNavigatePayload(val sessionId: String, val direction: String)
 
     // --- SLICE 4: New payload types for agent-facing message targeting ---
     @Serializable private data class LockMessagePayload(val session: String, val senderId: String, val timestamp: String)
@@ -69,6 +76,16 @@ class SessionFeature(
 
     private val blockParser = BlockSeparatingParser()
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
+
+    /** Maximum number of sent-message history entries kept per session. */
+    private val MAX_HISTORY_SIZE = 50
+
+    /**
+     * Debounce jobs for writing input.json, keyed by session localHandle.
+     * A new draft change cancels the previous job and starts a 5-second countdown.
+     * On SESSION_POST the job is cancelled and input.json is written immediately.
+     */
+    private val draftDebounceJobs = mutableMapOf<String, Job>()
 
     // --- Startup Loading Tracking ---
     // Tracks outstanding filesystem operations during startup so that
@@ -121,7 +138,9 @@ class SessionFeature(
 
                 fileList.forEach { entry ->
                     if (entry.path.endsWith(".json")) {
-                        // It's a session file inside a UUID folder — read it
+                        // It's a JSON file inside a UUID folder — read it.
+                        // Both localHandle.json and input.json are handled this way;
+                        // FILESYSTEM_RESPONSE_READ routes them based on the filename.
                         if (startupLoadingActive) pendingStartupOps++
                         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_READ, buildJsonObject { put("subpath", entry.path) }))
                     } else if (!entry.path.contains(".")) {
@@ -135,10 +154,22 @@ class SessionFeature(
             }
             ActionRegistry.Names.FILESYSTEM_RESPONSE_READ -> {
                 val data = action.payload ?: return
+                val subpath = data["subpath"]?.jsonPrimitive?.content ?: ""
+                val content = data["content"]?.jsonPrimitive?.content ?: ""
+
+                // Route input.json files to the input-state handler — they are not Session objects.
+                if (subpath.endsWith("/input.json")) {
+                    if (content.isNotBlank()) handleInputJsonRead(subpath, content, store)
+                    if (startupLoadingActive) {
+                        pendingStartupOps--
+                        checkStartupLoadComplete(store, sessionState)
+                    }
+                    return
+                }
+
                 try {
-                    val content = data["content"]?.jsonPrimitive?.content ?: ""
                     if (content.isBlank()) {
-                        platformDependencies.log(LogLevel.WARN, identity.handle, "Received empty session file content for ${data["subpath"]}")
+                        platformDependencies.log(LogLevel.WARN, identity.handle, "Received empty session file content for $subpath")
                         if (startupLoadingActive) {
                             pendingStartupOps--
                             checkStartupLoadComplete(store, sessionState)
@@ -148,7 +179,7 @@ class SessionFeature(
                     val session = json.decodeFromString<Session>(content)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.identity.localHandle to session))) as JsonObject))
                 } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse session file: ${data["subpath"]}. Error: ${e.message}")
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse session file: $subpath. Error: ${e.message}")
                     if (startupLoadingActive) {
                         pendingStartupOps--
                         checkStartupLoadComplete(store, sessionState)
@@ -334,6 +365,17 @@ class SessionFeature(
                 }
             }
 
+            ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED -> {
+                val sessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return
+                if (!sessionState.sessions.containsKey(sessionId)) return
+                // Cancel any existing debounce job and start a fresh 5-second countdown.
+                draftDebounceJobs[sessionId]?.cancel()
+                draftDebounceJobs[sessionId] = coroutineScope.launch {
+                    delay(5_000)
+                    persistInputState(sessionId, sessionState, store)
+                }
+            }
+
             ActionRegistry.Names.SESSION_POST -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
                 val localHandle = requireSessionId(identifier, sessionState, "POST") ?: return
@@ -355,6 +397,16 @@ class SessionFeature(
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_UPDATED, buildJsonObject { put("sessionId", localHandle) }))
                 } else {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "SESSION_POST failed: Ledger entry not found after reducer update.")
+                }
+
+                // For user posts: cancel the debounce and write input.json immediately
+                // so the cleared draft and updated history are persisted without waiting.
+                val activeUserId = (previousState as? SessionState)?.activeUserId ?: "user"
+                val postedSenderId = action.payload?.get("senderId")?.jsonPrimitive?.contentOrNull
+                if (postedSenderId == activeUserId) {
+                    draftDebounceJobs[localHandle]?.cancel()
+                    draftDebounceJobs.remove(localHandle)
+                    persistInputState(localHandle, sessionState, store)
                 }
             }
 
@@ -601,6 +653,50 @@ class SessionFeature(
         return newName
     }
 
+    /**
+     * Writes the current draft and history for [localHandle] to {uuid}/input.json.
+     * Uses [sessionState] (the post-reducer new state) so the data is always fresh.
+     */
+    private fun persistInputState(localHandle: String, sessionState: SessionState, store: Store) {
+        val session = sessionState.sessions[localHandle] ?: return
+        val uuid = session.identity.uuid ?: return
+        val draft = sessionState.draftInputs[localHandle] ?: ""
+        val history = sessionState.inputHistories[localHandle] ?: emptyList()
+        val inputState = SessionInputState(draft = draft, history = history)
+        store.deferredDispatch(identity.handle, Action(
+            ActionRegistry.Names.FILESYSTEM_SYSTEM_WRITE,
+            buildJsonObject {
+                put("subpath", "$uuid/input.json")
+                put("content", json.encodeToString(inputState))
+            }
+        ))
+    }
+
+    /**
+     * Parses a {uuid}/input.json file and dispatches INPUT_HISTORIES_LOADED.
+     * Logs a warning on parse failure without crashing.
+     */
+    private fun handleInputJsonRead(subpath: String, content: String, store: Store) {
+        if (content.isBlank()) return
+        val uuid = subpath.substringBefore("/")
+        try {
+            val inputState = json.decodeFromString<SessionInputState>(content)
+            store.deferredDispatch(identity.handle, Action(
+                ActionRegistry.Names.SESSION_INPUT_HISTORIES_LOADED,
+                buildJsonObject {
+                    put("uuid", uuid)
+                    put("draft", inputState.draft)
+                    put("history", Json.encodeToJsonElement(inputState.history))
+                }
+            ))
+        } catch (e: Exception) {
+            platformDependencies.log(
+                LogLevel.WARN, identity.handle,
+                "Failed to parse input.json for UUID $uuid — ignoring. Error: ${e.message}"
+            )
+        }
+    }
+
     private fun isMessageLockedGuard(
         localHandle: String,
         messageId: String,
@@ -817,7 +913,38 @@ class SessionFeature(
                     targetSession.ledger + newEntry
                 }
                 val updatedSession = targetSession.copy(ledger = updatedLedger)
-                currentFeatureState.copy(sessions = currentFeatureState.sessions + (localHandle to updatedSession))
+
+                // ── Draft / history management for user posts ──────────────────────
+                val activeUserId = currentFeatureState.activeUserId ?: "user"
+                val isUserPost = decoded.senderId == activeUserId
+                val messageText = decoded.message
+
+                var newDraftInputs = currentFeatureState.draftInputs
+                var newInputHistories = currentFeatureState.inputHistories
+                var newHistoryNavIndex = currentFeatureState.historyNavIndex
+                var newPreNavDrafts = currentFeatureState.preNavDrafts
+
+                if (isUserPost) {
+                    newDraftInputs = newDraftInputs - localHandle
+                    newHistoryNavIndex = newHistoryNavIndex - localHandle
+                    newPreNavDrafts = newPreNavDrafts - localHandle
+                    if (!messageText.isNullOrBlank()) {
+                        val existing = newInputHistories[localHandle] ?: emptyList()
+                        // Don't add a duplicate of the most recent entry
+                        if (existing.firstOrNull() != messageText) {
+                            val capped = (listOf(messageText) + existing).take(MAX_HISTORY_SIZE)
+                            newInputHistories = newInputHistories + (localHandle to capped)
+                        }
+                    }
+                }
+
+                currentFeatureState.copy(
+                    sessions = currentFeatureState.sessions + (localHandle to updatedSession),
+                    draftInputs = newDraftInputs,
+                    inputHistories = newInputHistories,
+                    historyNavIndex = newHistoryNavIndex,
+                    preNavDrafts = newPreNavDrafts
+                )
             }
             ActionRegistry.Names.SESSION_DELETE -> {
                 val identifier = payload?.let { json.decodeFromJsonElement<SessionTargetPayload>(it) }?.session ?: ""
@@ -829,7 +956,11 @@ class SessionFeature(
                     sessions = newSessions,
                     activeSessionLocalHandle = newActive,
                     lastDeletedSessionLocalHandle = localHandle,
-                    sessionOrder = SessionState.deriveSessionOrder(newSessions)
+                    sessionOrder = SessionState.deriveSessionOrder(newSessions),
+                    draftInputs = currentFeatureState.draftInputs - localHandle,
+                    inputHistories = currentFeatureState.inputHistories - localHandle,
+                    historyNavIndex = currentFeatureState.historyNavIndex - localHandle,
+                    preNavDrafts = currentFeatureState.preNavDrafts - localHandle
                 )
             }
             ActionRegistry.Names.SESSION_UPDATE_MESSAGE -> {
@@ -914,6 +1045,98 @@ class SessionFeature(
             // --- LIST_SESSIONS is handled purely in handleSideEffects (side-effect only, no state change) ---
             ActionRegistry.Names.SESSION_LIST_SESSIONS -> currentFeatureState
 
+            // ── Input draft persistence ───────────────────────────────────────────
+            ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED -> {
+                val decoded = payload?.let { json.decodeFromJsonElement<InputDraftChangedPayload>(it) }
+                    ?: return currentFeatureState
+                if (!currentFeatureState.sessions.containsKey(decoded.sessionId)) return currentFeatureState
+                currentFeatureState.copy(
+                    draftInputs = currentFeatureState.draftInputs + (decoded.sessionId to decoded.draft)
+                )
+            }
+
+            ActionRegistry.Names.SESSION_HISTORY_NAVIGATE -> {
+                val decoded = payload?.let { json.decodeFromJsonElement<HistoryNavigatePayload>(it) }
+                    ?: return currentFeatureState
+                val sessionId = decoded.sessionId
+                if (!currentFeatureState.sessions.containsKey(sessionId)) return currentFeatureState
+
+                val history = currentFeatureState.inputHistories[sessionId] ?: emptyList()
+                if (history.isEmpty()) return currentFeatureState
+
+                val currentIndex = currentFeatureState.historyNavIndex[sessionId] ?: -1
+
+                when (decoded.direction) {
+                    "UP" -> {
+                        if (currentIndex == -1) {
+                            // First UP: save the current draft, jump to history[0]
+                            val savedDraft = currentFeatureState.draftInputs[sessionId] ?: ""
+                            currentFeatureState.copy(
+                                historyNavIndex = currentFeatureState.historyNavIndex + (sessionId to 0),
+                                draftInputs = currentFeatureState.draftInputs + (sessionId to history[0]),
+                                preNavDrafts = currentFeatureState.preNavDrafts + (sessionId to savedDraft)
+                            )
+                        } else {
+                            // Subsequent UP: advance toward older entries, clamped at the last index
+                            val newIndex = (currentIndex + 1).coerceAtMost(history.lastIndex)
+                            currentFeatureState.copy(
+                                historyNavIndex = currentFeatureState.historyNavIndex + (sessionId to newIndex),
+                                draftInputs = currentFeatureState.draftInputs + (sessionId to history[newIndex])
+                            )
+                        }
+                    }
+                    "DOWN" -> {
+                        when {
+                            currentIndex == -1 -> currentFeatureState // not navigating — no-op
+                            currentIndex == 0 -> {
+                                // Back to live draft — restore preNavDraft and exit navigation mode
+                                val restored = currentFeatureState.preNavDrafts[sessionId] ?: ""
+                                currentFeatureState.copy(
+                                    historyNavIndex = currentFeatureState.historyNavIndex - sessionId,
+                                    draftInputs = if (restored.isEmpty())
+                                        currentFeatureState.draftInputs - sessionId
+                                    else
+                                        currentFeatureState.draftInputs + (sessionId to restored),
+                                    preNavDrafts = currentFeatureState.preNavDrafts - sessionId
+                                )
+                            }
+                            else -> {
+                                val newIndex = currentIndex - 1
+                                currentFeatureState.copy(
+                                    historyNavIndex = currentFeatureState.historyNavIndex + (sessionId to newIndex),
+                                    draftInputs = currentFeatureState.draftInputs + (sessionId to history[newIndex])
+                                )
+                            }
+                        }
+                    }
+                    else -> currentFeatureState
+                }
+            }
+
+            ActionRegistry.Names.SESSION_INPUT_HISTORIES_LOADED -> {
+                val uuid = payload?.get("uuid")?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
+                val draft = payload["draft"]?.jsonPrimitive?.contentOrNull ?: ""
+                val history = payload["history"]?.jsonArray?.mapNotNull {
+                    it.jsonPrimitive.contentOrNull
+                } ?: emptyList()
+
+                val session = currentFeatureState.sessions.values.find { it.identity.uuid == uuid }
+                if (session != null) {
+                    // Session already loaded — apply directly
+                    val localHandle = session.identity.localHandle
+                    currentFeatureState.copy(
+                        draftInputs = currentFeatureState.draftInputs + (localHandle to draft),
+                        inputHistories = currentFeatureState.inputHistories + (localHandle to history)
+                    )
+                } else {
+                    // Session not yet loaded — buffer until SESSION_LOADED drains it
+                    val inputState = SessionInputState(draft = draft, history = history)
+                    currentFeatureState.copy(
+                        pendingInputLoads = currentFeatureState.pendingInputLoads + (uuid to inputState)
+                    )
+                }
+            }
+
             ActionRegistry.Names.SESSION_SET_ACTIVE_TAB -> {
                 val identifier = payload?.get("session")?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
                 val localHandle = resolveSessionId(identifier, currentFeatureState) ?: return currentFeatureState
@@ -953,10 +1176,30 @@ class SessionFeature(
                 val merged = currentFeatureState.sessions + loaded.sessions
                 val normalized = SessionState.normalizeOrderIndices(merged)
                 val newActiveLocalHandle = currentFeatureState.activeSessionLocalHandle ?: normalized.values.maxByOrNull { it.createdAt }?.identity?.localHandle
+
+                // Drain pending input loads for sessions that just arrived.
+                // This handles the startup race where input.json is read before localHandle.json.
+                var newDraftInputs = currentFeatureState.draftInputs
+                var newInputHistories = currentFeatureState.inputHistories
+                var newPendingInputLoads = currentFeatureState.pendingInputLoads
+
+                val newLocalHandles = normalized.keys - currentFeatureState.sessions.keys
+                newLocalHandles.forEach { localHandle ->
+                    val session = normalized[localHandle] ?: return@forEach
+                    val uuid = session.identity.uuid ?: return@forEach
+                    val pending = newPendingInputLoads[uuid] ?: return@forEach
+                    if (pending.draft.isNotEmpty()) newDraftInputs = newDraftInputs + (localHandle to pending.draft)
+                    if (pending.history.isNotEmpty()) newInputHistories = newInputHistories + (localHandle to pending.history)
+                    newPendingInputLoads = newPendingInputLoads - uuid
+                }
+
                 currentFeatureState.copy(
                     sessions = normalized,
                     activeSessionLocalHandle = newActiveLocalHandle,
-                    sessionOrder = SessionState.deriveSessionOrder(normalized)
+                    sessionOrder = SessionState.deriveSessionOrder(normalized),
+                    draftInputs = newDraftInputs,
+                    inputHistories = newInputHistories,
+                    pendingInputLoads = newPendingInputLoads
                 )
             }
             ActionRegistry.Names.SESSION_REORDER -> {

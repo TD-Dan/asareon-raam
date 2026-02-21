@@ -222,13 +222,26 @@ private fun LedgerPane(
 
 @Composable
 private fun MessageInput(store: Store, activeSession: Session, platformDependencies: PlatformDependencies, onSend: (String) -> Unit) {
-    var text by remember { mutableStateOf("") }
     var menuExpanded by remember { mutableStateOf(false) }
 
     // ── Autocomplete state ──
     val appState by store.state.collectAsState()
     val sessionState = appState.featureStates["session"] as? SessionState
     var acState by remember { mutableStateOf<SlashCommandEngine.AutocompleteState?>(null) }
+
+    // ── Draft text is driven from the store — survives tab switches and app restarts ──
+    val sessionLocalHandle = activeSession.identity.localHandle
+    var text = sessionState?.draftInputs?.get(sessionLocalHandle) ?: ""
+
+    fun dispatchDraftChange(newText: String) {
+        store.dispatch("session.ui", Action(
+            ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED,
+            buildJsonObject {
+                put("sessionId", sessionLocalHandle)
+                put("draft", newText)
+            }
+        ))
+    }
 
     val engine = remember(
         appState.identityRegistry,
@@ -382,10 +395,10 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                     state = state,
                     onStateChange = { newState ->
                         acState = newState
-                        if (newState == null) text = ""
+                        if (newState == null) dispatchDraftChange("")
                     },
                     onInsert = { codeBlock ->
-                        text = codeBlock
+                        dispatchDraftChange(codeBlock)
                         acState = null
                     }
                 )
@@ -399,7 +412,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                 OutlinedTextField(
                     value = text,
                     onValueChange = { newText ->
-                        text = newText
+                        dispatchDraftChange(newText)
                         syncAutocompleteFromText(newText)
                     },
                     modifier = Modifier.weight(1f).onPreviewKeyEvent { event ->
@@ -419,35 +432,62 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                                         return@onPreviewKeyEvent handleCandidateSelection()
                                     }
                                     Key.Enter -> {
-                                        // Plain Enter selects candidate; Ctrl+Enter still sends
                                         if (!event.isCtrlPressed && !event.isMetaPressed) {
                                             return@onPreviewKeyEvent handleCandidateSelection()
                                         }
                                     }
                                     Key.Escape -> {
                                         acState = null
-                                        text = ""
+                                        dispatchDraftChange("")
                                         return@onPreviewKeyEvent true
                                     }
+                                    else -> {}
                                 }
                             }
 
                             // ── Escape during PARAMS stage dismisses autocomplete ──
                             if (acState?.stage == SlashCommandEngine.Stage.PARAMS && event.key == Key.Escape) {
                                 acState = null
-                                text = ""
+                                dispatchDraftChange("")
                                 return@onPreviewKeyEvent true
                             }
 
-                            // ── Ctrl+Enter to send (original behavior) ──
+                            // ── History navigation (Up/Down when autocomplete is not active) ──
+                            if (acState == null) {
+                                when (event.key) {
+                                    Key.DirectionUp -> {
+                                        store.dispatch("session.ui", Action(
+                                            ActionRegistry.Names.SESSION_HISTORY_NAVIGATE,
+                                            buildJsonObject {
+                                                put("sessionId", sessionLocalHandle)
+                                                put("direction", "UP")
+                                            }
+                                        ))
+                                        return@onPreviewKeyEvent true
+                                    }
+                                    Key.DirectionDown -> {
+                                        store.dispatch("session.ui", Action(
+                                            ActionRegistry.Names.SESSION_HISTORY_NAVIGATE,
+                                            buildJsonObject {
+                                                put("sessionId", sessionLocalHandle)
+                                                put("direction", "DOWN")
+                                            }
+                                        ))
+                                        return@onPreviewKeyEvent true
+                                    }
+                                    else -> {}
+                                }
+                            }
+
+                            // ── Ctrl+Enter to send ──
                             if (event.key == Key.Enter && (event.isCtrlPressed || event.isMetaPressed)) {
-                                if (text.isNotBlank()) { onSend(text); text = ""; acState = null }
+                                if (text.isNotBlank()) { onSend(text); acState = null }
                                 return@onPreviewKeyEvent true
                             }
                         }
                         false
                     },
-                    placeholder = { Text("Enter message (Ctrl+Enter to send, / for commands)...") }
+                    placeholder = { Text("Enter message (Ctrl+Enter to send)...") }
                 )
                 Box {
                     IconButton(onClick = { menuExpanded = true }) {
@@ -480,7 +520,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                         )
                     }
                 }
-                IconButton(onClick = { if (text.isNotBlank()) { onSend(text); text = ""; acState = null } }, enabled = text.isNotBlank()) {
+                IconButton(onClick = { if (text.isNotBlank()) { onSend(text); acState = null } }, enabled = text.isNotBlank()) {
                     Icon(Icons.AutoMirrored.Filled.Send, "Send")
                 }
             }

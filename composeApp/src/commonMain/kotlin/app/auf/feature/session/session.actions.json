@@ -643,6 +643,75 @@
       }
     },
     {
+      "action_name": "session.INPUT_DRAFT_CHANGED",
+      "summary": "Signals that the user has modified the message input field. Updates the transient draft in state and starts a 5-second debounce before writing {uuid}/input.json to disk.",
+      "open": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The localHandle of the session whose draft changed."
+          },
+          "draft": {
+            "type": "string",
+            "description": "The current full draft text."
+          }
+        },
+        "required": ["sessionId", "draft"]
+      }
+    },
+    {
+      "action_name": "session.HISTORY_NAVIGATE",
+      "summary": "Navigates the per-session sent-message history. UP moves toward older entries (first UP saves the in-progress draft); DOWN moves toward newer entries (DOWN at the newest restores the pre-navigation draft). No-op when history is empty (UP) or when not navigating (DOWN).",
+      "open": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The localHandle of the session to navigate."
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["UP", "DOWN"],
+            "description": "'UP' moves toward older history entries; 'DOWN' moves toward newer entries / restores the pre-navigation draft."
+          }
+        },
+        "required": ["sessionId", "direction"]
+      }
+    },
+    {
+      "action_name": "session.INPUT_HISTORIES_LOADED",
+      "summary": "[INTERNAL] Dispatched after SessionFeature reads a {uuid}/input.json. Carries the restored draft and history so the reducer can populate draftInputs and inputHistories.",
+      "open": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "The UUID of the session this input state belongs to."
+          },
+          "draft": {
+            "type": "string",
+            "description": "The restored draft text."
+          },
+          "history": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "The restored sent-message history, newest-first."
+          }
+        },
+        "required": ["uuid"]
+      }
+    },
+    {
       "action_name": "session.LOADED",
       "summary": "[INTERNAL] Dispatched after all session transcripts have been loaded from disk.",
       "open": false,

@@ -7,6 +7,17 @@ import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
 
 /**
+ * Persisted per-session input field state: the current draft text and the
+ * sent-message history (newest-first, capped at MAX_HISTORY_SIZE).
+ * Stored as {uuid}/input.json alongside the session's ledger file.
+ */
+@Serializable
+data class SessionInputState(
+    val draft: String = "",
+    val history: List<String> = emptyList()
+)
+
+/**
  * A sealed interface representing a single block of content within a message.
  * This allows for rich, structured messages instead of simple strings.
  */
@@ -150,7 +161,43 @@ data class SessionState(
 
     /** Pending session creations awaiting identity approval, keyed by UUID. */
     @Transient
-    val pendingCreations: Map<String, PendingSessionCreation> = emptyMap()
+    val pendingCreations: Map<String, PendingSessionCreation> = emptyMap(),
+
+    // ── Input draft & history ─────────────────────────────────────────────
+    // All five fields are @Transient so they are never written into the session
+    // JSON ledger file. They are persisted separately via {uuid}/input.json.
+
+    /** Live draft text for each session, keyed by localHandle. */
+    @Transient
+    val draftInputs: Map<String, String> = emptyMap(),
+
+    /** Sent-message history per session, keyed by localHandle, newest-first. */
+    @Transient
+    val inputHistories: Map<String, List<String>> = emptyMap(),
+
+    /**
+     * History navigation cursor per session, keyed by localHandle.
+     * Absent (or -1) means the user is not currently navigating history.
+     * 0 = most recent entry, history.lastIndex = oldest entry.
+     */
+    @Transient
+    val historyNavIndex: Map<String, Int> = emptyMap(),
+
+    /**
+     * The draft text that was in the input field before the user started
+     * navigating history (saved on the first UP press, restored on DOWN
+     * past index 0). Keyed by localHandle.
+     */
+    @Transient
+    val preNavDrafts: Map<String, String> = emptyMap(),
+
+    /**
+     * Buffer for input.json data that arrived before its session was loaded
+     * from disk (startup race). Keyed by session UUID.
+     * Drained into draftInputs/inputHistories when SESSION_LOADED fires.
+     */
+    @Transient
+    val pendingInputLoads: Map<String, SessionInputState> = emptyMap()
 
 ) : FeatureState {
 
