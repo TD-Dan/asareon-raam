@@ -14,6 +14,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -231,7 +233,22 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
 
     // ── Draft text is driven from the store — survives tab switches and app restarts ──
     val sessionLocalHandle = activeSession.identity.localHandle
-    var text = sessionState?.draftInputs?.get(sessionLocalHandle) ?: ""
+    val storeText = sessionState?.draftInputs?.get(sessionLocalHandle) ?: ""
+
+    // Local TextFieldValue state — allows cursor (selection) control.
+    // Initialized with cursor at end; re-keyed when switching sessions.
+    var textFieldValue by remember(sessionLocalHandle) {
+        mutableStateOf(TextFieldValue(storeText, TextRange(storeText.length)))
+    }
+
+    // Sync from store when text changes externally (history navigation, tab switch).
+    // When the store-driven text differs from what the user last typed, update the
+    // local TextFieldValue and place the cursor at the end of the new text.
+    LaunchedEffect(storeText, sessionLocalHandle) {
+        if (textFieldValue.text != storeText) {
+            textFieldValue = TextFieldValue(storeText, TextRange(storeText.length))
+        }
+    }
 
     fun dispatchDraftChange(newText: String) {
         store.dispatch("session.ui", Action(
@@ -241,6 +258,12 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                 put("draft", newText)
             }
         ))
+    }
+
+    /** Sets the local TextFieldValue with the cursor at the end and dispatches the draft change. */
+    fun setTextAndDispatch(newText: String) {
+        textFieldValue = TextFieldValue(newText, TextRange(newText.length))
+        dispatchDraftChange(newText)
     }
 
     val engine = remember(
@@ -333,7 +356,8 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                 if (candidates.isEmpty()) return false
 
                 val selected = candidates[index]
-                text = "$prefix${selected.name}."
+                val newText = "$prefix${selected.name}."
+                setTextAndDispatch(newText)
                 acState = engine.selectFeature(s, selected.name)
                 return true
             }
@@ -394,11 +418,21 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                     engine = engine,
                     state = state,
                     onStateChange = { newState ->
+                        val prevStage = acState?.stage
                         acState = newState
-                        if (newState == null) dispatchDraftChange("")
+                        if (newState == null) {
+                            setTextAndDispatch("")
+                        } else if (newState.stage == SlashCommandEngine.Stage.ACTION
+                            && prevStage == SlashCommandEngine.Stage.FEATURE
+                            && newState.selectedFeature != null
+                        ) {
+                            // Feature selected via mouse click — sync input text to match
+                            val prefix = if (newState.adminMode) "//" else "/"
+                            setTextAndDispatch("$prefix${newState.selectedFeature}.")
+                        }
                     },
                     onInsert = { codeBlock ->
-                        dispatchDraftChange(codeBlock)
+                        setTextAndDispatch(codeBlock)
                         acState = null
                     }
                 )
@@ -410,10 +444,17 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
             Row(Modifier.padding(8.dp), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
 
                 OutlinedTextField(
-                    value = text,
-                    onValueChange = { newText ->
-                        dispatchDraftChange(newText)
-                        syncAutocompleteFromText(newText)
+                    value = textFieldValue,
+                    onValueChange = { newValue ->
+                        val textChanged = newValue.text != textFieldValue.text
+                        textFieldValue = newValue
+                        // Always dispatch so that any user interaction (including cursor
+                        // movement) commits the current text as the draft and exits
+                        // history navigation mode if active.
+                        dispatchDraftChange(newValue.text)
+                        if (textChanged) {
+                            syncAutocompleteFromText(newValue.text)
+                        }
                     },
                     modifier = Modifier.weight(1f).onPreviewKeyEvent { event ->
                         if (event.type == KeyEventType.KeyDown) {
@@ -438,7 +479,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                                     }
                                     Key.Escape -> {
                                         acState = null
-                                        dispatchDraftChange("")
+                                        setTextAndDispatch("")
                                         return@onPreviewKeyEvent true
                                     }
                                     else -> {}
@@ -448,7 +489,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                             // ── Escape during PARAMS stage dismisses autocomplete ──
                             if (acState?.stage == SlashCommandEngine.Stage.PARAMS && event.key == Key.Escape) {
                                 acState = null
-                                dispatchDraftChange("")
+                                setTextAndDispatch("")
                                 return@onPreviewKeyEvent true
                             }
 
@@ -481,7 +522,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
 
                             // ── Ctrl+Enter to send ──
                             if (event.key == Key.Enter && (event.isCtrlPressed || event.isMetaPressed)) {
-                                if (text.isNotBlank()) { onSend(text); acState = null }
+                                if (textFieldValue.text.isNotBlank()) { onSend(textFieldValue.text); acState = null }
                                 return@onPreviewKeyEvent true
                             }
                         }
@@ -520,7 +561,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                         )
                     }
                 }
-                IconButton(onClick = { if (text.isNotBlank()) { onSend(text); acState = null } }, enabled = text.isNotBlank()) {
+                IconButton(onClick = { if (textFieldValue.text.isNotBlank()) { onSend(textFieldValue.text); acState = null } }, enabled = textFieldValue.text.isNotBlank()) {
                     Icon(Icons.AutoMirrored.Filled.Send, "Send")
                 }
             }

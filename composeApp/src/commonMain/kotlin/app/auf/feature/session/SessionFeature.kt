@@ -158,7 +158,8 @@ class SessionFeature(
                 val content = data["content"]?.jsonPrimitive?.content ?: ""
 
                 // Route input.json files to the input-state handler — they are not Session objects.
-                if (subpath.endsWith("/input.json")) {
+                // Check both "/" and "\" separators for cross-platform compatibility (Windows uses "\").
+                if (subpath.endsWith("/input.json") || subpath.endsWith("\\input.json")) {
                     if (content.isNotBlank()) handleInputJsonRead(subpath, content, store)
                     if (startupLoadingActive) {
                         pendingStartupOps--
@@ -179,7 +180,7 @@ class SessionFeature(
                     val session = json.decodeFromString<Session>(content)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_LOADED, Json.encodeToJsonElement(InternalSessionLoadedPayload(mapOf(session.identity.localHandle to session))) as JsonObject))
                 } catch (e: Exception) {
-                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse session file: $subpath. Error: ${e.message}")
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse session file: $subpath. Error: ${e.message}", e)
                     if (startupLoadingActive) {
                         pendingStartupOps--
                         checkStartupLoadComplete(store, sessionState)
@@ -698,11 +699,11 @@ class SessionFeature(
      */
     private fun handleInputJsonRead(subpath: String, content: String, store: Store) {
         if (content.isBlank()) return
-        // subpath is always "{uuid}/input.json" as a relative path inside the session folder,
-        // so the UUID is always the second-to-last path segment.
-        // substringBefore("/") would break on absolute paths (e.g. "/app/sessions/uuid/input.json")
-        // where it would return "". Using the parent segment is robust against any prefix.
-        val uuid = subpath.trimEnd('/').substringBeforeLast("/").substringAfterLast("/")
+        // subpath is always "{uuid}/input.json" (or "{uuid}\input.json" on Windows)
+        // as a relative path inside the session folder, so the UUID is always the
+        // second-to-last path segment. Replace backslashes for cross-platform compatibility.
+        val normalizedPath = subpath.replace('\\', '/')
+        val uuid = normalizedPath.trimEnd('/').substringBeforeLast("/").substringAfterLast("/")
         if (uuid.isBlank()) {
             platformDependencies.log(LogLevel.WARN, identity.handle,
                 "Cannot extract UUID from input.json subpath: $subpath — ignoring.")
@@ -1079,8 +1080,16 @@ class SessionFeature(
                 val decoded = payload?.let { json.decodeFromJsonElement<InputDraftChangedPayload>(it) }
                     ?: return currentFeatureState
                 if (!currentFeatureState.sessions.containsKey(decoded.sessionId)) return currentFeatureState
+
+                // If the user is navigating history, any edit (text change or cursor
+                // movement) commits the recalled entry as the live draft and exits
+                // navigation mode — subsequent Up/Down start fresh from history[0].
+                val navActive = (currentFeatureState.historyNavIndex[decoded.sessionId] ?: -1) >= 0
+
                 currentFeatureState.copy(
-                    draftInputs = currentFeatureState.draftInputs + (decoded.sessionId to decoded.draft)
+                    draftInputs = currentFeatureState.draftInputs + (decoded.sessionId to decoded.draft),
+                    historyNavIndex = if (navActive) currentFeatureState.historyNavIndex - decoded.sessionId else currentFeatureState.historyNavIndex,
+                    preNavDrafts = if (navActive) currentFeatureState.preNavDrafts - decoded.sessionId else currentFeatureState.preNavDrafts
                 )
             }
 
