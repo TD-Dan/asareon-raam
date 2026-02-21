@@ -468,6 +468,29 @@ class CoreFeature(
                     ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
                 ))
             }
+
+            ActionRegistry.Names.COMMANDBOT_ACTION_CREATED -> {
+                val acPayload = action.payload ?: return
+                val originatorId = acPayload["originatorId"]?.jsonPrimitive?.contentOrNull ?: return
+                val sessionId = acPayload["sessionId"]?.jsonPrimitive?.contentOrNull ?: return
+                val actionName = acPayload["actionName"]?.jsonPrimitive?.contentOrNull ?: return
+                val actionPayload = acPayload["actionPayload"]?.jsonObject ?: return
+
+                // Only claim actions from core user identities.
+                val originatorIdentity = store.state.value.identityRegistry[originatorId]
+                if (originatorIdentity?.parentHandle != "core") return
+
+                // Dispatch the domain action attributed to the user.
+                // Causality tracking is preserved — the originator on the bus
+                // is the actual user who typed the command.
+                val domainAction = Action(name = actionName, payload = actionPayload)
+                store.deferredDispatch(originatorId, domainAction)
+
+                platformDependencies.log(
+                    app.auf.util.LogLevel.INFO, identity.handle,
+                    "Dispatched '$actionName' on behalf of user '$originatorId' (session=$sessionId)."
+                )
+            }
         }
     }
 

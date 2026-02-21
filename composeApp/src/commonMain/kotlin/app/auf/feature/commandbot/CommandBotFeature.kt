@@ -309,22 +309,15 @@ class CommandBotFeature(
                     stageApproval(actionName, payloadJson, sessionId, originalSenderId, store)
                     return
                 }
-
-                // --- Publish validated action for the owning feature to dispatch ---
-                publishActionCreated(
-                    actionName = actionName,
-                    payload = payloadJson,
-                    sessionId = sessionId,
-                    originatorId = originalSenderId,
-                    store = store
-                )
-                return
             }
 
-            // === HUMAN USER PATH (unchanged) ===
-            // Guardrail (CAG-002): Causality Tracking. Dispatched on BEHALF of the original sender.
-            val commandAction = Action(name = actionName, payload = payloadJson)
-            store.deferredDispatch(originalSenderId, commandAction)
+            publishActionCreated(
+                actionName = actionName,
+                payload = payloadJson,
+                sessionId = sessionId,
+                originatorId = originalSenderId,
+                store = store
+            )
 
         } catch (e: Exception) {
             // Guardrail (CAG-003): Robust Error Handling with feedback loop.
