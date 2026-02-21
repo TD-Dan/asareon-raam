@@ -175,6 +175,7 @@ class CommandBotFeatureT2GuardrailsTest {
     fun `agent tracking - removing agent from registry reverts sender to human treatment`() = runTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
+        // TODO: The premise of this test is wrong. removing agent from registry should block that agent from doing anything as it no longer exists.
 
         // Remove the agent from the identity registry (simulates UNREGISTER_IDENTITY)
         harness.store.updateIdentityRegistry { registry ->
@@ -224,6 +225,7 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         // agent-one should now be treated as human (unrestricted)
+        // TODO: NO. agent-one should now not exist and it should not be allowed to post anything.
         postRawMessage(harness, agentOneHandle, "```auf_core.SHOW_TOAST\n{ \"message\": \"From ex-agent\" }\n```")
         runCurrent()
 
