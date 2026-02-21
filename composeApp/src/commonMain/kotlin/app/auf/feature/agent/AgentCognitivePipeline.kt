@@ -210,7 +210,7 @@ object AgentCognitivePipeline {
 
         // 2. Dispatch workspace listing request (parallel)
         val safeAgentId = agentId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
-        store.deferredDispatch("agent", Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.FILESYSTEM_LIST, buildJsonObject {
             put("subpath", "$safeAgentId/workspace")
             put("recursive", true)
             put("correlationId", agentId)

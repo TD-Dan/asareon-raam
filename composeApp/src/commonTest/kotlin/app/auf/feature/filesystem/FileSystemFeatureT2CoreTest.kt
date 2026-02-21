@@ -250,7 +250,7 @@ class FileSystemFeatureT2CoreTest {
     // ========================================================================
 
     @Test
-    fun `SYSTEM_LIST happy path returns relative listing via targeted action`() {
+    fun `LIST happy path returns relative listing via targeted action`() {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
@@ -262,7 +262,7 @@ class FileSystemFeatureT2CoreTest {
         platform.writeFileContent("$sandboxPath/config.json", "{}")
         platform.writeFileContent("$sandboxPath/data.txt", "hello")
 
-        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_LIST, buildJsonObject {
             put("subpath", "")
         })
 
@@ -284,7 +284,7 @@ class FileSystemFeatureT2CoreTest {
     }
 
     @Test
-    fun `SYSTEM_LIST with correlationId passes it through to the response`() {
+    fun `LIST with correlationId passes it through to the response`() {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
@@ -292,7 +292,7 @@ class FileSystemFeatureT2CoreTest {
         val sandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator"
         platform.createDirectories(sandboxPath)
 
-        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_LIST, buildJsonObject {
             put("subpath", "")
             put("correlationId", "corr-123")
         })

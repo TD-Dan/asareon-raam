@@ -1,6 +1,7 @@
 {
   "feature_name": "filesystem",
   "summary": "Acts as the sole, transactional, and secure gateway to the file system.",
+  "permissions": ["read", "write", "delete", "workspace", "system-files", "ui"],
   "actions": [
     {
       "action_name": "filesystem.NAVIGATE",
@@ -18,14 +19,17 @@
         "required": [
           "path"
         ]
-      }
+      },
+      "required_permissions": ["write", "ui"]
+
     },
     {
       "action_name": "filesystem.SELECT_DIRECTORY_UI",
       "summary": "Triggers the native OS file chooser to select a directory.",
       "public": true,
       "broadcast": true,
-      "targeted": false
+      "targeted": false,
+      "required_permissions": ["read", "system-files", "ui"]
     },
     {
       "action_name": "filesystem.REQUEST_SCOPED_READ_UI",
@@ -54,10 +58,11 @@
             "description": "Optional list of extensions to filter by (e.g., [\"json\", \"md\"])"
           }
         }
-      }
+      },
+      "required_permissions": ["read", "system-files", "ui"]
     },
     {
-      "action_name": "filesystem.SYSTEM_LIST",
+      "action_name": "filesystem.LIST",
       "summary": "A sandboxed service action for other features to request a listing of files/directories in their private sandbox. The response is delivered via the private channel.",
       "public": true,
       "broadcast": true,
@@ -531,7 +536,7 @@
               "string",
               "null"
             ],
-            "description": "Correlation ID passed through from the original SYSTEM_LIST request."
+            "description": "Correlation ID passed through from the original LIST request."
           }
         },
         "required": [

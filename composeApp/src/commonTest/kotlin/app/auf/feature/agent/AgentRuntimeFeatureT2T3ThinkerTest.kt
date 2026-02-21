@@ -48,7 +48,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
     fun `handleLedgerResponse stages context and triggers full context gathering`() = runTest {
         // This test verifies the full pipeline from ledger response to gateway request.
         // The flow is: LedgerResponse → STAGE_TURN_CONTEXT → evaluateTurnContext
-        // → FILESYSTEM_SYSTEM_LIST → FileSystemFeature → SET_WORKSPACE_CONTEXT
+        // → FILESYSTEM_LIST → FileSystemFeature → SET_WORKSPACE_CONTEXT
         // → evaluateFullContext (gate) → executeTurn → GATEWAY_GENERATE_CONTENT
 
         val harness = TestEnvironment.create()
@@ -82,7 +82,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
 
             // ASSERT 2: GATEWAY_GENERATE_CONTENT dispatched (proving full context pipeline completed)
             // This proves the loop: PrivateData -> Pipeline -> STAGE_TURN_CONTEXT -> evaluateTurnContext
-            // -> FILESYSTEM_SYSTEM_LIST -> FileSystemFeature -> SET_WORKSPACE_CONTEXT -> evaluateFullContext -> executeTurn
+            // -> FILESYSTEM_LIST -> FileSystemFeature -> SET_WORKSPACE_CONTEXT -> evaluateFullContext -> executeTurn
             val gatewayAction = harness.processedActions.find { it.name == ActionRegistry.Names.GATEWAY_GENERATE_CONTENT }
             assertNotNull(gatewayAction)
         }

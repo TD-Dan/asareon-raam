@@ -270,5 +270,5 @@ internal fun executeImportWrites(
 
     store.dispatch("ui.kgView", Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject { put("message", "Import complete. Reloading Knowledge Graph...") }))
     store.deferredDispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) }))
-    store.deferredDispatch("knowledgegraph", Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST))
+    store.deferredDispatch("knowledgegraph", Action(ActionRegistry.Names.FILESYSTEM_LIST))
 }

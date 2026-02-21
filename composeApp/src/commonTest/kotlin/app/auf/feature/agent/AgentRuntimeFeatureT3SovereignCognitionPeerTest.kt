@@ -115,7 +115,7 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
         harness.runAndLogOnFailure {
             // ACT 1: Force KG to load personas.
             // We use the feature's own discovery mechanism.
-            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST))
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.FILESYSTEM_LIST))
             runCurrent()
 
             // ACT 2: Initiate Turn

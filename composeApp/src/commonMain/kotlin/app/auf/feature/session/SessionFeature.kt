@@ -146,7 +146,7 @@ class SessionFeature(
                     } else if (!entry.path.contains(".")) {
                         // Looks like a UUID folder — list its contents
                         if (startupLoadingActive) pendingStartupOps++
-                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST, buildJsonObject { put("subpath", platformDependencies.getFileName(entry.path)) }))
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LIST, buildJsonObject { put("subpath", platformDependencies.getFileName(entry.path)) }))
                     }
                 }
 
@@ -190,7 +190,7 @@ class SessionFeature(
             ActionRegistry.Names.SYSTEM_STARTING -> {
                 startupLoadingActive = true
                 pendingStartupOps = 1 // the root listing dispatched below
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LIST))
                 // Register hide-hidden settings with the Settings feature for persistence.
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", SessionState.SETTING_HIDE_HIDDEN_VIEWER)

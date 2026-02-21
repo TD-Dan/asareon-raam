@@ -326,7 +326,7 @@ class FileSystemFeature(
                 val newSet = if (action.name.startsWith("filesystem.ADD")) fileSystemState.favoritePaths + path else fileSystemState.favoritePaths - path
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject { put("key", settingKeyFavorites); put("value", serializeSet(newSet)) }))
             }
-            ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST -> {
+            ActionRegistry.Names.FILESYSTEM_LIST -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SystemListPayload>(it) } ?: SystemListPayload()
                 if (!filepathGuard(payload.subpath, originator, "list directory")) return
 

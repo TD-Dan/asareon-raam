@@ -314,7 +314,7 @@ class SessionFeatureT2CoreTest {
     }
 
     @Test
-    fun `when the system starts it should dispatch SYSTEM_LIST to begin loading process`() = runTest {
+    fun `when the system starts it should dispatch LIST to begin loading process`() = runTest {
         val harness = TestEnvironment.create()
             .withFeature(sessionFeature)
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
@@ -324,8 +324,8 @@ class SessionFeatureT2CoreTest {
             harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
             testScheduler.advanceUntilIdle()
 
-            val listAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST && it.originator == "session" }
-            assertNotNull(listAction, "Should have dispatched filesystem.SYSTEM_LIST")
+            val listAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_LIST && it.originator == "session" }
+            assertNotNull(listAction, "Should have dispatched filesystem.LIST")
         }
     }
 
@@ -350,9 +350,9 @@ class SessionFeatureT2CoreTest {
             ))
             testScheduler.advanceUntilIdle()
 
-            // Should dispatch SYSTEM_LIST for each UUID folder to list its contents
+            // Should dispatch LIST for each UUID folder to list its contents
             val listActions = harness.processedActions.filter {
-                it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST && it.originator == "session"
+                it.name == ActionRegistry.Names.FILESYSTEM_LIST && it.originator == "session"
             }
             assertEquals(2, listActions.size, "Should list contents of each UUID folder")
         }

@@ -735,7 +735,7 @@ The `generateActionRegistry` task in `build.gradle.kts` is rewritten to:
 | `session.CREATE` | `exposedToAgents` missing `isHidden`, `isPrivate` | Superset — no issue |
 | `session.LIST_SESSIONS` | `exposedToAgents` missing `responseSession` | Auto-filled by CommandBot — no issue |
 | `filesystem.SYSTEM_WRITE` | `listensFor` has `encrypt` not in agent schema | Sandboxing rewrites `encrypt` → `"false"` — no issue |
-| `filesystem.SYSTEM_LIST` | `listensFor` has `correlationId` not in agent schema | Optional field — no issue |
+| `filesystem.LIST` | `listensFor` has `correlationId` not in agent schema | Optional field — no issue |
 
 **Statistics**: 168 total actions (105 commands, 18 events, 37 internal, 8 targeted). 63 action name renames. 15 agent-exposed actions preserved with full metadata.
 
@@ -1327,7 +1327,7 @@ The UUID folder is stable across renames. When a session is renamed, `UPDATE_IDE
 #### File Loading (Two-Level Traversal)
 
 `FILESYSTEM_RETURN_LIST` now handles two levels:
-1. First response: top-level listing of UUID folders → dispatches `SYSTEM_LIST` for each UUID folder
+1. First response: top-level listing of UUID folders → dispatches `LIST` for each UUID folder
 2. Second response: contents of a UUID folder → dispatches `SYSTEM_READ` for each `.json` file inside
 
 #### CoreFeature Additions
@@ -2113,7 +2113,7 @@ Full v2.0 compatibility audit performed on KnowledgeGraphFeature. Production cod
 - [x] All `Envelopes.*` references replaced with flat `ActionRegistry.Names.*`
 
 **New T2 Side-Effect Tests (7 tests):**
-- [x] `SYSTEM_STARTING should dispatch initial FILESYSTEM_SYSTEM_LIST` — boot sequence entry point (requires `AppLifecycle.INITIALIZING`)
+- [x] `SYSTEM_STARTING should dispatch initial FILESYSTEM_LIST` — boot sequence entry point (requires `AppLifecycle.INITIALIZING`)
 - [x] `PERSONA_LOADED should broadcast AVAILABLE_PERSONAS_UPDATED when roots change`
 - [x] `RELEASE_HKG should broadcast RESERVATIONS_UPDATED`
 - [x] `CREATE_PERSONA should write file and trigger filesystem reload`

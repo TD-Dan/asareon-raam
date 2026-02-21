@@ -41,7 +41,7 @@ object ExposedActionsContextProvider {
         appendLine("```")
         appendLine()
         appendLine("EXAMPLE — Listing your workspace:")
-        appendLine("```auf_filesystem.SYSTEM_LIST")
+        appendLine("```auf_filesystem.LIST")
         appendLine("{")
         appendLine("  \"recursive\": true")
         appendLine("}")

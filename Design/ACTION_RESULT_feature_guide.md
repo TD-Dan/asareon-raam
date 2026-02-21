@@ -28,7 +28,7 @@ Not every action needs ACTION_RESULT. Use this checklist:
 | Action type | ACTION_RESULT? | correlationId threading? | Example |
 |-------------|---------------|--------------------------|---------|
 | Command-dispatchable mutation | **Yes** | Yes | `SYSTEM_WRITE`, `SYSTEM_DELETE` |
-| Command-dispatchable query | **Yes** | Yes | `SYSTEM_READ`, `SYSTEM_LIST` |
+| Command-dispatchable query | **Yes** | Yes | `SYSTEM_READ`, `LIST` |
 | Internal/UI-only action | No | No | `TOGGLE_ITEM_EXPANDED`, `NAVIGATE` |
 | Targeted response (`RETURN_*`) | No | Thread it through | `RETURN_READ`, `RETURN_LIST` |
 
@@ -333,7 +333,7 @@ The filesystem implementation is the reference. It covers all the patterns:
 | Action | Type | ACTION_RESULT summary | DELIVER_TO_SESSION |
 |--------|------|----------------------|-------------------|
 | `SYSTEM_READ` | Query | `"Read 1 file (N bytes)"` | File content in code fence |
-| `SYSTEM_LIST` | Query | `"Listed N items"` | Directory listing in code fence |
+| `LIST` | Query | `"Listed N items"` | Directory listing in code fence |
 | `SYSTEM_WRITE` | Mutation | `"Wrote 1 file (N bytes)"` | Not needed |
 | `SYSTEM_DELETE` | Mutation | `"Deleted 1 file"` | Not needed |
 | `SYSTEM_DELETE_DIRECTORY` | Mutation | `"Deleted directory"` | Not needed |

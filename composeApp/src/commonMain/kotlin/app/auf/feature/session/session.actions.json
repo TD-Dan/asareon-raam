@@ -1,6 +1,7 @@
 {
   "feature_name": "session",
   "summary": "Acts as a pure, passive data manager for multiple, concurrent session transcripts (the 'Public Ledger').",
+  "permissions": ["read", "write", "delete", "sessions", "messages", "ui"],
   "actions": [
     {
       "action_name": "session.CREATE",
@@ -27,7 +28,8 @@
       },
       "agent_exposure": {
         "requires_approval": true
-      }
+      },
+      "required_permissions": ["write", "sessions"]
     },
     {
       "action_name": "session.CLONE",
@@ -49,7 +51,8 @@
       },
       "agent_exposure": {
         "requires_approval": true
-      }
+      },
+      "required_permissions": ["read", "write", "sessions"]
     },
     {
       "action_name": "session.UPDATE_CONFIG",
@@ -75,7 +78,8 @@
       },
       "agent_exposure": {
         "requires_approval": true
-      }
+      },
+      "required_permissions": ["read", "write", "sessions"]
     },
     {
       "action_name": "session.DELETE",
@@ -97,7 +101,8 @@
       },
       "agent_exposure": {
         "requires_approval": true
-      }
+      },
+      "required_permissions": ["delete", "sessions"]
     },
     {
       "action_name": "session.POST",
@@ -149,7 +154,8 @@
         "auto_fill_rules": {
           "senderId": "{agentId}"
         }
-      }
+      },
+      "required_permissions": ["write", "messages"]
     },
     {
       "action_name": "session.UPDATE_MESSAGE",
@@ -178,7 +184,8 @@
           "session",
           "messageId"
         ]
-      }
+      },
+      "required_permissions": ["read", "write", "messages"]
     },
     {
       "action_name": "session.DELETE_MESSAGE",
@@ -204,11 +211,12 @@
       },
       "agent_exposure": {
         "requires_approval": true
-      }
+      },
+      "required_permissions": ["delete", "messages"]
     },
     {
       "action_name": "session.REQUEST_LEDGER_CONTENT",
-      "summary": "Requests the formatted ledger content for a specific session. Used by agents to build context for a cognitive turn.",
+      "summary": "Requests the formatted full ledger content for a specific session.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -226,7 +234,8 @@
           "sessionId",
           "correlationId"
         ]
-      }
+      },
+      "required_permissions": ["read", "messages", "sessions"]
     },
     {
       "action_name": "session.SET_ACTIVE_TAB",
@@ -245,7 +254,8 @@
         "required": [
           "session"
         ]
-      }
+      },
+      "required_permissions": ["write", "ui"]
     },
     {
       "action_name": "session.SET_EDITING_SESSION_NAME",
@@ -263,7 +273,8 @@
             ]
           }
         }
-      }
+      },
+      "required_permissions": ["write", "ui"]
     },
     {
       "action_name": "session.SET_EDITING_MESSAGE",
@@ -281,7 +292,8 @@
             ]
           }
         }
-      }
+      },
+      "required_permissions": ["write", "ui"]
     },
     {
       "action_name": "session.TOGGLE_MESSAGE_COLLAPSED",
@@ -303,7 +315,8 @@
           "sessionId",
           "messageId"
         ]
-      }
+      },
+      "required_permissions": ["write", "ui"]
     },
     {
       "action_name": "session.TOGGLE_MESSAGE_RAW_VIEW",
@@ -325,7 +338,8 @@
           "sessionId",
           "messageId"
         ]
-      }
+      },
+      "required_permissions": ["write", "ui"]
     },
     {
       "action_name": "session.REORDER",
@@ -349,7 +363,8 @@
           "sessionId",
           "toIndex"
         ]
-      }
+      },
+      "required_permissions": ["write", "ui"]
     },
     {
       "action_name": "session.SET_ORDER",
@@ -371,7 +386,8 @@
         "required": [
           "order"
         ]
-      }
+      },
+      "required_permissions": ["write", "ui"]
     },
     {
       "action_name": "session.TOGGLE_SESSION_HIDDEN",
@@ -390,7 +406,8 @@
         "required": [
           "session"
         ]
-      }
+      },
+      "required_permissions": ["write", "messages"]
     },
     {
       "action_name": "session.TOGGLE_MESSAGE_LOCKED",
@@ -412,7 +429,8 @@
           "sessionId",
           "messageId"
         ]
-      }
+      },
+      "required_permissions": ["write", "messages"]
     },
     {
       "action_name": "session.CLEAR",
@@ -434,7 +452,8 @@
       },
       "agent_exposure": {
         "requires_approval": true
-      }
+      },
+      "required_permissions": ["delete", "messages"]
     },
     {
       "action_name": "session.LIST_SESSIONS",
@@ -456,7 +475,8 @@
         "auto_fill_rules": {
           "responseSession": "{sessionId}"
         }
-      }
+      },
+      "required_permissions": ["read", "sessions"]
     },
     {
       "action_name": "session.LOCK_MESSAGE",
@@ -488,7 +508,8 @@
       },
       "agent_exposure": {
         "requires_approval": true
-      }
+      },
+      "required_permissions": ["write", "messages"]
     },
     {
       "action_name": "session.UNLOCK_MESSAGE",
@@ -520,7 +541,8 @@
       },
       "agent_exposure": {
         "requires_approval": true
-      }
+      },
+      "required_permissions": ["write", "messages"]
     },
     {
       "action_name": "session.MESSAGE_POSTED",
@@ -645,7 +667,7 @@
     {
       "action_name": "session.INPUT_DRAFT_CHANGED",
       "summary": "Signals that the user has modified the message input field. Updates the transient draft in state and starts a 5-second debounce before writing {uuid}/input.json to disk.",
-      "public": true,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -666,7 +688,7 @@
     {
       "action_name": "session.HISTORY_NAVIGATE",
       "summary": "Navigates the per-session sent-message history. UP moves toward older entries (first UP saves the in-progress draft); DOWN moves toward newer entries (DOWN at the newest restores the pre-navigation draft). No-op when history is empty (UP) or when not navigating (DOWN).",
-      "public": true,
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -687,7 +709,7 @@
     },
     {
       "action_name": "session.INPUT_HISTORIES_LOADED",
-      "summary": "[INTERNAL] Dispatched after SessionFeature reads a {uuid}/input.json. Carries the restored draft and history so the reducer can populate draftInputs and inputHistories.",
+      "summary": "Dispatched after SessionFeature reads a {uuid}/input.json. Carries the restored draft and history so the reducer can populate draftInputs and inputHistories.",
       "public": false,
       "broadcast": false,
       "targeted": false,
@@ -713,7 +735,7 @@
     },
     {
       "action_name": "session.LOADED",
-      "summary": "[INTERNAL] Dispatched after all session transcripts have been loaded from disk.",
+      "summary": "Dispatched after all session transcripts have been loaded from disk.",
       "public": false,
       "broadcast": false,
       "targeted": false,

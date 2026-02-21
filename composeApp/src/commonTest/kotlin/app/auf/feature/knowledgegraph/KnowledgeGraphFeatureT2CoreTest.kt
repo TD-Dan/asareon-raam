@@ -341,7 +341,7 @@ class KnowledgeGraphFeatureT2CoreTest {
     // ========================================================================================
 
     @Test
-    fun `SYSTEM_STARTING should dispatch initial FILESYSTEM_SYSTEM_LIST`() {
+    fun `SYSTEM_STARTING should dispatch initial FILESYSTEM_LIST`() {
         // SYSTEM_STARTING is only allowed during INITIALIZING lifecycle
         val harness = TestEnvironment.create()
             .withFeature(feature)
@@ -351,8 +351,8 @@ class KnowledgeGraphFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
 
-            val listAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST }
-            assertNotNull(listAction, "SYSTEM_STARTING should trigger an initial FILESYSTEM_SYSTEM_LIST to discover personas.")
+            val listAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_LIST }
+            assertNotNull(listAction, "SYSTEM_STARTING should trigger an initial FILESYSTEM_LIST to discover personas.")
         }
     }
 
@@ -419,9 +419,9 @@ class KnowledgeGraphFeatureT2CoreTest {
             assertEquals("Test Persona", parsedContent["header"]!!.jsonObject["name"]!!.jsonPrimitive.content)
             assertEquals("AI_Persona_Root", parsedContent["header"]!!.jsonObject["type"]!!.jsonPrimitive.content)
 
-            // Assert a FILESYSTEM_SYSTEM_LIST reload was triggered
-            val reloadAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST }
-            assertNotNull(reloadAction, "CREATE_PERSONA should trigger a FILESYSTEM_SYSTEM_LIST reload.")
+            // Assert a FILESYSTEM_LIST reload was triggered
+            val reloadAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_LIST }
+            assertNotNull(reloadAction, "CREATE_PERSONA should trigger a FILESYSTEM_LIST reload.")
 
             // Assert a toast was shown
             assertTrue(harness.processedActions.any { it.name == ActionRegistry.Names.CORE_SHOW_TOAST })

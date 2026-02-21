@@ -109,7 +109,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // ASSERT: Workspace listing requested
             val workspaceListRequest = harness.processedActions.find { action ->
-                action.name == ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST &&
+                action.name == ActionRegistry.Names.FILESYSTEM_LIST &&
                         action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull == agentId
             }
             assertNotNull(workspaceListRequest, "Should request workspace listing")

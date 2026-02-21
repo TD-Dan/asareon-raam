@@ -95,7 +95,7 @@ class FileSystemFeatureT2GuardTest {
         val platform = FakePlatformDependencies("test")
         val feature = FileSystemFeature(platform)
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
-        val action = Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
+        val action = Action(ActionRegistry.Names.FILESYSTEM_LIST, buildJsonObject {
             put("subpath", "some/../../other/path")
         })
 

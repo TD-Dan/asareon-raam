@@ -123,7 +123,7 @@ class KnowledgeGraphFeature(
                 }
             }
             ActionRegistry.Names.SYSTEM_STARTING -> {
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LIST))
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_PERSONA_LOADED -> {
                 if (prevKgState?.personaRoots != kgState.personaRoots) {
@@ -166,7 +166,7 @@ class KnowledgeGraphFeature(
                     platformDependencies.log(LogLevel.WARN, identity.handle, "LOAD_PERSONA: Missing required 'personaId' field. Ignoring.")
                     return
                 }
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LIST, buildJsonObject {
                     put("subpath", personaId)
                     put("recursive", true)
                 }))
@@ -274,7 +274,7 @@ class KnowledgeGraphFeature(
                 }))
 
                 store.dispatch("ui.kgView", Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject { put("message", "Created persona '$name'.") }))
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_SYSTEM_LIST))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LIST))
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT -> {
                 val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: run {
