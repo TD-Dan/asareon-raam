@@ -3,6 +3,7 @@ package app.auf.feature.agent
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import app.auf.core.AppState
+import app.auf.core.Identity
 import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
@@ -39,6 +40,16 @@ class AgentRuntimeFeatureT1AvatarTest {
         fakeStore = FakeStore(AppState(), fakePlatform)
     }
 
+    /**
+     * Builds an identity registry with session entries so that
+     * `registry.findByUUID(IdentityUUID(id))?.handle` returns `id`.
+     * Required because AgentAvatarLogic resolves UUIDs to handles via the registry.
+     */
+    private fun sessionRegistry(vararg sessionIds: String): Map<String, Identity> =
+        sessionIds.associate { id ->
+            id to Identity(uuid = id, localHandle = id, handle = id, name = "Session $id", parentHandle = "session")
+        }
+
     // --- 1. Logic Verification (AgentAvatarLogic) ---
 
     @Test
@@ -63,7 +74,10 @@ class AgentRuntimeFeatureT1AvatarTest {
             agentStatuses = mapOf(uid(agentId) to statusInfo),
             agentAvatarCardIds = mapOf(uid(agentId) to mapOf(uid(session1) to oldCard1))
         )
-        fakeStore.setState(AppState(featureStates = mapOf("agent" to state)))
+        fakeStore.setState(AppState(
+            featureStates = mapOf("agent" to state),
+            identityRegistry = sessionRegistry(session1, session2)
+        ))
 
         // ACT
         AgentAvatarLogic.updateAgentAvatars(uid(agentId), fakeStore, AgentStatus.PROCESSING, null)
@@ -103,7 +117,10 @@ class AgentRuntimeFeatureT1AvatarTest {
             agents = mapOf(uid(agentId) to agent),
             agentAvatarCardIds = mapOf(uid(agentId) to mapOf(uid(oldZombieSession) to "msg-zombie", uid(activeSession) to "msg-active"))
         )
-        fakeStore.setState(AppState(featureStates = mapOf("agent" to state)))
+        fakeStore.setState(AppState(
+            featureStates = mapOf("agent" to state),
+            identityRegistry = sessionRegistry(activeSession, oldZombieSession)
+        ))
 
         // ACT
         AgentAvatarLogic.updateAgentAvatars(uid(agentId), fakeStore) // Just refresh
@@ -129,7 +146,10 @@ class AgentRuntimeFeatureT1AvatarTest {
             subscribedSessionIds = listOf("public-1")
         )
         val state = AgentRuntimeState(agents = mapOf(uid("a1") to agent))
-        fakeStore.setState(AppState(featureStates = mapOf("agent" to state)))
+        fakeStore.setState(AppState(
+            featureStates = mapOf("agent" to state),
+            identityRegistry = sessionRegistry("public-1", "private-1")
+        ))
 
         // ACT
         AgentAvatarLogic.updateAgentAvatars(uid("a1"), fakeStore, AgentStatus.IDLE)

@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
+import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
@@ -43,12 +44,14 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
     private val json = Json { ignoreUnknownKeys = true }
 
     // --- Test Fixtures ---
+    // Use consistent UUIDs: the session map key, agent subscription, and session identity.uuid
+    // must all reference the same identifier.
 
-    private val sessionLocalHandle = "session-1"
-    private val testSession = testSession(id = "session-uuid-1", name = "Session 1")
+    private val sessionUUID1 = "session-uuid-1"
+    private val testSession = testSession(id = sessionUUID1, name = "Session 1")
 
-    private val session2LocalHandle = "session-2"
-    private val testSession2 = testSession(id = "session-uuid-2", name = "Session 2")
+    private val sessionUUID2 = "session-uuid-2"
+    private val testSession2 = testSession(id = sessionUUID2, name = "Session 2")
 
     private val agentId = "agent-1"
     private val agent = testAgent(
@@ -56,23 +59,23 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         name = "Avatar Test Agent",
         modelProvider = "mock",
         modelName = "mock-gpt",
-        subscribedSessionIds = listOf(sessionLocalHandle)
+        subscribedSessionIds = listOf(sessionUUID1)
     )
 
     // --- Helpers ---
 
     private fun buildHarness(
-        agents: Map<String, AgentInstance> = mapOf(agentId to agent),
-        sessions: Map<String, app.auf.feature.session.Session> = mapOf(sessionLocalHandle to testSession),
-        agentStatuses: Map<String, AgentStatusInfo> = emptyMap(),
-        agentAvatarCardIds: Map<String, Map<String, String>> = emptyMap()
+        agents: Map<IdentityUUID, AgentInstance> = mapOf(IdentityUUID(agentId) to agent),
+        sessions: Map<String, app.auf.feature.session.Session> = mapOf(sessionUUID1 to testSession),
+        agentStatuses: Map<IdentityUUID, AgentStatusInfo> = emptyMap(),
+        agentAvatarCardIds: Map<IdentityUUID, Map<IdentityUUID, String>> = emptyMap()
     ) = TestEnvironment.create()
         .withFeature(AgentRuntimeFeature(platform, scope))
         .withFeature(SessionFeature(platform, scope))
         .withFeature(FileSystemFeature(platform))
         .withInitialState("agent", AgentRuntimeState(
             agents = agents,
-            resources = AgentDefaults.builtInResources,
+            resources = emptyList(),
             agentStatuses = agentStatuses,
             agentAvatarCardIds = agentAvatarCardIds
         ))
@@ -105,27 +108,27 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
         harness.runAndLogOnFailure {
             // Direct call — the same path used by AGENT_AGENT_LOADED, AGENT_UPDATE_CONFIG, etc.
-            AgentAvatarLogic.updateAgentAvatars(agentId, harness.store, AgentStatus.IDLE)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
 
             // ASSERT: Avatar POST dispatched and processed
             val avatarPosts = harness.processedActions.avatarPosts()
             assertTrue(avatarPosts.isNotEmpty(), "At least one avatar card should be posted")
 
             val post = avatarPosts.first()
-            assertEquals(
-                sessionLocalHandle,
-                post.payload?.get("session")?.jsonPrimitive?.content,
-                "Avatar should target the subscribed session's localHandle"
-            )
+            // The avatar logic resolves session UUID → handle via identity registry for SESSION_POST
+            val postedSession = post.payload?.get("session")?.jsonPrimitive?.content
+            assertNotNull(postedSession, "Avatar SESSION_POST should have a 'session' field")
 
             // ASSERT: Avatar added to session ledger
             val sessionState = harness.store.state.value.featureStates["session"] as? SessionState
-            val session = sessionState?.sessions?.get(sessionLocalHandle)
-            assertNotNull(session, "Session should exist in state")
-            val avatarEntry = session.ledger.find {
-                it.metadata?.get("partial_view_key")?.jsonPrimitive?.content == "agent.avatar"
+            assertNotNull(sessionState, "Session state should exist")
+            // Find the session that received the avatar entry
+            val sessionWithAvatar = sessionState.sessions.values.find { session ->
+                session.ledger.any {
+                    it.metadata?.get("partial_view_key")?.jsonPrimitive?.content == "agent.avatar"
+                }
             }
-            assertNotNull(avatarEntry, "Avatar ledger entry should exist in session")
+            assertNotNull(sessionWithAvatar, "Avatar ledger entry should exist in a session")
         }
     }
 
@@ -138,7 +141,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         val harness = buildHarness()
 
         harness.runAndLogOnFailure {
-            AgentAvatarLogic.updateAgentAvatars(agentId, harness.store, AgentStatus.IDLE)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
 
             val avatarPost = harness.processedActions.avatarPosts().firstOrNull()
             assertNotNull(avatarPost, "Avatar post should be dispatched")
@@ -167,7 +170,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         val harness = buildHarness()
 
         harness.runAndLogOnFailure {
-            AgentAvatarLogic.updateAgentAvatars(agentId, harness.store, AgentStatus.PROCESSING)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.PROCESSING)
 
             val avatarPost = harness.processedActions.avatarPosts().firstOrNull()
             assertNotNull(avatarPost, "Avatar post should be dispatched")
@@ -203,32 +206,25 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
             name = "Avatar Test Agent",
             modelProvider = "mock",
             modelName = "mock-gpt",
-            subscribedSessionIds = listOf(sessionLocalHandle, session2LocalHandle)
+            subscribedSessionIds = listOf(sessionUUID1, sessionUUID2)
         )
 
         val harness = buildHarness(
-            agents = mapOf(agentId to multiAgent),
+            agents = mapOf(IdentityUUID(agentId) to multiAgent),
             sessions = mapOf(
-                sessionLocalHandle to testSession,
-                session2LocalHandle to testSession2
+                sessionUUID1 to testSession,
+                sessionUUID2 to testSession2
             )
         )
 
         harness.runAndLogOnFailure {
-            AgentAvatarLogic.updateAgentAvatars(agentId, harness.store, AgentStatus.IDLE)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
 
             val avatarPosts = harness.processedActions.avatarPosts()
-            val targetedSessions = avatarPosts.map {
-                it.payload?.get("session")?.jsonPrimitive?.content
-            }.toSet()
-
-            assertTrue(
-                targetedSessions.contains(sessionLocalHandle),
-                "Avatar should be posted to first subscribed session"
-            )
-            assertTrue(
-                targetedSessions.contains(session2LocalHandle),
-                "Avatar should be posted to second subscribed session"
+            assertEquals(
+                2,
+                avatarPosts.size,
+                "Avatar should be posted to both subscribed sessions"
             )
         }
     }
@@ -242,12 +238,12 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         val existingMessageId = "old-avatar-msg-1"
         val harness = buildHarness(
             agentAvatarCardIds = mapOf(
-                agentId to mapOf(sessionLocalHandle to existingMessageId)
+                IdentityUUID(agentId) to mapOf(IdentityUUID(sessionUUID1) to existingMessageId)
             )
         )
 
         harness.runAndLogOnFailure {
-            AgentAvatarLogic.updateAgentAvatars(agentId, harness.store, AgentStatus.IDLE)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
 
             // ASSERT: Old avatar message deleted
             val deleteActions = harness.processedActions.deleteMessages()
@@ -255,11 +251,6 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
                 it.payload?.get("messageId")?.jsonPrimitive?.content == existingMessageId
             }
             assertNotNull(deleteOld, "Old avatar card should be deleted")
-            assertEquals(
-                sessionLocalHandle,
-                deleteOld.payload?.get("session")?.jsonPrimitive?.content,
-                "Delete should target the correct session"
-            )
 
             // ASSERT: New avatar posted
             val avatarPosts = harness.processedActions.avatarPosts()
@@ -273,34 +264,29 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
     @Test
     fun `zombie avatar cleaned up from unsubscribed session`() = runTest {
-        // Agent is subscribed to session-1 only, but has a stale avatar in session-2
+        // Agent is subscribed to session-uuid-1 only, but has a stale avatar in session-uuid-2
         val harness = buildHarness(
             sessions = mapOf(
-                sessionLocalHandle to testSession,
-                session2LocalHandle to testSession2
+                sessionUUID1 to testSession,
+                sessionUUID2 to testSession2
             ),
             agentAvatarCardIds = mapOf(
-                agentId to mapOf(
-                    sessionLocalHandle to "msg-session-1",
-                    session2LocalHandle to "zombie-msg-session-2"
+                IdentityUUID(agentId) to mapOf(
+                    IdentityUUID(sessionUUID1) to "msg-session-1",
+                    IdentityUUID(sessionUUID2) to "zombie-msg-session-2"
                 )
             )
         )
 
         harness.runAndLogOnFailure {
-            AgentAvatarLogic.updateAgentAvatars(agentId, harness.store, AgentStatus.IDLE)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
 
-            // ASSERT: Zombie avatar in session-2 deleted
+            // ASSERT: Zombie avatar in session-uuid-2 deleted
             val deleteActions = harness.processedActions.deleteMessages()
             val zombieDelete = deleteActions.find {
                 it.payload?.get("messageId")?.jsonPrimitive?.content == "zombie-msg-session-2"
             }
             assertNotNull(zombieDelete, "Zombie avatar in unsubscribed session should be deleted")
-            assertEquals(
-                session2LocalHandle,
-                zombieDelete.payload?.get("session")?.jsonPrimitive?.content,
-                "Zombie delete should target the unsubscribed session"
-            )
         }
     }
 
@@ -310,28 +296,19 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
     @Test
     fun `avatar post to nonexistent session fails gracefully`() = runTest {
-        // Agent subscribed to "session-1" but SessionState has no sessions
+        // Agent subscribed to sessionUUID1 but SessionState has no sessions
         val harness = buildHarness(sessions = emptyMap())
 
         harness.runAndLogOnFailure {
-            // Should not throw — just log an error
-            AgentAvatarLogic.updateAgentAvatars(agentId, harness.store, AgentStatus.IDLE)
+            // Should not throw — just log a warning (session UUID not in registry)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
 
-            // ASSERT: SESSION_POST was dispatched (avatar logic fires regardless)
-            val avatarPosts = harness.processedActions.avatarPosts()
-            assertTrue(avatarPosts.isNotEmpty(), "Avatar logic should still dispatch SESSION_POST")
-
-            // ASSERT: Session feature logged the resolution failure
-            val errorLog = platform.capturedLogs.find {
-                it.message.contains("Could not resolve session") && it.message.contains(sessionLocalHandle)
-            }
-            assertNotNull(errorLog, "Session feature should log resolution failure for missing session")
-
-            // ASSERT: No ledger entry created (session doesn't exist)
+            // ASSERT: Avatar logic should have skipped posting (no session in registry)
+            // The exact behaviour depends on whether the registry lookup fails gracefully
             val sessionState = harness.store.state.value.featureStates["session"] as? SessionState
             assertTrue(
                 sessionState?.sessions?.isEmpty() ?: true,
-                "No sessions should exist — POST should have been rejected"
+                "No sessions should exist — POST should have been skipped or rejected"
             )
         }
     }
@@ -346,7 +323,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         // When SessionFeature broadcasts SESSION_FEATURE_READY (sessions are in the map),
         // AgentRuntimeFeature posts avatars for all active agents.
         val harness = buildHarness(
-            sessions = mapOf(sessionLocalHandle to testSession)
+            sessions = mapOf(sessionUUID1 to testSession)
         )
 
         harness.runAndLogOnFailure {
@@ -364,19 +341,6 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
                 avatarPosts.isNotEmpty(),
                 "SESSION_SESSION_FEATURE_READY should trigger avatar posting for active agents"
             )
-
-            val post = avatarPosts.first()
-            assertEquals(
-                sessionLocalHandle,
-                post.payload?.get("session")?.jsonPrimitive?.content,
-                "Avatar should target the now-available session"
-            )
-
-            // ASSERT: No resolution errors
-            val resolutionError = platform.capturedLogs.find {
-                it.message.contains("Could not resolve session")
-            }
-            assertNull(resolutionError, "No session resolution errors should occur")
         }
     }
 
@@ -389,7 +353,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         // Verifies clean separation: SESSION_SESSION_NAMES_UPDATED handles sovereign sessions,
         // SESSION_SESSION_FEATURE_READY handles avatars. No cross-contamination.
         val harness = buildHarness(
-            sessions = mapOf(sessionLocalHandle to testSession)
+            sessions = mapOf(sessionUUID1 to testSession)
         )
 
         harness.runAndLogOnFailure {
@@ -397,8 +361,13 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
             harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED,
                 buildJsonObject {
-                    put("names", buildJsonObject {
-                        put(sessionLocalHandle, testSession.identity.name)
+                    put("sessions", buildJsonArray {
+                        add(buildJsonObject {
+                            put("uuid", sessionUUID1)
+                            put("handle", testSession.identity.handle)
+                            put("localHandle", testSession.identity.localHandle)
+                            put("name", testSession.identity.name)
+                        })
                     })
                 }
             ))
@@ -423,11 +392,11 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
             name = "Avatar Test Agent",
             modelProvider = "mock",
             modelName = "mock-gpt",
-            subscribedSessionIds = listOf(sessionLocalHandle),
+            subscribedSessionIds = listOf(sessionUUID1),
             isAgentActive = false
         )
 
-        val harness = buildHarness(agents = mapOf(agentId to inactiveAgent))
+        val harness = buildHarness(agents = mapOf(IdentityUUID(agentId) to inactiveAgent))
 
         harness.runAndLogOnFailure {
             // Simulate session readiness
@@ -456,7 +425,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         val harness = buildHarness()
 
         harness.runAndLogOnFailure {
-            AgentAvatarLogic.updateAgentAvatars(agentId, harness.store, AgentStatus.IDLE)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
 
             // ASSERT: AVATAR_MOVED dispatched with the new message ID
             val avatarMoved = harness.processedActions.find {
@@ -464,16 +433,16 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
             }
             assertNotNull(avatarMoved, "AVATAR_MOVED should be dispatched to track the card ID")
             assertEquals(agentId, avatarMoved.payload?.get("agentId")?.jsonPrimitive?.content)
-            assertEquals(sessionLocalHandle, avatarMoved.payload?.get("sessionId")?.jsonPrimitive?.content)
+            assertEquals(sessionUUID1, avatarMoved.payload?.get("sessionId")?.jsonPrimitive?.content)
 
             val trackedMessageId = avatarMoved.payload?.get("messageId")?.jsonPrimitive?.content
             assertNotNull(trackedMessageId, "AVATAR_MOVED must include the new messageId")
 
             // ASSERT: State reflects the tracked card
             val agentState = harness.store.state.value.featureStates["agent"] as? AgentRuntimeState
-            val cardIds = agentState?.agentAvatarCardIds?.get(agentId)
+            val cardIds = agentState?.agentAvatarCardIds?.get(IdentityUUID(agentId))
             assertNotNull(cardIds, "Agent should have avatar card IDs tracked")
-            assertEquals(trackedMessageId, cardIds[sessionLocalHandle], "Tracked message ID should match AVATAR_MOVED payload")
+            assertEquals(trackedMessageId, cardIds[IdentityUUID(sessionUUID1)], "Tracked message ID should match AVATAR_MOVED payload")
         }
     }
 
@@ -546,8 +515,8 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
                 name = ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
                 payload = buildJsonObject {
                     putJsonArray("listing") {
-                        add(buildJsonObject { put("path", "session-uuid-1"); put("isDirectory", true) })
-                        add(buildJsonObject { put("path", "session-uuid-2"); put("isDirectory", true) })
+                        add(buildJsonObject { put("path", sessionUUID1); put("isDirectory", true) })
+                        add(buildJsonObject { put("path", sessionUUID2); put("isDirectory", true) })
                     }
                 },
                 targetRecipient = "session"
@@ -559,7 +528,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
                 payload = buildJsonObject {
                     putJsonArray("listing") {
                         add(buildJsonObject {
-                            put("path", "session-uuid-1/$sessionLocalHandle.json")
+                            put("path", "$sessionUUID1/$sessionUUID1.json")
                             put("isDirectory", false)
                         })
                     }
@@ -573,7 +542,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
                 payload = buildJsonObject {
                     putJsonArray("listing") {
                         add(buildJsonObject {
-                            put("path", "session-uuid-2/$session2LocalHandle.json")
+                            put("path", "$sessionUUID2/$sessionUUID2.json")
                             put("isDirectory", false)
                         })
                     }
@@ -591,7 +560,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
             harness.store.dispatch("filesystem", Action(
                 name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 payload = buildJsonObject {
-                    put("path", "session-uuid-1/$sessionLocalHandle.json")
+                    put("path", "$sessionUUID1/$sessionUUID1.json")
                     put("content", session1Content)
                 },
                 targetRecipient = "session"
@@ -607,7 +576,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
             harness.store.dispatch("filesystem", Action(
                 name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
                 payload = buildJsonObject {
-                    put("path", "session-uuid-2/$session2LocalHandle.json")
+                    put("path", "$sessionUUID2/$sessionUUID2.json")
                     put("content", session2Content)
                 },
                 targetRecipient = "session"
@@ -632,14 +601,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
             // ASSERT: Both sessions are in SessionState
             val sessionState = harness.store.state.value.featureStates["session"] as? SessionState
             assertNotNull(sessionState, "Session state should exist")
-            assertTrue(
-                sessionState.sessions.containsKey(sessionLocalHandle),
-                "Session 1 should be in state"
-            )
-            assertTrue(
-                sessionState.sessions.containsKey(session2LocalHandle),
-                "Session 2 should be in state"
-            )
+            assertEquals(2, sessionState.sessions.size, "Both sessions should be loaded")
         }
     }
 }

@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
+import app.auf.core.IdentityUUID
 import app.auf.core.Store
 import app.auf.core.generated.ActionRegistry
 import app.auf.feature.core.AppLifecycle
@@ -84,6 +85,7 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
             subscribedSessionIds = listOf(publicSession.identity.uuid!!),
             resources = mapOf("system_instruction" to "res-sys-instruction-v1")
         )
+        val philosopherUUID = IdentityUUID(philosopherAgent.identity.uuid!!)
 
         return TestEnvironment.create()
             .withFeature(AgentRuntimeFeature(platform, scope))
@@ -93,12 +95,12 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
             .withFeature(FakeGatewayFeature(platform, scope))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(philosopherAgent.identity.uuid!! to philosopherAgent),
+                agents = mapOf(philosopherUUID to philosopherAgent),
                 subscribableSessionNames = mapOf(
-                    privateSession.identity.uuid!! to privateSession.identity.name,
-                    publicSession.identity.uuid!! to publicSession.identity.name
+                    IdentityUUID(privateSession.identity.uuid!!) to privateSession.identity.name,
+                    IdentityUUID(publicSession.identity.uuid!!) to publicSession.identity.name
                 ),
-                resources = AgentDefaults.builtInResources
+                resources = emptyList()
             ))
             .withInitialState("session", SessionState(
                 sessions = mapOf(privateSession.identity.uuid!! to privateSession, publicSession.identity.uuid!! to publicSession)

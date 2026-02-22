@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
+import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
@@ -40,13 +41,15 @@ class AgentRuntimeFeatureT3WatcherTest {
         val sessionFeature = SessionFeature(platform, testScope)
 
         val sessions = agents.flatMap { it.subscribedSessionIds }.distinct()
-            .associateWith { testSession(it, "Session $it") }
+            .associateWith { testSession(it.uuid, "Session ${it.uuid}") }
+        // Convert String-keyed session map: IdentityUUID.uuid → Session
+        val sessionMap: Map<String, app.auf.feature.session.Session> = sessions.mapKeys { it.key.uuid }
 
         harness = TestEnvironment.create()
             .withFeature(agentFeature)
             .withFeature(sessionFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = agents.associateBy { it.identity.uuid!! }))
-            .withInitialState("session", SessionState(sessions = sessions))
+            .withInitialState("agent", AgentRuntimeState(agents = agents.associateBy { it.identityUUID }))
+            .withInitialState("session", SessionState(sessions = sessionMap))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(scope = testScope, platform = platform)
     }
@@ -77,7 +80,7 @@ class AgentRuntimeFeatureT3WatcherTest {
             testScope.runCurrent()
 
             val stateAfterPost = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            assertEquals(AgentStatus.WAITING, stateAfterPost.agentStatuses[agent.identity.uuid]?.status)
+            assertEquals(AgentStatus.WAITING, stateAfterPost.agentStatuses[IdentityUUID(agent.identity.uuid!!)]?.status)
 
             // ACT: Advance time by 4 seconds (Undershoot). Should NOT trigger.
             dispatchHeartbeat(4000)

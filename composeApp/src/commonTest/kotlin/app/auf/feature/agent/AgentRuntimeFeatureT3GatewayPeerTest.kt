@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
+import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
@@ -35,6 +36,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
         subscribedSessionIds = listOf("session-1"),
         resources = mapOf("system_instruction" to "res-sys-instruction-v1")
     )
+    private val agentUUID = IdentityUUID(agent.identity.uuid!!)
 
     @BeforeTest
     fun setup() {
@@ -45,8 +47,8 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
             .withFeature(FileSystemFeature(platform))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agent.identity.uuid!! to agent),
-                resources = AgentDefaults.builtInResources
+                agents = mapOf(agentUUID to agent),
+                resources = emptyList()
             ))
             .build(platform = platform)
     }
@@ -59,7 +61,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
 
             val stateAfterTrigger = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
             // ASSERT status
-            assertEquals(AgentStatus.PROCESSING, stateAfterTrigger.agentStatuses[agent.identity.uuid]?.status)
+            assertEquals(AgentStatus.PROCESSING, stateAfterTrigger.agentStatuses[agentUUID]?.status)
 
             // Mock response sequence...
             harness.store.dispatch("session", Action(
@@ -80,7 +82,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
 
             val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
             // ASSERT final status
-            assertEquals(AgentStatus.IDLE, finalState.agentStatuses[agent.identity.uuid]?.status)
+            assertEquals(AgentStatus.IDLE, finalState.agentStatuses[agentUUID]?.status)
         }
     }
 
@@ -107,8 +109,8 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
             ))
 
             val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            assertEquals(AgentStatus.ERROR, finalState.agentStatuses[agent.identity.uuid]?.status)
-            assertEquals("[AGENT ERROR] Generation failed: Fail", finalState.agentStatuses[agent.identity.uuid]?.errorMessage)
+            assertEquals(AgentStatus.ERROR, finalState.agentStatuses[agentUUID]?.status)
+            assertEquals("[AGENT ERROR] Generation failed: Fail", finalState.agentStatuses[agentUUID]?.errorMessage)
         }
     }
 
@@ -121,9 +123,9 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agent.identity.uuid!! to agent),
-                agentStatuses = mapOf(agent.identity.uuid!! to status),
-                resources = AgentDefaults.builtInResources
+                agents = mapOf(agentUUID to agent),
+                agentStatuses = mapOf(agentUUID to status),
+                resources = emptyList()
             ))
             .build(platform = platform)
 
@@ -165,7 +167,7 @@ class AgentRuntimeFeatureT3GatewayPeerTest {
 
             // ASSERT 3: Agent reset to IDLE
             val finalState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            assertEquals(AgentStatus.IDLE, finalState.agentStatuses[agent.identity.uuid]?.status)
+            assertEquals(AgentStatus.IDLE, finalState.agentStatuses[agentUUID]?.status)
         }
     }
 }
