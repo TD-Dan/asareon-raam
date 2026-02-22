@@ -58,9 +58,9 @@ class AgentRuntimeFeatureT1ContextViewTest {
         val statusInfo = AgentStatusInfo(stagedPreviewData = previewData)
 
         val state = AgentRuntimeState(
-            agents = mapOf(agentId to agent),
-            agentStatuses = mapOf(agentId to statusInfo),
-            viewingContextForAgentId = agentId
+            agents = mapOf(uid(agentId) to agent),
+            agentStatuses = mapOf(uid(agentId) to statusInfo),
+            viewingContextForAgentId = uid(agentId)
         )
 
         fakeStore.setState(AppState(featureStates = mapOf("agent" to state)))

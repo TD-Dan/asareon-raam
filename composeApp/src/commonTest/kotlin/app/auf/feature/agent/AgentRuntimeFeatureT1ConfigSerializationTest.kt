@@ -1,5 +1,7 @@
 package app.auf.feature.agent
 
+import app.auf.core.IdentityHandle
+import app.auf.core.IdentityUUID
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -28,16 +30,16 @@ class AgentRuntimeFeatureT1ConfigSerializationTest {
             cognitiveStrategyId = "sovereign_v1"
         ).copy(
             cognitiveState = cognitiveState,
-            resources = mapOf("constitution" to "const_v1")
+            resources = mapOf("constitution" to IdentityUUID("const_v1"))
         )
 
         // Act
-        val serialized = json.encodeToString(original)
-        val deserialized = json.decodeFromString<AgentInstance>(serialized)
+        val serialized = json.encodeToString(AgentInstance.serializer(), original)
+        val deserialized = json.decodeFromString(AgentInstance.serializer(), serialized)
 
         // Assert
         assertEquals(original, deserialized)
-        assertEquals("sovereign_v1", deserialized.cognitiveStrategyId)
+        assertEquals(IdentityHandle("agent.strategy.sovereign"), deserialized.cognitiveStrategyId)
 
         // Verify we can read the structure of the opaque state
         val deserializedState = deserialized.cognitiveState as kotlinx.serialization.json.JsonObject
@@ -57,11 +59,11 @@ class AgentRuntimeFeatureT1ConfigSerializationTest {
         )
 
         // Act
-        val serialized = json.encodeToString(original)
-        val deserialized = json.decodeFromString<AgentInstance>(serialized)
+        val serialized = json.encodeToString(AgentInstance.serializer(), original)
+        val deserialized = json.decodeFromString(AgentInstance.serializer(), serialized)
 
         // Assert
         assertEquals(original, deserialized)
-        assertEquals("vanilla_v1", deserialized.cognitiveStrategyId)
+        assertEquals(IdentityHandle("agent.strategy.vanilla"), deserialized.cognitiveStrategyId)
     }
 }

@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
+import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.Json
@@ -23,8 +24,8 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     fun `SET_STATUS should update status and timestamps correctly`() {
         val agentId = "agent-1"
         val initialState = AgentRuntimeState(
-            agents = mapOf(agentId to testAgent(agentId, "Test")),
-            agentStatuses = mapOf(agentId to AgentStatusInfo(status = AgentStatus.IDLE))
+            agents = mapOf(uid(agentId) to testAgent(agentId, "Test")),
+            agentStatuses = mapOf(uid(agentId) to AgentStatusInfo(status = AgentStatus.IDLE))
         )
 
         val action = Action(ActionRegistry.Names.AGENT_SET_STATUS, buildJsonObject {
@@ -32,7 +33,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        val newStatus = newState.agentStatuses[agentId]
+        val newStatus = newState.agentStatuses[uid(agentId)]
 
         assertNotNull(newStatus)
         assertEquals(AgentStatus.PROCESSING, newStatus.status)
@@ -43,8 +44,8 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     fun `SET_STATUS should clear errors when transitioning from ERROR`() {
         val agentId = "agent-1"
         val initialState = AgentRuntimeState(
-            agents = mapOf(agentId to testAgent(agentId, "Test")),
-            agentStatuses = mapOf(agentId to AgentStatusInfo(status = AgentStatus.ERROR, errorMessage = "Bad thing"))
+            agents = mapOf(uid(agentId) to testAgent(agentId, "Test")),
+            agentStatuses = mapOf(uid(agentId) to AgentStatusInfo(status = AgentStatus.ERROR, errorMessage = "Bad thing"))
         )
 
         val action = Action(ActionRegistry.Names.AGENT_SET_STATUS, buildJsonObject {
@@ -52,7 +53,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        val newStatus = newState.agentStatuses[agentId]
+        val newStatus = newState.agentStatuses[uid(agentId)]
 
         assertEquals(AgentStatus.IDLE, newStatus?.status)
         assertNull(newStatus?.errorMessage)
@@ -63,10 +64,11 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         val agentId = "agent-1"
         val sessionId = "session-1"
         val agent = testAgent(agentId, "Test", subscribedSessionIds = listOf(sessionId))
-        val initialState = AgentRuntimeState(agents = mapOf(agentId to agent))
+        val initialState = AgentRuntimeState(agents = mapOf(uid(agentId) to agent))
 
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
             put("sessionId", sessionId)
+            put("sessionUUID", sessionId)
             put("entry", buildJsonObject {
                 put("id", "msg-1")
                 put("senderId", "user")
@@ -75,7 +77,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        val status = newState.agentStatuses[agentId]
+        val status = newState.agentStatuses[uid(agentId)]
 
         assertNotNull(status)
         assertEquals("msg-1", status.lastSeenMessageId)
@@ -88,12 +90,13 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         val agent = testAgent(agentId, "Test", subscribedSessionIds = listOf(sessionId))
         val initialStatus = AgentStatusInfo(lastSeenMessageId = "msg-old")
         val initialState = AgentRuntimeState(
-            agents = mapOf(agentId to agent),
-            agentStatuses = mapOf(agentId to initialStatus)
+            agents = mapOf(uid(agentId) to agent),
+            agentStatuses = mapOf(uid(agentId) to initialStatus)
         )
 
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
             put("sessionId", sessionId)
+            put("sessionUUID", sessionId)
             put("entry", buildJsonObject {
                 put("id", "msg-sentinel")
                 put("senderId", "system") // <--- Sentinel sender
@@ -102,7 +105,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        val status = newState.agentStatuses[agentId]
+        val status = newState.agentStatuses[uid(agentId)]
 
         // Assert state is unchanged
         assertEquals("msg-old", status?.lastSeenMessageId)
@@ -115,7 +118,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             status = AgentStatus.IDLE,
             stagedTurnContext = listOf(GatewayMessage("user", "old", "u", "U", 0L))
         )
-        val state = AgentRuntimeState(agentStatuses = mapOf(agentId to initialStatus))
+        val state = AgentRuntimeState(agentStatuses = mapOf(uid(agentId) to initialStatus))
 
         val action = Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
             put("agentId", agentId)
@@ -123,7 +126,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         })
 
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
-        val newStatus = newState.agentStatuses[agentId]!!
+        val newStatus = newState.agentStatuses[uid(agentId)]!!
 
         assertEquals(TurnMode.PREVIEW, newStatus.turnMode)
         assertNull(newStatus.stagedTurnContext)
@@ -133,7 +136,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     fun `INTERNAL_STAGE_TURN_CONTEXT should update staged context`() {
         val agentId = "agent-1"
         val messages = listOf(GatewayMessage("user", "Hello", "u1", "User", 100L))
-        val state = AgentRuntimeState(agentStatuses = mapOf(agentId to AgentStatusInfo()))
+        val state = AgentRuntimeState(agentStatuses = mapOf(uid(agentId) to AgentStatusInfo()))
 
         val action = Action(ActionRegistry.Names.AGENT_STAGE_TURN_CONTEXT, buildJsonObject {
             put("agentId", agentId)
@@ -141,7 +144,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         })
 
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
-        val updatedStatus = newState.agentStatuses[agentId]!!
+        val updatedStatus = newState.agentStatuses[uid(agentId)]!!
 
         assertEquals(1, updatedStatus.stagedTurnContext?.size)
         assertEquals("Hello", updatedStatus.stagedTurnContext?.first()?.content)
@@ -152,7 +155,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         val agentId = "agent-1"
         val request = GatewayRequest("model", emptyList(), agentId)
         val rawJson = "{}"
-        val state = AgentRuntimeState(agentStatuses = mapOf(agentId to AgentStatusInfo()))
+        val state = AgentRuntimeState(agentStatuses = mapOf(uid(agentId) to AgentStatusInfo()))
 
         val action = Action(ActionRegistry.Names.AGENT_SET_PREVIEW_DATA, buildJsonObject {
             put("agentId", agentId)
@@ -162,8 +165,8 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
 
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
 
-        assertNotNull(newState.agentStatuses[agentId]?.stagedPreviewData)
-        assertEquals(agentId, newState.viewingContextForAgentId)
+        assertNotNull(newState.agentStatuses[uid(agentId)]?.stagedPreviewData)
+        assertEquals(uid(agentId), newState.viewingContextForAgentId)
     }
 
     @Test
@@ -171,15 +174,15 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         val agentId = "agent-1"
         val previewData = StagedPreviewData(GatewayRequest("m", emptyList(), "id"), "{}")
         val state = AgentRuntimeState(
-            agentStatuses = mapOf(agentId to AgentStatusInfo(stagedPreviewData = previewData)),
-            viewingContextForAgentId = agentId
+            agentStatuses = mapOf(uid(agentId) to AgentStatusInfo(stagedPreviewData = previewData)),
+            viewingContextForAgentId = uid(agentId)
         )
 
         val action = Action(ActionRegistry.Names.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId) })
 
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
 
-        assertNull(newState.agentStatuses[agentId]?.stagedPreviewData)
+        assertNull(newState.agentStatuses[uid(agentId)]?.stagedPreviewData)
         assertNull(newState.viewingContextForAgentId)
     }
 
@@ -187,19 +190,19 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     fun `SESSION_DELETED should remove session from agent subscriptions and trigger persistence`() {
         // ARRANGE
         val agent = testAgent("a1", "Test", null, "p", "m", subscribedSessionIds = listOf("s1", "s2"))
-        val state = AgentRuntimeState(agents = mapOf("a1" to agent))
+        val state = AgentRuntimeState(agents = mapOf(uid("a1") to agent))
 
-        // ACT
+        // ACT — use sessionUUID for the new typed UUID extraction
         val action = Action(ActionRegistry.Names.SESSION_SESSION_DELETED, buildJsonObject {
-            put("sessionId", "s1")
+            put("sessionUUID", "s1")
         })
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
 
         // ASSERT
-        val updatedAgent = newState.agents["a1"]!!
+        val updatedAgent = newState.agents[uid("a1")]!!
         assertEquals(1, updatedAgent.subscribedSessionIds.size)
-        assertEquals("s2", updatedAgent.subscribedSessionIds.first())
-        assertTrue(newState.agentsToPersist?.contains("a1") == true)
+        assertEquals(IdentityUUID("s2"), updatedAgent.subscribedSessionIds.first())
+        assertTrue(newState.agentsToPersist?.contains(uid("a1")) == true)
     }
 
     // === Workspace Context Reducer Tests ===
@@ -207,7 +210,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     @Test
     fun `SET_WORKSPACE_CONTEXT should stage workspace context on agent status`() {
         val agentId = "agent-1"
-        val state = AgentRuntimeState(agentStatuses = mapOf(agentId to AgentStatusInfo()))
+        val state = AgentRuntimeState(agentStatuses = mapOf(uid(agentId) to AgentStatusInfo()))
 
         val action = Action(ActionRegistry.Names.AGENT_SET_WORKSPACE_CONTEXT, buildJsonObject {
             put("agentId", agentId)
@@ -215,7 +218,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         })
 
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
-        val status = newState.agentStatuses[agentId]!!
+        val status = newState.agentStatuses[uid(agentId)]!!
 
         assertEquals("Your workspace has 3 files.", status.transientWorkspaceContext)
     }
@@ -223,7 +226,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     @Test
     fun `SET_CONTEXT_GATHERING_STARTED should record timestamp on agent status`() {
         val agentId = "agent-1"
-        val state = AgentRuntimeState(agentStatuses = mapOf(agentId to AgentStatusInfo()))
+        val state = AgentRuntimeState(agentStatuses = mapOf(uid(agentId) to AgentStatusInfo()))
 
         val action = Action(ActionRegistry.Names.AGENT_SET_CONTEXT_GATHERING_STARTED, buildJsonObject {
             put("agentId", agentId)
@@ -231,7 +234,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         })
 
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
-        val status = newState.agentStatuses[agentId]!!
+        val status = newState.agentStatuses[uid(agentId)]!!
 
         assertEquals(9999L, status.contextGatheringStartedAt)
     }
@@ -240,7 +243,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     fun `CONTEXT_GATHERING_TIMEOUT is a no-op in reducer (side-effect only)`() {
         val agentId = "agent-1"
         val initialStatus = AgentStatusInfo(status = AgentStatus.PROCESSING, contextGatheringStartedAt = 5000L)
-        val state = AgentRuntimeState(agentStatuses = mapOf(agentId to initialStatus))
+        val state = AgentRuntimeState(agentStatuses = mapOf(uid(agentId) to initialStatus))
 
         val action = Action(ActionRegistry.Names.AGENT_CONTEXT_GATHERING_TIMEOUT, buildJsonObject {
             put("agentId", agentId)
@@ -262,7 +265,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             contextGatheringStartedAt = 1234L,
             stagedTurnContext = listOf(GatewayMessage("user", "old", "u", "U", 0L))
         )
-        val state = AgentRuntimeState(agentStatuses = mapOf(agentId to initialStatus))
+        val state = AgentRuntimeState(agentStatuses = mapOf(uid(agentId) to initialStatus))
 
         val action = Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
             put("agentId", agentId)
@@ -270,7 +273,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         })
 
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
-        val newStatus = newState.agentStatuses[agentId]!!
+        val newStatus = newState.agentStatuses[uid(agentId)]!!
 
         assertNull(newStatus.transientWorkspaceContext)
         assertNull(newStatus.contextGatheringStartedAt)
@@ -288,8 +291,8 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             processingSinceTimestamp = 1000L
         )
         val state = AgentRuntimeState(
-            agents = mapOf(agentId to testAgent(agentId, "Test")),
-            agentStatuses = mapOf(agentId to initialStatus)
+            agents = mapOf(uid(agentId) to testAgent(agentId, "Test")),
+            agentStatuses = mapOf(uid(agentId) to initialStatus)
         )
 
         val action = Action(ActionRegistry.Names.AGENT_SET_STATUS, buildJsonObject {
@@ -297,7 +300,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         })
 
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
-        val newStatus = newState.agentStatuses[agentId]!!
+        val newStatus = newState.agentStatuses[uid(agentId)]!!
 
         assertEquals(AgentStatus.IDLE, newStatus.status)
         assertNull(newStatus.transientWorkspaceContext)

@@ -3,6 +3,7 @@ package app.auf.feature.agent
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import app.auf.core.AppState
+import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
@@ -56,16 +57,16 @@ class AgentRuntimeFeatureT1AvatarTest {
             processingFrontierMessageId = "msg-last"
         )
 
-        // Setup State: Map<String, Map<String, String>>
+        // Setup State: Map<IdentityUUID, Map<IdentityUUID, String>>
         val state = AgentRuntimeState(
-            agents = mapOf(agentId to agent),
-            agentStatuses = mapOf(agentId to statusInfo),
-            agentAvatarCardIds = mapOf(agentId to mapOf(session1 to oldCard1))
+            agents = mapOf(uid(agentId) to agent),
+            agentStatuses = mapOf(uid(agentId) to statusInfo),
+            agentAvatarCardIds = mapOf(uid(agentId) to mapOf(uid(session1) to oldCard1))
         )
         fakeStore.setState(AppState(featureStates = mapOf("agent" to state)))
 
         // ACT
-        AgentAvatarLogic.updateAgentAvatars(agentId, fakeStore, AgentStatus.PROCESSING, null)
+        AgentAvatarLogic.updateAgentAvatars(uid(agentId), fakeStore, AgentStatus.PROCESSING, null)
 
         // ASSERT
         // 1. Delete Old (Session 1 only)
@@ -99,13 +100,13 @@ class AgentRuntimeFeatureT1AvatarTest {
         val agent = testAgent(agentId, "Test", null, "p", "m", subscribedSessionIds = listOf(activeSession))
 
         val state = AgentRuntimeState(
-            agents = mapOf(agentId to agent),
-            agentAvatarCardIds = mapOf(agentId to mapOf(oldZombieSession to "msg-zombie", activeSession to "msg-active"))
+            agents = mapOf(uid(agentId) to agent),
+            agentAvatarCardIds = mapOf(uid(agentId) to mapOf(uid(oldZombieSession) to "msg-zombie", uid(activeSession) to "msg-active"))
         )
         fakeStore.setState(AppState(featureStates = mapOf("agent" to state)))
 
         // ACT
-        AgentAvatarLogic.updateAgentAvatars(agentId, fakeStore) // Just refresh
+        AgentAvatarLogic.updateAgentAvatars(uid(agentId), fakeStore) // Just refresh
 
         // ASSERT
         // 1. Delete Zombie
@@ -121,17 +122,17 @@ class AgentRuntimeFeatureT1AvatarTest {
     }
 
     @Test
-    fun `updateAgentAvatars should target private session if sovereign`() {
+    fun `updateAgentAvatars should target output session if sovereign`() {
         // ARRANGE
         val agent = testAgent("a1", "Sovereign", "kg1", "p", "m",
             privateSessionId = "private-1",
             subscribedSessionIds = listOf("public-1")
         )
-        val state = AgentRuntimeState(agents = mapOf("a1" to agent))
+        val state = AgentRuntimeState(agents = mapOf(uid("a1") to agent))
         fakeStore.setState(AppState(featureStates = mapOf("agent" to state)))
 
         // ACT
-        AgentAvatarLogic.updateAgentAvatars("a1", fakeStore, AgentStatus.IDLE)
+        AgentAvatarLogic.updateAgentAvatars(uid("a1"), fakeStore, AgentStatus.IDLE)
 
         // ASSERT
         val postActions = fakeStore.dispatchedActions.filter { it.name == ActionRegistry.Names.SESSION_POST }
@@ -144,9 +145,10 @@ class AgentRuntimeFeatureT1AvatarTest {
     // --- 2. UI Verification (AgentAvatarCard) ---
 
     private fun renderAgentCard(agent: AgentInstance, status: AgentStatusInfo) {
+        val agentUuid = agent.identityUUID
         val state = AgentRuntimeState(
-            agents = mapOf(agent.identity.uuid!! to agent),
-            agentStatuses = mapOf(agent.identity.uuid!! to status)
+            agents = mapOf(agentUuid to agent),
+            agentStatuses = mapOf(agentUuid to status)
         )
         fakeStore.setState(AppState(featureStates = mapOf("agent" to state)))
 
