@@ -121,7 +121,7 @@ private fun AgentListView(
                 items(agentState.agents.values.toList(), key = { it.identity.uuid ?: "" }) { agent ->
                     AgentCard(
                         agent = agent,
-                        isEditing = agent.identity.uuid == editingAgentId,
+                        isEditing = agent.identityUUID == editingAgentId,
                         agentState = agentState,
                         store = store,
                         onDeleteRequest = { agentToDelete = it },
@@ -181,7 +181,7 @@ private fun AgentReadOnlyView(
     val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.subscribableSessionNames[it] } ?: "Not Subscribed"
     val hkgName = agent.knowledgeGraphId?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG"
     val privateSessionName = agent.privateSessionId?.let { identityRegistry["session.$it"]?.name } ?: agent.privateSessionId ?: "None"
-    val statusInfo = agentState.agentStatuses[agent.identity.uuid] ?: AgentStatusInfo()
+    val statusInfo = agentState.agentStatuses[agent.identityUUID] ?: AgentStatusInfo()
 
     var showInternals by remember { mutableStateOf(false) }
     // Only consider Sovereign if HKG is assigned.
@@ -270,7 +270,7 @@ private fun AgentEditorView(
             put("cognitiveStrategyId", draftAgent.cognitiveStrategyId)
             put("modelProvider", draftAgent.modelProvider)
             put("modelName", draftAgent.modelName)
-            put("subscribedSessionIds", buildJsonArray { draftAgent.subscribedSessionIds.forEach { add(it) } })
+            put("subscribedSessionIds", buildJsonArray { draftAgent.subscribedSessionIds.forEach { add(it.handle) } })
             if (draftAgent.knowledgeGraphId != null) put("knowledgeGraphId", draftAgent.knowledgeGraphId)
             else put("knowledgeGraphId", null as String?)
             put("automaticMode", draftAgent.automaticMode)
@@ -895,7 +895,7 @@ private fun ResourceSlotSelector(
         agentState.resources.filter { it.type == resourceType }
     }
     val selectedId = agent.resources[slotKey]
-    val selectedName = filteredResources.find { it.id == selectedId }?.name ?: "None"
+    val selectedName = filteredResources.find { it.id == selectedId?.uuid }?.name ?: "None"
     var isExpanded by remember { mutableStateOf(false) }
 
     ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
@@ -912,7 +912,7 @@ private fun ResourceSlotSelector(
             })
             filteredResources.forEach { resource ->
                 DropdownMenuItem(text = { Text(resource.name) }, onClick = {
-                    onUpdate(agent.copy(resources = agent.resources + (slotKey to resource.id)))
+                    onUpdate(agent.copy(resources = agent.resources + (slotKey to IdentityUUID(resource.id))))
                     isExpanded = false
                 })
             }

@@ -14,6 +14,8 @@ import kotlinx.serialization.json.put
  * It strictly implements the "Debounce" and "Timeout" contract:
  * 1. Debounce: Has enough time passed since the last message received?
  * 2. Timeout: Has the agent been waiting too long overall?
+ *
+ * [PHASE 1] Uses typed [IdentityUUID] for map key lookups.
  */
 object AgentAutoTriggerLogic {
 
@@ -26,8 +28,7 @@ object AgentAutoTriggerLogic {
         val currentTime = platformDependencies.currentTimeMillis()
 
         state.agents.values.forEach { agent ->
-            val agentUuid = agent.identity.uuid ?: return@forEach
-            // REF: Slice 3 - Access runtime status from `agentStatuses`
+            val agentUuid = agent.identityUUID
             val statusInfo = state.agentStatuses[agentUuid] ?: AgentStatusInfo()
 
             // Condition: Must be Automatic, Active, Waiting, and have valid timestamps
@@ -45,7 +46,7 @@ object AgentAutoTriggerLogic {
 
                 if (debounceTrigger || timeoutTrigger) {
                     store.deferredDispatch(featureName, Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
-                        put("agentId", agentUuid)
+                        put("agentId", agentUuid.uuid)
                         put("preview", false)
                     }))
                 }

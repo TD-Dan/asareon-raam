@@ -9,6 +9,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.auf.core.Action
+import app.auf.core.IdentityUUID
 import app.auf.core.Store
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.LogLevel
@@ -22,6 +23,8 @@ import kotlin.time.Duration.Companion.milliseconds
  * ## Mandate
  * To provide the Composable UI for an agent's "avatar card" and the pure, testable
  * logic for managing its presence within the public session ledger.
+ *
+ * [PHASE 1] Uses typed [IdentityUUID] for agent IDs and [IdentityHandle] for session IDs.
  */
 
 // --- Logic ---
@@ -29,13 +32,13 @@ import kotlin.time.Duration.Companion.milliseconds
 object AgentAvatarLogic {
 
     fun touchAgentAvatarCard(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
-        val agentUuid = agent.identity.uuid ?: return
+        val agentUuid = agent.identityUUID
         val sessionMap = agentState.agentAvatarCardIds[agentUuid] ?: return
         sessionMap.forEach { (sessionId, messageId) ->
             store.deferredDispatch("agent", Action(
                 name = ActionRegistry.Names.SESSION_UPDATE_MESSAGE,
                 payload = buildJsonObject {
-                    put("session", sessionId)
+                    put("session", sessionId.handle)
                     put("messageId", messageId)
                 }
             ))
@@ -45,9 +48,11 @@ object AgentAvatarLogic {
     /**
      * Reconciles the agent's visual presence in the ledger with its current configuration and state.
      * Uses the "Sovereign Avatar" pattern: Commit intention to state FIRST, then execute side effects.
+     *
+     * [PHASE 1] Parameter typed as [IdentityUUID].
      */
     fun updateAgentAvatars(
-        agentId: String,
+        agentId: IdentityUUID,
         store: Store,
         newStatus: AgentStatus? = null,
         newError: String? = null
@@ -55,7 +60,7 @@ object AgentAvatarLogic {
         // 1. Dispatch Status Change (if requested)
         if (newStatus != null) {
             store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_STATUS, buildJsonObject {
-                put("agentId", agentId)
+                put("agentId", agentId.uuid)
                 put("status", newStatus.name)
                 newError?.let { put("error", it) }
             }))
@@ -90,7 +95,7 @@ object AgentAvatarLogic {
             val messageId = currentCards[sessionId]
             if (messageId != null) {
                 store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
-                    put("session", sessionId)
+                    put("session", sessionId.handle)
                     put("messageId", messageId)
                 }))
             }
@@ -104,15 +109,15 @@ object AgentAvatarLogic {
             val newMessageId = platformDependencies.generateUUID()
 
             store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_AVATAR_MOVED, buildJsonObject {
-                put("agentId", agentId)
-                put("sessionId", sessionId)
+                put("agentId", agentId.uuid)
+                put("sessionId", sessionId.handle)
                 put("messageId", newMessageId)
             }))
 
             // B. Delete Old (if exists)
             if (oldMessageId != null) {
                 store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
-                    put("session", sessionId)
+                    put("session", sessionId.handle)
                     put("messageId", oldMessageId)
                 }))
             }
@@ -128,7 +133,7 @@ object AgentAvatarLogic {
             }
 
             store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                put("session", sessionId)
+                put("session", sessionId.handle)
                 put("senderId", agent.identity.handle)
                 put("messageId", newMessageId)
                 put("metadata", metadata)
@@ -158,8 +163,7 @@ fun AgentAvatarCard(
 ) {
     val appState by store.state.collectAsState()
     val agentState = appState.featureStates["agent"] as? AgentRuntimeState
-    // REF: Slice 3 - Resolve status
-    val statusInfo = agentState?.agentStatuses?.get(agent.identity.uuid) ?: AgentStatusInfo()
+    val statusInfo = agentState?.agentStatuses?.get(agent.identityUUID) ?: AgentStatusInfo()
 
     OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -201,6 +205,9 @@ fun AgentControlCard(
         }
         else -> statusInfo.status.name
     }
+
+    // [PHASE 1] Use typed accessor for JSON payloads
+    val agentUuidStr = agent.identityUUID.uuid
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -258,7 +265,7 @@ fun AgentControlCard(
                         text = { Text("Edit Agent") },
                         onClick = {
                             store.dispatch("ui.controls", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.manager") }))
-                            store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.identity.uuid) }))
+                            store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agentUuidStr) }))
                             menuExpanded = false
                         },
                         leadingIcon = { Icon(Icons.Default.Edit, null) }
@@ -267,7 +274,7 @@ fun AgentControlCard(
                         text = { Text("Preview Turn") },
                         onClick = {
                             store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
-                                put("agentId", agent.identity.uuid)
+                                put("agentId", agentUuidStr)
                                 put("preview", true)
                             }))
                             menuExpanded = false
@@ -286,7 +293,7 @@ fun AgentControlCard(
             ) {
                 IconButton(
                     onClick = {
-                        store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_TOGGLE_ACTIVE, buildJsonObject { put("agentId", agent.identity.uuid) }))
+                        store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_TOGGLE_ACTIVE, buildJsonObject { put("agentId", agentUuidStr) }))
                     }
                 ) {
                     Icon(
@@ -305,7 +312,7 @@ fun AgentControlCard(
             ) {
                 IconButton(
                     onClick = {
-                        store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject { put("agentId", agent.identity.uuid) }))
+                        store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject { put("agentId", agentUuidStr) }))
                     }
                 ) {
                     Icon(
@@ -318,7 +325,7 @@ fun AgentControlCard(
 
             if (statusInfo.status == AgentStatus.PROCESSING) {
                 Button(
-                    onClick = { store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agent.identity.uuid) })) },
+                    onClick = { store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agentUuidStr) })) },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                 ) {
                     Icon(Icons.Default.Cancel, contentDescription = "Cancel Turn")
@@ -326,7 +333,7 @@ fun AgentControlCard(
             } else {
                 Button(
                     onClick = { store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
-                        put("agentId", agent.identity.uuid)
+                        put("agentId", agentUuidStr)
                         put("preview", false) // Direct execution
                     })) },
                     enabled = canInitiateTurn
