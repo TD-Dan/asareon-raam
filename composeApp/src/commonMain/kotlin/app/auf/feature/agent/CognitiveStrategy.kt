@@ -1,5 +1,6 @@
 package app.auf.feature.agent
 
+import app.auf.core.IdentityHandle
 import kotlinx.serialization.json.JsonElement
 
 /**
@@ -24,14 +25,23 @@ data class ResourceSlot(
  * It manages the "Control Registers" (cognitiveState) of the agent, acting as the
  * Operating System that translates the Agent's static identity (HKG) and current
  * volatility (State) into a System Prompt.
+ *
+ * [PHASE 2] Strategies are now registered identities in the `agent.strategy.*`
+ * namespace. The `identityHandle` replaces the old `id: String` and serves as
+ * the stable, collision-proof contract enforced by the identity registry.
  */
 interface CognitiveStrategy {
 
     /**
-     * The unique identifier for this strategy (e.g., "vanilla_v1", "sovereign_v1").
-     * Used for serialization and UI selection.
+     * The identity handle for this strategy in the `agent.strategy.*` namespace.
+     * Examples: `agent.strategy.vanilla`, `agent.strategy.sovereign`.
+     *
+     * Used as the key in [CognitiveStrategyRegistry], for serialization in
+     * [AgentInstance.cognitiveStrategyId], and for UI selection.
+     *
+     * [PHASE 2] Replaces `val id: String`.
      */
-    val id: String
+    val identityHandle: IdentityHandle
 
     /**
      * The human-readable name (e.g., "Sovereign Constitutional").

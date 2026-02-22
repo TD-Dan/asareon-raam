@@ -58,6 +58,18 @@ class AgentRuntimeFeature(
         this[field]?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) }
 
     override fun init(store: Store) {
+        // [PHASE 2] Register all built-in cognitive strategies before any agents boot.
+        // This must happen before the heartbeat or any agent loading, so that
+        // CognitiveStrategyRegistry.get() and migrateStrategyId() resolve correctly.
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.VanillaStrategy,
+            legacyId = "vanilla_v1"
+        )
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.SovereignStrategy,
+            legacyId = "sovereign_v1"
+        )
+
         coroutineScope.launch {
             while (true) {
                 delay(1000)
@@ -781,7 +793,11 @@ class AgentRuntimeFeature(
             // Agent config files
             path.endsWith("/$agentConfigFILENAME") -> {
                 try {
-                    val agent = json.decodeFromString<AgentInstance>(content)
+                    val rawAgent = json.decodeFromString<AgentInstance>(content)
+                    // [PHASE 2] Migrate legacy strategy IDs (e.g. "vanilla_v1" → "agent.strategy.vanilla")
+                    val agent = rawAgent.copy(
+                        cognitiveStrategyId = CognitiveStrategyRegistry.migrateStrategyId(rawAgent.cognitiveStrategyId.handle)
+                    )
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse agent config from file: $path. Error: ${e.message}")

@@ -1,5 +1,6 @@
 package app.auf.feature.agent.strategies
 
+import app.auf.core.IdentityHandle
 import app.auf.feature.agent.* // Allowed: this is inter-feature import
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -7,9 +8,11 @@ import kotlinx.serialization.json.JsonNull
 /**
  * The standard, lightweight strategy.
  * No state machine, no constitutional overhead. Just Context + Identity.
+ *
+ * [PHASE 2] `id` replaced by `identityHandle` in the `agent.strategy.*` namespace.
  */
 object VanillaStrategy : CognitiveStrategy {
-    override val id: String = "vanilla_v1"
+    override val identityHandle: IdentityHandle = IdentityHandle("agent.strategy.vanilla")
     override val displayName: String = "Vanilla (Simple)"
 
     val DEFAULT_SYSTEM_INSTRUCTION_XML = """

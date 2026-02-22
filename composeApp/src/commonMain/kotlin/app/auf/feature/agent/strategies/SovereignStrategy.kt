@@ -1,5 +1,6 @@
 package app.auf.feature.agent.strategies
 
+import app.auf.core.IdentityHandle
 import app.auf.feature.agent.* // Allowed: this is inter-feature import
 import kotlinx.serialization.json.*
 
@@ -9,9 +10,11 @@ import kotlinx.serialization.json.*
  *
  * In BOOTING phase, the system prompt includes both Constitution and Bootloader.
  * The agent uses UPDATE_NVRAM to transition to AWAKE, at which point only the Constitution remains.
+ *
+ * [PHASE 2] `id` replaced by `identityHandle` in the `agent.strategy.*` namespace.
  */
 object SovereignStrategy : CognitiveStrategy {
-    override val id: String = "sovereign_v1"
+    override val identityHandle: IdentityHandle = IdentityHandle("agent.strategy.sovereign")
     override val displayName: String = "Sovereign (Constitutional)"
 
     private const val SLOT_CONSTITUTION = "constitution"

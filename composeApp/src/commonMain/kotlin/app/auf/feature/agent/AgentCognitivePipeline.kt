@@ -304,7 +304,7 @@ object AgentCognitivePipeline {
         val cognitiveState = if (agent.cognitiveState !is JsonNull) agent.cognitiveState else strategy.getInitialState()
 
         platformDependencies.log(LogLevel.DEBUG, LOG_TAG,
-            "Assembling prompt for '${agentUuid}' using strategy '${strategy.id}' (State: ${abbreviate(cognitiveState.toString(),30)}).")
+            "Assembling prompt for '${agentUuid}' using strategy '${strategy.identityHandle}' (State: ${abbreviate(cognitiveState.toString(),30)}).")
 
         // === RESOURCE RESOLUTION ===
         val resolvedResources = resolveAgentResources(agent, agentState.resources, strategy, platformDependencies, store)

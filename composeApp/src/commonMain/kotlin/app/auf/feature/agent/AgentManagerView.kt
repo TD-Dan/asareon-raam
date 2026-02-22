@@ -260,14 +260,14 @@ private fun AgentEditorView(
     var autoWaitTimeInput by remember(agent.identity.uuid) { mutableStateOf(agent.autoWaitTimeSeconds.toString()) }
     var autoMaxWaitTimeInput by remember(agent.identity.uuid) { mutableStateOf(agent.autoMaxWaitTimeSeconds.toString()) }
 
-    val isVanilla = draftAgent.cognitiveStrategyId == VanillaStrategy.id
+    val isVanilla = draftAgent.cognitiveStrategyId == VanillaStrategy.identityHandle
     val onDraftChanged: (AgentInstance) -> Unit = { draftAgent = it }
 
     val onSave = {
         store.dispatch("ui.agentManager", Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
             put("agentId", agent.identity.uuid)
             put("name", agentNameInput)
-            put("cognitiveStrategyId", draftAgent.cognitiveStrategyId)
+            put("cognitiveStrategyId", draftAgent.cognitiveStrategyId.handle)
             put("modelProvider", draftAgent.modelProvider)
             put("modelName", draftAgent.modelName)
             put("subscribedSessionIds", buildJsonArray { draftAgent.subscribedSessionIds.forEach { add(it.handle) } })
@@ -852,11 +852,11 @@ private fun ModelSelector(agent: AgentInstance, agentState: AgentRuntimeState, o
 private fun StrategySelector(agent: AgentInstance, onUpdate: (AgentInstance) -> Unit) {
     val strategies = remember { CognitiveStrategyRegistry.getAll() }
     var isExpanded by remember { mutableStateOf(false) }
-    val currentStrategy = strategies.find { it.id == agent.cognitiveStrategyId }
+    val currentStrategy = strategies.find { it.identityHandle == agent.cognitiveStrategyId }
 
     ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
         OutlinedTextField(
-            value = currentStrategy?.displayName ?: agent.cognitiveStrategyId,
+            value = currentStrategy?.displayName ?: agent.cognitiveStrategyId.handle,
             onValueChange = {}, readOnly = true, label = { Text("Strategy") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth()
@@ -864,9 +864,9 @@ private fun StrategySelector(agent: AgentInstance, onUpdate: (AgentInstance) -> 
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             strategies.forEach { strategy ->
                 DropdownMenuItem(text = { Text(strategy.displayName) }, onClick = {
-                    var updated = agent.copy(cognitiveStrategyId = strategy.id)
+                    var updated = agent.copy(cognitiveStrategyId = strategy.identityHandle)
                     // If switching to Vanilla, clear HKG
-                    if (strategy.id == VanillaStrategy.id) {
+                    if (strategy.identityHandle == VanillaStrategy.identityHandle) {
                         updated = updated.copy(knowledgeGraphId = null)
                     }
                     onUpdate(updated)

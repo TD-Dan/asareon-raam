@@ -56,7 +56,9 @@ object AgentCrudLogic {
                     knowledgeGraphId = payload["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull,
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: "gemini",
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: "gemini-pro",
-                    cognitiveStrategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull ?: "vanilla_v1",
+                    cognitiveStrategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull
+                        ?.let { CognitiveStrategyRegistry.migrateStrategyId(it) }
+                        ?: CognitiveStrategyRegistry.getDefault().identityHandle,
                     subscribedSessionIds = payload["subscribedSessionIds"]?.jsonArray
                         ?.map { IdentityHandle(it.jsonPrimitive.content) } ?: emptyList(),
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: false,
@@ -97,7 +99,9 @@ object AgentCrudLogic {
                     privateSessionId = if ("privateSessionId" in payload) payload.sessionHandle("privateSessionId") else agentToUpdate.privateSessionId,
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelProvider,
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelName,
-                    cognitiveStrategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.cognitiveStrategyId,
+                    cognitiveStrategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull
+                        ?.let { CognitiveStrategyRegistry.migrateStrategyId(it) }
+                        ?: agentToUpdate.cognitiveStrategyId,
                     subscribedSessionIds = filteredSubscribedSessionIds,
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: agentToUpdate.automaticMode,
                     autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoWaitTimeSeconds,

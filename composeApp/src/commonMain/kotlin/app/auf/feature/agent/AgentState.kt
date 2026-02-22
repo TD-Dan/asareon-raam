@@ -118,8 +118,9 @@ data class AgentPendingCommand(
 //    to value class wrappers. Because value classes serialize transparently as
 //    their underlying type, existing JSON is forward-compatible — no migration.
 //
-// 3. `cognitiveStrategyId` remains `String` until Phase 2 (strategy identity
-//    registration).
+// 3. `cognitiveStrategyId` migrated to `IdentityHandle` in Phase 2 (strategy
+//    identity registration). Old persisted values like `"vanilla_v1"` are
+//    migrated transparently via `CognitiveStrategyRegistry.migrateStrategyId`.
 //
 // 4. `knowledgeGraphId` remains `String?` until Phase 4 (compartmentalization).
 // ============================================================================
@@ -140,8 +141,10 @@ data class AgentInstance(
     val subscribedSessionIds: List<IdentityHandle> = emptyList(),
     val privateSessionId: IdentityHandle? = null,
 
-    // Cognitive Architecture
-    val cognitiveStrategyId: String = "vanilla_v1",
+    // [PHASE 2] Typed: strategy identity handle in `agent.strategy.*` namespace.
+    // Value class serializes as plain String — backward-compatible.
+    // Old values like "vanilla_v1" are migrated at load time.
+    val cognitiveStrategyId: IdentityHandle = IdentityHandle("agent.strategy.vanilla"),
 
     // The "NVRAM" / Control Registers
     // Persisted, so the agent remembers its state across restarts.
