@@ -61,6 +61,15 @@ object SovereignStrategy : CognitiveStrategy {
         )
     )
 
+    override fun getConfigFields(): List<StrategyConfigField> = listOf(
+        StrategyConfigField(
+            key = KEY_KNOWLEDGE_GRAPH_ID,
+            type = StrategyConfigFieldType.KNOWLEDGE_GRAPH,
+            displayName = "Knowledge Graph",
+            description = "The Holon Knowledge Graph reserved for this agent's long-term memory."
+        )
+    )
+
     /**
      * [PHASE 4] Initial state now includes `knowledgeGraphId` as a well-known key.
      * The strategy owns this field — it is no longer on AgentInstance.

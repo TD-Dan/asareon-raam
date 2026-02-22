@@ -19,14 +19,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
-import app.auf.feature.agent.strategies.VanillaStrategy // Allowed: this is an inter-feature import
+// [PHASE 7] VanillaStrategy import REMOVED. AgentManagerView now relies exclusively
+// on the CognitiveStrategy interface and CognitiveStrategyRegistry.
 import app.auf.ui.components.CodeEditor
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
 // ============================================================================
 // [PHASE 4] Helpers for knowledgeGraphId, which moved from AgentInstance into
-// cognitiveState as a strategy-owned key managed by SovereignStrategy.
+// cognitiveState as a strategy-owned key.
 // ============================================================================
 
 /** Reads `knowledgeGraphId` from the agent's cognitiveState. Null if absent. */
@@ -288,7 +289,6 @@ private fun AgentEditorView(
     var autoWaitTimeInput by remember(agent.identity.uuid) { mutableStateOf(agent.autoWaitTimeSeconds.toString()) }
     var autoMaxWaitTimeInput by remember(agent.identity.uuid) { mutableStateOf(agent.autoMaxWaitTimeSeconds.toString()) }
 
-    val isVanilla = draftAgent.cognitiveStrategyId == VanillaStrategy.identityHandle
     val onDraftChanged: (AgentInstance) -> Unit = { draftAgent = it }
 
     val onSave = {
@@ -341,12 +341,13 @@ private fun AgentEditorView(
             MultiSessionSelector(draftAgent, agentState, onDraftChanged)
         }
 
-        // --- ROW 4: Strategy-Specific Settings ---
+        // --- ROW 4: Strategy-Specific Settings (polymorphic, driven by strategy.getConfigFields()) ---
         val currentStrategy = remember(draftAgent.cognitiveStrategyId) {
             CognitiveStrategyRegistry.get(draftAgent.cognitiveStrategyId)
         }
+        val configFields = remember(currentStrategy) { currentStrategy.getConfigFields() }
 
-        if (!isVanilla) {
+        if (configFields.isNotEmpty()) {
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             Text(
                 "Strategy Settings (${currentStrategy.displayName})",
@@ -355,9 +356,13 @@ private fun AgentEditorView(
                 modifier = Modifier.padding(bottom = 4.dp)
             )
 
-            // Knowledge Graph selector for Sovereign strategy
-            Row(Modifier.fillMaxWidth()) {
-                KnowledgeGraphSelector(draftAgent, agentState, onDraftChanged)
+            configFields.forEach { field ->
+                Row(Modifier.fillMaxWidth()) {
+                    when (field.type) {
+                        StrategyConfigFieldType.KNOWLEDGE_GRAPH ->
+                            KnowledgeGraphSelector(draftAgent, agentState, onDraftChanged)
+                    }
+                }
             }
         }
 
@@ -877,11 +882,12 @@ private fun StrategySelector(agent: AgentInstance, onUpdate: (AgentInstance) -> 
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             strategies.forEach { strategy ->
                 DropdownMenuItem(text = { Text(strategy.displayName) }, onClick = {
-                    var updated = agent.copy(cognitiveStrategyId = strategy.identityHandle)
-                    // If switching to Vanilla, clear HKG
-                    if (strategy.identityHandle == VanillaStrategy.identityHandle) {
-                        updated = updated.withKnowledgeGraphId(null)
-                    }
+                    // Reset cognitiveState to the new strategy's initial state on switch.
+                    // Each strategy defines its own defaults — the core never inspects them.
+                    val updated = agent.copy(
+                        cognitiveStrategyId = strategy.identityHandle,
+                        cognitiveState = strategy.getInitialState()
+                    )
                     onUpdate(updated)
                     isExpanded = false
                 })

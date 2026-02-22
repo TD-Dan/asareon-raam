@@ -5,6 +5,25 @@ import app.auf.core.Store
 import kotlinx.serialization.json.JsonElement
 
 /**
+ * Declares a strategy-specific configuration field rendered by the Agent Manager UI.
+ * Analogous to [ResourceSlot] but for config values stored in cognitiveState.
+ *
+ * The core UI renders these generically — it never inspects which strategy is active.
+ */
+data class StrategyConfigField(
+    val key: String,
+    val type: StrategyConfigFieldType,
+    val displayName: String,
+    val description: String = ""
+)
+
+enum class StrategyConfigFieldType {
+    /** Rendered as a Knowledge Graph dropdown selector. */
+    KNOWLEDGE_GRAPH
+    // Future types: TEXT, BOOLEAN, ENUM, etc.
+}
+
+/**
  * Declares a resource slot that a strategy requires.
  * Used by the UI to render slot selectors and by the Pipeline to validate/resolve resources.
  */
@@ -63,6 +82,18 @@ interface CognitiveStrategy {
      * Used by the UI for slot selectors and by the Pipeline for validation.
      */
     fun getResourceSlots(): List<ResourceSlot>
+
+    /**
+     * Declares strategy-specific configuration fields that should be rendered
+     * in the Agent Manager UI under a "Strategy Settings" section.
+     *
+     * The core UI renders these generically based on [StrategyConfigFieldType].
+     * Strategies with no extra settings return an empty list (the default).
+     *
+     * Values are stored as well-known keys in [AgentInstance.cognitiveState],
+     * managed by the strategy.
+     */
+    fun getConfigFields(): List<StrategyConfigField> = emptyList()
 
     /**
      * Returns the initial "NVRAM" state for a freshly created agent.
