@@ -47,14 +47,13 @@ data class ResourceSlot(
  * Operating System that translates the Agent's static identity (HKG) and current
  * volatility (State) into a System Prompt.
  *
- * [PHASE 2] Strategies are now registered identities in the `agent.strategy.*`
- * namespace. The `identityHandle` replaces the old `id: String` and serves as
- * the stable, collision-proof contract enforced by the identity registry.
+ * Strategies are registered identities in the `agent.strategy.*` namespace.
+ * The `identityHandle` serves as the stable, collision-proof contract enforced
+ * by the identity registry.
  *
- * [PHASE 4] Extended with lifecycle hooks. The core runtime now speaks exclusively
- * to this interface — all strategy-specific behavior is encapsulated within each
- * strategy's implementation of these hooks. No implicit strategy checks remain
- * in AgentRuntimeFeature, AgentCognitivePipeline, or AgentCrudLogic.
+ * The core runtime speaks exclusively to this interface — all strategy-specific
+ * behavior is encapsulated within each strategy's implementation of these hooks.
+ * No implicit strategy checks remain in the runtime, pipeline, or CRUD logic.
  */
 interface CognitiveStrategy {
 
@@ -64,8 +63,6 @@ interface CognitiveStrategy {
      *
      * Used as the key in [CognitiveStrategyRegistry], for serialization in
      * [AgentInstance.cognitiveStrategyId], and for UI selection.
-     *
-     * [PHASE 2] Replaces `val id: String`.
      */
     val identityHandle: IdentityHandle
 
@@ -75,7 +72,7 @@ interface CognitiveStrategy {
     val displayName: String
 
     // =========================================================================
-    // Core methods (unchanged since Phase 0)
+    // Core methods
     // =========================================================================
 
     /**
@@ -100,9 +97,9 @@ interface CognitiveStrategy {
      * Returns the initial "NVRAM" state for a freshly created agent.
      * e.g., { "phase": "BOOTING", "rigor": "STANDARD", "knowledgeGraphId": null }
      *
-     * [PHASE 4] Strategy-specific configuration that was previously on AgentInstance
-     * (e.g., knowledgeGraphId) should be included here as well-known keys with
-     * defined defaults. The strategy owns and manages these keys via cognitiveState.
+     * Strategy-specific configuration (e.g., knowledgeGraphId for Sovereign)
+     * should be included here as well-known keys with defined defaults.
+     * The strategy owns and manages these keys via cognitiveState.
      */
     fun getInitialState(): JsonElement
 
@@ -131,7 +128,7 @@ interface CognitiveStrategy {
     ): PostProcessResult
 
     // =========================================================================
-    // [PHASE 4] Lifecycle hooks — all have default no-op implementations
+    // Lifecycle hooks — all have default no-op implementations
     //
     // The runtime calls these polymorphically on all agents. Strategy-specific
     // behavior (HKG reservation, session linking, etc.) is fully encapsulated
@@ -170,7 +167,7 @@ interface CognitiveStrategy {
     fun ensureInfrastructure(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {}
 
     /**
-     * [E7] Strategy-owned config validation. Called by AgentCrudLogic after
+     * Strategy-owned config validation. Called by AgentCrudLogic after
      * AGENT_UPDATE_CONFIG to let the strategy validate or repair config fields.
      *
      * Example: VanillaStrategy enforces outputSessionId ∈ subscribedSessionIds.
@@ -188,8 +185,6 @@ interface CognitiveStrategy {
      * This is an async dispatch — the strategy fires context request actions and the
      * pipeline waits for responses. Returns true if additional context was requested
      * (the pipeline should wait for it), false otherwise.
-     *
-     * [PHASE 4] Replaces the implicit `SovereignHKGResourceLogic.requestContextIfSovereign`.
      */
     fun requestAdditionalContext(agent: AgentInstance, store: Store): Boolean = false
 
@@ -199,8 +194,6 @@ interface CognitiveStrategy {
      *
      * Used by the context-gathering gate to know whether all expected context
      * has arrived before executing the turn.
-     *
-     * [PHASE 4] Replaces the implicit `agent.knowledgeGraphId.isNullOrBlank()` check.
      */
     fun needsAdditionalContext(agent: AgentInstance): Boolean = false
 }
@@ -235,6 +228,7 @@ enum class SentinelAction {
  * and whether it is the designated output target.
  */
 data class SessionInfo(
+    val uuid: String,
     val handle: String,
     val name: String,
     val isOutput: Boolean
@@ -249,6 +243,8 @@ data class AgentTurnContext(
     val gatheredContexts: Map<String, String>,  // source → content
     /** All sessions the agent is subscribed to, enriched with names and output flag. */
     val subscribedSessions: List<SessionInfo> = emptyList(),
-    /** The output session handle (may differ from subscribed sessions for Sovereign agents). */
+    /** The output session UUID (used by the pipeline for equality comparison). */
+    val outputSessionUUID: String? = null,
+    /** The output session handle (used by strategies for display in prompts). */
     val outputSessionHandle: String? = null
 )

@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 
 // ============================================================================
-// Typed ID Wrappers (Phase 1)
+// Typed ID Wrappers
 //
 // Zero-cost at runtime (value class erases to String). Compile-time type safety
 // prevents passing a session handle where a resource UUID is expected.
@@ -117,12 +117,96 @@ data class Identity(
      */
     val registeredAt: Long = 0
 
-    // FUTURE: Permissions grants — paved, not implemented in v2.0.
+    // FUTURE: Permissions grants — paved, not implemented yet
     // val permissions: Map<String, Boolean>? = null
 ) {
     /** Convenience accessor for typed handle. */
     val identityHandle: IdentityHandle get() = IdentityHandle(handle)
 
-    /** Convenience accessor for typed UUID. Throws if UUID is null (features). */
+    /** Convenience accessor for typed UUID. Null for features (no system-assigned UUID). */
     val identityUUID: IdentityUUID? get() = uuid?.let { IdentityUUID(it) }
+}
+
+// ============================================================================
+// Identity Registry Extensions
+//
+// The identity registry is Map<String, Identity> keyed by handle.
+// These extensions provide lookup by any form of identity reference
+// and close-match suggestions for error messages.
+// ============================================================================
+
+/**
+ * Find an identity by its [IdentityUUID].
+ * Returns null if no identity with this UUID exists in the registry.
+ */
+fun Map<String, Identity>.findByUUID(uuid: IdentityUUID): Identity? =
+    values.find { it.uuid == uuid.uuid }
+
+/**
+ * Find an identity by its UUID string.
+ */
+fun Map<String, Identity>.findByUUID(uuid: String): Identity? =
+    values.find { it.uuid == uuid }
+
+/**
+ * Universal identity resolution. Accepts any form of identity reference
+ * and returns the matching Identity, or null.
+ *
+ * Resolution order (first match wins):
+ *   1. Exact handle match (map key lookup — O(1))
+ *   2. UUID match
+ *   3. localHandle match
+ *   4. Case-insensitive display name match
+ *
+ * This order prioritizes unambiguous identifiers over potentially
+ * ambiguous ones (multiple identities could share a display name).
+ */
+fun Map<String, Identity>.resolve(raw: String): Identity? {
+    // 1. Direct handle (O(1) map lookup)
+    this[raw]?.let { return it }
+    // 2. UUID
+    values.find { it.uuid == raw }?.let { return it }
+    // 3. localHandle
+    values.find { it.localHandle == raw }?.let { return it }
+    // 4. Display name (case-insensitive)
+    values.find { it.name.equals(raw, ignoreCase = true) }?.let { return it }
+    return null
+}
+
+/**
+ * Scoped variant: resolves only among identities that are children of
+ * the given [parentHandle] (e.g. "agent", "session").
+ */
+fun Map<String, Identity>.resolve(raw: String, parentHandle: String): Identity? {
+    val scoped = values.filter { it.parentHandle == parentHandle }
+    scoped.find { it.handle == raw }?.let { return it }
+    scoped.find { it.uuid == raw }?.let { return it }
+    scoped.find { it.localHandle == raw }?.let { return it }
+    scoped.find { it.name.equals(raw, ignoreCase = true) }?.let { return it }
+    return null
+}
+
+/**
+ * Returns up to [limit] identities whose name, localHandle, or handle
+ * contain the query string (case-insensitive). Useful for "did you mean?"
+ * suggestions in error messages.
+ *
+ * This can be later updated to include some kind of fuzzy or nearness matching.
+ *
+ * Optionally scoped to a [parentHandle].
+ */
+fun Map<String, Identity>.suggestMatches(
+    query: String,
+    parentHandle: String? = null,
+    limit: Int = 3
+): List<Identity> {
+    val lower = query.lowercase()
+    return values
+        .filter { identity ->
+            (parentHandle == null || identity.parentHandle == parentHandle) &&
+                    (identity.name.lowercase().contains(lower) ||
+                            identity.localHandle.lowercase().contains(lower) ||
+                            identity.handle.lowercase().contains(lower))
+        }
+        .take(limit)
 }
