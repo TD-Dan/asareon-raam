@@ -20,31 +20,22 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
 /**
- * ## The Executor (Refined)
+ * ## The Executor
  * A pure switchboard feature.
  * - Config/Persistence -> AgentCrudLogic
  * - Runtime State -> AgentRuntimeReducer
  * - Cognition -> AgentCognitivePipeline
  * - Side Effects -> AgentAvatarLogic / Self
  *
- * [PHASE 1] All agent IDs are typed via [IdentityUUID]; session IDs via [IdentityHandle].
- * JSON extraction wraps raw strings at the boundary; internal logic uses typed values.
+ * All agent IDs are typed via [IdentityUUID]; session references use [IdentityUUID]
+ * (immutable, rename-safe). Session handles are resolved from the identity registry
+ * at point-of-use for cross-feature dispatch.
  *
- * [PHASE 4] ALL implicit strategy checks removed. The runtime no longer references
- * SovereignHKGResourceLogic or checks `agent.knowledgeGraphId`. All strategy-specific
- * behavior is dispatched polymorphically through the [CognitiveStrategy] lifecycle hooks.
+ * All strategy-specific behavior is dispatched polymorphically through the
+ * [CognitiveStrategy] lifecycle hooks — no implicit strategy checks.
  *
- * [PHASE 6] ACTION_RESULT compliance. All 15 command-dispatchable agent actions now
- * publish `agent.ACTION_RESULT` broadcasts with `correlationId`, `success`, and a
- * human-readable `summary`. CommandBot matches via `correlationId` to post feedback
- * into the originating session.
- *
- * Satisfies Definition of Done criterion #1:
- * "AgentRuntimeFeature contains no `if (agent.knowledgeGraphId != null)` or equivalent
- * implicit strategy checks."
- *
- * Satisfies Definition of Done criterion for Phase 6:
- * "All command-dispatchable agent actions publish agent.ACTION_RESULT with correlationId."
+ * All command-dispatchable agent actions publish `agent.ACTION_RESULT` broadcasts
+ * with `correlationId` for CommandBot correlation.
  */
 class AgentRuntimeFeature(
     private val platformDependencies: PlatformDependencies,
@@ -69,18 +60,54 @@ class AgentRuntimeFeature(
         const val PENDING_COMMAND_TTL_MS = 5 * 60 * 1000L
     }
 
-    // ---- Phase 1 boundary helper ----
+    // ---- Boundary helpers ----
     private fun JsonObject.agentUUID(field: String = "agentId"): IdentityUUID? =
         this[field]?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) }
 
-    // ---- Phase 6 boundary helper ----
     private fun JsonObject.correlationId(): String? =
         this["correlationId"]?.jsonPrimitive?.contentOrNull
 
+    /**
+     * Resolves an agent from a payload field using flexible identity matching.
+     * For public, command-dispatchable actions — resolves by UUID, handle,
+     * localHandle, or display name via the identity registry.
+     * On failure, publishes an ACTION_RESULT error with close-match suggestions.
+     *
+     * Internal actions (where the ID is always a UUID from our own dispatches)
+     * should continue using [agentUUID] directly.
+     */
+    private fun resolveAgentId(
+        payload: JsonObject?,
+        store: Store,
+        correlationId: String?,
+        actionName: String,
+        field: String = "agentId"
+    ): IdentityUUID? {
+        val raw = payload?.get(field)?.jsonPrimitive?.contentOrNull ?: return null
+        val registry = store.state.value.identityRegistry
+        val resolved = registry.resolve(raw, parentHandle = "agent")
+        if (resolved?.identityUUID != null) return resolved.identityUUID
+
+        // Not found in registry — publish error with suggestions
+        val suggestions = registry.suggestMatches(raw, parentHandle = "agent")
+            .joinToString(", ") { "'${it.name}' (${it.uuid})" }
+        val hint = if (suggestions.isNotEmpty()) " Did you mean: $suggestions?" else ""
+        publishActionResult(store, correlationId, actionName, false,
+            error = "Agent '$raw' not found.$hint")
+        platformDependencies.log(LogLevel.WARN, identity.handle, "$actionName: Agent '$raw' not found.$hint")
+        return null
+    }
+
+    /**
+     * Resolves a session [IdentityUUID] to its current handle via the identity registry.
+     * Used at dispatch sites for cross-feature session actions (SESSION_POST, etc.).
+     */
+    private fun resolveSessionHandle(sessionUUID: IdentityUUID, store: Store): String? {
+        return store.state.value.identityRegistry.findByUUID(sessionUUID)?.handle
+    }
+
     override fun init(store: Store) {
-        // [PHASE 2] Register all built-in cognitive strategies before any agents boot.
-        // This must happen before the heartbeat or any agent loading, so that
-        // CognitiveStrategyRegistry.get() and migrateStrategyId() resolve correctly.
+        // Register all built-in cognitive strategies before any agents boot.
         CognitiveStrategyRegistry.register(
             app.auf.feature.agent.strategies.MinimalStrategy)
         CognitiveStrategyRegistry.register(
@@ -116,7 +143,7 @@ class AgentRuntimeFeature(
             return
         }
         when (action.name) {
-            // Phase 3: Targeted responses — migrated from onPrivateData.
+            // Targeted responses — route to pipeline or handlers.
             ActionRegistry.Names.SESSION_RETURN_LEDGER,
             ActionRegistry.Names.KNOWLEDGEGRAPH_RETURN_CONTEXT,
             ActionRegistry.Names.GATEWAY_RETURN_RESPONSE,
@@ -128,8 +155,7 @@ class AgentRuntimeFeature(
             }
             // --- Startup ---
             ActionRegistry.Names.SYSTEM_STARTING -> {
-                // [PHASE 4] Inject built-in resources from all registered strategies.
-                // Replaces the hardcoded AgentDefaults.builtInResources list.
+                // Inject built-in resources from all registered strategies.
                 CognitiveStrategyRegistry.getAllBuiltInResources().forEach { resource ->
                     store.deferredDispatch(identity.handle, Action(
                         ActionRegistry.Names.AGENT_RESOURCE_LOADED,
@@ -150,14 +176,13 @@ class AgentRuntimeFeature(
                         saveAgentNvram(agent, store)
                     }
                 }
-                // [PHASE 4] Polymorphic infrastructure check for all agents.
-                // Replaces: SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+                // Polymorphic infrastructure check for all agents.
                 if (store.state.value.identityRegistry.values.any { it.parentHandle == "session" }) {
                     dispatchEnsureInfrastructureForAll(agentState, store)
                 }
             }
             ActionRegistry.Names.AGENT_VALIDATE_SOVEREIGN_STATE -> {
-                // [PHASE 4] Generalized: run ensureInfrastructure for all agents, not just Sovereign.
+                // Generalized: run ensureInfrastructure for all agents.
                 // The action name is retained for backward compat but the implementation is strategy-agnostic.
                 dispatchEnsureInfrastructureForAll(agentState, store)
             }
@@ -188,8 +213,7 @@ class AgentRuntimeFeature(
                 }
                 saveAgentConfig(agentToSave, store)
 
-                // [PHASE 4] Polymorphic: let the strategy set up its infrastructure.
-                // Replaces: SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+                // Polymorphic: let the strategy set up its infrastructure.
                 val strategy = CognitiveStrategyRegistry.get(agentToSave.cognitiveStrategyId)
                 strategy.onAgentRegistered(agentToSave, store)
 
@@ -207,16 +231,15 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.AGENT_CLONE -> {
                 val payload = action.payload
                 val correlationId = payload?.correlationId()
-                val agentId = payload?.agentUUID() ?: return
+                val agentId = resolveAgentId(payload, store, correlationId, action.name) ?: return
                 val agentToClone = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "AGENT_CLONE: Source agent '$agentId' not found in state.")
                     publishActionResult(store, correlationId, action.name, false, error = "Source agent '$agentId' not found.")
                     return
                 }
-                // [PHASE 4] knowledgeGraphId is now in cognitiveState. The clone payload
-                // passes it as a top-level field so AgentCrudLogic.AGENT_CREATE can merge
-                // it into the new agent's cognitiveState. We read it generically from
-                // cognitiveState — no strategy import needed.
+                // knowledgeGraphId is in cognitiveState. The clone payload passes it as a
+                // top-level field so AgentCrudLogic.AGENT_CREATE can merge it into the new
+                // agent's cognitiveState. Read it generically — no strategy import needed.
                 val kgId = (agentToClone.cognitiveState as? JsonObject)
                     ?.get("knowledgeGraphId")?.jsonPrimitive?.contentOrNull
                 val createPayload = buildJsonObject {
@@ -224,7 +247,7 @@ class AgentRuntimeFeature(
                     kgId?.let { put("knowledgeGraphId", it) }
                     put("modelProvider", agentToClone.modelProvider)
                     put("modelName", agentToClone.modelName)
-                    put("subscribedSessionIds", buildJsonArray { agentToClone.subscribedSessionIds.forEach { add(it.handle) } })
+                    put("subscribedSessionIds", buildJsonArray { agentToClone.subscribedSessionIds.forEach { add(it.uuid) } })
                     put("automaticMode", agentToClone.automaticMode)
                     put("autoWaitTimeSeconds", agentToClone.autoWaitTimeSeconds)
                     put("autoMaxWaitTimeSeconds", agentToClone.autoMaxWaitTimeSeconds)
@@ -236,7 +259,7 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, ActionRegistry.Names.AGENT_TOGGLE_ACTIVE -> {
                 val payload = action.payload
                 val correlationId = payload?.correlationId()
-                val agentId = payload?.agentUUID() ?: return
+                val agentId = resolveAgentId(payload, store, correlationId, action.name) ?: return
                 val agent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "AGENT_TOGGLE: Agent '$agentId' not found in state.")
                     publishActionResult(store, correlationId, action.name, false, error = "Agent '$agentId' not found.")
@@ -256,7 +279,7 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.AGENT_UPDATE_CONFIG -> {
                 val payload = action.payload
                 val correlationId = payload?.correlationId()
-                val agentId = payload?.agentUUID() ?: return
+                val agentId = resolveAgentId(payload, store, correlationId, action.name) ?: return
                 val oldAgent = (previousState as? AgentRuntimeState)?.agents?.get(agentId)
                 val newAgent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "AGENT_UPDATE_CONFIG: Agent '$agentId' not found in state after update.")
@@ -264,8 +287,7 @@ class AgentRuntimeFeature(
                     return
                 }
 
-                // [PHASE 4] Polymorphic config change notification.
-                // Replaces: SovereignHKGResourceLogic.handleSovereignAssignment/Revocation
+                // Polymorphic config change notification.
                 if (oldAgent != null) {
                     val strategy = CognitiveStrategyRegistry.get(newAgent.cognitiveStrategyId)
                     strategy.onAgentConfigChanged(oldAgent, newAgent, store)
@@ -274,8 +296,7 @@ class AgentRuntimeFeature(
                 saveAgentConfig(newAgent, store)
                 AgentAvatarLogic.updateAgentAvatars(agentId, store)
 
-                // [PHASE 4] Polymorphic infrastructure check.
-                // Replaces: SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+                // Polymorphic infrastructure check.
                 dispatchEnsureInfrastructureForAll(agentState, store)
 
                 // If agent name changed, update identity atomically
@@ -305,7 +326,7 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.AGENT_UPDATE_NVRAM -> {
                 val payload = action.payload
                 val correlationId = payload?.correlationId()
-                val agentId = payload?.agentUUID() ?: return
+                val agentId = resolveAgentId(payload, store, correlationId, action.name) ?: return
                 val agent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "UPDATE_NVRAM: Agent '$agentId' not found. Cannot update NVRAM.")
                     publishActionResult(store, correlationId, action.name, false, error = "Agent '$agentId' not found.")
@@ -317,10 +338,11 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.AGENT_DELETE -> {
                 val payload = action.payload
                 val correlationId = payload?.correlationId()
-                val agentId = payload?.agentUUID() ?: return
-                agentState.agentAvatarCardIds[agentId]?.forEach { (sessionId, messageId) ->
+                val agentId = resolveAgentId(payload, store, correlationId, action.name) ?: return
+                agentState.agentAvatarCardIds[agentId]?.forEach { (sessionUUID, messageId) ->
+                    val sessionHandle = resolveSessionHandle(sessionUUID, store) ?: return@forEach
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
-                        put("session", sessionId.handle)
+                        put("session", sessionHandle)
                         put("messageId", messageId)
                     }))
                 }
@@ -394,7 +416,7 @@ class AgentRuntimeFeature(
             // --- Cognitive Pipeline & Peer Updates (Delegated) ---
             ActionRegistry.Names.AGENT_INITIATE_TURN -> {
                 val correlationId = action.payload?.correlationId()
-                val agentId = action.payload?.agentUUID() ?: return
+                val agentId = resolveAgentId(action.payload, store, correlationId, action.name) ?: return
                 val agent = agentState.agents[agentId]
                 AgentCognitivePipeline.startCognitiveCycle(agentId, store)
                 publishActionResult(store, correlationId, action.name, true, summary = "Turn initiated for agent '${agent?.identity?.name ?: agentId.uuid}'.")
@@ -428,7 +450,7 @@ class AgentRuntimeFeature(
             }
             ActionRegistry.Names.AGENT_EXECUTE_PREVIEWED_TURN -> {
                 val correlationId = action.payload?.correlationId()
-                val agentId = action.payload?.agentUUID() ?: return
+                val agentId = resolveAgentId(action.payload, store, correlationId, action.name) ?: return
                 val agent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "EXECUTE_PREVIEWED_TURN: Agent '$agentId' not found.")
                     publishActionResult(store, correlationId, action.name, false, error = "Agent '$agentId' not found.")
@@ -457,7 +479,7 @@ class AgentRuntimeFeature(
             }
             ActionRegistry.Names.AGENT_DISCARD_PREVIEW -> {
                 val correlationId = action.payload?.correlationId()
-                val agentId = action.payload?.agentUUID() ?: return
+                val agentId = resolveAgentId(action.payload, store, correlationId, action.name) ?: return
                 val agent = agentState.agents[agentId]
                 val statusInfo = agentState.agentStatuses[agentId]
                 if (statusInfo?.status != AgentStatus.PROCESSING) {
@@ -470,7 +492,7 @@ class AgentRuntimeFeature(
             }
             ActionRegistry.Names.AGENT_CANCEL_TURN -> {
                 val correlationId = action.payload?.correlationId()
-                val agentId = action.payload?.agentUUID() ?: return
+                val agentId = resolveAgentId(action.payload, store, correlationId, action.name) ?: return
                 val agent = agentState.agents[agentId]
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_CANCEL_REQUEST, buildJsonObject {
                     put("correlationId", agentId.uuid)
@@ -505,8 +527,7 @@ class AgentRuntimeFeature(
                 AgentAutoTriggerLogic.checkAndDispatchTriggers(store, agentState, platformDependencies, identity.handle)
             }
             ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED -> {
-                // [PHASE 4] Polymorphic infrastructure check.
-                // Replaces: SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+                // Polymorphic infrastructure check.
                 dispatchEnsureInfrastructureForAll(agentState, store)
             }
             ActionRegistry.Names.SESSION_SESSION_FEATURE_READY -> {
@@ -593,15 +614,13 @@ class AgentRuntimeFeature(
     }
 
     // ========================================================================
-    // [PHASE 4] Polymorphic lifecycle dispatch helpers
+    // Polymorphic lifecycle dispatch helpers
     // ========================================================================
 
     /**
      * Calls [CognitiveStrategy.ensureInfrastructure] for every active agent.
      * Each strategy's implementation is a no-op if the agent doesn't need
      * infrastructure management — so this is safe to call unconditionally.
-     *
-     * [PHASE 4] Replaces all calls to SovereignHKGResourceLogic.ensureSovereignSessions().
      */
     private fun dispatchEnsureInfrastructureForAll(agentState: AgentRuntimeState, store: Store) {
         agentState.agents.values.forEach { agent ->
@@ -611,7 +630,7 @@ class AgentRuntimeFeature(
     }
 
     // ========================================================================
-    // [PHASE 6] ACTION_RESULT broadcast helper
+    // ACTION_RESULT broadcast helper
     // ========================================================================
 
     /**
@@ -693,7 +712,7 @@ class AgentRuntimeFeature(
     }
 
     // ========================================================================
-    // Targeted action handling (Phase 3 — migrated from onPrivateData)
+    // Targeted action handling
     // ========================================================================
 
     private fun handleTargetedResponse(action: Action, store: Store, agentState: AgentRuntimeState) {
@@ -744,11 +763,16 @@ class AgentRuntimeFeature(
         val formatted = formatResponseForSession(action)
 
         if (formatted != null) {
+            val sessionHandle = resolveSessionHandle(pending.sessionId, store) ?: run {
+                platformDependencies.log(LogLevel.ERROR, identity.handle,
+                    "routeCommandResponseToSession: Session UUID '${pending.sessionId}' not in registry. Cannot deliver.")
+                return
+            }
             store.deferredDispatch(identity.handle, Action(
                 ActionRegistry.Names.COMMANDBOT_DELIVER_TO_SESSION,
                 buildJsonObject {
                     put("correlationId", pending.correlationId)
-                    put("sessionId", pending.sessionId.handle)
+                    put("sessionId", sessionHandle)
                     put("message", formatted)
                 }
             ))
@@ -873,6 +897,11 @@ class AgentRuntimeFeature(
                         "Agent '${agent.identityUUID}' has no session for workspace list response.")
                     return
                 }
+                val targetSessionHandle = resolveSessionHandle(targetSessionId, store) ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle,
+                        "Agent '${agent.identityUUID}' session UUID '$targetSessionId' not in registry.")
+                    return
+                }
 
                 val workspaceRelativePath = normalizedPath.substringAfter("$agentIdStr/workspace")
                     .removePrefix("/")
@@ -899,7 +928,7 @@ class AgentRuntimeFeature(
                 }
 
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                    put("session", targetSessionId.handle)
+                    put("session", targetSessionHandle)
                     put("senderId", commandBotSenderId)
                     put("message", message)
                 }))
@@ -934,6 +963,11 @@ class AgentRuntimeFeature(
                         "Agent '${agent.identityUUID}' has no session for workspace read response.")
                     return
                 }
+                val targetSessionHandle = resolveSessionHandle(targetSessionId, store) ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle,
+                        "Agent '${agent.identityUUID}' session UUID '$targetSessionId' not in registry.")
+                    return
+                }
 
                 val message = if (content != null) {
                     "```text\n[WORKSPACE FILE: $relativePath]\n$content\n```"
@@ -942,7 +976,7 @@ class AgentRuntimeFeature(
                 }
 
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                    put("session", targetSessionId.handle)
+                    put("session", targetSessionHandle)
                     put("senderId", commandBotSenderId)
                     put("message", message)
                 }))
@@ -961,26 +995,25 @@ class AgentRuntimeFeature(
             path.endsWith("/$agentConfigFILENAME") -> {
                 try {
                     val rawAgent = json.decodeFromString<AgentInstance>(content)
-                    // [PHASE 2] Migrate legacy strategy IDs (e.g. "vanilla_v1" → "agent.strategy.vanilla")
+                    // Migrate legacy strategy IDs (e.g. "vanilla_v1" → "agent.strategy.vanilla")
                     var agent = rawAgent.copy(
                         cognitiveStrategyId = CognitiveStrategyRegistry.migrateStrategyId(rawAgent.cognitiveStrategyId.handle)
                     )
-                    // [PHASE 3] Migrate old "privateSessionId" → outputSessionId
+                    // Migrate old "privateSessionId" → outputSessionId
                     if (agent.outputSessionId == null) {
                         val rawJson = json.parseToJsonElement(content).jsonObject
                         rawJson["privateSessionId"]?.jsonPrimitive?.contentOrNull?.let { oldValue ->
-                            agent = agent.copy(outputSessionId = IdentityHandle(oldValue))
+                            // Old value may be a handle — resolve to UUID if possible
+                            val registry = store.state.value.identityRegistry
+                            val resolved = registry.resolve(oldValue)
+                            agent = agent.copy(outputSessionId = IdentityUUID(resolved?.uuid ?: oldValue))
                         }
                     }
-                    // [PHASE 4] Migrate old top-level "knowledgeGraphId" → cognitiveState
-                    // Old agent.json files have knowledgeGraphId as a top-level field.
-                    // Since it's removed from AgentInstance, ignoreUnknownKeys drops it.
-                    // We re-read it from raw JSON and merge into cognitiveState.
+                    // Migrate old top-level "knowledgeGraphId" → cognitiveState
                     val rawJson = json.parseToJsonElement(content).jsonObject
                     val legacyKgId = rawJson["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull
                     if (legacyKgId != null) {
                         val currentState = agent.cognitiveState as? JsonObject ?: buildJsonObject {}
-                        // Only migrate if cognitiveState doesn't already have it
                         if (currentState["knowledgeGraphId"] == null || currentState["knowledgeGraphId"] is JsonNull) {
                             agent = agent.copy(cognitiveState = buildJsonObject {
                                 currentState.forEach { (k, v) -> put(k, v) }
@@ -988,6 +1021,29 @@ class AgentRuntimeFeature(
                             })
                         }
                     }
+                    // Migrate legacy handle-based session references → UUIDs
+                    // IdentityUUID serializes as a plain string, so old handle strings
+                    // load into IdentityUUID wrappers. Detect and re-resolve them.
+                    val registry = store.state.value.identityRegistry
+                    agent = agent.copy(
+                        subscribedSessionIds = agent.subscribedSessionIds.map { maybeHandle ->
+                            if (maybeHandle.uuid.matches(Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"))) {
+                                maybeHandle // Already a UUID
+                            } else {
+                                // Legacy handle — resolve to UUID
+                                val resolved = registry.resolve(maybeHandle.uuid)
+                                if (resolved?.uuid != null) IdentityUUID(resolved.uuid) else maybeHandle
+                            }
+                        },
+                        outputSessionId = agent.outputSessionId?.let { maybeHandle ->
+                            if (maybeHandle.uuid.matches(Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"))) {
+                                maybeHandle
+                            } else {
+                                val resolved = registry.resolve(maybeHandle.uuid)
+                                if (resolved?.uuid != null) IdentityUUID(resolved.uuid) else maybeHandle
+                            }
+                        }
+                    )
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse agent config from file: $path. Error: ${e.message}")
@@ -1061,9 +1117,9 @@ class AgentRuntimeFeature(
  * Uses the agent's outputSessionId if set, otherwise falls back to the first
  * subscribed session.
  *
- * [PHASE 1] Returns typed [IdentityHandle].
- * [PHASE 4] Docstring updated — no longer references Sovereign/Vanilla specifically.
+ * Returns [IdentityUUID] — callers resolve to a handle via [resolveSessionHandle]
+ * at the point of cross-feature dispatch.
  */
-private fun getAgentResponseSessionId(agent: AgentInstance): IdentityHandle? {
+private fun getAgentResponseSessionId(agent: AgentInstance): IdentityUUID? {
     return agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull()
 }
