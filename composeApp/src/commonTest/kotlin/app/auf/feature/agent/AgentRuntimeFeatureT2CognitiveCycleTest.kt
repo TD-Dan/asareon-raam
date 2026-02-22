@@ -89,7 +89,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             .withFeature(SessionFeature(platform, scope))
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agentId to agent),
+                agents = mapOf(uid(agentId) to agent),
                 resources = emptyList()
             ))
             .withInitialState("session", SessionState(
@@ -138,7 +138,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             assertNotNull(stageAction, "Should stage turn context")
 
             // === PHASE 3: EVALUATE CONTEXT (triggers parallel context gathering) ===
-            AgentCognitivePipeline.evaluateTurnContext(agentId, harness.store)
+            AgentCognitivePipeline.evaluateTurnContext(uid(agentId), harness.store)
 
             // ASSERT: Workspace listing requested
             val workspaceListRequest = harness.processedActions.find { action ->
@@ -212,7 +212,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             .withFeature(SessionFeature(platform, scope))
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agentId to agent),
+                agents = mapOf(uid(agentId) to agent),
                 resources = emptyList()
             ))
             .withInitialState("session", SessionState(
@@ -272,7 +272,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             .withFeature(SessionFeature(platform, scope))
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agentId to awakeAgent),
+                agents = mapOf(uid(agentId) to awakeAgent),
                 resources = emptyList()
             ))
             .withInitialState("session", SessionState(
@@ -307,7 +307,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             ))
 
             // Trigger evaluation (parallel context gathering)
-            AgentCognitivePipeline.evaluateTurnContext(agentId, harness.store)
+            AgentCognitivePipeline.evaluateTurnContext(uid(agentId), harness.store)
 
             // Workspace context arrives automatically via FileSystemFeature.
             // Sovereign agent also needs HKG context:
@@ -359,7 +359,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
     fun `missing resources triggers error state`() = runTest {
         val agentWithMissingResource = agent.copy(
             resources = mapOf(
-                "constitution" to "nonexistent-resource-id"
+                "constitution" to uid("nonexistent-resource-id")
             )
         )
 
@@ -370,7 +370,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             .withFeature(SessionFeature(platform, scope))
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agentId to agentWithMissingResource),
+                agents = mapOf(uid(agentId) to agentWithMissingResource),
                 resources = emptyList()
             ))
             .withInitialState("session", SessionState(
@@ -404,7 +404,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             ))
 
             // Trigger evaluation (parallel context gathering starts)
-            AgentCognitivePipeline.evaluateTurnContext(agentId, harness.store)
+            AgentCognitivePipeline.evaluateTurnContext(uid(agentId), harness.store)
 
             // Workspace listing arrives via FileSystemFeature automatically.
             // Sovereign agent also needs HKG context for gate to pass:

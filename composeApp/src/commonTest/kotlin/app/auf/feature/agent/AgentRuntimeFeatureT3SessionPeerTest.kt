@@ -57,6 +57,20 @@ class AgentRuntimeFeatureT3SessionPeerTest {
         ))
     }
 
+    /**
+     * Registers a session identity in the identity registry so that
+     * AgentCognitivePipeline can resolve session UUIDs to handles.
+     */
+    private fun registerSessionIdentity(harness: TestHarness, session: app.auf.feature.session.Session) {
+        harness.store.dispatch("session", Action(
+            ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+            buildJsonObject {
+                put("uuid", session.identity.uuid)
+                put("name", session.identity.name)
+            }
+        ))
+    }
+
     @Test
     fun `when a new message arrives an IDLE agent transitions to WAITING and moves its card`() = runTest {
         val initialAvatarCards: Map<IdentityUUID, Map<IdentityUUID, String>> = mapOf(
@@ -115,6 +129,8 @@ class AgentRuntimeFeatureT3SessionPeerTest {
         harness.runAndLogOnFailure {
             // Register agent identity so resolveAgentId works for INITIATE_TURN
             registerAgentIdentity(harness)
+            // Register session identity so AgentCognitivePipeline can resolve session UUIDs
+            registerSessionIdentity(harness, sessionA)
 
             // ACT: Trigger the agent's turn
             val triggerAction = Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agentConfig.identity.uuid) })
