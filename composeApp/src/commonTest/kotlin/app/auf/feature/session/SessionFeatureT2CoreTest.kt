@@ -497,4 +497,263 @@ class SessionFeatureT2CoreTest {
             assertNotNull(postAction, "Should resolve by display name")
         }
     }
+
+    // ==========================================================================
+    // SESSION_CLONE — two-phase creation with ledger copy
+    // ==========================================================================
+
+    @Test
+    fun `SESSION_CLONE creates a new session with the source ledger copied`() = runTest {
+        val sourceEntry1 = LedgerEntry("msg-1", 1L, "user", "Hello")
+        val sourceEntry2 = LedgerEntry("msg-2", 2L, "agent", "World")
+        val source = testSession("original", "Original Chat", ledger = listOf(sourceEntry1, sourceEntry2))
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withFeature(fileSystemFeature)
+            .withInitialState("session", SessionState(sessions = mapOf(source.identity.localHandle to source)))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_CLONE, buildJsonObject {
+                put("session", "original")
+            }))
+            testScheduler.advanceUntilIdle()
+
+            val sessionState = harness.store.state.value.featureStates["session"] as? SessionState
+            assertNotNull(sessionState)
+            assertEquals(2, sessionState.sessions.size, "Should have both original and cloned session")
+
+            // Find the clone (not the original)
+            val clone = sessionState.sessions.values.find { it.identity.localHandle != "original" }
+            assertNotNull(clone, "Cloned session should exist")
+            assertTrue(clone.identity.name.contains("Copy"), "Clone name should contain 'Copy', got: ${clone.identity.name}")
+            assertEquals(2, clone.ledger.size, "Clone should have the same number of ledger entries as source")
+            assertEquals("Hello", clone.ledger[0].rawContent, "Clone should preserve message content")
+            assertEquals("World", clone.ledger[1].rawContent, "Clone should preserve message content")
+
+            // Clone should not be hidden, even if the source were
+            assertFalse(clone.isHidden, "Clone should always be non-hidden")
+
+            // Pending creations should be cleared
+            assertTrue(sessionState.pendingCreations.isEmpty(), "Pending creations should be cleared")
+
+            // Verify persistence was triggered for the clone
+            val writeAction = harness.processedActions.find {
+                it.name == ActionRegistry.Names.FILESYSTEM_WRITE &&
+                        it.payload?.get("path")?.jsonPrimitive?.content?.contains(clone.identity.localHandle) == true
+            }
+            assertNotNull(writeAction, "Cloned session should be persisted to disk")
+        }
+    }
+
+    @Test
+    fun `SESSION_CLONE with unknown source session is ignored`() = runTest {
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withInitialState("session", SessionState())
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_CLONE, buildJsonObject {
+                put("session", "nonexistent")
+            }))
+            testScheduler.advanceUntilIdle()
+
+            val sessionState = harness.store.state.value.featureStates["session"] as SessionState
+            assertTrue(sessionState.sessions.isEmpty(), "No session should be created when source is unknown")
+            assertTrue(sessionState.pendingCreations.isEmpty(), "No pending creation should be added")
+        }
+    }
+
+    // ==========================================================================
+    // SESSION_CLEAR — locked and doNotClear entries survive
+    // ==========================================================================
+
+    @Test
+    fun `SESSION_CLEAR removes normal messages but preserves locked and doNotClear entries`() = runTest {
+        val normalEntry = LedgerEntry("msg-normal", 1L, "user", "Clearable message")
+        val lockedEntry = LedgerEntry("msg-locked", 2L, "user", "Locked message", isLocked = true)
+        val doNotClearEntry = LedgerEntry("msg-durable", 3L, "agent", "Durable UI card", doNotClear = true)
+        val anotherNormalEntry = LedgerEntry("msg-normal2", 4L, "agent", "Also clearable")
+
+        val session = testSession("sid-1", "Test Session",
+            ledger = listOf(normalEntry, lockedEntry, doNotClearEntry, anotherNormalEntry),
+            messageUiState = mapOf(
+                "msg-normal" to MessageUiState(isCollapsed = true),
+                "msg-locked" to MessageUiState(isRawView = true),
+                "msg-durable" to MessageUiState(),
+                "msg-normal2" to MessageUiState()
+            )
+        )
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withFeature(fileSystemFeature)
+            .withInitialState("session", SessionState(sessions = mapOf(session.identity.localHandle to session)))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject {
+                put("session", "sid-1")
+            }))
+            testScheduler.advanceUntilIdle()
+
+            val sessionState = harness.store.state.value.featureStates["session"] as SessionState
+            val clearedSession = sessionState.sessions["sid-1"]
+            assertNotNull(clearedSession)
+
+            // Only locked and doNotClear entries should survive
+            assertEquals(2, clearedSession.ledger.size,
+                "Only locked and doNotClear entries should survive clear. Remaining: ${clearedSession.ledger.map { it.id }}")
+            val survivingIds = clearedSession.ledger.map { it.id }.toSet()
+            assertTrue("msg-locked" in survivingIds, "Locked entry should survive")
+            assertTrue("msg-durable" in survivingIds, "doNotClear entry should survive")
+            assertFalse("msg-normal" in survivingIds, "Normal entry should be cleared")
+            assertFalse("msg-normal2" in survivingIds, "Normal entry should be cleared")
+
+            // Message UI state should also be cleaned up
+            assertEquals(2, clearedSession.messageUiState.size,
+                "messageUiState for cleared messages should be removed")
+            assertTrue("msg-locked" in clearedSession.messageUiState,
+                "messageUiState for surviving messages should be preserved")
+        }
+    }
+
+    @Test
+    fun `SESSION_CLEAR on already empty session is a no-op`() = runTest {
+        val session = testSession("sid-1", "Empty Session")
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withInitialState("session", SessionState(sessions = mapOf(session.identity.localHandle to session)))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject {
+                put("session", "sid-1")
+            }))
+            testScheduler.advanceUntilIdle()
+
+            val sessionState = harness.store.state.value.featureStates["session"] as SessionState
+            val clearedSession = sessionState.sessions["sid-1"]
+            assertNotNull(clearedSession)
+            assertTrue(clearedSession.ledger.isEmpty())
+        }
+    }
+
+    // ==========================================================================
+    // TOGGLE_SESSION_HIDDEN — visibility toggling
+    // ==========================================================================
+
+    @Test
+    fun `TOGGLE_SESSION_HIDDEN flips the hidden flag`() = runTest {
+        val session = testSession("sid-1", "Visible Session", isHidden = false)
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withInitialState("session", SessionState(sessions = mapOf(session.identity.localHandle to session)))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            // Toggle to hidden
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_TOGGLE_SESSION_HIDDEN, buildJsonObject {
+                put("session", "sid-1")
+            }))
+            testScheduler.advanceUntilIdle()
+
+            var sessionState = harness.store.state.value.featureStates["session"] as SessionState
+            assertTrue(sessionState.sessions["sid-1"]!!.isHidden, "Session should now be hidden")
+
+            // Toggle back to visible
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_TOGGLE_SESSION_HIDDEN, buildJsonObject {
+                put("session", "sid-1")
+            }))
+            testScheduler.advanceUntilIdle()
+
+            sessionState = harness.store.state.value.featureStates["session"] as SessionState
+            assertFalse(sessionState.sessions["sid-1"]!!.isHidden, "Session should now be visible again")
+        }
+    }
+
+    // ==========================================================================
+    // TOGGLE_MESSAGE_LOCKED — lock toggling
+    // ==========================================================================
+
+    @Test
+    fun `TOGGLE_MESSAGE_LOCKED toggles the lock flag on a message`() = runTest {
+        val entry = LedgerEntry("msg-1", 1L, "user", "Hello", isLocked = false)
+        val session = testSession("sid-1", "Test", ledger = listOf(entry))
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withInitialState("session", SessionState(sessions = mapOf(session.identity.localHandle to session)))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            // Toggle to locked
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_LOCKED, buildJsonObject {
+                put("sessionId", "sid-1"); put("messageId", "msg-1")
+            }))
+            testScheduler.advanceUntilIdle()
+
+            var sessionState = harness.store.state.value.featureStates["session"] as SessionState
+            assertTrue(sessionState.sessions["sid-1"]!!.ledger[0].isLocked, "Message should now be locked")
+
+            // Toggle back to unlocked
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_LOCKED, buildJsonObject {
+                put("sessionId", "sid-1"); put("messageId", "msg-1")
+            }))
+            testScheduler.advanceUntilIdle()
+
+            sessionState = harness.store.state.value.featureStates["session"] as SessionState
+            assertFalse(sessionState.sessions["sid-1"]!!.ledger[0].isLocked, "Message should now be unlocked")
+        }
+    }
+
+    @Test
+    fun `locked messages cannot be deleted via SESSION_DELETE_MESSAGE`() = runTest {
+        val lockedEntry = LedgerEntry("msg-1", 1L, "user", "Protected", isLocked = true)
+        val session = testSession("sid-1", "Test", ledger = listOf(lockedEntry))
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withInitialState("session", SessionState(sessions = mapOf(session.identity.localHandle to session)))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
+                put("session", "sid-1"); put("messageId", "msg-1")
+            }))
+            testScheduler.advanceUntilIdle()
+
+            val sessionState = harness.store.state.value.featureStates["session"] as SessionState
+            assertEquals(1, sessionState.sessions["sid-1"]!!.ledger.size,
+                "Locked message should not be deleted")
+            assertEquals("msg-1", sessionState.sessions["sid-1"]!!.ledger[0].id)
+        }
+    }
+
+    @Test
+    fun `locked messages cannot be edited via SESSION_UPDATE_MESSAGE`() = runTest {
+        val lockedEntry = LedgerEntry("msg-1", 1L, "user", "Original", isLocked = true)
+        val session = testSession("sid-1", "Test", ledger = listOf(lockedEntry))
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withInitialState("session", SessionState(sessions = mapOf(session.identity.localHandle to session)))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_UPDATE_MESSAGE, buildJsonObject {
+                put("session", "sid-1"); put("messageId", "msg-1"); put("newContent", "Modified")
+            }))
+            testScheduler.advanceUntilIdle()
+
+            val sessionState = harness.store.state.value.featureStates["session"] as SessionState
+            assertEquals("Original", sessionState.sessions["sid-1"]!!.ledger[0].rawContent,
+                "Locked message content should not be changed")
+        }
+    }
 }
