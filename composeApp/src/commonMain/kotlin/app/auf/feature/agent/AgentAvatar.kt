@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import app.auf.core.Action
 import app.auf.core.IdentityUUID
 import app.auf.core.Store
+import app.auf.core.findByUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
@@ -21,10 +22,11 @@ import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * ## Mandate
- * To provide the Composable UI for an agent's "avatar card" and the pure, testable
+ * Provides the Composable UI for an agent's "avatar card" and the pure, testable
  * logic for managing its presence within the public session ledger.
  *
- * [PHASE 1] Uses typed [IdentityUUID] for agent IDs and [IdentityHandle] for session IDs.
+ * All session references are [IdentityUUID]. Handles are resolved from the
+ * identity registry at dispatch time for cross-feature session actions.
  */
 
 // --- Logic ---
@@ -34,11 +36,13 @@ object AgentAvatarLogic {
     fun touchAgentAvatarCard(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
         val agentUuid = agent.identityUUID
         val sessionMap = agentState.agentAvatarCardIds[agentUuid] ?: return
-        sessionMap.forEach { (sessionId, messageId) ->
+        val registry = store.state.value.identityRegistry
+        sessionMap.forEach { (sessionUUID, messageId) ->
+            val sessionHandle = registry.findByUUID(sessionUUID)?.handle ?: return@forEach
             store.deferredDispatch("agent", Action(
                 name = ActionRegistry.Names.SESSION_UPDATE_MESSAGE,
                 payload = buildJsonObject {
-                    put("session", sessionId.handle)
+                    put("session", sessionHandle)
                     put("messageId", messageId)
                 }
             ))
@@ -48,8 +52,6 @@ object AgentAvatarLogic {
     /**
      * Reconciles the agent's visual presence in the ledger with its current configuration and state.
      * Uses the "Sovereign Avatar" pattern: Commit intention to state FIRST, then execute side effects.
-     *
-     * [PHASE 1] Parameter typed as [IdentityUUID].
      */
     fun updateAgentAvatars(
         agentId: IdentityUUID,
@@ -71,6 +73,7 @@ object AgentAvatarLogic {
         val agentState = appState.featureStates["agent"] as? AgentRuntimeState ?: return
         val agent = agentState.agents[agentId] ?: return
         val statusInfo = agentState.agentStatuses[agentId] ?: AgentStatusInfo()
+        val registry = appState.identityRegistry
 
         // 3. Determine Target Sessions
         val targetSessions = (agent.subscribedSessionIds + listOfNotNull(agent.outputSessionId)).distinct()
@@ -91,33 +94,39 @@ object AgentAvatarLogic {
 
         // 5. Cleanup Zombies (Sessions we are no longer subscribed to)
         val zombies = currentCards.keys - targetSessions.toSet()
-        zombies.forEach { sessionId ->
-            val messageId = currentCards[sessionId]
-            if (messageId != null) {
+        zombies.forEach { sessionUUID ->
+            val messageId = currentCards[sessionUUID]
+            val sessionHandle = registry.findByUUID(sessionUUID)?.handle
+            if (messageId != null && sessionHandle != null) {
                 store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
-                    put("session", sessionId.handle)
+                    put("session", sessionHandle)
                     put("messageId", messageId)
                 }))
             }
         }
 
         // 6. Update/Post Target Sessions
-        targetSessions.forEach { sessionId ->
-            val oldMessageId = currentCards[sessionId]
+        targetSessions.forEach { sessionUUID ->
+            val sessionHandle = registry.findByUUID(sessionUUID)?.handle ?: run {
+                platformDependencies.log(LogLevel.WARN, "agent-avatar",
+                    "Session UUID '$sessionUUID' not in registry for agent '${agent.identity.name}'. Skipping avatar.")
+                return@forEach
+            }
+            val oldMessageId = currentCards[sessionUUID]
 
             // A. Generate New ID and Commit Intention (Sovereign Update)
             val newMessageId = platformDependencies.generateUUID()
 
             store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_AVATAR_MOVED, buildJsonObject {
                 put("agentId", agentId.uuid)
-                put("sessionId", sessionId.handle)
+                put("sessionId", sessionUUID.uuid)
                 put("messageId", newMessageId)
             }))
 
             // B. Delete Old (if exists)
             if (oldMessageId != null) {
                 store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
-                    put("session", sessionId.handle)
+                    put("session", sessionHandle)
                     put("messageId", oldMessageId)
                 }))
             }
@@ -133,7 +142,7 @@ object AgentAvatarLogic {
             }
 
             store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                put("session", sessionId.handle)
+                put("session", sessionHandle)
                 put("senderId", agent.identity.handle)
                 put("messageId", newMessageId)
                 put("metadata", metadata)
@@ -206,7 +215,6 @@ fun AgentControlCard(
         else -> statusInfo.status.name
     }
 
-    // [PHASE 1] Use typed accessor for JSON payloads
     val agentUuidStr = agent.identityUUID.uuid
 
     Row(
@@ -233,7 +241,7 @@ fun AgentControlCard(
                 )
             }
 
-            // NEW: Display last request token usage if available
+            // Display last request token usage if available
             val lastInput = statusInfo.lastInputTokens
             val lastOutput = statusInfo.lastOutputTokens
             if (lastInput != null || lastOutput != null) {

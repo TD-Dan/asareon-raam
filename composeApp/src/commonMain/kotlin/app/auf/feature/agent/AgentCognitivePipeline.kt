@@ -10,19 +10,17 @@ import kotlinx.serialization.json.*
 
 /**
  * ## Mandate
- * To orchestrate the "Think" phase of the Agent's lifecycle.
- * It is the canonical handler for:
+ * Orchestrates the "Think" phase of the Agent's lifecycle:
  * 1. Gathering Context (Ledger + HKG + Workspace)
  * 2. Formulating the Prompt (via Strategy)
  * 3. Processing the Response (via Strategy)
  *
- * [PHASE 1] Uses typed identity accessors (.identityUUID, .identityHandle) throughout.
+ * Uses typed identity accessors throughout. All session references are [IdentityUUID];
+ * handles are resolved from the identity registry at dispatch time for cross-feature actions.
  *
- * [PHASE 4] ALL implicit strategy checks removed. Context requests that were
- * previously hard-coded to SovereignHKGResourceLogic are now dispatched
- * polymorphically via CognitiveStrategy.requestAdditionalContext(). The context
- * gate check uses CognitiveStrategy.needsAdditionalContext() instead of
- * checking agent.knowledgeGraphId directly.
+ * Strategy-specific context requests are dispatched polymorphically via
+ * [CognitiveStrategy.requestAdditionalContext] and gated via
+ * [CognitiveStrategy.needsAdditionalContext].
  */
 object AgentCognitivePipeline {
 
@@ -47,8 +45,14 @@ object AgentCognitivePipeline {
             return
         }
 
-        val contextSessionId = agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
+        val contextSessionUUID = agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
             val msg = "Cannot start turn: Agent has no session for context."
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, msg)
+            return
+        }
+        val contextSessionHandle = store.state.value.identityRegistry.findByUUID(contextSessionUUID)?.handle ?: run {
+            val msg = "Cannot start turn: Session UUID '$contextSessionUUID' not in registry."
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
             AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, msg)
             return
@@ -62,7 +66,7 @@ object AgentCognitivePipeline {
             put("agentId", agentId.uuid); put("step", "Requesting Ledger")
         }))
         store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject {
-            put("sessionId", contextSessionId.handle); put("correlationId", agentId.uuid)
+            put("sessionId", contextSessionHandle); put("correlationId", agentId.uuid)
         }))
     }
 
@@ -152,7 +156,7 @@ object AgentCognitivePipeline {
     }
 
     /**
-     * [7b] Handles the workspace listing response from the filesystem feature.
+     * Handles the workspace listing response from the filesystem feature.
      * Extracts the correlationId (agentId), formats the listing, and stages it via action.
      */
     private fun handleWorkspaceListingResponse(payload: JsonObject, store: Store) {
@@ -185,7 +189,7 @@ object AgentCognitivePipeline {
     }
 
     /**
-     * [7c] Called after the ledger is staged. Dispatches ALL context requests in parallel
+     * Called after the ledger is staged. Dispatches ALL context requests in parallel
      * and sets up a timeout. Does NOT call executeTurn directly — the gate handles it.
      */
     fun evaluateTurnContext(agentId: IdentityUUID, store: Store) {
@@ -228,8 +232,7 @@ object AgentCognitivePipeline {
             put("agentId", agentId.uuid); put("step", "Gathering Context")
         }))
 
-        // [PHASE 4] Polymorphic: let the strategy request any additional context it needs.
-        // Replaces: SovereignHKGResourceLogic.requestContextIfSovereign(store, agent)
+        // Polymorphic: let the strategy request any additional context it needs.
         val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
         strategy.requestAdditionalContext(agent, store)
 
@@ -243,7 +246,7 @@ object AgentCognitivePipeline {
     }
 
     /**
-     * [7d] The unified gate function. Called whenever a context response arrives or the timeout fires.
+     * The unified gate function. Called whenever a context response arrives or the timeout fires.
      * Proceeds to executeTurn only when all expected contexts are ready (or timeout forces it).
      */
     fun evaluateFullContext(agentId: IdentityUUID, store: Store, isTimeout: Boolean = false) {
@@ -276,17 +279,14 @@ object AgentCognitivePipeline {
 
         val workspaceReady = statusInfo.transientWorkspaceContext != null
 
-        // [PHASE 4] Polymorphic: ask the strategy if it expects additional context.
-        // Replaces: val expectsHkg = !agent.knowledgeGraphId.isNullOrBlank()
+        // Polymorphic: ask the strategy if it expects additional context.
         val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
         val expectsAdditionalContext = strategy.needsAdditionalContext(agent)
         val additionalContextReady = !expectsAdditionalContext || statusInfo.transientHkgContext != null
 
         if (workspaceReady && additionalContextReady) {
-            // FIX: Close the gate immediately before dispatching executeTurn so that a concurrent
+            // Close the gate immediately before dispatching executeTurn so that a concurrent
             // timeout callback cannot re-enter and produce a duplicate GATEWAY_GENERATE_CONTENT.
-            // The timeout's stale-guard checks contextGatheringStartedAt; nulling it here ensures
-            // the guard rejects the timeout even if it fires before SET_STATUS(IDLE) is processed.
             store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_CONTEXT_GATHERING_STARTED, buildJsonObject {
                 put("agentId", agentId.uuid)
                 put("startedAt", JsonNull)
@@ -298,8 +298,7 @@ object AgentCognitivePipeline {
             if (!additionalContextReady) missing.add("strategy-context")
             store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
                 "Context gathering timeout for agent '$agentId'. Missing: ${missing.joinToString(", ")}. Proceeding without.")
-            // FIX: Same gate-closing dispatch on the timeout path to prevent any subsequent
-            // context-arrival callbacks from triggering a second executeTurn.
+            // Same gate-closing dispatch on the timeout path.
             store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_CONTEXT_GATHERING_STARTED, buildJsonObject {
                 put("agentId", agentId.uuid)
                 put("startedAt", JsonNull)
@@ -309,7 +308,7 @@ object AgentCognitivePipeline {
     }
 
     /**
-     * [7e] Kept as a thin wrapper for backward compatibility.
+     * Kept as a thin wrapper for backward compatibility.
      */
     fun evaluateHkgContext(agentId: IdentityUUID, store: Store) {
         evaluateFullContext(agentId, store)
@@ -347,8 +346,11 @@ object AgentCognitivePipeline {
         }
 
         // === SESSION METADATA (with token usage context) ===
-        val sessionId = agent.subscribedSessionIds.firstOrNull()
-        val sessionName = sessionId?.let { store.state.value.identityRegistry["session.${it.handle}"]?.name } ?: "Unknown Session"
+        val identityRegistry = store.state.value.identityRegistry
+        val sessionUUID = agent.subscribedSessionIds.firstOrNull()
+        val sessionIdentity = sessionUUID?.let { identityRegistry.findByUUID(it) }
+        val sessionName = sessionIdentity?.name ?: "Unknown Session"
+        val sessionHandleDisplay = sessionIdentity?.handle ?: sessionUUID?.uuid ?: "none"
         val lastInput = statusInfo.lastInputTokens
         val lastOutput = statusInfo.lastOutputTokens
         val tokenUsageContext = if (lastInput != null || lastOutput != null) {
@@ -365,7 +367,7 @@ object AgentCognitivePipeline {
             
             You are running on platform: 'AUF App ${Version.APP_VERSION} (Windows), a multi-agent, multi-session agent/chat platform.'
             Your Host LLM (API connection): '${agent.modelProvider}' / '${agent.modelName}'
-            You are currently participating in a multi-party chat session: '${sessionName}', id: '${sessionId?.handle ?: "none"}'
+            You are currently participating in a multi-party chat session: '${sessionName}', id: '${sessionHandleDisplay}'
             Your agent handle is: '${agent.identityHandle}'
             Your agent id (internal): '${agentUuid}'
             Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())}
@@ -427,16 +429,19 @@ object AgentCognitivePipeline {
         // ============================================================
         // Build structured session subscription context
         // ============================================================
-        val identityRegistry = store.state.value.identityRegistry
-        val outputHandle = agent.outputSessionId?.handle
-        val subscribedSessionInfos = agent.subscribedSessionIds.map { sessId ->
-            val sessName = identityRegistry["session.${sessId.handle}"]?.name
-                ?: agentState.subscribableSessionNames[sessId]
-                ?: sessId.handle
+        val outputSessionUUID = agent.outputSessionId
+        val outputSessionHandle = outputSessionUUID?.let { identityRegistry.findByUUID(it)?.handle }
+        val subscribedSessionInfos = agent.subscribedSessionIds.mapNotNull { sessUUID ->
+            val sessIdentity = identityRegistry.findByUUID(sessUUID)
+            val sessName = sessIdentity?.name
+                ?: agentState.subscribableSessionNames[sessUUID]
+                ?: sessUUID.uuid
+            val sessHandle = sessIdentity?.handle ?: sessUUID.uuid
             SessionInfo(
-                handle = sessId.handle,
+                uuid = sessUUID.uuid,
+                handle = sessHandle,
                 name = sessName,
-                isOutput = sessId.handle == outputHandle
+                isOutput = sessUUID == outputSessionUUID
             )
         }
 
@@ -445,7 +450,8 @@ object AgentCognitivePipeline {
             resolvedResources = resolvedResources,
             gatheredContexts = contextMap,
             subscribedSessions = subscribedSessionInfos,
-            outputSessionHandle = outputHandle
+            outputSessionUUID = outputSessionUUID?.uuid,
+            outputSessionHandle = outputSessionHandle
         )
 
         val systemPrompt = strategy.prepareSystemPrompt(context, cognitiveState)
@@ -570,9 +576,14 @@ object AgentCognitivePipeline {
             return
         }
         val agentUuid = agent.identityUUID
-        val targetSessionId = agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
+        val targetSessionUUID = agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleGatewayResponse: Agent '$agentUuid' has no target session to post response to.")
             AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.ERROR, "No target session for response.")
+            return
+        }
+        val targetSessionHandle = store.state.value.identityRegistry.findByUUID(targetSessionUUID)?.handle ?: run {
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleGatewayResponse: Session UUID '$targetSessionUUID' not in registry for agent '$agentUuid'.")
+            AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.ERROR, "Target session not in registry.")
             return
         }
 
@@ -610,7 +621,7 @@ object AgentCognitivePipeline {
         if (match != null) {
             contentToPost = contentToPost.substring(match.range.last + 1).trimStart()
             store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                put("session", targetSessionId.handle)
+                put("session", targetSessionHandle)
                 put("senderId", "system")
                 put("message", """SYSTEM SENTINEL (llm-output-sanitizer): Warning for [${agent.identity.name}]: Please do not include the standard system "name (id) @timestamp:" part in your output. The host system adds this automatically.""")
             }))
@@ -618,7 +629,7 @@ object AgentCognitivePipeline {
 
         // 4. Proceed to Post — senderId is now the agent's handle for bus addressing
         store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-            put("session", targetSessionId.handle); put("senderId", agent.identityHandle.handle); put("message", contentToPost)
+            put("session", targetSessionHandle); put("senderId", agent.identityHandle.handle); put("message", contentToPost)
         }))
         AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.IDLE)
 

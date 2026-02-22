@@ -2,7 +2,6 @@ package app.auf.feature.agent
 
 import app.auf.core.Action
 import app.auf.core.Identity
-import app.auf.core.IdentityHandle
 import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.PlatformDependencies
@@ -10,46 +9,40 @@ import kotlinx.serialization.json.*
 
 /**
  * ## Mandate
- * To provide pure, testable reducer logic for the synchronous CRUD operations
- * of the AgentRuntimeFeature. This isolates the "administrative" state transitions
- * from the complex, asynchronous runtime logic.
+ * Pure, testable reducer logic for the synchronous CRUD operations of the
+ * AgentRuntimeFeature. Isolates "administrative" state transitions from the
+ * complex, asynchronous runtime logic.
  *
- * [PHASE 1] All ID extractions from JSON payloads are wrapped in typed value classes
- * at the boundary. Internal logic operates on [IdentityUUID] and [IdentityHandle].
+ * All ID extractions from JSON payloads are wrapped in typed value classes at
+ * the boundary. Internal logic operates on [IdentityUUID].
  *
- * [PHASE 4] `knowledgeGraphId` removed from AgentInstance. When the payload contains
- * `knowledgeGraphId`, it is merged into `cognitiveState` as a strategy-owned key.
- * `validateConfig` is called via the strategy after every config update.
+ * `knowledgeGraphId` is a strategy-owned key in `cognitiveState`. When the
+ * payload contains it, it is merged into cognitiveState.
  *
- * [PHASE 5] Strategy handle validation added: AGENT_CREATE and AGENT_UPDATE_CONFIG
- * reject unknown `cognitiveStrategyId` handles with a clear error log rather than
- * silently falling back to Vanilla. This surfaces configuration bugs immediately.
+ * Strategy handle validation: AGENT_CREATE and AGENT_UPDATE_CONFIG reject
+ * unknown `cognitiveStrategyId` handles with a clear error log.
  */
 object AgentCrudLogic {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    // ---- Phase 1 boundary helpers ----
+    // ---- Boundary helpers ----
 
     /** Extract an agent UUID from a JSON payload field. */
     private fun JsonObject.agentUUID(field: String = "agentId"): IdentityUUID? =
         this[field]?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) }
-
-    /** Extract a session handle from a JSON payload field. */
-    private fun JsonObject.sessionHandle(field: String): IdentityHandle? =
-        this[field]?.jsonPrimitive?.contentOrNull?.let { IdentityHandle(it) }
 
     /** Extract a resource UUID from a JSON payload field. */
     private fun JsonObject.resourceUUID(field: String): IdentityUUID? =
         this[field]?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) }
 
     /**
-     * [PHASE 4] Merges a `knowledgeGraphId` value from the payload into the agent's
-     * cognitiveState. This is how the UI/command pipeline sets or clears the KG
-     * assignment now that `knowledgeGraphId` is no longer a top-level AgentInstance field.
+     * Merges a `knowledgeGraphId` value from the payload into the agent's cognitiveState.
+     * This is how the UI/command pipeline sets or clears the KG assignment now that
+     * `knowledgeGraphId` is a strategy-owned key in cognitiveState.
      *
      * If the payload contains `"knowledgeGraphId"`, the value is merged into
-     * `cognitiveState` under the `"knowledgeGraphId"` key. If the value is null/JsonNull,
+     * `cognitiveState` under that key. If the value is null/JsonNull,
      * the key is set to JsonNull (KG revocation).
      */
     private fun mergeCognitiveStateFromPayload(
@@ -87,9 +80,7 @@ object AgentCrudLogic {
                     ?.let { CognitiveStrategyRegistry.migrateStrategyId(it) }
                     ?: CognitiveStrategyRegistry.getDefault().identityHandle
 
-                // [PHASE 5] Reject unknown strategy handles rather than silently accepting.
-                // Silent fallback masks configuration bugs — fail loud here so the caller
-                // knows the strategy isn't registered.
+                // Reject unknown strategy handles rather than silently accepting.
                 if (!CognitiveStrategyRegistry.isRegistered(strategyId)) {
                     platformDependencies.log(
                         app.auf.util.LogLevel.ERROR, "AgentCrudLogic",
@@ -100,7 +91,7 @@ object AgentCrudLogic {
 
                 val strategy = CognitiveStrategyRegistry.get(strategyId)
 
-                // [PHASE 4] Initial cognitiveState comes from the strategy.
+                // Initial cognitiveState comes from the strategy.
                 // If the payload contains `knowledgeGraphId`, merge it in.
                 val initialState = strategy.getInitialState()
                 val cognitiveState = mergeCognitiveStateFromPayload(payload, initialState)
@@ -118,7 +109,7 @@ object AgentCrudLogic {
                     cognitiveStrategyId = strategyId,
                     cognitiveState = cognitiveState,
                     subscribedSessionIds = payload["subscribedSessionIds"]?.jsonArray
-                        ?.map { IdentityHandle(it.jsonPrimitive.content) } ?: emptyList(),
+                        ?.map { IdentityUUID(it.jsonPrimitive.content) } ?: emptyList(),
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: false,
                     autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: 5,
                     autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: 30
@@ -133,7 +124,7 @@ object AgentCrudLogic {
                 // Filtering logic to prevent subscription to private sessions
                 val newSubscribedSessionIds = if ("subscribedSessionIds" in payload) {
                     payload["subscribedSessionIds"]?.jsonArray
-                        ?.map { IdentityHandle(it.jsonPrimitive.content) } ?: emptyList()
+                        ?.map { IdentityUUID(it.jsonPrimitive.content) } ?: emptyList()
                 } else {
                     agentToUpdate.subscribedSessionIds
                 }
@@ -149,11 +140,10 @@ object AgentCrudLogic {
                     agentToUpdate.resources
                 }
 
-                // [PHASE 4] Merge knowledgeGraphId from payload into cognitiveState
+                // Merge knowledgeGraphId from payload into cognitiveState
                 val updatedCognitiveState = mergeCognitiveStateFromPayload(payload, agentToUpdate.cognitiveState)
 
-                // [PHASE 5] Validate strategy handle if one is being set.
-                // Reject the entire update if the handle is not registered.
+                // Validate strategy handle if one is being set.
                 val resolvedStrategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull
                     ?.let { raw ->
                         val migrated = CognitiveStrategyRegistry.migrateStrategyId(raw)
@@ -173,7 +163,9 @@ object AgentCrudLogic {
                     identity = agentToUpdate.identity.copy(
                         name = payload["name"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.identity.name
                     ),
-                    outputSessionId = if ("outputSessionId" in payload) payload.sessionHandle("outputSessionId") else agentToUpdate.outputSessionId,
+                    outputSessionId = if ("outputSessionId" in payload) {
+                        payload["outputSessionId"]?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) }
+                    } else agentToUpdate.outputSessionId,
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelProvider,
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelName,
                     cognitiveStrategyId = resolvedStrategyId,
@@ -185,9 +177,7 @@ object AgentCrudLogic {
                     resources = updatedResources
                 )
 
-                // [PHASE 4 / E7 / E8] Strategy-owned config validation.
-                // Each strategy defines its own rules (e.g., Vanilla enforces
-                // outputSessionId ∈ subscribedSessionIds; Sovereign permits out-of-band).
+                // Strategy-owned config validation.
                 val strategy = CognitiveStrategyRegistry.get(updatedAgent.cognitiveStrategyId)
                 val validatedAgent = strategy.validateConfig(updatedAgent)
 
@@ -225,7 +215,7 @@ object AgentCrudLogic {
                 val uuid = agent.identityUUID
                 if (!state.agents.containsKey(uuid)) state.copy(agents = state.agents + (uuid to agent)) else state
             }
-            // [NEW] Handle loading resources from disk
+            // Handle loading resources from disk
             ActionRegistry.Names.AGENT_RESOURCE_LOADED -> {
                 val resource = action.payload?.let { json.decodeFromJsonElement<AgentResource>(it) } ?: return state
                 // Merge logic: Add if new, replace if exists
@@ -241,7 +231,7 @@ object AgentCrudLogic {
                 val name = payload["name"]?.jsonPrimitive?.contentOrNull ?: return state
                 val typeString = payload["type"]?.jsonPrimitive?.contentOrNull ?: return state
                 val type = AgentResourceType.entries.find { it.name == typeString } ?: return state
-                // [NEW] Support initial content for cloning
+
                 val initialContent = payload["initialContent"]?.jsonPrimitive?.contentOrNull
 
                 val newResource = AgentResource(
@@ -272,7 +262,7 @@ object AgentCrudLogic {
 
                 state.copy(resources = updatedResources)
             }
-            // [NEW] Rename Logic
+
             ActionRegistry.Names.AGENT_RENAME_RESOURCE -> {
                 val payload = action.payload ?: return state
                 val resourceId = payload["resourceId"]?.jsonPrimitive?.contentOrNull ?: return state
