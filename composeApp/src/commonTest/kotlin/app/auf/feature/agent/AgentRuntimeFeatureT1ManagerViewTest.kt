@@ -416,7 +416,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         fakeStore.dispatchedActions.clear()
 
         // 1. Open the System Instruction dropdown and select a resource
-        composeTestRule.onNodeWithText("System Instructions").performClick()
+        composeTestRule.onNodeWithText("System Instructions").performScrollTo().performClick()
         composeTestRule.onNodeWithText("My Instruction").performClick()
 
         // 2. Verify: no action dispatched yet

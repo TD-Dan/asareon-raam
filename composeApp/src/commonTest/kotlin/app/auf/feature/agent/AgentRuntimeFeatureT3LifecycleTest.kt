@@ -26,18 +26,26 @@ import kotlin.test.*
  * 1. AGENT_CANCEL_TURN — Processing → Idle, gateway cancel dispatched
  * 2. AGENT_DELETE — avatar cleanup, filesystem delete, identity unregistration, state removal
  * 3. SESSION_SESSION_DELETED — subscription cleanup, avatar card cleanup, persistence flag
+ *
+ * NOTE: CANCEL_TURN and DELETE are public, command-dispatchable actions that resolve
+ * the agent via the identity registry (resolveAgentId). Tests must register the agent
+ * identity before dispatching these actions.
+ *
+ * NOTE: SESSION_SESSION_DELETED uses stringIsUUID() validation, so session IDs must
+ * be proper UUID v4 format (8-4-4-4-12 lowercase hex).
  */
 class AgentRuntimeFeatureT3LifecycleTest {
 
     private val scope = CoroutineScope(Dispatchers.Unconfined)
     private val platform = FakePlatformDependencies("test")
 
-    private val sessionUUID1 = "session-uuid-1"
-    private val sessionUUID2 = "session-uuid-2"
+    // Use proper UUID v4 format — required by stringIsUUID validation in SESSION_SESSION_DELETED
+    private val sessionUUID1 = "a0000000-0000-0000-0000-000000000001"
+    private val sessionUUID2 = "a0000000-0000-0000-0000-000000000002"
     private val testSession1 = testSession(sessionUUID1, "Session One")
     private val testSession2 = testSession(sessionUUID2, "Session Two")
 
-    private val agentId = "agent-lifecycle-1"
+    private val agentId = "b0000000-0000-0000-0000-000000000001"
     private val agent = testAgent(
         id = agentId,
         name = "Lifecycle Agent",
@@ -70,6 +78,20 @@ class AgentRuntimeFeatureT3LifecycleTest {
         .withInitialState("session", SessionState(sessions = sessions))
         .build(platform = platform)
 
+    /**
+     * Registers the agent identity in the identity registry so that
+     * resolveAgentId (used by public actions like DELETE, CANCEL_TURN) can find it.
+     */
+    private fun registerAgentIdentity(harness: TestHarness, agentInstance: AgentInstance = agent) {
+        harness.store.dispatch("agent", Action(
+            ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+            buildJsonObject {
+                put("uuid", agentInstance.identity.uuid)
+                put("name", agentInstance.identity.name)
+            }
+        ))
+    }
+
     // ========================================================================
     // CANCEL TURN
     // ========================================================================
@@ -82,6 +104,8 @@ class AgentRuntimeFeatureT3LifecycleTest {
         )
 
         harness.runAndLogOnFailure {
+            registerAgentIdentity(harness)
+
             // ACT
             harness.store.dispatch("ui", Action(
                 ActionRegistry.Names.AGENT_CANCEL_TURN,
@@ -117,6 +141,8 @@ class AgentRuntimeFeatureT3LifecycleTest {
         )
 
         harness.runAndLogOnFailure {
+            registerAgentIdentity(harness)
+
             // ACT
             harness.store.dispatch("ui", Action(
                 ActionRegistry.Names.AGENT_CANCEL_TURN,
@@ -144,6 +170,8 @@ class AgentRuntimeFeatureT3LifecycleTest {
         val harness = buildHarness(agentAvatarCardIds = avatarCards)
 
         harness.runAndLogOnFailure {
+            registerAgentIdentity(harness)
+
             // ACT
             harness.store.dispatch("ui", Action(
                 ActionRegistry.Names.AGENT_DELETE,
@@ -167,6 +195,8 @@ class AgentRuntimeFeatureT3LifecycleTest {
         val harness = buildHarness()
 
         harness.runAndLogOnFailure {
+            registerAgentIdentity(harness)
+
             // ACT
             harness.store.dispatch("ui", Action(
                 ActionRegistry.Names.AGENT_DELETE,
@@ -191,6 +221,8 @@ class AgentRuntimeFeatureT3LifecycleTest {
         val harness = buildHarness()
 
         harness.runAndLogOnFailure {
+            registerAgentIdentity(harness)
+
             // ACT
             harness.store.dispatch("ui", Action(
                 ActionRegistry.Names.AGENT_DELETE,
@@ -213,6 +245,8 @@ class AgentRuntimeFeatureT3LifecycleTest {
         val harness = buildHarness()
 
         harness.runAndLogOnFailure {
+            registerAgentIdentity(harness)
+
             // ACT
             harness.store.dispatch("ui", Action(
                 ActionRegistry.Names.AGENT_DELETE,
@@ -241,12 +275,11 @@ class AgentRuntimeFeatureT3LifecycleTest {
         val harness = buildHarness()
 
         harness.runAndLogOnFailure {
-            // ACT: Simulate session deletion broadcast (with UUID)
+            // ACT: Simulate session deletion broadcast (with proper UUID)
             harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_SESSION_DELETED,
                 buildJsonObject {
                     put("sessionUUID", sessionUUID1)
-                    put("sessionId", sessionUUID1)
                 }
             ))
 
@@ -281,7 +314,6 @@ class AgentRuntimeFeatureT3LifecycleTest {
                 ActionRegistry.Names.SESSION_SESSION_DELETED,
                 buildJsonObject {
                     put("sessionUUID", sessionUUID1)
-                    put("sessionId", sessionUUID1)
                 }
             ))
 
@@ -311,7 +343,6 @@ class AgentRuntimeFeatureT3LifecycleTest {
                 ActionRegistry.Names.SESSION_SESSION_DELETED,
                 buildJsonObject {
                     put("sessionUUID", sessionUUID1)
-                    put("sessionId", sessionUUID1)
                 }
             ))
 
@@ -346,7 +377,6 @@ class AgentRuntimeFeatureT3LifecycleTest {
                 ActionRegistry.Names.SESSION_SESSION_DELETED,
                 buildJsonObject {
                     put("sessionUUID", sessionUUID1)
-                    put("sessionId", sessionUUID1)
                 }
             ))
 
@@ -364,7 +394,8 @@ class AgentRuntimeFeatureT3LifecycleTest {
     @Test
     fun `session deletion of unrelated session does not affect agent`() = runTest {
         val harness = buildHarness()
-        val unrelatedSessionUUID = "session-uuid-unrelated"
+        // Proper UUID format but not in agent's subscriptions
+        val unrelatedSessionUUID = "c0000000-0000-0000-0000-000000000099"
 
         harness.runAndLogOnFailure {
             // ACT: Delete a session the agent is NOT subscribed to
@@ -372,7 +403,6 @@ class AgentRuntimeFeatureT3LifecycleTest {
                 ActionRegistry.Names.SESSION_SESSION_DELETED,
                 buildJsonObject {
                     put("sessionUUID", unrelatedSessionUUID)
-                    put("sessionId", unrelatedSessionUUID)
                 }
             ))
 
