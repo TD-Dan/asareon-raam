@@ -82,7 +82,7 @@ class SessionFeatureT1SessionViewTest {
 
         composeTestRule.onNodeWithText("Session One").assertIsSelected()
         composeTestRule.onNodeWithText("Session Two").assertIsNotSelected()
-        composeTestRule.onNodeWithText("Enter message (Ctrl+Enter to send)...").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Enter message (Ctrl+Enter to send, / for commandline)...").assertIsDisplayed()
     }
 
     @Test
@@ -147,7 +147,7 @@ class SessionFeatureT1SessionViewTest {
             // draftInputs absent → should display placeholder / empty field
         ))
 
-        composeTestRule.onNodeWithText("Enter message (Ctrl+Enter to send)...").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Enter message (Ctrl+Enter to send, / for commandline)...").assertIsDisplayed()
     }
 
     @Test
@@ -196,7 +196,7 @@ class SessionFeatureT1SessionViewTest {
         ))
 
         composeTestRule
-            .onNodeWithText("Enter message (Ctrl+Enter to send)...")
+            .onNodeWithText("Enter message (Ctrl+Enter to send, / for commandline)...")
             .performTextInput("typing test")
 
         val draftActions = fakeStore.dispatchedActions.filter {
@@ -221,7 +221,7 @@ class SessionFeatureT1SessionViewTest {
         ))
 
         composeTestRule
-            .onNodeWithText("Enter message (Ctrl+Enter to send)...")
+            .onNodeWithText("Enter message (Ctrl+Enter to send, / for commandline)...")
             .performTextInput("just typing")
 
         val postActions = fakeStore.dispatchedActions.filter {
@@ -358,6 +358,6 @@ class SessionFeatureT1SessionViewTest {
         composeTestRule.waitForIdle()
 
         // Input should now show placeholder (empty)
-        composeTestRule.onNodeWithText("Enter message (Ctrl+Enter to send)...").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Enter message (Ctrl+Enter to send, / for commandline)...").assertIsDisplayed()
     }
 }

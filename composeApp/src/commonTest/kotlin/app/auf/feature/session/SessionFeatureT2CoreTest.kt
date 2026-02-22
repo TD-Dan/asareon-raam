@@ -126,7 +126,7 @@ class SessionFeatureT2CoreTest {
 
             val publishAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED }
             assertNotNull(publishAction)
-            assertEquals("{}", publishAction.payload?.get("names").toString())
+            assertEquals("[]", publishAction.payload?.get("sessions").toString())
 
             assertNotNull(harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_SESSION_DELETED })
         }
