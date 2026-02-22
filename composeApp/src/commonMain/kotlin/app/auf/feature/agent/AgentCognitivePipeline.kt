@@ -12,11 +12,17 @@ import kotlinx.serialization.json.*
  * ## Mandate
  * To orchestrate the "Think" phase of the Agent's lifecycle.
  * It is the canonical handler for:
- * 1. Gathering Context (Ledger + HKG)
+ * 1. Gathering Context (Ledger + HKG + Workspace)
  * 2. Formulating the Prompt (via Strategy)
  * 3. Processing the Response (via Strategy)
  *
  * [PHASE 1] Uses typed identity accessors (.identityUUID, .identityHandle) throughout.
+ *
+ * [PHASE 4] ALL implicit strategy checks removed. Context requests that were
+ * previously hard-coded to SovereignHKGResourceLogic are now dispatched
+ * polymorphically via CognitiveStrategy.requestAdditionalContext(). The context
+ * gate check uses CognitiveStrategy.needsAdditionalContext() instead of
+ * checking agent.knowledgeGraphId directly.
  */
 object AgentCognitivePipeline {
 
@@ -222,8 +228,10 @@ object AgentCognitivePipeline {
             put("agentId", agentId.uuid); put("step", "Gathering Context")
         }))
 
-        // 3. Request HKG context if sovereign (parallel — unchanged)
-        SovereignHKGResourceLogic.requestContextIfSovereign(store, agent)
+        // [PHASE 4] Polymorphic: let the strategy request any additional context it needs.
+        // Replaces: SovereignHKGResourceLogic.requestContextIfSovereign(store, agent)
+        val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
+        strategy.requestAdditionalContext(agent, store)
 
         // 4. Schedule timeout after 10 seconds
         store.scheduleDelayed(10_000L, "agent", Action(ActionRegistry.Names.AGENT_CONTEXT_GATHERING_TIMEOUT, buildJsonObject {
@@ -267,15 +275,19 @@ object AgentCognitivePipeline {
         }
 
         val workspaceReady = statusInfo.transientWorkspaceContext != null
-        val expectsHkg = !agent.knowledgeGraphId.isNullOrBlank()
-        val hkgReady = !expectsHkg || statusInfo.transientHkgContext != null
 
-        if (workspaceReady && hkgReady) {
+        // [PHASE 4] Polymorphic: ask the strategy if it expects additional context.
+        // Replaces: val expectsHkg = !agent.knowledgeGraphId.isNullOrBlank()
+        val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
+        val expectsAdditionalContext = strategy.needsAdditionalContext(agent)
+        val additionalContextReady = !expectsAdditionalContext || statusInfo.transientHkgContext != null
+
+        if (workspaceReady && additionalContextReady) {
             executeTurn(agent, ledgerContext, statusInfo.transientHkgContext, state, store)
         } else if (isTimeout) {
             val missing = mutableListOf<String>()
             if (!workspaceReady) missing.add("workspace")
-            if (!hkgReady) missing.add("HKG")
+            if (!additionalContextReady) missing.add("strategy-context")
             store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
                 "Context gathering timeout for agent '$agentId'. Missing: ${missing.joinToString(", ")}. Proceeding without.")
             executeTurn(agent, ledgerContext, statusInfo.transientHkgContext, state, store)

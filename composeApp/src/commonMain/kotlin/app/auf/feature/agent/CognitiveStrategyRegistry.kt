@@ -1,7 +1,6 @@
 package app.auf.feature.agent
 
 import app.auf.core.IdentityHandle
-import app.auf.feature.agent.strategies.VanillaStrategy // Allowed: inter-feature import
 
 /**
  * The Lookup Table for Cognitive Architectures.
@@ -11,6 +10,10 @@ import app.auf.feature.agent.strategies.VanillaStrategy // Allowed: inter-featur
  * [register]. The registry also provides [migrateStrategyId] to transparently
  * upgrade legacy string IDs (e.g. `"vanilla_v1"`) found in persisted agent.json
  * files to their canonical [IdentityHandle] equivalents.
+ *
+ * [PHASE 4] Added [getAllBuiltInResources] — replaces the hardcoded
+ * `AgentDefaults.builtInResources` list. The core state no longer imports
+ * any strategy implementations.
  */
 object CognitiveStrategyRegistry {
 
@@ -36,20 +39,34 @@ object CognitiveStrategyRegistry {
 
     /**
      * Resolves a strategy by its identity handle.
-     * Falls back to [VanillaStrategy] if the handle is not registered.
+     * Falls back to the default strategy if the handle is not registered.
      */
     fun get(handle: IdentityHandle): CognitiveStrategy =
-        strategies[handle] ?: VanillaStrategy
+        strategies[handle] ?: getDefault()
 
     /**
-     * Returns the default strategy (Vanilla).
+     * Returns the default strategy.
+     * Uses the well-known Vanilla handle. If not registered (shouldn't happen),
+     * returns the first registered strategy.
      */
-    fun getDefault(): CognitiveStrategy = VanillaStrategy
+    fun getDefault(): CognitiveStrategy {
+        val vanillaHandle = IdentityHandle("agent.strategy.vanilla")
+        return strategies[vanillaHandle] ?: strategies.values.firstOrNull()
+        ?: error("CognitiveStrategyRegistry: No strategies registered. Call register() during init.")
+    }
 
     /**
      * Returns all registered strategies for UI enumeration.
      */
     fun getAll(): List<CognitiveStrategy> = strategies.values.toList()
+
+    /**
+     * [PHASE 4] Aggregates built-in resources from all registered strategies.
+     * Replaces the hardcoded `AgentDefaults.builtInResources` list.
+     * Called at init time to seed the resource catalog.
+     */
+    fun getAllBuiltInResources(): List<AgentResource> =
+        getAll().flatMap { it.getBuiltInResources() }
 
     /**
      * Migrates a raw strategy ID string — which may be either a legacy ID
@@ -66,7 +83,7 @@ object CognitiveStrategyRegistry {
         // 2. Legacy ID?
         legacyIdMap[raw]?.let { return it }
 
-        // 3. Unknown — wrap as-is (will fall back to Vanilla on lookup)
+        // 3. Unknown — wrap as-is (will fall back to default on lookup)
         return asHandle
     }
 }

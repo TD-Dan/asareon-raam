@@ -16,6 +16,10 @@ import kotlinx.serialization.json.*
  *
  * [PHASE 1] All ID extractions from JSON payloads are wrapped in typed value classes
  * at the boundary. Internal logic operates on [IdentityUUID] and [IdentityHandle].
+ *
+ * [PHASE 4] `knowledgeGraphId` removed from AgentInstance. When the payload contains
+ * `knowledgeGraphId`, it is merged into `cognitiveState` as a strategy-owned key.
+ * `validateConfig` is called via the strategy after every config update.
  */
 object AgentCrudLogic {
 
@@ -35,6 +39,35 @@ object AgentCrudLogic {
     private fun JsonObject.resourceUUID(field: String): IdentityUUID? =
         this[field]?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) }
 
+    /**
+     * [PHASE 4] Merges a `knowledgeGraphId` value from the payload into the agent's
+     * cognitiveState. This is how the UI/command pipeline sets or clears the KG
+     * assignment now that `knowledgeGraphId` is no longer a top-level AgentInstance field.
+     *
+     * If the payload contains `"knowledgeGraphId"`, the value is merged into
+     * `cognitiveState` under the `"knowledgeGraphId"` key. If the value is null/JsonNull,
+     * the key is set to JsonNull (KG revocation).
+     */
+    private fun mergeCognitiveStateFromPayload(
+        payload: JsonObject,
+        currentCognitiveState: JsonElement
+    ): JsonElement {
+        // Check if payload has knowledgeGraphId to migrate into cognitiveState
+        if ("knowledgeGraphId" !in payload) return currentCognitiveState
+
+        val kgValue = payload["knowledgeGraphId"]
+        val kgJsonValue: JsonElement = when {
+            kgValue == null || kgValue is JsonNull -> JsonNull
+            else -> kgValue
+        }
+
+        val currentObj = currentCognitiveState as? JsonObject ?: buildJsonObject {}
+        return buildJsonObject {
+            currentObj.forEach { (k, v) -> put(k, v) }
+            put("knowledgeGraphId", kgJsonValue)
+        }
+    }
+
     fun reduce(
         state: AgentRuntimeState,
         action: Action,
@@ -45,6 +78,17 @@ object AgentCrudLogic {
                 val payload = action.payload ?: return state
                 val uuid = IdentityUUID(platformDependencies.generateUUID())
                 val name = payload["name"]?.jsonPrimitive?.contentOrNull ?: "New Agent"
+
+                val strategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull
+                    ?.let { CognitiveStrategyRegistry.migrateStrategyId(it) }
+                    ?: CognitiveStrategyRegistry.getDefault().identityHandle
+                val strategy = CognitiveStrategyRegistry.get(strategyId)
+
+                // [PHASE 4] Initial cognitiveState comes from the strategy.
+                // If the payload contains `knowledgeGraphId`, merge it in.
+                val initialState = strategy.getInitialState()
+                val cognitiveState = mergeCognitiveStateFromPayload(payload, initialState)
+
                 val newAgent = AgentInstance(
                     identity = Identity(
                         uuid = uuid.uuid,
@@ -53,12 +97,10 @@ object AgentCrudLogic {
                         name = name,
                         parentHandle = "agent"
                     ),
-                    knowledgeGraphId = payload["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull,
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: "gemini",
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: "gemini-pro",
-                    cognitiveStrategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull
-                        ?.let { CognitiveStrategyRegistry.migrateStrategyId(it) }
-                        ?: CognitiveStrategyRegistry.getDefault().identityHandle,
+                    cognitiveStrategyId = strategyId,
+                    cognitiveState = cognitiveState,
                     subscribedSessionIds = payload["subscribedSessionIds"]?.jsonArray
                         ?.map { IdentityHandle(it.jsonPrimitive.content) } ?: emptyList(),
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: false,
@@ -91,29 +133,34 @@ object AgentCrudLogic {
                     agentToUpdate.resources
                 }
 
+                // [PHASE 4] Merge knowledgeGraphId from payload into cognitiveState
+                val updatedCognitiveState = mergeCognitiveStateFromPayload(payload, agentToUpdate.cognitiveState)
+
                 val updatedAgent = agentToUpdate.copy(
                     identity = agentToUpdate.identity.copy(
                         name = payload["name"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.identity.name
                     ),
-                    knowledgeGraphId = if ("knowledgeGraphId" in payload) payload["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull else agentToUpdate.knowledgeGraphId,
                     outputSessionId = if ("outputSessionId" in payload) payload.sessionHandle("outputSessionId") else agentToUpdate.outputSessionId,
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelProvider,
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelName,
                     cognitiveStrategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull
                         ?.let { CognitiveStrategyRegistry.migrateStrategyId(it) }
                         ?: agentToUpdate.cognitiveStrategyId,
+                    cognitiveState = updatedCognitiveState,
                     subscribedSessionIds = filteredSubscribedSessionIds,
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: agentToUpdate.automaticMode,
                     autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoWaitTimeSeconds,
                     autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoMaxWaitTimeSeconds,
                     resources = updatedResources
                 )
-                // [PHASE 3] Soft invariant: outputSessionId SHOULD be in subscribedSessionIds
-                // for Vanilla agents, but Sovereign agents legitimately use a private cognition
-                // session as outputSessionId that is NOT in subscribedSessionIds.
-                // Hard enforcement deferred to Phase 4 lifecycle hooks where the strategy can
-                // participate in validation.
-                state.copy(agents = state.agents + (agentId to updatedAgent))
+
+                // [PHASE 4 / E7 / E8] Strategy-owned config validation.
+                // Each strategy defines its own rules (e.g., Vanilla enforces
+                // outputSessionId ∈ subscribedSessionIds; Sovereign permits out-of-band).
+                val strategy = CognitiveStrategyRegistry.get(updatedAgent.cognitiveStrategyId)
+                val validatedAgent = strategy.validateConfig(updatedAgent)
+
+                state.copy(agents = state.agents + (agentId to validatedAgent))
             }
             ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE -> {
                 val agentId = action.payload?.agentUUID() ?: return state

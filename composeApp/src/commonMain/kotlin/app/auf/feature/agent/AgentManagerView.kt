@@ -24,6 +24,28 @@ import app.auf.ui.components.CodeEditor
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
+// ============================================================================
+// [PHASE 4] Helpers for knowledgeGraphId, which moved from AgentInstance into
+// cognitiveState as a strategy-owned key managed by SovereignStrategy.
+// ============================================================================
+
+/** Reads `knowledgeGraphId` from the agent's cognitiveState. Null if absent. */
+private fun AgentInstance.getKnowledgeGraphId(): String? =
+    (cognitiveState as? JsonObject)
+        ?.get("knowledgeGraphId")
+        ?.jsonPrimitive
+        ?.contentOrNull
+
+/** Returns a copy of this agent with `knowledgeGraphId` set/cleared in cognitiveState. */
+private fun AgentInstance.withKnowledgeGraphId(kgId: String?): AgentInstance {
+    val currentObj = cognitiveState as? JsonObject ?: buildJsonObject {}
+    val updatedState = buildJsonObject {
+        currentObj.forEach { (k, v) -> put(k, v) }
+        if (kgId != null) put("knowledgeGraphId", kgId) else put("knowledgeGraphId", JsonNull)
+    }
+    return copy(cognitiveState = updatedState)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AgentManagerView(store: Store, platformDependencies: app.auf.util.PlatformDependencies) {
@@ -179,13 +201,13 @@ private fun AgentReadOnlyView(
 ) {
     val identityRegistry = store.state.collectAsState().value.identityRegistry
     val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.subscribableSessionNames[it] } ?: "Not Subscribed"
-    val hkgName = agent.knowledgeGraphId?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG"
+    val hkgName = agent.getKnowledgeGraphId()?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG"
     val privateSessionName = agent.outputSessionId?.let { identityRegistry["session.$it"]?.name } ?: agent.outputSessionId?.handle ?: "None"
     val statusInfo = agentState.agentStatuses[agent.identityUUID] ?: AgentStatusInfo()
 
     var showInternals by remember { mutableStateOf(false) }
     // Only consider Sovereign if HKG is assigned.
-    val isSovereign = agent.knowledgeGraphId != null
+    val isSovereign = agent.getKnowledgeGraphId() != null
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         AgentControlCard(agent, statusInfo, store, platformDependencies)
@@ -271,7 +293,10 @@ private fun AgentEditorView(
             put("modelProvider", draftAgent.modelProvider)
             put("modelName", draftAgent.modelName)
             put("subscribedSessionIds", buildJsonArray { draftAgent.subscribedSessionIds.forEach { add(it.handle) } })
-            if (draftAgent.knowledgeGraphId != null) put("knowledgeGraphId", draftAgent.knowledgeGraphId)
+            // [PHASE 4] knowledgeGraphId is sent as a top-level payload field;
+            // AgentCrudLogic.mergeCognitiveStateFromPayload() routes it into cognitiveState.
+            val draftKgId = draftAgent.getKnowledgeGraphId()
+            if (draftKgId != null) put("knowledgeGraphId", draftKgId)
             else put("knowledgeGraphId", null as String?)
             put("automaticMode", draftAgent.automaticMode)
             autoWaitTimeInput.toIntOrNull()?.let { put("autoWaitTimeSeconds", it) }
@@ -307,7 +332,7 @@ private fun AgentEditorView(
 
         // --- ROW 3: Context (Subscriptions) ---
         Row(Modifier.fillMaxWidth()) {
-            if (draftAgent.knowledgeGraphId == null) {
+            if (draftAgent.getKnowledgeGraphId() == null) {
                 SingleSessionSelector(draftAgent, agentState, onDraftChanged)
             } else {
                 MultiSessionSelector(draftAgent, agentState, onDraftChanged)
@@ -763,28 +788,29 @@ private fun MultiSessionSelector(agent: AgentInstance, agentState: AgentRuntimeS
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun KnowledgeGraphSelector(agent: AgentInstance, agentState: AgentRuntimeState, onUpdate: (AgentInstance) -> Unit) {
-    val availableGraphs = remember(agentState.knowledgeGraphNames, agentState.hkgReservedIds, agent.knowledgeGraphId) {
+    val currentKgId = agent.getKnowledgeGraphId()
+    val availableGraphs = remember(agentState.knowledgeGraphNames, agentState.hkgReservedIds, currentKgId) {
         agentState.knowledgeGraphNames.entries.filter { (id, _) ->
-            !agentState.hkgReservedIds.contains(id) || id == agent.knowledgeGraphId
+            !agentState.hkgReservedIds.contains(id) || id == currentKgId
         }
     }
     var isExpanded by remember { mutableStateOf(false) }
 
     ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
         OutlinedTextField(
-            value = agentState.knowledgeGraphNames[agent.knowledgeGraphId] ?: "None",
+            value = currentKgId?.let { agentState.knowledgeGraphNames[it] } ?: "None",
             onValueChange = {}, readOnly = true, label = { Text("Knowledge Graph") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth()
         )
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             DropdownMenuItem(text = { Text("None") }, onClick = {
-                onUpdate(agent.copy(knowledgeGraphId = null))
+                onUpdate(agent.withKnowledgeGraphId(null))
                 isExpanded = false
             })
             availableGraphs.forEach { (graphId, graphName) ->
                 DropdownMenuItem(text = { Text(graphName) }, onClick = {
-                    onUpdate(agent.copy(knowledgeGraphId = graphId))
+                    onUpdate(agent.withKnowledgeGraphId(graphId))
                     isExpanded = false
                 })
             }
@@ -867,7 +893,7 @@ private fun StrategySelector(agent: AgentInstance, onUpdate: (AgentInstance) -> 
                     var updated = agent.copy(cognitiveStrategyId = strategy.identityHandle)
                     // If switching to Vanilla, clear HKG
                     if (strategy.identityHandle == VanillaStrategy.identityHandle) {
-                        updated = updated.copy(knowledgeGraphId = null)
+                        updated = updated.withKnowledgeGraphId(null)
                     }
                     onUpdate(updated)
                     isExpanded = false

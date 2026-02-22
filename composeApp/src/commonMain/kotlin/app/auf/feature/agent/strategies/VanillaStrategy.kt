@@ -1,7 +1,7 @@
 package app.auf.feature.agent.strategies
 
 import app.auf.core.IdentityHandle
-import app.auf.feature.agent.* // Allowed: this is inter-feature import
+import app.auf.feature.agent.*
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 
@@ -10,6 +10,12 @@ import kotlinx.serialization.json.JsonNull
  * No state machine, no constitutional overhead. Just Context + Identity.
  *
  * [PHASE 2] `id` replaced by `identityHandle` in the `agent.strategy.*` namespace.
+ *
+ * [PHASE 4] Lifecycle hooks added:
+ * - `getBuiltInResources()` — provides the default system instruction resource.
+ *   Replaces the Vanilla entry that was in AgentDefaults.builtInResources.
+ * - `validateConfig()` — enforces the strict invariant that outputSessionId must
+ *   be a member of subscribedSessionIds (or null).
  */
 object VanillaStrategy : CognitiveStrategy {
     override val identityHandle: IdentityHandle = IdentityHandle("agent.strategy.vanilla")
@@ -66,5 +72,37 @@ object VanillaStrategy : CognitiveStrategy {
     override fun postProcessResponse(response: String, currentState: JsonElement): PostProcessResult {
         // Vanilla agents never halt for sentinel checks.
         return PostProcessResult(currentState, SentinelAction.PROCEED)
+    }
+
+    // =========================================================================
+    // [PHASE 4] Lifecycle hooks
+    // =========================================================================
+
+    /**
+     * Returns the Vanilla-specific built-in resource: Default System Instruction.
+     * [PHASE 4] Replaces the Vanilla entry that was in AgentDefaults.builtInResources.
+     */
+    override fun getBuiltInResources(): List<AgentResource> = listOf(
+        AgentResource(
+            id = "res-sys-instruction-v1",
+            type = AgentResourceType.SYSTEM_INSTRUCTION,
+            name = "Default Builtin System Instruction",
+            content = DEFAULT_SYSTEM_INSTRUCTION_XML,
+            isBuiltIn = true
+        )
+    )
+
+    /**
+     * Enforces the strict invariant: outputSessionId must be in subscribedSessionIds.
+     * If it's not, falls back to the first subscribed session (or null).
+     *
+     * [PHASE 4 / E7] This is the Vanilla-specific validation. Sovereign permits
+     * out-of-band output sessions and does not apply this correction.
+     */
+    override fun validateConfig(agent: AgentInstance): AgentInstance {
+        if (agent.outputSessionId != null && agent.outputSessionId !in agent.subscribedSessionIds) {
+            return agent.copy(outputSessionId = agent.subscribedSessionIds.firstOrNull())
+        }
+        return agent
     }
 }

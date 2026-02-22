@@ -29,6 +29,14 @@ import kotlinx.serialization.json.*
  *
  * [PHASE 1] All agent IDs are typed via [IdentityUUID]; session IDs via [IdentityHandle].
  * JSON extraction wraps raw strings at the boundary; internal logic uses typed values.
+ *
+ * [PHASE 4] ALL implicit strategy checks removed. The runtime no longer references
+ * SovereignHKGResourceLogic or checks `agent.knowledgeGraphId`. All strategy-specific
+ * behavior is dispatched polymorphically through the [CognitiveStrategy] lifecycle hooks.
+ *
+ * Satisfies Definition of Done criterion #1:
+ * "AgentRuntimeFeature contains no `if (agent.knowledgeGraphId != null)` or equivalent
+ * implicit strategy checks."
  */
 class AgentRuntimeFeature(
     private val platformDependencies: PlatformDependencies,
@@ -106,8 +114,9 @@ class AgentRuntimeFeature(
             }
             // --- Startup ---
             ActionRegistry.Names.SYSTEM_STARTING -> {
-                // Inject built-in resources FIRST (ensures they're always available)
-                AgentDefaults.builtInResources.forEach { resource ->
+                // [PHASE 4] Inject built-in resources from all registered strategies.
+                // Replaces the hardcoded AgentDefaults.builtInResources list.
+                CognitiveStrategyRegistry.getAllBuiltInResources().forEach { resource ->
                     store.deferredDispatch(identity.handle, Action(
                         ActionRegistry.Names.AGENT_RESOURCE_LOADED,
                         json.encodeToJsonElement(resource) as JsonObject
@@ -127,12 +136,16 @@ class AgentRuntimeFeature(
                         saveAgentNvram(agent, store)
                     }
                 }
+                // [PHASE 4] Polymorphic infrastructure check for all agents.
+                // Replaces: SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
                 if (store.state.value.identityRegistry.values.any { it.parentHandle == "session" }) {
-                    SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+                    dispatchEnsureInfrastructureForAll(agentState, store)
                 }
             }
             ActionRegistry.Names.AGENT_VALIDATE_SOVEREIGN_STATE -> {
-                SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+                // [PHASE 4] Generalized: run ensureInfrastructure for all agents, not just Sovereign.
+                // The action name is retained for backward compat but the implementation is strategy-agnostic.
+                dispatchEnsureInfrastructureForAll(agentState, store)
             }
             ActionRegistry.Names.AGENT_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
@@ -157,7 +170,12 @@ class AgentRuntimeFeature(
                     return
                 }
                 saveAgentConfig(agentToSave, store)
-                SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+
+                // [PHASE 4] Polymorphic: let the strategy set up its infrastructure.
+                // Replaces: SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+                val strategy = CognitiveStrategyRegistry.get(agentToSave.cognitiveStrategyId)
+                strategy.onAgentRegistered(agentToSave, store)
+
                 // Register agent identity (no localHandle — CoreFeature generates via slugifyName)
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.CORE_REGISTER_IDENTITY,
@@ -173,9 +191,15 @@ class AgentRuntimeFeature(
                     platformDependencies.log(LogLevel.WARN, identity.handle, "AGENT_CLONE: Source agent '$agentId' not found in state.")
                     return
                 }
+                // [PHASE 4] knowledgeGraphId is now in cognitiveState. The clone payload
+                // passes it as a top-level field so AgentCrudLogic.AGENT_CREATE can merge
+                // it into the new agent's cognitiveState. We read it generically from
+                // cognitiveState — no strategy import needed.
+                val kgId = (agentToClone.cognitiveState as? JsonObject)
+                    ?.get("knowledgeGraphId")?.jsonPrimitive?.contentOrNull
                 val createPayload = buildJsonObject {
                     put("name", "${agentToClone.identity.name} (Copy)")
-                    agentToClone.knowledgeGraphId?.let { put("knowledgeGraphId", it) }
+                    kgId?.let { put("knowledgeGraphId", it) }
                     put("modelProvider", agentToClone.modelProvider)
                     put("modelName", agentToClone.modelName)
                     put("subscribedSessionIds", buildJsonArray { agentToClone.subscribedSessionIds.forEach { add(it.handle) } })
@@ -202,12 +226,20 @@ class AgentRuntimeFeature(
                     return
                 }
 
-                SovereignHKGResourceLogic.handleSovereignAssignment(store, oldAgent, newAgent)
-                SovereignHKGResourceLogic.handleSovereignRevocation(store, oldAgent, newAgent)
+                // [PHASE 4] Polymorphic config change notification.
+                // Replaces: SovereignHKGResourceLogic.handleSovereignAssignment/Revocation
+                if (oldAgent != null) {
+                    val strategy = CognitiveStrategyRegistry.get(newAgent.cognitiveStrategyId)
+                    strategy.onAgentConfigChanged(oldAgent, newAgent, store)
+                }
 
                 saveAgentConfig(newAgent, store)
                 AgentAvatarLogic.updateAgentAvatars(agentId, store)
-                SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+
+                // [PHASE 4] Polymorphic infrastructure check.
+                // Replaces: SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+                dispatchEnsureInfrastructureForAll(agentState, store)
+
                 // If agent name changed, update identity atomically
                 if (oldAgent != null && oldAgent.identity.name != newAgent.identity.name) {
                     val currentHandle = newAgent.identityHandle
@@ -390,7 +422,9 @@ class AgentRuntimeFeature(
                 AgentAutoTriggerLogic.checkAndDispatchTriggers(store, agentState, platformDependencies, identity.handle)
             }
             ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED -> {
-                SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+                // [PHASE 4] Polymorphic infrastructure check.
+                // Replaces: SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
+                dispatchEnsureInfrastructureForAll(agentState, store)
             }
             ActionRegistry.Names.SESSION_SESSION_FEATURE_READY -> {
                 agentState.agents.forEach { (agentId, agent) ->
@@ -472,6 +506,24 @@ class AgentRuntimeFeature(
                     "Dispatched '$actionName' on behalf of agent '$originatorId' (uuid=$agentUuid, session=$sessionId, correlationId=$correlationId)."
                 )
             }
+        }
+    }
+
+    // ========================================================================
+    // [PHASE 4] Polymorphic lifecycle dispatch helpers
+    // ========================================================================
+
+    /**
+     * Calls [CognitiveStrategy.ensureInfrastructure] for every active agent.
+     * Each strategy's implementation is a no-op if the agent doesn't need
+     * infrastructure management — so this is safe to call unconditionally.
+     *
+     * [PHASE 4] Replaces all calls to SovereignHKGResourceLogic.ensureSovereignSessions().
+     */
+    private fun dispatchEnsureInfrastructureForAll(agentState: AgentRuntimeState, store: Store) {
+        agentState.agents.values.forEach { agent ->
+            val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
+            strategy.ensureInfrastructure(agent, agentState, store)
         }
     }
 
@@ -805,6 +857,22 @@ class AgentRuntimeFeature(
                             agent = agent.copy(outputSessionId = IdentityHandle(oldValue))
                         }
                     }
+                    // [PHASE 4] Migrate old top-level "knowledgeGraphId" → cognitiveState
+                    // Old agent.json files have knowledgeGraphId as a top-level field.
+                    // Since it's removed from AgentInstance, ignoreUnknownKeys drops it.
+                    // We re-read it from raw JSON and merge into cognitiveState.
+                    val rawJson = json.parseToJsonElement(content).jsonObject
+                    val legacyKgId = rawJson["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull
+                    if (legacyKgId != null) {
+                        val currentState = agent.cognitiveState as? JsonObject ?: buildJsonObject {}
+                        // Only migrate if cognitiveState doesn't already have it
+                        if (currentState["knowledgeGraphId"] == null || currentState["knowledgeGraphId"] is JsonNull) {
+                            agent = agent.copy(cognitiveState = buildJsonObject {
+                                currentState.forEach { (k, v) -> put(k, v) }
+                                put("knowledgeGraphId", legacyKgId)
+                            })
+                        }
+                    }
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse agent config from file: $path. Error: ${e.message}")
@@ -875,10 +943,11 @@ class AgentRuntimeFeature(
 
 /**
  * Determines the session where workspace operation responses should be posted.
- * For sovereign agents: their private session (isolated cognition).
- * For vanilla agents: their first subscribed session (where they participate).
+ * Uses the agent's outputSessionId if set, otherwise falls back to the first
+ * subscribed session.
  *
  * [PHASE 1] Returns typed [IdentityHandle].
+ * [PHASE 4] Docstring updated — no longer references Sovereign/Vanilla specifically.
  */
 private fun getAgentResponseSessionId(agent: AgentInstance): IdentityHandle? {
     return agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull()

@@ -4,8 +4,6 @@ import app.auf.core.FeatureState
 import app.auf.core.Identity
 import app.auf.core.IdentityHandle
 import app.auf.core.IdentityUUID
-import app.auf.feature.agent.strategies.SovereignDefaults // Allowed: this is an inter-feature import
-import app.auf.feature.agent.strategies.VanillaStrategy // Allowed: this is an inter-feature import
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
@@ -35,31 +33,15 @@ data class AgentResource(
     val path: String? = null // Relative path if user-defined
 )
 
-object AgentDefaults {
-    val builtInResources: List<AgentResource> = listOf(
-        AgentResource(
-            id = "res-sovereign-constitution-v1",
-            type = AgentResourceType.CONSTITUTION,
-            name = "Sovereign Constitution (v5.9)",
-            content = SovereignDefaults.DEFAULT_CONSTITUTION_XML,
-            isBuiltIn = true
-        ),
-        AgentResource(
-            id = "res-boot-sentinel-v1",
-            type = AgentResourceType.BOOTLOADER,
-            name = "Boot Sentinel (v1.0)",
-            content = SovereignDefaults.BOOT_SENTINEL_XML,
-            isBuiltIn = true
-        ),
-        AgentResource(
-            id = "res-sys-instruction-v1",
-            type = AgentResourceType.SYSTEM_INSTRUCTION,
-            name = "Default Builtin System Instruction",
-            content = VanillaStrategy.DEFAULT_SYSTEM_INSTRUCTION_XML,
-            isBuiltIn = true
-        )
-    )
-}
+// [PHASE 4] AgentDefaults REMOVED.
+//
+// The built-in resource list is now provided by each strategy via
+// CognitiveStrategy.getBuiltInResources(), aggregated by
+// CognitiveStrategyRegistry.getAllBuiltInResources().
+//
+// AgentState.kt no longer imports SovereignDefaults or VanillaStrategy.
+// This satisfies the Definition of Done criterion #2:
+// "AgentState.kt contains no imports from app.auf.feature.agent.strategies.*"
 
 @Serializable
 data class GatewayMessage(
@@ -114,15 +96,19 @@ data class AgentPendingCommand(
 //    continue to load without migration. Computed typed accessors provide the
 //    Phase 1 type safety at call sites.
 //
-// 2. `subscribedSessionIds`, `privateSessionId`, and `resources` are migrated
-//    to value class wrappers. Because value classes serialize transparently as
-//    their underlying type, existing JSON is forward-compatible — no migration.
+// 2. `subscribedSessionIds`, and `resources` are migrated to value class
+//    wrappers. Because value classes serialize transparently as their underlying
+//    type, existing JSON is forward-compatible — no migration.
 //
 // 3. `cognitiveStrategyId` migrated to `IdentityHandle` in Phase 2 (strategy
 //    identity registration). Old persisted values like `"vanilla_v1"` are
 //    migrated transparently via `CognitiveStrategyRegistry.migrateStrategyId`.
 //
-// 4. `knowledgeGraphId` remains `String?` until Phase 4 (compartmentalization).
+// 4. [PHASE 4] `knowledgeGraphId` REMOVED from AgentInstance. It is now owned
+//    by SovereignStrategy as a well-known key in `cognitiveState`. Old persisted
+//    values are migrated at load time by AgentRuntimeFeature: the top-level
+//    `knowledgeGraphId` field is read from raw JSON and merged into cognitiveState.
+//    `ignoreUnknownKeys = true` handles deserialization of the removed field.
 // ============================================================================
 
 /**
@@ -132,7 +118,6 @@ data class AgentPendingCommand(
 @Serializable
 data class AgentInstance(
     val identity: Identity,
-    val knowledgeGraphId: String? = null,
     val modelProvider: String,
     val modelName: String,
 
@@ -141,7 +126,7 @@ data class AgentInstance(
     val subscribedSessionIds: List<IdentityHandle> = emptyList(),
 
     // [PHASE 3] The session where this agent's gateway responses are routed.
-    // Invariant: must be a member of subscribedSessionIds, or null.
+    // Invariant enforcement is strategy-owned via CognitiveStrategy.validateConfig().
     // Replaces `privateSessionId`. Old persisted values are migrated at load time.
     val outputSessionId: IdentityHandle? = null,
 
@@ -152,6 +137,8 @@ data class AgentInstance(
 
     // The "NVRAM" / Control Registers
     // Persisted, so the agent remembers its state across restarts.
+    // [PHASE 4] Strategy-specific config (e.g., knowledgeGraphId for Sovereign)
+    // lives here as well-known keys managed by the strategy.
     val cognitiveState: JsonElement = JsonNull,
 
     // [PHASE 1] Typed: resource slot → resource UUID.
