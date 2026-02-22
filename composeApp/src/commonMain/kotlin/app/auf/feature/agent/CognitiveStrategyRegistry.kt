@@ -14,8 +14,24 @@ import app.auf.core.IdentityHandle
  * [PHASE 4] Added [getAllBuiltInResources] — replaces the hardcoded
  * `AgentDefaults.builtInResources` list. The core state no longer imports
  * any strategy implementations.
+ *
+ * [PHASE 5] Added [isRegistered] for CRUD validation. Centralized the default
+ * strategy handle as [DEFAULT_STRATEGY_HANDLE] — the single source of truth for
+ * the well-known Vanilla handle string used as the serialization default in
+ * [AgentInstance.cognitiveStrategyId].
  */
 object CognitiveStrategyRegistry {
+
+    /**
+     * The well-known handle for the default (Vanilla) strategy.
+     * Referenced by [AgentInstance.cognitiveStrategyId] as its serialization default,
+     * and by [getDefault]. Defined here as the single source of truth so that if
+     * the default strategy ever changes, only this constant needs updating.
+     *
+     * [PHASE 5] Replaces the hardcoded string `"agent.strategy.vanilla"` that
+     * previously appeared in both AgentState.kt and this file.
+     */
+    val DEFAULT_STRATEGY_HANDLE = IdentityHandle("agent.strategy.vanilla")
 
     private val strategies = mutableMapOf<IdentityHandle, CognitiveStrategy>()
 
@@ -40,18 +56,31 @@ object CognitiveStrategyRegistry {
     /**
      * Resolves a strategy by its identity handle.
      * Falls back to the default strategy if the handle is not registered.
+     *
+     * Note: This fallback is intentional for runtime safety — agent state loaded
+     * from disk may reference a strategy that is no longer registered (e.g., a
+     * plugin strategy that was uninstalled). CRUD operations should use
+     * [isRegistered] to validate handles before accepting them.
      */
     fun get(handle: IdentityHandle): CognitiveStrategy =
         strategies[handle] ?: getDefault()
 
     /**
+     * Returns true if the given handle corresponds to a registered strategy.
+     *
+     * [PHASE 5] Used by [AgentCrudLogic] to reject unknown strategy handles on
+     * AGENT_CREATE and AGENT_UPDATE_CONFIG, rather than silently falling back.
+     */
+    fun isRegistered(handle: IdentityHandle): Boolean =
+        handle in strategies
+
+    /**
      * Returns the default strategy.
-     * Uses the well-known Vanilla handle. If not registered (shouldn't happen),
+     * Uses [DEFAULT_STRATEGY_HANDLE]. If not registered (shouldn't happen),
      * returns the first registered strategy.
      */
     fun getDefault(): CognitiveStrategy {
-        val vanillaHandle = IdentityHandle("agent.strategy.vanilla")
-        return strategies[vanillaHandle] ?: strategies.values.firstOrNull()
+        return strategies[DEFAULT_STRATEGY_HANDLE] ?: strategies.values.firstOrNull()
         ?: error("CognitiveStrategyRegistry: No strategies registered. Call register() during init.")
     }
 

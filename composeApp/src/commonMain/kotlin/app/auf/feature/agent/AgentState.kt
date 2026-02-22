@@ -133,7 +133,8 @@ data class AgentInstance(
     // [PHASE 2] Typed: strategy identity handle in `agent.strategy.*` namespace.
     // Value class serializes as plain String — backward-compatible.
     // Old values like "vanilla_v1" are migrated at load time.
-    val cognitiveStrategyId: IdentityHandle = IdentityHandle("agent.strategy.vanilla"),
+    // [PHASE 5] Default references the centralized constant in CognitiveStrategyRegistry.
+    val cognitiveStrategyId: IdentityHandle = CognitiveStrategyRegistry.DEFAULT_STRATEGY_HANDLE,
 
     // The "NVRAM" / Control Registers
     // Persisted, so the agent remembers its state across restarts.

@@ -20,6 +20,10 @@ import kotlinx.serialization.json.*
  * [PHASE 4] `knowledgeGraphId` removed from AgentInstance. When the payload contains
  * `knowledgeGraphId`, it is merged into `cognitiveState` as a strategy-owned key.
  * `validateConfig` is called via the strategy after every config update.
+ *
+ * [PHASE 5] Strategy handle validation added: AGENT_CREATE and AGENT_UPDATE_CONFIG
+ * reject unknown `cognitiveStrategyId` handles with a clear error log rather than
+ * silently falling back to Vanilla. This surfaces configuration bugs immediately.
  */
 object AgentCrudLogic {
 
@@ -82,6 +86,18 @@ object AgentCrudLogic {
                 val strategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull
                     ?.let { CognitiveStrategyRegistry.migrateStrategyId(it) }
                     ?: CognitiveStrategyRegistry.getDefault().identityHandle
+
+                // [PHASE 5] Reject unknown strategy handles rather than silently accepting.
+                // Silent fallback masks configuration bugs — fail loud here so the caller
+                // knows the strategy isn't registered.
+                if (!CognitiveStrategyRegistry.isRegistered(strategyId)) {
+                    platformDependencies.log(
+                        app.auf.util.LogLevel.ERROR, "AgentCrudLogic",
+                        "AGENT_CREATE rejected: cognitiveStrategyId '${strategyId.handle}' is not a registered strategy."
+                    )
+                    return state
+                }
+
                 val strategy = CognitiveStrategyRegistry.get(strategyId)
 
                 // [PHASE 4] Initial cognitiveState comes from the strategy.
@@ -136,6 +152,23 @@ object AgentCrudLogic {
                 // [PHASE 4] Merge knowledgeGraphId from payload into cognitiveState
                 val updatedCognitiveState = mergeCognitiveStateFromPayload(payload, agentToUpdate.cognitiveState)
 
+                // [PHASE 5] Validate strategy handle if one is being set.
+                // Reject the entire update if the handle is not registered.
+                val resolvedStrategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull
+                    ?.let { raw ->
+                        val migrated = CognitiveStrategyRegistry.migrateStrategyId(raw)
+                        if (!CognitiveStrategyRegistry.isRegistered(migrated)) {
+                            platformDependencies.log(
+                                app.auf.util.LogLevel.ERROR, "AgentCrudLogic",
+                                "AGENT_UPDATE_CONFIG rejected for agent '${agentId.uuid}': " +
+                                        "cognitiveStrategyId '${migrated.handle}' is not a registered strategy."
+                            )
+                            return state
+                        }
+                        migrated
+                    }
+                    ?: agentToUpdate.cognitiveStrategyId
+
                 val updatedAgent = agentToUpdate.copy(
                     identity = agentToUpdate.identity.copy(
                         name = payload["name"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.identity.name
@@ -143,9 +176,7 @@ object AgentCrudLogic {
                     outputSessionId = if ("outputSessionId" in payload) payload.sessionHandle("outputSessionId") else agentToUpdate.outputSessionId,
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelProvider,
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelName,
-                    cognitiveStrategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull
-                        ?.let { CognitiveStrategyRegistry.migrateStrategyId(it) }
-                        ?: agentToUpdate.cognitiveStrategyId,
+                    cognitiveStrategyId = resolvedStrategyId,
                     cognitiveState = updatedCognitiveState,
                     subscribedSessionIds = filteredSubscribedSessionIds,
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: agentToUpdate.automaticMode,
