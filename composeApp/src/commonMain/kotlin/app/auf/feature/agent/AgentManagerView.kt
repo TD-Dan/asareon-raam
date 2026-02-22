@@ -19,15 +19,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
-// [PHASE 7] VanillaStrategy import REMOVED. AgentManagerView now relies exclusively
-// on the CognitiveStrategy interface and CognitiveStrategyRegistry.
 import app.auf.ui.components.CodeEditor
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
 // ============================================================================
-// [PHASE 4] Helpers for knowledgeGraphId, which moved from AgentInstance into
-// cognitiveState as a strategy-owned key.
+// Helpers for knowledgeGraphId, which lives in cognitiveState as a
+// strategy-owned key.
 // ============================================================================
 
 /** Reads `knowledgeGraphId` from the agent's cognitiveState. Null if absent. */
@@ -223,9 +221,9 @@ private fun AgentReadOnlyView(
                 // Show primary/output session for all agents that have one
                 if (agent.outputSessionId != null) {
                     val outputSessionName = agent.outputSessionId.let {
-                        identityRegistry["session.$it"]?.name
+                        identityRegistry.findByUUID(it)?.name
                             ?: agentState.subscribableSessionNames[it]
-                            ?: it.handle
+                            ?: it.uuid
                     }
                     Text("Primary Session: $outputSessionName", style = MaterialTheme.typography.bodyMedium)
                 }
@@ -305,11 +303,11 @@ private fun AgentEditorView(
             put("cognitiveStrategyId", draftAgent.cognitiveStrategyId.handle)
             put("modelProvider", draftAgent.modelProvider)
             put("modelName", draftAgent.modelName)
-            put("subscribedSessionIds", buildJsonArray { draftAgent.subscribedSessionIds.forEach { add(it.handle) } })
+            put("subscribedSessionIds", buildJsonArray { draftAgent.subscribedSessionIds.forEach { add(it.uuid) } })
             // outputSessionId — strategy-owned primary session selection
-            if (draftAgent.outputSessionId != null) put("outputSessionId", draftAgent.outputSessionId!!.handle)
+            if (draftAgent.outputSessionId != null) put("outputSessionId", draftAgent.outputSessionId!!.uuid)
             else put("outputSessionId", null as String?)
-            // [PHASE 4] knowledgeGraphId is sent as a top-level payload field;
+            // knowledgeGraphId is sent as a top-level payload field;
             // AgentCrudLogic.mergeCognitiveStateFromPayload() routes it into cognitiveState.
             val draftKgId = draftAgent.getKnowledgeGraphId()
             if (draftKgId != null) put("knowledgeGraphId", draftKgId)
@@ -753,9 +751,6 @@ private fun CreateResourceDialog(
 // Selectors — Draft-Based (no direct store dispatch)
 // =============================================================================
 
-// [PHASE 7] SingleSessionSelector REMOVED — replaced by unified MultiSessionSelector
-// for all agent strategies. All agents now use multi-select session subscriptions.
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MultiSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, onUpdate: (AgentInstance) -> Unit) {
@@ -850,7 +845,7 @@ private fun OutputSessionSelector(agent: AgentInstance, agentState: AgentRuntime
     // Show the explicitly set output session, or indicate the effective default
     val currentOutputName = when {
         agent.outputSessionId != null ->
-            agentState.subscribableSessionNames[agent.outputSessionId] ?: agent.outputSessionId.handle
+            agentState.subscribableSessionNames[agent.outputSessionId] ?: agent.outputSessionId.uuid
         subscribedSessions.isNotEmpty() ->
             "${subscribedSessions.first().second} (default)"
         else -> "No sessions subscribed"

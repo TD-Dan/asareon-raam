@@ -15,17 +15,14 @@ import kotlinx.serialization.json.*
  * In BOOTING phase, the system prompt includes both Constitution and Bootloader.
  * The agent uses UPDATE_NVRAM to transition to AWAKE, at which point only the Constitution remains.
  *
- * [PHASE 2] `id` replaced by `identityHandle` in the `agent.strategy.*` namespace.
- *
- * [PHASE 4] Lifecycle hooks now encapsulate ALL Sovereign-specific behavior:
- * - HKG reservation and release (was SovereignHKGResourceLogic.handleSovereignAssignment/Revocation)
- * - Private cognition session linking (was SovereignHKGResourceLogic.ensureSovereignSessions)
- * - HKG context requests during the cognitive pipeline (was SovereignHKGResourceLogic.requestContextIfSovereign)
- * - Built-in resource provisioning (was part of AgentDefaults)
+ * Lifecycle hooks encapsulate ALL Sovereign-specific behavior:
+ * - HKG reservation and release
+ * - Private cognition session linking
+ * - HKG context requests during the cognitive pipeline
+ * - Built-in resource provisioning
  * - Config validation permitting out-of-band outputSessionId
  *
- * `knowledgeGraphId` is now owned by this strategy via `cognitiveState`, no longer
- * a top-level field on AgentInstance.
+ * `knowledgeGraphId` is owned by this strategy via `cognitiveState`.
  */
 object SovereignStrategy : CognitiveStrategy {
     override val identityHandle: IdentityHandle = IdentityHandle("agent.strategy.sovereign")
@@ -71,8 +68,7 @@ object SovereignStrategy : CognitiveStrategy {
     )
 
     /**
-     * [PHASE 4] Initial state now includes `knowledgeGraphId` as a well-known key.
-     * The strategy owns this field — it is no longer on AgentInstance.
+     * Initial state includes `knowledgeGraphId` as a well-known key owned by this strategy.
      */
     override fun getInitialState(): JsonElement {
         return buildJsonObject {
@@ -157,12 +153,11 @@ object SovereignStrategy : CognitiveStrategy {
     }
 
     // =========================================================================
-    // [PHASE 4] Lifecycle hooks
+    // Lifecycle hooks
     // =========================================================================
 
     /**
      * Returns Sovereign-specific built-in resources: Constitution and Boot Sentinel.
-     * [PHASE 4] Replaces the Sovereign entries that were in AgentDefaults.builtInResources.
      */
     override fun getBuiltInResources(): List<AgentResource> = listOf(
         AgentResource(
@@ -194,8 +189,6 @@ object SovereignStrategy : CognitiveStrategy {
      * Detects Sovereign-specific configuration transitions:
      * - KG assignment: reserve the HKG
      * - KG revocation: release the HKG and truncate subscriptions
-     *
-     * [PHASE 4] Absorbed from SovereignHKGResourceLogic.handleSovereignAssignment/Revocation.
      */
     override fun onAgentConfigChanged(old: AgentInstance, new: AgentInstance, store: Store) {
         val oldKgId = getKnowledgeGraphId(old)
@@ -218,7 +211,7 @@ object SovereignStrategy : CognitiveStrategy {
                     put("agentId", new.identityUUID.uuid)
                     put("outputSessionId", JsonNull)
                     put("subscribedSessionIds", buildJsonArray {
-                        truncatedSubscriptions.forEach { add(it.handle) }
+                        truncatedSubscriptions.forEach { add(it.uuid) }
                     })
                 }
             ))
@@ -235,8 +228,6 @@ object SovereignStrategy : CognitiveStrategy {
      *
      * 1. HKG Reservation: Ensures the KG is reserved for this agent.
      * 2. Session Linking: Ensures the private cognition session exists and is linked.
-     *
-     * [PHASE 4] Absorbed from SovereignHKGResourceLogic.ensureSovereignSessions.
      */
     override fun ensureInfrastructure(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
         val kgId = getKnowledgeGraphId(agent) ?: return // Not a Sovereign agent (no KG assigned)
@@ -265,14 +256,22 @@ object SovereignStrategy : CognitiveStrategy {
         }
 
         if (existingSessionIdentity != null) {
-            // FOUND: Link it by localHandle.
-            store.deferredDispatch("agent", Action(
-                ActionRegistry.Names.AGENT_UPDATE_CONFIG,
-                buildJsonObject {
-                    put("agentId", agent.identityUUID.uuid)
-                    put("outputSessionId", existingSessionIdentity.localHandle)
-                }
-            ))
+            // FOUND: Link by UUID (immutable, survives renames).
+            val sessionUUID = existingSessionIdentity.uuid
+            if (sessionUUID != null) {
+                store.deferredDispatch("agent", Action(
+                    ActionRegistry.Names.AGENT_UPDATE_CONFIG,
+                    buildJsonObject {
+                        put("agentId", agent.identityUUID.uuid)
+                        put("outputSessionId", sessionUUID)
+                    }
+                ))
+            } else {
+                store.platformDependencies.log(
+                    LogLevel.WARN, LOG_TAG,
+                    "Found session '${existingSessionIdentity.handle}' for agent '${agent.identityUUID}' but it has no UUID. Cannot link."
+                )
+            }
         } else {
             // NOT FOUND: Create it.
             store.deferredDispatch("agent", Action(
@@ -288,16 +287,12 @@ object SovereignStrategy : CognitiveStrategy {
 
     /**
      * Sovereign permits out-of-band outputSessionId — the private cognition session
-     * is deliberately NOT in subscribedSessionIds.
-     *
-     * [PHASE 4 / E7] No correction applied; the agent is returned unchanged.
+     * is deliberately NOT in subscribedSessionIds. No correction applied.
      */
     override fun validateConfig(agent: AgentInstance): AgentInstance = agent
 
     /**
      * Requests HKG context for Sovereign agents that have a knowledge graph assigned.
-     *
-     * [PHASE 4] Absorbed from SovereignHKGResourceLogic.requestContextIfSovereign.
      */
     override fun requestAdditionalContext(agent: AgentInstance, store: Store): Boolean {
         val kgId = getKnowledgeGraphId(agent) ?: return false
@@ -332,8 +327,6 @@ object SovereignStrategy : CognitiveStrategy {
     /**
      * Returns true if this agent has a knowledge graph assigned — the pipeline
      * should wait for HKG context before executing the turn.
-     *
-     * [PHASE 4] Replaces the implicit `agent.knowledgeGraphId.isNullOrBlank()` check.
      */
     override fun needsAdditionalContext(agent: AgentInstance): Boolean {
         return getKnowledgeGraphId(agent) != null
@@ -346,10 +339,7 @@ object SovereignStrategy : CognitiveStrategy {
     /**
      * Extracts `knowledgeGraphId` from the agent's cognitiveState.
      * Returns null if not present or null-valued.
-     *
-     * [PHASE 4] This is the canonical accessor for knowledgeGraphId, which is
-     * now owned by this strategy in cognitiveState rather than being a top-level
-     * field on AgentInstance.
+     * This is the canonical accessor for knowledgeGraphId, owned by this strategy.
      */
     fun getKnowledgeGraphId(agent: AgentInstance): String? {
         return (agent.cognitiveState as? JsonObject)

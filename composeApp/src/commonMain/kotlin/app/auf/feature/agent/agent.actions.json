@@ -27,13 +27,15 @@
             "type": "string"
           },
           "cognitiveStrategyId": {
-            "type": "string"
+            "type": "string",
+            "description": "Handle of the cognitive strategy to use (e.g. 'agent.strategy.vanilla')."
           },
           "subscribedSessionIds": {
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "List of session UUIDs this agent observes. UUIDs are immutable and survive session renames."
           },
           "automaticMode": {
             "type": "boolean",
@@ -69,7 +71,8 @@
         "type": "object",
         "properties": {
           "agentId": {
-            "type": "string"
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
           },
           "correlationId": {
             "type": [
@@ -95,7 +98,8 @@
         "type": "object",
         "properties": {
           "agentId": {
-            "type": "string"
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
           },
           "name": {
             "type": "string"
@@ -110,7 +114,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Session UUID for the agent's primary output session. Null to clear."
           },
           "modelProvider": {
             "type": "string"
@@ -125,7 +130,8 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "List of session UUIDs this agent observes."
           },
           "automaticMode": {
             "type": "boolean"
@@ -160,7 +166,8 @@
         "type": "object",
         "properties": {
           "agentId": {
-            "type": "string"
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
           },
           "correlationId": {
             "type": [
@@ -186,7 +193,8 @@
         "type": "object",
         "properties": {
           "agentId": {
-            "type": "string"
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
           },
           "correlationId": {
             "type": [
@@ -212,7 +220,8 @@
         "type": "object",
         "properties": {
           "agentId": {
-            "type": "string"
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
           },
           "correlationId": {
             "type": [
@@ -238,7 +247,8 @@
         "type": "object",
         "properties": {
           "agentId": {
-            "type": "string"
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
           },
           "preview": {
             "type": "boolean",
@@ -268,7 +278,8 @@
         "type": "object",
         "properties": {
           "agentId": {
-            "type": "string"
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
           },
           "correlationId": {
             "type": [
@@ -294,7 +305,8 @@
         "type": "object",
         "properties": {
           "agentId": {
-            "type": "string"
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
           },
           "correlationId": {
             "type": [
@@ -320,7 +332,8 @@
         "type": "object",
         "properties": {
           "agentId": {
-            "type": "string"
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
           },
           "correlationId": {
             "type": [
@@ -522,7 +535,8 @@
         "type": "object",
         "properties": {
           "agentId": {
-            "type": "string"
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
           },
           "updates": {
             "type": "object",
@@ -817,7 +831,8 @@
             "type": "string"
           },
           "sessionId": {
-            "type": "string"
+            "type": "string",
+            "description": "Session UUID (immutable identifier)."
           },
           "messageId": {
             "type": "string"
@@ -937,7 +952,8 @@
             "type": "string"
           },
           "sessionId": {
-            "type": "string"
+            "type": "string",
+            "description": "Session UUID (immutable identifier)."
           },
           "actionName": {
             "type": "string"

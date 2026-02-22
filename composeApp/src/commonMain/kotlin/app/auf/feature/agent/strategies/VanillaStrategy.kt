@@ -9,13 +9,10 @@ import kotlinx.serialization.json.JsonNull
  * The standard, lightweight strategy.
  * No state machine, no constitutional overhead. Just Context + Identity.
  *
- * [PHASE 2] `id` replaced by `identityHandle` in the `agent.strategy.*` namespace.
- *
- * [PHASE 4] Lifecycle hooks added:
+ * Lifecycle hooks:
  * - `getBuiltInResources()` — provides the default system instruction resource.
- *   Replaces the Vanilla entry that was in AgentDefaults.builtInResources.
- * - `validateConfig()` — enforces the strict invariant that outputSessionId must
- *   be a member of subscribedSessionIds (or null).
+ * - `validateConfig()` — enforces that outputSessionId must be a member of
+ *   subscribedSessionIds (or null).
  */
 object VanillaStrategy : CognitiveStrategy {
     override val identityHandle: IdentityHandle = IdentityHandle("agent.strategy.vanilla")
@@ -100,12 +97,11 @@ object VanillaStrategy : CognitiveStrategy {
     }
 
     // =========================================================================
-    // [PHASE 4] Lifecycle hooks
+    // Lifecycle hooks
     // =========================================================================
 
     /**
      * Returns the Vanilla-specific built-in resource: Default System Instruction.
-     * [PHASE 4] Replaces the Vanilla entry that was in AgentDefaults.builtInResources.
      */
     override fun getBuiltInResources(): List<AgentResource> = listOf(
         AgentResource(
@@ -121,9 +117,6 @@ object VanillaStrategy : CognitiveStrategy {
      * Enforces the strict invariant: outputSessionId must be in subscribedSessionIds.
      * If it's not, falls back to the first subscribed session (or null).
      * If it's null but subscriptions exist, auto-assigns to the first subscribed session.
-     *
-     * [PHASE 4 / E7] This is the Vanilla-specific validation. Sovereign permits
-     * out-of-band output sessions and does not apply this correction.
      */
     override fun validateConfig(agent: AgentInstance): AgentInstance {
         val outputId = agent.outputSessionId
