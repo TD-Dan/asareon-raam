@@ -146,7 +146,7 @@ object AgentRuntimeReducer {
                     ?.let { IdentityHandle(it) } ?: return state
 
                 val agentsToUpdate = state.agents.values
-                    .filter { it.subscribedSessionIds.contains(deletedSessionId) || it.privateSessionId == deletedSessionId }
+                    .filter { it.subscribedSessionIds.contains(deletedSessionId) || it.outputSessionId == deletedSessionId }
 
                 // Cleanup deleted session from avatar map
                 var newAvatarCards = state.agentAvatarCardIds
@@ -162,7 +162,7 @@ object AgentRuntimeReducer {
                     if (agentsToUpdate.any { it.identityUUID == agent.identityUUID }) {
                         agent.copy(
                             subscribedSessionIds = agent.subscribedSessionIds - deletedSessionId,
-                            privateSessionId = if (agent.privateSessionId == deletedSessionId) null else agent.privateSessionId
+                            outputSessionId = if (agent.outputSessionId == deletedSessionId) null else agent.outputSessionId
                         )
                     } else {
                         agent
@@ -351,7 +351,7 @@ object AgentRuntimeReducer {
         state.agents.values.forEach { agent ->
             val agentUuid = agent.identityUUID
             val currentStatus = updatedStatuses[agentUuid] ?: AgentStatusInfo()
-            val isRelevant = (agent.subscribedSessionIds.contains(sessionId) || agent.privateSessionId == sessionId)
+            val isRelevant = (agent.subscribedSessionIds.contains(sessionId) || agent.outputSessionId == sessionId)
             val isSelf = (agentUuid.uuid == senderId || agent.identityHandle.handle == senderId)
 
             if (isRelevant && !isSelf) {

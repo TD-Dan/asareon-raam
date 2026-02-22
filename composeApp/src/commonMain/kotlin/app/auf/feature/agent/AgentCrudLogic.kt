@@ -96,7 +96,7 @@ object AgentCrudLogic {
                         name = payload["name"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.identity.name
                     ),
                     knowledgeGraphId = if ("knowledgeGraphId" in payload) payload["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull else agentToUpdate.knowledgeGraphId,
-                    privateSessionId = if ("privateSessionId" in payload) payload.sessionHandle("privateSessionId") else agentToUpdate.privateSessionId,
+                    outputSessionId = if ("outputSessionId" in payload) payload.sessionHandle("outputSessionId") else agentToUpdate.outputSessionId,
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelProvider,
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelName,
                     cognitiveStrategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull
@@ -108,6 +108,11 @@ object AgentCrudLogic {
                     autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoMaxWaitTimeSeconds,
                     resources = updatedResources
                 )
+                // [PHASE 3] Soft invariant: outputSessionId SHOULD be in subscribedSessionIds
+                // for Vanilla agents, but Sovereign agents legitimately use a private cognition
+                // session as outputSessionId that is NOT in subscribedSessionIds.
+                // Hard enforcement deferred to Phase 4 lifecycle hooks where the strategy can
+                // participate in validation.
                 state.copy(agents = state.agents + (agentId to updatedAgent))
             }
             ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE -> {

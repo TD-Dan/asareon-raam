@@ -20,9 +20,9 @@
             "type": "boolean",
             "description": "If true, the session is created in a hidden state. Defaults to false."
           },
-          "isPrivate": {
-            "type": "boolean",
-            "description": "If true, the session is marked as an private session. Defaults to false."
+          "isPrivateTo": {
+            "type": ["string", "null"],
+            "description": "If non-null, the identity handle of the owner. The session is private to that identity. Defaults to null."
           }
         }
       },

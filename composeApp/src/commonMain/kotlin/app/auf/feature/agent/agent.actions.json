@@ -90,7 +90,7 @@
               "null"
             ]
           },
-          "privateSessionId": {
+          "outputSessionId": {
             "type": [
               "string",
               "null"

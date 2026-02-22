@@ -795,9 +795,16 @@ class AgentRuntimeFeature(
                 try {
                     val rawAgent = json.decodeFromString<AgentInstance>(content)
                     // [PHASE 2] Migrate legacy strategy IDs (e.g. "vanilla_v1" → "agent.strategy.vanilla")
-                    val agent = rawAgent.copy(
+                    var agent = rawAgent.copy(
                         cognitiveStrategyId = CognitiveStrategyRegistry.migrateStrategyId(rawAgent.cognitiveStrategyId.handle)
                     )
+                    // [PHASE 3] Migrate old "privateSessionId" → outputSessionId
+                    if (agent.outputSessionId == null) {
+                        val rawJson = json.parseToJsonElement(content).jsonObject
+                        rawJson["privateSessionId"]?.jsonPrimitive?.contentOrNull?.let { oldValue ->
+                            agent = agent.copy(outputSessionId = IdentityHandle(oldValue))
+                        }
+                    }
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_LOADED, json.encodeToJsonElement(agent) as JsonObject))
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to parse agent config from file: $path. Error: ${e.message}")
@@ -874,5 +881,5 @@ class AgentRuntimeFeature(
  * [PHASE 1] Returns typed [IdentityHandle].
  */
 private fun getAgentResponseSessionId(agent: AgentInstance): IdentityHandle? {
-    return agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull()
+    return agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull()
 }

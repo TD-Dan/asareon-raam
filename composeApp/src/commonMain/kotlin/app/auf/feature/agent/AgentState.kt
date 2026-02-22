@@ -139,7 +139,11 @@ data class AgentInstance(
     // [PHASE 1] Typed: session localHandle wrappers.
     // Value class serializes as plain String — backward-compatible.
     val subscribedSessionIds: List<IdentityHandle> = emptyList(),
-    val privateSessionId: IdentityHandle? = null,
+
+    // [PHASE 3] The session where this agent's gateway responses are routed.
+    // Invariant: must be a member of subscribedSessionIds, or null.
+    // Replaces `privateSessionId`. Old persisted values are migrated at load time.
+    val outputSessionId: IdentityHandle? = null,
 
     // [PHASE 2] Typed: strategy identity handle in `agent.strategy.*` namespace.
     // Value class serializes as plain String — backward-compatible.
@@ -206,7 +210,7 @@ data class AgentRuntimeState(
     /** Key = IdentityUUID (agent UUID). */
     val agentStatuses: Map<IdentityUUID, AgentStatusInfo> = emptyMap(),
     /** Map of session localHandle → display name for non-private sessions.
-     *  Populated from SESSION_NAMES_UPDATED broadcast (which excludes isPrivate sessions).
+     *  Populated from SESSION_NAMES_UPDATED broadcast (which excludes private sessions).
      *  [PHASE 1] Key typed as IdentityHandle (session localHandle wrapper). */
     val subscribableSessionNames: Map<IdentityHandle, String> = emptyMap(),
     val availableModels: Map<String, List<String>> = emptyMap(),

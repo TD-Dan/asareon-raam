@@ -27,7 +27,7 @@ object SovereignHKGResourceLogic {
             val truncatedSubscriptions = oldAgent.subscribedSessionIds.take(1)
             store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
                 put("agentId", newAgent.identityUUID.uuid)
-                put("privateSessionId", JsonNull)
+                put("outputSessionId", JsonNull)
                 put("subscribedSessionIds", buildJsonArray { truncatedSubscriptions.forEach { add(it.handle) } })
             }))
             store.deferredDispatch("agent", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RELEASE_HKG, buildJsonObject {
@@ -54,7 +54,7 @@ object SovereignHKGResourceLogic {
         agentState.agents.values.filter { it.knowledgeGraphId != null }.forEach { agent ->
 
             // [RULE 1] The Existing Pointer Boundary
-            if (agent.privateSessionId != null) {
+            if (agent.outputSessionId != null) {
                 return@forEach
             }
 
@@ -70,14 +70,14 @@ object SovereignHKGResourceLogic {
                 // FOUND: Link it by localHandle.
                 store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
                     put("agentId", agent.identityUUID.uuid)
-                    put("privateSessionId", existingSessionIdentity.localHandle)
+                    put("outputSessionId", existingSessionIdentity.localHandle)
                 }))
             } else {
                 // NOT FOUND: Create it.
                 store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_CREATE, buildJsonObject {
                     put("name", expectedSessionName)
                     put("isHidden", true)
-                    put("isPrivate", true)
+                    put("isPrivateTo", agent.identityHandle.handle)
                 }))
             }
         }

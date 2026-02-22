@@ -41,7 +41,7 @@ object AgentCognitivePipeline {
             return
         }
 
-        val contextSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
+        val contextSessionId = agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
             val msg = "Cannot start turn: Agent has no session for context."
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
             AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, msg)
@@ -526,7 +526,7 @@ object AgentCognitivePipeline {
             return
         }
         val agentUuid = agent.identityUUID
-        val targetSessionId = agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
+        val targetSessionId = agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleGatewayResponse: Agent '$agentUuid' has no target session to post response to.")
             AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.ERROR, "No target session for response.")
             return

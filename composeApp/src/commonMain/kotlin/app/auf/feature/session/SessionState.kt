@@ -2,6 +2,7 @@ package app.auf.feature.session
 
 import app.auf.core.FeatureState
 import app.auf.core.Identity
+import app.auf.core.IdentityHandle
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
@@ -70,7 +71,8 @@ data class PendingSessionCreation(
     val uuid: String,
     val requestedName: String,
     val isHidden: Boolean = false,
-    val isPrivate: Boolean = false,
+    /** [PHASE 3] The identity handle of the owner, or null if not private. Replaces `isPrivate: Boolean`. */
+    val isPrivateTo: IdentityHandle? = null,
     val createdAt: Long,
     /** For clones: the localHandle of the source session to copy the ledger from. */
     val cloneSourceLocalHandle: String? = null
@@ -89,7 +91,22 @@ data class Session(
     val messageUiState: Map<String, MessageUiState> = emptyMap(),
     /** When true, this session is hidden from the default view in both the tab bar and manager. */
     val isHidden: Boolean = false,
-    /** When true, this session is an agent's private cognition session (shown with a lightning bolt icon). */
+    /**
+     * [PHASE 3] If non-null, this session is private to the specified identity
+     * (shown with a lightning bolt icon, excluded from session name broadcasts).
+     * Replaces the old `isPrivate: Boolean`. A session is private if `isPrivateTo != null`.
+     *
+     * Old persisted sessions may still have `"isPrivate": true` with no `isPrivateTo`.
+     * These are migrated at load time by the agent infrastructure (Phase 4 hooks),
+     * or handled by the compat flag below.
+     */
+    val isPrivateTo: IdentityHandle? = null,
+    /**
+     * @deprecated Backward-compat shim. Old session JSON files have `"isPrivate": true`.
+     * New code should check `isPrivateTo != null` instead. This field is retained so that
+     * kotlinx.serialization can deserialize old files without data loss. Will be removed
+     * once all persisted sessions have been re-saved with `isPrivateTo`.
+     */
     val isPrivate: Boolean = false,
     /**
      * Persistent ordering index for this session.

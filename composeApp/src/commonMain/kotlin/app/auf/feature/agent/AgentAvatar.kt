@@ -73,7 +73,7 @@ object AgentAvatarLogic {
         val statusInfo = agentState.agentStatuses[agentId] ?: AgentStatusInfo()
 
         // 3. Determine Target Sessions
-        val targetSessions = (agent.subscribedSessionIds + listOfNotNull(agent.privateSessionId)).distinct()
+        val targetSessions = (agent.subscribedSessionIds + listOfNotNull(agent.outputSessionId)).distinct()
 
         // 4. Determine Position
         val afterMessageId = when (statusInfo.status) {
@@ -196,7 +196,7 @@ fun AgentControlCard(
         }
     }
 
-    val canInitiateTurn = (statusInfo.status == AgentStatus.IDLE || statusInfo.status == AgentStatus.WAITING || statusInfo.status == AgentStatus.ERROR) && (agent.subscribedSessionIds.isNotEmpty() || agent.privateSessionId != null) && agent.isAgentActive
+    val canInitiateTurn = (statusInfo.status == AgentStatus.IDLE || statusInfo.status == AgentStatus.WAITING || statusInfo.status == AgentStatus.ERROR) && (agent.subscribedSessionIds.isNotEmpty() || agent.outputSessionId != null) && agent.isAgentActive
 
     val statusText = when (statusInfo.status) {
         AgentStatus.PROCESSING -> {

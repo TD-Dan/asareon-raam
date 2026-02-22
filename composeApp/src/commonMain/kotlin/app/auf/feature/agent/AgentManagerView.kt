@@ -180,7 +180,7 @@ private fun AgentReadOnlyView(
     val identityRegistry = store.state.collectAsState().value.identityRegistry
     val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.subscribableSessionNames[it] } ?: "Not Subscribed"
     val hkgName = agent.knowledgeGraphId?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG"
-    val privateSessionName = agent.privateSessionId?.let { identityRegistry["session.$it"]?.name } ?: agent.privateSessionId ?: "None"
+    val privateSessionName = agent.outputSessionId?.let { identityRegistry["session.$it"]?.name } ?: agent.outputSessionId?.handle ?: "None"
     val statusInfo = agentState.agentStatuses[agent.identityUUID] ?: AgentStatusInfo()
 
     var showInternals by remember { mutableStateOf(false) }
@@ -197,7 +197,7 @@ private fun AgentReadOnlyView(
                 // [LOGIC] Only show Sovereign details if actually Sovereign (has HKG)
                 if (isSovereign) {
                     Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium)
-                    Text("Private Session: ${agent.privateSessionId ?: "None"} ($privateSessionName)", style = MaterialTheme.typography.bodyMedium)
+                    Text("Output Session: ${agent.outputSessionId?.handle ?: "None"} ($privateSessionName)", style = MaterialTheme.typography.bodyMedium)
                 }
 
                 Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
