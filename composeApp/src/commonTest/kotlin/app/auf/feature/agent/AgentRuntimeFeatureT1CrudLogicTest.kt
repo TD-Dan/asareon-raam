@@ -5,8 +5,6 @@ import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.*
-import org.junit.After
-import org.junit.Before
 import kotlin.test.*
 
 /**
@@ -17,7 +15,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
 
     private val platform = FakePlatformDependencies("test")
 
-    @Before
+    @BeforeTest
     fun setUp() {
         CognitiveStrategyRegistry.clearForTesting()
         CognitiveStrategyRegistry.register(
@@ -32,7 +30,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
         )
     }
 
-    @After
+    @AfterTest
     fun tearDown() {
         CognitiveStrategyRegistry.clearForTesting()
     }
