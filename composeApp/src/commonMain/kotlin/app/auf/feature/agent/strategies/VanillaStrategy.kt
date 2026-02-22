@@ -120,14 +120,21 @@ object VanillaStrategy : CognitiveStrategy {
     /**
      * Enforces the strict invariant: outputSessionId must be in subscribedSessionIds.
      * If it's not, falls back to the first subscribed session (or null).
+     * If it's null but subscriptions exist, auto-assigns to the first subscribed session.
      *
      * [PHASE 4 / E7] This is the Vanilla-specific validation. Sovereign permits
      * out-of-band output sessions and does not apply this correction.
      */
     override fun validateConfig(agent: AgentInstance): AgentInstance {
-        if (agent.outputSessionId != null && agent.outputSessionId !in agent.subscribedSessionIds) {
-            return agent.copy(outputSessionId = agent.subscribedSessionIds.firstOrNull())
+        val outputId = agent.outputSessionId
+        return when {
+            // outputSessionId is set but not in subscriptions → correct to first (or null)
+            outputId != null && outputId !in agent.subscribedSessionIds ->
+                agent.copy(outputSessionId = agent.subscribedSessionIds.firstOrNull())
+            // outputSessionId is null but subscriptions exist → auto-assign to first
+            outputId == null && agent.subscribedSessionIds.isNotEmpty() ->
+                agent.copy(outputSessionId = agent.subscribedSessionIds.first())
+            else -> agent
         }
-        return agent
     }
 }

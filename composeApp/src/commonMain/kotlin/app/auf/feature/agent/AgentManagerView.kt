@@ -201,13 +201,10 @@ private fun AgentReadOnlyView(
     platformDependencies: app.auf.util.PlatformDependencies
 ) {
     val identityRegistry = store.state.collectAsState().value.identityRegistry
-    val hkgName = agent.getKnowledgeGraphId()?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG"
-    val privateSessionName = agent.outputSessionId?.let { identityRegistry["session.$it"]?.name } ?: agent.outputSessionId?.handle ?: "None"
     val statusInfo = agentState.agentStatuses[agent.identityUUID] ?: AgentStatusInfo()
 
     var showInternals by remember { mutableStateOf(false) }
-    // Only consider Sovereign if HKG is assigned.
-    val isSovereign = agent.getKnowledgeGraphId() != null
+    val hasKnowledgeGraph = agent.getKnowledgeGraphId() != null
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         AgentControlCard(agent, statusInfo, store, platformDependencies)
@@ -223,10 +220,20 @@ private fun AgentReadOnlyView(
                 }
                 Text("Subscribed: $sessionSummary", style = MaterialTheme.typography.bodyMedium)
 
-                // [LOGIC] Only show Sovereign details if actually Sovereign (has HKG)
-                if (isSovereign) {
+                // Show primary/output session for all agents that have one
+                if (agent.outputSessionId != null) {
+                    val outputSessionName = agent.outputSessionId.let {
+                        identityRegistry["session.$it"]?.name
+                            ?: agentState.subscribableSessionNames[it]
+                            ?: it.handle
+                    }
+                    Text("Primary Session: $outputSessionName", style = MaterialTheme.typography.bodyMedium)
+                }
+
+                // Knowledge Graph — only for agents that have one assigned
+                if (hasKnowledgeGraph) {
+                    val hkgName = agent.getKnowledgeGraphId()?.let { agentState.knowledgeGraphNames[it] } ?: "Unknown"
                     Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium)
-                    Text("Output Session: ${agent.outputSessionId?.handle ?: "None"} ($privateSessionName)", style = MaterialTheme.typography.bodyMedium)
                 }
 
                 Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
@@ -840,9 +847,14 @@ private fun OutputSessionSelector(agent: AgentInstance, agentState: AgentRuntime
             agentState.subscribableSessionNames[id]?.let { name -> id to name }
         }
     }
-    val currentOutputName = agent.outputSessionId?.let { agentState.subscribableSessionNames[it] }
-        ?: agent.subscribedSessionIds.firstOrNull()?.let { agentState.subscribableSessionNames[it] }
-        ?: "None"
+    // Show the explicitly set output session, or indicate the effective default
+    val currentOutputName = when {
+        agent.outputSessionId != null ->
+            agentState.subscribableSessionNames[agent.outputSessionId] ?: agent.outputSessionId.handle
+        subscribedSessions.isNotEmpty() ->
+            "${subscribedSessions.first().second} (default)"
+        else -> "No sessions subscribed"
+    }
     var isExpanded by remember { mutableStateOf(false) }
 
     ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
@@ -855,10 +867,22 @@ private fun OutputSessionSelector(agent: AgentInstance, agentState: AgentRuntime
         )
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             subscribedSessions.forEach { (sessionId, sessionName) ->
-                DropdownMenuItem(text = { Text(sessionName) }, onClick = {
-                    onUpdate(agent.copy(outputSessionId = sessionId))
-                    isExpanded = false
-                })
+                val isSelected = sessionId == agent.outputSessionId
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isSelected) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(sessionName)
+                        }
+                    },
+                    onClick = {
+                        onUpdate(agent.copy(outputSessionId = sessionId))
+                        isExpanded = false
+                    }
+                )
             }
         }
     }
