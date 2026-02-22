@@ -367,8 +367,17 @@ private fun AgentEditorView(
         }
 
         // --- ROW 5: Resource Slots (Strategy-Driven) ---
-        // The Strategy is the single source of truth for slot IDs and layout.
         val resourceSlots = remember(currentStrategy) { currentStrategy.getResourceSlots() }
+
+        if (resourceSlots.isNotEmpty()) {
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            Text(
+                "Resources",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+        }
 
         if (resourceSlots.size == 1) {
             val slot = resourceSlots.first()
@@ -398,6 +407,14 @@ private fun AgentEditorView(
         }
 
         // --- ROW 6: Auto Mode ---
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        Text(
+            "Automatic Operation",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
