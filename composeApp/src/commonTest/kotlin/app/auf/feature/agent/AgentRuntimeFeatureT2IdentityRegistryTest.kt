@@ -7,6 +7,8 @@ import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
 import app.auf.feature.filesystem.FileSystemFeature
+import app.auf.feature.session.SessionFeature
+import app.auf.feature.session.SessionState
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,7 +17,7 @@ import kotlinx.serialization.json.*
 import kotlin.test.*
 
 /**
- * ## Tier 2 Integration Test: Identity Registry Interactions
+ * ## Tier 2/3 Integration Test: Identity Registry Interactions
  *
  * **Mandate:** Close the systemic identity registry blind spot identified in
  * the T2 coverage analysis. Every interaction between AgentRuntimeFeature and
@@ -23,27 +25,28 @@ import kotlin.test.*
  *
  * **Coverage Targets:**
  * 1. `resolveAgentId()` — flexible resolution by UUID, handle, localHandle, name
- * 2. `resolveSessionHandle()` — UUID→handle for cross-feature dispatch
- * 3. `startCognitiveCycle` — session UUID validation guard
- * 4. `handleGatewayResponse` — session UUID validation guard
- * 5. `CORE_REGISTER_IDENTITY` dispatched on AGENT_AGENT_LOADED
- * 6. `CORE_REGISTER_IDENTITY` dispatched on AGENT_CREATE
- * 7. `CORE_UNREGISTER_IDENTITY` dispatched on AGENT_DELETE
- * 8. `CORE_RETURN_REGISTER_IDENTITY` → triggers saveAgentConfig
- * 9. `CORE_RETURN_UPDATE_IDENTITY` → triggers saveAgentConfig
+ * 2. `startCognitiveCycle` — session UUID validation guard (abort + success)
+ * 3. `handleGatewayResponse` — session UUID validation guard
+ * 4. `CORE_REGISTER_IDENTITY` dispatched on AGENT_AGENT_LOADED and AGENT_CREATE
+ * 5. `CORE_UNREGISTER_IDENTITY` dispatched on AGENT_DELETE
+ * 6. `CORE_UPDATE_IDENTITY` dispatched on AGENT_UPDATE_CONFIG name change
+ * 7. `CORE_RETURN_REGISTER_IDENTITY` / `CORE_RETURN_UPDATE_IDENTITY` → saveAgentConfig
  *
- * **Identity Registry Pre-Population:**
- * Tests that need a populated registry dispatch `CORE_REGISTER_IDENTITY` from
- * the appropriate originator ("agent" or "session") during setup, then verify
- * the registry was populated before exercising the feature's resolution paths.
+ * **Design Notes:**
+ * - `resolveAgentId` tests (§2) register only the agent identity. They prove
+ *   resolution succeeded by asserting `AGENT_ACTION_RESULT success=true` and
+ *   `SET_STATUS` with an error about "Session UUID" (not "agent not found").
+ *   This isolates resolution from the session validation guard concern.
+ * - Session-dependent tests (§4–5) include `SessionFeature` so the "session"
+ *   parent identity exists in the registry and session child identities can be
+ *   registered via `SessionState` pre-population.
  */
 class AgentRuntimeFeatureT2IdentityRegistryTest {
 
     private val scope = CoroutineScope(Dispatchers.Unconfined)
     private val platform = FakePlatformDependencies("test")
 
-    // Stable identifiers used across tests. Names are single lowercase words
-    // to minimize ambiguity in CoreFeature's handle slugification.
+    // Valid UUIDs (hex-only, 8-4-4-4-12 format) — CoreFeature validates format.
     private val agentUUID = "a0000000-0000-0000-0000-000000000001"
     private val sessionUUID = "b0000000-0000-0000-0000-000000000001"
 
@@ -56,14 +59,16 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
         resources = mapOf("system_instruction" to "res-sys-instruction-v1")
     )
 
+    private val session = testSession(sessionUUID, "Chat")
+
     // ========================================================================
-    // Helper: Register identities in the registry via CORE_REGISTER_IDENTITY
+    // Helper: Register agent identity in the registry
     // ========================================================================
 
     /**
-     * Dispatches CORE_REGISTER_IDENTITY from the given originator to populate
-     * the identity registry. This mirrors what AgentRuntimeFeature does in
-     * its AGENT_AGENT_LOADED and AGENT_CREATE side effects.
+     * Dispatches CORE_REGISTER_IDENTITY from "agent" to populate the identity
+     * registry. This mirrors what AgentRuntimeFeature does in AGENT_AGENT_LOADED.
+     * Works because AgentRuntimeFeature registers "agent" as a root identity.
      */
     private fun registerAgentIdentity(
         harness: app.auf.test.TestHarness,
@@ -71,20 +76,6 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
         name: String
     ) {
         harness.store.dispatch("agent", Action(
-            ActionRegistry.Names.CORE_REGISTER_IDENTITY,
-            buildJsonObject {
-                put("uuid", uuid)
-                put("name", name)
-            }
-        ))
-    }
-
-    private fun registerSessionIdentity(
-        harness: app.auf.test.TestHarness,
-        uuid: String,
-        name: String
-    ) {
-        harness.store.dispatch("session", Action(
             ActionRegistry.Names.CORE_REGISTER_IDENTITY,
             buildJsonObject {
                 put("uuid", uuid)
@@ -142,6 +133,13 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
 
     // ========================================================================
     // 2. resolveAgentId — flexible resolution paths
+    //
+    // These tests register only the agent identity (no session) and prove
+    // resolution succeeded by asserting:
+    //   (a) AGENT_ACTION_RESULT with success=true (dispatched after resolveAgentId)
+    //   (b) SET_STATUS error mentions "Session UUID" (proves pipeline got past
+    //       resolution to the session validation guard — if resolution had failed,
+    //       the error would say "not found" and ACTION_RESULT would have success=false)
     // ========================================================================
 
     @Test
@@ -158,10 +156,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            // SETUP: Register agent + session identities so resolveAgentId succeeds
             registerAgentIdentity(harness, agentUUID, "Alpha")
-            registerSessionIdentity(harness, sessionUUID, "Chat")
-            assertRegistered(harness, agentUUID, "agent")
             harness.store.processedActions.clear()
 
             // ACT: Dispatch INITIATE_TURN using the agent's UUID
@@ -170,12 +165,25 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
                 buildJsonObject { put("agentId", agentUUID) }
             ))
 
-            // ASSERT: resolveAgentId succeeded → pipeline started → REQUEST_LEDGER_CONTENT dispatched
-            val ledgerRequest = harness.processedActions.find {
-                it.name == ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT
+            // ASSERT: resolveAgentId succeeded → ACTION_RESULT with success=true
+            val successResult = harness.processedActions.find {
+                it.name == ActionRegistry.Names.AGENT_ACTION_RESULT &&
+                        it.payload?.get("success")?.jsonPrimitive?.boolean == true
             }
-            assertNotNull(ledgerRequest, "Expected SESSION_REQUEST_LEDGER_CONTENT after resolveAgentId by UUID")
-            assertEquals(agentUUID, ledgerRequest.payload?.get("correlationId")?.jsonPrimitive?.content)
+            assertNotNull(successResult,
+                "Expected AGENT_ACTION_RESULT with success=true after resolveAgentId by UUID")
+            assertTrue(successResult.payload?.get("summary")?.jsonPrimitive?.content?.contains("Alpha") == true,
+                "ACTION_RESULT summary should mention agent name 'Alpha'")
+
+            // Pipeline got past resolution → session guard fired (expected in this T2 setup)
+            val errorStatus = harness.processedActions.find {
+                it.name == ActionRegistry.Names.AGENT_SET_STATUS &&
+                        it.payload?.get("status")?.jsonPrimitive?.content == "ERROR"
+            }
+            assertNotNull(errorStatus, "Expected SET_STATUS ERROR (from session guard, not from resolution)")
+            val errorMsg = errorStatus.payload?.get("error")?.jsonPrimitive?.content ?: ""
+            assertTrue(errorMsg.contains("Session UUID"),
+                "Error should be about session UUID (not agent resolution), got: $errorMsg")
         }
     }
 
@@ -194,21 +202,29 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
 
         harness.runAndLogOnFailure {
             registerAgentIdentity(harness, agentUUID, "Alpha")
-            registerSessionIdentity(harness, sessionUUID, "Chat")
-            assertRegistered(harness, agentUUID, "agent")
             harness.store.processedActions.clear()
 
-            // ACT: Dispatch INITIATE_TURN using the agent's display NAME (case mismatch)
+            // ACT: Dispatch using case-mismatched display name
             harness.store.dispatch("ui", Action(
                 ActionRegistry.Names.AGENT_INITIATE_TURN,
                 buildJsonObject { put("agentId", "alpha") }
             ))
 
-            // ASSERT: resolveAgentId resolved by name → pipeline started
-            val ledgerRequest = harness.processedActions.find {
-                it.name == ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT
+            // ASSERT: Resolution succeeded (success=true, error is about session not agent)
+            val successResult = harness.processedActions.find {
+                it.name == ActionRegistry.Names.AGENT_ACTION_RESULT &&
+                        it.payload?.get("success")?.jsonPrimitive?.boolean == true
             }
-            assertNotNull(ledgerRequest, "Expected SESSION_REQUEST_LEDGER_CONTENT after resolveAgentId by name")
+            assertNotNull(successResult,
+                "Expected AGENT_ACTION_RESULT with success=true after resolveAgentId by name 'alpha'")
+
+            val errorStatus = harness.processedActions.find {
+                it.name == ActionRegistry.Names.AGENT_SET_STATUS &&
+                        it.payload?.get("status")?.jsonPrimitive?.content == "ERROR"
+            }
+            val errorMsg = errorStatus?.payload?.get("error")?.jsonPrimitive?.content ?: ""
+            assertTrue(errorMsg.contains("Session UUID"),
+                "Error should be about session UUID (not agent resolution), got: $errorMsg")
         }
     }
 
@@ -227,7 +243,6 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
 
         harness.runAndLogOnFailure {
             registerAgentIdentity(harness, agentUUID, "Alpha")
-            registerSessionIdentity(harness, sessionUUID, "Chat")
             val registeredAgent = assertRegistered(harness, agentUUID, "agent")
             harness.store.processedActions.clear()
 
@@ -237,11 +252,21 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
                 buildJsonObject { put("agentId", registeredAgent.handle) }
             ))
 
-            // ASSERT: resolveAgentId resolved by handle → pipeline started
-            val ledgerRequest = harness.processedActions.find {
-                it.name == ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT
+            // ASSERT: Resolution succeeded
+            val successResult = harness.processedActions.find {
+                it.name == ActionRegistry.Names.AGENT_ACTION_RESULT &&
+                        it.payload?.get("success")?.jsonPrimitive?.boolean == true
             }
-            assertNotNull(ledgerRequest, "Expected SESSION_REQUEST_LEDGER_CONTENT after resolveAgentId by handle '${registeredAgent.handle}'")
+            assertNotNull(successResult,
+                "Expected AGENT_ACTION_RESULT with success=true after resolveAgentId by handle '${registeredAgent.handle}'")
+
+            val errorStatus = harness.processedActions.find {
+                it.name == ActionRegistry.Names.AGENT_SET_STATUS &&
+                        it.payload?.get("status")?.jsonPrimitive?.content == "ERROR"
+            }
+            val errorMsg = errorStatus?.payload?.get("error")?.jsonPrimitive?.content ?: ""
+            assertTrue(errorMsg.contains("Session UUID"),
+                "Error should be about session UUID (not agent resolution), got: $errorMsg")
         }
     }
 
@@ -260,7 +285,6 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
 
         harness.runAndLogOnFailure {
             registerAgentIdentity(harness, agentUUID, "Alpha")
-            registerSessionIdentity(harness, sessionUUID, "Chat")
             val registeredAgent = assertRegistered(harness, agentUUID, "agent")
             harness.store.processedActions.clear()
 
@@ -270,11 +294,21 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
                 buildJsonObject { put("agentId", registeredAgent.localHandle) }
             ))
 
-            // ASSERT: resolveAgentId resolved by localHandle → pipeline started
-            val ledgerRequest = harness.processedActions.find {
-                it.name == ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT
+            // ASSERT: Resolution succeeded
+            val successResult = harness.processedActions.find {
+                it.name == ActionRegistry.Names.AGENT_ACTION_RESULT &&
+                        it.payload?.get("success")?.jsonPrimitive?.boolean == true
             }
-            assertNotNull(ledgerRequest, "Expected SESSION_REQUEST_LEDGER_CONTENT after resolveAgentId by localHandle '${registeredAgent.localHandle}'")
+            assertNotNull(successResult,
+                "Expected AGENT_ACTION_RESULT with success=true after resolveAgentId by localHandle '${registeredAgent.localHandle}'")
+
+            val errorStatus = harness.processedActions.find {
+                it.name == ActionRegistry.Names.AGENT_SET_STATUS &&
+                        it.payload?.get("status")?.jsonPrimitive?.content == "ERROR"
+            }
+            val errorMsg = errorStatus?.payload?.get("error")?.jsonPrimitive?.content ?: ""
+            assertTrue(errorMsg.contains("Session UUID"),
+                "Error should be about session UUID (not agent resolution), got: $errorMsg")
         }
     }
 
@@ -328,26 +362,33 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
 
     // ========================================================================
     // 4. startCognitiveCycle — session UUID validation guard
+    //
+    // These tests include SessionFeature so the "session" parent identity
+    // exists in the registry and session child identities can be registered.
     // ========================================================================
 
     @Test
     fun `startCognitiveCycle aborts with ERROR when session UUID is not in registry`() = runTest {
         val feature = AgentRuntimeFeature(platform, scope)
 
+        // Include SessionFeature (so "session" parent exists) but do NOT
+        // pre-populate SessionState with our session — its UUID won't be
+        // in the registry, so startCognitiveCycle should abort.
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(SessionFeature(platform, scope))
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
                 agents = mapOf(uid(agentUUID) to agent),
                 resources = emptyList()
             ))
+            .withInitialState("session", SessionState())
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            // Register AGENT identity so resolveAgentId succeeds...
+            // Register AGENT identity so resolveAgentId succeeds
             registerAgentIdentity(harness, agentUUID, "Alpha")
-            // ...but do NOT register the session identity.
-            // The agent's subscribedSessionIds contains sessionUUID, which is NOT in the registry.
             harness.store.processedActions.clear()
 
             // ACT
@@ -375,21 +416,27 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
     @Test
     fun `startCognitiveCycle succeeds when both agent and session are registered`() = runTest {
         val feature = AgentRuntimeFeature(platform, scope)
+        val sessionFeature = SessionFeature(platform, scope)
 
+        // Include SessionFeature with the session pre-populated so its
+        // identity gets registered during Store initialization.
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(sessionFeature)
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
                 agents = mapOf(uid(agentUUID) to agent),
                 resources = emptyList()
             ))
+            .withInitialState("session", SessionState(
+                sessions = mapOf(sessionUUID to session)
+            ))
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            // Register BOTH agent and session identities
+            // Register agent identity (session should be auto-registered by SessionFeature)
             registerAgentIdentity(harness, agentUUID, "Alpha")
-            registerSessionIdentity(harness, sessionUUID, "Chat")
-            assertRegistered(harness, sessionUUID, "session")
             harness.store.processedActions.clear()
 
             // ACT
@@ -403,7 +450,8 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
                 it.name == ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT
             }
             assertNotNull(ledgerRequest,
-                "Pipeline should dispatch SESSION_REQUEST_LEDGER_CONTENT when both identities are registered")
+                "Pipeline should dispatch SESSION_REQUEST_LEDGER_CONTENT when both identities are registered. " +
+                        "Registry: ${harness.store.state.value.identityRegistry.values.map { "${it.handle} (uuid=${it.uuid})" }}")
 
             // Agent should NOT be in ERROR
             val state = harness.store.state.value.featureStates["agent"] as AgentRuntimeState

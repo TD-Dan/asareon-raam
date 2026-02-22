@@ -92,6 +92,21 @@ class AgentRuntimeFeatureT3LifecycleTest {
         ))
     }
 
+    /**
+     * Registers session identities in the identity registry so that
+     * resolveSessionHandle (used by avatar cleanup in DELETE) can resolve
+     * session UUIDs to handles.
+     */
+    private fun registerSessionIdentity(harness: TestHarness, session: app.auf.feature.session.Session) {
+        harness.store.dispatch("session", Action(
+            ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+            buildJsonObject {
+                put("uuid", session.identity.uuid)
+                put("name", session.identity.name)
+            }
+        ))
+    }
+
     // ========================================================================
     // CANCEL TURN
     // ========================================================================
@@ -171,6 +186,8 @@ class AgentRuntimeFeatureT3LifecycleTest {
 
         harness.runAndLogOnFailure {
             registerAgentIdentity(harness)
+            registerSessionIdentity(harness, testSession1)
+            registerSessionIdentity(harness, testSession2)
 
             // ACT
             harness.store.dispatch("ui", Action(
