@@ -37,6 +37,15 @@ object VanillaStrategy : CognitiveStrategy {
         )
     )
 
+    override fun getConfigFields(): List<StrategyConfigField> = listOf(
+        StrategyConfigField(
+            key = "outputSessionId",
+            type = StrategyConfigFieldType.OUTPUT_SESSION,
+            displayName = "Primary Session",
+            description = "The session where this agent's responses and tool results are routed."
+        )
+    )
+
     override fun getInitialState(): JsonElement = JsonNull
 
     override fun prepareSystemPrompt(context: AgentTurnContext, state: JsonElement): String {

@@ -82,6 +82,8 @@ class AgentRuntimeFeature(
         // This must happen before the heartbeat or any agent loading, so that
         // CognitiveStrategyRegistry.get() and migrateStrategyId() resolve correctly.
         CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.MinimalStrategy)
+        CognitiveStrategyRegistry.register(
             app.auf.feature.agent.strategies.VanillaStrategy,
             legacyId = "vanilla_v1"
         )

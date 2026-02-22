@@ -299,6 +299,9 @@ private fun AgentEditorView(
             put("modelProvider", draftAgent.modelProvider)
             put("modelName", draftAgent.modelName)
             put("subscribedSessionIds", buildJsonArray { draftAgent.subscribedSessionIds.forEach { add(it.handle) } })
+            // outputSessionId — strategy-owned primary session selection
+            if (draftAgent.outputSessionId != null) put("outputSessionId", draftAgent.outputSessionId!!.handle)
+            else put("outputSessionId", null as String?)
             // [PHASE 4] knowledgeGraphId is sent as a top-level payload field;
             // AgentCrudLogic.mergeCognitiveStateFromPayload() routes it into cognitiveState.
             val draftKgId = draftAgent.getKnowledgeGraphId()
@@ -361,6 +364,8 @@ private fun AgentEditorView(
                     when (field.type) {
                         StrategyConfigFieldType.KNOWLEDGE_GRAPH ->
                             KnowledgeGraphSelector(draftAgent, agentState, onDraftChanged)
+                        StrategyConfigFieldType.OUTPUT_SESSION ->
+                            OutputSessionSelector(draftAgent, agentState, onDraftChanged)
                     }
                 }
             }
@@ -820,6 +825,38 @@ private fun KnowledgeGraphSelector(agent: AgentInstance, agentState: AgentRuntim
             availableGraphs.forEach { (graphId, graphName) ->
                 DropdownMenuItem(text = { Text(graphName) }, onClick = {
                     onUpdate(agent.withKnowledgeGraphId(graphId))
+                    isExpanded = false
+                })
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OutputSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, onUpdate: (AgentInstance) -> Unit) {
+    val subscribedSessions = remember(agent.subscribedSessionIds, agentState.subscribableSessionNames) {
+        agent.subscribedSessionIds.mapNotNull { id ->
+            agentState.subscribableSessionNames[id]?.let { name -> id to name }
+        }
+    }
+    val currentOutputName = agent.outputSessionId?.let { agentState.subscribableSessionNames[it] }
+        ?: agent.subscribedSessionIds.firstOrNull()?.let { agentState.subscribableSessionNames[it] }
+        ?: "None"
+    var isExpanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
+        OutlinedTextField(
+            value = currentOutputName,
+            onValueChange = {}, readOnly = true, label = { Text("Primary Session") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth(),
+            enabled = subscribedSessions.isNotEmpty()
+        )
+        ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
+            subscribedSessions.forEach { (sessionId, sessionName) ->
+                DropdownMenuItem(text = { Text(sessionName) }, onClick = {
+                    onUpdate(agent.copy(outputSessionId = sessionId))
                     isExpanded = false
                 })
             }

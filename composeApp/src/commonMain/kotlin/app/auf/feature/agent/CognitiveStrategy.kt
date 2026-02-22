@@ -19,8 +19,9 @@ data class StrategyConfigField(
 
 enum class StrategyConfigFieldType {
     /** Rendered as a Knowledge Graph dropdown selector. */
-    KNOWLEDGE_GRAPH
-    // Future types: TEXT, BOOLEAN, ENUM, etc.
+    KNOWLEDGE_GRAPH,
+    /** Rendered as a dropdown of the agent's subscribed sessions to select the output target. */
+    OUTPUT_SESSION
 }
 
 /**
