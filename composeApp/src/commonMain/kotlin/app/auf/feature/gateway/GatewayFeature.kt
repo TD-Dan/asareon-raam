@@ -153,6 +153,20 @@ open class GatewayFeature(
             return
         }
 
+        // GUARD: Reject duplicate in-flight requests for the same correlationId.
+        // This is a defence-in-depth check — the primary fix lives in AgentCognitivePipeline.
+        // A duplicate here indicates a race condition upstream (e.g. the context-gathering
+        // timeout firing after executeTurn has already been dispatched).
+        if (activeRequests.containsKey(correlationId)) {
+            platformDependencies.log(
+                LogLevel.ERROR, identity.handle,
+                "DROPPED GENERATE_CONTENT: correlationId '$correlationId' is already in-flight. " +
+                        "This indicates a duplicate dispatch from the caller — likely a context-gathering " +
+                        "timeout race. Dropping to prevent double API call and duplicate response."
+            )
+            return
+        }
+
         // AUDIT: Log the request intention
         platformDependencies.log(LogLevel.INFO, identity.handle, "Generating content via $providerId ($modelName). CorrelationId: $correlationId. SystemPrompt: ${systemPrompt != null}")
 

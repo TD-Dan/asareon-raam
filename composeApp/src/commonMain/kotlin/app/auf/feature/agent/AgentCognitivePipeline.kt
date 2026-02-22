@@ -283,6 +283,14 @@ object AgentCognitivePipeline {
         val additionalContextReady = !expectsAdditionalContext || statusInfo.transientHkgContext != null
 
         if (workspaceReady && additionalContextReady) {
+            // FIX: Close the gate immediately before dispatching executeTurn so that a concurrent
+            // timeout callback cannot re-enter and produce a duplicate GATEWAY_GENERATE_CONTENT.
+            // The timeout's stale-guard checks contextGatheringStartedAt; nulling it here ensures
+            // the guard rejects the timeout even if it fires before SET_STATUS(IDLE) is processed.
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_CONTEXT_GATHERING_STARTED, buildJsonObject {
+                put("agentId", agentId.uuid)
+                put("startedAt", JsonNull)
+            }))
             executeTurn(agent, ledgerContext, statusInfo.transientHkgContext, state, store)
         } else if (isTimeout) {
             val missing = mutableListOf<String>()
@@ -290,6 +298,12 @@ object AgentCognitivePipeline {
             if (!additionalContextReady) missing.add("strategy-context")
             store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
                 "Context gathering timeout for agent '$agentId'. Missing: ${missing.joinToString(", ")}. Proceeding without.")
+            // FIX: Same gate-closing dispatch on the timeout path to prevent any subsequent
+            // context-arrival callbacks from triggering a second executeTurn.
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_CONTEXT_GATHERING_STARTED, buildJsonObject {
+                put("agentId", agentId.uuid)
+                put("startedAt", JsonNull)
+            }))
             executeTurn(agent, ledgerContext, statusInfo.transientHkgContext, state, store)
         }
     }
