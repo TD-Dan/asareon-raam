@@ -45,8 +45,8 @@ class AgentRuntimeFeatureT2AvatarCoreTest {
 
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
-            // Initial state: Agent is IDLE
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identity.uuid!! to agent)))
+            // Initial state: Agent is IDLE — use IdentityUUID keys
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identityUUID to agent)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
@@ -102,7 +102,7 @@ class AgentRuntimeFeatureT2AvatarCoreTest {
 
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identity.uuid!! to agent)))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identityUUID to agent)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
@@ -150,7 +150,7 @@ class AgentRuntimeFeatureT2AvatarCoreTest {
 
         val harness = TestEnvironment.create()
             .withFeature(agentFeature)
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identity.uuid!! to agent)))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identityUUID to agent)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 

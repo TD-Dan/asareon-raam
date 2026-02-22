@@ -26,6 +26,33 @@ private fun resolveStrategyHandle(raw: String): IdentityHandle = when (raw) {
 }
 
 /**
+ * Ensures all cognitive strategies are registered for test use. Idempotent.
+ * Must be called before [testBuiltInResources] or any test that relies on
+ * strategy resolution.
+ */
+private fun ensureTestStrategiesRegistered() {
+    if (CognitiveStrategyRegistry.getAll().isEmpty()) {
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.MinimalStrategy)
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.VanillaStrategy, legacyId = "vanilla_v1")
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.SovereignStrategy, legacyId = "sovereign_v1")
+    }
+}
+
+/**
+ * Returns built-in resources from all registered cognitive strategies.
+ * Ensures strategies are registered before querying.
+ *
+ * Replaces the removed `AgentDefaults.builtInResources`.
+ */
+fun testBuiltInResources(): List<AgentResource> {
+    ensureTestStrategiesRegistered()
+    return CognitiveStrategyRegistry.getAllBuiltInResources()
+}
+
+/**
  * Test utility to construct AgentInstance with Identity.
  * Mirrors the old positional constructor for minimal test churn.
  *

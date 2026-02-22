@@ -162,9 +162,9 @@ class AgentRuntimeFeatureT2StartupTest {
                 targetRecipient = "agent"
             ))
 
-            // Assert: Agent loaded into state
+            // Assert: Agent loaded into state — use uid() for IdentityUUID map key
             val agentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            val loadedAgent = agentState.agents[agentId]
+            val loadedAgent = agentState.agents[uid(agentId)]
             assertNotNull(loadedAgent, "Agent should be present in state after loading")
             assertEquals("Restored Agent", loadedAgent.identity.name)
 
@@ -248,9 +248,9 @@ class AgentRuntimeFeatureT2StartupTest {
             }
             assertNotNull(agentsLoaded, "AGENTS_LOADED should fire after the real agent config is loaded")
 
-            // Agent should be loaded
+            // Agent should be loaded — use uid() for IdentityUUID map key
             val agentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            assertNotNull(agentState.agents[agentId])
+            assertNotNull(agentState.agents[uid(agentId)])
         }
     }
 }

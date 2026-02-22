@@ -31,7 +31,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
         val harness = TestEnvironment.create()
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identity.uuid!! to agent), resources = AgentDefaults.builtInResources))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identityUUID to agent), resources = testBuiltInResources()))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
@@ -54,7 +54,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
         val harness = TestEnvironment.create()
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identity.uuid!! to agent), resources = AgentDefaults.builtInResources))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identityUUID to agent), resources = testBuiltInResources()))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
@@ -94,7 +94,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
         val harness = TestEnvironment.create()
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identity.uuid!! to agent), resources = AgentDefaults.builtInResources))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identityUUID to agent), resources = testBuiltInResources()))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
@@ -112,11 +112,10 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
 
             // ASSERT: Agent status remains IDLE (null/default)
             val state = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            val status = state.agentStatuses[agent.identity.uuid]?.status ?: AgentStatus.IDLE
+            val status = state.agentStatuses[agent.identityUUID]?.status ?: AgentStatus.IDLE
             assertEquals(AgentStatus.IDLE, status)
         }
     }
-    /* ADD TO: commonTest\kotlin\app\auf\feature\agent\AgentRuntimeFeatureT2T3ThinkerTest.kt */
 
     @Test
     fun `startCognitiveCycle should fail gracefully and set ERROR status if agent has no sessions`() = runTest {
@@ -125,7 +124,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
         val harness = TestEnvironment.create()
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(orphanAgent.identity.uuid!! to orphanAgent), resources = AgentDefaults.builtInResources))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(orphanAgent.identityUUID to orphanAgent), resources = testBuiltInResources()))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
@@ -136,7 +135,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
 
             // ASSERT
             val state = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            val status = state.agentStatuses[orphanAgent.identity.uuid]
+            val status = state.agentStatuses[orphanAgent.identityUUID]
 
             // Should be ERROR status
             assertEquals(AgentStatus.ERROR, status?.status)
@@ -153,7 +152,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
         val harness = TestEnvironment.create()
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
-            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identity.uuid!! to agent), resources = AgentDefaults.builtInResources))
+            .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identityUUID to agent), resources = testBuiltInResources()))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
@@ -170,7 +169,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
 
             // ASSERT
             val state = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            val status = state.agentStatuses[agent.identity.uuid]
+            val status = state.agentStatuses[agent.identityUUID]
 
             // Should transition to ERROR
             assertEquals(AgentStatus.ERROR, status?.status)
@@ -193,9 +192,9 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agent.identity.uuid!! to agent),
-                agentStatuses = mapOf(agent.identity.uuid!! to status),
-                resources = AgentDefaults.builtInResources
+                agents = mapOf(agent.identityUUID to agent),
+                agentStatuses = mapOf(agent.identityUUID to status),
+                resources = testBuiltInResources()
             ))
             .build(platform = platform)
 
@@ -212,7 +211,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
 
             // ASSERT
             val state = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
-            val finalStatus = state.agentStatuses[agent.identity.uuid]
+            val finalStatus = state.agentStatuses[agent.identityUUID]
 
             // Should abort and set ERROR
             assertEquals(AgentStatus.ERROR, finalStatus?.status)

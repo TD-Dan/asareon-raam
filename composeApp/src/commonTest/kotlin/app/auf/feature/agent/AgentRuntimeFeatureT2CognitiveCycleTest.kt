@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
+import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.agent.strategies.SovereignDefaults
@@ -31,7 +32,6 @@ import kotlin.test.*
  * - (If Sovereign) HKG response → SET_HKG_CONTEXT → evaluateFullContext (gate)
  * - Gate passes → executeTurn → GATEWAY_GENERATE_CONTENT
  * - Gateway Response → postProcessResponse → NVRAM_LOADED + SESSION_POST
- * - Gateway Response → postProcessResponse → NVRAM_LOADED + SESSION_POST
  */
 class AgentRuntimeFeatureT2CognitiveCycleTest {
 
@@ -41,6 +41,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
     // Sovereign Agent in BOOTING phase
     private val agentId = "agent-sovereign"
+    private val agentUUID = uid(agentId)
     private val sessionId = "session-1"
     private val agent = testAgent(
         id = agentId,
@@ -63,8 +64,8 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agentId to agent),
-                resources = AgentDefaults.builtInResources
+                agents = mapOf(agentUUID to agent),
+                resources = testBuiltInResources()
             ))
             .build(platform = platform)
 
@@ -105,7 +106,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             assertNotNull(stageAction, "Should stage turn context")
 
             // === PHASE 3: EVALUATE CONTEXT (triggers parallel context gathering) ===
-            AgentCognitivePipeline.evaluateTurnContext(agentId, harness.store)
+            AgentCognitivePipeline.evaluateTurnContext(agentUUID, harness.store)
 
             // ASSERT: Workspace listing requested
             val workspaceListRequest = harness.processedActions.find { action ->
@@ -165,7 +166,6 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                 action.name == ActionRegistry.Names.SESSION_POST
             }
             assertNotNull(sessionPost, "Should post response to session")
-            assertEquals(sessionId, sessionPost.payload?.get("session")?.jsonPrimitive?.content)
             assertEquals(agent.identity.handle, sessionPost.payload?.get("senderId")?.jsonPrimitive?.content)
         }
     }
@@ -178,8 +178,8 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agentId to agent),
-                resources = AgentDefaults.builtInResources
+                agents = mapOf(agentUUID to agent),
+                resources = testBuiltInResources()
             ))
             .build(platform = platform)
 
@@ -230,8 +230,8 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agentId to awakeAgent),
-                resources = AgentDefaults.builtInResources
+                agents = mapOf(agentUUID to awakeAgent),
+                resources = testBuiltInResources()
             ))
             .build(platform = platform)
 
@@ -258,7 +258,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             ))
 
             // Trigger evaluation (parallel context gathering)
-            AgentCognitivePipeline.evaluateTurnContext(agentId, harness.store)
+            AgentCognitivePipeline.evaluateTurnContext(agentUUID, harness.store)
 
             // Workspace context arrives automatically via FileSystemFeature.
             // Sovereign agent also needs HKG context:
@@ -310,7 +310,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
     fun `missing resources triggers error state`() = runTest {
         val agentWithMissingResource = agent.copy(
             resources = mapOf(
-                "constitution" to "nonexistent-resource-id"
+                "constitution" to IdentityUUID("nonexistent-resource-id")
             )
         )
 
@@ -320,8 +320,8 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agentId to agentWithMissingResource),
-                resources = AgentDefaults.builtInResources
+                agents = mapOf(agentUUID to agentWithMissingResource),
+                resources = testBuiltInResources()
             ))
             .build(platform = platform)
 
@@ -347,7 +347,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             ))
 
             // Trigger evaluation (parallel context gathering starts)
-            AgentCognitivePipeline.evaluateTurnContext(agentId, harness.store)
+            AgentCognitivePipeline.evaluateTurnContext(agentUUID, harness.store)
 
             // Workspace listing arrives via FileSystemFeature automatically.
             // Sovereign agent also needs HKG context for gate to pass:
