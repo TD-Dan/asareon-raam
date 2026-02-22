@@ -144,7 +144,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
             editingAgentId = uid("a1")
         ))
 
-        composeTestRule.onNodeWithContentDescription("Cancel Edit").performClick()
+        composeTestRule.onNodeWithContentDescription("Cancel Edit").performScrollTo().performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_SET_EDITING }
         assertNotNull(action)
@@ -165,11 +165,11 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         composeTestRule.onNodeWithText("Agent Name").performTextReplacement("New Name")
 
         // 2. Update Timers
-        composeTestRule.onNodeWithText("Auto Wait (s)").performTextReplacement("10")
-        composeTestRule.onNodeWithText("Max Wait (s)").performTextReplacement("60")
+        composeTestRule.onNodeWithText("Auto Wait (s)").performScrollTo().performTextReplacement("10")
+        composeTestRule.onNodeWithText("Max Wait (s)").performScrollTo().performTextReplacement("60")
 
         // 3. Save
-        composeTestRule.onNodeWithContentDescription("Save").performClick()
+        composeTestRule.onNodeWithContentDescription("Save").performScrollTo().performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
         assertNotNull(action)
@@ -196,14 +196,14 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         fakeStore.dispatchedActions.clear()
 
         // 1. Toggle the switch (updates draft, no dispatch)
-        composeTestRule.onNode(isToggleable()).performClick()
+        composeTestRule.onNode(isToggleable()).performScrollTo().performClick()
 
         // Verify NO action dispatched yet
         val prematureAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
         assertNull(prematureAction, "No UPDATE_CONFIG should fire before Save")
 
         // 2. Save
-        composeTestRule.onNodeWithContentDescription("Save").performClick()
+        composeTestRule.onNodeWithContentDescription("Save").performScrollTo().performClick()
 
         // 3. Verify the saved payload includes automaticMode = true
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
@@ -224,7 +224,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         composeTestRule.onNodeWithText("Agent Name").performTextReplacement("Changed")
 
         // 2. Cancel
-        composeTestRule.onNodeWithContentDescription("Cancel Edit").performClick()
+        composeTestRule.onNodeWithContentDescription("Cancel Edit").performScrollTo().performClick()
 
         // 3. Verify: only SET_EDITING dispatched, no UPDATE_CONFIG
         val updateAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
@@ -271,7 +271,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         assertNull(prematureAction, "Dropdown selection should not dispatch directly")
 
         // 2. Save
-        composeTestRule.onNodeWithContentDescription("Save").performClick()
+        composeTestRule.onNodeWithContentDescription("Save").performScrollTo().performClick()
 
         // 3. Verify payload
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
@@ -424,7 +424,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         assertNull(prematureAction)
 
         // 3. Save
-        composeTestRule.onNodeWithContentDescription("Save").performClick()
+        composeTestRule.onNodeWithContentDescription("Save").performScrollTo().performClick()
 
         // 4. Verify resources map in payload
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
