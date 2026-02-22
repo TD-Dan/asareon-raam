@@ -1,11 +1,12 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
-import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.agent.strategies.SovereignDefaults
 import app.auf.feature.filesystem.FileSystemFeature
+import app.auf.feature.session.SessionFeature
+import app.auf.feature.session.SessionState
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +33,12 @@ import kotlin.test.*
  * - (If Sovereign) HKG response → SET_HKG_CONTEXT → evaluateFullContext (gate)
  * - Gate passes → executeTurn → GATEWAY_GENERATE_CONTENT
  * - Gateway Response → postProcessResponse → NVRAM_LOADED + SESSION_POST
+ *
+ * **Identity Registry Notes:**
+ * All IDs use valid UUID hex format (CoreFeature validates). SessionFeature is
+ * included so the "session" parent identity exists and session child identities
+ * can be registered. Agent identities are registered via CORE_REGISTER_IDENTITY
+ * before any INITIATE_TURN dispatch.
  */
 class AgentRuntimeFeatureT2CognitiveCycleTest {
 
@@ -39,10 +46,13 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
     private val platform = FakePlatformDependencies("test")
     private val json = Json { ignoreUnknownKeys = true }
 
+    // Valid UUID hex format — CoreFeature validates these.
+    private val agentId = "a0000001-0000-0000-0000-000000000001"
+    private val sessionId = "b0000001-0000-0000-0000-000000000001"
+
+    private val session = testSession(sessionId, "Chat")
+
     // Sovereign Agent in BOOTING phase
-    private val agentId = "agent-sovereign"
-    private val agentUUID = uid(agentId)
-    private val sessionId = "session-1"
     private val agent = testAgent(
         id = agentId,
         name = "Sovereign Test Agent",
@@ -56,20 +66,42 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
         )
     ).copy(cognitiveState = buildJsonObject { put("phase", "BOOTING") })
 
+    /**
+     * Registers the agent identity in the registry via CORE_REGISTER_IDENTITY.
+     * Must be called after harness.build() and before INITIATE_TURN.
+     */
+    private fun registerAgentIdentity(harness: app.auf.test.TestHarness) {
+        harness.store.dispatch("agent", Action(
+            ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+            buildJsonObject {
+                put("uuid", agentId)
+                put("name", agent.identity.name)
+            }
+        ))
+    }
+
     @Test
     fun `full boot cycle with sentinel validation`() = runTest {
         val feature = AgentRuntimeFeature(platform, scope)
 
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(SessionFeature(platform, scope))
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agentUUID to agent),
-                resources = testBuiltInResources()
+                agents = mapOf(agentId to agent),
+                resources = emptyList()
+            ))
+            .withInitialState("session", SessionState(
+                sessions = mapOf(sessionId to session)
             ))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
+            // Register agent identity so resolveAgentId succeeds
+            registerAgentIdentity(harness)
+            harness.store.processedActions.clear()
+
             // === PHASE 1: INITIATE TURN ===
             harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                 put("agentId", agentId)
@@ -106,7 +138,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             assertNotNull(stageAction, "Should stage turn context")
 
             // === PHASE 3: EVALUATE CONTEXT (triggers parallel context gathering) ===
-            AgentCognitivePipeline.evaluateTurnContext(agentUUID, harness.store)
+            AgentCognitivePipeline.evaluateTurnContext(agentId, harness.store)
 
             // ASSERT: Workspace listing requested
             val workspaceListRequest = harness.processedActions.find { action ->
@@ -166,6 +198,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                 action.name == ActionRegistry.Names.SESSION_POST
             }
             assertNotNull(sessionPost, "Should post response to session")
+            assertEquals(sessionId, sessionPost.payload?.get("session")?.jsonPrimitive?.content)
             assertEquals(agent.identity.handle, sessionPost.payload?.get("senderId")?.jsonPrimitive?.content)
         }
     }
@@ -176,14 +209,22 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(SessionFeature(platform, scope))
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agentUUID to agent),
-                resources = testBuiltInResources()
+                agents = mapOf(agentId to agent),
+                resources = emptyList()
+            ))
+            .withInitialState("session", SessionState(
+                sessions = mapOf(sessionId to session)
             ))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
+            // Register agent identity so session lookup path works
+            registerAgentIdentity(harness)
+            harness.store.processedActions.clear()
+
             // Simulate a gateway failure response with sentinel failure token
             harness.store.dispatch("gateway", Action(
                 name = ActionRegistry.Names.GATEWAY_RETURN_RESPONSE,
@@ -228,14 +269,22 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(SessionFeature(platform, scope))
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agentUUID to awakeAgent),
-                resources = testBuiltInResources()
+                agents = mapOf(agentId to awakeAgent),
+                resources = emptyList()
+            ))
+            .withInitialState("session", SessionState(
+                sessions = mapOf(sessionId to session)
             ))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
+            // Register agent identity so resolveAgentId succeeds
+            registerAgentIdentity(harness)
+            harness.store.processedActions.clear()
+
             // === INITIATE TURN ===
             harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                 put("agentId", agentId)
@@ -258,7 +307,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             ))
 
             // Trigger evaluation (parallel context gathering)
-            AgentCognitivePipeline.evaluateTurnContext(agentUUID, harness.store)
+            AgentCognitivePipeline.evaluateTurnContext(agentId, harness.store)
 
             // Workspace context arrives automatically via FileSystemFeature.
             // Sovereign agent also needs HKG context:
@@ -310,7 +359,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
     fun `missing resources triggers error state`() = runTest {
         val agentWithMissingResource = agent.copy(
             resources = mapOf(
-                "constitution" to IdentityUUID("nonexistent-resource-id")
+                "constitution" to "nonexistent-resource-id"
             )
         )
 
@@ -318,14 +367,22 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
         val harness = TestEnvironment.create()
             .withFeature(feature)
+            .withFeature(SessionFeature(platform, scope))
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
-                agents = mapOf(agentUUID to agentWithMissingResource),
-                resources = testBuiltInResources()
+                agents = mapOf(agentId to agentWithMissingResource),
+                resources = emptyList()
+            ))
+            .withInitialState("session", SessionState(
+                sessions = mapOf(sessionId to session)
             ))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
+            // Register agent identity so resolveAgentId succeeds
+            registerAgentIdentity(harness)
+            harness.store.processedActions.clear()
+
             // Initiate turn and deliver ledger
             harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                 put("agentId", agentId)
@@ -347,7 +404,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             ))
 
             // Trigger evaluation (parallel context gathering starts)
-            AgentCognitivePipeline.evaluateTurnContext(agentUUID, harness.store)
+            AgentCognitivePipeline.evaluateTurnContext(agentId, harness.store)
 
             // Workspace listing arrives via FileSystemFeature automatically.
             // Sovereign agent also needs HKG context for gate to pass:

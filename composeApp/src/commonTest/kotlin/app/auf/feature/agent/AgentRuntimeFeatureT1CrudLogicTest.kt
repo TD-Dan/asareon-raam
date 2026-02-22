@@ -5,6 +5,8 @@ import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.*
+import org.junit.After
+import org.junit.Before
 import kotlin.test.*
 
 /**
@@ -14,6 +16,26 @@ import kotlin.test.*
 class AgentRuntimeFeatureT1CrudLogicTest {
 
     private val platform = FakePlatformDependencies("test")
+
+    @Before
+    fun setUp() {
+        CognitiveStrategyRegistry.clearForTesting()
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.MinimalStrategy)
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.VanillaStrategy,
+            legacyId = "vanilla_v1"
+        )
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.SovereignStrategy,
+            legacyId = "sovereign_v1"
+        )
+    }
+
+    @After
+    fun tearDown() {
+        CognitiveStrategyRegistry.clearForTesting()
+    }
 
     // =========================================================================
     // AGENT_CREATE
