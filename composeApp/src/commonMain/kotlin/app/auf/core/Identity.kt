@@ -1,6 +1,51 @@
 package app.auf.core
 
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmInline
+
+// ============================================================================
+// Typed ID Wrappers (Phase 1)
+//
+// Zero-cost at runtime (value class erases to String). Compile-time type safety
+// prevents passing a session handle where a resource UUID is expected.
+//
+// Serialization: kotlinx.serialization encodes value classes transparently as
+// their underlying type — a plain JSON string, not a nested object. Existing
+// persisted files are forward-compatible with no migration.
+//
+// NOTE: @JvmInline is required by the compiler for single-field value classes.
+// It IS available in commonMain — kotlin.jvm.JvmInline is part of the Kotlin
+// stdlib and compiles on all KMP targets (JVM, Native, JS/WASM).
+// ============================================================================
+
+/**
+ * The full bus address of any registered identity.
+ * Examples: "session", "session.chat1", "agent.gemini-coder-1", "core.alice"
+ *
+ * Used as the key in [AppState.identityRegistry] and as the stable reference
+ * from any entity that needs to point to an identity without embedding a
+ * full [Identity] struct.
+ */
+@JvmInline
+@Serializable
+value class IdentityHandle(val handle: String) {
+    override fun toString(): String = handle
+}
+
+/**
+ * A globally unique, system-assigned identifier for ephemeral entities
+ * (users, agents, sessions). Features have null UUIDs — their handles are
+ * stable across restarts.
+ *
+ * Used as the map key for agents (`AgentRuntimeState.agents`) and for
+ * filesystem paths (`{uuid}/agent.json`), correlation IDs, and any
+ * context where a stable, non-reassignable identifier is needed.
+ */
+@JvmInline
+@Serializable
+value class IdentityUUID(val uuid: String) {
+    override fun toString(): String = uuid
+}
 
 /**
  * A universal, serializable data class representing a unique participant on the action bus.
@@ -74,4 +119,10 @@ data class Identity(
 
     // FUTURE: Permissions grants — paved, not implemented in v2.0.
     // val permissions: Map<String, Boolean>? = null
-)
+) {
+    /** Convenience accessor for typed handle. */
+    val identityHandle: IdentityHandle get() = IdentityHandle(handle)
+
+    /** Convenience accessor for typed UUID. Throws if UUID is null (features). */
+    val identityUUID: IdentityUUID? get() = uuid?.let { IdentityUUID(it) }
+}

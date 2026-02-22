@@ -2,6 +2,8 @@ package app.auf.feature.agent
 
 import app.auf.core.FeatureState
 import app.auf.core.Identity
+import app.auf.core.IdentityHandle
+import app.auf.core.IdentityUUID
 import app.auf.feature.agent.strategies.SovereignDefaults // Allowed: this is an inter-feature import
 import app.auf.feature.agent.strategies.VanillaStrategy // Allowed: this is an inter-feature import
 import kotlinx.serialization.Serializable
@@ -95,12 +97,32 @@ data class StagedPreviewData(
 @Serializable
 data class AgentPendingCommand(
     val correlationId: String,
-    val agentId: String,
+    val agentId: IdentityUUID,
     val agentName: String,
-    val sessionId: String,
+    val sessionId: IdentityHandle,
     val actionName: String,
     val createdAt: Long
 )
+
+// ============================================================================
+// [PHASE 1] AgentInstance — Typed ID fields
+//
+// Design decisions:
+//
+// 1. `identity: Identity` is RETAINED for serialization backward compatibility.
+//    Existing agent.json files on disk contain `"identity": { ... }` and must
+//    continue to load without migration. Computed typed accessors provide the
+//    Phase 1 type safety at call sites.
+//
+// 2. `subscribedSessionIds`, `privateSessionId`, and `resources` are migrated
+//    to value class wrappers. Because value classes serialize transparently as
+//    their underlying type, existing JSON is forward-compatible — no migration.
+//
+// 3. `cognitiveStrategyId` remains `String` until Phase 2 (strategy identity
+//    registration).
+//
+// 4. `knowledgeGraphId` remains `String?` until Phase 4 (compartmentalization).
+// ============================================================================
 
 /**
  * [PURE CONFIGURATION]
@@ -112,8 +134,11 @@ data class AgentInstance(
     val knowledgeGraphId: String? = null,
     val modelProvider: String,
     val modelName: String,
-    val subscribedSessionIds: List<String> = emptyList(),
-    val privateSessionId: String? = null,
+
+    // [PHASE 1] Typed: session localHandle wrappers.
+    // Value class serializes as plain String — backward-compatible.
+    val subscribedSessionIds: List<IdentityHandle> = emptyList(),
+    val privateSessionId: IdentityHandle? = null,
 
     // Cognitive Architecture
     val cognitiveStrategyId: String = "vanilla_v1",
@@ -122,15 +147,25 @@ data class AgentInstance(
     // Persisted, so the agent remembers its state across restarts.
     val cognitiveState: JsonElement = JsonNull,
 
-    // Resource Links (Maps Slot ID -> Resource ID)
-    val resources: Map<String, String> = emptyMap(),
+    // [PHASE 1] Typed: resource slot → resource UUID.
+    // Key (slot ID) remains plain String (strategy-defined constant, not a registered identity).
+    // Value migrated from String to IdentityUUID.
+    val resources: Map<String, IdentityUUID> = emptyMap(),
 
     // Configuration
     val automaticMode: Boolean = false,
     val autoWaitTimeSeconds: Int = 5,
     val autoMaxWaitTimeSeconds: Int = 30,
     val isAgentActive: Boolean = true
-)
+) {
+    // ---- Phase 1 typed accessors (computed from embedded Identity) ----
+
+    /** The agent's bus address. Prefer over `identity.handle`. */
+    val identityHandle: IdentityHandle get() = IdentityHandle(identity.handle)
+
+    /** The agent's UUID. Prefer over `identity.uuid`. */
+    val identityUUID: IdentityUUID get() = IdentityUUID(identity.uuid!!)
+}
 
 /**
  * [RUNTIME STATE]
@@ -161,15 +196,16 @@ data class AgentStatusInfo(
 
 @Serializable
 data class AgentRuntimeState(
-    /** Key = identity.uuid. Agents are always keyed by UUID internally. */
-    val agents: Map<String, AgentInstance> = emptyMap(),
+    // [PHASE 1] Key = IdentityUUID (agent UUID). Value class used as map key.
+    // Serializes transparently — JSON key is still a plain string.
+    val agents: Map<IdentityUUID, AgentInstance> = emptyMap(),
     @Transient
-    /** Key = identity.uuid. */
-    val agentStatuses: Map<String, AgentStatusInfo> = emptyMap(),
+    /** Key = IdentityUUID (agent UUID). */
+    val agentStatuses: Map<IdentityUUID, AgentStatusInfo> = emptyMap(),
     /** Map of session localHandle → display name for non-private sessions.
      *  Populated from SESSION_NAMES_UPDATED broadcast (which excludes isPrivate sessions).
-     *  Used by AgentManagerView for session pickers and AgentCrudLogic for subscription validation. */
-    val subscribableSessionNames: Map<String, String> = emptyMap(),
+     *  [PHASE 1] Key typed as IdentityHandle (session localHandle wrapper). */
+    val subscribableSessionNames: Map<IdentityHandle, String> = emptyMap(),
     val availableModels: Map<String, List<String>> = emptyMap(),
     val knowledgeGraphNames: Map<String, String> = emptyMap(),
 
@@ -181,18 +217,18 @@ data class AgentRuntimeState(
     @Transient
     val hkgReservedIds: Set<String> = emptySet(),
     @Transient
-    val editingAgentId: String? = null,   // UUID
+    val editingAgentId: IdentityUUID? = null,
     @Transient
     val editingResourceId: String? = null,
     @Transient
     val activeManagerTab: Int = 0, // 0 = Agents, 1 = Resources
     @Transient
-    /** Key = identity.uuid → Map<SessionId, MessageId> */
-    val agentAvatarCardIds: Map<String, Map<String, String>> = emptyMap(),
+    /** Key = IdentityUUID (agent) → Map<IdentityHandle (session) → messageId> */
+    val agentAvatarCardIds: Map<IdentityUUID, Map<IdentityHandle, String>> = emptyMap(),
     @Transient
-    val agentsToPersist: Set<String>? = null,
+    val agentsToPersist: Set<IdentityUUID>? = null,
     @Transient
-    val viewingContextForAgentId: String? = null,
+    val viewingContextForAgentId: IdentityUUID? = null,
     @Transient
     val lastAutoTriggerAgentIndex: Int = 0,
 

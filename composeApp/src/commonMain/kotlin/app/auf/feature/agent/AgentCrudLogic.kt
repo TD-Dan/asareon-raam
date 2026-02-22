@@ -2,6 +2,8 @@ package app.auf.feature.agent
 
 import app.auf.core.Action
 import app.auf.core.Identity
+import app.auf.core.IdentityHandle
+import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.*
@@ -11,10 +13,27 @@ import kotlinx.serialization.json.*
  * To provide pure, testable reducer logic for the synchronous CRUD operations
  * of the AgentRuntimeFeature. This isolates the "administrative" state transitions
  * from the complex, asynchronous runtime logic.
+ *
+ * [PHASE 1] All ID extractions from JSON payloads are wrapped in typed value classes
+ * at the boundary. Internal logic operates on [IdentityUUID] and [IdentityHandle].
  */
 object AgentCrudLogic {
 
     private val json = Json { ignoreUnknownKeys = true }
+
+    // ---- Phase 1 boundary helpers ----
+
+    /** Extract an agent UUID from a JSON payload field. */
+    private fun JsonObject.agentUUID(field: String = "agentId"): IdentityUUID? =
+        this[field]?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) }
+
+    /** Extract a session handle from a JSON payload field. */
+    private fun JsonObject.sessionHandle(field: String): IdentityHandle? =
+        this[field]?.jsonPrimitive?.contentOrNull?.let { IdentityHandle(it) }
+
+    /** Extract a resource UUID from a JSON payload field. */
+    private fun JsonObject.resourceUUID(field: String): IdentityUUID? =
+        this[field]?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) }
 
     fun reduce(
         state: AgentRuntimeState,
@@ -24,11 +43,11 @@ object AgentCrudLogic {
         return when (action.name) {
             ActionRegistry.Names.AGENT_CREATE -> {
                 val payload = action.payload ?: return state
-                val uuid = platformDependencies.generateUUID()
+                val uuid = IdentityUUID(platformDependencies.generateUUID())
                 val name = payload["name"]?.jsonPrimitive?.contentOrNull ?: "New Agent"
                 val newAgent = AgentInstance(
                     identity = Identity(
-                        uuid = uuid,
+                        uuid = uuid.uuid,
                         localHandle = "",    // placeholder — filled on RETURN_REGISTER_IDENTITY
                         handle = "",         // placeholder — filled on RETURN_REGISTER_IDENTITY
                         name = name,
@@ -38,7 +57,8 @@ object AgentCrudLogic {
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: "gemini",
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: "gemini-pro",
                     cognitiveStrategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull ?: "vanilla_v1",
-                    subscribedSessionIds = payload["subscribedSessionIds"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList(),
+                    subscribedSessionIds = payload["subscribedSessionIds"]?.jsonArray
+                        ?.map { IdentityHandle(it.jsonPrimitive.content) } ?: emptyList(),
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: false,
                     autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: 5,
                     autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: 30
@@ -47,12 +67,13 @@ object AgentCrudLogic {
             }
             ActionRegistry.Names.AGENT_UPDATE_CONFIG -> {
                 val payload = action.payload ?: return state
-                val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
+                val agentId = payload.agentUUID() ?: return state
                 val agentToUpdate = state.agents[agentId] ?: return state
 
                 // Filtering logic to prevent subscription to private sessions
                 val newSubscribedSessionIds = if ("subscribedSessionIds" in payload) {
-                    payload["subscribedSessionIds"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
+                    payload["subscribedSessionIds"]?.jsonArray
+                        ?.map { IdentityHandle(it.jsonPrimitive.content) } ?: emptyList()
                 } else {
                     agentToUpdate.subscribedSessionIds
                 }
@@ -61,7 +82,9 @@ object AgentCrudLogic {
                 }
 
                 val updatedResources = if ("resources" in payload) {
-                    payload["resources"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content } ?: agentToUpdate.resources
+                    payload["resources"]?.jsonObject
+                        ?.mapValues { IdentityUUID(it.value.jsonPrimitive.content) }
+                        ?: agentToUpdate.resources
                 } else {
                     agentToUpdate.resources
                 }
@@ -71,7 +94,7 @@ object AgentCrudLogic {
                         name = payload["name"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.identity.name
                     ),
                     knowledgeGraphId = if ("knowledgeGraphId" in payload) payload["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull else agentToUpdate.knowledgeGraphId,
-                    privateSessionId = if ("privateSessionId" in payload) payload["privateSessionId"]?.jsonPrimitive?.contentOrNull else agentToUpdate.privateSessionId,
+                    privateSessionId = if ("privateSessionId" in payload) payload.sessionHandle("privateSessionId") else agentToUpdate.privateSessionId,
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelProvider,
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelName,
                     cognitiveStrategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.cognitiveStrategyId,
@@ -84,19 +107,19 @@ object AgentCrudLogic {
                 state.copy(agents = state.agents + (agentId to updatedAgent))
             }
             ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
+                val agentId = action.payload?.agentUUID() ?: return state
                 val agentToUpdate = state.agents[agentId] ?: return state
                 val updatedAgent = agentToUpdate.copy(automaticMode = !agentToUpdate.automaticMode)
                 state.copy(agents = state.agents + (agentId to updatedAgent))
             }
             ActionRegistry.Names.AGENT_TOGGLE_ACTIVE -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
+                val agentId = action.payload?.agentUUID() ?: return state
                 val agentToUpdate = state.agents[agentId] ?: return state
                 val updatedAgent = agentToUpdate.copy(isAgentActive = !agentToUpdate.isAgentActive)
                 state.copy(agents = state.agents + (agentId to updatedAgent))
             }
             ActionRegistry.Names.AGENT_SET_EDITING -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull
+                val agentId = action.payload?.agentUUID()
                 state.copy(editingAgentId = if (agentId == state.editingAgentId) null else agentId)
             }
             ActionRegistry.Names.AGENT_SET_MANAGER_TAB -> {
@@ -104,7 +127,7 @@ object AgentCrudLogic {
                 state.copy(activeManagerTab = tabIndex)
             }
             ActionRegistry.Names.AGENT_CONFIRM_DELETE -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
+                val agentId = action.payload?.agentUUID() ?: return state
                 state.copy(
                     agents = state.agents - agentId,
                     agentAvatarCardIds = state.agentAvatarCardIds - agentId
@@ -112,7 +135,7 @@ object AgentCrudLogic {
             }
             ActionRegistry.Names.AGENT_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return state
-                val uuid = agent.identity.uuid ?: return state
+                val uuid = agent.identityUUID
                 if (!state.agents.containsKey(uuid)) state.copy(agents = state.agents + (uuid to agent)) else state
             }
             // [NEW] Handle loading resources from disk
@@ -185,7 +208,7 @@ object AgentCrudLogic {
             }
             ActionRegistry.Names.AGENT_UPDATE_NVRAM -> {
                 val payload = action.payload ?: return state
-                val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
+                val agentId = payload.agentUUID() ?: return state
                 val updates = payload["updates"]?.jsonObject ?: return state
 
                 val agent = state.agents[agentId] ?: return state
@@ -202,7 +225,7 @@ object AgentCrudLogic {
             }
             ActionRegistry.Names.AGENT_NVRAM_LOADED -> {
                 val payload = action.payload ?: return state
-                val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
+                val agentId = payload.agentUUID() ?: return state
                 val newState = payload["state"] ?: return state
 
                 val agent = state.agents[agentId] ?: return state

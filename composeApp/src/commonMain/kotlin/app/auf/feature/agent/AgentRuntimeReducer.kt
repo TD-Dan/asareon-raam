@@ -1,6 +1,8 @@
 package app.auf.feature.agent
 
 import app.auf.core.Action
+import app.auf.core.IdentityHandle
+import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.*
@@ -9,10 +11,17 @@ import kotlinx.serialization.json.*
  * ## Mandate
  * To provide pure, testable reducer logic for the **ephemeral runtime state**
  * of the AgentRuntimeFeature.
+ *
+ * [PHASE 1] All agent IDs extracted from payloads are wrapped in [IdentityUUID].
+ * Session IDs are wrapped in [IdentityHandle]. Map lookups use typed keys.
  */
 object AgentRuntimeReducer {
 
     private val json = Json { ignoreUnknownKeys = true }
+
+    // ---- Phase 1 boundary helpers ----
+    private fun JsonObject.agentUUID(field: String = "agentId"): IdentityUUID? =
+        this[field]?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) }
 
     fun reduce(
         state: AgentRuntimeState,
@@ -25,7 +34,7 @@ object AgentRuntimeReducer {
 
             ActionRegistry.Names.AGENT_SET_PROCESSING_STEP -> {
                 val payload = action.payload ?: return state
-                val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
+                val agentId = payload.agentUUID() ?: return state
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
                 val step = payload["step"]?.jsonPrimitive?.contentOrNull
                 val updatedStatus = currentStatus.copy(processingStep = step)
@@ -47,7 +56,7 @@ object AgentRuntimeReducer {
             }
 
             ActionRegistry.Names.AGENT_SET_WORKSPACE_CONTEXT -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
+                val agentId = action.payload?.agentUUID() ?: return state
                 val context = action.payload?.get("context")?.jsonPrimitive?.contentOrNull ?: return state
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
                 val updatedStatus = currentStatus.copy(transientWorkspaceContext = context)
@@ -55,7 +64,7 @@ object AgentRuntimeReducer {
             }
 
             ActionRegistry.Names.AGENT_SET_CONTEXT_GATHERING_STARTED -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
+                val agentId = action.payload?.agentUUID() ?: return state
                 val startedAt = action.payload?.get("startedAt")?.jsonPrimitive?.longOrNull ?: return state
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
                 val updatedStatus = currentStatus.copy(contextGatheringStartedAt = startedAt)
@@ -94,7 +103,7 @@ object AgentRuntimeReducer {
             }
 
             ActionRegistry.Names.AGENT_DISCARD_PREVIEW -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return state
+                val agentId = action.payload?.agentUUID() ?: return state
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
                 val updatedStatus = currentStatus.copy(stagedPreviewData = null, processingStep = null)
                 state.copy(
@@ -120,7 +129,7 @@ object AgentRuntimeReducer {
 
             ActionRegistry.Names.SESSION_MESSAGE_DELETED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<MessageDeletedPayload>(it) } ?: return state
-                // REFACTORED: Iterate Map<AgentId, Map<SessionId, MessageId>>
+                // REFACTORED: Iterate Map<IdentityUUID, Map<IdentityHandle, String>>
                 var newAvatarCards = state.agentAvatarCardIds
                 state.agentAvatarCardIds.forEach { (agentId, sessionMap) ->
                     val sessionEntry = sessionMap.entries.find { it.value == payload.messageId }
@@ -133,7 +142,9 @@ object AgentRuntimeReducer {
             }
 
             ActionRegistry.Names.SESSION_SESSION_DELETED -> {
-                val deletedSessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return state
+                val deletedSessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull
+                    ?.let { IdentityHandle(it) } ?: return state
+
                 val agentsToUpdate = state.agents.values
                     .filter { it.subscribedSessionIds.contains(deletedSessionId) || it.privateSessionId == deletedSessionId }
 
@@ -148,7 +159,7 @@ object AgentRuntimeReducer {
                 if (agentsToUpdate.isEmpty()) return state.copy(agentAvatarCardIds = newAvatarCards)
 
                 val newAgents = state.agents.mapValues { (_, agent) ->
-                    if (agentsToUpdate.any { it.identity.uuid == agent.identity.uuid }) {
+                    if (agentsToUpdate.any { it.identityUUID == agent.identityUUID }) {
                         agent.copy(
                             subscribedSessionIds = agent.subscribedSessionIds - deletedSessionId,
                             privateSessionId = if (agent.privateSessionId == deletedSessionId) null else agent.privateSessionId
@@ -158,7 +169,11 @@ object AgentRuntimeReducer {
                     }
                 }
                 // Note: We set agentsToPersist so the Feature knows to save these changes
-                state.copy(agents = newAgents, agentAvatarCardIds = newAvatarCards, agentsToPersist = agentsToUpdate.mapNotNull { it.identity.uuid }.toSet())
+                state.copy(
+                    agents = newAgents,
+                    agentAvatarCardIds = newAvatarCards,
+                    agentsToPersist = agentsToUpdate.map { it.identityUUID }.toSet()
+                )
             }
 
             ActionRegistry.Names.GATEWAY_AVAILABLE_MODELS_UPDATED -> {
@@ -168,7 +183,9 @@ object AgentRuntimeReducer {
 
             ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED -> {
                 val names = try {
-                    action.payload?.get("names")?.jsonObject?.mapValues { it.value.jsonPrimitive.content }
+                    action.payload?.get("names")?.jsonObject
+                        ?.mapKeys { IdentityHandle(it.key) }
+                        ?.mapValues { it.value.jsonPrimitive.content }
                 } catch (e: Exception) { null }
                 if (names != null) state.copy(subscribableSessionNames = names) else state
             }
@@ -192,7 +209,7 @@ object AgentRuntimeReducer {
             ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY -> {
                 val payload = action.payload ?: return state
                 val success = payload["success"]?.jsonPrimitive?.booleanOrNull ?: false
-                val uuid = payload["uuid"]?.jsonPrimitive?.contentOrNull ?: return state
+                val uuid = payload.agentUUID("uuid") ?: return state
                 if (!success) return state
 
                 val approvedLocalHandle = payload["approvedLocalHandle"]?.jsonPrimitive?.contentOrNull ?: return state
@@ -217,7 +234,7 @@ object AgentRuntimeReducer {
                 val success = payload["success"]?.jsonPrimitive?.booleanOrNull ?: false
                 if (!success) return state
 
-                val uuid = payload["uuid"]?.jsonPrimitive?.contentOrNull ?: return state
+                val uuid = payload.agentUUID("uuid") ?: return state
                 val newLocalHandle = payload["newLocalHandle"]?.jsonPrimitive?.contentOrNull ?: return state
                 val newHandle = payload["newHandle"]?.jsonPrimitive?.contentOrNull ?: return state
                 val name = payload["name"]?.jsonPrimitive?.contentOrNull ?: return state
@@ -263,7 +280,7 @@ object AgentRuntimeReducer {
 
     private fun handleSetStatus(action: Action, state: AgentRuntimeState, platformDependencies: PlatformDependencies): AgentRuntimeState {
         val payload = action.payload ?: return state
-        val agentId = payload["agentId"]?.jsonPrimitive?.contentOrNull ?: return state
+        val agentId = payload.agentUUID() ?: return state
         val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
 
         val newStatusString = payload["status"]?.jsonPrimitive?.contentOrNull ?: return state
@@ -312,12 +329,12 @@ object AgentRuntimeReducer {
         val metadata = entry["metadata"]?.jsonObject
         val isAvatar = metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
         if (isAvatar) {
-            // Track avatar cards: Map<AgentId, Map<SessionId, MessageId>>
+            // Track avatar cards: Map<IdentityUUID, Map<IdentityHandle, String>>
             val avatarAgentId = entry["senderId"]?.jsonPrimitive?.contentOrNull
             if (avatarAgentId != null) {
                 // Resolve to UUID: senderId may be UUID (old) or handle (new)
-                val resolvedUuid = state.agents[avatarAgentId]?.identity?.uuid  // direct UUID key match
-                    ?: state.agents.values.find { it.identity.handle == avatarAgentId }?.identity?.uuid
+                val resolvedUuid = state.agents[IdentityUUID(avatarAgentId)]?.identityUUID  // direct UUID key match
+                    ?: state.agents.values.find { it.identityHandle.handle == avatarAgentId }?.identityUUID
                 if (resolvedUuid != null) {
                     val currentSessionMap = state.agentAvatarCardIds[resolvedUuid] ?: emptyMap()
                     val newSessionMap = currentSessionMap + (sessionId to messageId)
@@ -332,10 +349,10 @@ object AgentRuntimeReducer {
 
         val updatedStatuses = state.agentStatuses.toMutableMap()
         state.agents.values.forEach { agent ->
-            val agentUuid = agent.identity.uuid ?: return@forEach
+            val agentUuid = agent.identityUUID
             val currentStatus = updatedStatuses[agentUuid] ?: AgentStatusInfo()
             val isRelevant = (agent.subscribedSessionIds.contains(sessionId) || agent.privateSessionId == sessionId)
-            val isSelf = (agentUuid == senderId || agent.identity.handle == senderId)
+            val isSelf = (agentUuid.uuid == senderId || agent.identityHandle.handle == senderId)
 
             if (isRelevant && !isSelf) {
                 // NEW: Auto-Waiting Logic (Synchronous)

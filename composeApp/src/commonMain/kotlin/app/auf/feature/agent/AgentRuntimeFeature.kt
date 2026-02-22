@@ -27,9 +27,8 @@ import kotlinx.serialization.json.*
  * - Cognition -> AgentCognitivePipeline
  * - Side Effects -> AgentAvatarLogic / Self
  *
- * Subscribes to ACTION_CREATED from CommandBot to handle validated agent commands:
- * applies workspace sandboxing, dispatches domain actions, and routes results
- * back to the session via the DELIVER_TO_SESSION / ACTION_RESULT protocol.
+ * [PHASE 1] All agent IDs are typed via [IdentityUUID]; session IDs via [IdentityHandle].
+ * JSON extraction wraps raw strings at the boundary; internal logic uses typed values.
  */
 class AgentRuntimeFeature(
     private val platformDependencies: PlatformDependencies,
@@ -45,14 +44,18 @@ class AgentRuntimeFeature(
 
     private val commandBotSenderId = "commandbot"
 
-    private val activeTurnJobs = mutableMapOf<String, Job>()
-    private val avatarUpdateJobs = mutableMapOf<String, Job>()
+    private val activeTurnJobs = mutableMapOf<IdentityUUID, Job>()
+    private val avatarUpdateJobs = mutableMapOf<IdentityUUID, Job>()
     private var agentLoadCount = 0
 
     companion object {
         /** TTL for pending command entries: 5 minutes. */
         const val PENDING_COMMAND_TTL_MS = 5 * 60 * 1000L
     }
+
+    // ---- Phase 1 boundary helper ----
+    private fun JsonObject.agentUUID(field: String = "agentId"): IdentityUUID? =
+        this[field]?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) }
 
     override fun init(store: Store) {
         coroutineScope.launch {
@@ -121,16 +124,12 @@ class AgentRuntimeFeature(
             }
             ActionRegistry.Names.AGENT_AGENT_LOADED -> {
                 val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return
-                val uuid = agent.identity.uuid ?: return
-                // NOTE: Avatar posting deferred to SESSION_SESSION_FEATURE_READY.
-                // At startup, agent files may load before session files. The session feature
-                // broadcasts SESSION_FEATURE_READY once sessions are in its map, at which point
-                // we reconcile avatars for all active agents.
+                val uuid = agent.identityUUID
                 // Register agent identity
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.CORE_REGISTER_IDENTITY,
                     buildJsonObject {
-                        put("uuid", uuid)
+                        put("uuid", uuid.uuid)
                         put("name", agent.identity.name)
                     }
                 ))
@@ -151,13 +150,13 @@ class AgentRuntimeFeature(
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.CORE_REGISTER_IDENTITY,
                     buildJsonObject {
-                        put("uuid", agentToSave.identity.uuid)
+                        put("uuid", agentToSave.identityUUID.uuid)
                         put("name", agentToSave.identity.name)
                     }
                 ))
             }
             ActionRegistry.Names.AGENT_CLONE -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentId = action.payload?.agentUUID() ?: return
                 val agentToClone = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "AGENT_CLONE: Source agent '$agentId' not found in state.")
                     return
@@ -167,7 +166,7 @@ class AgentRuntimeFeature(
                     agentToClone.knowledgeGraphId?.let { put("knowledgeGraphId", it) }
                     put("modelProvider", agentToClone.modelProvider)
                     put("modelName", agentToClone.modelName)
-                    put("subscribedSessionIds", buildJsonArray { agentToClone.subscribedSessionIds.forEach { add(it) } })
+                    put("subscribedSessionIds", buildJsonArray { agentToClone.subscribedSessionIds.forEach { add(it.handle) } })
                     put("automaticMode", agentToClone.automaticMode)
                     put("autoWaitTimeSeconds", agentToClone.autoWaitTimeSeconds)
                     put("autoMaxWaitTimeSeconds", agentToClone.autoMaxWaitTimeSeconds)
@@ -175,7 +174,7 @@ class AgentRuntimeFeature(
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_CREATE, createPayload))
             }
             ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, ActionRegistry.Names.AGENT_TOGGLE_ACTIVE -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentId = action.payload?.agentUUID() ?: return
                 val agent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "AGENT_TOGGLE: Agent '$agentId' not found in state.")
                     return
@@ -184,7 +183,7 @@ class AgentRuntimeFeature(
                 AgentAvatarLogic.touchAgentAvatarCard(agent, agentState, store)
             }
             ActionRegistry.Names.AGENT_UPDATE_CONFIG -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentId = action.payload?.agentUUID() ?: return
                 val oldAgent = (previousState as? AgentRuntimeState)?.agents?.get(agentId)
                 val newAgent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "AGENT_UPDATE_CONFIG: Agent '$agentId' not found in state after update.")
@@ -199,12 +198,12 @@ class AgentRuntimeFeature(
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
                 // If agent name changed, update identity atomically
                 if (oldAgent != null && oldAgent.identity.name != newAgent.identity.name) {
-                    val currentHandle = newAgent.identity.handle
-                    if (currentHandle.isNotBlank()) {
+                    val currentHandle = newAgent.identityHandle
+                    if (currentHandle.handle.isNotBlank()) {
                         store.deferredDispatch(identity.handle, Action(
                             ActionRegistry.Names.CORE_UPDATE_IDENTITY,
                             buildJsonObject {
-                                put("handle", currentHandle)
+                                put("handle", currentHandle.handle)
                                 put("newName", newAgent.identity.name)
                             }
                         ))
@@ -212,43 +211,39 @@ class AgentRuntimeFeature(
                 }
             }
             ActionRegistry.Names.AGENT_NVRAM_LOADED -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentId = action.payload?.agentUUID() ?: return
                 val agent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "NVRAM_LOADED: Agent '$agentId' not found. Cannot persist NVRAM.")
                     return
                 }
-                // Reducer replaced cognitiveState
-                // Save to disk (handles both: strategy transitions AND redundant save from disk loading)
                 saveAgentNvram(agent, store)
             }
             ActionRegistry.Names.AGENT_UPDATE_NVRAM -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentId = action.payload?.agentUUID() ?: return
                 val agent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "UPDATE_NVRAM: Agent '$agentId' not found. Cannot update NVRAM.")
                     return
                 }
-                // Reducer already merged updates into cognitiveState
-                // Save directly to disk
                 saveAgentNvram(agent, store)
             }
             ActionRegistry.Names.AGENT_DELETE -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentId = action.payload?.agentUUID() ?: return
                 agentState.agentAvatarCardIds[agentId]?.forEach { (sessionId, messageId) ->
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
-                        put("session", sessionId)
+                        put("session", sessionId.handle)
                         put("messageId", messageId)
                     }))
                 }
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_DELETE_DIRECTORY, buildJsonObject { put("path", agentId) }))
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_CONFIRM_DELETE, buildJsonObject { put("agentId", agentId) }))
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_DELETED, buildJsonObject { put("agentId", agentId) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_DELETE_DIRECTORY, buildJsonObject { put("path", agentId.uuid) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_CONFIRM_DELETE, buildJsonObject { put("agentId", agentId.uuid) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_DELETED, buildJsonObject { put("agentId", agentId.uuid) }))
                 // Unregister agent identity (cascades any sub-identities)
                 val agentToDelete = (previousState as? AgentRuntimeState)?.agents?.get(agentId)
-                val deleteHandle = agentToDelete?.identity?.handle
-                if (!deleteHandle.isNullOrBlank()) {
+                val deleteHandle = agentToDelete?.identityHandle
+                if (deleteHandle != null && deleteHandle.handle.isNotBlank()) {
                     store.deferredDispatch(identity.handle, Action(
                         ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
-                        buildJsonObject { put("handle", deleteHandle) }
+                        buildJsonObject { put("handle", deleteHandle.handle) }
                     ))
                 }
             }
@@ -272,7 +267,7 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.AGENT_DELETE_RESOURCE -> {
                 val resourceId = action.payload?.get("resourceId")?.jsonPrimitive?.contentOrNull ?: return
                 val resourceToDelete = (previousState as? AgentRuntimeState)?.resources?.find { it.id == resourceId } ?: run {
-                    platformDependencies.log(LogLevel.WARN, identity.handle, "DELETE_RESOURCE: Resource '$resourceId' not found in previous state.")
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "DELETE_RESOURCE: Resource '$resourceId' not found in previousState.")
                     return
                 }
                 resourceToDelete.path?.let { path ->
@@ -285,32 +280,29 @@ class AgentRuntimeFeature(
 
             // --- Cognitive Pipeline & Peer Updates (Delegated) ---
             ActionRegistry.Names.AGENT_INITIATE_TURN -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentId = action.payload?.agentUUID() ?: return
                 AgentCognitivePipeline.startCognitiveCycle(agentId, store)
             }
             ActionRegistry.Names.AGENT_STAGE_TURN_CONTEXT -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentId = action.payload?.agentUUID() ?: return
                 AgentCognitivePipeline.evaluateTurnContext(agentId, store)
             }
             ActionRegistry.Names.AGENT_SET_HKG_CONTEXT -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentId = action.payload?.agentUUID() ?: return
                 AgentCognitivePipeline.evaluateFullContext(agentId, store)
             }
             ActionRegistry.Names.AGENT_SET_WORKSPACE_CONTEXT -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentId = action.payload?.agentUUID() ?: return
                 AgentCognitivePipeline.evaluateFullContext(agentId, store)
             }
             ActionRegistry.Names.AGENT_CONTEXT_GATHERING_TIMEOUT -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentId = action.payload?.agentUUID() ?: return
                 val startedAt = action.payload?.get("startedAt")?.jsonPrimitive?.longOrNull ?: return
                 val statusInfo = agentState.agentStatuses[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "CONTEXT_GATHERING_TIMEOUT: No status entry for agent '$agentId'. Turn may have been cancelled.")
                     return
                 }
 
-                // Validate: only proceed if this timeout belongs to the current turn.
-                // contextGatheringStartedAt is the canonical indicator — it's set at the
-                // start and cleared on turn completion, regardless of direct vs preview mode.
                 if (statusInfo.contextGatheringStartedAt != startedAt) {
                     platformDependencies.log(LogLevel.DEBUG, identity.handle,
                         "Stale context gathering timeout for agent '$agentId' (expected startedAt=${statusInfo.contextGatheringStartedAt}, got=$startedAt). Ignoring.")
@@ -319,7 +311,7 @@ class AgentRuntimeFeature(
                 AgentCognitivePipeline.evaluateFullContext(agentId, store, isTimeout = true)
             }
             ActionRegistry.Names.AGENT_EXECUTE_PREVIEWED_TURN -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentId = action.payload?.agentUUID() ?: return
                 val agent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "EXECUTE_PREVIEWED_TURN: Agent '$agentId' not found.")
                     return
@@ -339,23 +331,23 @@ class AgentRuntimeFeature(
                     put("contents", json.encodeToJsonElement(previewData.agnosticRequest.contents))
                     previewData.agnosticRequest.systemPrompt?.let { put("systemPrompt", it) }
                 }))
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId.uuid) }))
                 store.dispatch("ui.agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
             }
             ActionRegistry.Names.AGENT_DISCARD_PREVIEW -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentId = action.payload?.agentUUID() ?: return
                 val statusInfo = agentState.agentStatuses[agentId]
                 if (statusInfo?.status != AgentStatus.PROCESSING) {
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
-                        put("agentId", agentId); put("step", JsonNull)
+                        put("agentId", agentId.uuid); put("step", JsonNull)
                     }))
                 }
                 store.dispatch("ui.agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
             }
             ActionRegistry.Names.AGENT_CANCEL_TURN -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull ?: return
+                val agentId = action.payload?.agentUUID() ?: return
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_CANCEL_REQUEST, buildJsonObject {
-                    put("correlationId", agentId)
+                    put("correlationId", agentId.uuid)
                 }))
                 activeTurnJobs[agentId]?.cancel()
                 activeTurnJobs.remove(agentId)
@@ -389,9 +381,6 @@ class AgentRuntimeFeature(
                 SovereignHKGResourceLogic.ensureSovereignSessions(store, agentState)
             }
             ActionRegistry.Names.SESSION_SESSION_FEATURE_READY -> {
-                // Sessions are now in the sessions map and resolvable. Post avatar cards
-                // for all active agents. This is idempotent — updateAgentAvatars deletes
-                // old cards before posting new ones, so duplicate signals are harmless.
                 agentState.agents.forEach { (agentId, agent) ->
                     if (agent.isAgentActive) {
                         AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.IDLE)
@@ -401,14 +390,12 @@ class AgentRuntimeFeature(
 
             // --- Identity Registration Response Side Effects ---
             ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY -> {
-                // Reducer already updated the agent's identity — re-save config with full identity
-                val uuid = action.payload?.get("uuid")?.jsonPrimitive?.contentOrNull ?: return
+                val uuid = action.payload?.agentUUID("uuid") ?: return
                 val agent = agentState.agents[uuid] ?: return
                 saveAgentConfig(agent, store)
             }
             ActionRegistry.Names.CORE_RETURN_UPDATE_IDENTITY -> {
-                // Reducer already updated the agent's identity — re-save config with new identity
-                val uuid = action.payload?.get("uuid")?.jsonPrimitive?.contentOrNull ?: return
+                val uuid = action.payload?.agentUUID("uuid") ?: return
                 val agent = agentState.agents[uuid] ?: return
                 saveAgentConfig(agent, store)
             }
@@ -427,11 +414,10 @@ class AgentRuntimeFeature(
 
                 // Resolve originator: originatorId may be a UUID (direct key match)
                 // or a handle like "agent.flash" (identity registry format).
-                // Agents are keyed by UUID internally, so we must resolve handles.
-                val agent = agentState.agents[originatorId]
-                    ?: agentState.agents.values.find { it.identity.handle == originatorId }
+                val agent = agentState.agents[IdentityUUID(originatorId)]
+                    ?: agentState.agents.values.find { it.identityHandle.handle == originatorId }
                 if (agent == null) return  // Not our agent — ignore
-                val agentUuid = agent.identity.uuid ?: return
+                val agentUuid = agent.identityUUID
 
                 platformDependencies.log(
                     LogLevel.INFO, identity.handle,
@@ -442,9 +428,7 @@ class AgentRuntimeFeature(
                 // Uses UUID because workspace paths are "{uuid}/workspace/".
                 val finalPayload = applySandboxRewrite(actionName, actionPayload, agentUuid)
 
-                // Inject correlationId into the payload so the handling feature can thread it
-                // to ACTION_RESULT and RETURN_* responses.
-                // Guard: don't overwrite a correlationId the agent explicitly included.
+                // Inject correlationId into the payload
                 val enrichedPayload = if (finalPayload["correlationId"] == null) {
                     JsonObject(finalPayload + ("correlationId" to JsonPrimitive(correlationId)))
                 } else {
@@ -454,13 +438,12 @@ class AgentRuntimeFeature(
                 // Dispatch the domain action attributed to the agent.
                 store.deferredDispatch(identity.handle, Action(name = actionName, payload = enrichedPayload))
 
-                // Track the pending command in state so we can route RETURN_* data
-                // to the session via DELIVER_TO_SESSION.
+                // Track the pending command in state
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.AGENT_REGISTER_PENDING_COMMAND,
                     buildJsonObject {
                         put("correlationId", correlationId)
-                        put("agentId", agentUuid)
+                        put("agentId", agentUuid.uuid)
                         put("agentName", originatorName)
                         put("sessionId", sessionId)
                         put("actionName", actionName)
@@ -481,25 +464,17 @@ class AgentRuntimeFeature(
     }
 
     // ========================================================================
-    // ACTION_CREATED: Sandbox rewrite (moved from CommandBot)
+    // ACTION_CREATED: Sandbox rewrite
     // ========================================================================
 
-    /**
-     * Applies workspace sandboxing to an agent's action payload.
-     * The agent feature owns the "{agentId}/workspace/" path convention.
-     *
-     * For actions with sandbox rules defined in ActionRegistry, the path field
-     * is prefixed with the agent's workspace path. For other actions, the payload
-     * is returned unchanged.
-     */
-    private fun applySandboxRewrite(actionName: String, payload: JsonObject, agentId: String): JsonObject {
+    private fun applySandboxRewrite(actionName: String, payload: JsonObject, agentId: IdentityUUID): JsonObject {
         val rule = ActionRegistry.agentSandboxRules[actionName] ?: return payload
         if (rule.strategy != "AGENT_WORKSPACE") return payload
 
         val mutablePayload = payload.toMutableMap()
 
         val originalPath = payload["path"]?.jsonPrimitive?.contentOrNull ?: ""
-        val prefix = rule.pathPrefixTemplate.replace("{agentId}", agentId)
+        val prefix = rule.pathPrefixTemplate.replace("{agentId}", agentId.uuid)
         val sandboxedPath = if (originalPath.isNotBlank()) "$prefix/$originalPath" else prefix
         mutablePayload["path"] = JsonPrimitive(sandboxedPath)
 
@@ -515,17 +490,16 @@ class AgentRuntimeFeature(
     // ========================================================================
 
     private fun saveAgentConfig(agent: AgentInstance, store: Store) {
-        // Exclude cognitiveState - it's saved separately in nvram.json
         val agentWithoutNvram = agent.copy(cognitiveState = JsonNull)
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
-            put("path", "${agent.identity.uuid}/$agentConfigFILENAME")
+            put("path", "${agent.identityUUID.uuid}/$agentConfigFILENAME")
             put("content", json.encodeToString(agentWithoutNvram))
         }))
     }
 
     private fun saveAgentNvram(agent: AgentInstance, store: Store) {
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
-            put("path", "${agent.identity.uuid}/$nvramFILENAME")
+            put("path", "${agent.identityUUID.uuid}/$nvramFILENAME")
             put("content", json.encodeToString(agent.cognitiveState))
         }))
     }
@@ -543,14 +517,6 @@ class AgentRuntimeFeature(
     // Targeted action handling (Phase 3 — migrated from onPrivateData)
     // ========================================================================
 
-    /**
-     * Handles all targeted responses delivered to the agent feature.
-     * Called from handleSideEffects for any action whose name matches a targeted response type.
-     *
-     * Command-originated responses (those with a correlationId matching a pending command)
-     * are routed to the session via DELIVER_TO_SESSION. All other targeted responses
-     * are routed to their existing handlers (cognitive pipeline, workspace reads, etc.).
-     */
     private fun handleTargetedResponse(action: Action, store: Store, agentState: AgentRuntimeState) {
         val payload = action.payload ?: return
 
@@ -573,13 +539,10 @@ class AgentRuntimeFeature(
                 AgentCognitivePipeline.handleTargetedAction(action, store)
             }
             ActionRegistry.Names.FILESYSTEM_RETURN_LIST -> {
-                // If the listing has a correlationId, it was requested by the cognitive pipeline
-                // for workspace context injection — route it to the pipeline.
                 val hasCorrelationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull != null
                 if (hasCorrelationId) {
                     AgentCognitivePipeline.handleTargetedAction(action, store)
                 } else {
-                    // Agent-initiated listing — handle locally (post to session)
                     handleFileSystemListResponse(payload, store)
                 }
             }
@@ -594,22 +557,11 @@ class AgentRuntimeFeature(
     // ACTION_CREATED: DELIVER_TO_SESSION routing
     // ========================================================================
 
-    /**
-     * Routes a command-originated targeted response to the originating session
-     * via the DELIVER_TO_SESSION protocol.
-     *
-     * This replaces the old postCommandResponse/formatResponseForSession approach:
-     * instead of posting directly via SESSION_POST, we dispatch to CommandBot's
-     * DELIVER_TO_SESSION channel, which provides consistent formatting and attribution.
-     */
     private fun routeCommandResponseToSession(
         pending: AgentPendingCommand,
         action: Action,
         store: Store
     ) {
-        // Format the response data. Returns null if the response indicates an error
-        // or contains no useful data — in that case, ACTION_RESULT already provides
-        // the error status line, so we skip DELIVER_TO_SESSION to avoid duplicates.
         val formatted = formatResponseForSession(action)
 
         if (formatted != null) {
@@ -617,7 +569,7 @@ class AgentRuntimeFeature(
                 ActionRegistry.Names.COMMANDBOT_DELIVER_TO_SESSION,
                 buildJsonObject {
                     put("correlationId", pending.correlationId)
-                    put("sessionId", pending.sessionId)
+                    put("sessionId", pending.sessionId.handle)
                     put("message", formatted)
                 }
             ))
@@ -632,25 +584,17 @@ class AgentRuntimeFeature(
             )
         }
 
-        // Always clear the pending command — whether we delivered data or not.
         store.deferredDispatch(identity.handle, Action(
             ActionRegistry.Names.AGENT_CLEAR_PENDING_COMMAND,
             buildJsonObject { put("correlationId", pending.correlationId) }
         ))
     }
 
-    /**
-     * Formats a targeted response action into a human-readable session message.
-     * Returns null if the response indicates an error or contains no useful data —
-     * the caller should skip DELIVER_TO_SESSION in that case, since ACTION_RESULT
-     * already provides the error feedback to the session.
-     */
     private fun formatResponseForSession(action: Action): String? {
         val payload = action.payload ?: return null
         return when (action.name) {
             ActionRegistry.Names.FILESYSTEM_RETURN_LIST -> {
                 val listing = payload["listing"]?.jsonArray
-                // Empty listing on error — ACTION_RESULT covers it
                 if (listing == null || listing.isEmpty()) return null
                 val path = payload["path"]?.jsonPrimitive?.contentOrNull ?: "."
                 val formatted = Json { prettyPrint = true }.encodeToString(
@@ -664,14 +608,12 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.FILESYSTEM_RETURN_READ -> {
                 val path = payload["path"]?.jsonPrimitive?.contentOrNull ?: ""
                 val content = payload["content"]?.jsonPrimitive?.contentOrNull
-                // Null content = file not found / read error — ACTION_RESULT covers it
                 if (content == null) return null
                 val ext = path.substringAfterLast('.', "")
                 "```$ext \"$path\"\n$content\n```"
             }
             ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT -> {
                 val contents = payload["contents"]?.jsonObject
-                // No contents = error — ACTION_RESULT covers it
                 if (contents == null || contents.isEmpty()) return null
                 contents.entries.joinToString("\n\n") { (path, content) ->
                     val ext = path.substringAfterLast('.', "")
@@ -679,7 +621,6 @@ class AgentRuntimeFeature(
                 }
             }
             else -> {
-                // Generic fallback: pretty-print the payload
                 "```json\n${Json { prettyPrint = true }.encodeToString(payload)}\n```"
             }
         }
@@ -693,7 +634,6 @@ class AgentRuntimeFeature(
         val path = payload["path"]?.jsonPrimitive?.contentOrNull ?: ""
         val listing = payload["listing"]?.jsonArray
 
-        // Normalize for matching
         val normalizedPath = path.replace("\\", "/")
 
         when {
@@ -738,8 +678,8 @@ class AgentRuntimeFeature(
 
             // ====== Agent workspace directory listings ======
             normalizedPath.contains("/workspace") -> {
-                // Extract agent ID: "agent-xyz/workspace" or "agent-xyz/workspace/subdir"
-                val agentId = normalizedPath.substringBefore("/workspace")
+                val agentIdStr = normalizedPath.substringBefore("/workspace")
+                val agentId = IdentityUUID(agentIdStr)
                 val state = store.state.value.featureStates[identity.handle] as? AgentRuntimeState ?: run {
                     platformDependencies.log(LogLevel.DEBUG, identity.handle, "handleFileSystemListResponse: Agent state unavailable. Dropping workspace listing for '$agentId'.")
                     return
@@ -751,21 +691,19 @@ class AgentRuntimeFeature(
                 }
                 val targetSessionId = getAgentResponseSessionId(agent) ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle,
-                        "Agent '${agent.identity.uuid}' has no session for workspace list response.")
+                        "Agent '${agent.identityUUID}' has no session for workspace list response.")
                     return
                 }
 
-                // Format as JSON code block for machine readability
-                val workspaceRelativePath = normalizedPath.substringAfter("$agentId/workspace")
+                val workspaceRelativePath = normalizedPath.substringAfter("$agentIdStr/workspace")
                     .removePrefix("/")
                     .ifBlank { "." }
 
                 val listingJson = listing?.map { element ->
                     val entry = json.decodeFromJsonElement<FileEntry>(element)
-                    // Strip the agent+workspace prefix so the agent sees workspace-relative paths
                     val relativePath = entry.path.replace("\\", "/")
-                        .removePrefix("$agentId/workspace/")
-                        .removePrefix("$agentId/workspace")
+                        .removePrefix("$agentIdStr/workspace/")
+                        .removePrefix("$agentIdStr/workspace")
                     buildJsonObject {
                         put("path", relativePath)
                         put("isDirectory", entry.isDirectory)
@@ -782,7 +720,7 @@ class AgentRuntimeFeature(
                 }
 
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                    put("session", targetSessionId)
+                    put("session", targetSessionId.handle)
                     put("senderId", commandBotSenderId)
                     put("message", message)
                 }))
@@ -791,7 +729,6 @@ class AgentRuntimeFeature(
     }
 
     private fun handleFileSystemReadResponse(payload: JsonObject, store: Store) {
-        // Normalize separators to '/' to ensure cross-platform matching logic
         val path = (payload["path"]?.jsonPrimitive?.contentOrNull ?: "").replace("\\", "/")
         val content = payload["content"]?.jsonPrimitive?.contentOrNull ?: run {
             platformDependencies.log(LogLevel.DEBUG, identity.handle, "handleFileSystemReadResponse: Missing content in read response for path='$path'.")
@@ -801,7 +738,8 @@ class AgentRuntimeFeature(
         when {
             // ====== Agent workspace file responses ======
             path.contains(workspacePathMarker) -> {
-                val agentId = path.substringBefore(workspacePathMarker)
+                val agentIdStr = path.substringBefore(workspacePathMarker)
+                val agentId = IdentityUUID(agentIdStr)
                 val relativePath = path.substringAfter(workspacePathMarker)
                 val state = store.state.value.featureStates[identity.handle] as? AgentRuntimeState ?: run {
                     platformDependencies.log(LogLevel.DEBUG, identity.handle, "handleFileSystemReadResponse: Agent state unavailable. Dropping file read for '$agentId'.")
@@ -814,7 +752,7 @@ class AgentRuntimeFeature(
                 }
                 val targetSessionId = getAgentResponseSessionId(agent) ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle,
-                        "Agent '${agent.identity.uuid}' has no session for workspace read response.")
+                        "Agent '${agent.identityUUID}' has no session for workspace read response.")
                     return
                 }
 
@@ -825,7 +763,7 @@ class AgentRuntimeFeature(
                 }
 
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                    put("session", targetSessionId)
+                    put("session", targetSessionId.handle)
                     put("senderId", commandBotSenderId)
                     put("message", message)
                 }))
@@ -834,7 +772,6 @@ class AgentRuntimeFeature(
             path.startsWith("resources/") -> {
                 try {
                     val resource = json.decodeFromString<AgentResource>(content)
-                    // Ensure the in-memory resource has a normalized path
                     val resWithPath = resource.copy(path = path)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_RESOURCE_LOADED, json.encodeToJsonElement(resWithPath) as JsonObject))
                 } catch (e: Exception) {
@@ -859,20 +796,17 @@ class AgentRuntimeFeature(
             path.endsWith("/$nvramFILENAME") -> {
                 try {
                     val nvramState = json.decodeFromString<JsonElement>(content)
-                    // Extract agent ID from path (e.g., "agent-xyz/nvram.json" -> "agent-xyz")
-                    val agentId = path.substringBeforeLast("/")
+                    val agentIdStr = path.substringBeforeLast("/")
 
-                    // Dispatch to merge NVRAM into the agent's state
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_NVRAM_LOADED, buildJsonObject {
-                        put("agentId", agentId)
+                        put("agentId", agentIdStr)
                         put("state", nvramState)
                     }))
                 } catch (e: Exception) {
-                    // NVRAM file missing or corrupted is non-fatal - agent will use initial state
                     platformDependencies.log(LogLevel.WARN, identity.handle, "Failed to load NVRAM from $path (agent will use initial state): ${e.message}")
                 }
             }
-            // Unknown file — log and ignore, don't corrupt agent load tracking
+            // Unknown file
             else -> {
                 platformDependencies.log(LogLevel.WARN, identity.handle, "Received unexpected file read response for: $path. Ignoring.")
             }
@@ -903,14 +837,12 @@ class AgentRuntimeFeature(
             val appState by store.state.collectAsState()
             val state = appState.featureStates[identity.handle] as? AgentRuntimeState ?: return
             // Context may be a UUID (direct call) or a handle like "agent.flash"
-            // (from SessionView which passes entry.senderId). Try UUID first, then
-            // fall back to searching by identity handle.
-            val agent = state.agents[agentId]
-                ?: state.agents.values.find { it.identity.handle == agentId }
+            val agent = state.agents[IdentityUUID(agentId)]
+                ?: state.agents.values.find { it.identityHandle.handle == agentId }
             if (agent == null) {
                 platformDependencies.log(LogLevel.ERROR, identity.handle,
                     "PartialView: Could not resolve agent for context '$agentId'. " +
-                            "Known UUIDs: ${state.agents.keys}, known handles: ${state.agents.values.map { it.identity.handle }}")
+                            "Known UUIDs: ${state.agents.keys}, known handles: ${state.agents.values.map { it.identityHandle }}")
                 return
             }
             AgentAvatarCard(agent = agent, store = store, platformDependencies = platformDependencies)
@@ -922,7 +854,9 @@ class AgentRuntimeFeature(
  * Determines the session where workspace operation responses should be posted.
  * For sovereign agents: their private session (isolated cognition).
  * For vanilla agents: their first subscribed session (where they participate).
+ *
+ * [PHASE 1] Returns typed [IdentityHandle].
  */
-private fun getAgentResponseSessionId(agent: AgentInstance): String? {
+private fun getAgentResponseSessionId(agent: AgentInstance): IdentityHandle? {
     return agent.privateSessionId ?: agent.subscribedSessionIds.firstOrNull()
 }
