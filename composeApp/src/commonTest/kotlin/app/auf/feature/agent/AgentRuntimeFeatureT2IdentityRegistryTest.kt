@@ -45,7 +45,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
     // Stable identifiers used across tests. Names are single lowercase words
     // to minimize ambiguity in CoreFeature's handle slugification.
     private val agentUUID = "a0000000-0000-0000-0000-000000000001"
-    private val sessionUUID = "s0000000-0000-0000-0000-000000000001"
+    private val sessionUUID = "b0000000-0000-0000-0000-000000000001"
 
     private val agent = testAgent(
         id = agentUUID,
@@ -684,7 +684,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             }
             assertNotNull(updateAction,
                 "Expected CORE_UPDATE_IDENTITY dispatched when agent name changes")
-            assertEquals("Alpha Renamed", updateAction.payload?.get("name")?.jsonPrimitive?.content)
+            assertEquals("Alpha Renamed", updateAction.payload?.get("newName")?.jsonPrimitive?.content)
         }
     }
 }
