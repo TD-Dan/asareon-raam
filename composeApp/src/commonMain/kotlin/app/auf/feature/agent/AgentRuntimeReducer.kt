@@ -65,7 +65,10 @@ object AgentRuntimeReducer {
 
             ActionRegistry.Names.AGENT_SET_CONTEXT_GATHERING_STARTED -> {
                 val agentId = action.payload?.agentUUID() ?: return state
-                val startedAt = action.payload?.get("startedAt")?.jsonPrimitive?.longOrNull ?: return state
+                // startedAt is null (JsonNull) when clearing the gate, Long when setting it.
+                val startedAt = action.payload?.get("startedAt")?.let {
+                    if (it is JsonNull) null else it.jsonPrimitive.longOrNull
+                }
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
                 val updatedStatus = currentStatus.copy(contextGatheringStartedAt = startedAt)
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))

@@ -212,6 +212,9 @@ class AgentRuntimeFeature(
                     return
                 }
                 saveAgentConfig(agentToSave, store)
+                // cognitiveState contains strategy-owned data (e.g. knowledgeGraphId for
+                // Sovereign). saveAgentConfig strips it, so always write NVRAM on creation.
+                saveAgentNvram(agentToSave, store)
 
                 // Polymorphic: let the strategy set up its infrastructure.
                 val strategy = CognitiveStrategyRegistry.get(agentToSave.cognitiveStrategyId)
@@ -294,6 +297,12 @@ class AgentRuntimeFeature(
                 }
 
                 saveAgentConfig(newAgent, store)
+                // cognitiveState may have changed (e.g. knowledgeGraphId routed into it
+                // by mergeCognitiveStateFromPayload). saveAgentConfig strips cognitiveState,
+                // so we must also write the NVRAM file when it differs.
+                if (oldAgent == null || oldAgent.cognitiveState != newAgent.cognitiveState) {
+                    saveAgentNvram(newAgent, store)
+                }
                 AgentAvatarLogic.updateAgentAvatars(agentId, store)
 
                 // Polymorphic infrastructure check.
