@@ -513,9 +513,10 @@ class SessionFeature(
                     return
                 }
 
-                val session = sessionState.sessions[payload.sessionId]
+                val localHandle = resolveSessionId(payload.sessionId, sessionState)
+                val session = localHandle?.let { sessionState.sessions[it] }
                 if (session == null) {
-                    platformDependencies.log(LogLevel.ERROR, identity.handle, "REQUEST_LEDGER_CONTENT failed: Session '${payload.sessionId}' not found.")
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "REQUEST_LEDGER_CONTENT failed: Could not resolve session '${payload.sessionId}'.")
                     return
                 }
 
@@ -667,12 +668,16 @@ class SessionFeature(
         }))
     }
 
-    // Phase 4: Resolves by localHandle, full handle, or display name
+    // Resolves a session identifier to its localHandle (map key).
+    // Accepts: localHandle, full handle, display name, or UUID.
     private fun resolveSessionId(identifier: String, state: SessionState): String? {
         // Direct localHandle match (map key)
         if (state.sessions.containsKey(identifier)) return identifier
         // Match by full handle (e.g., "session.cats-chat")
         state.sessions.values.singleOrNull { it.identity.handle == identifier }
+            ?.let { return it.identity.localHandle }
+        // Match by UUID (immutable, preferred for cross-feature references)
+        state.sessions.values.singleOrNull { it.identity.uuid == identifier }
             ?.let { return it.identity.localHandle }
         // Match by display name
         state.sessions.values.singleOrNull { it.identity.name == identifier }

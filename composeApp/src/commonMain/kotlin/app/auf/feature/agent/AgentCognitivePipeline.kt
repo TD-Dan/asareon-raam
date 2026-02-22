@@ -51,7 +51,8 @@ object AgentCognitivePipeline {
             AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, msg)
             return
         }
-        val contextSessionHandle = store.state.value.identityRegistry.findByUUID(contextSessionUUID)?.handle ?: run {
+        // Validate the UUID is still in the registry (session may have been deleted)
+        if (store.state.value.identityRegistry.findByUUID(contextSessionUUID) == null) {
             val msg = "Cannot start turn: Session UUID '$contextSessionUUID' not in registry."
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
             AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, msg)
@@ -65,8 +66,9 @@ object AgentCognitivePipeline {
         store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
             put("agentId", agentId.uuid); put("step", "Requesting Ledger")
         }))
+        // Send UUID — the session feature's resolveSessionId handles UUID lookup
         store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject {
-            put("sessionId", contextSessionHandle); put("correlationId", agentId.uuid)
+            put("sessionId", contextSessionUUID.uuid); put("correlationId", agentId.uuid)
         }))
     }
 
@@ -581,7 +583,7 @@ object AgentCognitivePipeline {
             AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.ERROR, "No target session for response.")
             return
         }
-        val targetSessionHandle = store.state.value.identityRegistry.findByUUID(targetSessionUUID)?.handle ?: run {
+        if (store.state.value.identityRegistry.findByUUID(targetSessionUUID) == null) {
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleGatewayResponse: Session UUID '$targetSessionUUID' not in registry for agent '$agentUuid'.")
             AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.ERROR, "Target session not in registry.")
             return
@@ -621,7 +623,7 @@ object AgentCognitivePipeline {
         if (match != null) {
             contentToPost = contentToPost.substring(match.range.last + 1).trimStart()
             store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                put("session", targetSessionHandle)
+                put("session", targetSessionUUID.uuid)
                 put("senderId", "system")
                 put("message", """SYSTEM SENTINEL (llm-output-sanitizer): Warning for [${agent.identity.name}]: Please do not include the standard system "name (id) @timestamp:" part in your output. The host system adds this automatically.""")
             }))
@@ -629,7 +631,7 @@ object AgentCognitivePipeline {
 
         // 4. Proceed to Post — senderId is now the agent's handle for bus addressing
         store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-            put("session", targetSessionHandle); put("senderId", agent.identityHandle.handle); put("message", contentToPost)
+            put("session", targetSessionUUID.uuid); put("senderId", agent.identityHandle.handle); put("message", contentToPost)
         }))
         AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.IDLE)
 
