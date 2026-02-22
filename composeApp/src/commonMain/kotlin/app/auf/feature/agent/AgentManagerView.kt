@@ -200,7 +200,6 @@ private fun AgentReadOnlyView(
     platformDependencies: app.auf.util.PlatformDependencies
 ) {
     val identityRegistry = store.state.collectAsState().value.identityRegistry
-    val sessionName = agent.subscribedSessionIds.firstOrNull()?.let { agentState.subscribableSessionNames[it] } ?: "Not Subscribed"
     val hkgName = agent.getKnowledgeGraphId()?.let { agentState.knowledgeGraphNames[it] } ?: "No HKG"
     val privateSessionName = agent.outputSessionId?.let { identityRegistry["session.$it"]?.name } ?: agent.outputSessionId?.handle ?: "None"
     val statusInfo = agentState.agentStatuses[agent.identityUUID] ?: AgentStatusInfo()
@@ -214,7 +213,14 @@ private fun AgentReadOnlyView(
 
         SelectionContainer {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Subscribed: $sessionName" + if (agent.subscribedSessionIds.size > 1) " (+${agent.subscribedSessionIds.size - 1} more)" else "", style = MaterialTheme.typography.bodyMedium)
+                // Show all subscribed sessions
+                val sessionNames = agent.subscribedSessionIds.mapNotNull { agentState.subscribableSessionNames[it] }
+                val sessionSummary = when {
+                    sessionNames.isEmpty() -> "Not Subscribed"
+                    sessionNames.size == 1 -> sessionNames.first()
+                    else -> sessionNames.joinToString(", ")
+                }
+                Text("Subscribed: $sessionSummary", style = MaterialTheme.typography.bodyMedium)
 
                 // [LOGIC] Only show Sovereign details if actually Sovereign (has HKG)
                 if (isSovereign) {
@@ -330,17 +336,26 @@ private fun AgentEditorView(
             Box(Modifier.weight(1f)) { ModelSelector(draftAgent, agentState, onDraftChanged) }
         }
 
-        // --- ROW 3: Context (Subscriptions) ---
+        // --- ROW 3: Context (Subscriptions) — Unified multi-select for all strategies ---
         Row(Modifier.fillMaxWidth()) {
-            if (draftAgent.getKnowledgeGraphId() == null) {
-                SingleSessionSelector(draftAgent, agentState, onDraftChanged)
-            } else {
-                MultiSessionSelector(draftAgent, agentState, onDraftChanged)
-            }
+            MultiSessionSelector(draftAgent, agentState, onDraftChanged)
         }
 
-        // --- ROW 4: Sovereign Specifics (Knowledge Graph) ---
+        // --- ROW 4: Strategy-Specific Settings ---
+        val currentStrategy = remember(draftAgent.cognitiveStrategyId) {
+            CognitiveStrategyRegistry.get(draftAgent.cognitiveStrategyId)
+        }
+
         if (!isVanilla) {
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            Text(
+                "Strategy Settings (${currentStrategy.displayName})",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+
+            // Knowledge Graph selector for Sovereign strategy
             Row(Modifier.fillMaxWidth()) {
                 KnowledgeGraphSelector(draftAgent, agentState, onDraftChanged)
             }
@@ -348,9 +363,6 @@ private fun AgentEditorView(
 
         // --- ROW 5: Resource Slots (Strategy-Driven) ---
         // The Strategy is the single source of truth for slot IDs and layout.
-        val currentStrategy = remember(draftAgent.cognitiveStrategyId) {
-            CognitiveStrategyRegistry.get(draftAgent.cognitiveStrategyId)
-        }
         val resourceSlots = remember(currentStrategy) { currentStrategy.getResourceSlots() }
 
         if (resourceSlots.size == 1) {
@@ -707,33 +719,8 @@ private fun CreateResourceDialog(
 // Selectors — Draft-Based (no direct store dispatch)
 // =============================================================================
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SingleSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, onUpdate: (AgentInstance) -> Unit) {
-    val availableSessions = agentState.subscribableSessionNames.entries.toList()
-    var isExpanded by remember { mutableStateOf(false) }
-
-    ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
-        OutlinedTextField(
-            value = agent.subscribedSessionIds.firstOrNull()?.let { agentState.subscribableSessionNames[it] } ?: "Not Subscribed",
-            onValueChange = {}, readOnly = true, label = { Text("Session") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
-            modifier = Modifier.menuAnchor().fillMaxWidth()
-        )
-        ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
-            DropdownMenuItem(text = { Text("None (Unsubscribe)") }, onClick = {
-                onUpdate(agent.copy(subscribedSessionIds = emptyList()))
-                isExpanded = false
-            })
-            availableSessions.forEach { (sessionId, sessionName) ->
-                DropdownMenuItem(text = { Text(sessionName) }, onClick = {
-                    onUpdate(agent.copy(subscribedSessionIds = listOf(sessionId)))
-                    isExpanded = false
-                })
-            }
-        }
-    }
-}
+// [PHASE 7] SingleSessionSelector REMOVED — replaced by unified MultiSessionSelector
+// for all agent strategies. All agents now use multi-select session subscriptions.
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -752,7 +739,7 @@ private fun MultiSessionSelector(agent: AgentInstance, agentState: AgentRuntimeS
             value = selectionText,
             onValueChange = {},
             readOnly = true,
-            label = { Text("Subscriptions") },
+            label = { Text("Subscribed Sessions") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth()
         )

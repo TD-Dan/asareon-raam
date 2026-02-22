@@ -199,10 +199,24 @@ enum class SentinelAction {
 }
 
 /**
+ * Describes a session the agent is subscribed to, enriched with display name
+ * and whether it is the designated output target.
+ */
+data class SessionInfo(
+    val handle: String,
+    val name: String,
+    val isOutput: Boolean
+)
+
+/**
  * Minimal context required by the strategy to build the prompt.
  */
 data class AgentTurnContext(
     val agentName: String,
     val resolvedResources: Map<String, String>, // slotId → content
-    val gatheredContexts: Map<String, String>   // source → content
+    val gatheredContexts: Map<String, String>,  // source → content
+    /** All sessions the agent is subscribed to, enriched with names and output flag. */
+    val subscribedSessions: List<SessionInfo> = emptyList(),
+    /** The output session handle (may differ from subscribed sessions for Sovereign agents). */
+    val outputSessionHandle: String? = null
 )

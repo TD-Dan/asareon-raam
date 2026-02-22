@@ -89,7 +89,32 @@ object SovereignStrategy : CognitiveStrategy {
             appendLine("You are a candidate consciousness named ${context.agentName}.")
             appendLine()
 
-            // 3. The Context (World)
+            // 3. Session Subscription Awareness
+            if (context.subscribedSessions.isNotEmpty() || context.outputSessionHandle != null) {
+                appendLine("--- SUBSCRIBED SESSIONS ---")
+
+                // Mark the private cognition session as primary output
+                if (context.outputSessionHandle != null) {
+                    val outputInSubscribed = context.subscribedSessions.find { it.handle == context.outputSessionHandle }
+                    if (outputInSubscribed != null) {
+                        appendLine("  - ${outputInSubscribed.name} (${outputInSubscribed.handle}) [PRIMARY OUTPUT — Your private cognition session. Responses and tool results are routed here]")
+                    } else {
+                        appendLine("  - ${context.outputSessionHandle} [PRIMARY OUTPUT — Your private cognition session. Responses and tool results are routed here]")
+                    }
+                }
+
+                // List other subscribed sessions
+                context.subscribedSessions.forEach { session ->
+                    if (session.handle != context.outputSessionHandle) {
+                        appendLine("  - ${session.name} (${session.handle}) [OBSERVED — You receive messages from this session]")
+                    }
+                }
+
+                appendLine("You observe messages from all subscribed sessions. Your responses are posted to the primary output session.")
+                appendLine()
+            }
+
+            // 4. The Context (World)
             if (context.gatheredContexts.isNotEmpty()) {
                 appendLine("--- OBSERVED REALITY ---")
                 context.gatheredContexts.forEach { (source, content) ->
@@ -99,7 +124,7 @@ object SovereignStrategy : CognitiveStrategy {
                 appendLine()
             }
 
-            // 4. The Bootloader (ONLY in BOOTING phase)
+            // 5. The Bootloader (ONLY in BOOTING phase)
             if (phase == PHASE_BOOTING && bootloader.isNotBlank()) {
                 appendLine(bootloader)
             }

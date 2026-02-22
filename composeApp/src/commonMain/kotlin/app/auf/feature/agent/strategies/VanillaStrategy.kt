@@ -53,6 +53,22 @@ object VanillaStrategy : CognitiveStrategy {
                 appendLine(instructions)
             }
 
+            // Session subscription awareness
+            if (context.subscribedSessions.isNotEmpty()) {
+                appendLine("\n--- SUBSCRIBED SESSIONS ---")
+                appendLine("You are currently subscribed to the following sessions:")
+                context.subscribedSessions.forEach { session ->
+                    val primaryTag = if (session.isOutput || (context.outputSessionHandle == null && session == context.subscribedSessions.first())) {
+                        " [PRIMARY — Your output and tool results are routed here]"
+                    } else {
+                        ""
+                    }
+                    appendLine("  - ${session.name} (${session.handle})$primaryTag")
+                }
+                appendLine("You observe messages from all subscribed sessions. Your responses are posted to the primary session.")
+                appendLine()
+            }
+
             // Add multi-agent context if present (includes participant list and message format explanation)
             context.gatheredContexts["MULTI_AGENT_CONTEXT"]?.let {
                 appendLine(it)

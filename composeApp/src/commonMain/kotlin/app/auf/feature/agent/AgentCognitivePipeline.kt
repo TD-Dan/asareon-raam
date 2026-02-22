@@ -410,10 +410,28 @@ object AgentCognitivePipeline {
             contextMap["MULTI_AGENT_CONTEXT"] = multiAgentContext
         }
 
+        // ============================================================
+        // Build structured session subscription context
+        // ============================================================
+        val identityRegistry = store.state.value.identityRegistry
+        val outputHandle = agent.outputSessionId?.handle
+        val subscribedSessionInfos = agent.subscribedSessionIds.map { sessId ->
+            val sessName = identityRegistry["session.${sessId.handle}"]?.name
+                ?: agentState.subscribableSessionNames[sessId]
+                ?: sessId.handle
+            SessionInfo(
+                handle = sessId.handle,
+                name = sessName,
+                isOutput = sessId.handle == outputHandle
+            )
+        }
+
         val context = AgentTurnContext(
             agentName = agent.identity.name,
             resolvedResources = resolvedResources,
-            gatheredContexts = contextMap
+            gatheredContexts = contextMap,
+            subscribedSessions = subscribedSessionInfos,
+            outputSessionHandle = outputHandle
         )
 
         val systemPrompt = strategy.prepareSystemPrompt(context, cognitiveState)
