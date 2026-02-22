@@ -34,9 +34,17 @@ import kotlinx.serialization.json.*
  * SovereignHKGResourceLogic or checks `agent.knowledgeGraphId`. All strategy-specific
  * behavior is dispatched polymorphically through the [CognitiveStrategy] lifecycle hooks.
  *
+ * [PHASE 6] ACTION_RESULT compliance. All 15 command-dispatchable agent actions now
+ * publish `agent.ACTION_RESULT` broadcasts with `correlationId`, `success`, and a
+ * human-readable `summary`. CommandBot matches via `correlationId` to post feedback
+ * into the originating session.
+ *
  * Satisfies Definition of Done criterion #1:
  * "AgentRuntimeFeature contains no `if (agent.knowledgeGraphId != null)` or equivalent
  * implicit strategy checks."
+ *
+ * Satisfies Definition of Done criterion for Phase 6:
+ * "All command-dispatchable agent actions publish agent.ACTION_RESULT with correlationId."
  */
 class AgentRuntimeFeature(
     private val platformDependencies: PlatformDependencies,
@@ -64,6 +72,10 @@ class AgentRuntimeFeature(
     // ---- Phase 1 boundary helper ----
     private fun JsonObject.agentUUID(field: String = "agentId"): IdentityUUID? =
         this[field]?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) }
+
+    // ---- Phase 6 boundary helper ----
+    private fun JsonObject.correlationId(): String? =
+        this["correlationId"]?.jsonPrimitive?.contentOrNull
 
     override fun init(store: Store) {
         // [PHASE 2] Register all built-in cognitive strategies before any agents boot.
@@ -165,8 +177,11 @@ class AgentRuntimeFeature(
 
             // --- Agent CRUD Side Effects ---
             ActionRegistry.Names.AGENT_CREATE -> {
+                val payload = action.payload
+                val correlationId = payload?.correlationId()
                 val agentToSave = agentState.agents.values.lastOrNull() ?: run {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "AGENT_CREATE: No agents in state after CREATE action. Reducer may have failed.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Agent creation failed — reducer did not produce an agent.")
                     return
                 }
                 saveAgentConfig(agentToSave, store)
@@ -184,11 +199,16 @@ class AgentRuntimeFeature(
                         put("name", agentToSave.identity.name)
                     }
                 ))
+
+                publishActionResult(store, correlationId, action.name, true, summary = "Agent '${agentToSave.identity.name}' created.")
             }
             ActionRegistry.Names.AGENT_CLONE -> {
-                val agentId = action.payload?.agentUUID() ?: return
+                val payload = action.payload
+                val correlationId = payload?.correlationId()
+                val agentId = payload?.agentUUID() ?: return
                 val agentToClone = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "AGENT_CLONE: Source agent '$agentId' not found in state.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Source agent '$agentId' not found.")
                     return
                 }
                 // [PHASE 4] knowledgeGraphId is now in cognitiveState. The clone payload
@@ -208,21 +228,37 @@ class AgentRuntimeFeature(
                     put("autoMaxWaitTimeSeconds", agentToClone.autoMaxWaitTimeSeconds)
                 }
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_CREATE, createPayload))
+
+                publishActionResult(store, correlationId, action.name, true, summary = "Agent '${agentToClone.identity.name}' cloned.")
             }
             ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, ActionRegistry.Names.AGENT_TOGGLE_ACTIVE -> {
-                val agentId = action.payload?.agentUUID() ?: return
+                val payload = action.payload
+                val correlationId = payload?.correlationId()
+                val agentId = payload?.agentUUID() ?: return
                 val agent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "AGENT_TOGGLE: Agent '$agentId' not found in state.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Agent '$agentId' not found.")
                     return
                 }
                 saveAgentConfig(agent, store)
                 AgentAvatarLogic.touchAgentAvatarCard(agent, agentState, store)
+
+                val summary = when (action.name) {
+                    ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE ->
+                        "Agent '${agent.identity.name}' automatic mode ${if (agent.automaticMode) "enabled" else "disabled"}."
+                    else ->
+                        "Agent '${agent.identity.name}' ${if (agent.isAgentActive) "activated" else "paused"}."
+                }
+                publishActionResult(store, correlationId, action.name, true, summary = summary)
             }
             ActionRegistry.Names.AGENT_UPDATE_CONFIG -> {
-                val agentId = action.payload?.agentUUID() ?: return
+                val payload = action.payload
+                val correlationId = payload?.correlationId()
+                val agentId = payload?.agentUUID() ?: return
                 val oldAgent = (previousState as? AgentRuntimeState)?.agents?.get(agentId)
                 val newAgent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "AGENT_UPDATE_CONFIG: Agent '$agentId' not found in state after update.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Agent '$agentId' not found after update.")
                     return
                 }
 
@@ -253,6 +289,8 @@ class AgentRuntimeFeature(
                         ))
                     }
                 }
+
+                publishActionResult(store, correlationId, action.name, true, summary = "Agent '${newAgent.identity.name}' configuration updated.")
             }
             ActionRegistry.Names.AGENT_NVRAM_LOADED -> {
                 val agentId = action.payload?.agentUUID() ?: return
@@ -263,15 +301,21 @@ class AgentRuntimeFeature(
                 saveAgentNvram(agent, store)
             }
             ActionRegistry.Names.AGENT_UPDATE_NVRAM -> {
-                val agentId = action.payload?.agentUUID() ?: return
+                val payload = action.payload
+                val correlationId = payload?.correlationId()
+                val agentId = payload?.agentUUID() ?: return
                 val agent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "UPDATE_NVRAM: Agent '$agentId' not found. Cannot update NVRAM.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Agent '$agentId' not found.")
                     return
                 }
                 saveAgentNvram(agent, store)
+                publishActionResult(store, correlationId, action.name, true, summary = "Agent '${agent.identity.name}' cognitive state updated.")
             }
             ActionRegistry.Names.AGENT_DELETE -> {
-                val agentId = action.payload?.agentUUID() ?: return
+                val payload = action.payload
+                val correlationId = payload?.correlationId()
+                val agentId = payload?.agentUUID() ?: return
                 agentState.agentAvatarCardIds[agentId]?.forEach { (sessionId, messageId) ->
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
                         put("session", sessionId.handle)
@@ -283,6 +327,7 @@ class AgentRuntimeFeature(
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENT_DELETED, buildJsonObject { put("agentId", agentId.uuid) }))
                 // Unregister agent identity (cascades any sub-identities)
                 val agentToDelete = (previousState as? AgentRuntimeState)?.agents?.get(agentId)
+                val deleteName = agentToDelete?.identity?.name ?: agentId.uuid
                 val deleteHandle = agentToDelete?.identityHandle
                 if (deleteHandle != null && deleteHandle.handle.isNotBlank()) {
                     store.deferredDispatch(identity.handle, Action(
@@ -290,28 +335,49 @@ class AgentRuntimeFeature(
                         buildJsonObject { put("handle", deleteHandle.handle) }
                     ))
                 }
+
+                publishActionResult(store, correlationId, action.name, true, summary = "Agent '$deleteName' deleted.")
             }
 
             // --- Resource CRUD Side Effects ---
             ActionRegistry.Names.AGENT_CREATE_RESOURCE -> {
+                val correlationId = action.payload?.correlationId()
                 val newResource = agentState.resources.lastOrNull() ?: run {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "CREATE_RESOURCE: No resources in state after CREATE action. Reducer may have failed.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Resource creation failed.")
                     return
                 }
                 saveResourceConfig(newResource, store)
+                publishActionResult(store, correlationId, action.name, true, summary = "Resource '${newResource.name}' created.")
             }
             ActionRegistry.Names.AGENT_SAVE_RESOURCE -> {
+                val correlationId = action.payload?.correlationId()
                 val resourceId = action.payload?.get("resourceId")?.jsonPrimitive?.contentOrNull ?: return
                 val resourceToSave = agentState.resources.find { it.id == resourceId } ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "SAVE_RESOURCE: Resource '$resourceId' not found in state.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Resource '$resourceId' not found.")
                     return
                 }
                 saveResourceConfig(resourceToSave, store)
+                publishActionResult(store, correlationId, action.name, true, summary = "Resource '${resourceToSave.name}' saved.")
+            }
+            ActionRegistry.Names.AGENT_RENAME_RESOURCE -> {
+                val correlationId = action.payload?.correlationId()
+                val resourceId = action.payload?.get("resourceId")?.jsonPrimitive?.contentOrNull ?: return
+                val renamedResource = agentState.resources.find { it.id == resourceId } ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "RENAME_RESOURCE: Resource '$resourceId' not found in state after rename.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Resource '$resourceId' not found.")
+                    return
+                }
+                saveResourceConfig(renamedResource, store)
+                publishActionResult(store, correlationId, action.name, true, summary = "Resource renamed to '${renamedResource.name}'.")
             }
             ActionRegistry.Names.AGENT_DELETE_RESOURCE -> {
+                val correlationId = action.payload?.correlationId()
                 val resourceId = action.payload?.get("resourceId")?.jsonPrimitive?.contentOrNull ?: return
                 val resourceToDelete = (previousState as? AgentRuntimeState)?.resources?.find { it.id == resourceId } ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "DELETE_RESOURCE: Resource '$resourceId' not found in previousState.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Resource '$resourceId' not found.")
                     return
                 }
                 resourceToDelete.path?.let { path ->
@@ -320,12 +386,16 @@ class AgentRuntimeFeature(
                     }))
                 }
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_SELECT_RESOURCE, buildJsonObject { put("resourceId", null as String?) }))
+                publishActionResult(store, correlationId, action.name, true, summary = "Resource '${resourceToDelete.name}' deleted.")
             }
 
             // --- Cognitive Pipeline & Peer Updates (Delegated) ---
             ActionRegistry.Names.AGENT_INITIATE_TURN -> {
+                val correlationId = action.payload?.correlationId()
                 val agentId = action.payload?.agentUUID() ?: return
+                val agent = agentState.agents[agentId]
                 AgentCognitivePipeline.startCognitiveCycle(agentId, store)
+                publishActionResult(store, correlationId, action.name, true, summary = "Turn initiated for agent '${agent?.identity?.name ?: agentId.uuid}'.")
             }
             ActionRegistry.Names.AGENT_STAGE_TURN_CONTEXT -> {
                 val agentId = action.payload?.agentUUID() ?: return
@@ -355,14 +425,17 @@ class AgentRuntimeFeature(
                 AgentCognitivePipeline.evaluateFullContext(agentId, store, isTimeout = true)
             }
             ActionRegistry.Names.AGENT_EXECUTE_PREVIEWED_TURN -> {
+                val correlationId = action.payload?.correlationId()
                 val agentId = action.payload?.agentUUID() ?: return
                 val agent = agentState.agents[agentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "EXECUTE_PREVIEWED_TURN: Agent '$agentId' not found.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Agent '$agentId' not found.")
                     return
                 }
                 val statusInfo = agentState.agentStatuses[agentId]
                 val previewData = statusInfo?.stagedPreviewData ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "EXECUTE_PREVIEWED_TURN: No staged preview data for agent '$agentId'. Preview may have been discarded.")
+                    publishActionResult(store, correlationId, action.name, false, error = "No staged preview for agent '${agent.identity.name}'.")
                     return
                 }
 
@@ -377,9 +450,13 @@ class AgentRuntimeFeature(
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId.uuid) }))
                 store.dispatch("ui.agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
+
+                publishActionResult(store, correlationId, action.name, true, summary = "Previewed turn executed for agent '${agent.identity.name}'.")
             }
             ActionRegistry.Names.AGENT_DISCARD_PREVIEW -> {
+                val correlationId = action.payload?.correlationId()
                 val agentId = action.payload?.agentUUID() ?: return
+                val agent = agentState.agents[agentId]
                 val statusInfo = agentState.agentStatuses[agentId]
                 if (statusInfo?.status != AgentStatus.PROCESSING) {
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
@@ -387,15 +464,19 @@ class AgentRuntimeFeature(
                     }))
                 }
                 store.dispatch("ui.agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
+                publishActionResult(store, correlationId, action.name, true, summary = "Preview discarded for agent '${agent?.identity?.name ?: agentId.uuid}'.")
             }
             ActionRegistry.Names.AGENT_CANCEL_TURN -> {
+                val correlationId = action.payload?.correlationId()
                 val agentId = action.payload?.agentUUID() ?: return
+                val agent = agentState.agents[agentId]
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_CANCEL_REQUEST, buildJsonObject {
                     put("correlationId", agentId.uuid)
                 }))
                 activeTurnJobs[agentId]?.cancel()
                 activeTurnJobs.remove(agentId)
                 AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.IDLE, "Turn cancelled by user.")
+                publishActionResult(store, correlationId, action.name, true, summary = "Turn cancelled for agent '${agent?.identity?.name ?: agentId.uuid}'.")
             }
             ActionRegistry.Names.SESSION_MESSAGE_POSTED -> {
                 val prevAgentState = previousState as? AgentRuntimeState ?: run {
@@ -525,6 +606,38 @@ class AgentRuntimeFeature(
             val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
             strategy.ensureInfrastructure(agent, agentState, store)
         }
+    }
+
+    // ========================================================================
+    // [PHASE 6] ACTION_RESULT broadcast helper
+    // ========================================================================
+
+    /**
+     * Publishes a lightweight broadcast notification after completing a
+     * command-dispatchable action. CommandBot matches via `correlationId`
+     * to post feedback to the originating session. Other observers
+     * (logging plugins, usage monitors) may also subscribe.
+     *
+     * Follows the same contract as `FileSystemFeature.publishActionResult`.
+     */
+    private fun publishActionResult(
+        store: Store,
+        correlationId: String?,
+        requestAction: String,
+        success: Boolean,
+        summary: String? = null,
+        error: String? = null
+    ) {
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.AGENT_ACTION_RESULT,
+            payload = buildJsonObject {
+                correlationId?.let { put("correlationId", it) }
+                put("requestAction", requestAction)
+                put("success", success)
+                summary?.let { put("summary", it) }
+                error?.let { put("error", it) }
+            }
+        ))
     }
 
     // ========================================================================

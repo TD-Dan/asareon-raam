@@ -44,6 +44,14 @@
           },
           "autoMaxWaitTimeSeconds": {
             "type": "integer"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
           }
         },
         "required": [
@@ -62,6 +70,14 @@
         "properties": {
           "agentId": {
             "type": "string"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
           }
         },
         "required": [
@@ -119,6 +135,14 @@
           },
           "autoMaxWaitTimeSeconds": {
             "type": "integer"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
           }
         },
         "required": [
@@ -137,6 +161,14 @@
         "properties": {
           "agentId": {
             "type": "string"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
           }
         },
         "required": [
@@ -155,6 +187,14 @@
         "properties": {
           "agentId": {
             "type": "string"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
           }
         },
         "required": [
@@ -173,6 +213,14 @@
         "properties": {
           "agentId": {
             "type": "string"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
           }
         },
         "required": [
@@ -195,6 +243,14 @@
           "preview": {
             "type": "boolean",
             "default": false
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
           }
         },
         "required": [
@@ -213,6 +269,14 @@
         "properties": {
           "agentId": {
             "type": "string"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
           }
         },
         "required": [
@@ -231,6 +295,14 @@
         "properties": {
           "agentId": {
             "type": "string"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
           }
         },
         "required": [
@@ -249,6 +321,14 @@
         "properties": {
           "agentId": {
             "type": "string"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
           }
         },
         "required": [
@@ -324,6 +404,14 @@
           },
           "content": {
             "type": "string"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
           }
         },
         "required": [
@@ -352,6 +440,14 @@
               "string",
               "null"
             ]
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
           }
         },
         "required": [
@@ -374,6 +470,14 @@
           },
           "newName": {
             "type": "string"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
           }
         },
         "required": [
@@ -393,6 +497,14 @@
         "properties": {
           "resourceId": {
             "type": "string"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
           }
         },
         "required": [
@@ -415,11 +527,63 @@
           "updates": {
             "type": "object",
             "description": "Key-value pairs to merge into the agent's cognitive state JSON."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
           }
         },
         "required": [
           "agentId",
           "updates"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.ACTION_RESULT",
+      "summary": "Broadcast notification published after a command-dispatchable agent action completes. Carries a lightweight summary for session feedback via CommandBot. Other observers (logging plugins, usage monitors) may also subscribe.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "From the domain action's payload. Null if not command-originated."
+          },
+          "requestAction": {
+            "type": "string",
+            "description": "The domain action name that produced this result, e.g. 'agent.CREATE'."
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable description of what happened."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable error message. Present when success is false."
+          }
+        },
+        "required": [
+          "requestAction",
+          "success"
         ]
       }
     },
