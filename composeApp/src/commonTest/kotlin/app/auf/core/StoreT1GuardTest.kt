@@ -130,6 +130,50 @@ class StoreT1GuardTest {
         assertEquals(AppLifecycle.INITIALIZING, finalCoreState.lifecycle)
     }
 
+    @Test
+    fun `store guard blocks normal actions when CLOSING`() {
+        val store = createStore(CoreState(lifecycle = AppLifecycle.CLOSING))
+        val initialState = store.state.value
+        store.dispatch("test.feature", Action("test.INCREMENT"))
+        assertEquals(initialState, store.state.value, "State should not have changed during CLOSING.")
+    }
+
+    @Test
+    fun `store guard allows SYSTEM_CLOSING when CLOSING`() {
+        platform.capturedLogs.clear()
+        val store = createStore(CoreState(lifecycle = AppLifecycle.CLOSING))
+        store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_CLOSING))
+
+        val lifecycleError = platform.capturedLogs.find {
+            it.level == LogLevel.ERROR && it.message.contains("invalid lifecycle state")
+        }
+        assertNull(lifecycleError, "system.CLOSING should be allowed during CLOSING lifecycle.")
+    }
+
+    @Test
+    fun `store guard blocks SYSTEM_STARTING when RUNNING`() {
+        platform.capturedLogs.clear()
+        val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING))
+        store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_STARTING))
+
+        val lifecycleError = platform.capturedLogs.find {
+            it.level == LogLevel.ERROR && it.message.contains("invalid lifecycle state")
+        }
+        assertNotNull(lifecycleError, "system.STARTING should be blocked during RUNNING lifecycle.")
+    }
+
+    @Test
+    fun `store guard blocks SYSTEM_INITIALIZING when RUNNING`() {
+        platform.capturedLogs.clear()
+        val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING))
+        store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
+
+        val lifecycleError = platform.capturedLogs.find {
+            it.level == LogLevel.ERROR && it.message.contains("invalid lifecycle state")
+        }
+        assertNotNull(lifecycleError, "system.INITIALIZING should be blocked during RUNNING lifecycle.")
+    }
+
     // --- Exception Handling Tests ---
 
     @Test
@@ -213,5 +257,32 @@ class StoreT1GuardTest {
         // No toast or FATAL log — the action was simply rejected, not crashed
         val fatalLog = platform.capturedLogs.find { it.level == LogLevel.FATAL }
         assertNull(fatalLog, "No FATAL error should occur — the action is cleanly rejected before reaching any feature.")
+    }
+
+    // --- handleFeatureException Direct Test ---
+
+    @Test
+    fun `handleFeatureException logs FATAL and dispatches toast action`() {
+        platform.capturedLogs.clear()
+        val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING))
+
+        val testException = RuntimeException("Something went wrong")
+        store.handleFeatureException(testException as Exception, "test-location", "test-feature")
+
+        // Verify FATAL log
+        val fatalLog = platform.capturedLogs.find { it.level == LogLevel.FATAL }
+        assertNotNull(fatalLog, "A FATAL log should be captured.")
+        assertTrue(fatalLog.message.contains("FATAL EXCEPTION in test-location"),
+            "Log should contain the location.")
+        assertTrue(fatalLog.message.contains("test-feature"),
+            "Log should contain the feature name.")
+        assertTrue(fatalLog.message.contains("Something went wrong"),
+            "Log should contain the exception message.")
+
+        // Verify toast was dispatched (core state should have a toast message)
+        val coreState = store.state.value.featureStates["core"] as CoreState
+        assertNotNull(coreState.toastMessage, "A toast message should be present after handleFeatureException.")
+        assertTrue(coreState.toastMessage!!.contains("test-feature"),
+            "Toast message should reference the feature name.")
     }
 }

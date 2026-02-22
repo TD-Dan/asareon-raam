@@ -10,6 +10,7 @@ import app.auf.util.LogLevel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
  * Tier 1 Unit Tests for the Store's flow control logic.
@@ -176,5 +177,57 @@ class StoreT1FlowControlTest {
         store.dispatch("test", Action("seq.A"))
 
         assertEquals("State from A", stateSeenByB, "handleSideEffects for B must see the state fully updated by A's reducer.")
+    }
+
+    // --- scheduleDelayed Tests ---
+
+    @Test
+    fun `scheduleDelayed dispatches action when platform fires the callback`() {
+        val features = listOf(CoreFeature(platform), SequencingFeature())
+        val initialState = AppState(
+            featureStates = mapOf(
+                "core" to CoreState(lifecycle = AppLifecycle.RUNNING),
+                "sequencing" to SequencingState()
+            ),
+            actionDescriptors = ActionRegistry.byActionName + testDescriptorsFor(testActionNames)
+        )
+        val store = Store(initialState, features, platform)
+
+        // Schedule a delayed action — should NOT execute yet
+        store.scheduleDelayed(5000L, "sequencing", Action("seq.A"))
+
+        val stateBeforeFire = store.state.value.featureStates["sequencing"] as SequencingState
+        assertTrue(stateBeforeFire.log.isEmpty(),
+            "Scheduled action should not execute before the platform fires the callback.")
+
+        // Simulate the delay elapsing
+        platform.fireScheduledCallbacks(5000L)
+
+        val stateAfterFire = store.state.value.featureStates["sequencing"] as SequencingState
+        assertEquals(listOf("seq.A:REDUCER"), stateAfterFire.log,
+            "Scheduled action should execute after the platform fires the callback.")
+    }
+
+    @Test
+    fun `scheduleDelayed returns a cancellable handle`() {
+        val features = listOf(CoreFeature(platform), SequencingFeature())
+        val initialState = AppState(
+            featureStates = mapOf(
+                "core" to CoreState(lifecycle = AppLifecycle.RUNNING),
+                "sequencing" to SequencingState()
+            ),
+            actionDescriptors = ActionRegistry.byActionName + testDescriptorsFor(testActionNames)
+        )
+        val store = Store(initialState, features, platform)
+
+        val handle = store.scheduleDelayed(5000L, "sequencing", Action("seq.A"))
+
+        // Cancel before firing
+        platform.cancelScheduled(handle)
+        platform.fireAllScheduledCallbacks()
+
+        val finalState = store.state.value.featureStates["sequencing"] as SequencingState
+        assertTrue(finalState.log.isEmpty(),
+            "Cancelled scheduled action should not execute even after firing callbacks.")
     }
 }
