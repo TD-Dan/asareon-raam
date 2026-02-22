@@ -351,14 +351,25 @@ private fun AgentEditorView(
 
         // --- ROW 4: Strategy-Specific Settings (polymorphic, driven by strategy.getConfigFields()) ---
         val currentStrategy = remember(draftAgent.cognitiveStrategyId) {
-            CognitiveStrategyRegistry.get(draftAgent.cognitiveStrategyId)
+            if (CognitiveStrategyRegistry.getAll().isEmpty()) null
+            else CognitiveStrategyRegistry.get(draftAgent.cognitiveStrategyId)
         }
-        val configFields = remember(currentStrategy) { currentStrategy.getConfigFields() }
+
+        if (currentStrategy == null) {
+            Text(
+                "Strategy unavailable — registry not initialised.",
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
+        }
+
+        val configFields = remember(currentStrategy) { currentStrategy?.getConfigFields() ?: emptyList() }
 
         if (configFields.isNotEmpty()) {
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             Text(
-                "Strategy Settings (${currentStrategy.displayName})",
+                "Strategy Settings (${currentStrategy?.displayName ?: "Unknown"})",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(bottom = 4.dp)
@@ -377,7 +388,7 @@ private fun AgentEditorView(
         }
 
         // --- ROW 5: Resource Slots (Strategy-Driven) ---
-        val resourceSlots = remember(currentStrategy) { currentStrategy.getResourceSlots() }
+        val resourceSlots = remember(currentStrategy) { currentStrategy?.getResourceSlots() ?: emptyList() }
 
         if (resourceSlots.isNotEmpty()) {
             HorizontalDivider(Modifier.padding(vertical = 4.dp))

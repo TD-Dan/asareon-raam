@@ -9,6 +9,7 @@ import app.auf.fakes.FakeStore
 import app.auf.ui.AppTheme
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -47,6 +48,25 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     fun setUp() {
         fakePlatform = FakePlatformDependencies("test")
         fakeStore = FakeStore(AppState(), fakePlatform)
+
+        // Register cognitive strategies — normally done in AgentRuntimeFeature.init(),
+        // which T1 tests intentionally skip (testing only the View layer).
+        CognitiveStrategyRegistry.clearForTesting()
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.MinimalStrategy)
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.VanillaStrategy,
+            legacyId = "vanilla_v1"
+        )
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.SovereignStrategy,
+            legacyId = "sovereign_v1"
+        )
+    }
+
+    @After
+    fun tearDown() {
+        CognitiveStrategyRegistry.clearForTesting()
     }
 
     private fun setViewState(state: AgentRuntimeState) {

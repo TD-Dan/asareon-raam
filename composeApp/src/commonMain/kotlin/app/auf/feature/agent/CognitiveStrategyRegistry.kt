@@ -98,6 +98,16 @@ object CognitiveStrategyRegistry {
         getAll().flatMap { it.getBuiltInResources() }
 
     /**
+     * Resets all registered strategies and legacy mappings.
+     * **Test-only** — use in `@Before` / `@AfterTest` to guarantee a clean
+     * registry between test runs, since this is a process-wide singleton.
+     */
+    fun clearForTesting() {
+        strategies.clear()
+        legacyIdMap.clear()
+    }
+
+    /**
      * Migrates a raw strategy ID string — which may be either a legacy ID
      * (e.g. `"vanilla_v1"`) or an already-migrated handle (e.g.
      * `"agent.strategy.vanilla"`) — to a canonical [IdentityHandle].
