@@ -628,7 +628,7 @@
     },
     {
       "action_name": "session.SESSION_NAMES_UPDATED",
-      "summary": "Broadcasts the map of subscribable (non-private) session localHandles to their display names. Private sessions are excluded. Can only be dispatched by the SessionFeature.",
+      "summary": "Broadcasts the map of subscribable (non-private) session localHandles to their display names. Private sessions are excluded.",
       "public": false,
       "broadcast": true,
       "targeted": false,
