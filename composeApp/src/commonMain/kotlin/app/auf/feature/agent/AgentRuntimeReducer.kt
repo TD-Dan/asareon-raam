@@ -3,6 +3,8 @@ package app.auf.feature.agent
 import app.auf.core.Action
 import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
+import app.auf.core.stringIsUUID
+import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.*
 
@@ -139,8 +141,16 @@ object AgentRuntimeReducer {
             }
 
             ActionRegistry.Names.SESSION_SESSION_DELETED -> {
-                val deletedSessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull
-                    ?.let { IdentityUUID(it) } ?: return state
+                // Prefer sessionUUID (immutable); fall back to sessionId (localHandle) for legacy compat
+                val uuidStr = action.payload?.get("sessionUUID")?.jsonPrimitive?.contentOrNull
+                    ?: action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull
+                    ?: return state
+                if (!stringIsUUID(uuidStr)) {
+                    platformDependencies.log(LogLevel.ERROR, "AgentRuntimeReducer",
+                        "SESSION_SESSION_DELETED: expected UUID but got '$uuidStr'. Session feature may not be sending UUIDs yet.")
+                    return state
+                }
+                val deletedSessionId = IdentityUUID(uuidStr)
 
                 val agentsToUpdate = state.agents.values
                     .filter { it.subscribedSessionIds.contains(deletedSessionId) || it.outputSessionId == deletedSessionId }
@@ -179,12 +189,27 @@ object AgentRuntimeReducer {
             }
 
             ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED -> {
-                val names = try {
-                    action.payload?.get("names")?.jsonObject
-                        ?.mapKeys { IdentityUUID(it.key) }
-                        ?.mapValues { it.value.jsonPrimitive.content }
-                } catch (e: Exception) { null }
-                if (names != null) state.copy(subscribableSessionNames = names) else state
+                // New format: "sessions" array with { uuid, handle, localHandle, name } objects
+                val sessionsArray = action.payload?.get("sessions")?.jsonArray
+                if (sessionsArray != null) {
+                    val newNames = mutableMapOf<IdentityUUID, String>()
+                    sessionsArray.forEach { element ->
+                        val obj = element.jsonObject
+                        val uuid = obj["uuid"]?.jsonPrimitive?.contentOrNull ?: return@forEach
+                        val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@forEach
+                        if (!stringIsUUID(uuid)) {
+                            platformDependencies.log(LogLevel.ERROR, "AgentRuntimeReducer",
+                                "SESSION_NAMES_UPDATED: entry has non-UUID id '$uuid', skipping.")
+                            return@forEach
+                        }
+                        newNames[IdentityUUID(uuid)] = name
+                    }
+                    state.copy(subscribableSessionNames = newNames)
+                } else {
+                    platformDependencies.log(LogLevel.WARN, "AgentRuntimeReducer",
+                        "SESSION_NAMES_UPDATED: missing 'sessions' array. Legacy 'names' map format no longer supported.")
+                    state
+                }
             }
 
             ActionRegistry.Names.KNOWLEDGEGRAPH_AVAILABLE_PERSONAS_UPDATED -> {
@@ -318,7 +343,16 @@ object AgentRuntimeReducer {
         val payload = action.payload?.let { json.decodeFromJsonElement<MessagePostedPayload>(it) } ?: return state
         val entry = payload.entry
         val messageId = entry["id"]?.jsonPrimitive?.contentOrNull ?: return state
-        val sessionId = payload.sessionId
+
+        // Prefer sessionUUID; fall back to sessionId only if it's a valid UUID
+        val sessionUUIDStr = payload.sessionUUID ?: payload.sessionId
+        if (!stringIsUUID(sessionUUIDStr)) {
+            platformDependencies.log(LogLevel.ERROR, "AgentRuntimeReducer",
+                "SESSION_MESSAGE_POSTED: expected UUID but got '$sessionUUIDStr'. Cannot match to agent subscriptions.")
+            return state
+        }
+        val sessionId = IdentityUUID(sessionUUIDStr)
+
         val senderId = entry["senderId"]?.jsonPrimitive?.contentOrNull
         val currentTime = platformDependencies.currentTimeMillis()
 

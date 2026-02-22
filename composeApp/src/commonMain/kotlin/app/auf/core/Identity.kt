@@ -47,6 +47,35 @@ value class IdentityUUID(val uuid: String) {
     override fun toString(): String = uuid
 }
 
+// ============================================================================
+// Identity String Validators
+//
+// Runtime guards for catching type mismatches (e.g. a handle string wrapped
+// in an IdentityUUID). Place these at trust boundaries — reducer entry points,
+// payload parsing, and cross-feature dispatch sites.
+// ============================================================================
+
+private val UUID_REGEX = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+/** True if [s] matches UUID v4 format: 8-4-4-4-12 lowercase hex with dashes. */
+fun stringIsUUID(s: String): Boolean = s.length == 36 && UUID_REGEX.matches(s)
+
+/** True if [s] looks like a dotted hierarchical handle (e.g. "session.chat1"). */
+fun stringIsHandle(s: String): Boolean = '.' in s && !stringIsUUID(s)
+
+/**
+ * Wraps [s] as [IdentityUUID] after validating UUID format.
+ * Throws [IllegalArgumentException] on mismatch — use at trust boundaries
+ * where a non-UUID value indicates a wiring bug.
+ */
+fun requireUUID(s: String, context: String = ""): IdentityUUID {
+    require(stringIsUUID(s)) {
+        "Expected UUID but got '${s.take(60)}'${if (context.isNotEmpty()) " ($context)" else ""}. " +
+                "This usually means a handle was passed where a UUID was expected."
+    }
+    return IdentityUUID(s)
+}
+
 /**
  * A universal, serializable data class representing a unique participant on the action bus.
  * Every addressable entity — features, users, agents, sessions, future scripts — is an Identity.
@@ -117,7 +146,7 @@ data class Identity(
      */
     val registeredAt: Long = 0
 
-    // FUTURE: Permissions grants — paved, not implemented yet
+    // FUTURE: Permissions grants — paved, not implemented in v2.0.
     // val permissions: Map<String, Boolean>? = null
 ) {
     /** Convenience accessor for typed handle. */
@@ -190,8 +219,6 @@ fun Map<String, Identity>.resolve(raw: String, parentHandle: String): Identity? 
  * Returns up to [limit] identities whose name, localHandle, or handle
  * contain the query string (case-insensitive). Useful for "did you mean?"
  * suggestions in error messages.
- *
- * This can be later updated to include some kind of fuzzy or nearness matching.
  *
  * Optionally scoped to a [parentHandle].
  */

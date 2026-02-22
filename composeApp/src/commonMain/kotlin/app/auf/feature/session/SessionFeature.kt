@@ -319,7 +319,10 @@ class SessionFeature(
                         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_DELETE_FILE, buildJsonObject { put("path", uuid) }))
                     }
                     broadcastSessionNames(sessionState, store)
-                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_DELETED, buildJsonObject { put("sessionId", localHandleToDelete) }))
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_DELETED, buildJsonObject {
+                        put("sessionId", localHandleToDelete)
+                        uuid?.let { put("sessionUUID", it) }
+                    }))
                     // Unregister session identity (cascades any children)
                     store.deferredDispatch(identity.handle, Action(
                         ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
@@ -413,6 +416,7 @@ class SessionFeature(
                 if (postedEntry != null) {
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
                         put("sessionId", localHandle)
+                        sessionState.sessions[localHandle]?.identity?.uuid?.let { put("sessionUUID", it) }
                         put("entry", json.encodeToJsonElement(postedEntry))
                     }))
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_UPDATED, buildJsonObject { put("sessionId", localHandle) }))
@@ -484,6 +488,7 @@ class SessionFeature(
                 persistSession(localHandle, sessionState, store)
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_MESSAGE_DELETED, buildJsonObject {
                     put("sessionId", localHandle)
+                    sessionState.sessions[localHandle]?.identity?.uuid?.let { put("sessionUUID", it) }
                     put("messageId", resolvedMessageId)
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_UPDATED, buildJsonObject { put("sessionId", localHandle) }))
@@ -646,11 +651,19 @@ class SessionFeature(
     }
 
     private fun broadcastSessionNames(state: SessionState, store: Store) {
-        val subscribableNames = state.sessions
+        val subscribable = state.sessions
             .filterValues { it.isPrivateTo == null && !it.isPrivate }
-            .mapValues { it.value.identity.name }
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED, buildJsonObject {
-            put("names", Json.encodeToJsonElement(subscribableNames))
+            put("sessions", buildJsonArray {
+                subscribable.forEach { (localHandle, session) ->
+                    add(buildJsonObject {
+                        session.identity.uuid?.let { put("uuid", it) }
+                        put("handle", session.identity.handle)
+                        put("localHandle", localHandle)
+                        put("name", session.identity.name)
+                    })
+                }
+            })
         }))
     }
 

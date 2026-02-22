@@ -19,13 +19,36 @@ import kotlinx.serialization.json.JsonObject
 // External-event payloads (session/identity/gateway/ledger envelopes)
 // =============================================================================
 
-@Serializable internal data class SessionNamesPayload(val names: Map<IdentityUUID, String>)
+// SessionNamesPayload removed — SESSION_NAMES_UPDATED now sends a richer
+// "sessions" array parsed directly in the reducer.
+
 @Serializable internal data class GraphNamesPayload(val names: Map<String, String>)
 @Serializable internal data class ReservedIdsPayload(val reservedIds: Set<String>)
 @Serializable internal data class GatewayResponsePayload(val correlationId: String, val rawContent: String? = null, val errorMessage: String? = null, val inputTokens: Int? = null, val outputTokens: Int? = null)
 @Serializable internal data class LedgerResponsePayload(val correlationId: String, val messages: List<JsonObject>) // Generic JsonObject representing LedgerEntry
-@Serializable internal data class MessagePostedPayload(val sessionId: IdentityUUID, val entry: JsonObject)
-@Serializable internal data class MessageDeletedPayload(val sessionId: IdentityUUID, val messageId: String)
+
+/**
+ * Payload from session.MESSAGE_POSTED broadcast.
+ * [sessionId] is the session localHandle (always present, legacy).
+ * [sessionUUID] is the session's immutable UUID (preferred for matching).
+ */
+@Serializable internal data class MessagePostedPayload(
+    val sessionId: String,
+    val sessionUUID: String? = null,
+    val entry: JsonObject
+)
+
+/**
+ * Payload from session.MESSAGE_DELETED broadcast.
+ * [sessionId] is the session localHandle (always present, legacy).
+ * [sessionUUID] is the session's immutable UUID (preferred for matching).
+ */
+@Serializable internal data class MessageDeletedPayload(
+    val sessionId: String,
+    val sessionUUID: String? = null,
+    val messageId: String
+)
+
 @Serializable internal data class IdentitiesUpdatedPayload(val identities: List<Identity>, val activeId: String?)
 
 // =============================================================================

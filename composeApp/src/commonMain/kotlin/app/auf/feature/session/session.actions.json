@@ -1,7 +1,14 @@
 {
   "feature_name": "session",
   "summary": "Acts as a pure, passive data manager for multiple, concurrent session transcripts (the 'Public Ledger').",
-  "permissions": ["read", "write", "delete", "sessions", "messages", "ui"],
+  "permissions": [
+    "read",
+    "write",
+    "delete",
+    "sessions",
+    "messages",
+    "ui"
+  ],
   "actions": [
     {
       "action_name": "session.CREATE",
@@ -21,7 +28,10 @@
             "description": "If true, the session is created in a hidden state. Defaults to false."
           },
           "isPrivateTo": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "If non-null, the identity handle of the owner. The session is private to that identity. Defaults to null."
           }
         }
@@ -29,7 +39,10 @@
       "agent_exposure": {
         "requires_approval": true
       },
-      "required_permissions": ["write", "sessions"]
+      "required_permissions": [
+        "write",
+        "sessions"
+      ]
     },
     {
       "action_name": "session.CLONE",
@@ -52,7 +65,11 @@
       "agent_exposure": {
         "requires_approval": true
       },
-      "required_permissions": ["read", "write", "sessions"]
+      "required_permissions": [
+        "read",
+        "write",
+        "sessions"
+      ]
     },
     {
       "action_name": "session.UPDATE_CONFIG",
@@ -79,7 +96,11 @@
       "agent_exposure": {
         "requires_approval": true
       },
-      "required_permissions": ["read", "write", "sessions"]
+      "required_permissions": [
+        "read",
+        "write",
+        "sessions"
+      ]
     },
     {
       "action_name": "session.DELETE",
@@ -102,7 +123,10 @@
       "agent_exposure": {
         "requires_approval": true
       },
-      "required_permissions": ["delete", "sessions"]
+      "required_permissions": [
+        "delete",
+        "sessions"
+      ]
     },
     {
       "action_name": "session.POST",
@@ -155,7 +179,10 @@
           "senderId": "{agentId}"
         }
       },
-      "required_permissions": ["write", "messages"]
+      "required_permissions": [
+        "write",
+        "messages"
+      ]
     },
     {
       "action_name": "session.UPDATE_MESSAGE",
@@ -185,7 +212,11 @@
           "messageId"
         ]
       },
-      "required_permissions": ["read", "write", "messages"]
+      "required_permissions": [
+        "read",
+        "write",
+        "messages"
+      ]
     },
     {
       "action_name": "session.DELETE_MESSAGE",
@@ -212,7 +243,10 @@
       "agent_exposure": {
         "requires_approval": true
       },
-      "required_permissions": ["delete", "messages"]
+      "required_permissions": [
+        "delete",
+        "messages"
+      ]
     },
     {
       "action_name": "session.REQUEST_LEDGER_CONTENT",
@@ -235,7 +269,11 @@
           "correlationId"
         ]
       },
-      "required_permissions": ["read", "messages", "sessions"]
+      "required_permissions": [
+        "read",
+        "messages",
+        "sessions"
+      ]
     },
     {
       "action_name": "session.SET_ACTIVE_TAB",
@@ -255,7 +293,10 @@
           "session"
         ]
       },
-      "required_permissions": ["write", "ui"]
+      "required_permissions": [
+        "write",
+        "ui"
+      ]
     },
     {
       "action_name": "session.SET_EDITING_SESSION_NAME",
@@ -274,7 +315,10 @@
           }
         }
       },
-      "required_permissions": ["write", "ui"]
+      "required_permissions": [
+        "write",
+        "ui"
+      ]
     },
     {
       "action_name": "session.SET_EDITING_MESSAGE",
@@ -293,7 +337,10 @@
           }
         }
       },
-      "required_permissions": ["write", "ui"]
+      "required_permissions": [
+        "write",
+        "ui"
+      ]
     },
     {
       "action_name": "session.TOGGLE_MESSAGE_COLLAPSED",
@@ -316,7 +363,10 @@
           "messageId"
         ]
       },
-      "required_permissions": ["write", "ui"]
+      "required_permissions": [
+        "write",
+        "ui"
+      ]
     },
     {
       "action_name": "session.TOGGLE_MESSAGE_RAW_VIEW",
@@ -339,7 +389,10 @@
           "messageId"
         ]
       },
-      "required_permissions": ["write", "ui"]
+      "required_permissions": [
+        "write",
+        "ui"
+      ]
     },
     {
       "action_name": "session.REORDER",
@@ -364,7 +417,10 @@
           "toIndex"
         ]
       },
-      "required_permissions": ["write", "ui"]
+      "required_permissions": [
+        "write",
+        "ui"
+      ]
     },
     {
       "action_name": "session.SET_ORDER",
@@ -387,7 +443,10 @@
           "order"
         ]
       },
-      "required_permissions": ["write", "ui"]
+      "required_permissions": [
+        "write",
+        "ui"
+      ]
     },
     {
       "action_name": "session.TOGGLE_SESSION_HIDDEN",
@@ -407,7 +466,10 @@
           "session"
         ]
       },
-      "required_permissions": ["write", "messages"]
+      "required_permissions": [
+        "write",
+        "messages"
+      ]
     },
     {
       "action_name": "session.TOGGLE_MESSAGE_LOCKED",
@@ -430,7 +492,10 @@
           "messageId"
         ]
       },
-      "required_permissions": ["write", "messages"]
+      "required_permissions": [
+        "write",
+        "messages"
+      ]
     },
     {
       "action_name": "session.CLEAR",
@@ -453,7 +518,10 @@
       "agent_exposure": {
         "requires_approval": true
       },
-      "required_permissions": ["delete", "messages"]
+      "required_permissions": [
+        "delete",
+        "messages"
+      ]
     },
     {
       "action_name": "session.LIST_SESSIONS",
@@ -476,7 +544,10 @@
           "responseSession": "{sessionId}"
         }
       },
-      "required_permissions": ["read", "sessions"]
+      "required_permissions": [
+        "read",
+        "sessions"
+      ]
     },
     {
       "action_name": "session.LOCK_MESSAGE",
@@ -509,7 +580,10 @@
       "agent_exposure": {
         "requires_approval": true
       },
-      "required_permissions": ["write", "messages"]
+      "required_permissions": [
+        "write",
+        "messages"
+      ]
     },
     {
       "action_name": "session.UNLOCK_MESSAGE",
@@ -542,7 +616,10 @@
       "agent_exposure": {
         "requires_approval": true
       },
-      "required_permissions": ["write", "messages"]
+      "required_permissions": [
+        "write",
+        "messages"
+      ]
     },
     {
       "action_name": "session.MESSAGE_POSTED",
@@ -554,12 +631,20 @@
         "type": "object",
         "properties": {
           "sessionId": {
-            "type": "string"
+            "type": "string",
+            "description": "Session localHandle (legacy)."
           },
           "entry": {
             "type": "object",
             "description": "The full LedgerEntry object that was added.",
             "$ref": "#/definitions/LedgerEntry"
+          },
+          "sessionUUID": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Session UUID (preferred for matching)."
           }
         },
         "required": [
@@ -578,10 +663,18 @@
         "type": "object",
         "properties": {
           "sessionId": {
-            "type": "string"
+            "type": "string",
+            "description": "Session localHandle (legacy)."
           },
           "messageId": {
             "type": "string"
+          },
+          "sessionUUID": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Session UUID (preferred for matching)."
           }
         },
         "required": [
@@ -618,7 +711,15 @@
         "type": "object",
         "properties": {
           "sessionId": {
-            "type": "string"
+            "type": "string",
+            "description": "The localHandle of the deleted session (legacy)."
+          },
+          "sessionUUID": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The immutable UUID of the deleted session (preferred for matching)."
           }
         },
         "required": [
@@ -628,20 +729,47 @@
     },
     {
       "action_name": "session.SESSION_NAMES_UPDATED",
-      "summary": "Broadcasts the map of subscribable (non-private) session localHandles to their display names. Private sessions are excluded.",
+      "summary": "Broadcasts the full identity snapshot of all subscribable (non-private) sessions. Listeners can detect renames by matching on UUID.",
       "public": false,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "names": {
-            "type": "object",
-            "description": "A map where the key is the session localHandle and the value is the session's display name. Excludes private sessions."
+          "sessions": {
+            "type": "array",
+            "description": "Array of session identity snapshots. Each entry contains uuid, handle, localHandle, and name.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "uuid": {
+                  "type": "string",
+                  "description": "Immutable session UUID."
+                },
+                "handle": {
+                  "type": "string",
+                  "description": "Full bus handle (e.g. session.chat1). May change on rename."
+                },
+                "localHandle": {
+                  "type": "string",
+                  "description": "Leaf handle (e.g. chat1). May change on rename."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Display name."
+                }
+              },
+              "required": [
+                "uuid",
+                "handle",
+                "localHandle",
+                "name"
+              ]
+            }
           }
         },
         "required": [
-          "names"
+          "sessions"
         ]
       }
     },
@@ -682,7 +810,10 @@
             "description": "The current full draft text."
           }
         },
-        "required": ["sessionId", "draft"]
+        "required": [
+          "sessionId",
+          "draft"
+        ]
       }
     },
     {
@@ -700,11 +831,17 @@
           },
           "direction": {
             "type": "string",
-            "enum": ["UP", "DOWN"],
+            "enum": [
+              "UP",
+              "DOWN"
+            ],
             "description": "'UP' moves toward older history entries; 'DOWN' moves toward newer entries / restores the pre-navigation draft."
           }
         },
-        "required": ["sessionId", "direction"]
+        "required": [
+          "sessionId",
+          "direction"
+        ]
       }
     },
     {
@@ -726,11 +863,15 @@
           },
           "history": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "The restored sent-message history, newest-first."
           }
         },
-        "required": ["uuid"]
+        "required": [
+          "uuid"
+        ]
       }
     },
     {
