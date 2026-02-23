@@ -1,6 +1,7 @@
 {
   "feature_name": "agent",
   "summary": "Hosts and manages the lifecycle of autonomous, HKG-driven AI agents.",
+  "permissions": ["read", "write", "delete", "agent"],
   "actions": [
     {
       "action_name": "agent.CREATE",
