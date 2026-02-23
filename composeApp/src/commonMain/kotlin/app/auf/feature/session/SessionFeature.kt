@@ -1231,7 +1231,11 @@ class SessionFeature(
                 val loaded = payload?.let { json.decodeFromJsonElement<InternalSessionLoadedPayload>(it) } ?: return currentFeatureState
                 val merged = currentFeatureState.sessions + loaded.sessions
                 val normalized = SessionState.normalizeOrderIndices(merged)
-                val newActiveLocalHandle = currentFeatureState.activeSessionLocalHandle ?: normalized.values.maxByOrNull { it.createdAt }?.identity?.localHandle
+                val newActiveLocalHandle = currentFeatureState.activeSessionLocalHandle
+                    ?: normalized.values
+                        .filter { !it.isHidden }
+                        .maxByOrNull { it.createdAt }
+                        ?.identity?.localHandle
 
                 // Drain pending input loads for sessions that just arrived.
                 // This handles the startup race where input.json is read before localHandle.json.
