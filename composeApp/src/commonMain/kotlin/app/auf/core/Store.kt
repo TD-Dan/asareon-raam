@@ -88,38 +88,6 @@ open class Store(
     }
 
     /**
-     * DEPRECATED — Phase 3. Use deferredDispatch with Action.targetRecipient instead.
-     *
-     * This bridge internally converts to a targeted dispatch through processAction,
-     * gaining full validation, authorization, lifecycle guards, and audit logging.
-     * Maintained for backward compatibility while features are being migrated.
-     *
-     * Example migration:
-     * ```
-     * // BEFORE:
-     * store.deliverPrivateData(identity.handle, recipient, PrivateDataEnvelope(type, payload))
-     * // AFTER:
-     * store.deferredDispatch(identity.handle, Action(name = type, payload = payload, targetRecipient = recipient))
-     * ```
-     */
-    @Suppress("DEPRECATION")
-    @Deprecated("Use deferredDispatch with Action(targetRecipient = recipient) instead")
-    open fun deliverPrivateData(originator: String, recipient: String, envelope: PrivateDataEnvelope) {
-        platformDependencies.log(
-            level = LogLevel.WARN,
-            tag = "Store",
-            message = "DEPRECATED deliverPrivateData called: type='${envelope.type}' from '$originator' to '$recipient'. Migrate to targeted dispatch."
-        )
-        // Bridge: convert to targeted dispatch through the normal pipeline.
-        // This gains full validation, authorization, and lifecycle guards.
-        deferredDispatch(originator, Action(
-            name = envelope.type,
-            payload = envelope.payload,
-            targetRecipient = recipient
-        ))
-    }
-
-    /**
      * Enqueues an action to be dispatched.
      * This is the preferred method for actions triggered inside `handleSideEffects` to avoid re-entrancy issues.
      */

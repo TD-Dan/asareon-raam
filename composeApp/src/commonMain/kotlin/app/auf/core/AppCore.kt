@@ -93,19 +93,3 @@ data class Action(
                 ">"
     }
 }
-
-/**
- * The canonical contract for all data passed through the private channel.
- *
- * DEPRECATED — Phase 3. Use Action with targetRecipient instead.
- * Store.deliverPrivateData now internally bridges to targeted dispatch.
- * Will be removed in Phase 3b after all features have migrated.
- */
-@Deprecated("Use Action with targetRecipient field instead. See Phase 3 of the Unified Action Bus plan.")
-@Serializable
-data class PrivateDataEnvelope(
-    /** A unique string identifying the payload's schema (e.g., "gateway.response"). */
-    val type: String,
-    /** The serializable data payload. */
-    val payload: JsonObject
-)

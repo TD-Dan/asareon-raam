@@ -34,19 +34,6 @@ interface Feature {
      */
     fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {}
 
-    /**
-     * DEPRECATED — Phase 3. Merge handlers into [handleSideEffects].
-     * Private data now arrives as targeted Actions (with [Action.targetRecipient] set)
-     * through the normal processAction pipeline with full security.
-     *
-     * The bridge in [Store.deliverPrivateData] converts legacy calls to targeted dispatches,
-     * so unmigrated senders still work. But receivers should migrate their handlers into
-     * [handleSideEffects] where `action.name` replaces `envelope.type` and
-     * `action.payload` replaces `envelope.payload`.
-     */
-    @Suppress("DEPRECATION")
-    @Deprecated("Merge into handleSideEffects. Private data now arrives as targeted Actions.")
-    fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {}
     fun init(store: Store) {}
 
     val composableProvider: ComposableProvider?
