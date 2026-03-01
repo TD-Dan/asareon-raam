@@ -80,8 +80,6 @@ object DefaultPermissions {
         DefaultGrant("agent.*", "filesystem:workspace",         PermissionLevel.YES),
         DefaultGrant("agent.*", "session:read",                 PermissionLevel.YES),
         DefaultGrant("agent.*", "session:write",                PermissionLevel.YES),
-        DefaultGrant("agent.*", "gateway:generate",             PermissionLevel.YES),
-        DefaultGrant("agent.*", "gateway:preview",              PermissionLevel.YES),
         DefaultGrant("agent.*", "knowledgegraph:read",          PermissionLevel.YES),
     )
 }
