@@ -73,6 +73,8 @@ object DefaultPermissions {
         DefaultGrant("core.*", "core:identity",                 PermissionLevel.YES),
         DefaultGrant("core.*", "knowledgegraph:read",           PermissionLevel.YES),
         DefaultGrant("core.*", "knowledgegraph:write",          PermissionLevel.YES),
+        DefaultGrant("core.*", "agent:manage",                  PermissionLevel.YES),
+        DefaultGrant("core.*", "agent:execute",                 PermissionLevel.YES),
 
         // ── Agent identities (agent.*) ────────────────────────────────
         DefaultGrant("agent.*", "filesystem:workspace",         PermissionLevel.YES),

@@ -1,6 +1,7 @@
 {
   "feature_name": "commandbot",
   "summary": "A stateful agent that observes all session transcripts for command directives (`auf_` code blocks), validates them against guardrails, and publishes ACTION_CREATED for agent commands so the owning feature can dispatch. For human commands, dispatches directly. For actions requiring approval, it stages the request and presents an approval card to the user.",
+  "permissions": [],
   "actions": [
     {
       "action_name": "commandbot.APPROVE",
@@ -84,8 +85,7 @@
           "actionName",
           "actionPayload"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "commandbot.STAGE_APPROVAL",
@@ -126,8 +126,7 @@
           "actionName",
           "payload"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "commandbot.RESOLVE_APPROVAL",
@@ -153,8 +152,7 @@
           "approvalId",
           "resolution"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "commandbot.REGISTER_PENDING_RESULT",
@@ -188,8 +186,7 @@
           "originatorName",
           "actionName"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "commandbot.CLEAR_PENDING_RESULT",
@@ -207,8 +204,7 @@
         "required": [
           "correlationId"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "commandbot.DELIVER_TO_SESSION",
@@ -242,6 +238,5 @@
       },
       "required_permissions": []
     }
-  ],
-  "permissions": []
+  ]
 }

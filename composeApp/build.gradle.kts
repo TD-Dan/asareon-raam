@@ -356,15 +356,19 @@ tasks.register("generateActionRegistry") {
             }
         }
 
-        // ====== Phase 2.B Post-migration: Enforce required_permissions on every action ======
-        // After Phase 2 migration, every action MUST declare required_permissions explicitly.
-        // Actions that genuinely require no permissions declare "required_permissions": [].
+        // ====== Phase 2.B Post-migration: Enforce required_permissions on public actions ======
+        // Public actions MUST declare required_permissions explicitly because any originator
+        // (including non-trusted user/agent identities) can dispatch them. Non-public actions
+        // are restricted to the owning feature (Step 2 authorization), and feature identities
+        // are trusted (uuid == null, skip permission check) — so requiring the field on them
+        // would be pointless ceremony.
         for (action in allActions) {
+            val isPublic = action["public"] as Boolean
             val reqPerms = action["requiredPermissions"]
-            if (reqPerms == null) {
+            if (isPublic && reqPerms == null) {
                 throw GradleException(
-                    "Action '${action["fullName"]}' is missing 'required_permissions' field. " +
-                            "All actions must declare required_permissions explicitly. " +
+                    "Public action '${action["fullName"]}' is missing 'required_permissions' field. " +
+                            "All public actions must declare required_permissions explicitly. " +
                             "Use \"required_permissions\": [] for actions that require no permissions."
                 )
             }

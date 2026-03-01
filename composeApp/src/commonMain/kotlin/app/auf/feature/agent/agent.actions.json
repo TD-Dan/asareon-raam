@@ -1,7 +1,18 @@
 {
   "feature_name": "agent",
   "summary": "Hosts and manages the lifecycle of autonomous, HKG-driven AI agents.",
-  "permissions": ["read", "write", "delete", "agent"],
+  "permissions": [
+    {
+      "key": "agent:manage",
+      "description": "Create, delete, and configure agents",
+      "dangerLevel": "CAUTION"
+    },
+    {
+      "key": "agent:execute",
+      "description": "Initiate and control agent turns",
+      "dangerLevel": "CAUTION"
+    }
+  ],
   "actions": [
     {
       "action_name": "agent.CREATE",
@@ -60,7 +71,10 @@
         "required": [
           "name"
         ]
-      }
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
     },
     {
       "action_name": "agent.CLONE",
@@ -87,7 +101,10 @@
         "required": [
           "agentId"
         ]
-      }
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
     },
     {
       "action_name": "agent.UPDATE_CONFIG",
@@ -155,7 +172,10 @@
         "required": [
           "agentId"
         ]
-      }
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
     },
     {
       "action_name": "agent.DELETE",
@@ -182,7 +202,10 @@
         "required": [
           "agentId"
         ]
-      }
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
     },
     {
       "action_name": "agent.TOGGLE_AUTOMATIC_MODE",
@@ -209,7 +232,10 @@
         "required": [
           "agentId"
         ]
-      }
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
     },
     {
       "action_name": "agent.TOGGLE_ACTIVE",
@@ -236,7 +262,10 @@
         "required": [
           "agentId"
         ]
-      }
+      },
+      "required_permissions": [
+        "agent:execute"
+      ]
     },
     {
       "action_name": "agent.INITIATE_TURN",
@@ -267,7 +296,10 @@
         "required": [
           "agentId"
         ]
-      }
+      },
+      "required_permissions": [
+        "agent:execute"
+      ]
     },
     {
       "action_name": "agent.EXECUTE_PREVIEWED_TURN",
@@ -294,7 +326,10 @@
         "required": [
           "agentId"
         ]
-      }
+      },
+      "required_permissions": [
+        "agent:execute"
+      ]
     },
     {
       "action_name": "agent.DISCARD_PREVIEW",
@@ -321,7 +356,10 @@
         "required": [
           "agentId"
         ]
-      }
+      },
+      "required_permissions": [
+        "agent:execute"
+      ]
     },
     {
       "action_name": "agent.CANCEL_TURN",
@@ -348,7 +386,10 @@
         "required": [
           "agentId"
         ]
-      }
+      },
+      "required_permissions": [
+        "agent:execute"
+      ]
     },
     {
       "action_name": "agent.SET_EDITING",
@@ -366,7 +407,8 @@
             ]
           }
         }
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "agent.SET_MANAGER_TAB",
@@ -384,7 +426,8 @@
         "required": [
           "tabIndex"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "agent.SELECT_RESOURCE",
@@ -402,7 +445,8 @@
             ]
           }
         }
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "agent.SAVE_RESOURCE",
@@ -432,7 +476,10 @@
           "resourceId",
           "content"
         ]
-      }
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
     },
     {
       "action_name": "agent.CREATE_RESOURCE",
@@ -468,7 +515,10 @@
           "name",
           "type"
         ]
-      }
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
     },
     {
       "action_name": "agent.RENAME_RESOURCE",
@@ -498,7 +548,10 @@
           "resourceId",
           "newName"
         ]
-      }
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
     },
     {
       "action_name": "agent.DELETE_RESOURCE",
@@ -524,7 +577,10 @@
         "required": [
           "resourceId"
         ]
-      }
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
     },
     {
       "action_name": "agent.UPDATE_NVRAM",
@@ -556,7 +612,10 @@
           "agentId",
           "updates"
         ]
-      }
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
     },
     {
       "action_name": "agent.ACTION_RESULT",
