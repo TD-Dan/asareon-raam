@@ -265,6 +265,55 @@ tasks.register("generateActionRegistry") {
                         val reqPerms = (obj["required_permissions"] as? JsonArray)
                             ?.map { it.jsonPrimitive.content }
 
+                        // Phase 3: Parse permission_scopes
+                        val validScopeTypes = setOf("match_originator", "match_namespace", "match_resource_scope")
+                        val validOriginatorProps = setOf("uuid", "handle", "localHandle")
+                        val permissionScopes = (obj["permission_scopes"] as? JsonArray)?.map { scopeEl ->
+                            val scopeObj = scopeEl.jsonObject
+                            val permKey = scopeObj["permission_key"]?.jsonPrimitive?.content
+                                ?: throw GradleException("permission_scopes entry missing 'permission_key' in action '$actionName' (${manifestFile.path})")
+                            val payloadField = scopeObj["payload_field"]?.jsonPrimitive?.content
+                                ?: throw GradleException("permission_scopes entry missing 'payload_field' in action '$actionName' (${manifestFile.path})")
+                            val scopeType = scopeObj["scope_type"]?.jsonPrimitive?.content
+                                ?: throw GradleException("permission_scopes entry missing 'scope_type' in action '$actionName' (${manifestFile.path})")
+                            val originatorProperty = scopeObj["originator_property"]?.jsonPrimitive?.content
+
+                            // Validate scope_type
+                            if (scopeType !in validScopeTypes) {
+                                throw GradleException(
+                                    "Invalid scope_type '$scopeType' in permission_scopes for action '$actionName' (${manifestFile.path}). " +
+                                            "Must be one of: ${validScopeTypes.joinToString(", ")}"
+                                )
+                            }
+                            // Validate originator_property when scope_type requires it
+                            if (scopeType == "match_originator" && originatorProperty == null) {
+                                throw GradleException(
+                                    "scope_type 'match_originator' requires 'originator_property' in permission_scopes " +
+                                            "for action '$actionName' (${manifestFile.path})"
+                                )
+                            }
+                            if (originatorProperty != null && originatorProperty !in validOriginatorProps) {
+                                throw GradleException(
+                                    "Invalid originator_property '$originatorProperty' in permission_scopes for action '$actionName' " +
+                                            "(${manifestFile.path}). Must be one of: ${validOriginatorProps.joinToString(", ")}"
+                                )
+                            }
+                            // Validate permission_key is in required_permissions
+                            if (reqPerms != null && permKey !in reqPerms) {
+                                throw GradleException(
+                                    "permission_scopes references permission_key '$permKey' which is not in " +
+                                            "required_permissions for action '$actionName' (${manifestFile.path})"
+                                )
+                            }
+
+                            mapOf(
+                                "permissionKey" to permKey,
+                                "payloadField" to payloadField,
+                                "scopeType" to scopeType,
+                                "originatorProperty" to originatorProperty
+                            )
+                        } ?: emptyList()
+
                         actionsList.add(mapOf(
                             "fullName" to actionName,
                             "featureName" to actionFeature,
@@ -277,7 +326,8 @@ tasks.register("generateActionRegistry") {
                             "requiredFields" to requiredFields,
                             "autoFillRules" to autoFillRules,
                             "sandboxRule" to sandboxRule,
-                            "requiredPermissions" to reqPerms
+                            "requiredPermissions" to reqPerms,
+                            "permissionScopes" to permissionScopes
                         ))
                     }
                 } catch (e: Exception) {
@@ -384,6 +434,19 @@ tasks.register("generateActionRegistry") {
                 else if (reqPerms.isEmpty()) "emptyList()"
                 else "listOf(${reqPerms.joinToString(", ") { "\"$it\"" }})"
 
+                // Phase 3: Permission scopes
+                @Suppress("UNCHECKED_CAST")
+                val scopes = action["permissionScopes"] as? List<Map<String, Any?>> ?: emptyList()
+                val scopesStr = if (scopes.isEmpty()) "emptyList()"
+                else {
+                    val scopeLines = scopes.joinToString(",\n") { scope ->
+                        val origProp = scope["originatorProperty"] as? String
+                        val origPropStr = if (origProp != null) "\"$origProp\"" else "null"
+                        "                        PermissionScopeRule(\"${scope["permissionKey"]}\", \"${scope["payloadField"]}\", \"${scope["scopeType"]}\", $origPropStr)"
+                    }
+                    "listOf(\n$scopeLines\n                    )"
+                }
+
                 """                "${action["suffix"]}" to ActionDescriptor(
                 |                    fullName = "${action["fullName"]}",
                 |                    featureName = "${action["featureName"]}",
@@ -396,7 +459,8 @@ tasks.register("generateActionRegistry") {
                 |                    requiredFields = $reqFieldsStr,
                 |                    autoFillRules = $autoFillStr,
                 |                    sandboxRule = $sandboxStr,
-                |                    requiredPermissions = $reqPermsStr
+                |                    requiredPermissions = $reqPermsStr,
+                |                    permissionScopes = $scopesStr
                 |                )""".trimMargin()
             }
 
@@ -463,6 +527,25 @@ tasks.register("generateActionRegistry") {
             |        val payloadRewrites: Map<String, String> = emptyMap()
             |    )
             |
+            |    /**
+            |     * A declarative scope constraint on a permission, evaluated by the Store guard (Phase 3).
+            |     *
+            |     * Scope rules narrow a permission check beyond just YES/NO — they verify that the
+            |     * specific action invocation falls within the granted scope. For example, an agent
+            |     * with `session:write = YES` can only post messages where `senderId` matches its own handle.
+            |     *
+            |     * @param permissionKey Which permission key this scope constrains (must be in requiredPermissions)
+            |     * @param payloadField Dot-separated path into the action payload to extract the value to check
+            |     * @param scopeType The type of scope check: "match_originator", "match_namespace", or "match_resource_scope"
+            |     * @param originatorProperty For match_originator: which Identity field to compare against ("uuid", "handle", "localHandle")
+            |     */
+            |    data class PermissionScopeRule(
+            |        val permissionKey: String,
+            |        val payloadField: String,
+            |        val scopeType: String,
+            |        val originatorProperty: String? = null
+            |    )
+            |
             |    data class ActionDescriptor(
             |        val fullName: String,
             |        val featureName: String,
@@ -475,7 +558,8 @@ tasks.register("generateActionRegistry") {
             |        val requiredFields: List<String>,
             |        val autoFillRules: Map<String, String> = emptyMap(),
             |        val sandboxRule: SandboxRule? = null,
-            |        val requiredPermissions: List<String>? = null
+            |        val requiredPermissions: List<String>? = null,
+            |        val permissionScopes: List<PermissionScopeRule> = emptyList()
             |    ) {
             |        /** A Command is any action public to all originators. */
             |        val isCommand: Boolean get() = public

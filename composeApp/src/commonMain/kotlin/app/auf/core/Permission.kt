@@ -33,7 +33,8 @@ enum class PermissionLevel {
  *
  * @param level The access level (NO, ASK, APP_LIFETIME, YES).
  * @param resourceScope Optional path/prefix constraint for resource-scoped permissions.
- *   Phase 4 feature — ignored until then.
+ *   Used by `match_resource_scope` scope rules in the Store permission guard (Phase 3).
+ *   When set, the guard verifies that the target payload field starts with this prefix.
  */
 @Serializable
 data class PermissionGrant(

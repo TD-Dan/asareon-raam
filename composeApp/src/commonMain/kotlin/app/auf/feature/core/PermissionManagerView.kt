@@ -244,6 +244,7 @@ fun PermissionManagerView(store: Store) {
                                     isChecked = isChecked,
                                     isInherited = isInherited,
                                     isEscalated = escalated,
+                                    resourceScope = effectiveGrant?.resourceScope,
                                     onToggle = {
                                         val newLevel = if (isChecked) "NO" else "YES"
                                         store.dispatch("core", Action(
@@ -351,12 +352,15 @@ private fun PermissionColumnHeader(
 /**
  * A single cell in the permission matrix. Shows a checkbox for YES/NO,
  * with visual indicators for inherited and escalated states.
+ * Phase 3: shows resourceScope as a small label when present.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PermissionCell(
     isChecked: Boolean,
     isInherited: Boolean,
     isEscalated: Boolean,
+    resourceScope: String?,
     onToggle: () -> Unit
 ) {
     val bgColor = when {
@@ -364,36 +368,66 @@ private fun PermissionCell(
         else -> Color.Transparent
     }
 
-    Box(
-        modifier = Modifier
-            .width(80.dp)
-            .fillMaxHeight()
-            .background(bgColor),
-        contentAlignment = Alignment.Center
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+    val cellContent = @Composable {
+        Box(
+            modifier = Modifier
+                .width(80.dp)
+                .fillMaxHeight()
+                .background(bgColor),
+            contentAlignment = Alignment.Center
         ) {
-            Checkbox(
-                checked = isChecked,
-                onCheckedChange = { onToggle() },
-                colors = CheckboxDefaults.colors(
-                    // Inherited grants get a muted check color
-                    checkedColor = if (isInherited)
-                        MaterialTheme.colorScheme.outline
-                    else
-                        MaterialTheme.colorScheme.primary
-                )
-            )
-            if (isEscalated) {
-                Icon(
-                    Icons.Default.Warning,
-                    contentDescription = "Escalated above parent",
-                    tint = DangerCautionColor,
-                    modifier = Modifier.size(14.dp)
-                )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Checkbox(
+                        checked = isChecked,
+                        onCheckedChange = { onToggle() },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = if (isInherited)
+                                MaterialTheme.colorScheme.outline
+                            else
+                                MaterialTheme.colorScheme.primary
+                        )
+                    )
+                    if (isEscalated) {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = "Escalated above parent",
+                            tint = DangerCautionColor,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+                // Phase 3: Show resource scope prefix when present
+                if (resourceScope != null) {
+                    Text(
+                        text = resourceScope,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 8.sp,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
+    }
+
+    if (resourceScope != null) {
+        TooltipBox(
+            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+            state = rememberTooltipState(),
+            tooltip = {
+                PlainTooltip {
+                    Text("Scope: $resourceScope", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        ) {
+            cellContent()
+        }
+    } else {
+        cellContent()
     }
 }
