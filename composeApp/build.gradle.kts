@@ -28,18 +28,18 @@ plugins {
 
 
 // ============================================================================
-// Phase 1 — New generateActionRegistry Gradle task
+// Phase 1 — generateActionRegistry Gradle task (with permissions support)
 // ============================================================================
-// Drop-in replacement for the old task in build.gradle.kts (lines 29–346).
-//
-// Reads the unified *.actions.json format (actions[] with public/broadcast/targeted)
-// and generates two files:
+// Reads the unified *.actions.json format and generates:
 //   1. ActionRegistry.kt — the unified registry (single source of truth)
 //   2. ActionNames.kt — typealias + old→new name compat shim
 //
-// IMPORTANT: No data classes inside doLast{} — Gradle script closures don't
-// support them reliably. Uses plain Map<String, Any> throughout, matching the
-// pattern of the original working task.
+// Phase 1 additions:
+//   - Parses "permissions" array from manifests (objects with key/description/dangerLevel)
+//   - Validates dangerLevel is LOW/CAUTION/DANGER
+//   - Validates permission keys contain exactly one colon
+//   - Cross-references required_permissions against declared keys
+//   - Generates PermissionDeclaration data class and permissionDeclarations map
 // ============================================================================
 
 tasks.register("generateActionRegistry") {
@@ -61,9 +61,16 @@ tasks.register("generateActionRegistry") {
     doLast {
         val json = Json { ignoreUnknownKeys = true }
 
+        // Valid dangerLevel values
+        val validDangerLevels = setOf("LOW", "CAUTION", "DANGER")
+
         // Plain-map collections only — no data classes in Gradle doLast blocks!
-        // featureMap: featureName → { "name", "summary", "permissions", "actions": List<Map> }
+        // featureMap: featureName → { "name", "summary", "permissionDeclarations", "actions": List<Map> }
         val featureMap = mutableMapOf<String, MutableMap<String, Any>>()
+
+        // Collect all declared permission keys across all features for cross-referencing
+        // Map: permissionKey → { key, description, dangerLevel, featureName }
+        val allDeclaredPermissions = mutableMapOf<String, Map<String, String>>()
 
         // Helper to escape strings for Kotlin source
         fun String.escKt() = this
@@ -86,14 +93,77 @@ tasks.register("generateActionRegistry") {
                     val featureName = manifest["feature_name"]?.jsonPrimitive?.content
                         ?: throw GradleException("Missing feature_name in ${manifestFile.path}")
                     val featureSummary = manifest["summary"]?.jsonPrimitive?.content ?: ""
-                    val permissions = (manifest["permissions"] as? JsonArray)
-                        ?.map { it.jsonPrimitive.content } ?: emptyList<String>()
+
+                    // ====== Parse permissions declarations (Phase 1) ======
+                    // New format: array of objects with key, description, dangerLevel
+                    val permissionsArray = manifest["permissions"] as? JsonArray
+                    val permissionDeclarations = mutableListOf<Map<String, String>>()
+
+                    if (permissionsArray != null) {
+                        for (permEl in permissionsArray) {
+                            if (permEl is JsonObject) {
+                                // New format: { key, description, dangerLevel }
+                                val key = permEl["key"]?.jsonPrimitive?.content
+                                    ?: throw GradleException("Permission declaration missing 'key' in ${manifestFile.path}")
+                                val description = permEl["description"]?.jsonPrimitive?.content ?: ""
+                                val dangerLevel = permEl["dangerLevel"]?.jsonPrimitive?.content ?: "LOW"
+
+                                // Validate dangerLevel
+                                if (dangerLevel !in validDangerLevels) {
+                                    throw GradleException(
+                                        "Invalid dangerLevel '$dangerLevel' for permission '$key' in ${manifestFile.path}. " +
+                                                "Must be one of: ${validDangerLevels.joinToString(", ")}"
+                                    )
+                                }
+
+                                // Validate colon format: exactly one colon
+                                val colonCount = key.count { it == ':' }
+                                if (colonCount != 1) {
+                                    throw GradleException(
+                                        "Permission key '$key' in ${manifestFile.path} must contain exactly one colon. " +
+                                                "Format: '<domain>:<capability>'. Found $colonCount colon(s)."
+                                    )
+                                }
+
+                                // Validate key length
+                                if (key.length > 64) {
+                                    throw GradleException(
+                                        "Permission key '$key' in ${manifestFile.path} exceeds 64 characters (${key.length})."
+                                    )
+                                }
+
+                                val decl = mapOf(
+                                    "key" to key,
+                                    "description" to description,
+                                    "dangerLevel" to dangerLevel,
+                                    "featureName" to featureName
+                                )
+                                permissionDeclarations.add(decl)
+                                allDeclaredPermissions[key] = decl
+                            } else if (permEl is JsonPrimitive) {
+                                // Legacy format: plain string — backward compat, no dangerLevel
+                                val key = permEl.content
+                                val decl = mapOf(
+                                    "key" to key,
+                                    "description" to "",
+                                    "dangerLevel" to "LOW",
+                                    "featureName" to featureName
+                                )
+                                permissionDeclarations.add(decl)
+                                allDeclaredPermissions[key] = decl
+                            }
+                        }
+                    }
+
+                    // Legacy permissions list (simple strings) for backward compat
+                    val legacyPermissions = permissionDeclarations.map { it["key"]!! }
 
                     val featureData = featureMap.getOrPut(featureName) {
                         mutableMapOf(
                             "name" to featureName,
                             "summary" to featureSummary,
-                            "permissions" to permissions,
+                            "permissions" to legacyPermissions,
+                            "permissionDeclarations" to permissionDeclarations,
                             "actions" to mutableListOf<Map<String, Any?>>()
                         )
                     }
@@ -194,7 +264,7 @@ tasks.register("generateActionRegistry") {
                             aeMap
                         } else null
 
-                        // Parse required_permissions (future hook)
+                        // Parse required_permissions
                         val reqPerms = (obj["required_permissions"] as? JsonArray)
                             ?.map { it.jsonPrimitive.content }
 
@@ -219,11 +289,24 @@ tasks.register("generateActionRegistry") {
             }
         }
 
-        // ====== Collect all actions sorted ======
+        // ====== Cross-reference validation: required_permissions vs declared keys ======
         val allActions = featureMap.values.flatMap { feature ->
             @Suppress("UNCHECKED_CAST")
             feature["actions"] as List<Map<String, Any?>>
         }.sortedBy { it["fullName"] as String }
+
+        for (action in allActions) {
+            @Suppress("UNCHECKED_CAST")
+            val reqPerms = action["requiredPermissions"] as? List<String> ?: continue
+            for (permKey in reqPerms) {
+                if (permKey !in allDeclaredPermissions) {
+                    throw GradleException(
+                        "Action '${action["fullName"]}' requires permission '$permKey' which is not declared " +
+                                "in any feature's 'permissions' array. Declare it in the appropriate *.actions.json manifest."
+                    )
+                }
+            }
+        }
 
         // ============================================================
         // Generate ActionRegistry.kt
@@ -292,6 +375,7 @@ tasks.register("generateActionRegistry") {
                 @Suppress("UNCHECKED_CAST")
                 val reqPerms = action["requiredPermissions"] as? List<String>
                 val reqPermsStr = if (reqPerms == null) "null"
+                else if (reqPerms.isEmpty()) "emptyList()"
                 else "listOf(${reqPerms.joinToString(", ") { "\"$it\"" }})"
 
                 """                "${action["suffix"]}" to ActionDescriptor(
@@ -321,6 +405,15 @@ tasks.register("generateActionRegistry") {
             |            actions = mapOf(
             |$actionEntries
             |            )
+            |        )""".trimMargin()
+        }
+
+        // Section: Permission declarations map
+        val permDeclEntries = allDeclaredPermissions.entries.sortedBy { it.key }.joinToString(",\n") { (key, decl) ->
+            """        "$key" to PermissionDeclaration(
+            |            key = "$key",
+            |            description = "${decl["description"]!!.escKt()}",
+            |            dangerLevel = app.auf.core.DangerLevel.${decl["dangerLevel"]!!}
             |        )""".trimMargin()
         }
 
@@ -399,6 +492,16 @@ tasks.register("generateActionRegistry") {
             |        val actions: Map<String, ActionDescriptor>
             |    )
             |
+            |    /**
+            |     * A declared permission key with its description and danger level.
+            |     * Generated from the "permissions" arrays in *.actions.json manifests.
+            |     */
+            |    data class PermissionDeclaration(
+            |        val key: String,
+            |        val description: String,
+            |        val dangerLevel: app.auf.core.DangerLevel
+            |    )
+            |
             |    // ================================================================
             |    // Section 3: Feature Registry (generated from manifests)
             |    // ================================================================
@@ -430,6 +533,15 @@ tasks.register("generateActionRegistry") {
             |    /** Sandbox rules for agent actions. */
             |    val agentSandboxRules: Map<String, SandboxRule> = byActionName.values
             |        .mapNotNull { d -> d.agentExposure?.sandboxRule?.let { d.fullName to it } }.toMap()
+            |
+            |    // ================================================================
+            |    // Section 5: Permission Declarations (Phase 1)
+            |    // ================================================================
+            |
+            |    /** All declared permission keys with their descriptions and danger levels. */
+            |    val permissionDeclarations: Map<String, PermissionDeclaration> = mapOf(
+            |$permDeclEntries
+            |    )
             |}
         """.trimMargin()
 
@@ -438,7 +550,7 @@ tasks.register("generateActionRegistry") {
         registryOut.writeText(actionRegistryContent)
 
         // Summary
-        println("Generated ActionRegistry.kt with ${allActions.size} actions across ${featureMap.size} features.")
+        println("Generated ActionRegistry.kt with ${allActions.size} actions across ${featureMap.size} features, ${allDeclaredPermissions.size} permission declarations.")
     }
 }
 

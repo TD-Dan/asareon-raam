@@ -144,10 +144,16 @@ data class Identity(
     /**
      * Epoch millis when this identity was registered.
      */
-    val registeredAt: Long = 0
+    val registeredAt: Long = 0,
 
-    // FUTURE: Permissions grants — paved, not implemented in v2.0.
-    // val permissions: Map<String, Boolean>? = null
+    /**
+     * Permission grants for this identity, keyed by permission key.
+     * Example: {"filesystem:workspace": {"level": "YES"}, "gateway:generate": {"level": "YES"}}
+     *
+     * Empty map means no explicit grants — inherits from parent, or deny-by-default
+     * if no ancestor has grants.
+     */
+    val permissions: Map<String, PermissionGrant> = emptyMap()
 ) {
     /** Convenience accessor for typed handle. */
     val identityHandle: IdentityHandle get() = IdentityHandle(handle)

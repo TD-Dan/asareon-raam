@@ -20,6 +20,7 @@ import kotlinx.serialization.json.put
  * - Feature identities are seeded at boot in initFeatureLifecycles().
  * - AppState.identityRegistry is the single source of truth, mutated via updateIdentityRegistry().
  * - The validActionNames constructor param is removed; validation uses AppState.actionDescriptors.
+ * - Permission guard (Phase 1): Step 2b checks required_permissions against originator's effective grants.
  */
 open class Store(
     initialState: AppState,
@@ -51,6 +52,10 @@ open class Store(
      *
      * This enables hierarchical originator resolution: an action dispatched by
      * "agent.gemini-flash-abc123" is authorized as if it came from the "agent" feature.
+     *
+     * NOTE: For deeper hierarchies ("agent.coder-1.sub-task"), this returns "agent"
+     * (first segment only). This is intentional — only exact feature handles skip
+     * permission checks (feature trust exemption).
      */
     private fun extractFeatureHandle(originator: String?): String? =
         originator?.substringBefore('.')
@@ -144,6 +149,56 @@ open class Store(
     }
 
     /**
+     * Resolves the effective permissions for an identity by walking the
+     * parent chain. Applies controlled escalation policy (Pillar 7):
+     * child grants may override parent grants freely, but escalations
+     * (child level > parent level) are logged at WARN for audit.
+     *
+     * Resolution: accumulate from root to leaf. Each layer overrides
+     * the inherited value.
+     */
+    fun resolveEffectivePermissions(
+        identity: Identity
+    ): Map<String, PermissionGrant> {
+        val registry = _state.value.identityRegistry
+
+        // Collect the chain: [self, parent, grandparent, ...]
+        val chain = mutableListOf(identity)
+        var current = identity
+        while (current.parentHandle != null) {
+            val parent = registry[current.parentHandle] ?: break
+            chain.add(parent)
+            current = parent
+        }
+
+        // Merge root-first: each child layer overrides
+        val effective = mutableMapOf<String, PermissionGrant>()
+
+        for (ancestor in chain.reversed()) {
+            for ((key, grant) in ancestor.permissions) {
+                val parentGrant = effective[key]
+                if (parentGrant == null) {
+                    // First in chain to declare this key
+                    effective[key] = grant
+                } else {
+                    // Controlled escalation: allow but log
+                    if (grant.level > parentGrant.level) {
+                        platformDependencies.log(
+                            LogLevel.WARN, "Store",
+                            "PERMISSION ESCALATION: '${ancestor.handle}' has " +
+                                    "'${grant.level}' for '$key' but parent effective is " +
+                                    "'${parentGrant.level}'. Allowed under controlled escalation."
+                        )
+                    }
+                    effective[key] = grant
+                }
+            }
+        }
+
+        return effective
+    }
+
+    /**
      * The core logic for processing a single action.
      *
      * Authorization and routing are schema-driven via ActionDescriptor flags:
@@ -154,6 +209,10 @@ open class Store(
      * Authorization (step 2):
      *   public: true  → any originator
      *   public: false → originator's feature handle must match action's owning feature
+     *
+     * Permission guard (step 2b — Phase 1):
+     *   If the action has required_permissions, the originator's effective grants
+     *   must include YES for all listed keys. Features (uuid == null) are exempt.
      *
      * Routing (step 4):
      *   targeted: true     → deliver to targetRecipient only (Phase 3)
@@ -196,6 +255,25 @@ open class Store(
             return
         }
 
+        // --- STEP 1c: ORIGINATOR VALIDATION (Pre-Phase 1) ---
+        // Reject originators not in the identity registry and not resolvable to a feature handle.
+        if (action.originator != null) {
+            val originatorInRegistry = _state.value.identityRegistry.containsKey(action.originator)
+            val originatorIsFeature = features.any { it.identity.handle == action.originator }
+            if (!originatorInRegistry && !originatorIsFeature) {
+                val featureHandle = extractFeatureHandle(action.originator)
+                val parentIsFeature = features.any { it.identity.handle == featureHandle }
+                if (!parentIsFeature) {
+                    platformDependencies.log(
+                        LogLevel.ERROR, "Store",
+                        "INVALID ORIGINATOR: '${action.originator}' is not a registered identity " +
+                                "or feature. Action '${action.name}' rejected."
+                    )
+                    return
+                }
+            }
+        }
+
         // --- STEP 2: AUTHORIZATION (public flag) ---
         // `public` answers: "who is allowed to dispatch this?"
         // public: true  → any originator
@@ -214,16 +292,73 @@ open class Store(
             return
         }
 
-        // FUTURE: After authorization, check required permissions:
-        // val requiredPerms = descriptor.requiredPermissions
-        // if (requiredPerms != null) {
-        //     val identity = _state.value.identityRegistry[action.originator]
-        //     val effectivePerms = resolvePermissions(identity)  // walk parentHandle chain
-        //     if (!requiredPerms.all { effectivePerms[it] == true }) {
-        //         log(ERROR, "Permission denied for '${action.originator}' on '${action.name}'")
-        //         return
-        //     }
-        // }
+        // --- STEP 2b: PERMISSION GUARD (Phase 1: YES/NO only) ---
+        val requiredPerms = descriptor.requiredPermissions
+        if (requiredPerms != null && requiredPerms.isNotEmpty()) {
+            val originatorIdentity = action.originator?.let {
+                _state.value.identityRegistry[it]
+            }
+
+            // Feature identities (uuid == null) are trusted — skip permission check.
+            if (originatorIdentity != null && originatorIdentity.uuid != null) {
+                val effective = resolveEffectivePermissions(originatorIdentity)
+
+                for (permKey in requiredPerms) {
+                    val grant = effective[permKey]
+                    val level = grant?.level ?: PermissionLevel.NO  // deny by default (Pillar 5)
+
+                    when (level) {
+                        PermissionLevel.NO -> {
+                            platformDependencies.log(
+                                LogLevel.WARN, "Store",
+                                "PERMISSION DENIED: '${action.originator}' lacks '$permKey' " +
+                                        "for action '${action.name}'. Action blocked."
+                            )
+                            return
+                        }
+                        PermissionLevel.ASK -> {
+                            // ASK system not yet implemented. Deny with warning.
+                            // See: permissions-ask-system-task.md
+                            platformDependencies.log(
+                                LogLevel.WARN, "Store",
+                                "PERMISSION ASK not yet implemented (treating as NO): " +
+                                        "'${action.originator}' has ASK for '$permKey' " +
+                                        "on action '${action.name}'. Action blocked."
+                            )
+                            return
+                        }
+                        PermissionLevel.APP_LIFETIME -> {
+                            // APP_LIFETIME system not yet implemented. Deny with warning.
+                            platformDependencies.log(
+                                LogLevel.WARN, "Store",
+                                "PERMISSION APP_LIFETIME not yet implemented (treating as NO): " +
+                                        "'${action.originator}' has APP_LIFETIME for '$permKey' " +
+                                        "on action '${action.name}'. Action blocked."
+                            )
+                            return
+                        }
+                        PermissionLevel.YES -> {
+                            // Permitted — continue to next required permission.
+                        }
+                    }
+                }
+                // Phase 3: Evaluate permission scopes here.
+            }
+            // Unknown originator with required permissions: check if resolvable to feature.
+            else if (originatorIdentity == null && action.originator != null) {
+                val featureHandle = extractFeatureHandle(action.originator)
+                val isFeature = features.any { it.identity.handle == featureHandle }
+                if (!isFeature) {
+                    platformDependencies.log(
+                        LogLevel.ERROR, "Store",
+                        "PERMISSION DENIED: originator '${action.originator}' not found in " +
+                                "identity registry and action '${action.name}' requires permissions. Blocked."
+                    )
+                    return
+                }
+                // Resolvable to a trusted feature — allowed (feature trust exemption).
+            }
+        }
 
         // --- STEP 3: LIFECYCLE GUARD ---
 
@@ -369,7 +504,9 @@ open class Store(
             name = ActionRegistry.Names.CORE_SHOW_TOAST,
             payload = buildJsonObject { put("message", toastMessage) }
         )
-        deferredDispatch("Store.ExceptionHandler", toastAction)
+        // Pre-Phase 1 fix: dispatch as "core" (registered feature handle) instead of
+        // "Store.ExceptionHandler" (unregistered), so originator validation passes.
+        deferredDispatch("core", toastAction)
         ensureProcessingLoop()
     }
 }

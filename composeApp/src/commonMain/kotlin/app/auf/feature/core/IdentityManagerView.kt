@@ -49,7 +49,8 @@ fun IdentityManagerView(store: Store) {
         AddIdentityDialog(
             onDismiss = { showAddDialog = false },
             onAdd = { name ->
-                store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_ADD_USER_IDENTITY, buildJsonObject { put("name", name) }))
+                // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core.ui"
+                store.dispatch("core", Action(ActionRegistry.Names.CORE_ADD_USER_IDENTITY, buildJsonObject { put("name", name) }))
                 showAddDialog = false
             }
         )
@@ -60,7 +61,8 @@ fun IdentityManagerView(store: Store) {
             TopAppBar(
                 title = { Text("Identity Manager") },
                 navigationIcon = {
-                    IconButton(onClick = { store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW)) }) {
+                    // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core.ui"
+                    IconButton(onClick = { store.dispatch("core", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW)) }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -106,10 +108,12 @@ fun IdentityManagerView(store: Store) {
                         identity = identity,
                         isActive = identity.handle == coreState?.activeUserId,
                         onSetActive = {
-                            store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) }))
+                            // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core.ui"
+                            store.dispatch("core", Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) }))
                         },
                         onDelete = {
-                            store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) }))
+                            // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core.ui"
+                            store.dispatch("core", Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) }))
                         }
                     )
                 }
@@ -196,6 +200,14 @@ private fun InternalIdentityRow(identity: Identity) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                // Phase 1: Show permission grants count
+                if (identity.permissions.isNotEmpty()) {
+                    Text(
+                        "permissions: ${identity.permissions.size} grant(s)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -220,6 +232,14 @@ private fun IdentityRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(identity.name, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
                 Text("ID: ${identity.handle}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // Phase 1: Show permission summary
+                if (identity.permissions.isNotEmpty()) {
+                    Text(
+                        "${identity.permissions.size} permission(s)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (!isActive) {

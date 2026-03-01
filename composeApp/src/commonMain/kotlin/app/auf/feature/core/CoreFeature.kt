@@ -54,6 +54,21 @@ class CoreFeature(
         val newName: String
     )
 
+    // --- Permission management payload classes (Phase 1) ---
+    @Serializable private data class SetPermissionPayload(
+        val identityHandle: String,
+        val permissionKey: String,
+        val level: String
+    )
+    @Serializable private data class SetPermissionsBatchPayload(
+        val grants: List<BatchGrantEntry>
+    )
+    @Serializable private data class BatchGrantEntry(
+        val identityHandle: String,
+        val permissionKey: String,
+        val level: String
+    )
+
     /**
      * Lenient Json instance for decoding action payloads. Uses ignoreUnknownKeys
      * because upstream features (e.g., CoreFeature's own handleSideEffects) may
@@ -149,6 +164,70 @@ class CoreFeature(
             },
             targetRecipient = originator
         ))
+    }
+
+    /**
+     * Applies a single permission grant to an identity in the registry.
+     * Validates the permission key and level before applying.
+     */
+    private fun applyPermissionGrant(
+        store: Store,
+        identityHandle: String,
+        permissionKey: String,
+        levelStr: String
+    ): Boolean {
+        val level = try {
+            PermissionLevel.valueOf(levelStr)
+        } catch (e: IllegalArgumentException) {
+            platformDependencies.log(
+                app.auf.util.LogLevel.ERROR, identity.handle,
+                "SET_PERMISSION: invalid level '$levelStr' — must be one of ${PermissionLevel.entries.map { it.name }}"
+            )
+            return false
+        }
+
+        val registry = store.state.value.identityRegistry
+        val targetIdentity = registry[identityHandle]
+        if (targetIdentity == null) {
+            platformDependencies.log(
+                app.auf.util.LogLevel.ERROR, identity.handle,
+                "SET_PERMISSION: identity '$identityHandle' not found in registry"
+            )
+            return false
+        }
+
+        val updatedPermissions = targetIdentity.permissions + (permissionKey to PermissionGrant(level = level))
+        val updatedIdentity = targetIdentity.copy(permissions = updatedPermissions)
+
+        store.updateIdentityRegistry { it + (identityHandle to updatedIdentity) }
+
+        platformDependencies.log(
+            app.auf.util.LogLevel.INFO, identity.handle,
+            "SET_PERMISSION: '$identityHandle' → '$permissionKey' = $level"
+        )
+        return true
+    }
+
+    /**
+     * Applies default permissions from [DefaultPermissions] to a newly registered identity.
+     * Only applies grants that the identity doesn't already have.
+     */
+    private fun applyDefaultPermissions(store: Store, newIdentity: Identity) {
+        val defaults = DefaultPermissions.grantsFor(newIdentity.handle)
+        if (defaults.isEmpty()) return
+
+        // Merge: existing explicit grants take precedence over defaults
+        val merged = defaults + newIdentity.permissions  // existing overwrites defaults
+        if (merged != newIdentity.permissions) {
+            val updatedIdentity = newIdentity.copy(permissions = merged)
+            store.updateIdentityRegistry { it + (newIdentity.handle to updatedIdentity) }
+
+            platformDependencies.log(
+                app.auf.util.LogLevel.INFO, identity.handle,
+                "Applied ${defaults.size} default permission(s) to '${newIdentity.handle}': " +
+                        defaults.keys.joinToString(", ")
+            )
+        }
     }
 
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
@@ -311,7 +390,8 @@ class CoreFeature(
                             handle = fullHandle,
                             name = userIdentity.name,
                             parentHandle = "core",
-                            registeredAt = userIdentity.registeredAt.takeIf { it > 0 } ?: platformDependencies.currentTimeMillis()
+                            registeredAt = userIdentity.registeredAt.takeIf { it > 0 } ?: platformDependencies.currentTimeMillis(),
+                            permissions = userIdentity.permissions  // Preserve existing permissions
                         )
                         fullHandle to registryIdentity
                     }
@@ -322,6 +402,13 @@ class CoreFeature(
                             !key.startsWith("core.")
                         }
                         withoutCoreChildren + registryEntries
+                    }
+
+                    // Apply default permissions to any user identities that have no explicit grants.
+                    for ((_, registryIdentity) in registryEntries) {
+                        if (registryIdentity.permissions.isEmpty()) {
+                            applyDefaultPermissions(store, registryIdentity)
+                        }
                     }
 
                     persistAndBroadcastIdentities(latestCoreState, store)
@@ -403,6 +490,9 @@ class CoreFeature(
 
                 // Delegate storage to the Store
                 store.updateIdentityRegistry { it + (fullHandle to newIdentity) }
+
+                // Apply default permissions from DefaultPermissions (Phase 1 hook)
+                applyDefaultPermissions(store, newIdentity)
 
                 // Targeted response to the originator: here's what was approved
                 store.deferredDispatch(identity.handle, Action(
@@ -551,6 +641,46 @@ class CoreFeature(
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
                 ))
+            }
+
+            // --- Permission Management (Phase 1) ---
+            ActionRegistry.Names.CORE_SET_PERMISSION -> {
+                val payload = action.payload?.let {
+                    json.decodeFromJsonElement<SetPermissionPayload>(it)
+                } ?: return
+
+                val changed = applyPermissionGrant(store, payload.identityHandle, payload.permissionKey, payload.level)
+                if (changed) {
+                    // Persist updated identities and broadcast
+                    val updatedCoreState = store.state.value.featureStates["core"] as? CoreState
+                    if (updatedCoreState != null) {
+                        persistAndBroadcastIdentities(updatedCoreState, store)
+                    }
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.CORE_PERMISSIONS_UPDATED
+                    ))
+                }
+            }
+            ActionRegistry.Names.CORE_SET_PERMISSIONS_BATCH -> {
+                val payload = action.payload?.let {
+                    json.decodeFromJsonElement<SetPermissionsBatchPayload>(it)
+                } ?: return
+
+                var anyChanged = false
+                for (grant in payload.grants) {
+                    val changed = applyPermissionGrant(store, grant.identityHandle, grant.permissionKey, grant.level)
+                    if (changed) anyChanged = true
+                }
+
+                if (anyChanged) {
+                    val updatedCoreState = store.state.value.featureStates["core"] as? CoreState
+                    if (updatedCoreState != null) {
+                        persistAndBroadcastIdentities(updatedCoreState, store)
+                    }
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.CORE_PERMISSIONS_UPDATED
+                    ))
+                }
             }
 
             ActionRegistry.Names.COMMANDBOT_ACTION_CREATED -> {
@@ -776,7 +906,8 @@ class CoreFeature(
 
         @Composable
         override fun RibbonContent(store: Store, activeViewKey: String?) {
-            IconButton(onClick = { store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKeyIdentities) })) }) {
+            // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core.ui"
+            IconButton(onClick = { store.dispatch("core", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKeyIdentities) })) }) {
                 Icon(Icons.Default.Person, "Identity Manager", tint = if (activeViewKey == viewKeyIdentities) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -786,7 +917,8 @@ class CoreFeature(
             DropdownMenuItem(
                 text = { Text("About") },
                 onClick = {
-                    store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKeyAbout) }))
+                    // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core.ui"
+                    store.dispatch("core", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKeyAbout) }))
                     onDismiss()
                 },
                 leadingIcon = { Icon(Icons.Default.Info, "About Application") }

@@ -1,6 +1,11 @@
 {
   "feature_name": "core",
   "summary": "Handles core, application-level state and UI logic like navigation, toasts, user identity management, and the universal identity registry.",
+  "permissions": [
+    { "key": "core:read", "description": "Read core state and identity information", "dangerLevel": "LOW" },
+    { "key": "core:identity", "description": "Modify identity records", "dangerLevel": "CAUTION" },
+    { "key": "core:administrator", "description": "Full administrative access to core operations", "dangerLevel": "DANGER" }
+  ],
   "actions": [
     {
       "action_name": "core.SET_ACTIVE_VIEW",
@@ -8,6 +13,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -25,7 +31,8 @@
       "summary": "Changes the main view to whatever is configured as the default view.",
       "public": true,
       "broadcast": true,
-      "targeted": false
+      "targeted": false,
+      "required_permissions": []
     },
     {
       "action_name": "core.UPDATE_WINDOW_SIZE",
@@ -33,6 +40,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -55,6 +63,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -72,14 +81,16 @@
       "summary": "Immediately hides the currently displayed toast message.",
       "public": true,
       "broadcast": true,
-      "targeted": false
+      "targeted": false,
+      "required_permissions": []
     },
     {
       "action_name": "core.OPEN_LOGS_FOLDER",
       "summary": "Requests that the application's logs folder be opened in the native file explorer.",
       "public": true,
       "broadcast": true,
-      "targeted": false
+      "targeted": false,
+      "required_permissions": []
     },
     {
       "action_name": "core.COPY_TO_CLIPBOARD",
@@ -87,6 +98,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -105,6 +117,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "required_permissions": ["core:identity"],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -123,6 +136,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "required_permissions": ["core:identity"],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -141,6 +155,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -159,6 +174,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -200,6 +216,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -219,6 +236,7 @@
       "public": false,
       "broadcast": true,
       "targeted": false,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -247,6 +265,7 @@
       "public": false,
       "broadcast": false,
       "targeted": false,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -274,6 +293,7 @@
       "public": false,
       "broadcast": false,
       "targeted": true,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -296,6 +316,7 @@
       "public": true,
       "broadcast": false,
       "targeted": false,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -317,55 +338,33 @@
     },
     {
       "action_name": "core.RETURN_REGISTER_IDENTITY",
-      "summary": "Targeted response to a core.REGISTER_IDENTITY request. Contains the approved identity on success, or an error on failure. The caller can correlate by UUID (if one was provided in the request) or by requestedLocalHandle.",
+      "summary": "Targeted response to a core.REGISTER_IDENTITY request. Contains the approved identity on success, or an error on failure.",
       "public": false,
       "broadcast": false,
       "targeted": true,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
-          "success": {
-            "type": "boolean",
-            "description": "Whether the registration was accepted."
-          },
-          "requestedLocalHandle": {
-            "type": "string",
-            "description": "The localHandle that was originally requested."
-          },
-          "approvedLocalHandle": {
-            "type": "string",
-            "description": "The localHandle that was actually registered (may differ due to deduplication). Only present on success."
-          },
-          "handle": {
-            "type": "string",
-            "description": "The full bus address of the registered identity. Only present on success."
-          },
-          "uuid": {
-            "type": "string",
-            "description": "The UUID of the registered identity. Matches caller-provided UUID if one was given. Only present on success."
-          },
-          "name": {
-            "type": "string",
-            "description": "The display name. Only present on success."
-          },
-          "parentHandle": {
-            "type": "string",
-            "description": "The parent's full handle (= the originator). Only present on success."
-          },
-          "error": {
-            "type": "string",
-            "description": "Error message explaining why registration was rejected. Only present on failure."
-          }
+          "success": { "type": "boolean" },
+          "requestedLocalHandle": { "type": "string" },
+          "approvedLocalHandle": { "type": "string" },
+          "handle": { "type": "string" },
+          "uuid": { "type": "string" },
+          "name": { "type": "string" },
+          "parentHandle": { "type": "string" },
+          "error": { "type": "string" }
         },
         "required": ["success"]
       }
     },
     {
       "action_name": "core.UNREGISTER_IDENTITY",
-      "summary": "Remove an identity from the registry. Cascades: all descendants (by handle prefix) are also removed. Namespace enforcement: the originator can only unregister identities within its own namespace. Only delivered to CoreFeature (non-broadcast); a core.IDENTITY_REGISTRY_UPDATED event follows on success.",
+      "summary": "Remove an identity from the registry. Cascades: all descendants are also removed. Namespace enforcement: the originator can only unregister identities within its own namespace.",
       "public": true,
       "broadcast": false,
       "targeted": false,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -379,59 +378,57 @@
     },
     {
       "action_name": "core.IDENTITY_REGISTRY_UPDATED",
-      "summary": "Broadcast after any change to the identity registry. Features that need to react to identity changes (e.g., updating UI, refreshing name caches) should listen for this. Replaces both core.IDENTITIES_UPDATED and agent.AGENT_NAMES_UPDATED for registry consumers.",
+      "summary": "Broadcast after any change to the identity registry.",
       "public": false,
       "broadcast": true,
-      "targeted": false
+      "targeted": false,
+      "required_permissions": []
     },
     {
       "action_name": "core.UPDATE_IDENTITY",
-      "summary": "Update the name (and consequently the handle/slug) of an existing identity. The UUID and parent are preserved. Namespace enforcement: the originator can only update identities within its own namespace. Cascading: children's parentHandle and handle are updated. A targeted RETURN_UPDATE_IDENTITY is sent to the caller.",
+      "summary": "Update the name (and consequently the handle/slug) of an existing identity.",
       "public": true,
       "broadcast": false,
       "targeted": false,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
-          "handle": {
-            "type": "string",
-            "description": "Full handle of the identity to update."
-          },
-          "newName": {
-            "type": "string",
-            "description": "The new display name. A new localHandle/slug will be derived from this."
-          }
+          "handle": { "type": "string" },
+          "newName": { "type": "string" }
         },
         "required": ["handle", "newName"]
       }
     },
     {
       "action_name": "core.RETURN_UPDATE_IDENTITY",
-      "summary": "Targeted response to a core.UPDATE_IDENTITY request. Sent to the original caller with the updated identity details, and also sent as cascading notifications to features owning child identities whose handles changed.",
+      "summary": "Targeted response to a core.UPDATE_IDENTITY request.",
       "public": false,
       "broadcast": false,
       "targeted": true,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
           "success": { "type": "boolean" },
-          "oldHandle": { "type": "string", "description": "The handle before the update." },
-          "newHandle": { "type": "string", "description": "The handle after the update. Only present on success." },
-          "oldLocalHandle": { "type": "string", "description": "Only present on success." },
-          "newLocalHandle": { "type": "string", "description": "Only present on success." },
-          "name": { "type": "string", "description": "The new display name. Only present on success." },
-          "uuid": { "type": "string", "description": "The UUID (unchanged). Only present on success." },
-          "error": { "type": "string", "description": "Only present on failure." }
+          "oldHandle": { "type": "string" },
+          "newHandle": { "type": "string" },
+          "oldLocalHandle": { "type": "string" },
+          "newLocalHandle": { "type": "string" },
+          "name": { "type": "string" },
+          "uuid": { "type": "string" },
+          "error": { "type": "string" }
         },
         "required": ["success", "oldHandle"]
       }
     },
     {
       "action_name": "core.REGISTER_PENDING_COMMAND",
-      "summary": "[INTERNAL] Records a correlationId → session mapping when CoreFeature dispatches a domain action on behalf of a user command. Used to route targeted RETURN_* data back to the session via commandbot.DELIVER_TO_SESSION.",
+      "summary": "[INTERNAL] Records a correlationId → session mapping when CoreFeature dispatches a domain action on behalf of a user command.",
       "public": false,
       "broadcast": false,
       "targeted": false,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -449,12 +446,82 @@
       "public": false,
       "broadcast": false,
       "targeted": false,
+      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
           "correlationId": { "type": "string" }
         },
         "required": ["correlationId"]
+      }
+    },
+    {
+      "action_name": "core.SET_PERMISSION",
+      "summary": "Sets a single permission grant on an identity. Only dispatchable by CoreFeature (non-public). The Permission Manager UI operates through Core's trusted handle.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "required_permissions": [],
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "identityHandle": { "type": "string", "description": "The handle of the identity to modify." },
+          "permissionKey": { "type": "string", "description": "The permission key (e.g., 'filesystem:workspace')." },
+          "level": { "type": "string", "description": "The permission level. ASK and APP_LIFETIME are reserved for the ASK system." }
+        },
+        "required": ["identityHandle", "permissionKey", "level"]
+      }
+    },
+    {
+      "action_name": "core.SET_PERMISSIONS_BATCH",
+      "summary": "Bulk-sets multiple permission grants. Used by the matrix UI and initial config loading. Non-public — only dispatchable by CoreFeature.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "required_permissions": [],
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "grants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "identityHandle": { "type": "string" },
+                "permissionKey": { "type": "string" },
+                "level": { "type": "string" }
+              },
+              "required": ["identityHandle", "permissionKey", "level"]
+            }
+          }
+        },
+        "required": ["grants"]
+      }
+    },
+    {
+      "action_name": "core.PERMISSIONS_UPDATED",
+      "summary": "Broadcast after any permission change. Features that cache permission state should refresh.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "required_permissions": []
+    },
+    {
+      "action_name": "core.PERMISSION_DENIED",
+      "summary": "Targeted notification sent to the originator's feature when an action is blocked by the permission guard.",
+      "public": false,
+      "broadcast": false,
+      "targeted": true,
+      "required_permissions": [],
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "blockedAction": { "type": "string" },
+          "originatorHandle": { "type": "string" },
+          "missingPermissions": { "type": "array", "items": { "type": "string" } },
+          "sessionId": { "type": ["string", "null"], "description": "Session context for feedback, if available." }
+        },
+        "required": ["blockedAction", "originatorHandle", "missingPermissions"]
       }
     }
   ]
