@@ -111,13 +111,13 @@ Each `*.actions.json` file declares its permission keys with descriptions and da
 
 ```json
 {
-  "feature_name": "filesystem",
-  "permissions": [
-    { "key": "filesystem:workspace",           "description": "Read, write, and delete files in the sandboxed workspace", "dangerLevel": "LOW" },
-    { "key": "filesystem:system-files-read",   "description": "Read any file on the operating system",                   "dangerLevel": "CAUTION" },
-    { "key": "filesystem:system-files-modify", "description": "Write and delete any file on the operating system",        "dangerLevel": "DANGER" }
-  ],
-  "actions": [ ... ]
+   "feature_name": "filesystem",
+   "permissions": [
+      { "key": "filesystem:workspace",           "description": "Read, write, and delete files in the sandboxed workspace", "dangerLevel": "LOW" },
+      { "key": "filesystem:system-files-read",   "description": "Read any file on the operating system",                   "dangerLevel": "CAUTION" },
+      { "key": "filesystem:system-files-modify", "description": "Write and delete any file on the operating system",        "dangerLevel": "DANGER" }
+   ],
+   "actions": [ ... ]
 }
 ```
 
@@ -153,17 +153,17 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 enum class PermissionLevel {
-    /** Access denied. The action is silently blocked at the Store level. */
-    NO,
+   /** Access denied. The action is silently blocked at the Store level. */
+   NO,
 
-    /** Reserved for ASK system. Currently treated as NO with WARN log. */
-    ASK,
+   /** Reserved for ASK system. Currently treated as NO with WARN log. */
+   ASK,
 
-    /** Reserved for ASK system. Currently treated as NO with WARN log. */
-    APP_LIFETIME,
+   /** Reserved for ASK system. Currently treated as NO with WARN log. */
+   APP_LIFETIME,
 
-    /** Access permanently granted. Persisted with the identity. */
-    YES
+   /** Access permanently granted. Persisted with the identity. */
+   YES
 }
 ```
 
@@ -179,8 +179,8 @@ enum class PermissionLevel {
  */
 @Serializable
 data class PermissionGrant(
-    val level: PermissionLevel,
-    val resourceScope: String? = null
+   val level: PermissionLevel,
+   val resourceScope: String? = null
 )
 ```
 
@@ -193,12 +193,12 @@ data class PermissionGrant(
  */
 @Serializable
 enum class DangerLevel {
-    /** Safe operation within sandboxed boundaries. UI: green/default. */
-    LOW,
-    /** Operation with broader impact. UI: orange/warning. */
-    CAUTION,
-    /** Operation that can cause system-wide damage. UI: red/danger. */
-    DANGER
+   /** Safe operation within sandboxed boundaries. UI: green/default. */
+   LOW,
+   /** Operation with broader impact. UI: orange/warning. */
+   CAUTION,
+   /** Operation that can cause system-wide damage. UI: red/danger. */
+   DANGER
 }
 ```
 
@@ -227,19 +227,19 @@ val permissions: Map<String, PermissionGrant> = emptyMap()
 
 ```json
 {
-  "action_name": "filesystem.WRITE",
-  "required_permissions": ["filesystem:workspace"],
-  ...
+   "action_name": "filesystem.WRITE",
+   "required_permissions": ["filesystem:workspace"],
+   ...
 },
 {
-  "action_name": "session.POST",
-  "required_permissions": ["session:write"],
-  ...
+"action_name": "session.POST",
+"required_permissions": ["session:write"],
+...
 },
 {
-  "action_name": "filesystem.NAVIGATE",
-  "required_permissions": [],
-  ...
+"action_name": "filesystem.NAVIGATE",
+"required_permissions": [],
+...
 }
 ```
 
@@ -251,8 +251,8 @@ In the generated `ActionRegistry`, `ActionDescriptor` gains:
 
 ```kotlin
 data class ActionDescriptor(
-    // ... existing fields ...
-    val requiredPermissions: List<String> = emptyList()
+   // ... existing fields ...
+   val requiredPermissions: List<String> = emptyList()
 )
 ```
 
@@ -260,21 +260,21 @@ New data class and registry-level additions:
 
 ```kotlin
 object ActionRegistry {
-    data class PermissionDeclaration(
-        val key: String,
-        val description: String,
-        val dangerLevel: DangerLevel
-    )
+   data class PermissionDeclaration(
+      val key: String,
+      val description: String,
+      val dangerLevel: DangerLevel
+   )
 
-    /** All declared permission keys with their descriptions and danger levels. */
-    val permissionDeclarations: Map<String, PermissionDeclaration> = mapOf(
-        "filesystem:workspace" to PermissionDeclaration(
-            "filesystem:workspace",
-            "Read, write, and delete files in the sandboxed workspace",
-            DangerLevel.LOW
-        ),
-        // ... generated from *.actions.json "permissions" arrays
-    )
+   /** All declared permission keys with their descriptions and danger levels. */
+   val permissionDeclarations: Map<String, PermissionDeclaration> = mapOf(
+      "filesystem:workspace" to PermissionDeclaration(
+         "filesystem:workspace",
+         "Read, write, and delete files in the sandboxed workspace",
+         DangerLevel.LOW
+      ),
+      // ... generated from *.actions.json "permissions" arrays
+   )
 }
 ```
 
@@ -311,7 +311,7 @@ These changes are prerequisites that must land before the permission guard is im
 4. **Replace all ad-hoc UI originator strings with feature handles.** 14 call sites across UI composables use unregistered strings (`"core.ui"`, `"session.ui"`, `"settings.ui"`, `"ui.agent"`, `"ui.ribbon"`, `"filesystem.ui"`). Replace all with the owning feature's handle:
 
    | Current | Replacement | Files |
-   |---|---|---|
+      |---|---|---|
    | `"core.ui"` | `"core"` | IdentityManagerView.kt, CoreFeature.kt composables |
    | `"session.ui"` | `"session"` | SessionFeature.kt composables |
    | `"settings.ui"` | `"settings"` | SettingsFeature.kt composables |
@@ -332,7 +332,7 @@ These changes are prerequisites that must land before the permission guard is im
 5. **Store guard** — Insert permission check in `processAction()` as Step 2b. See §5.
 6. **Strict originator validation** — Step 1c in `processAction()`. Reject originators not in the identity registry and not resolvable to a feature handle. See §9.1.
 7. **Inheritance resolution** — `resolveEffectivePermissions()` with controlled escalation (Pillar 7). See §5.3.
-8. **Default permissions via registration hook** — When `core.REGISTER_IDENTITY` processes a new identity, CoreFeature reads `default-permissions.json`, matches the new identity against patterns, and applies grants. See §8.3.
+8. **Default permissions via registration hook** — When `core.REGISTER_IDENTITY` processes a new identity, CoreFeature reads the compiled-in defaults from `DefaultPermissions.defaultGrants`, matches the new identity against patterns, and applies grants. See §8.2.
 9. **`core.SET_PERMISSION` secured** — `public: false`. Only CoreFeature can dispatch. The Permission Manager UI path operates under Core's trusted handle.
 10. **Test suite** — `StoreT1PermissionGuardTest.kt` with the 9 test scenarios in §10.1. Test infrastructure extended with permission-aware helpers.
 
@@ -673,7 +673,7 @@ session (feature — trusted, exempt from checks)
 
 When `core.REGISTER_IDENTITY` processes a new identity, CoreFeature:
 
-1. Reads `default-permissions.json` (loaded at startup, cached in CoreState).
+1. Reads the compiled-in defaults from `DefaultPermissions.defaultGrants` (no file I/O needed).
 2. Matches the new identity's handle against `identityPattern` glob patterns.
 3. Applies matching grants to the new identity via the same code path as `core.SET_PERMISSIONS_BATCH`.
 
@@ -687,36 +687,70 @@ If the registration payload includes `requestedPermissions`, those are merged on
 
 Permissions are persisted as part of the `Identity` data class. Since `identities.json` already stores full `Identity` objects, adding the `permissions` field is a non-breaking schema extension via `ignoreUnknownKeys`.
 
-### 8.2 Default Permissions Loading
+### 8.2 Default Permissions — Compile-Time Constants
 
-A `default-permissions.json` ships with the app:
+A `DefaultPermissions.kt` object in `app.auf.core` embeds the default grants directly in the binary. This eliminates file I/O, avoids resource-loading race conditions, and makes defaults available immediately at process start.
 
-```json
-{
-  "grants": [
-    { "identityPattern": "core.*",    "permissionKey": "filesystem:workspace",        "level": "YES" },
-    { "identityPattern": "core.*",    "permissionKey": "filesystem:system-files-read", "level": "YES" },
-    { "identityPattern": "core.*",    "permissionKey": "session:read",                "level": "YES" },
-    { "identityPattern": "core.*",    "permissionKey": "session:write",               "level": "YES" },
-    { "identityPattern": "core.*",    "permissionKey": "session:manage",              "level": "YES" },
-    { "identityPattern": "core.*",    "permissionKey": "gateway:generate",            "level": "YES" },
-    { "identityPattern": "core.*",    "permissionKey": "gateway:preview",             "level": "YES" },
-    { "identityPattern": "core.*",    "permissionKey": "core:read",                   "level": "YES" },
-    { "identityPattern": "core.*",    "permissionKey": "core:identity",               "level": "YES" },
-    { "identityPattern": "core.*",    "permissionKey": "knowledgegraph:read",         "level": "YES" },
-    { "identityPattern": "core.*",    "permissionKey": "knowledgegraph:write",        "level": "YES" },
+```kotlin
+// File: app.auf.core.DefaultPermissions.kt
 
-    { "identityPattern": "agent.*",   "permissionKey": "filesystem:workspace",        "level": "YES" },
-    { "identityPattern": "agent.*",   "permissionKey": "session:read",                "level": "YES" },
-    { "identityPattern": "agent.*",   "permissionKey": "session:write",               "level": "YES" },
-    { "identityPattern": "agent.*",   "permissionKey": "gateway:generate",            "level": "YES" },
-    { "identityPattern": "agent.*",   "permissionKey": "gateway:preview",             "level": "YES" },
-    { "identityPattern": "agent.*",   "permissionKey": "knowledgegraph:read",         "level": "YES" }
-  ]
+package app.auf.core
+
+/**
+ * Compile-time default permission grants applied to newly registered identities.
+ *
+ * When [core.REGISTER_IDENTITY] processes a new identity, CoreFeature matches
+ * the identity's handle against [defaultGrants] patterns and applies matching
+ * grants. These defaults only apply to identities that lack explicit grants
+ * (i.e., not already persisted in identities.json).
+ *
+ * To change defaults, modify this file and rebuild. This is intentional —
+ * default permissions are a security-critical compile-time decision, not a
+ * runtime configuration knob.
+ */
+object DefaultPermissions {
+
+    /**
+     * A single default grant rule.
+     *
+     * @param identityPattern Glob pattern matched against identity handles.
+     *   Supports `*` as a single-segment wildcard (e.g., `core.*` matches
+     *   `core.alice` but not `core.alice.sub`).
+     * @param permissionKey The permission key to grant.
+     * @param level The default grant level.
+     */
+    data class DefaultGrant(
+        val identityPattern: String,
+        val permissionKey: String,
+        val level: PermissionLevel
+    )
+
+    val defaultGrants: List<DefaultGrant> = listOf(
+        // ── Human users (core.*) ──────────────────────────────────────
+        DefaultGrant("core.*", "filesystem:workspace",          PermissionLevel.YES),
+        DefaultGrant("core.*", "filesystem:system-files-read",  PermissionLevel.YES),
+        DefaultGrant("core.*", "session:read",                  PermissionLevel.YES),
+        DefaultGrant("core.*", "session:write",                 PermissionLevel.YES),
+        DefaultGrant("core.*", "session:manage",                PermissionLevel.YES),
+        DefaultGrant("core.*", "gateway:generate",              PermissionLevel.YES),
+        DefaultGrant("core.*", "gateway:preview",               PermissionLevel.YES),
+        DefaultGrant("core.*", "core:read",                     PermissionLevel.YES),
+        DefaultGrant("core.*", "core:identity",                 PermissionLevel.YES),
+        DefaultGrant("core.*", "knowledgegraph:read",           PermissionLevel.YES),
+        DefaultGrant("core.*", "knowledgegraph:write",          PermissionLevel.YES),
+
+        // ── Agent identities (agent.*) ────────────────────────────────
+        DefaultGrant("agent.*", "filesystem:workspace",         PermissionLevel.YES),
+        DefaultGrant("agent.*", "session:read",                 PermissionLevel.YES),
+        DefaultGrant("agent.*", "session:write",                PermissionLevel.YES),
+        DefaultGrant("agent.*", "gateway:generate",             PermissionLevel.YES),
+        DefaultGrant("agent.*", "gateway:preview",              PermissionLevel.YES),
+        DefaultGrant("agent.*", "knowledgegraph:read",          PermissionLevel.YES),
+    )
 }
 ```
 
-**Loading mechanism:** CoreFeature reads `default-permissions.json` during `system.STARTING` and caches the parsed grants in `CoreState`. Grants are **not** batch-applied at startup. Instead, when `core.REGISTER_IDENTITY` processes a new identity, CoreFeature matches it against the cached patterns and applies matching grants. This eliminates the race condition where agents may not be registered when startup runs.
+**Loading mechanism:** CoreFeature accesses `DefaultPermissions.defaultGrants` directly — no file reading or parsing required. The grants list is cached in `CoreState` at startup (during `system.STARTING`) for pattern matching. When `core.REGISTER_IDENTITY` processes a new identity, CoreFeature matches it against the cached patterns and applies matching grants. This eliminates the race condition where agents may not be registered when startup runs.
 
 For identities that already exist at startup (loaded from `identities.json`), their persisted `permissions` field is authoritative. Defaults only apply to newly registered identities that lack explicit grants.
 
@@ -828,7 +862,7 @@ fun TestEnvironment.withIdentityAndPermissions(
 |---|---|---|
 | `Permission.kt` | `app.auf.core` | `PermissionLevel` enum, `PermissionGrant`, `DangerLevel` |
 | `PermissionManagerView.kt` | `app.auf.feature.core` | Matrix UI (Phase 2.A) |
-| `default-permissions.json` | resources | Initial permission grants |
+| `DefaultPermissions.kt` | `app.auf.core` | Compile-time default permission grants |
 | `StoreT1PermissionGuardTest.kt` | test | Guard unit tests |
 
 ### Modified Files
@@ -836,7 +870,7 @@ fun TestEnvironment.withIdentityAndPermissions(
 |---|---|
 | `Identity.kt` | Replace paved `permissions` field with `Map<String, PermissionGrant>` |
 | `Store.kt` | Add Step 1c originator validation, Step 2b permission guard, `resolveEffectivePermissions()`, `evaluateScope()` (Phase 3) |
-| `CoreFeature.kt` | Handle `SET_PERMISSION`, `SET_PERMISSIONS_BATCH`, default-permissions loading via registration hook, permission persistence |
+| `CoreFeature.kt` | Handle `SET_PERMISSION`, `SET_PERMISSIONS_BATCH`, default-permissions loading from `DefaultPermissions.kt` via registration hook, permission persistence |
 | `AgentRuntimeFeature.kt` | **Fix dispatch originator** to use agent identity handle (Pre-Phase 1) |
 | `FileSystemFeature.kt` | **Fix `getSandboxPathFor`** to resolve at feature level (Pre-Phase 1) |
 | `CommandBotFeature.kt` | Replace allowlist with permission checks (Phase 2.B) |
