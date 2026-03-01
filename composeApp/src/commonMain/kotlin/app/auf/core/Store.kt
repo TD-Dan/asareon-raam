@@ -256,18 +256,24 @@ open class Store(
         }
 
         // --- STEP 1c: ORIGINATOR VALIDATION (Pre-Phase 1) ---
-        // Reject originators not in the identity registry and not resolvable to a feature handle.
+        // Reject originators not in the identity registry and not resolvable to a
+        // feature handle or known action namespace.
+        // "Known action namespace" covers the "system" pseudo-feature which owns
+        // actions (system.INITIALIZING, etc.) but has no Feature object.
         if (action.originator != null) {
             val originatorInRegistry = _state.value.identityRegistry.containsKey(action.originator)
             val originatorIsFeature = features.any { it.identity.handle == action.originator }
             if (!originatorInRegistry && !originatorIsFeature) {
                 val featureHandle = extractFeatureHandle(action.originator)
                 val parentIsFeature = features.any { it.identity.handle == featureHandle }
-                if (!parentIsFeature) {
+                val parentIsKnownNamespace = _state.value.actionDescriptors.values.any {
+                    it.featureName == featureHandle
+                }
+                if (!parentIsFeature && !parentIsKnownNamespace) {
                     platformDependencies.log(
                         LogLevel.ERROR, "Store",
-                        "INVALID ORIGINATOR: '${action.originator}' is not a registered identity " +
-                                "or feature. Action '${action.name}' rejected."
+                        "INVALID ORIGINATOR: '${action.originator}' is not a registered identity, " +
+                                "feature, or known action namespace. Action '${action.name}' rejected."
                     )
                     return
                 }
@@ -344,11 +350,15 @@ open class Store(
                 }
                 // Phase 3: Evaluate permission scopes here.
             }
-            // Unknown originator with required permissions: check if resolvable to feature.
+            // Unknown originator with required permissions: check if resolvable to feature
+            // or known action namespace (e.g., "system").
             else if (originatorIdentity == null && action.originator != null) {
                 val featureHandle = extractFeatureHandle(action.originator)
                 val isFeature = features.any { it.identity.handle == featureHandle }
-                if (!isFeature) {
+                val isKnownNamespace = _state.value.actionDescriptors.values.any {
+                    it.featureName == featureHandle
+                }
+                if (!isFeature && !isKnownNamespace) {
                     platformDependencies.log(
                         LogLevel.ERROR, "Store",
                         "PERMISSION DENIED: originator '${action.originator}' not found in " +
@@ -356,7 +366,7 @@ open class Store(
                     )
                     return
                 }
-                // Resolvable to a trusted feature — allowed (feature trust exemption).
+                // Resolvable to a trusted feature/namespace — allowed (feature trust exemption).
             }
         }
 
