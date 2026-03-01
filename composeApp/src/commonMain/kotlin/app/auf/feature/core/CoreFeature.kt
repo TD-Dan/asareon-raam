@@ -643,7 +643,7 @@ class CoreFeature(
                 ))
             }
 
-            // --- Permission Management (Phase 1) ---
+            // --- Permission Management (Phase 1 + Phase 2) ---
             ActionRegistry.Names.CORE_SET_PERMISSION -> {
                 val payload = action.payload?.let {
                     json.decodeFromJsonElement<SetPermissionPayload>(it)
@@ -651,11 +651,8 @@ class CoreFeature(
 
                 val changed = applyPermissionGrant(store, payload.identityHandle, payload.permissionKey, payload.level)
                 if (changed) {
-                    // Persist updated identities and broadcast
-                    val updatedCoreState = store.state.value.featureStates["core"] as? CoreState
-                    if (updatedCoreState != null) {
-                        persistAndBroadcastIdentities(updatedCoreState, store)
-                    }
+                    // Persist from registry (authoritative source including permissions)
+                    persistUserIdentitiesFromRegistry(store)
                     store.deferredDispatch(identity.handle, Action(
                         ActionRegistry.Names.CORE_PERMISSIONS_UPDATED
                     ))
@@ -673,10 +670,8 @@ class CoreFeature(
                 }
 
                 if (anyChanged) {
-                    val updatedCoreState = store.state.value.featureStates["core"] as? CoreState
-                    if (updatedCoreState != null) {
-                        persistAndBroadcastIdentities(updatedCoreState, store)
-                    }
+                    // Persist from registry (authoritative source including permissions)
+                    persistUserIdentitiesFromRegistry(store)
                     store.deferredDispatch(identity.handle, Action(
                         ActionRegistry.Names.CORE_PERMISSIONS_UPDATED
                     ))
@@ -746,6 +741,27 @@ class CoreFeature(
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_IDENTITIES_UPDATED, buildJsonObject {
             put("identities", Json.encodeToJsonElement(state.userIdentities))
             state.activeUserId?.let { put("activeId", it) }
+        }))
+    }
+
+    /**
+     * Persists user identities from the authoritative identity registry (which
+     * includes permissions) rather than from the deprecated CoreState.userIdentities.
+     * Used after permission changes to ensure grants survive restart.
+     */
+    private fun persistUserIdentitiesFromRegistry(store: Store) {
+        val registry = store.state.value.identityRegistry
+        val coreState = store.state.value.featureStates["core"] as? CoreState ?: return
+        val userIdentities = registry.values
+            .filter { it.parentHandle == "core" }
+            .sortedBy { it.handle }
+            .toList()
+
+        val persistencePayload = IdentitiesLoadedPayload(userIdentities, coreState.activeUserId)
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
+            put("path", identitiesFileName)
+            put("content", Json.encodeToString(persistencePayload))
+            put("encrypt", true)
         }))
     }
 

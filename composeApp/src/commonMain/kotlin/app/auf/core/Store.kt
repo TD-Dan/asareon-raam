@@ -7,6 +7,8 @@ import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -256,24 +258,18 @@ open class Store(
         }
 
         // --- STEP 1c: ORIGINATOR VALIDATION (Pre-Phase 1) ---
-        // Reject originators not in the identity registry and not resolvable to a
-        // feature handle or known action namespace.
-        // "Known action namespace" covers the "system" pseudo-feature which owns
-        // actions (system.INITIALIZING, etc.) but has no Feature object.
+        // Reject originators not in the identity registry and not resolvable to a feature handle.
         if (action.originator != null) {
             val originatorInRegistry = _state.value.identityRegistry.containsKey(action.originator)
             val originatorIsFeature = features.any { it.identity.handle == action.originator }
             if (!originatorInRegistry && !originatorIsFeature) {
                 val featureHandle = extractFeatureHandle(action.originator)
                 val parentIsFeature = features.any { it.identity.handle == featureHandle }
-                val parentIsKnownNamespace = _state.value.actionDescriptors.values.any {
-                    it.featureName == featureHandle
-                }
-                if (!parentIsFeature && !parentIsKnownNamespace) {
+                if (!parentIsFeature) {
                     platformDependencies.log(
                         LogLevel.ERROR, "Store",
-                        "INVALID ORIGINATOR: '${action.originator}' is not a registered identity, " +
-                                "feature, or known action namespace. Action '${action.name}' rejected."
+                        "INVALID ORIGINATOR: '${action.originator}' is not a registered identity " +
+                                "or feature. Action '${action.name}' rejected."
                     )
                     return
                 }
@@ -298,7 +294,7 @@ open class Store(
             return
         }
 
-        // --- STEP 2b: PERMISSION GUARD (Phase 1: YES/NO only) ---
+        // --- STEP 2b: PERMISSION GUARD (Phase 1: YES/NO, Phase 2: PERMISSION_DENIED notifications) ---
         val requiredPerms = descriptor.requiredPermissions
         if (requiredPerms != null && requiredPerms.isNotEmpty()) {
             val originatorIdentity = action.originator?.let {
@@ -308,6 +304,7 @@ open class Store(
             // Feature identities (uuid == null) are trusted — skip permission check.
             if (originatorIdentity != null && originatorIdentity.uuid != null) {
                 val effective = resolveEffectivePermissions(originatorIdentity)
+                val missingPermissions = mutableListOf<String>()
 
                 for (permKey in requiredPerms) {
                     val grant = effective[permKey]
@@ -315,50 +312,68 @@ open class Store(
 
                     when (level) {
                         PermissionLevel.NO -> {
-                            platformDependencies.log(
-                                LogLevel.WARN, "Store",
-                                "PERMISSION DENIED: '${action.originator}' lacks '$permKey' " +
-                                        "for action '${action.name}'. Action blocked."
-                            )
-                            return
+                            missingPermissions.add(permKey)
                         }
                         PermissionLevel.ASK -> {
-                            // ASK system not yet implemented. Deny with warning.
-                            // See: permissions-ask-system-task.md
+                            // ASK system not yet implemented. Treat as NO with warning.
                             platformDependencies.log(
                                 LogLevel.WARN, "Store",
                                 "PERMISSION ASK not yet implemented (treating as NO): " +
                                         "'${action.originator}' has ASK for '$permKey' " +
-                                        "on action '${action.name}'. Action blocked."
+                                        "on action '${action.name}'."
                             )
-                            return
+                            missingPermissions.add(permKey)
                         }
                         PermissionLevel.APP_LIFETIME -> {
-                            // APP_LIFETIME system not yet implemented. Deny with warning.
+                            // APP_LIFETIME system not yet implemented. Treat as NO with warning.
                             platformDependencies.log(
                                 LogLevel.WARN, "Store",
                                 "PERMISSION APP_LIFETIME not yet implemented (treating as NO): " +
                                         "'${action.originator}' has APP_LIFETIME for '$permKey' " +
-                                        "on action '${action.name}'. Action blocked."
+                                        "on action '${action.name}'."
                             )
-                            return
+                            missingPermissions.add(permKey)
                         }
                         PermissionLevel.YES -> {
                             // Permitted — continue to next required permission.
                         }
                     }
                 }
+
+                if (missingPermissions.isNotEmpty()) {
+                    platformDependencies.log(
+                        LogLevel.WARN, "Store",
+                        "PERMISSION DENIED: '${action.originator}' lacks " +
+                                "${missingPermissions.joinToString(", ") { "'$it'" }} " +
+                                "for action '${action.name}'. Action blocked."
+                    )
+
+                    // Phase 2: Dispatch targeted PERMISSION_DENIED notification to the
+                    // originator's feature so it can show meaningful feedback to the user.
+                    val originatorFeatureHandle = extractFeatureHandle(action.originator)
+                    if (originatorFeatureHandle != null) {
+                        deferredActionQueue.add(Action(
+                            name = ActionRegistry.Names.CORE_PERMISSION_DENIED,
+                            payload = buildJsonObject {
+                                put("blockedAction", action.name)
+                                put("originatorHandle", action.originator ?: "")
+                                put("missingPermissions", buildJsonArray {
+                                    missingPermissions.forEach { add(JsonPrimitive(it)) }
+                                })
+                            },
+                            originator = "core",
+                            targetRecipient = originatorFeatureHandle
+                        ))
+                    }
+                    return
+                }
                 // Phase 3: Evaluate permission scopes here.
             }
-            // Unknown originator with required permissions: check if resolvable to feature
-            // or known action namespace (e.g., "system").
+            // Unknown originator with required permissions: check if resolvable to feature.
             else if (originatorIdentity == null && action.originator != null) {
                 val featureHandle = extractFeatureHandle(action.originator)
                 val isFeature = features.any { it.identity.handle == featureHandle }
-                val isKnownNamespace = _state.value.actionDescriptors.values.any {
-                    it.featureName == featureHandle
-                }
-                if (!isFeature && !isKnownNamespace) {
+                if (!isFeature) {
                     platformDependencies.log(
                         LogLevel.ERROR, "Store",
                         "PERMISSION DENIED: originator '${action.originator}' not found in " +
@@ -366,7 +381,7 @@ open class Store(
                     )
                     return
                 }
-                // Resolvable to a trusted feature/namespace — allowed (feature trust exemption).
+                // Resolvable to a trusted feature — allowed (feature trust exemption).
             }
         }
 

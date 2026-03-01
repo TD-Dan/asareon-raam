@@ -134,7 +134,7 @@ private fun PendingApprovalContent(approval: PendingApproval, store: Store) {
     ) {
         OutlinedButton(
             onClick = {
-                store.dispatch("commandbot.ui", Action(
+                store.dispatch("commandbot", Action(
                     ActionRegistry.Names.COMMANDBOT_DENY,
                     buildJsonObject { put("approvalId", approval.approvalId) }
                 ))
@@ -152,7 +152,7 @@ private fun PendingApprovalContent(approval: PendingApproval, store: Store) {
 
         Button(
             onClick = {
-                store.dispatch("commandbot.ui", Action(
+                store.dispatch("commandbot", Action(
                     ActionRegistry.Names.COMMANDBOT_APPROVE,
                     buildJsonObject { put("approvalId", approval.approvalId) }
                 ))
@@ -200,7 +200,7 @@ private fun ResolvedApprovalContent(resolution: ApprovalResolution, store: Store
         // Dismiss button — removes the card entry from the session ledger
         TextButton(
             onClick = {
-                store.dispatch("commandbot.ui", Action(
+                store.dispatch("commandbot", Action(
                     ActionRegistry.Names.SESSION_DELETE_MESSAGE,
                     buildJsonObject {
                         put("session", resolution.sessionId)

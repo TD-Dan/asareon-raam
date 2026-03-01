@@ -28,10 +28,12 @@ import kotlinx.serialization.json.put
  * - **CAG-001 (Self-Reaction Prevention)**: Ignores messages from itself.
  * - **CAG-002 (Causality Tracking)**: Attributes dispatched actions to the original sender.
  * - **CAG-003 (Robust Error Handling)**: Posts parse errors back to the session.
- * - **CAG-004 (Agent Action Restriction)**: Agent-originated commands are restricted to the
- *   build-time [ActionRegistry.agentAllowedNames] allowlist. Human users are unrestricted.
- * - **CAG-006 (Approval Gate)**: Actions in [ActionRegistry.agentRequiresApproval] are staged
- *   and require explicit user approval before dispatch.
+ * - **CAG-004 (Agent Action Restriction)**: Agent-originated commands are validated against
+ *   the originator's effective permissions (Phase 2.B). The Store permission guard is
+ *   authoritative; this pre-check provides early rejection with session-visible feedback.
+ * - **CAG-006 (Approval Gate)**: [DEFERRED] Previously driven by `agentRequiresApproval`.
+ *   Will be re-activated by the ASK permission level system. Approval infrastructure
+ *   (staging, cards, PendingApproval) is preserved for that integration.
  * - **CAG-007 (Auto-Fill)**: Payload fields declared in [ActionRegistry.agentAutoFillRules] are
  *   injected before publishing (e.g., senderId = agentId for session.POST).
  *
@@ -361,6 +363,47 @@ class CommandBotFeature(
     // Command Processing Pipeline
     // ========================================================================
 
+    /**
+     * Phase 2.B: Pre-dispatch permission check for agent-originated commands.
+     *
+     * Replaces the old `agentAllowedNames` allowlist (CAG-004). The Store's Step 2b
+     * guard is authoritative, but this pre-check provides:
+     *   1. Early rejection with user-facing feedback in the session
+     *   2. Better error messages (names the missing permissions)
+     *
+     * @return null if all permissions are satisfied, or a user-facing denial message
+     */
+    private fun checkAgentPermissions(
+        senderIdentityHandle: String,
+        actionName: String,
+        store: Store
+    ): String? {
+        val descriptor = ActionRegistry.byActionName[actionName]
+            ?: return "Unknown action: '$actionName'"
+
+        val requiredPerms = descriptor.requiredPermissions
+        // Legacy actions without required_permissions declared — allow through
+        // (the Store guard will also allow these since the field is null)
+        if (requiredPerms == null || requiredPerms.isEmpty()) return null
+
+        val identity = store.state.value.identityRegistry[senderIdentityHandle]
+            ?: return "Identity '$senderIdentityHandle' not found in registry."
+
+        // Feature identities (uuid == null) are trusted
+        if (identity.uuid == null) return null
+
+        val effective = store.resolveEffectivePermissions(identity)
+        val missing = requiredPerms.filter { permKey ->
+            val level = effective[permKey]?.level ?: PermissionLevel.NO
+            level != PermissionLevel.YES
+        }
+
+        return if (missing.isEmpty()) null
+        else "Permission denied: '$senderIdentityHandle' cannot execute '$actionName'. " +
+                "Missing: ${missing.joinToString(", ")}. " +
+                "An administrator can grant these in Identity Manager → Permissions."
+    }
+
     private fun processCommandBlock(
         language: String,
         code: String,
@@ -380,15 +423,18 @@ class CommandBotFeature(
 
             // === AGENT ENFORCEMENT ===
             if (isAgent) {
-                // Guardrail (CAG-004): Agent Action Restriction
-                if (actionName !in ActionRegistry.agentAllowedNames) {
+                // Guardrail (CAG-004): Permission-Based Action Restriction (Phase 2.B)
+                // Replaces the former agentAllowedNames allowlist. The Store guard is
+                // authoritative; this pre-check gives early feedback in the session.
+                val denialMessage = checkAgentPermissions(originalSenderId, actionName, store)
+                if (denialMessage != null) {
                     platformDependencies.log(
                         LogLevel.WARN, identity.handle,
-                        "Agent '$originalSenderId' attempted disallowed action '$actionName'. Blocked."
+                        "Agent '$originalSenderId' denied action '$actionName': $denialMessage"
                     )
                     postFeedbackToSession(
                         sessionId,
-                        "[COMMAND BOT] Action '$actionName' is not available to agents.",
+                        "[COMMAND BOT] $denialMessage",
                         store
                     )
                     return
@@ -408,10 +454,13 @@ class CommandBotFeature(
                 }
 
                 // --- CAG-006: Approval Gate ---
-                if (actionName in ActionRegistry.agentRequiresApproval) {
-                    stageApproval(actionName, payloadJson, sessionId, originalSenderId, store)
-                    return
-                }
+                // DEFERRED: Previously driven by ActionRegistry.agentRequiresApproval
+                // (removed in Phase 2.B). Will be re-activated when the ASK permission
+                // level system is implemented. The approval infrastructure (stageApproval,
+                // PendingApproval, ApprovalCard) is preserved for that integration.
+                // When ASK is live, the check will be:
+                //   val askPerms = requiredPerms.filter { effective[it]?.level == PermissionLevel.ASK }
+                //   if (askPerms.isNotEmpty()) { stageApproval(...); return }
             }
 
             publishActionCreated(

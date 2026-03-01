@@ -24,9 +24,55 @@ import app.auf.core.generated.ActionRegistry
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+/**
+ * Tabbed container for the Identity Manager: "Identities" tab shows user/identity
+ * management, "Permissions" tab shows the permission grant matrix (Phase 2.A).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IdentityManagerView(store: Store) {
+    var selectedTab by remember { mutableStateOf(0) }
+    val tabs = listOf("Identities", "Permissions")
+
+    Scaffold(
+        topBar = {
+            Column {
+                TopAppBar(
+                    title = { Text("Identity Manager") },
+                    navigationIcon = {
+                        IconButton(onClick = { store.dispatch("core", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW)) }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                )
+                // Phase 2.A: Tab row for Identities / Permissions
+                TabRow(selectedTabIndex = selectedTab) {
+                    tabs.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTab == index,
+                            onClick = { selectedTab = index },
+                            text = { Text(title) }
+                        )
+                    }
+                }
+            }
+        }
+    ) { paddingValues ->
+        Box(Modifier.fillMaxSize().padding(paddingValues)) {
+            when (selectedTab) {
+                0 -> IdentitiesTabContent(store)
+                1 -> PermissionManagerView(store)
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Tab 0: Identities (original content extracted into its own composable)
+// ============================================================================
+
+@Composable
+private fun IdentitiesTabContent(store: Store) {
     val appState by store.state.collectAsState()
     val coreState = appState.featureStates["core"] as? CoreState
     var showAddDialog by remember { mutableStateOf(false) }
@@ -49,43 +95,37 @@ fun IdentityManagerView(store: Store) {
         AddIdentityDialog(
             onDismiss = { showAddDialog = false },
             onAdd = { name ->
-                // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core.ui"
                 store.dispatch("core", Action(ActionRegistry.Names.CORE_ADD_USER_IDENTITY, buildJsonObject { put("name", name) }))
                 showAddDialog = false
             }
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Identity Manager") },
-                navigationIcon = {
-                    // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core.ui"
-                    IconButton(onClick = { store.dispatch("core", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW)) }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = { showAllIdentities = !showAllIdentities }
-                    ) {
-                        Icon(
-                            imageVector = if (showAllIdentities) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                            contentDescription = "Show all identities",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Button(onClick = { showAddDialog = true }) {
-                        Icon(Icons.Default.Add, "Add Identity"); Spacer(Modifier.width(8.dp)); Text("Add")
-                    }
-                }
-            )
+    Column(Modifier.fillMaxSize()) {
+        // Action bar
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = { showAllIdentities = !showAllIdentities }
+            ) {
+                Icon(
+                    imageVector = if (showAllIdentities) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                    contentDescription = "Show all identities",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = { showAddDialog = true }) {
+                Icon(Icons.Default.Add, "Add Identity"); Spacer(Modifier.width(8.dp)); Text("Add")
+            }
         }
-    ) { paddingValues ->
+
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(paddingValues),
-            contentPadding = PaddingValues(16.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // --- User Identities Section ---
@@ -108,11 +148,9 @@ fun IdentityManagerView(store: Store) {
                         identity = identity,
                         isActive = identity.handle == coreState?.activeUserId,
                         onSetActive = {
-                            // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core.ui"
                             store.dispatch("core", Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) }))
                         },
                         onDelete = {
-                            // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core.ui"
                             store.dispatch("core", Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) }))
                         }
                     )
@@ -150,6 +188,10 @@ fun IdentityManagerView(store: Store) {
         }
     }
 }
+
+// ============================================================================
+// Identity Row Components
+// ============================================================================
 
 @Composable
 private fun InternalIdentityRow(identity: Identity) {
@@ -200,7 +242,6 @@ private fun InternalIdentityRow(identity: Identity) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                // Phase 1: Show permission grants count
                 if (identity.permissions.isNotEmpty()) {
                     Text(
                         "permissions: ${identity.permissions.size} grant(s)",
@@ -232,7 +273,6 @@ private fun IdentityRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(identity.name, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
                 Text("ID: ${identity.handle}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                // Phase 1: Show permission summary
                 if (identity.permissions.isNotEmpty()) {
                     Text(
                         "${identity.permissions.size} permission(s)",

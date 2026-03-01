@@ -228,23 +228,22 @@ tasks.register("generateActionRegistry") {
                             }
                         }
 
-                        // Parse agent_exposure → Map<String, Any>?
+                        // Phase 2.B: Parse agent_exposure → extract sandbox_rule and auto_fill_rules
+                        // as top-level fields. AgentExposure wrapper removed; requiresApproval deprecated.
                         val agentExposureObj = obj["agent_exposure"] as? JsonObject
-                        val agentExposure: Map<String, Any>? = if (agentExposureObj != null) {
-                            val aeMap = mutableMapOf<String, Any>()
-                            aeMap["requiresApproval"] = agentExposureObj["requires_approval"]?.jsonPrimitive?.content?.toBoolean() ?: false
 
+                        val autoFillRules: Map<String, String> = if (agentExposureObj != null) {
                             val autoFillObj = agentExposureObj["auto_fill_rules"] as? JsonObject
                             if (autoFillObj != null) {
                                 val fills = mutableMapOf<String, String>()
                                 for (key in autoFillObj.keys) {
                                     fills[key] = autoFillObj[key]!!.jsonPrimitive.content
                                 }
-                                aeMap["autoFillRules"] = fills
-                            } else {
-                                aeMap["autoFillRules"] = emptyMap<String, String>()
-                            }
+                                fills
+                            } else emptyMap()
+                        } else emptyMap()
 
+                        val sandboxRule: Map<String, Any>? = if (agentExposureObj != null) {
                             val sandboxObj = agentExposureObj["sandbox_rule"] as? JsonObject
                             if (sandboxObj != null) {
                                 val srMap = mutableMapOf<String, Any>()
@@ -258,10 +257,8 @@ tasks.register("generateActionRegistry") {
                                     }
                                 }
                                 srMap["payloadRewrites"] = rewrites
-                                aeMap["sandboxRule"] = srMap
-                            }
-
-                            aeMap
+                                srMap
+                            } else null
                         } else null
 
                         // Parse required_permissions
@@ -278,7 +275,8 @@ tasks.register("generateActionRegistry") {
                             "targeted" to targetedFlag,
                             "payloadFields" to payloadFields,
                             "requiredFields" to requiredFields,
-                            "agentExposure" to agentExposure,
+                            "autoFillRules" to autoFillRules,
+                            "sandboxRule" to sandboxRule,
                             "requiredPermissions" to reqPerms
                         ))
                     }
@@ -305,6 +303,20 @@ tasks.register("generateActionRegistry") {
                                 "in any feature's 'permissions' array. Declare it in the appropriate *.actions.json manifest."
                     )
                 }
+            }
+        }
+
+        // ====== Phase 2.B Post-migration: Enforce required_permissions on every action ======
+        // After Phase 2 migration, every action MUST declare required_permissions explicitly.
+        // Actions that genuinely require no permissions declare "required_permissions": [].
+        for (action in allActions) {
+            val reqPerms = action["requiredPermissions"]
+            if (reqPerms == null) {
+                throw GradleException(
+                    "Action '${action["fullName"]}' is missing 'required_permissions' field. " +
+                            "All actions must declare required_permissions explicitly. " +
+                            "Use \"required_permissions\": [] for actions that require no permissions."
+                )
             }
         }
 
@@ -349,27 +361,21 @@ tasks.register("generateActionRegistry") {
                 val reqFieldsStr = if (reqFields.isEmpty()) "emptyList()"
                 else "listOf(${reqFields.joinToString(", ") { "\"$it\"" }})"
 
-                // AgentExposure
+                // Phase 2.B: autoFillRules and sandboxRule as top-level fields
                 @Suppress("UNCHECKED_CAST")
-                val ae = action["agentExposure"] as? Map<String, Any>
-                val agentStr = if (ae == null) "null"
+                val autoFills = action["autoFillRules"] as? Map<String, String> ?: emptyMap()
+                val autoFillStr = if (autoFills.isEmpty()) "emptyMap()"
+                else "mapOf(${autoFills.entries.joinToString(", ") { "\"${it.key}\" to \"${it.value}\"" }})"
+
+                @Suppress("UNCHECKED_CAST")
+                val sr = action["sandboxRule"] as? Map<String, Any>
+                val sandboxStr = if (sr == null) "null"
                 else {
                     @Suppress("UNCHECKED_CAST")
-                    val autoFills = ae["autoFillRules"] as? Map<String, String> ?: emptyMap()
-                    val autoFillStr = if (autoFills.isEmpty()) "emptyMap()"
-                    else "mapOf(${autoFills.entries.joinToString(", ") { "\"${it.key}\" to \"${it.value}\"" }})"
-
-                    @Suppress("UNCHECKED_CAST")
-                    val sr = ae["sandboxRule"] as? Map<String, Any>
-                    val sandboxStr = if (sr == null) "null"
-                    else {
-                        @Suppress("UNCHECKED_CAST")
-                        val rw = sr["payloadRewrites"] as? Map<String, String> ?: emptyMap()
-                        val rwStr = if (rw.isEmpty()) "emptyMap()"
-                        else "mapOf(${rw.entries.joinToString(", ") { "\"${it.key}\" to \"${it.value}\"" }})"
-                        "SandboxRule(\n                        strategy = \"${sr["strategy"]}\",\n                        pathPrefixTemplate = \"${sr["pathPrefixTemplate"]}\",\n                        payloadRewrites = $rwStr\n                    )"
-                    }
-                    "AgentExposure(\n                    requiresApproval = ${ae["requiresApproval"]},\n                    autoFillRules = $autoFillStr,\n                    sandboxRule = $sandboxStr\n                )"
+                    val rw = sr["payloadRewrites"] as? Map<String, String> ?: emptyMap()
+                    val rwStr = if (rw.isEmpty()) "emptyMap()"
+                    else "mapOf(${rw.entries.joinToString(", ") { "\"${it.key}\" to \"${it.value}\"" }})"
+                    "SandboxRule(\n                        strategy = \"${sr["strategy"]}\",\n                        pathPrefixTemplate = \"${sr["pathPrefixTemplate"]}\",\n                        payloadRewrites = $rwStr\n                    )"
                 }
 
                 @Suppress("UNCHECKED_CAST")
@@ -388,7 +394,8 @@ tasks.register("generateActionRegistry") {
                 |                    targeted = ${action["targeted"]},
                 |                    payloadFields = $fieldsStr,
                 |                    requiredFields = $reqFieldsStr,
-                |                    agentExposure = $agentStr,
+                |                    autoFillRules = $autoFillStr,
+                |                    sandboxRule = $sandboxStr,
                 |                    requiredPermissions = $reqPermsStr
                 |                )""".trimMargin()
             }
@@ -456,12 +463,6 @@ tasks.register("generateActionRegistry") {
             |        val payloadRewrites: Map<String, String> = emptyMap()
             |    )
             |
-            |    data class AgentExposure(
-            |        val requiresApproval: Boolean = false,
-            |        val autoFillRules: Map<String, String> = emptyMap(),
-            |        val sandboxRule: SandboxRule? = null
-            |    )
-            |
             |    data class ActionDescriptor(
             |        val fullName: String,
             |        val featureName: String,
@@ -472,7 +473,8 @@ tasks.register("generateActionRegistry") {
             |        val targeted: Boolean,
             |        val payloadFields: List<PayloadField>,
             |        val requiredFields: List<String>,
-            |        val agentExposure: AgentExposure?,
+            |        val autoFillRules: Map<String, String> = emptyMap(),
+            |        val sandboxRule: SandboxRule? = null,
             |        val requiredPermissions: List<String>? = null
             |    ) {
             |        /** A Command is any action public to all originators. */
@@ -517,22 +519,14 @@ tasks.register("generateActionRegistry") {
             |    val byActionName: Map<String, ActionDescriptor> = features.values
             |        .flatMap { it.actions.values }.associateBy { it.fullName }
             |
-            |    /** Action names that agents are permitted to invoke. */
-            |    val agentAllowedNames: Set<String> = byActionName.values
-            |        .filter { it.agentExposure != null }.map { it.fullName }.toSet()
-            |
-            |    /** Actions that require human approval before agent execution. */
-            |    val agentRequiresApproval: Set<String> = byActionName.values
-            |        .filter { it.agentExposure?.requiresApproval == true }.map { it.fullName }.toSet()
-            |
             |    /** Auto-fill rules for agent actions (field name → template). */
             |    val agentAutoFillRules: Map<String, Map<String, String>> = byActionName.values
-            |        .filter { it.agentExposure?.autoFillRules?.isNotEmpty() == true }
-            |        .associate { it.fullName to it.agentExposure!!.autoFillRules }
+            |        .filter { it.autoFillRules.isNotEmpty() }
+            |        .associate { it.fullName to it.autoFillRules }
             |
             |    /** Sandbox rules for agent actions. */
             |    val agentSandboxRules: Map<String, SandboxRule> = byActionName.values
-            |        .mapNotNull { d -> d.agentExposure?.sandboxRule?.let { d.fullName to it } }.toMap()
+            |        .mapNotNull { d -> d.sandboxRule?.let { d.fullName to it } }.toMap()
             |
             |    // ================================================================
             |    // Section 5: Permission Declarations (Phase 1)

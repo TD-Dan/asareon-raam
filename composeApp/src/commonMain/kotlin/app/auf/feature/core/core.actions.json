@@ -523,6 +523,23 @@
         },
         "required": ["blockedAction", "originatorHandle", "missingPermissions"]
       }
+    },
+    {
+      "action_name": "core.REQUEST_PERMISSION_ESCALATION",
+      "summary": "Paved action name for future runtime permission escalation requests. Analogous to Android's runtime permission request flow. NOT YET IMPLEMENTED — dispatching this action is a no-op until a use case emerges.",
+      "public": true,
+      "broadcast": false,
+      "targeted": true,
+      "required_permissions": [],
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "requestingHandle": { "type": "string", "description": "Identity handle requesting elevated permissions." },
+          "requestedPermissions": { "type": "array", "items": { "type": "string" }, "description": "Permission keys being requested." },
+          "reason": { "type": "string", "description": "Human-readable justification for the escalation." }
+        },
+        "required": ["requestingHandle", "requestedPermissions"]
+      }
     }
   ]
 }
