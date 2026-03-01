@@ -1,0 +1,212 @@
+{
+  "feature_name": "commandbot",
+  "summary": "A stateful agent that observes all session transcripts for command directives (`auf_` code blocks), validates them against guardrails, and publishes ACTION_CREATED for agent commands so the owning feature can dispatch. For human commands, dispatches directly. For actions requiring approval, it stages the request and presents an approval card to the user.",
+  "actions": [
+    {
+      "action_name": "commandbot.APPROVE",
+      "summary": "User approves a pending agent action. Publishes ACTION_CREATED with the staged action.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "approvalId": {
+            "type": "string",
+            "description": "The ID of the pending approval to approve."
+          }
+        },
+        "required": [
+          "approvalId"
+        ]
+      }
+    },
+    {
+      "action_name": "commandbot.DENY",
+      "summary": "User denies a pending agent action. Posts denial feedback to the originating session.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "approvalId": {
+            "type": "string",
+            "description": "The ID of the pending approval to deny."
+          }
+        },
+        "required": [
+          "approvalId"
+        ]
+      }
+    },
+    {
+      "action_name": "commandbot.ACTION_CREATED",
+      "summary": "Published after CommandBot validates an agent command from an auf_* code block. Any feature that manages the originator entity should subscribe, apply its own sandboxing/routing, and dispatch the domain action. CommandBot does NOT dispatch domain actions itself.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": "string",
+            "description": "Unique correlation ID for matching the eventual response."
+          },
+          "originatorId": {
+            "type": "string",
+            "description": "The ID of the entity that posted the command."
+          },
+          "originatorName": {
+            "type": "string",
+            "description": "Human-readable name of the originator."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Session where the command was posted and where results should be returned."
+          },
+          "actionName": {
+            "type": "string",
+            "description": "The validated domain action name."
+          },
+          "actionPayload": {
+            "type": "object",
+            "description": "The auto-filled payload, before sandbox rewrites."
+          }
+        },
+        "required": [
+          "correlationId",
+          "originatorId",
+          "originatorName",
+          "sessionId",
+          "actionName",
+          "actionPayload"
+        ]
+      }
+    },
+    {
+      "action_name": "commandbot.STAGE_APPROVAL",
+      "summary": "[INTERNAL] Adds a pending approval to CommandBotState.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "cardMessageId": {
+            "type": "string"
+          },
+          "requestingAgentId": {
+            "type": "string"
+          },
+          "requestingAgentName": {
+            "type": "string"
+          },
+          "actionName": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "approvalId",
+          "sessionId",
+          "cardMessageId",
+          "requestingAgentId",
+          "actionName",
+          "payload"
+        ]
+      }
+    },
+    {
+      "action_name": "commandbot.RESOLVE_APPROVAL",
+      "summary": "[INTERNAL] Moves a pending approval to the resolved map and records the resolution.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "DENIED"
+            ]
+          }
+        },
+        "required": [
+          "approvalId",
+          "resolution"
+        ]
+      }
+    },
+    {
+      "action_name": "commandbot.REGISTER_PENDING_RESULT",
+      "summary": "[INTERNAL] Adds a correlationId → PendingResult entry to CommandBotState. Dispatched alongside every ACTION_CREATED so that CommandBot can later match incoming ACTION_RESULT broadcasts to the originating session.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": { "type": "string" },
+          "sessionId": { "type": "string" },
+          "originatorId": { "type": "string" },
+          "originatorName": { "type": "string" },
+          "actionName": { "type": "string" }
+        },
+        "required": ["correlationId", "sessionId", "originatorId", "originatorName", "actionName"]
+      }
+    },
+    {
+      "action_name": "commandbot.CLEAR_PENDING_RESULT",
+      "summary": "[INTERNAL] Removes a pending result entry. Dispatched after a matching ACTION_RESULT is processed, or on TTL expiry.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": { "type": "string" }
+        },
+        "required": ["correlationId"]
+      }
+    },
+    {
+      "action_name": "commandbot.DELIVER_TO_SESSION",
+      "summary": "Targeted data delivery channel. Core or Agent dispatches this to route command result data (e.g., file contents, directory listings) into the session where the command was typed. The message is pre-formatted by the sender. CommandBot posts it to the specified session without modification.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": ["string", "null"],
+            "description": "For logging/tracing. Not used for routing."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "The session where the content should be posted."
+          },
+          "message": {
+            "type": "string",
+            "description": "Pre-formatted message to post. CommandBot posts as-is."
+          }
+        },
+        "required": ["sessionId", "message"]
+      }
+    }
+  ]
+}

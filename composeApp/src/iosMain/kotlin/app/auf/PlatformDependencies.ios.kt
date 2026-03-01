@@ -15,4 +15,9 @@ actual class PlatformDependencies {
         println("iOS formatIsoTimestamp not implemented.")
         return timestamp.toString()
     }
+
+    actual fun parseIsoTimestamp(timestamp: String): Long? {
+        println("iOS parseIsoTimestamp not implemented.")
+        return null
+    }
 }
