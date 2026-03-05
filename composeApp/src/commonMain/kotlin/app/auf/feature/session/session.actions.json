@@ -2,12 +2,21 @@
   "feature_name": "session",
   "summary": "Acts as a pure, passive data manager for multiple, concurrent session transcripts (the 'Public Ledger').",
   "permissions": [
-    "read",
-    "write",
-    "delete",
-    "sessions",
-    "messages",
-    "ui"
+    {
+      "key": "session:read",
+      "description": "Read session list, transcripts and message content",
+      "dangerLevel": "LOW"
+    },
+    {
+      "key": "session:write",
+      "description": "Post messages in sessions",
+      "dangerLevel": "LOW"
+    },
+    {
+      "key": "session:manage",
+      "description": "Create, delete, clone, and configure sessions. Modify and delete all messages.",
+      "dangerLevel": "CAUTION"
+    }
   ],
   "actions": [
     {
@@ -36,12 +45,8 @@
           }
         }
       },
-      "agent_exposure": {
-        "requires_approval": true
-      },
       "required_permissions": [
-        "write",
-        "sessions"
+        "session:manage"
       ]
     },
     {
@@ -53,36 +58,31 @@
       "payload_schema": {
         "type": "object",
         "properties": {
-          "session": {
+          "sessionId": {
             "type": "string",
-            "description": "The session's localHandle, full handle, or display name."
+            "description": "The session's uuid, localHandle, full handle, or display name of the session to clone"
           }
         },
         "required": [
-          "session"
+          "sessionId"
         ]
       },
-      "agent_exposure": {
-        "requires_approval": true
-      },
       "required_permissions": [
-        "read",
-        "write",
-        "sessions"
+        "session:manage"
       ]
     },
     {
       "action_name": "session.UPDATE_CONFIG",
-      "summary": "Updates the configuration of an existing session. Targets the session via the 'session' property (ID or name).",
+      "summary": "Updates the configuration of an existing session.",
       "public": true,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "session": {
+          "sessionId": {
             "type": "string",
-            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to update."
+            "description": "The session's uuid, localHandle, full handle, or display name of the session to update."
           },
           "name": {
             "type": "string",
@@ -97,9 +97,7 @@
         "requires_approval": true
       },
       "required_permissions": [
-        "read",
-        "write",
-        "sessions"
+        "session:manage"
       ]
     },
     {
@@ -120,17 +118,13 @@
           "session"
         ]
       },
-      "agent_exposure": {
-        "requires_approval": true
-      },
       "required_permissions": [
-        "delete",
-        "sessions"
+        "session:manage"
       ]
     },
     {
       "action_name": "session.POST",
-      "summary": "Posts a new entry to a specific session's ledger. Can be a text message or contain metadata for a UI component.",
+      "summary": "Posts a new entry to a specific session's ledger.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -173,15 +167,8 @@
           "senderId"
         ]
       },
-      "agent_exposure": {
-        "requires_approval": false,
-        "auto_fill_rules": {
-          "senderId": "{agentId}"
-        }
-      },
       "required_permissions": [
-        "write",
-        "messages"
+        "session:write"
       ]
     },
     {
@@ -195,10 +182,11 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The session's localHandle, full handle, or display name."
+            "description": "The session's uuid, localHandle, full handle, or display name."
           },
           "messageId": {
-            "type": "string"
+            "type": "string",
+            "description": "The messages's uuid or poster+timestamp"
           },
           "newContent": {
             "type": "string"
@@ -213,9 +201,7 @@
         ]
       },
       "required_permissions": [
-        "read",
-        "write",
-        "messages"
+        "session:manage"
       ]
     },
     {
@@ -229,7 +215,7 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to delete."
+            "description": "The session's localHandle, full handle, or display name of the session to delete."
           },
           "messageId": {
             "type": "string"
@@ -240,12 +226,8 @@
           "messageId"
         ]
       },
-      "agent_exposure": {
-        "requires_approval": true
-      },
       "required_permissions": [
-        "delete",
-        "messages"
+        "session:manage"
       ]
     },
     {
@@ -257,7 +239,7 @@
       "payload_schema": {
         "type": "object",
         "properties": {
-          "sessionId": {
+          "session": {
             "type": "string"
           },
           "correlationId": {
@@ -270,15 +252,13 @@
         ]
       },
       "required_permissions": [
-        "read",
-        "messages",
-        "sessions"
+        "session:read"
       ]
     },
     {
       "action_name": "session.SET_ACTIVE_TAB",
-      "summary": "Sets the currently visible session in the main tabbed view. Targets the session via the 'session' property (ID or name).",
-      "public": true,
+      "summary": "[INTERNAL] Sets the currently visible session in the main tabbed view.",
+      "public": false,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -286,17 +266,14 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to make active."
+            "description": "The session's uuid, localHandle, full handle, or display name of the session to make active."
           }
         },
         "required": [
           "session"
         ]
       },
-      "required_permissions": [
-        "write",
-        "ui"
-      ]
+      "required_permissions": []
     },
     {
       "action_name": "session.SET_EDITING_SESSION_NAME",
@@ -315,10 +292,7 @@
           }
         }
       },
-      "required_permissions": [
-        "write",
-        "ui"
-      ]
+      "required_permissions": []
     },
     {
       "action_name": "session.SET_EDITING_MESSAGE",
@@ -337,10 +311,7 @@
           }
         }
       },
-      "required_permissions": [
-        "write",
-        "ui"
-      ]
+      "required_permissions": []
     },
     {
       "action_name": "session.TOGGLE_MESSAGE_COLLAPSED",
@@ -363,10 +334,7 @@
           "messageId"
         ]
       },
-      "required_permissions": [
-        "write",
-        "ui"
-      ]
+      "required_permissions": []
     },
     {
       "action_name": "session.TOGGLE_MESSAGE_RAW_VIEW",
@@ -389,10 +357,7 @@
           "messageId"
         ]
       },
-      "required_permissions": [
-        "write",
-        "ui"
-      ]
+      "required_permissions": []
     },
     {
       "action_name": "session.REORDER",
@@ -418,8 +383,7 @@
         ]
       },
       "required_permissions": [
-        "write",
-        "ui"
+        "session:manage"
       ]
     },
     {
@@ -444,8 +408,7 @@
         ]
       },
       "required_permissions": [
-        "write",
-        "ui"
+        "session:manage"
       ]
     },
     {
@@ -467,8 +430,7 @@
         ]
       },
       "required_permissions": [
-        "write",
-        "messages"
+        "session:manage"
       ]
     },
     {
@@ -493,8 +455,7 @@
         ]
       },
       "required_permissions": [
-        "write",
-        "messages"
+        "session:write"
       ]
     },
     {
@@ -519,8 +480,7 @@
         "requires_approval": true
       },
       "required_permissions": [
-        "delete",
-        "messages"
+        "session:manage"
       ]
     },
     {
@@ -545,8 +505,7 @@
         }
       },
       "required_permissions": [
-        "read",
-        "sessions"
+        "session:read"
       ]
     },
     {
@@ -581,8 +540,7 @@
         "requires_approval": true
       },
       "required_permissions": [
-        "write",
-        "messages"
+        "session:write"
       ]
     },
     {
@@ -617,8 +575,7 @@
         "requires_approval": true
       },
       "required_permissions": [
-        "write",
-        "messages"
+        "session:write"
       ]
     },
     {
@@ -775,7 +732,7 @@
     },
     {
       "action_name": "session.SESSION_FEATURE_READY",
-      "summary": "Broadcast once when all pending session identity registrations have completed and the sessions map is stable. Fired at startup after the last file-loaded session finishes identity approval, and at runtime after any session creation completes. Other features should use this — not SESSION_NAMES_UPDATED — as the signal that sessions are available for cross-feature operations like avatar posting.",
+      "summary": "Broadcast once when all pending session identity registrations have completed and the sessions map is stable. Fired at startup after the last file-loaded session finishes identity approval, and at runtime after any session creation completes. Other features should use this - not SESSION_NAMES_UPDATED - as the signal that sessions are available for cross-feature operations like avatar posting.",
       "public": false,
       "broadcast": true,
       "targeted": false,

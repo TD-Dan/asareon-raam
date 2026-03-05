@@ -53,7 +53,7 @@ data class PermissionGrant(
 enum class DangerLevel {
     /** Safe operation within sandboxed boundaries. UI: green/default. */
     LOW,
-    /** Operation with broader impact. UI: orange/warning. */
+    /** Operation with broader impact. Can cause app wide damage. UI: orange/warning. */
     CAUTION,
     /** Operation that can cause system-wide damage. UI: red/danger. */
     DANGER
