@@ -43,8 +43,13 @@ class FileSystemFeature(
     private val settingKeyFavorites = "filesystem.favoritePaths"
 
     private fun getSandboxPathFor(originator: String): String {
+        // Pre-Phase 1 fix: resolve to feature-level prefix to preserve storage layout.
+        // When agent dispatch changes from "agent" to "agent.coder-1", we still want
+        // APP_ZONE/agent as the sandbox root, not APP_ZONE/agent_coder-1.
+        // "agent.coder-1" → "agent", "session.chat1" → "session", "settings" → "settings"
+        val featureHandle = originator.substringBefore('.')
         val appZoneRoot = platformDependencies.getBasePathFor(BasePath.APP_ZONE)
-        val safeOriginator = originator.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+        val safeOriginator = featureHandle.replace(Regex("[^a-zA-Z0-9_-]"), "_")
         return "$appZoneRoot${platformDependencies.pathSeparator}$safeOriginator"
     }
 
@@ -630,7 +635,7 @@ class FileSystemFeature(
         )
         @Composable override fun RibbonContent(store: Store, activeViewKey: String?) {
             val isActive = activeViewKey == viewKey
-            IconButton(onClick = { store.dispatch("filesystem.ui", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKey) })) }) {
+            IconButton(onClick = { store.dispatch("filesystem", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKey) })) }) {
                 Icon(Icons.Default.Folder, "File System Browser", tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

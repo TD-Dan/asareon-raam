@@ -379,7 +379,10 @@ object AgentCognitivePipeline {
         // ============================================================
         // Inject available system actions for agent tooling
         // ============================================================
-        contextMap["AVAILABLE_ACTIONS"] = ExposedActionsContextProvider.generateContext()
+        val agentIdentity = store.state.value.identityRegistry[agent.identityHandle.handle]
+        if (agentIdentity != null) {
+            contextMap["AVAILABLE_ACTIONS"] = ExposedActionsContextProvider.generateContext(store, agentIdentity)
+        }
 
         // ============================================================
         // Inject workspace file awareness context

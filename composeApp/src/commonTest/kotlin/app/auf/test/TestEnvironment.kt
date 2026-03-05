@@ -5,6 +5,8 @@ import app.auf.core.AppState
 import app.auf.core.Feature
 import app.auf.core.FeatureState
 import app.auf.core.Identity
+import app.auf.core.PermissionGrant
+import app.auf.core.PermissionLevel
 import app.auf.core.PrivateDataEnvelope
 import app.auf.core.Store
 import app.auf.core.generated.ActionRegistry
@@ -153,6 +155,7 @@ class TestEnvironment {
     private val initialStates = mutableMapOf<String, FeatureState>()
     private var actionRegistryOverride: Set<String>? = null
     private var extraDescriptors: Map<String, ActionRegistry.ActionDescriptor> = emptyMap()
+    private var identitySeeds: Map<String, Identity> = emptyMap()
 
     companion object {
         fun create(): TestEnvironment {
@@ -189,6 +192,24 @@ class TestEnvironment {
      */
     fun withExtraDescriptors(descriptors: Map<String, ActionRegistry.ActionDescriptor>): TestEnvironment {
         this.extraDescriptors = this.extraDescriptors + descriptors
+        return this
+    }
+
+    /**
+     * Pre-seeds an identity in the identity registry. Useful for testing permission
+     * guards — the identity will be present when the Store processes actions.
+     *
+     * Example:
+     * ```
+     * .withIdentity(Identity(
+     *     uuid = "test-user-1", handle = "core.alice", localHandle = "alice",
+     *     name = "Alice", parentHandle = "core",
+     *     permissions = mapOf("session:write" to PermissionGrant(PermissionLevel.YES))
+     * ))
+     * ```
+     */
+    fun withIdentity(identity: Identity): TestEnvironment {
+        this.identitySeeds = this.identitySeeds + (identity.handle to identity)
         return this
     }
 
@@ -229,7 +250,8 @@ class TestEnvironment {
 
         val fullyPopulatedState = AppState(
             featureStates = newFeatureStates,
-            actionDescriptors = finalDescriptors
+            actionDescriptors = finalDescriptors,
+            identityRegistry = identitySeeds
         )
 
         val store = RecordingStore(fullyPopulatedState, allFeatures, platform)
@@ -263,8 +285,47 @@ fun testDescriptorsFor(actionNames: Set<String>): Map<String, ActionRegistry.Act
             broadcast = true,
             targeted = false,
             payloadFields = emptyList(),
-            requiredFields = emptyList(),
-            agentExposure = null
+            requiredFields = emptyList()
         )
+    }
+}
+
+/**
+ * Creates an ActionDescriptor with specific permission requirements for testing
+ * the Store permission guard. Defaults to public+broadcast with the given
+ * required permissions.
+ */
+fun testDescriptorWithPermissions(
+    name: String,
+    requiredPermissions: List<String>,
+    permissionScopes: List<ActionRegistry.PermissionScopeRule> = emptyList(),
+    public: Boolean = true,
+    broadcast: Boolean = true,
+    targeted: Boolean = false
+): ActionRegistry.ActionDescriptor {
+    val parts = name.split(".", limit = 2)
+    return ActionRegistry.ActionDescriptor(
+        fullName = name,
+        featureName = parts.firstOrNull() ?: "test",
+        suffix = parts.getOrElse(1) { name },
+        summary = "Test action with permissions",
+        public = public,
+        broadcast = broadcast,
+        targeted = targeted,
+        payloadFields = emptyList(),
+        requiredFields = emptyList(),
+        requiredPermissions = requiredPermissions,
+        permissionScopes = permissionScopes
+    )
+}
+
+/**
+ * Convenience: creates a map of permission-guarded test descriptors.
+ */
+fun testDescriptorsWithPermissions(
+    vararg entries: Pair<String, List<String>>
+): Map<String, ActionRegistry.ActionDescriptor> {
+    return entries.associate { (name, perms) ->
+        name to testDescriptorWithPermissions(name, perms)
     }
 }

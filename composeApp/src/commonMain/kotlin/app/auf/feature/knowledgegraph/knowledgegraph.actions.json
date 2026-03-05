@@ -1,6 +1,18 @@
 {
   "feature_name": "knowledgegraph",
   "summary": "Acts as a universal, decoupled service that loads, manages, and serves multiple, distinct Holon Knowledge Graph (HKG) trees for consumption by any other feature.",
+  "permissions": [
+    {
+      "key": "knowledgegraph:read",
+      "description": "Read HKG context and persona data",
+      "dangerLevel": "LOW"
+    },
+    {
+      "key": "knowledgegraph:write",
+      "description": "Modify holons, import data, manage personas",
+      "dangerLevel": "CAUTION"
+    }
+  ],
   "actions": [
     {
       "action_name": "knowledgegraph.SET_VIEW_MODE",
@@ -18,7 +30,8 @@
         "required": [
           "mode"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "knowledgegraph.LOAD_PERSONA",
@@ -36,7 +49,10 @@
         "required": [
           "personaId"
         ]
-      }
+      },
+      "required_permissions": [
+        "knowledgegraph:read"
+      ]
     },
     {
       "action_name": "knowledgegraph.REQUEST_CONTEXT",
@@ -60,7 +76,10 @@
           "personaId",
           "correlationId"
         ]
-      }
+      },
+      "required_permissions": [
+        "knowledgegraph:read"
+      ]
     },
     {
       "action_name": "knowledgegraph.RESERVE_HKG",
@@ -78,7 +97,10 @@
         "required": [
           "personaId"
         ]
-      }
+      },
+      "required_permissions": [
+        "knowledgegraph:read"
+      ]
     },
     {
       "action_name": "knowledgegraph.RELEASE_HKG",
@@ -96,7 +118,10 @@
         "required": [
           "personaId"
         ]
-      }
+      },
+      "required_permissions": [
+        "knowledgegraph:read"
+      ]
     },
     {
       "action_name": "knowledgegraph.SET_ACTIVE_VIEW_HOLON",
@@ -114,7 +139,8 @@
             ]
           }
         }
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "knowledgegraph.TOGGLE_HOLON_EXPANDED",
@@ -132,14 +158,16 @@
         "required": [
           "holonId"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "knowledgegraph.TOGGLE_SHOW_SUMMARIES",
       "summary": "Toggles the visibility of summary text in the holon tree view.",
       "public": true,
       "broadcast": true,
-      "targeted": false
+      "targeted": false,
+      "required_permissions": []
     },
     {
       "action_name": "knowledgegraph.SET_TYPE_FILTERS",
@@ -160,14 +188,18 @@
         "required": [
           "types"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "knowledgegraph.START_IMPORT_ANALYSIS",
       "summary": "Initiates the user-facing workflow to select and analyze a directory for HKG import.",
       "public": true,
       "broadcast": true,
-      "targeted": false
+      "targeted": false,
+      "required_permissions": [
+        "knowledgegraph:write"
+      ]
     },
     {
       "action_name": "knowledgegraph.SET_IMPORT_RECURSIVE",
@@ -185,14 +217,16 @@
         "required": [
           "recursive"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "knowledgegraph.TOGGLE_SHOW_ONLY_CHANGED",
       "summary": "Toggles whether the import view should only show files with a proposed change.",
       "public": true,
       "broadcast": true,
-      "targeted": false
+      "targeted": false,
+      "required_permissions": []
     },
     {
       "action_name": "knowledgegraph.UPDATE_IMPORT_ACTION",
@@ -214,21 +248,30 @@
           "sourcePath",
           "action"
         ]
-      }
+      },
+      "required_permissions": [
+        "knowledgegraph:write"
+      ]
     },
     {
       "action_name": "knowledgegraph.EXECUTE_IMPORT",
       "summary": "Triggers the execution of the currently staged import plan.",
       "public": true,
       "broadcast": true,
-      "targeted": false
+      "targeted": false,
+      "required_permissions": [
+        "knowledgegraph:write"
+      ]
     },
     {
       "action_name": "knowledgegraph.COPY_ANALYSIS_TO_CLIPBOARD",
       "summary": "Formats the current import analysis into a string and copies it to the clipboard.",
       "public": true,
       "broadcast": true,
-      "targeted": false
+      "targeted": false,
+      "required_permissions": [
+        "knowledgegraph:read"
+      ]
     },
     {
       "action_name": "knowledgegraph.CREATE_PERSONA",
@@ -246,7 +289,10 @@
         "required": [
           "name"
         ]
-      }
+      },
+      "required_permissions": [
+        "knowledgegraph:write"
+      ]
     },
     {
       "action_name": "knowledgegraph.DELETE_PERSONA",
@@ -264,7 +310,10 @@
         "required": [
           "personaId"
         ]
-      }
+      },
+      "required_permissions": [
+        "knowledgegraph:write"
+      ]
     },
     {
       "action_name": "knowledgegraph.SET_PERSONA_TO_DELETE",
@@ -282,7 +331,8 @@
             ]
           }
         }
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "knowledgegraph.SET_CREATING_PERSONA",
@@ -300,7 +350,8 @@
         "required": [
           "isCreating"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "knowledgegraph.UPDATE_HOLON_CONTENT",
@@ -326,7 +377,10 @@
         "required": [
           "holonId"
         ]
-      }
+      },
+      "required_permissions": [
+        "knowledgegraph:write"
+      ]
     },
     {
       "action_name": "knowledgegraph.RENAME_HOLON",
@@ -348,7 +402,10 @@
           "holonId",
           "newName"
         ]
-      }
+      },
+      "required_permissions": [
+        "knowledgegraph:write"
+      ]
     },
     {
       "action_name": "knowledgegraph.DELETE_HOLON",
@@ -366,7 +423,10 @@
         "required": [
           "holonId"
         ]
-      }
+      },
+      "required_permissions": [
+        "knowledgegraph:write"
+      ]
     },
     {
       "action_name": "knowledgegraph.SET_HOLON_TO_DELETE",
@@ -384,7 +444,8 @@
             ]
           }
         }
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "knowledgegraph.SET_HOLON_TO_EDIT",
@@ -402,7 +463,8 @@
             ]
           }
         }
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "knowledgegraph.SET_HOLON_TO_RENAME",
@@ -420,7 +482,8 @@
             ]
           }
         }
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "knowledgegraph.AVAILABLE_PERSONAS_UPDATED",

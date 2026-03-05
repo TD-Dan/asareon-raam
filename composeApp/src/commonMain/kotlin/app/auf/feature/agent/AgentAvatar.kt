@@ -272,8 +272,8 @@ fun AgentControlCard(
                     DropdownMenuItem(
                         text = { Text("Edit Agent") },
                         onClick = {
-                            store.dispatch("ui.controls", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.manager") }))
-                            store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agentUuidStr) }))
+                            store.dispatch("agent", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.manager") }))
+                            store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agentUuidStr) }))
                             menuExpanded = false
                         },
                         leadingIcon = { Icon(Icons.Default.Edit, null) }
@@ -281,7 +281,7 @@ fun AgentControlCard(
                     DropdownMenuItem(
                         text = { Text("Preview Turn") },
                         onClick = {
-                            store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
+                            store.dispatch("agent", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                                 put("agentId", agentUuidStr)
                                 put("preview", true)
                             }))
@@ -301,7 +301,7 @@ fun AgentControlCard(
             ) {
                 IconButton(
                     onClick = {
-                        store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_TOGGLE_ACTIVE, buildJsonObject { put("agentId", agentUuidStr) }))
+                        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_TOGGLE_ACTIVE, buildJsonObject { put("agentId", agentUuidStr) }))
                     }
                 ) {
                     Icon(
@@ -320,7 +320,7 @@ fun AgentControlCard(
             ) {
                 IconButton(
                     onClick = {
-                        store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject { put("agentId", agentUuidStr) }))
+                        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject { put("agentId", agentUuidStr) }))
                     }
                 ) {
                     Icon(
@@ -333,14 +333,14 @@ fun AgentControlCard(
 
             if (statusInfo.status == AgentStatus.PROCESSING) {
                 Button(
-                    onClick = { store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agentUuidStr) })) },
+                    onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agentUuidStr) })) },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                 ) {
                     Icon(Icons.Default.Cancel, contentDescription = "Cancel Turn")
                 }
             } else {
                 Button(
-                    onClick = { store.dispatch("ui.controls", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
+                    onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                         put("agentId", agentUuidStr)
                         put("preview", false) // Direct execution
                     })) },

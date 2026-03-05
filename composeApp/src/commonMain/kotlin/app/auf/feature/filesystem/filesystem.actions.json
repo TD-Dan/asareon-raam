@@ -1,7 +1,23 @@
 {
   "feature_name": "filesystem",
   "summary": "Acts as the sole secure gateway to the file system. Consumers are sandboxed to their own private folders according to their identity.",
-  "permissions": ["read", "write", "delete", "workspace", "system-files", "ui", "clipboard"],
+  "permissions": [
+    {
+      "key": "filesystem:workspace",
+      "description": "Read, write, and delete files in the sandboxed workspace",
+      "dangerLevel": "LOW"
+    },
+    {
+      "key": "filesystem:system-files-read",
+      "description": "Read any file on the operating system",
+      "dangerLevel": "CAUTION"
+    },
+    {
+      "key": "filesystem:system-files-modify",
+      "description": "Write and delete any file on the operating system",
+      "dangerLevel": "DANGER"
+    }
+  ],
   "actions": [
     {
       "action_name": "filesystem.LIST",
@@ -38,7 +54,9 @@
           "path_prefix_template": "{agentId}/workspace"
         }
       },
-      "required_permissions": ["read", "workspace"]
+      "required_permissions": [
+        "filesystem:workspace"
+      ]
     },
     {
       "action_name": "filesystem.READ",
@@ -64,7 +82,9 @@
           "path_prefix_template": "{agentId}/workspace"
         }
       },
-      "required_permissions": ["read", "workspace"]
+      "required_permissions": [
+        "filesystem:workspace"
+      ]
     },
     {
       "action_name": "filesystem.READ_MULTIPLE",
@@ -86,7 +106,9 @@
           "paths"
         ]
       },
-      "required_permissions": ["read", "workspace"]
+      "required_permissions": [
+        "filesystem:workspace"
+      ]
     },
     {
       "action_name": "filesystem.WRITE",
@@ -124,7 +146,16 @@
           }
         }
       },
-      "required_permissions": ["write", "workspace"]
+      "required_permissions": [
+        "filesystem:workspace"
+      ],
+      "permission_scopes": [
+        {
+          "permission_key": "filesystem:workspace",
+          "payload_field": "path",
+          "scope_type": "match_resource_scope"
+        }
+      ]
     },
     {
       "action_name": "filesystem.DELETE_FILE",
@@ -150,7 +181,16 @@
           "path_prefix_template": "{agentId}/workspace"
         }
       },
-      "required_permissions": ["delete", "workspace"]
+      "required_permissions": [
+        "filesystem:workspace"
+      ],
+      "permission_scopes": [
+        {
+          "permission_key": "filesystem:workspace",
+          "payload_field": "path",
+          "scope_type": "match_resource_scope"
+        }
+      ]
     },
     {
       "action_name": "filesystem.DELETE_DIRECTORY",
@@ -176,7 +216,9 @@
           "path_prefix_template": "{agentId}/workspace"
         }
       },
-      "required_permissions": ["delete", "workspace"]
+      "required_permissions": [
+        "filesystem:workspace"
+      ]
     },
     {
       "action_name": "filesystem.REQUEST_SCOPED_READ_UI",
@@ -206,7 +248,9 @@
           }
         }
       },
-      "required_permissions": ["read", "system-files", "ui"]
+      "required_permissions": [
+        "filesystem:system-files-read"
+      ]
     },
     {
       "action_name": "filesystem.OPEN_WORKSPACE_FOLDER",
@@ -224,7 +268,9 @@
           }
         }
       },
-      "required_permissions": ["read", "workspace", "ui"]
+      "required_permissions": [
+        "filesystem:workspace"
+      ]
     },
     {
       "action_name": "filesystem.NAVIGATE",
@@ -242,16 +288,14 @@
         "required": [
           "path"
         ]
-      },
-      "required_permissions": ["write", "ui"]
+      }
     },
     {
       "action_name": "filesystem.SELECT_DIRECTORY_UI",
       "summary": "Triggers the native OS file chooser to select a directory.",
       "public": false,
       "broadcast": true,
-      "targeted": false,
-      "required_permissions": ["read", "system-files", "ui"]
+      "targeted": false
     },
     {
       "action_name": "filesystem.EXPAND_ALL",
@@ -270,7 +314,7 @@
           "path"
         ]
       },
-      "required_permissions": ["write", "ui"]
+      "required_permissions": []
     },
     {
       "action_name": "filesystem.COLLAPSE_ALL",
@@ -289,7 +333,7 @@
           "path"
         ]
       },
-      "required_permissions": ["write", "ui"]
+      "required_permissions": []
     },
     {
       "action_name": "filesystem.ADD_WHITELIST_PATH",
@@ -308,7 +352,9 @@
           "path"
         ]
       },
-      "required_permissions": ["write", "system-files", "ui"]
+      "required_permissions": [
+        "filesystem:system-files-read"
+      ]
     },
     {
       "action_name": "filesystem.REMOVE_WHITELIST_PATH",
@@ -327,7 +373,9 @@
           "path"
         ]
       },
-      "required_permissions": ["delete", "system-files", "ui"]
+      "required_permissions": [
+        "filesystem:system-files-read"
+      ]
     },
     {
       "action_name": "filesystem.ADD_FAVORITE_PATH",
@@ -346,7 +394,7 @@
           "path"
         ]
       },
-      "required_permissions": ["write", "system-files", "ui"]
+      "required_permissions": []
     },
     {
       "action_name": "filesystem.REMOVE_FAVORITE_PATH",
@@ -365,7 +413,7 @@
           "path"
         ]
       },
-      "required_permissions": ["delete", "system-files", "ui"]
+      "required_permissions": []
     },
     {
       "action_name": "filesystem.TOGGLE_ITEM_EXPANDED",
@@ -384,7 +432,7 @@
           "path"
         ]
       },
-      "required_permissions": ["write", "ui"]
+      "required_permissions": []
     },
     {
       "action_name": "filesystem.TOGGLE_ITEM_SELECTED",
@@ -407,7 +455,7 @@
           "path"
         ]
       },
-      "required_permissions": ["write", "ui"]
+      "required_permissions": []
     },
     {
       "action_name": "filesystem.COPY_SELECTION_TO_CLIPBOARD",
@@ -415,7 +463,9 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": ["write", "ui", "clipboard"]
+      "required_permissions": [
+        "filesystem:workspace"
+      ]
     },
     {
       "action_name": "filesystem.LOAD_CHILDREN",
@@ -605,7 +655,7 @@
     },
     {
       "action_name": "filesystem.ACTION_RESULT",
-      "summary": "Broadcast notification published after a command-dispatchable domain action completes. Carries a lightweight, privacy-safe summary — never raw data or sandbox-internal paths. CommandBot matches via correlationId to post feedback to the originating session. Other observers (logging plugins, usage monitors) may also subscribe.",
+      "summary": "Broadcast notification published after a command-dispatchable domain action completes. Carries a lightweight, privacy-safe summary \u2014 never raw data or sandbox-internal paths. CommandBot matches via correlationId to post feedback to the originating session. Other observers (logging plugins, usage monitors) may also subscribe.",
       "public": false,
       "broadcast": true,
       "targeted": false,
@@ -613,7 +663,10 @@
         "type": "object",
         "properties": {
           "correlationId": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "From the domain action's payload. Null if not command-originated."
           },
           "requestAction": {
@@ -624,15 +677,24 @@
             "type": "boolean"
           },
           "summary": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Human-readable, privacy-safe description of what happened. No sandbox paths."
           },
           "error": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Human-readable error message. Present when success is false."
           }
         },
-        "required": ["requestAction", "success"]
+        "required": [
+          "requestAction",
+          "success"
+        ]
       }
     }
   ],

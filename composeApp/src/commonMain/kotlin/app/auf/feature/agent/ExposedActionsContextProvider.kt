@@ -1,12 +1,19 @@
 package app.auf.feature.agent
 
+import app.auf.core.Identity
+import app.auf.core.PermissionLevel
+import app.auf.core.Store
 import app.auf.core.generated.ActionRegistry
 
 /**
  * ## Mandate
  * Generates the "Available System Actions" context block for injection into an agent's
  * system prompt. This is fully data-driven: it reads from the build-time generated
- * [ActionRegistry], ensuring the prompt always matches the actual allowlist.
+ * [ActionRegistry] and filters by the agent's effective permissions, ensuring the
+ * prompt always matches what the agent can actually do.
+ *
+ * Phase 2.B: Replaced the static `agentAllowedNames` allowlist with dynamic
+ * permission-based filtering via [Store.resolveEffectivePermissions].
  *
  * The context teaches the agent:
  * 1. The `auf_` code block invocation syntax.
@@ -16,10 +23,13 @@ import app.auf.core.generated.ActionRegistry
 object ExposedActionsContextProvider {
 
     /**
-     * Generates a formatted context block describing all available agent actions.
-     * Designed for injection into `AgentTurnContext.gatheredContexts["AVAILABLE_ACTIONS"]`.
+     * Generates a formatted context block describing all actions available to
+     * the specified agent identity, filtered by its effective permissions.
+     *
+     * @param store The Store instance for resolving effective permissions
+     * @param agentIdentity The agent's Identity from the registry
      */
-    fun generateContext(): String = buildString {
+    fun generateContext(store: Store, agentIdentity: Identity): String = buildString {
         appendLine("--- AVAILABLE SYSTEM ACTIONS ---")
         appendLine()
         appendLine("You can invoke system actions by including a fenced code block in your response.")
@@ -48,8 +58,21 @@ object ExposedActionsContextProvider {
         appendLine("```")
         appendLine()
 
-        val agentActions = ActionRegistry.agentAllowedNames
-            .mapNotNull { name -> ActionRegistry.byActionName[name] }
+        // Resolve the agent's effective permissions through the inheritance chain
+        val effectivePerms = store.resolveEffectivePermissions(agentIdentity)
+
+        // Filter to public actions where the agent has all required permissions
+        val agentActions = ActionRegistry.byActionName.values
+            .filter { desc ->
+                // Must be public (agents dispatch cross-feature)
+                desc.public &&
+                        // Must have declared required_permissions
+                        desc.requiredPermissions != null &&
+                        // Agent must have YES for all required permissions
+                        desc.requiredPermissions!!.all { permKey ->
+                            effectivePerms[permKey]?.level == PermissionLevel.YES
+                        }
+            }
             .sortedBy { it.fullName }
 
         if (agentActions.isEmpty()) {

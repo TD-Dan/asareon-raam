@@ -482,7 +482,7 @@ class AgentRuntimeFeature(
                     previewData.agnosticRequest.systemPrompt?.let { put("systemPrompt", it) }
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId.uuid) }))
-                store.dispatch("ui.agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
+                store.dispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
 
                 publishActionResult(store, correlationId, action.name, true, summary = "Previewed turn executed for agent '${agent.identity.name}'.")
             }
@@ -496,7 +496,7 @@ class AgentRuntimeFeature(
                         put("agentId", agentId.uuid); put("step", JsonNull)
                     }))
                 }
-                store.dispatch("ui.agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
+                store.dispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
                 publishActionResult(store, correlationId, action.name, true, summary = "Preview discarded for agent '${agent?.identity?.name ?: agentId.uuid}'.")
             }
             ActionRegistry.Names.AGENT_CANCEL_TURN -> {
@@ -595,7 +595,10 @@ class AgentRuntimeFeature(
                 }
 
                 // Dispatch the domain action attributed to the agent.
-                store.deferredDispatch(identity.handle, Action(name = actionName, payload = enrichedPayload))
+                // Pre-Phase 1 fix: dispatch as the agent's identity handle (e.g., "agent.coder-1")
+                // instead of the feature handle ("agent") so the Store permission guard
+                // evaluates the correct identity's effective permissions.
+                store.deferredDispatch(agent.identityHandle.handle, Action(name = actionName, payload = enrichedPayload))
 
                 // Track the pending command in state
                 store.deferredDispatch(identity.handle, Action(
@@ -1094,7 +1097,7 @@ class AgentRuntimeFeature(
         override fun RibbonContent(store: Store, activeViewKey: String?) {
             val viewKey = "feature.agent.manager"
             val isActive = activeViewKey == viewKey
-            IconButton(onClick = { store.dispatch("ui.ribbon", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKey) })) }) {
+            IconButton(onClick = { store.dispatch("agent", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKey) })) }) {
                 Icon(Icons.Default.Bolt, "Agent Manager", tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

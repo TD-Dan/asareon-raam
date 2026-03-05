@@ -1,6 +1,18 @@
 {
   "feature_name": "gateway",
   "summary": "Acts as a secure, centralized router for all generative AI service requests. It is the single source of truth for available providers and models.",
+  "permissions": [
+    {
+      "key": "gateway:generate",
+      "description": "Request AI content generation from providers",
+      "dangerLevel": "CAUTION"
+    },
+    {
+      "key": "gateway:preview",
+      "description": "Request turn preview / token estimation",
+      "dangerLevel": "LOW"
+    }
+  ],
   "actions": [
     {
       "action_name": "gateway.GENERATE_CONTENT",
@@ -49,7 +61,10 @@
           "correlationId",
           "contents"
         ]
-      }
+      },
+      "required_permissions": [
+        "gateway:generate"
+      ]
     },
     {
       "action_name": "gateway.PREPARE_PREVIEW",
@@ -98,14 +113,18 @@
           "correlationId",
           "contents"
         ]
-      }
+      },
+      "required_permissions": [
+        "gateway:preview"
+      ]
     },
     {
       "action_name": "gateway.REQUEST_AVAILABLE_MODELS",
       "summary": "Requests that the GatewayFeature broadcast the current list of available models.",
       "public": true,
       "broadcast": true,
-      "targeted": false
+      "targeted": false,
+      "required_permissions": []
     },
     {
       "action_name": "gateway.CANCEL_REQUEST",
@@ -123,7 +142,10 @@
         "required": [
           "correlationId"
         ]
-      }
+      },
+      "required_permissions": [
+        "gateway:generate"
+      ]
     },
     {
       "action_name": "gateway.CONTENT_GENERATED",

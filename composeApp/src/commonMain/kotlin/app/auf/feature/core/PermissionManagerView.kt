@@ -292,7 +292,7 @@ private fun LegendChip(label: String, color: Color) {
  * - Domain label above
  * - Color-coded bottom bar by dangerLevel
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun PermissionColumnHeader(
     domain: String,
@@ -354,7 +354,7 @@ private fun PermissionColumnHeader(
  * with visual indicators for inherited and escalated states.
  * Phase 3: shows resourceScope as a small label when present.
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun PermissionCell(
     isChecked: Boolean,

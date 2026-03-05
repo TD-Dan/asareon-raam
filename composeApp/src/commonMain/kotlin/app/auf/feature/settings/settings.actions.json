@@ -49,7 +49,8 @@
           "section",
           "defaultValue"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "settings.UI_INPUT_CHANGED",
@@ -95,14 +96,16 @@
           "key",
           "value"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "settings.OPEN_FOLDER",
       "summary": "Requests that the application's settings folder be opened in the native file explorer.",
       "public": true,
       "broadcast": true,
-      "targeted": false
+      "targeted": false,
+      "required_permissions": []
     },
     {
       "action_name": "settings.LOAD",
@@ -146,5 +149,6 @@
         ]
       }
     }
-  ]
+  ],
+  "permissions": []
 }
