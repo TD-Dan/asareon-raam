@@ -132,7 +132,7 @@ class SettingsFeatureT2CoreTest {
             .withFeature(SettingsFeature(FakePlatformDependencies("test")))
             .build()
 
-        harness.store.dispatch("settings.ui", Action(ActionRegistry.Names.SETTINGS_OPEN_FOLDER))
+        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_OPEN_FOLDER))
 
         val openAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER }
         assertNotNull(openAction, "OPEN_FOLDER should dispatch FILESYSTEM_OPEN_WORKSPACE_FOLDER.")

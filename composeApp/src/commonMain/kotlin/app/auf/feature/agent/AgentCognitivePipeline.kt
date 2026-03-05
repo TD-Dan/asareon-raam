@@ -552,7 +552,7 @@ object AgentCognitivePipeline {
             put("rawRequestJson", decoded.rawRequestJson)
             decoded.estimatedInputTokens?.let { put("estimatedInputTokens", it) }
         }))
-        store.dispatch("ui.agent", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.context_viewer") }))
+        store.dispatch("agent", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.context_viewer") }))
     }
 
     private fun handleGatewayResponse(payload: JsonObject, store: Store) {

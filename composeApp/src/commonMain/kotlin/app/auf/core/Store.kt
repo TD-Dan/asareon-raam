@@ -335,14 +335,19 @@ open class Store(
         }
 
         // --- STEP 1c: ORIGINATOR VALIDATION (Pre-Phase 1) ---
-        // Reject originators not in the identity registry and not resolvable to a feature handle.
+        // Reject originators not in the identity registry and not resolvable to a known feature.
+        // "Known feature" means either a registered Feature instance OR a feature name declared
+        // in the action descriptors (covers infrastructure like "system" which has a manifest
+        // but no Feature instance — it's dispatched by the app container).
         if (action.originator != null) {
             val originatorInRegistry = _state.value.identityRegistry.containsKey(action.originator)
             val originatorIsFeature = features.any { it.identity.handle == action.originator }
             if (!originatorInRegistry && !originatorIsFeature) {
                 val featureHandle = extractFeatureHandle(action.originator)
                 val parentIsFeature = features.any { it.identity.handle == featureHandle }
-                if (!parentIsFeature) {
+                val parentIsKnownDescriptorFeature = _state.value.actionDescriptors.values
+                    .any { it.featureName == featureHandle }
+                if (!parentIsFeature && !parentIsKnownDescriptorFeature) {
                     platformDependencies.log(
                         LogLevel.ERROR, "Store",
                         "INVALID ORIGINATOR: '${action.originator}' is not a registered identity " +
@@ -506,7 +511,9 @@ open class Store(
             else if (originatorIdentity == null && action.originator != null) {
                 val featureHandle = extractFeatureHandle(action.originator)
                 val isFeature = features.any { it.identity.handle == featureHandle }
-                if (!isFeature) {
+                val isKnownDescriptorFeature = _state.value.actionDescriptors.values
+                    .any { it.featureName == featureHandle }
+                if (!isFeature && !isKnownDescriptorFeature) {
                     platformDependencies.log(
                         LogLevel.ERROR, "Store",
                         "PERMISSION DENIED: originator '${action.originator}' not found in " +

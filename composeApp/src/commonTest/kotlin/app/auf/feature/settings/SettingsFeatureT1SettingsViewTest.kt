@@ -76,7 +76,7 @@ class SettingsFeatureT1SettingsViewTest {
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SETTINGS_UI_INPUT_CHANGED }
         assertNotNull(action)
-        assertEquals("settings.ui", action.originator)
+        assertEquals("settings", action.originator)
         assertEquals("test.api.key", action.payload?.get("key")?.jsonPrimitive?.content)
         assertEquals("new_key", action.payload?.get("value")?.jsonPrimitive?.content)
     }

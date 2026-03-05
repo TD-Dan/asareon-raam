@@ -51,10 +51,10 @@ fun AgentContextView(store: Store) {
     }
 
     val onDiscard = {
-        store.dispatch("ui.contextView", Action(ActionRegistry.Names.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agent.identity.uuid) }))
+        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agent.identity.uuid) }))
     }
     val onExecute = {
-        store.dispatch("ui.contextView", Action(ActionRegistry.Names.AGENT_EXECUTE_PREVIEWED_TURN, buildJsonObject { put("agentId", agent.identity.uuid) }))
+        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_EXECUTE_PREVIEWED_TURN, buildJsonObject { put("agentId", agent.identity.uuid) }))
     }
 
     Scaffold(
@@ -223,7 +223,7 @@ private fun LogicalContextPane(previewData: StagedPreviewData, store: Store) {
                         append("\n\n")
                     }
                 }
-                store.dispatch("ui.contextView", Action(ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", fullText.trim()) }))
+                store.dispatch("agent", Action(ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", fullText.trim()) }))
             }) {
                 Icon(Icons.Default.ContentCopy, contentDescription = "Copy All", modifier = Modifier.padding(end = 8.dp))
                 Text("Copy All")
@@ -259,7 +259,7 @@ private fun RawJsonPane(previewData: StagedPreviewData, store: Store) {
             horizontalArrangement = Arrangement.End
         ) {
             Button(onClick = {
-                store.dispatch("ui.contextView", Action(ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", previewData.rawRequestJson) }))
+                store.dispatch("agent", Action(ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", previewData.rawRequestJson) }))
             }) {
                 Icon(Icons.Default.ContentCopy, contentDescription = "Copy All", modifier = Modifier.padding(end = 8.dp))
                 Text("Copy All")

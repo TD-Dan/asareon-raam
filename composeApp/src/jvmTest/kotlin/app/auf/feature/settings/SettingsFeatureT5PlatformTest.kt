@@ -61,7 +61,7 @@ class SettingsFeatureT5PlatformTest {
             val updateAction = Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject {
                 put("key", "test.key"); put("value", "live_value")
             })
-            store.dispatch("settings.ui", updateAction)
+            store.dispatch("settings", updateAction)
         }
 
         // --- SCOPE 2: Re-initialize and reload the setting ---
