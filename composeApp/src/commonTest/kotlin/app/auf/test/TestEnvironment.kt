@@ -276,7 +276,6 @@ fun testDescriptorsFor(actionNames: Set<String>): Map<String, ActionRegistry.Act
 fun testDescriptorWithPermissions(
     name: String,
     requiredPermissions: List<String>,
-    permissionScopes: List<ActionRegistry.PermissionScopeRule> = emptyList(),
     public: Boolean = true,
     broadcast: Boolean = true,
     targeted: Boolean = false
@@ -292,8 +291,7 @@ fun testDescriptorWithPermissions(
         targeted = targeted,
         payloadFields = emptyList(),
         requiredFields = emptyList(),
-        requiredPermissions = requiredPermissions,
-        permissionScopes = permissionScopes
+        requiredPermissions = requiredPermissions
     )
 }
 

@@ -7,12 +7,9 @@ import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 
 
@@ -203,80 +200,6 @@ open class Store(
         return effective
     }
 
-    // ========================================================================
-    // Phase 3: Scope Evaluation
-    // ========================================================================
-
-    /**
-     * Resolves a dot-separated field path in a JSON payload.
-     * Example: "metadata.author" resolves payload["metadata"]["author"].
-     * Returns the string value at the path, or null if any segment is missing.
-     */
-    private fun resolvePayloadField(payload: JsonObject?, fieldPath: String): String? {
-        if (payload == null) return null
-        val segments = fieldPath.split(".")
-        var current: JsonElement = payload
-
-        for (segment in segments.dropLast(1)) {
-            current = (current as? JsonObject)?.get(segment) ?: return null
-        }
-
-        return (current as? JsonObject)
-            ?.get(segments.last())
-            ?.let { element ->
-                when (element) {
-                    is JsonPrimitive -> element.contentOrNull
-                    else -> element.toString()
-                }
-            }
-    }
-
-    /**
-     * Phase 3: Evaluates a declarative permission scope rule against an action.
-     *
-     * Scope rules narrow a YES permission check to verify that the specific
-     * invocation falls within the granted scope. Three scope types are supported:
-     *
-     * - **match_originator**: The payload field must equal an originator identity property
-     *   (uuid, handle, or localHandle). Prevents impersonation.
-     * - **match_namespace**: The payload field must be the originator's handle or
-     *   start with "{handle}.". Prevents cross-namespace access.
-     * - **match_resource_scope**: The payload field must start with the grant's
-     *   resourceScope prefix. Enables path-based sandboxing.
-     *
-     * @return true if the scope constraint is satisfied, false otherwise (fail closed).
-     */
-    private fun evaluateScope(
-        rule: ActionRegistry.PermissionScopeRule,
-        action: Action,
-        originator: Identity,
-        grant: PermissionGrant
-    ): Boolean {
-        val payloadValue = resolvePayloadField(action.payload, rule.payloadField)
-            ?: return false  // Missing field = scope violation (fail closed, Pillar 5)
-
-        return when (rule.scopeType) {
-            "match_originator" -> {
-                val originatorValue = when (rule.originatorProperty) {
-                    "uuid" -> originator.uuid
-                    "handle" -> originator.handle
-                    "localHandle" -> originator.localHandle
-                    else -> null
-                }
-                payloadValue == originatorValue
-            }
-            "match_namespace" -> {
-                payloadValue == originator.handle ||
-                        payloadValue.startsWith("${originator.handle}.")
-            }
-            "match_resource_scope" -> {
-                val prefix = grant.resourceScope
-                prefix != null && payloadValue.startsWith(prefix)
-            }
-            else -> false  // Unknown scope type = fail closed
-        }
-    }
-
     /**
      * The core logic for processing a single action.
      *
@@ -444,59 +367,6 @@ open class Store(
                         originator = "core"
                     ))
                     return
-                }
-                // --- STEP 2c: SCOPE EVALUATION (Phase 3) ---
-                // After all required permissions pass the YES/NO check, evaluate
-                // declarative scope rules that narrow the permission to specific payloads.
-                val scopeRules = descriptor.permissionScopes
-                if (scopeRules.isNotEmpty()) {
-                    val scopeViolations = mutableListOf<String>()
-
-                    for (rule in scopeRules) {
-                        val grant = effective[rule.permissionKey]
-                        if (grant == null) {
-                            // Permission key referenced by scope but not in effective set.
-                            // This shouldn't happen (the permission check above would have
-                            // caught it), but fail closed just in case.
-                            scopeViolations.add("${rule.permissionKey} (no grant)")
-                            continue
-                        }
-
-                        if (!evaluateScope(rule, action, originatorIdentity, grant)) {
-                            val payloadValue = resolvePayloadField(action.payload, rule.payloadField) ?: "<missing>"
-                            platformDependencies.log(
-                                LogLevel.WARN, "Store",
-                                "SCOPE VIOLATION: '${action.originator}' failed scope check " +
-                                        "'${rule.scopeType}' on field '${rule.payloadField}' " +
-                                        "(value='$payloadValue') for permission '${rule.permissionKey}' " +
-                                        "on action '${action.name}'."
-                            )
-                            scopeViolations.add(rule.permissionKey)
-                        }
-                    }
-
-                    if (scopeViolations.isNotEmpty()) {
-                        platformDependencies.log(
-                            LogLevel.WARN, "Store",
-                            "PERMISSION SCOPE DENIED: '${action.originator}' passed permission " +
-                                    "level checks but failed scope evaluation for " +
-                                    "${scopeViolations.joinToString(", ") { "'$it'" }} " +
-                                    "on action '${action.name}'. Action blocked."
-                        )
-
-                        deferredActionQueue.add(Action(
-                            name = ActionRegistry.Names.CORE_PERMISSION_DENIED,
-                            payload = buildJsonObject {
-                                put("blockedAction", action.name)
-                                put("originatorHandle", action.originator ?: "")
-                                put("missingPermissions", buildJsonArray {
-                                    scopeViolations.forEach { add(JsonPrimitive(it)) }
-                                })
-                            },
-                            originator = "core"
-                        ))
-                        return
-                    }
                 }
             }
             // Unknown originator with required permissions: check if resolvable to feature.

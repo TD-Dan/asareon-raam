@@ -148,13 +148,6 @@
       },
       "required_permissions": [
         "filesystem:workspace"
-      ],
-      "permission_scopes": [
-        {
-          "permission_key": "filesystem:workspace",
-          "payload_field": "path",
-          "scope_type": "match_resource_scope"
-        }
       ]
     },
     {
@@ -183,13 +176,6 @@
       },
       "required_permissions": [
         "filesystem:workspace"
-      ],
-      "permission_scopes": [
-        {
-          "permission_key": "filesystem:workspace",
-          "payload_field": "path",
-          "scope_type": "match_resource_scope"
-        }
       ]
     },
     {

@@ -196,13 +196,7 @@ class CoreFeature(
             return false
         }
 
-        // Preserve the existing resourceScope when updating the level.
-        // Without this, toggling a permission in the Permission Manager would wipe
-        // the scope prefix (e.g., an agent's UUID workspace path), causing
-        // match_resource_scope checks to fail.
-        val existingGrant = targetIdentity.permissions[permissionKey]
-        val updatedGrant = PermissionGrant(level = level, resourceScope = existingGrant?.resourceScope)
-        val updatedPermissions = targetIdentity.permissions + (permissionKey to updatedGrant)
+        val updatedPermissions = targetIdentity.permissions + (permissionKey to PermissionGrant(level = level))
         val updatedIdentity = targetIdentity.copy(permissions = updatedPermissions)
 
         store.updateIdentityRegistry { it + (identityHandle to updatedIdentity) }
