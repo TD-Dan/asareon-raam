@@ -184,6 +184,58 @@
               "null"
             ],
             "description": "The number of output/completion tokens consumed, as reported by the provider. Null if the provider did not report usage."
+          },
+          "rateLimitInfo": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Rate limit snapshot extracted from the provider's HTTP response headers. Null if unavailable or the provider does not report rate limits.",
+            "properties": {
+              "requestLimit": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "requestsRemaining": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "tokenLimit": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "tokensRemaining": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "requestsResetAtMs": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "tokensResetAtMs": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "retryAfterMs": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Epoch ms until which the caller MUST NOT retry. Non-null only on HTTP 429."
+              }
+            }
           }
         },
         "required": [
@@ -255,7 +307,7 @@
     },
     {
       "action_name": "gateway.RETURN_RESPONSE",
-      "summary": "The standard response envelope from the GatewayFeature, containing either generated content or an error, plus optional token usage.",
+      "summary": "The standard response envelope from the GatewayFeature, containing either generated content or an error, plus optional token usage and rate limit data.",
       "public": false,
       "broadcast": false,
       "targeted": true,
@@ -290,6 +342,58 @@
               "null"
             ],
             "description": "Output/completion tokens consumed, as reported by the provider."
+          },
+          "rateLimitInfo": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Rate limit snapshot extracted from the provider's HTTP response headers. Null if unavailable or the provider does not report rate limits.",
+            "properties": {
+              "requestLimit": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "requestsRemaining": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "tokenLimit": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "tokensRemaining": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "requestsResetAtMs": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "tokensResetAtMs": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "retryAfterMs": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Epoch ms until which the caller MUST NOT retry. Non-null only on HTTP 429."
+              }
+            }
           }
         },
         "required": [

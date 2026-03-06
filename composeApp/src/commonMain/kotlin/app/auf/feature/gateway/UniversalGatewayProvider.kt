@@ -34,7 +34,9 @@ data class GatewayResponse(
     /** The number of tokens consumed by the input/prompt, as reported by the provider. */
     val inputTokens: Int? = null,
     /** The number of tokens consumed by the generated output, as reported by the provider. */
-    val outputTokens: Int? = null
+    val outputTokens: Int? = null,
+    /** Rate limit snapshot extracted from the provider's HTTP response headers. Null if unavailable. */
+    val rateLimitInfo: RateLimitInfo? = null
 )
 
 /**
@@ -44,6 +46,46 @@ data class GatewayResponse(
 @Serializable
 data class TokenCountEstimate(
     val inputTokens: Int
+)
+
+/**
+ * A provider-agnostic snapshot of API rate limit state, extracted from HTTP response headers.
+ *
+ * Providers populate this from the standard rate limit headers returned by most LLM APIs:
+ *   - Anthropic: x-ratelimit-limit-requests, x-ratelimit-remaining-requests, etc.
+ *   - OpenAI:    x-ratelimit-limit-requests, x-ratelimit-remaining-requests, etc.
+ *   - Inception: Same as OpenAI (OpenAI-compatible API).
+ *   - Gemini:    429 + Retry-After only (no per-response quota headers).
+ *
+ * Null fields indicate the provider or response did not include that header.
+ * This data is advisory — the authoritative signal is the retryAfterMs field,
+ * which is set when the provider returns HTTP 429.
+ */
+@Serializable
+data class RateLimitInfo(
+    /** Maximum requests allowed in the current rate limit window. */
+    val requestLimit: Int? = null,
+    /** Remaining requests in the current rate limit window. */
+    val requestsRemaining: Int? = null,
+    /** Maximum tokens allowed in the current rate limit window. */
+    val tokenLimit: Int? = null,
+    /** Remaining tokens in the current rate limit window. */
+    val tokensRemaining: Int? = null,
+    /**
+     * Epoch milliseconds when the request rate limit window resets.
+     * Converted from the provider's reset header (ISO duration or seconds).
+     */
+    val requestsResetAtMs: Long? = null,
+    /**
+     * Epoch milliseconds when the token rate limit window resets.
+     */
+    val tokensResetAtMs: Long? = null,
+    /**
+     * Epoch milliseconds until which the caller MUST NOT send another request.
+     * Non-null only when the provider returned HTTP 429 (Too Many Requests).
+     * The caller should delay retries until at least this timestamp.
+     */
+    val retryAfterMs: Long? = null
 )
 
 /**
