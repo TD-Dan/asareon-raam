@@ -8,6 +8,7 @@ import app.auf.feature.gateway.GatewayFeature
 import app.auf.feature.gateway.gemini.GeminiProvider
 import app.auf.feature.gateway.openai.OpenAIProvider
 import app.auf.feature.gateway.anthropic.AnthropicProvider
+import app.auf.feature.gateway.inception.InceptionProvider
 import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
 import app.auf.feature.settings.SettingsFeature
 import app.auf.feature.session.SessionFeature
@@ -49,7 +50,8 @@ class AppContainer(
             providers = listOf(
                 GeminiProvider(platformDependencies),
                 OpenAIProvider(platformDependencies),
-                AnthropicProvider(platformDependencies)
+                AnthropicProvider(platformDependencies),
+                InceptionProvider(platformDependencies)
             )
         )
 
