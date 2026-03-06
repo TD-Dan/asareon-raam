@@ -44,16 +44,16 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
     private val json = Json { ignoreUnknownKeys = true }
 
     // --- Test Fixtures ---
-    // Use consistent UUIDs: the session map key, agent subscription, and session identity.uuid
-    // must all reference the same identifier.
+    // All IDs must be valid UUIDs — the reducer validates with stringIsUUID()
+    // and the avatar system resolves session UUIDs via identity registry.
 
-    private val sessionUUID1 = "session-uuid-1"
-    private val testSession = testSession(id = sessionUUID1, name = "Session 1")
+    private val sessionUUID1 = "a0000000-0000-0000-0000-000000000001"
+    private val testSession1 = testSession(id = sessionUUID1, name = "Session 1")
 
-    private val sessionUUID2 = "session-uuid-2"
+    private val sessionUUID2 = "a0000000-0000-0000-0000-000000000002"
     private val testSession2 = testSession(id = sessionUUID2, name = "Session 2")
 
-    private val agentId = "agent-1"
+    private val agentId = "b0000000-0000-0000-0000-000000000001"
     private val agent = testAgent(
         id = agentId,
         name = "Avatar Test Agent",
@@ -66,7 +66,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
     private fun buildHarness(
         agents: Map<IdentityUUID, AgentInstance> = mapOf(IdentityUUID(agentId) to agent),
-        sessions: Map<String, app.auf.feature.session.Session> = mapOf(sessionUUID1 to testSession),
+        sessions: Map<String, app.auf.feature.session.Session> = mapOf(sessionUUID1 to testSession1),
         agentStatuses: Map<IdentityUUID, AgentStatusInfo> = emptyMap(),
         agentAvatarCardIds: Map<IdentityUUID, Map<IdentityUUID, String>> = emptyMap()
     ) = TestEnvironment.create()
@@ -85,6 +85,19 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
             sessionOrder = SessionState.deriveSessionOrder(sessions)
         ))
         .build(platform = platform)
+
+    /**
+     * Registers session identities in the identity registry so the avatar system
+     * can resolve session UUIDs → handles. Must be called after buildHarness().
+     */
+    private fun registerSessions(
+        harness: app.auf.test.TestHarness,
+        vararg sessions: app.auf.feature.session.Session
+    ) {
+        for (session in sessions) {
+            harness.registerSessionIdentity(session)
+        }
+    }
 
     /** Finds all avatar-specific SESSION_POST actions (identified by partial_view_key metadata). */
     private fun List<Action>.avatarPosts(): List<Action> = filter { action ->
@@ -107,6 +120,8 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         val harness = buildHarness()
 
         harness.runAndLogOnFailure {
+            registerSessions(harness, testSession1)
+
             // Direct call — the same path used by AGENT_AGENT_LOADED, AGENT_UPDATE_CONFIG, etc.
             AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
 
@@ -141,6 +156,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         val harness = buildHarness()
 
         harness.runAndLogOnFailure {
+            registerSessions(harness, testSession1)
             AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
 
             val avatarPost = harness.processedActions.avatarPosts().firstOrNull()
@@ -170,6 +186,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         val harness = buildHarness()
 
         harness.runAndLogOnFailure {
+            registerSessions(harness, testSession1)
             AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.PROCESSING)
 
             val avatarPost = harness.processedActions.avatarPosts().firstOrNull()
@@ -212,12 +229,13 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         val harness = buildHarness(
             agents = mapOf(IdentityUUID(agentId) to multiAgent),
             sessions = mapOf(
-                sessionUUID1 to testSession,
+                sessionUUID1 to testSession1,
                 sessionUUID2 to testSession2
             )
         )
 
         harness.runAndLogOnFailure {
+            registerSessions(harness, testSession1, testSession2)
             AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
 
             val avatarPosts = harness.processedActions.avatarPosts()
@@ -243,6 +261,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         )
 
         harness.runAndLogOnFailure {
+            registerSessions(harness, testSession1)
             AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
 
             // ASSERT: Old avatar message deleted
@@ -267,7 +286,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         // Agent is subscribed to session-uuid-1 only, but has a stale avatar in session-uuid-2
         val harness = buildHarness(
             sessions = mapOf(
-                sessionUUID1 to testSession,
+                sessionUUID1 to testSession1,
                 sessionUUID2 to testSession2
             ),
             agentAvatarCardIds = mapOf(
@@ -279,6 +298,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         )
 
         harness.runAndLogOnFailure {
+            registerSessions(harness, testSession1, testSession2)
             AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
 
             // ASSERT: Zombie avatar in session-uuid-2 deleted
@@ -323,10 +343,12 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         // When SessionFeature broadcasts SESSION_FEATURE_READY (sessions are in the map),
         // AgentRuntimeFeature posts avatars for all active agents.
         val harness = buildHarness(
-            sessions = mapOf(sessionUUID1 to testSession)
+            sessions = mapOf(sessionUUID1 to testSession1)
         )
 
         harness.runAndLogOnFailure {
+            registerSessions(harness, testSession1)
+
             // Simulate: SessionFeature signals that sessions are loaded and available
             harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_SESSION_FEATURE_READY,
@@ -353,7 +375,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         // Verifies clean separation: SESSION_SESSION_NAMES_UPDATED handles sovereign sessions,
         // SESSION_SESSION_FEATURE_READY handles avatars. No cross-contamination.
         val harness = buildHarness(
-            sessions = mapOf(sessionUUID1 to testSession)
+            sessions = mapOf(sessionUUID1 to testSession1)
         )
 
         harness.runAndLogOnFailure {
@@ -364,9 +386,9 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
                     put("sessions", buildJsonArray {
                         add(buildJsonObject {
                             put("uuid", sessionUUID1)
-                            put("handle", testSession.identity.handle)
-                            put("localHandle", testSession.identity.localHandle)
-                            put("name", testSession.identity.name)
+                            put("handle", testSession1.identity.handle)
+                            put("localHandle", testSession1.identity.localHandle)
+                            put("name", testSession1.identity.name)
                         })
                     })
                 }
@@ -425,6 +447,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         val harness = buildHarness()
 
         harness.runAndLogOnFailure {
+            registerSessions(harness, testSession1)
             AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
 
             // ASSERT: AVATAR_MOVED dispatched with the new message ID
@@ -504,7 +527,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
         harness.runAndLogOnFailure {
             // Pre-serialize the two test sessions for file-read simulation.
-            val session1Content = json.encodeToString(testSession)
+            val session1Content = json.encodeToString(testSession1)
             val session2Content = json.encodeToString(testSession2)
 
             // 1. Trigger startup
