@@ -8,6 +8,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.*
 
@@ -375,7 +376,7 @@ class CoreFeatureT2PermissionManagerViewTest {
         }
         assertNotNull(writeAction, "A FILESYSTEM_WRITE should be dispatched to persist permission changes.")
 
-        val content = writeAction.payload?.get("content")?.toString() ?: ""
+        val content = writeAction.payload?.get("content")?.jsonPrimitive?.content ?: ""
         assertTrue(content.contains("gateway:generate"),
             "Persisted content should include the newly granted permission.")
         assertTrue(content.contains("filesystem:workspace"),
@@ -401,6 +402,10 @@ class CoreFeatureT2PermissionManagerViewTest {
                 activeUserId = "core.alice"
             ))
             .build(platform = platform)
+
+        // Seed alice in the registry — CoreState.userIdentities is the deprecated legacy
+        // field. SET_PERMISSION operates on the registry directly, so alice must be there.
+        harness.store.updateIdentityRegistry { it + ("core.alice" to alice) }
 
         // First: set a permission via the view
         harness.store.dispatch("core", Action(
@@ -553,12 +558,12 @@ class CoreFeatureT2PermissionManagerViewTest {
         assertEquals(PermissionLevel.NO, core.permissions["filesystem:workspace"]?.level,
             "Feature permission should be updated in registry.")
 
-        // Persistence should include feature identities
+        // Persistence should include ALL identities
         val writeAction = harness.processedActions.findLast {
             it.name == ActionRegistry.Names.FILESYSTEM_WRITE
         }
         assertNotNull(writeAction, "FILESYSTEM_WRITE should be dispatched to persist feature permission changes.")
-        val content = writeAction.payload?.get("content")?.toString() ?: ""
+        val content = writeAction.payload?.get("content")?.jsonPrimitive?.content ?: ""
         assertTrue(content.contains("\"handle\":\"core\""),
             "Persisted content should include the core feature identity with its permissions.")
     }

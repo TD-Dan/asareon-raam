@@ -300,7 +300,8 @@ class CoreFeatureT2PermissionTest {
             .build(platform = platform)
         seedIdentities(harness.store, "core", "agent")
 
-        // Register an agent child — DefaultPermissions.grantsFor("agent.*") should apply
+        // Register an agent child — should inherit permissions from the "agent" feature
+        // which received its grants from DefaultPermissions at boot.
         harness.store.dispatch("agent", Action(
             ActionRegistry.Names.CORE_REGISTER_IDENTITY,
             buildJsonObject { put("localHandle", "mercury"); put("name", "Mercury") }
@@ -310,9 +311,10 @@ class CoreFeatureT2PermissionTest {
         val mercury = harness.store.state.value.identityRegistry["agent.mercury"]
         assertNotNull(mercury, "Agent identity should be registered.")
 
-        // DefaultPermissions grants agent.* several permissions including filesystem:workspace
-        val fsGrant = mercury.permissions["filesystem:workspace"]
-        assertNotNull(fsGrant, "Default filesystem:workspace permission should be applied to agent identities.")
+        // Children inherit from parent feature — check effective permissions, not explicit.
+        val effective = harness.store.resolveEffectivePermissions(mercury)
+        val fsGrant = effective["filesystem:workspace"]
+        assertNotNull(fsGrant, "Agent child should inherit filesystem:workspace from the agent feature parent.")
         assertEquals(PermissionLevel.YES, fsGrant.level)
     }
 
@@ -323,8 +325,8 @@ class CoreFeatureT2PermissionTest {
 
         // Put Alice in CoreState.userIdentities WITH her explicit NO grant.
         // When ADD_USER_IDENTITY fires, handleSideEffects rebuilds all core.* registry
-        // entries from userIdentities, then calls applyDefaultPermissions only for
-        // identities with empty permissions. Alice has permissions, so defaults are skipped.
+        // entries from userIdentities. Alice's explicit NO should be preserved — children
+        // inherit from the parent feature, but explicit grants on the child take precedence.
         val alice = Identity(
             uuid = "user-1", handle = "core.alice", localHandle = "alice",
             name = "Alice", parentHandle = "core",
@@ -340,15 +342,15 @@ class CoreFeatureT2PermissionTest {
             ))
             .build(platform = platform)
 
-        // Trigger the legacy identity sync flow which calls applyDefaultPermissions
+        // Trigger the legacy identity sync flow
         harness.store.dispatch("core", Action(
             ActionRegistry.Names.CORE_ADD_USER_IDENTITY,
             buildJsonObject { put("name", "Bob") }
         ))
         runCurrent()
 
-        // Alice's explicit NO should be preserved — applyDefaultPermissions skips
-        // identities that already have permissions.
+        // Alice's explicit NO should be preserved — the legacy sync copies her
+        // permissions directly from userIdentities to the registry.
         val aliceState = harness.store.state.value.identityRegistry["core.alice"]
         assertNotNull(aliceState, "Alice should still be in the registry after identity sync.")
         assertEquals(PermissionLevel.NO, aliceState.permissions["filesystem:workspace"]?.level,
