@@ -7,9 +7,7 @@ import app.auf.test.TestEnvironment
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
+import kotlinx.serialization.json.*
 import kotlin.test.*
 
 /**
@@ -26,6 +24,19 @@ import kotlin.test.*
  *   - Danger-level cell tinting for YES grants
  */
 class CoreFeatureT2PermissionManagerViewTest {
+
+    /**
+     * Parses persisted identities.json content from a FILESYSTEM_WRITE action.
+     * Returns (list of identity JsonObjects, activeId).
+     */
+    private fun parsePersistedContent(action: Action): Pair<List<JsonObject>, String?> {
+        val content = action.payload?.get("content")?.jsonPrimitive?.content
+            ?: error("No content in FILESYSTEM_WRITE payload")
+        val root = Json.parseToJsonElement(content).jsonObject
+        val identities = root["identities"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
+        val activeId = root["activeId"]?.jsonPrimitive?.contentOrNull
+        return identities to activeId
+    }
 
     // ================================================================
     // SET_PERMISSION toggle dispatched from view
@@ -375,12 +386,13 @@ class CoreFeatureT2PermissionManagerViewTest {
             it.name == ActionRegistry.Names.FILESYSTEM_WRITE
         }
         assertNotNull(writeAction, "A FILESYSTEM_WRITE should be dispatched to persist permission changes.")
-
-        val content = writeAction.payload?.get("content")?.jsonPrimitive?.content ?: ""
-        assertTrue(content.contains("gateway:generate"),
-            "Persisted content should include the newly granted permission.")
-        assertTrue(content.contains("filesystem:workspace"),
-            "Persisted content should preserve existing permissions.")
+        val (identities, _) = parsePersistedContent(writeAction)
+        val alice = identities.find { it["handle"]?.jsonPrimitive?.content == "core.alice" }
+        assertNotNull(alice, "Alice should be in the persisted identities.")
+        val perms = alice["permissions"]?.jsonObject
+        assertNotNull(perms, "Alice's permissions should be persisted.")
+        assertNotNull(perms["gateway:generate"], "Newly granted gateway:generate should be persisted.")
+        assertNotNull(perms["filesystem:workspace"], "Existing filesystem:workspace should be preserved.")
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -564,9 +576,13 @@ class CoreFeatureT2PermissionManagerViewTest {
             it.name == ActionRegistry.Names.FILESYSTEM_WRITE
         }
         assertNotNull(writeAction, "FILESYSTEM_WRITE should be dispatched to persist feature permission changes.")
-        val content = writeAction.payload?.get("content")?.jsonPrimitive?.content ?: ""
-        assertTrue(content.contains("\"handle\":\"core\""),
-            "Persisted content should include the core feature identity with its permissions.")
+        val (identities, _) = parsePersistedContent(writeAction)
+        val coreIdentity = identities.find { it["handle"]?.jsonPrimitive?.content == "core" }
+        assertNotNull(coreIdentity, "Persisted content should include the core feature identity.")
+        val perms = coreIdentity["permissions"]?.jsonObject
+        assertNotNull(perms, "Core identity should have persisted permissions.")
+        assertEquals("NO", perms["filesystem:workspace"]?.jsonObject?.get("level")?.jsonPrimitive?.content,
+            "The updated permission should be persisted.")
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)

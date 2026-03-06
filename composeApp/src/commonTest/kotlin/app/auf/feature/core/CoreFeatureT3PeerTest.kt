@@ -71,11 +71,12 @@ class CoreFeatureT3PeerTest {
                 add(buildJsonObject {
                     put("uuid", "uuid-1")
                     put("localHandle", "loaded-user")
-                    put("handle", "loaded-user")
+                    put("handle", "core.loaded-user")
                     put("name", "Loaded User")
+                    put("parentHandle", "core")
                 })
             }
-            put("activeId", "loaded-user")
+            put("activeId", "core.loaded-user")
         }.toString()
 
         // ACT: Dispatch a targeted action (as FileSystemFeature would after Phase 3 migration).
@@ -112,17 +113,19 @@ class CoreFeatureT3PeerTest {
                 add(buildJsonObject {
                     put("uuid", "uuid-alice")
                     put("localHandle", "alice")
-                    put("handle", "alice")
+                    put("handle", "core.alice")
                     put("name", "Alice")
+                    put("parentHandle", "core")
                 })
                 add(buildJsonObject {
                     put("uuid", "uuid-bob")
                     put("localHandle", "bob")
-                    put("handle", "bob")
+                    put("handle", "core.bob")
                     put("name", "Bob")
+                    put("parentHandle", "core")
                 })
             }
-            put("activeId", "alice")
+            put("activeId", "core.alice")
         }.toString()
 
         // ACT: Dispatch targeted action (replacing old deliverPrivateData call).

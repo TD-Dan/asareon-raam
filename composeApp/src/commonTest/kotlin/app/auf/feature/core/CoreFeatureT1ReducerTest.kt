@@ -163,8 +163,8 @@ class CoreFeatureT1ReducerTest {
         val initialState = CoreState()
         val action = Action(ActionRegistry.Names.CORE_IDENTITIES_LOADED, buildJsonObject {
             put("identities", buildJsonArray {
-                // Only a feature identity — no core children
-                add(buildJsonObject { put("localHandle", "agent"); put("handle", "agent"); put("name", "Agent Runtime") })
+                // Only a feature identity (uuid=null, no parentHandle) — no core children
+                add(buildJsonObject { put("uuid", null as String?); put("localHandle", "agent"); put("handle", "agent"); put("name", "Agent Runtime") })
             })
         })
         val newState = feature.reducer(initialState, action) as? CoreState

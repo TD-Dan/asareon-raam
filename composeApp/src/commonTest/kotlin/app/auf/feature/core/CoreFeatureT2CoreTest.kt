@@ -10,9 +10,7 @@ import app.auf.test.TestEnvironment
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
+import kotlinx.serialization.json.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -27,6 +25,19 @@ import kotlin.test.assertTrue
  * working together within a realistic TestEnvironment that includes the real Store.
  */
 class CoreFeatureT2CoreTest {
+
+    /**
+     * Parses the persisted identities.json content from a FILESYSTEM_WRITE action payload.
+     * Returns (identities as list of JsonObject, activeId as String?).
+     */
+    private fun parsePersistedContent(action: Action): Pair<List<JsonObject>, String?> {
+        val content = action.payload?.get("content")?.jsonPrimitive?.content
+            ?: error("No content in FILESYSTEM_WRITE payload")
+        val root = Json.parseToJsonElement(content).jsonObject
+        val identities = root["identities"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
+        val activeId = root["activeId"]?.jsonPrimitive?.contentOrNull
+        return identities to activeId
+    }
 
     /**
      * Helper: seeds feature identities into AppState.identityRegistry via Store,
@@ -128,15 +139,17 @@ class CoreFeatureT2CoreTest {
         assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
         assertEquals("identities.json", writeAction.payload?.get("path")?.jsonPrimitive?.content)
         assertFalse(writeAction.payload?.get("encrypt").toString().toBoolean(), "Persistence encryption is temporarily disabled for debugging.")
-        val content = writeAction.payload?.get("content")?.jsonPrimitive?.content
-        assertNotNull(content)
-        assertTrue(content.contains("Test User"), "The new user's name should be in the persisted content.")
+        val (identities, _) = parsePersistedContent(writeAction)
+        assertTrue(identities.any { it["name"]?.jsonPrimitive?.content == "Test User" },
+            "The new user should be in the persisted identities.")
 
-        // ASSERT: Broadcasting (legacy)
+        // ASSERT: Broadcasting
         val broadcastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITIES_UPDATED }
-        assertNotNull(broadcastAction, "A legacy broadcast action should be dispatched.")
-        val broadcastContent = broadcastAction.payload.toString()
-        assertTrue(broadcastContent.contains("Test User"), "The new user's name should be in the broadcast payload.")
+        assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
+        val broadcastIdentities = broadcastAction.payload?.get("identities")?.jsonArray
+        assertNotNull(broadcastIdentities)
+        assertTrue(broadcastIdentities.any { it.jsonObject["name"]?.jsonPrimitive?.content == "Test User" },
+            "The new user should be in the broadcast payload.")
 
         // ASSERT: Phase 2 registry broadcast
         val registryBroadcast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED }
@@ -178,9 +191,10 @@ class CoreFeatureT2CoreTest {
         // ASSERT: Persistence
         val writeAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
         assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
-        val content = writeAction.payload?.get("content")?.jsonPrimitive?.content
-        assertNotNull(content)
-        assertTrue(content.contains("User 2") && !content.contains("User 1"), "The remaining user should be in the persisted content.")
+        val (identities, _) = parsePersistedContent(writeAction)
+        val persistedNames = identities.map { it["name"]?.jsonPrimitive?.content }
+        assertTrue("User 2" in persistedNames, "User 2 should be in the persisted identities.")
+        assertFalse("User 1" in persistedNames, "User 1 should NOT be in the persisted identities.")
 
         // ASSERT: Registry broadcast
         val registryBroadcast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED }
@@ -220,10 +234,11 @@ class CoreFeatureT2CoreTest {
         // ASSERT: Persistence
         val writeAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
         assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
-        val content = writeAction.payload?.get("content")?.jsonPrimitive?.content
-        assertNotNull(content)
-        assertTrue(content.contains("User 1") && content.contains("User 2"), "Both users should be in the persisted content.")
-        assertTrue(content.contains("\"activeId\":\"core.user-2\""), "The new activeId should be in the persisted content.")
+        val (identities, activeId) = parsePersistedContent(writeAction)
+        val persistedNames = identities.map { it["name"]?.jsonPrimitive?.content }
+        assertTrue("User 1" in persistedNames && "User 2" in persistedNames,
+            "Both users should be in the persisted identities.")
+        assertEquals("core.user-2", activeId, "The new activeId should be persisted.")
     }
 
     // ================================================================
