@@ -173,8 +173,8 @@ class StoreT1RoutingTest {
             descriptor("test.OPEN_CMD", featureName = "alpha", public = true, broadcast = true)
         )
 
-        // Dispatch from a completely unrelated originator
-        store.dispatch("unrelated.caller", Action("test.OPEN_CMD"))
+        // Dispatch from a non-owning feature (beta is not alpha, the owning feature)
+        store.dispatch("beta", Action("test.OPEN_CMD"))
 
         // Should be delivered (at least to alpha, the owner)
         assertTrue(store.alphaState().reducerLog.contains("test.OPEN_CMD"),
@@ -248,7 +248,7 @@ class StoreT1RoutingTest {
             descriptor("test.BROADCAST", featureName = "alpha", public = true, broadcast = true)
         )
 
-        store.dispatch("anyone", Action("test.BROADCAST"))
+        store.dispatch("beta", Action("test.BROADCAST"))
 
         assertTrue(store.alphaState().reducerLog.contains("test.BROADCAST"),
             "Broadcast action should be delivered to alpha (owner).")
@@ -425,7 +425,7 @@ class StoreT1RoutingTest {
             useSideEffectTracking = true
         )
 
-        store.dispatch("anyone", Action("test.BROADCAST"))
+        store.dispatch("beta", Action("test.BROADCAST"))
 
         // The marker actions prove handleSideEffects was called
         assertTrue(store.alphaState().sideEffectLog.contains("test.BROADCAST"),
