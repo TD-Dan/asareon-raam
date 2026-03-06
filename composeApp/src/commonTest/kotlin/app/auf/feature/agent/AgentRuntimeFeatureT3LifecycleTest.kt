@@ -122,7 +122,7 @@ class AgentRuntimeFeatureT3LifecycleTest {
             registerAgentIdentity(harness)
 
             // ACT
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_CANCEL_TURN,
                 buildJsonObject { put("agentId", agentId) }
             ))
@@ -159,7 +159,7 @@ class AgentRuntimeFeatureT3LifecycleTest {
             registerAgentIdentity(harness)
 
             // ACT
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_CANCEL_TURN,
                 buildJsonObject { put("agentId", agentId) }
             ))
@@ -190,7 +190,7 @@ class AgentRuntimeFeatureT3LifecycleTest {
             registerSessionIdentity(harness, testSession2)
 
             // ACT
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_DELETE,
                 buildJsonObject { put("agentId", agentId) }
             ))
@@ -215,7 +215,7 @@ class AgentRuntimeFeatureT3LifecycleTest {
             registerAgentIdentity(harness)
 
             // ACT
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_DELETE,
                 buildJsonObject { put("agentId", agentId) }
             ))
@@ -241,7 +241,7 @@ class AgentRuntimeFeatureT3LifecycleTest {
             registerAgentIdentity(harness)
 
             // ACT
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_DELETE,
                 buildJsonObject { put("agentId", agentId) }
             ))
@@ -265,7 +265,7 @@ class AgentRuntimeFeatureT3LifecycleTest {
             registerAgentIdentity(harness)
 
             // ACT
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_DELETE,
                 buildJsonObject { put("agentId", agentId) }
             ))
