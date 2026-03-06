@@ -426,7 +426,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
                 agents = mapOf(uid(agentUUID) to agent),
-                resources = emptyList()
+                resources = testBuiltInResources()
             ))
             .withInitialState("session", SessionState(
                 sessions = mapOf(sessionUUID to session)
@@ -435,8 +435,16 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            // Register agent identity (session should be auto-registered by SessionFeature)
+            // Register both agent and session identities explicitly.
+            // Pre-populating SessionState does NOT auto-register child identities.
             registerAgentIdentity(harness, agentUUID, "Alpha")
+            harness.store.dispatch("session", Action(
+                ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+                buildJsonObject {
+                    put("uuid", sessionUUID)
+                    put("name", session.identity.name)
+                }
+            ))
             harness.store.processedActions.clear()
 
             // ACT
