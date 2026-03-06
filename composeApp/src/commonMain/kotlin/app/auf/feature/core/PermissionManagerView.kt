@@ -25,7 +25,7 @@ import kotlinx.serialization.json.put
 // ============================================================================
 
 /** Cell background alpha for granted (YES) permissions. */
-private const val CELL_TINT_ALPHA = 0.60f
+private const val CELL_TINT_ALPHA = 0.10f
 
 /**
  * Returns the theme color for a given danger level.
@@ -168,6 +168,71 @@ fun PermissionManagerView(store: Store) {
         }
 
         HorizontalDivider()
+
+        // ── Warning banners ──────────────────────────────────────────
+        val hasDangerGrants = remember(effectivePermsMap, declarations) {
+            effectivePermsMap.values.any { effective ->
+                effective.any { (key, grant) ->
+                    grant.level == PermissionLevel.YES &&
+                            declarations[key]?.dangerLevel == DangerLevel.DANGER
+                }
+            }
+        }
+
+        val hasEscalations = remember(editableIdentities, effectivePermsMap, parentEffectivePermsMap) {
+            editableIdentities.any { identity ->
+                val effective = effectivePermsMap[identity.handle] ?: emptyMap()
+                val parentEffective = parentEffectivePermsMap[identity.handle]
+                flatPermKeys.any { key -> isEscalated(identity, key, effective, parentEffective) }
+            }
+        }
+
+        if (hasDangerGrants) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.error.copy(alpha = CELL_TINT_ALPHA))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    "Current permissions allow potentially dangerous operations to take place on your computer! " +
+                            "Please consider using incremental disk backup or running inside a virtual machine for added security.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+
+        if (hasEscalations) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(LocalExtendedColors.current.warning.copy(alpha = CELL_TINT_ALPHA))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = LocalExtendedColors.current.warning,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    "Warning: Some identities have escalated permissions beyond their parent.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalExtendedColors.current.warning
+                )
+            }
+        }
 
         // Matrix area with scrollbars
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -347,7 +412,7 @@ private fun PermissionColumnHeader(
 
     TooltipBox(
         positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        state = rememberTooltipState(),
+        state = rememberTooltipState(isPersistent = true),
         tooltip = {
             PlainTooltip {
                 Text(

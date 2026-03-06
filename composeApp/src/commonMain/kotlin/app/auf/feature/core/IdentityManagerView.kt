@@ -25,6 +25,44 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
+ * Formats epoch millis to a human-readable ISO-like timestamp.
+ * Example: "2025-03-06 14:30:05"
+ */
+private fun formatTimestamp(epochMillis: Long): String {
+    // Manual formatting from epoch — no platform dependency needed.
+    // Computes UTC date/time from millis since 1970-01-01T00:00:00Z.
+    val totalSeconds = epochMillis / 1000
+    val milliRemainder = epochMillis % 1000
+
+    // Days since epoch
+    var days = (totalSeconds / 86400).toInt()
+    val timeOfDay = (totalSeconds % 86400).toInt()
+    val hour = timeOfDay / 3600
+    val minute = (timeOfDay % 3600) / 60
+    val second = timeOfDay % 60
+
+    // Year/month/day from day count (civil calendar from days since epoch)
+    var year = 1970
+    while (true) {
+        val daysInYear = if (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) 366 else 365
+        if (days < daysInYear) break
+        days -= daysInYear
+        year++
+    }
+    val isLeap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+    val monthDays = intArrayOf(31, if (isLeap) 29 else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    var month = 0
+    while (month < 12 && days >= monthDays[month]) {
+        days -= monthDays[month]
+        month++
+    }
+    val day = days + 1
+    month += 1
+
+    return "%04d-%02d-%02d %02d:%02d:%02d".format(year, month, day, hour, minute, second)
+}
+
+/**
  * Tabbed container for the Identity Manager: "Identities" tab shows user/identity
  * management, "Permissions" tab shows the permission grant matrix (Phase 2.A).
  */
@@ -147,6 +185,7 @@ private fun IdentitiesTabContent(store: Store) {
                     IdentityRow(
                         identity = identity,
                         isActive = identity.handle == coreState?.activeUserId,
+                        showDetails = showAllIdentities,
                         onSetActive = {
                             store.dispatch("core", Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) }))
                         },
@@ -237,7 +276,7 @@ private fun InternalIdentityRow(identity: Identity) {
                 )
                 if (identity.registeredAt > 0) {
                     Text(
-                        "registeredAt: ${identity.registeredAt}",
+                        "registeredAt: ${formatTimestamp(identity.registeredAt)}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -258,6 +297,7 @@ private fun InternalIdentityRow(identity: Identity) {
 private fun IdentityRow(
     identity: Identity,
     isActive: Boolean,
+    showDetails: Boolean = false,
     onSetActive: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -267,7 +307,7 @@ private fun IdentityRow(
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -280,9 +320,41 @@ private fun IdentityRow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                if (showDetails) {
+                    identity.parentHandle?.let {
+                        Text(
+                            "parent: $it",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    identity.uuid?.let {
+                        Text(
+                            "uuid: $it",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        "localHandle: ${identity.localHandle}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (identity.registeredAt > 0) {
+                        Text(
+                            "registeredAt: ${formatTimestamp(identity.registeredAt)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!isActive) {
+                if (isActive) {
+                    FilledTonalButton(onClick = { /* already active */ }) {
+                        Text("Active")
+                    }
+                } else {
                     Button(onClick = onSetActive) {
                         Text("Set Active")
                     }
