@@ -87,7 +87,7 @@ class CoreFeatureT2CoreTest {
         })
 
         // ACT
-        harness.store.dispatch("ui", action)
+        harness.store.dispatch("core", action)
         runCurrent()
 
         // ASSERT
@@ -112,7 +112,7 @@ class CoreFeatureT2CoreTest {
             .build(platform = platform)
 
         // ACT
-        harness.store.dispatch("ui", Action(ActionRegistry.Names.CORE_ADD_USER_IDENTITY, buildJsonObject {
+        harness.store.dispatch("core", Action(ActionRegistry.Names.CORE_ADD_USER_IDENTITY, buildJsonObject {
             put("name", "Test User")
         }))
         runCurrent()
@@ -155,7 +155,7 @@ class CoreFeatureT2CoreTest {
             .build(platform = platform)
 
         // ACT
-        harness.store.dispatch("ui", Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject {
+        harness.store.dispatch("core", Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject {
             put("id", "user-1")
         }))
         runCurrent()
@@ -194,7 +194,7 @@ class CoreFeatureT2CoreTest {
             .build(platform = platform)
 
         // ACT
-        harness.store.dispatch("ui", Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject {
+        harness.store.dispatch("core", Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject {
             put("id", "user-2")
         }))
         runCurrent()

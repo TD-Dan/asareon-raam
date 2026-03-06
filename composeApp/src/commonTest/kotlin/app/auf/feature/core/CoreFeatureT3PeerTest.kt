@@ -160,7 +160,7 @@ class CoreFeatureT3PeerTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
-        val originatorFeatureName = "FileSystemFeature"
+        val originatorFeatureName = "filesystem"
         val testRequestId = "test-request-123"
 
         // --- ACT 1: Another feature requests a confirmation ---
@@ -213,7 +213,7 @@ class CoreFeatureT3PeerTest {
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
             .build(platform = platform)
 
-        val originatorFeatureName = "FileSystemFeature"
+        val originatorFeatureName = "filesystem"
         val testRequestId = "test-request-456"
 
         // --- ACT 1: Show the dialog ---

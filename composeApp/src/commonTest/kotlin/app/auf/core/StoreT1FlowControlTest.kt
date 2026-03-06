@@ -79,7 +79,7 @@ class StoreT1FlowControlTest {
     fun `deferredDispatch queues an action to be processed after the current cycle`() {
         val store = createStore()
 
-        store.dispatch("test", Action("seq.A_DEFERRED_B"))
+        store.dispatch("sequencing", Action("seq.A_DEFERRED_B"))
 
         val finalState = store.state.value.featureStates["sequencing"] as SequencingState
         val expectedLog = listOf(
@@ -94,7 +94,7 @@ class StoreT1FlowControlTest {
         platform.capturedLogs.clear()
         val store = createStore()
 
-        store.dispatch("test", Action("seq.A_IMMEDIATE_B"))
+        store.dispatch("sequencing", Action("seq.A_IMMEDIATE_B"))
 
         val finalState = store.state.value.featureStates["sequencing"] as SequencingState
         val expectedLog = listOf(
@@ -111,7 +111,7 @@ class StoreT1FlowControlTest {
     fun `multiple deferred actions are queued and processed in FIFO order`() {
         val store = createStore()
 
-        store.dispatch("test", Action("seq.A_DEFERRED_B_C"))
+        store.dispatch("sequencing", Action("seq.A_DEFERRED_B_C"))
 
         val finalState = store.state.value.featureStates["sequencing"] as SequencingState
         val expectedLog = listOf(
@@ -127,7 +127,7 @@ class StoreT1FlowControlTest {
         val store = createStore()
 
         // This action will cause seq.B_DEFERRED_C's handler to defer seq.C.
-        store.dispatch("test", Action("seq.B_DEFERRED_C"))
+        store.dispatch("sequencing", Action("seq.B_DEFERRED_C"))
 
         val finalState = store.state.value.featureStates["sequencing"] as SequencingState
         val expectedLog = listOf(
@@ -174,7 +174,7 @@ class StoreT1FlowControlTest {
             platform
         )
 
-        store.dispatch("test", Action("seq.A"))
+        store.dispatch("statecheck", Action("seq.A"))
 
         assertEquals("State from A", stateSeenByB, "handleSideEffects for B must see the state fully updated by A's reducer.")
     }
