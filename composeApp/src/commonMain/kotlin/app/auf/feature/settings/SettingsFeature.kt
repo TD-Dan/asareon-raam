@@ -61,7 +61,7 @@ class SettingsFeature(
             }
             ActionRegistry.Names.SETTINGS_UPDATE -> {
                 val latestSettingsState = newState as? SettingsState ?: return
-                store.dispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
                     put("path", settingsFileName)
                     put("content", Json.encodeToString(latestSettingsState.values))
                     put("encrypt", true)
