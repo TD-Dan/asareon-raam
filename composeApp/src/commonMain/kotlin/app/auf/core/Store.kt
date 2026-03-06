@@ -430,23 +430,19 @@ open class Store(
                                 "for action '${action.name}'. Action blocked."
                     )
 
-                    // Phase 2: Dispatch targeted PERMISSION_DENIED notification to the
-                    // originator's feature so it can show meaningful feedback to the user.
-                    val originatorFeatureHandle = extractFeatureHandle(action.originator)
-                    if (originatorFeatureHandle != null) {
-                        deferredActionQueue.add(Action(
-                            name = ActionRegistry.Names.CORE_PERMISSION_DENIED,
-                            payload = buildJsonObject {
-                                put("blockedAction", action.name)
-                                put("originatorHandle", action.originator ?: "")
-                                put("missingPermissions", buildJsonArray {
-                                    missingPermissions.forEach { add(JsonPrimitive(it)) }
-                                })
-                            },
-                            originator = "core",
-                            targetRecipient = originatorFeatureHandle
-                        ))
-                    }
+                    // Phase 2: Broadcast PERMISSION_DENIED notification so observing
+                    // features (e.g., CommandBot) can provide user-facing feedback.
+                    deferredActionQueue.add(Action(
+                        name = ActionRegistry.Names.CORE_PERMISSION_DENIED,
+                        payload = buildJsonObject {
+                            put("blockedAction", action.name)
+                            put("originatorHandle", action.originator ?: "")
+                            put("missingPermissions", buildJsonArray {
+                                missingPermissions.forEach { add(JsonPrimitive(it)) }
+                            })
+                        },
+                        originator = "core"
+                    ))
                     return
                 }
                 // --- STEP 2c: SCOPE EVALUATION (Phase 3) ---
@@ -488,21 +484,17 @@ open class Store(
                                     "on action '${action.name}'. Action blocked."
                         )
 
-                        val originatorFeatureHandle = extractFeatureHandle(action.originator)
-                        if (originatorFeatureHandle != null) {
-                            deferredActionQueue.add(Action(
-                                name = ActionRegistry.Names.CORE_PERMISSION_DENIED,
-                                payload = buildJsonObject {
-                                    put("blockedAction", action.name)
-                                    put("originatorHandle", action.originator ?: "")
-                                    put("missingPermissions", buildJsonArray {
-                                        scopeViolations.forEach { add(JsonPrimitive(it)) }
-                                    })
-                                },
-                                originator = "core",
-                                targetRecipient = originatorFeatureHandle
-                            ))
-                        }
+                        deferredActionQueue.add(Action(
+                            name = ActionRegistry.Names.CORE_PERMISSION_DENIED,
+                            payload = buildJsonObject {
+                                put("blockedAction", action.name)
+                                put("originatorHandle", action.originator ?: "")
+                                put("missingPermissions", buildJsonArray {
+                                    scopeViolations.forEach { add(JsonPrimitive(it)) }
+                                })
+                            },
+                            originator = "core"
+                        ))
                         return
                     }
                 }

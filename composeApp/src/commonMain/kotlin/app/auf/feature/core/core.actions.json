@@ -508,10 +508,10 @@
     },
     {
       "action_name": "core.PERMISSION_DENIED",
-      "summary": "Targeted notification sent to the originator's feature when an action is blocked by the permission guard.",
+      "summary": "Broadcast notification sent when an action is blocked by the permission guard. Allows observing features (e.g., CommandBot) to provide user-facing feedback.",
       "public": false,
-      "broadcast": false,
-      "targeted": true,
+      "broadcast": true,
+      "targeted": false,
       "required_permissions": [],
       "payload_schema": {
         "type": "object",

@@ -302,6 +302,38 @@ class CommandBotFeature(
                 postRawToSession(sessionId, message, store)
             }
 
+            // --- Permission Denial Feedback ---
+            ActionRegistry.Names.CORE_PERMISSION_DENIED -> {
+                val payload = action.payload ?: return
+                val blockedAction = payload["blockedAction"]?.jsonPrimitive?.contentOrNull ?: return
+                val originatorHandle = payload["originatorHandle"]?.jsonPrimitive?.contentOrNull ?: return
+                val missingPermissions = payload["missingPermissions"]?.jsonArray
+                    ?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+
+                val commandBotState = newState as? CommandBotState ?: return
+
+                // Match the denied action against pending results by originator + action name
+                val matchingEntry = commandBotState.pendingResults.entries.find { (_, pending) ->
+                    pending.actionName == blockedAction && pending.originatorId == originatorHandle
+                } ?: return
+
+                val pendingResult = matchingEntry.value
+                val permList = missingPermissions.joinToString(", ")
+                val feedbackMessage = "ERROR ✗ ${pendingResult.actionName} — Permission denied for '${pendingResult.originatorName}'. Missing permission: $permList"
+
+                postFeedbackToSession(pendingResult.sessionId, feedbackMessage, store)
+
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.COMMANDBOT_CLEAR_PENDING_RESULT,
+                    buildJsonObject { put("correlationId", matchingEntry.key) }
+                ))
+
+                platformDependencies.log(
+                    LogLevel.INFO, identity.handle,
+                    "PERMISSION_DENIED matched for '${pendingResult.actionName}' (originator=$originatorHandle). Feedback posted to session '${pendingResult.sessionId}'."
+                )
+            }
+
             // --- ACTION_RESULT Interception ---
             else -> {
                 if (!action.name.endsWith(".ACTION_RESULT")) return
