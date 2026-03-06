@@ -2,8 +2,6 @@ package app.auf.feature.core
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -69,7 +67,6 @@ private fun isEscalated(
     parentEffectivePerms: Map<String, PermissionGrant>?
 ): Boolean {
     if (parentEffectivePerms == null) return false
-    // Only escalated if the identity has an explicit grant AND it exceeds the parent
     val explicitGrant = identity.permissions[permKey] ?: return false
     val parentGrant = parentEffectivePerms[permKey]
     val parentLevel = parentGrant?.level ?: PermissionLevel.NO
@@ -81,35 +78,32 @@ private fun isEscalated(
 // ============================================================================
 
 /**
- * Permission Manager — Phase 2.A matrix UI.
+ * Permission Manager — matrix UI.
  *
- * Displays a permission grant matrix with:
- * - Rows: non-feature identities (users, agents, sessions)
- * - Columns: permission keys from ActionRegistry.permissionDeclarations, grouped by domain
- * - Cells: YES/NO toggle checkboxes
- * - Column headers colored by danger level with tooltips
- * - Escalation indicators (⚠ + orange bg) when child grant exceeds parent
+ * Layout: fixed identity column on the left + horizontally scrollable permission
+ * matrix on the right. Both share a single vertical scroll state so rows stay
+ * aligned. Visible scrollbars on both axes.
  */
 @Composable
 fun PermissionManagerView(store: Store) {
     val appState by store.state.collectAsState()
+
+    // Shared scroll states — one vertical (rows), one horizontal (permission columns)
+    val verticalScrollState = rememberScrollState()
     val horizontalScrollState = rememberScrollState()
 
-    // Get all permission declarations sorted and grouped
     val declarations = ActionRegistry.permissionDeclarations
     val groupedPermissions = remember(declarations) { groupPermissionsByDomain(declarations) }
     val flatPermKeys = remember(groupedPermissions) {
         groupedPermissions.flatMap { (_, decls) -> decls.map { it.key } }
     }
 
-    // Get non-feature identities (uuid != null means not a feature)
     val editableIdentities = remember(appState.identityRegistry) {
         appState.identityRegistry.values
             .filter { it.uuid != null }
             .sortedBy { it.handle }
     }
 
-    // Pre-compute effective permissions and parent effective permissions for each identity
     val effectivePermsMap = remember(appState.identityRegistry, editableIdentities) {
         editableIdentities.associate { identity ->
             identity.handle to store.resolveEffectivePermissions(identity)
@@ -163,105 +157,131 @@ fun PermissionManagerView(store: Store) {
 
         HorizontalDivider()
 
-        // Matrix: fixed identity column + scrollable permission columns
-        Row(Modifier.fillMaxSize()) {
-            // --- Fixed left column: identity names ---
-            Column(Modifier.width(160.dp)) {
-                // Header cell
-                Box(
-                    Modifier.height(72.dp).fillMaxWidth().padding(4.dp),
-                    contentAlignment = Alignment.BottomStart
-                ) {
-                    Text(
-                        "Identity",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                HorizontalDivider()
+        // Matrix area with scrollbars
+        Box(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxSize().padding(bottom = 8.dp, end = 8.dp)) {
+                // --- Fixed left column: identity names ---
+                Column(Modifier.width(160.dp)) {
+                    // Header cell
+                    Box(
+                        Modifier.height(72.dp).fillMaxWidth().padding(4.dp),
+                        contentAlignment = Alignment.BottomStart
+                    ) {
+                        Text(
+                            "Identity",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    HorizontalDivider()
 
-                LazyColumn {
-                    items(editableIdentities, key = { it.handle }) { identity ->
-                        Box(
-                            Modifier.height(48.dp).fillMaxWidth().padding(horizontal = 4.dp),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            Column {
-                                Text(
-                                    identity.name,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    identity.handle,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                    // Identity rows — shares verticalScrollState with the matrix
+                    Column(Modifier.verticalScroll(verticalScrollState)) {
+                        for (identity in editableIdentities) {
+                            Box(
+                                Modifier.height(48.dp).fillMaxWidth().padding(horizontal = 4.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                Column {
+                                    Text(
+                                        identity.name,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        identity.handle,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            HorizontalDivider(thickness = 0.5.dp)
+                        }
+                    }
+                }
+
+                VerticalDivider()
+
+                // --- Scrollable right section: permission columns ---
+                Column(Modifier.fillMaxSize()) {
+                    // Column headers scroll horizontally but stay pinned vertically
+                    Row(Modifier.height(72.dp).horizontalScroll(horizontalScrollState)) {
+                        for ((domain, decls) in groupedPermissions) {
+                            for (decl in decls) {
+                                PermissionColumnHeader(
+                                    domain = domain,
+                                    declaration = decl
                                 )
                             }
                         }
-                        HorizontalDivider(thickness = 0.5.dp)
+                    }
+                    HorizontalDivider()
+
+                    // Data rows — shares both scroll states
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(verticalScrollState)
+                            .horizontalScroll(horizontalScrollState)
+                    ) {
+                        for (identity in editableIdentities) {
+                            val effective = effectivePermsMap[identity.handle] ?: emptyMap()
+                            val parentEffective = parentEffectivePermsMap[identity.handle]
+
+                            Row(Modifier.height(48.dp)) {
+                                for (permKey in flatPermKeys) {
+                                    val effectiveGrant = effective[permKey]
+                                    val effectiveLevel = effectiveGrant?.level ?: PermissionLevel.NO
+                                    val isChecked = effectiveLevel == PermissionLevel.YES
+                                    val explicitGrant = identity.permissions[permKey]
+                                    val isInherited = explicitGrant == null && effectiveLevel != PermissionLevel.NO
+                                    val escalated = isEscalated(identity, permKey, effective, parentEffective)
+
+                                    PermissionCell(
+                                        isChecked = isChecked,
+                                        isInherited = isInherited,
+                                        isEscalated = escalated,
+                                        onToggle = {
+                                            val newLevel = if (isChecked) "NO" else "YES"
+                                            store.dispatch("core", Action(
+                                                ActionRegistry.Names.CORE_SET_PERMISSION,
+                                                buildJsonObject {
+                                                    put("identityHandle", identity.handle)
+                                                    put("permissionKey", permKey)
+                                                    put("level", newLevel)
+                                                }
+                                            ))
+                                        }
+                                    )
+                                }
+                            }
+                            HorizontalDivider(thickness = 0.5.dp)
+                        }
                     }
                 }
             }
 
-            VerticalDivider()
+            // Vertical scrollbar — anchored to the right edge, below the header row
+            VerticalScrollbar(
+                adapter = rememberScrollbarAdapter(verticalScrollState),
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .padding(top = 72.dp)
+            )
 
-            // --- Scrollable right section: permission columns ---
-            Column(Modifier.fillMaxSize().horizontalScroll(horizontalScrollState)) {
-                // --- Column headers: grouped by domain ---
-                Row(Modifier.height(72.dp)) {
-                    for ((domain, decls) in groupedPermissions) {
-                        for (decl in decls) {
-                            PermissionColumnHeader(
-                                domain = domain,
-                                declaration = decl
-                            )
-                        }
-                    }
-                }
-                HorizontalDivider()
-
-                // --- Data rows ---
-                LazyColumn {
-                    items(editableIdentities, key = { "perm-${it.handle}" }) { identity ->
-                        val effective = effectivePermsMap[identity.handle] ?: emptyMap()
-                        val parentEffective = parentEffectivePermsMap[identity.handle]
-
-                        Row(Modifier.height(48.dp)) {
-                            for (permKey in flatPermKeys) {
-                                val effectiveGrant = effective[permKey]
-                                val effectiveLevel = effectiveGrant?.level ?: PermissionLevel.NO
-                                val isChecked = effectiveLevel == PermissionLevel.YES
-                                val explicitGrant = identity.permissions[permKey]
-                                val isInherited = explicitGrant == null && effectiveLevel != PermissionLevel.NO
-                                val escalated = isEscalated(identity, permKey, effective, parentEffective)
-
-                                PermissionCell(
-                                    isChecked = isChecked,
-                                    isInherited = isInherited,
-                                    isEscalated = escalated,
-                                    onToggle = {
-                                        val newLevel = if (isChecked) "NO" else "YES"
-                                        store.dispatch("core", Action(
-                                            ActionRegistry.Names.CORE_SET_PERMISSION,
-                                            buildJsonObject {
-                                                put("identityHandle", identity.handle)
-                                                put("permissionKey", permKey)
-                                                put("level", newLevel)
-                                            }
-                                        ))
-                                    }
-                                )
-                            }
-                        }
-                        HorizontalDivider(thickness = 0.5.dp)
-                    }
-                }
-            }
+            // Horizontal scrollbar — anchored to the bottom edge, right of the identity column
+            HorizontalScrollbar(
+                adapter = rememberScrollbarAdapter(horizontalScrollState),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(start = 160.dp)
+            )
         }
     }
 }
@@ -337,7 +357,6 @@ private fun PermissionColumnHeader(
                 textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(4.dp))
-            // Danger level indicator bar
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -351,6 +370,7 @@ private fun PermissionColumnHeader(
 /**
  * A single cell in the permission matrix. Shows a checkbox for YES/NO,
  * with visual indicators for inherited and escalated states.
+ * Checkbox uses theme-consistent colors — no white fill on unchecked state.
  */
 @Composable
 private fun PermissionCell(
@@ -382,7 +402,9 @@ private fun PermissionCell(
                     checkedColor = if (isInherited)
                         MaterialTheme.colorScheme.outline
                     else
-                        MaterialTheme.colorScheme.primary
+                        MaterialTheme.colorScheme.primary,
+                    uncheckedColor = MaterialTheme.colorScheme.outline,
+                    checkmarkColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
             if (isEscalated) {
