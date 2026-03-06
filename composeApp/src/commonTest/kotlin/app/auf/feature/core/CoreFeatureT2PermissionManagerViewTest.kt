@@ -385,29 +385,25 @@ class CoreFeatureT2PermissionManagerViewTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `permissions survive legacy identity flow after SET_PERMISSION`() = runTest {
+    fun `permissions survive adding a new user identity`() = runTest {
         val platform = FakePlatformDependencies("test")
-        val alice = Identity(
-            uuid = "user-1", handle = "core.alice", localHandle = "alice",
-            name = "Alice", parentHandle = "core"
-        )
 
-        @Suppress("DEPRECATION")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
             .withFeature(app.auf.feature.filesystem.FileSystemFeature(platform))
             .withInitialState("core", CoreState(
                 lifecycle = AppLifecycle.RUNNING,
-                userIdentities = listOf(alice),
                 activeUserId = "core.alice"
             ))
             .build(platform = platform)
 
-        // Seed alice in the registry — CoreState.userIdentities is the deprecated legacy
-        // field. SET_PERMISSION operates on the registry directly, so alice must be there.
-        harness.store.updateIdentityRegistry { it + ("core.alice" to alice) }
+        // Seed Alice in the registry
+        harness.store.updateIdentityRegistry { it + ("core.alice" to Identity(
+            uuid = "user-1", handle = "core.alice", localHandle = "alice",
+            name = "Alice", parentHandle = "core"
+        ))}
 
-        // First: set a permission via the view
+        // Set a permission on Alice via the view
         harness.store.dispatch("core", Action(
             ActionRegistry.Names.CORE_SET_PERMISSION,
             buildJsonObject {
@@ -423,19 +419,24 @@ class CoreFeatureT2PermissionManagerViewTest {
         assertEquals(PermissionLevel.YES, aliceAfterSet?.permissions?.get("gateway:generate")?.level,
             "Permission should be set after SET_PERMISSION.")
 
-        // Now trigger a legacy identity operation (e.g., adding a new user)
-        // This used to wipe permissions because it rebuilt from CoreState.userIdentities
+        // Now add a new user — Alice's permissions should be unaffected
         harness.store.dispatch("core", Action(
             ActionRegistry.Names.CORE_ADD_USER_IDENTITY,
             buildJsonObject { put("name", "Bob") }
         ))
         runCurrent()
 
-        // Verify Alice's permission survives the legacy sync
-        val aliceAfterSync = harness.store.state.value.identityRegistry["core.alice"]
-        assertNotNull(aliceAfterSync, "Alice should still be in the registry after legacy identity sync.")
-        assertEquals(PermissionLevel.YES, aliceAfterSync.permissions["gateway:generate"]?.level,
-            "Alice's permission set via SET_PERMISSION should survive the legacy identity sync flow.")
+        // Verify Alice's permission survives
+        val aliceAfterAdd = harness.store.state.value.identityRegistry["core.alice"]
+        assertNotNull(aliceAfterAdd, "Alice should still be in the registry after adding Bob.")
+        assertEquals(PermissionLevel.YES, aliceAfterAdd.permissions["gateway:generate"]?.level,
+            "Alice's permission should survive adding a new user identity.")
+
+        // Verify Bob was added
+        val bob = harness.store.state.value.identityRegistry.values
+            .find { it.name == "Bob" }
+        assertNotNull(bob, "Bob should be in the registry.")
+        assertEquals("core", bob.parentHandle)
     }
 
     // ================================================================

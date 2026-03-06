@@ -75,6 +75,7 @@ class CoreFeature(
      * enrich payloads with extra fields like correlationId before dispatch.
      */
     private val json = Json { ignoreUnknownKeys = true }
+    private val jsonPretty = Json { prettyPrint = true }
 
     private val settingKeyWidth = "core.window.width"
     private val settingKeyHeight = "core.window.height"
@@ -349,101 +350,119 @@ class CoreFeature(
                     buildJsonObject { put("correlationId", correlationId) }
                 ))
             }
-            ActionRegistry.Names.CORE_ADD_USER_IDENTITY,
-            ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY,
-            ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY,
+            // --- User Identity Management (registry-direct) ---
+            // All identity mutations go through store.updateIdentityRegistry().
+            // No intermediate CoreState.userIdentities — the registry IS the truth.
+
             ActionRegistry.Names.CORE_IDENTITIES_LOADED -> {
                 if (latestCoreState != null) {
-                    // Sync user identities to AppState.identityRegistry via Store.
-                    // Build registry entries from the authoritative userIdentities list.
-                    // IMPORTANT: Preserve permissions from existing registry entries,
-                    // because SET_PERMISSION updates the registry directly without
-                    // touching the deprecated CoreState.userIdentities.
-                    val currentRegistry = store.state.value.identityRegistry
-                    @Suppress("DEPRECATION")
-                    val registryEntries = latestCoreState.userIdentities.associate { userIdentity ->
-                        val localHandle = userIdentity.localHandle.ifBlank {
-                            userIdentity.name.lowercase().replace(Regex("[^a-z0-9-]"), "-").trimStart('-').ifEmpty { "user" }
-                        }
-                        val fullHandle = if (userIdentity.handle.startsWith("core.")) userIdentity.handle else "core.$localHandle"
+                    val loadedPayload = action.payload?.let { json.decodeFromJsonElement<IdentitiesLoadedPayload>(it) }
+                    val loadedIdentities = loadedPayload?.identities ?: emptyList()
 
-                        // Merge permissions: start with userIdentity's permissions,
-                        // then overlay with any grants from the existing registry entry
-                        // (which may have been updated by SET_PERMISSION directly).
-                        val existingRegistryIdentity = currentRegistry[fullHandle]
-                        val mergedPermissions = if (existingRegistryIdentity != null) {
-                            // Registry is authoritative for permissions — it has the latest
-                            // SET_PERMISSION changes. Use registry permissions, falling back
-                            // to userIdentity permissions for keys not in the registry.
-                            userIdentity.permissions + existingRegistryIdentity.permissions
-                        } else {
-                            userIdentity.permissions
-                        }
-
-                        val registryIdentity = Identity(
-                            uuid = userIdentity.uuid ?: platformDependencies.generateUUID(),
-                            localHandle = localHandle,
-                            handle = fullHandle,
-                            name = userIdentity.name,
-                            parentHandle = "core",
-                            registeredAt = userIdentity.registeredAt.takeIf { it > 0 } ?: platformDependencies.currentTimeMillis(),
-                            permissions = mergedPermissions
-                        )
-                        fullHandle to registryIdentity
-                    }
-
-                    // Replace all "core.*" entries in the registry with the current set.
                     store.updateIdentityRegistry { current ->
-                        val withoutCoreChildren = current.filterKeys { key ->
-                            !key.startsWith("core.")
+                        var updated = current
+
+                        // Restore feature permission overrides from disk.
+                        // Compile-time defaults first, then persisted overrides on top.
+                        for (loaded in loadedIdentities.filter { it.uuid == null }) {
+                            val existing = current[loaded.handle] ?: continue
+                            val defaults = DefaultPermissions.grantsFor(loaded.handle)
+                            val merged = defaults + loaded.permissions
+                            if (merged != existing.permissions) {
+                                updated = updated + (loaded.handle to existing.copy(permissions = merged))
+                            }
                         }
-                        withoutCoreChildren + registryEntries
+
+                        // Restore ALL child identities from disk.
+                        for (loaded in loadedIdentities.filter { it.uuid != null }) {
+                            val parentExists = loaded.parentHandle?.let { it in updated } ?: true
+                            if (parentExists) {
+                                updated = updated + (loaded.handle to loaded)
+                            }
+                        }
+
+                        updated
                     }
 
-                    // Children inherit from parent feature — no per-child defaults needed.
-
-                    // On load from disk: restore ALL persisted identities.
-                    // Core is the owner of ALL identity data and permissions.
-                    if (action.name == ActionRegistry.Names.CORE_IDENTITIES_LOADED) {
-                        val loadedPayload = action.payload?.let { json.decodeFromJsonElement<IdentitiesLoadedPayload>(it) }
-                        val loadedIdentities = loadedPayload?.identities ?: emptyList()
-
-                        store.updateIdentityRegistry { current ->
-                            var updated = current
-
-                            // Restore feature permission overrides.
-                            // Feature identities are seeded at boot with compile-time defaults;
-                            // persisted permissions (from UI edits) override those defaults while
-                            // preserving any newly added compile-time defaults.
-                            for (loaded in loadedIdentities.filter { it.uuid == null }) {
-                                val existing = current[loaded.handle] ?: continue
-                                val defaults = DefaultPermissions.grantsFor(loaded.handle)
-                                val merged = defaults + loaded.permissions
-                                if (merged != existing.permissions) {
-                                    updated = updated + (loaded.handle to existing.copy(permissions = merged))
-                                }
-                            }
-
-                            // Restore non-core child identities (agent.*, session.*, etc.)
-                            // Core children were already handled by the legacy sync above.
-                            for (loaded in loadedIdentities.filter { it.uuid != null && it.parentHandle != "core" }) {
-                                // Only restore if the parent feature exists in the registry.
-                                val parentExists = loaded.parentHandle?.let { it in updated } ?: true
-                                if (parentExists) {
-                                    updated = updated + (loaded.handle to loaded)
-                                }
-                            }
-
-                            updated
-                        }
+                    // Ensure there's at least one user identity.
+                    val coreChildren = store.state.value.identityRegistry.values
+                        .filter { it.parentHandle == "core" && it.uuid != null }
+                    if (coreChildren.isEmpty()) {
+                        val defaultUser = Identity(
+                            uuid = platformDependencies.generateUUID(),
+                            localHandle = "default-user", handle = "core.default-user",
+                            name = "DefaultUser", parentHandle = "core",
+                            registeredAt = platformDependencies.currentTimeMillis()
+                        )
+                        store.updateIdentityRegistry { it + (defaultUser.handle to defaultUser) }
                     }
 
                     persistIdentitiesFromRegistry(store)
-                    // Broadcast identity registry update so all features get the unified notification
                     store.deferredDispatch(identity.handle, Action(
                         ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
                     ))
                 }
+            }
+
+            ActionRegistry.Names.CORE_ADD_USER_IDENTITY -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<AddUserIdentityPayload>(it) } ?: return
+                val registry = store.state.value.identityRegistry
+                val localHandle = slugifyName(payload.name)
+                val finalLocalHandle = deduplicateLocalHandle(localHandle, "core", registry)
+                val fullHandle = "core.$finalLocalHandle"
+                val newUser = Identity(
+                    uuid = platformDependencies.generateUUID(),
+                    localHandle = finalLocalHandle,
+                    handle = fullHandle,
+                    name = payload.name,
+                    parentHandle = "core",
+                    registeredAt = platformDependencies.currentTimeMillis()
+                )
+                store.updateIdentityRegistry { it + (fullHandle to newUser) }
+
+                // Auto-activate if this is the first user, or no active user is set.
+                val coreState = store.state.value.featureStates["core"] as? CoreState
+                if (coreState?.activeUserId == null) {
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY,
+                        buildJsonObject { put("id", fullHandle) }
+                    ))
+                }
+
+                persistIdentitiesFromRegistry(store)
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+                ))
+            }
+
+            ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return
+                val handleToRemove = payload.id
+                val registry = store.state.value.identityRegistry
+                if (handleToRemove !in registry) return
+
+                store.updateIdentityRegistry { it - handleToRemove }
+
+                // If removed identity was the active one, pick the next core.* child.
+                val coreState = store.state.value.featureStates["core"] as? CoreState
+                if (coreState?.activeUserId == handleToRemove) {
+                    val nextUser = store.state.value.identityRegistry.values
+                        .filter { it.parentHandle == "core" && it.uuid != null }
+                        .minByOrNull { it.handle }
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY,
+                        buildJsonObject { put("id", nextUser?.handle ?: "") }
+                    ))
+                }
+
+                persistIdentitiesFromRegistry(store)
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+                ))
+            }
+
+            ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY -> {
+                persistIdentitiesFromRegistry(store)
             }
 
             // --- Identity Registry Management ---
@@ -500,6 +519,46 @@ class CoreFeature(
                         "REGISTER_IDENTITY: originator '${parentHandle}' not found in identity registry")
                     sendRegistrationFailure(store, originator, requestedLocalHandle, "Parent not found in registry", payload.uuid)
                     return
+                }
+
+                // ── Idempotent reclaim: if an identity with this UUID already exists,
+                // return it instead of creating a duplicate. This handles the restart
+                // scenario where identities are restored from disk but features
+                // re-register them from their own config files.
+                if (payload.uuid != null) {
+                    val existingByUUID = registry.findByUUID(payload.uuid)
+                    if (existingByUUID != null) {
+                        // Update name if it changed, but keep the existing handle and permissions.
+                        val reclaimed = if (existingByUUID.name != payload.name) {
+                            existingByUUID.copy(name = payload.name)
+                        } else {
+                            existingByUUID
+                        }
+                        if (reclaimed !== existingByUUID) {
+                            store.updateIdentityRegistry { it + (reclaimed.handle to reclaimed) }
+                        }
+
+                        platformDependencies.log(
+                            app.auf.util.LogLevel.INFO, identity.handle,
+                            "REGISTER_IDENTITY: Reclaimed existing identity '${reclaimed.handle}' (UUID=${payload.uuid})"
+                        )
+
+                        // Return the existing identity to the caller
+                        store.deferredDispatch(identity.handle, Action(
+                            ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY,
+                            buildJsonObject {
+                                put("success", true)
+                                put("requestedLocalHandle", requestedLocalHandle)
+                                put("approvedLocalHandle", reclaimed.localHandle)
+                                put("handle", reclaimed.handle)
+                                put("uuid", reclaimed.uuid)
+                                put("name", reclaimed.name)
+                                put("parentHandle", reclaimed.parentHandle ?: "")
+                            },
+                            targetRecipient = originator
+                        ))
+                        return
+                    }
                 }
 
                 // Deduplicate among siblings (same parent namespace)
@@ -776,18 +835,18 @@ class CoreFeature(
         val persistencePayload = IdentitiesLoadedPayload(allIdentities, coreState.activeUserId)
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
             put("path", identitiesFileName)
-            put("content", Json.encodeToString(persistencePayload))
+            put("content", jsonPretty.encodeToString(persistencePayload))
             // Encryption temporarily disabled for debugging
             put("encrypt", false)
         }))
 
-        // Legacy broadcast — only user identities (for features that still listen)
-        val userIdentities = registry.values
-            .filter { it.parentHandle == "core" }
+        // Broadcast for features that listen to IDENTITIES_UPDATED
+        val coreUserIdentities = registry.values
+            .filter { it.parentHandle == "core" && it.uuid != null }
             .sortedBy { it.handle }
             .toList()
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_IDENTITIES_UPDATED, buildJsonObject {
-            put("identities", Json.encodeToJsonElement(userIdentities))
+            put("identities", Json.encodeToJsonElement(coreUserIdentities))
             coreState.activeUserId?.let { put("activeId", it) }
         }))
     }
@@ -845,71 +904,25 @@ class CoreFeature(
             }
             ActionRegistry.Names.CORE_IDENTITIES_LOADED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<IdentitiesLoadedPayload>(it) } ?: return coreState
-                // Only core's own children go into the deprecated userIdentities list.
-                // The legacy sync in handleSideEffects processes userIdentities and
-                // rebuilds them as "core.$localHandle" — if agent.mercury were here,
-                // it would become core.mercury. Non-core identities are restored
-                // directly into the registry by the handleSideEffects restoration code.
                 val coreChildren = payload.identities.filter { it.parentHandle == "core" && it.uuid != null }
-                val identities: List<Identity>
-                val activeId: String?
-                if (coreChildren.isEmpty()) {
-                    val defaultUser = Identity(platformDependencies.generateUUID(), name = "DefaultUser", handle = "default-user", localHandle = "default-user")
-                    identities = listOf(defaultUser)
-                    activeId = defaultUser.handle
-                } else {
-                    identities = coreChildren
-                    activeId = if (payload.activeId in identities.map { it.handle }) payload.activeId else identities.first().handle
+                val activeId = when {
+                    coreChildren.isEmpty() -> "core.default-user"
+                    payload.activeId in coreChildren.map { it.handle } -> payload.activeId
+                    else -> coreChildren.first().handle
                 }
-
-                // Identity registry migration is handled in handleSideEffects via store.updateIdentityRegistry().
-                @Suppress("DEPRECATION")
-                return coreState.copy(
-                    userIdentities = identities,
-                    activeUserId = activeId
-                )
+                return coreState.copy(activeUserId = activeId)
             }
             ActionRegistry.Names.CORE_ADD_USER_IDENTITY -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<AddUserIdentityPayload>(it) } ?: return coreState
-                val localHandle = slugifyName(payload.name)
-                // Dedup against existing user identities (registry sync is handled in handleSideEffects).
-                @Suppress("DEPRECATION")
-                val existingAsMap = coreState.userIdentities.associateBy { it.handle }
-                val finalLocalHandle = deduplicateLocalHandle(localHandle, "core", existingAsMap)
-                val fullHandle = "core.$finalLocalHandle"
-                val uuid = platformDependencies.generateUUID()
-                val newUser = Identity(
-                    uuid = uuid,
-                    localHandle = finalLocalHandle,
-                    handle = fullHandle,
-                    name = payload.name,
-                    parentHandle = "core",
-                    registeredAt = platformDependencies.currentTimeMillis()
-                )
-                @Suppress("DEPRECATION")
-                return coreState.copy(
-                    userIdentities = coreState.userIdentities + newUser
-                )
+                // Identity creation handled entirely in handleSideEffects.
+                return coreState
             }
             ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return coreState
-                @Suppress("DEPRECATION")
-                val updatedIdentities = coreState.userIdentities.filterNot { it.handle == payload.id }
-                val updatedActiveId = if (coreState.activeUserId == payload.id) updatedIdentities.firstOrNull()?.handle else coreState.activeUserId
-                // Identity registry cleanup is handled in handleSideEffects via store.updateIdentityRegistry().
-                @Suppress("DEPRECATION")
-                return coreState.copy(
-                    userIdentities = updatedIdentities,
-                    activeUserId = updatedActiveId
-                )
+                // Registry removal and activeUserId update handled in handleSideEffects.
+                return coreState
             }
             ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<IdentityIdPayload>(it) } ?: return coreState
-                @Suppress("DEPRECATION")
-                if (coreState.userIdentities.any { it.handle == payload.id }) {
-                    return coreState.copy(activeUserId = payload.id)
-                }
-                return coreState
+                return coreState.copy(activeUserId = payload.id)
             }
 
             // ================================================================

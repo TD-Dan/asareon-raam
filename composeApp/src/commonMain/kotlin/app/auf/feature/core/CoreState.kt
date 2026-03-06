@@ -2,7 +2,6 @@ package app.auf.feature.core
 
 import app.auf.core.Action
 import app.auf.core.FeatureState
-import app.auf.core.Identity
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
@@ -56,15 +55,7 @@ data class CoreState(
     val windowWidth: Int = 1200,
     val windowHeight: Int = 800,
 
-    // --- User Identity Management State (DEPRECATED — Phase 2.2) ---
-    // userIdentities is kept for backward compatibility during the migration period.
-    // New code should read from AppState.identityRegistry filtered by parentHandle == "core".
-    // Will be removed in Phase 4.
-    @Deprecated(
-        message = "Use AppState.identityRegistry filtered by parentHandle == \"core\" instead.",
-        replaceWith = ReplaceWith("AppState.identityRegistry")
-    )
-    val userIdentities: List<Identity> = emptyList(),
+    // Active user identity handle — resolved from the identity registry.
     val activeUserId: String? = null,
 
     // --- Transient State for Global UI ---

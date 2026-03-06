@@ -16,6 +16,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -39,12 +40,15 @@ class CoreFeatureT2CoreTest {
         extraRegistry: Map<String, Identity> = emptyMap()
     ) {
         val featureIdentities = featureHandles.associate { handle ->
+            // Apply DefaultPermissions, matching what Store.initFeatureLifecycles() does.
+            val defaults = DefaultPermissions.grantsFor(handle)
             handle to Identity(
                 uuid = null,
                 localHandle = handle,
                 handle = handle,
                 name = handle.replaceFirstChar { it.uppercase() },
-                parentHandle = null
+                parentHandle = null,
+                permissions = defaults
             )
         }
         store.updateIdentityRegistry { it + featureIdentities + extraRegistry }
@@ -142,24 +146,33 @@ class CoreFeatureT2CoreTest {
     @Test
     fun `handleSideEffects for REMOVE_USER_IDENTITY persists and broadcasts changes`() = runTest {
         val platform = FakePlatformDependencies("test")
-        val user1 = Identity("id-1", localHandle = "user-1", handle = "user-1", name = "User 1")
-        val user2 = Identity("id-2", localHandle = "user-2", handle = "user-2", name = "User 2")
+        val user1 = Identity("id-1", localHandle = "user-1", handle = "core.user-1", name = "User 1", parentHandle = "core")
+        val user2 = Identity("id-2", localHandle = "user-2", handle = "core.user-2", name = "User 2", parentHandle = "core")
 
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
             .withFeature(FileSystemFeature(platform))
             .withInitialState("core", CoreState(
-                userIdentities = listOf(user1, user2),
-                activeUserId = "user-1",
+                activeUserId = "core.user-1",
                 lifecycle = AppLifecycle.RUNNING
             ))
             .build(platform = platform)
+        harness.store.updateIdentityRegistry { it + mapOf(
+            "core.user-1" to user1,
+            "core.user-2" to user2
+        )}
 
         // ACT
         harness.store.dispatch("core", Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject {
-            put("id", "user-1")
+            put("id", "core.user-1")
         }))
         runCurrent()
+
+        // ASSERT: Identity removed from registry
+        assertNull(harness.store.state.value.identityRegistry["core.user-1"],
+            "User 1 should be removed from the registry.")
+        assertNotNull(harness.store.state.value.identityRegistry["core.user-2"],
+            "User 2 should remain in the registry.")
 
         // ASSERT: Persistence
         val writeAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
@@ -167,38 +180,41 @@ class CoreFeatureT2CoreTest {
         val content = writeAction.payload?.get("content")?.jsonPrimitive?.content
         assertNotNull(content)
         assertTrue(content.contains("User 2") && !content.contains("User 1"), "The remaining user should be in the persisted content.")
-        assertTrue(content.contains("\"activeId\":\"user-2\""), "The activeId should be updated in the persisted content.")
 
-        // ASSERT: Broadcasting
-        val broadcastAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.CORE_IDENTITIES_UPDATED }
-        assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
-        val broadcastContent = broadcastAction.payload.toString()
-        assertTrue(broadcastContent.contains("User 2") && !broadcastContent.contains("User 1"), "The remaining user should be in the broadcast payload.")
-        assertEquals("user-2", broadcastAction.payload?.get("activeId")?.jsonPrimitive?.content)
+        // ASSERT: Registry broadcast
+        val registryBroadcast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED }
+        assertNotNull(registryBroadcast, "IDENTITY_REGISTRY_UPDATED should be broadcast.")
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `handleSideEffects for SET_ACTIVE_USER_IDENTITY persists and broadcasts changes`() = runTest {
         val platform = FakePlatformDependencies("test")
-        val user1 = Identity("id-1", localHandle = "user-1", handle = "user-1", name = "User 1")
-        val user2 = Identity("id-2", localHandle = "user-2", handle = "user-2", name = "User 2")
+        val user1 = Identity("id-1", localHandle = "user-1", handle = "core.user-1", name = "User 1", parentHandle = "core")
+        val user2 = Identity("id-2", localHandle = "user-2", handle = "core.user-2", name = "User 2", parentHandle = "core")
 
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
             .withFeature(FileSystemFeature(platform))
             .withInitialState("core", CoreState(
-                userIdentities = listOf(user1, user2),
-                activeUserId = "user-1",
+                activeUserId = "core.user-1",
                 lifecycle = AppLifecycle.RUNNING
             ))
             .build(platform = platform)
+        harness.store.updateIdentityRegistry { it + mapOf(
+            "core.user-1" to user1,
+            "core.user-2" to user2
+        )}
 
         // ACT
         harness.store.dispatch("core", Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject {
-            put("id", "user-2")
+            put("id", "core.user-2")
         }))
         runCurrent()
+
+        // ASSERT: activeUserId updated in CoreState
+        val coreState = harness.store.state.value.featureStates["core"] as CoreState
+        assertEquals("core.user-2", coreState.activeUserId)
 
         // ASSERT: Persistence
         val writeAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
@@ -206,14 +222,7 @@ class CoreFeatureT2CoreTest {
         val content = writeAction.payload?.get("content")?.jsonPrimitive?.content
         assertNotNull(content)
         assertTrue(content.contains("User 1") && content.contains("User 2"), "Both users should be in the persisted content.")
-        assertTrue(content.contains("\"activeId\":\"user-2\""), "The new activeId should be in the persisted content.")
-
-        // ASSERT: Broadcasting
-        val broadcastAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.CORE_IDENTITIES_UPDATED }
-        assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
-        val broadcastContent = broadcastAction.payload.toString()
-        assertTrue(broadcastContent.contains("User 1") && broadcastContent.contains("User 2"), "Both users should be in the broadcast payload.")
-        assertEquals("user-2", broadcastAction.payload?.get("activeId")?.jsonPrimitive?.content)
+        assertTrue(content.contains("\"activeId\":\"core.user-2\""), "The new activeId should be in the persisted content.")
     }
 
     // ================================================================

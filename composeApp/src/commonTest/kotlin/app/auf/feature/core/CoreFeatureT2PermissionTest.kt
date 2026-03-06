@@ -1,6 +1,7 @@
 package app.auf.feature.core
 
 import app.auf.core.Action
+import app.auf.core.DefaultPermissions
 import app.auf.core.Identity
 import app.auf.core.PermissionGrant
 import app.auf.core.PermissionLevel
@@ -30,9 +31,12 @@ class CoreFeatureT2PermissionTest {
         extraRegistry: Map<String, Identity> = emptyMap()
     ) {
         val featureIdentities = featureHandles.associate { handle ->
+            // Apply DefaultPermissions, matching what Store.initFeatureLifecycles() does.
+            val defaults = DefaultPermissions.grantsFor(handle)
             handle to Identity(
                 uuid = null, localHandle = handle, handle = handle,
-                name = handle.replaceFirstChar { it.uppercase() }, parentHandle = null
+                name = handle.replaceFirstChar { it.uppercase() }, parentHandle = null,
+                permissions = defaults
             )
         }
         store.updateIdentityRegistry { it + featureIdentities + extraRegistry }
@@ -323,38 +327,29 @@ class CoreFeatureT2PermissionTest {
     fun `default permissions do not overwrite existing explicit grants`() = runTest {
         val platform = FakePlatformDependencies("test")
 
-        // Put Alice in CoreState.userIdentities WITH her explicit NO grant.
-        // When ADD_USER_IDENTITY fires, handleSideEffects rebuilds all core.* registry
-        // entries from userIdentities. Alice's explicit NO should be preserved — children
-        // inherit from the parent feature, but explicit grants on the child take precedence.
+        // Alice has an explicit NO grant on filesystem:workspace.
+        // The core feature parent has YES for filesystem:workspace from DefaultPermissions.
+        // Alice's explicit NO should take precedence via resolveEffectivePermissions.
         val alice = Identity(
             uuid = "user-1", handle = "core.alice", localHandle = "alice",
             name = "Alice", parentHandle = "core",
             permissions = mapOf("filesystem:workspace" to PermissionGrant(PermissionLevel.NO))
         )
-        @Suppress("DEPRECATION")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
             .withInitialState("core", CoreState(
                 lifecycle = AppLifecycle.RUNNING,
-                userIdentities = listOf(alice),
                 activeUserId = "core.alice"
             ))
             .build(platform = platform)
+        harness.store.updateIdentityRegistry { it + ("core.alice" to alice) }
 
-        // Trigger the legacy identity sync flow
-        harness.store.dispatch("core", Action(
-            ActionRegistry.Names.CORE_ADD_USER_IDENTITY,
-            buildJsonObject { put("name", "Bob") }
-        ))
-        runCurrent()
-
-        // Alice's explicit NO should be preserved — the legacy sync copies her
-        // permissions directly from userIdentities to the registry.
+        // Verify Alice's explicit NO overrides the inherited YES from core
         val aliceState = harness.store.state.value.identityRegistry["core.alice"]
-        assertNotNull(aliceState, "Alice should still be in the registry after identity sync.")
-        assertEquals(PermissionLevel.NO, aliceState.permissions["filesystem:workspace"]?.level,
-            "Existing explicit grants should not be overwritten by defaults.")
+        assertNotNull(aliceState, "Alice should be in the registry.")
+        val effective = harness.store.resolveEffectivePermissions(aliceState)
+        assertEquals(PermissionLevel.NO, effective["filesystem:workspace"]?.level,
+            "Alice's explicit NO should override the inherited YES from the core feature.")
     }
 
     // ================================================================
