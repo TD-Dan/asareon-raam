@@ -664,7 +664,7 @@ class KnowledgeGraphFeature(
         override fun RibbonContent(store: Store, activeViewKey: String?) {
             val viewKey = "feature.knowledgegraph.main"
             val isActive = activeViewKey == viewKey
-            IconButton(onClick = { store.dispatch("ui.ribbon", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKey) })) }) {
+            IconButton(onClick = { store.dispatch(identity.handle, Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKey) })) }) {
                 Icon(
                     imageVector = Icons.Default.Hub,
                     contentDescription = "Knowledge Graph Manager",
