@@ -68,7 +68,7 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
 
         harness.runAndLogOnFailure {
             // Act
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
+            harness.store.dispatch("session", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
 
             // Assert: Find the two write actions
             val writeActions = harness.processedActions.filter { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
@@ -130,7 +130,7 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
 
         harness.runAndLogOnFailure {
             // ACT
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
+            harness.store.dispatch("session", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
 
             // ASSERT
             val writeActions = harness.processedActions.filter { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }

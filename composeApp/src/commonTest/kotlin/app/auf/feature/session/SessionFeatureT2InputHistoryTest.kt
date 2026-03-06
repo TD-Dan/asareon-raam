@@ -817,7 +817,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_DELETE,
                 buildJsonObject { put("session", "sid-1") }
             ))

@@ -163,7 +163,7 @@ class GatewayFeatureT2CoreTest {
         harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_LOADED, buildJsonObject {
             put("gateway.provider-2.apiKey", "k2")
         }))
-        val originatorId = "agent-feature-1"
+        val originatorId = "agent"
         val correlationId = "test-turn-123"
         val message = GatewayMessage("user", "Test", "user-1", "User", 1L)
         val action = Action(ActionRegistry.Names.GATEWAY_GENERATE_CONTENT, buildJsonObject {
@@ -200,7 +200,7 @@ class GatewayFeatureT2CoreTest {
     @Test
     fun `PREPARE_PREVIEW uses polymorphic generatePreview`() = testScope.runTest {
         val harness = createHarness(this)
-        val originatorId = "agent-feature-1"
+        val originatorId = "agent"
         val correlationId = "test-preview-456"
         val message = GatewayMessage("user", "Preview Test", "user-1", "User", 1L)
         val systemPrompt = "You are a test assistant."
@@ -245,7 +245,7 @@ class GatewayFeatureT2CoreTest {
             put("correlationId", correlationId)
             put("contents", buildJsonArray { add(Json.encodeToJsonElement(GatewayMessage("user", "hi", "u1", "U", 1L))) })
         })
-        harness.store.dispatch("agent-1", generateAction)
+        harness.store.dispatch("agent", generateAction)
         runCurrent() // Launches coroutine, effectively "in flight"
 
         // 2. Dispatch Cancel
@@ -291,7 +291,7 @@ class GatewayFeatureT2CoreTest {
         })
 
         // ACT
-        harness.store.dispatch("agent-feature-1", action)
+        harness.store.dispatch("gateway", action)
         runCurrent()
 
         // ASSERT
@@ -322,7 +322,7 @@ class GatewayFeatureT2CoreTest {
         runCurrent()
 
         // ACT: Request the current model list
-        harness.store.dispatch("some-feature", Action(ActionRegistry.Names.GATEWAY_REQUEST_AVAILABLE_MODELS))
+        harness.store.dispatch("gateway", Action(ActionRegistry.Names.GATEWAY_REQUEST_AVAILABLE_MODELS))
         runCurrent()
 
         // ASSERT
@@ -351,7 +351,7 @@ class GatewayFeatureT2CoreTest {
         })
 
         // ACT
-        harness.store.dispatch("agent-feature-1", action)
+        harness.store.dispatch("agent", action)
         runCurrent()
 
         // ASSERT

@@ -58,7 +58,7 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
 
         harness.runAndLogOnFailure {
             // ACT
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject {
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject {
                 put("holonId", holonId)
                 put("newName", "New Name")
             }))
@@ -130,7 +130,7 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
             }))
 
             // ACT 2: Dispatch a managed command to modify the holon's header.
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject {
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject {
                 put("holonId", holonId)
                 put("newName", "New Name")
             }))

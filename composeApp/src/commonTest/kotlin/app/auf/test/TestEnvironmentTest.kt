@@ -122,8 +122,8 @@ class TestEnvironmentTest {
 
         harness.runAndLogOnFailure {
             // ACT
-            harness.store.dispatch("ui", Action("core.SET_ACTIVE_VIEW", buildJsonObject { put("key", "test") }))
-            harness.store.dispatch("ui", Action("unknown.ACTION"))
+            harness.store.dispatch("core", Action("core.SET_ACTIVE_VIEW", buildJsonObject { put("key", "test") }))
+            harness.store.dispatch("core", Action("unknown.ACTION"))
 
             // ASSERT
             val validAction = harness.processedActions.find { it.name == "core.SET_ACTIVE_VIEW" }
@@ -145,8 +145,8 @@ class TestEnvironmentTest {
 
         harness.runAndLogOnFailure {
             // ACT
-            harness.store.dispatch("ui", Action("fakea.ALLOWED"))
-            harness.store.dispatch("ui", Action("core.SET_ACTIVE_VIEW")) // Valid in real registry, but not in our override
+            harness.store.dispatch("core", Action("fakea.ALLOWED"))
+            harness.store.dispatch("core", Action("core.SET_ACTIVE_VIEW")) // Valid in real registry, but not in our override
 
             // ASSERT
             assertEquals(1, harness.processedActions.size, "Only the action in the minimal registry should pass.")

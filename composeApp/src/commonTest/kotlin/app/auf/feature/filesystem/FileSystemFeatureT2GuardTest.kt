@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
  * regardless of whether the guard fired.
  */
 class FileSystemFeatureT2GuardTest {
-    private val originator = "test-feature"
+    private val originator = "core"
 
     @Test
     fun `filenameGuard rejects blank paths for write operations`() {

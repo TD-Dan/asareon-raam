@@ -201,7 +201,7 @@ class KnowledgeGraphFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject {
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON, buildJsonObject {
                 put("holonId", "h1")
                 put("newName", "New Name")
             }))
@@ -405,7 +405,7 @@ class KnowledgeGraphFeatureT2CoreTest {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_CREATE_PERSONA, buildJsonObject {
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_CREATE_PERSONA, buildJsonObject {
                 put("name", "Test Persona")
             }))
 
@@ -458,7 +458,7 @@ class KnowledgeGraphFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject {
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject {
                 put("holonId", childId)
             }))
 
@@ -526,8 +526,8 @@ class KnowledgeGraphFeatureT2CoreTest {
 
         harness.runAndLogOnFailure {
             // Dispatch actions with missing required fields
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_CREATE_PERSONA, buildJsonObject { }))
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { }))
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_CREATE_PERSONA, buildJsonObject { }))
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { }))
             harness.store.dispatch("agent-alpha", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_REQUEST_CONTEXT, buildJsonObject { }))
 
             // Assert warnings were logged for each
@@ -550,7 +550,7 @@ class KnowledgeGraphFeatureT2CoreTest {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject {
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject {
                 put("holonId", "nonexistent-holon")
             }))
 

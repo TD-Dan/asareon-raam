@@ -76,7 +76,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_CREATE))
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_CREATE))
             testScheduler.advanceUntilIdle()
 
             val sessionState = harness.store.state.value.featureStates["session"] as? SessionState
@@ -110,7 +110,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_DELETE, buildJsonObject { put("session", "sid-1") }))
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_DELETE, buildJsonObject { put("session", "sid-1") }))
             testScheduler.advanceUntilIdle()
 
             val sessionState = harness.store.state.value.featureStates["session"] as? SessionState
@@ -174,8 +174,8 @@ class SessionFeatureT2CoreTest {
                 put("session", "sid-1"); put("senderId", "agent"); put("metadata", buildJsonObject { put("is_transient", true) })
             })
 
-            harness.store.dispatch("ui", persistentAction)
-            harness.store.dispatch("ui", transientAction)
+            harness.store.dispatch("session", persistentAction)
+            harness.store.dispatch("session", transientAction)
             testScheduler.advanceUntilIdle()
 
             // Filter to session ledger writes only. input.json is also written on user posts
@@ -300,7 +300,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
                 put("session", "sid-1"); put("messageId", "msg-1")
             }))
             testScheduler.advanceUntilIdle()
@@ -429,7 +429,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "unknown-session-id")
                 put("senderId", "user")
                 put("message", "Test")
@@ -454,7 +454,7 @@ class SessionFeatureT2CoreTest {
 
         harness.runAndLogOnFailure {
             // Post a message to trigger persistence
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "my-chat"); put("senderId", "user"); put("message", "hello")
             }))
             testScheduler.advanceUntilIdle()
@@ -480,7 +480,7 @@ class SessionFeatureT2CoreTest {
 
         harness.runAndLogOnFailure {
             // Resolve by localHandle
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "my-chat"); put("senderId", "user"); put("message", "by localHandle")
             }))
             testScheduler.advanceUntilIdle()
@@ -488,7 +488,7 @@ class SessionFeatureT2CoreTest {
             assertNotNull(postAction, "Should resolve by localHandle")
 
             // Resolve by display name
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                 put("session", "My Chat Room"); put("senderId", "user"); put("message", "by name")
             }))
             testScheduler.advanceUntilIdle()
@@ -514,7 +514,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_CLONE, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_CLONE, buildJsonObject {
                 put("session", "original")
             }))
             testScheduler.advanceUntilIdle()
@@ -555,7 +555,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_CLONE, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_CLONE, buildJsonObject {
                 put("session", "nonexistent")
             }))
             testScheduler.advanceUntilIdle()
@@ -594,7 +594,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject {
                 put("session", "sid-1")
             }))
             testScheduler.advanceUntilIdle()
@@ -630,7 +630,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject {
                 put("session", "sid-1")
             }))
             testScheduler.advanceUntilIdle()
@@ -657,7 +657,7 @@ class SessionFeatureT2CoreTest {
 
         harness.runAndLogOnFailure {
             // Toggle to hidden
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_TOGGLE_SESSION_HIDDEN, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_TOGGLE_SESSION_HIDDEN, buildJsonObject {
                 put("session", "sid-1")
             }))
             testScheduler.advanceUntilIdle()
@@ -666,7 +666,7 @@ class SessionFeatureT2CoreTest {
             assertTrue(sessionState.sessions["sid-1"]!!.isHidden, "Session should now be hidden")
 
             // Toggle back to visible
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_TOGGLE_SESSION_HIDDEN, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_TOGGLE_SESSION_HIDDEN, buildJsonObject {
                 put("session", "sid-1")
             }))
             testScheduler.advanceUntilIdle()
@@ -692,7 +692,7 @@ class SessionFeatureT2CoreTest {
 
         harness.runAndLogOnFailure {
             // Toggle to locked
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_LOCKED, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_LOCKED, buildJsonObject {
                 put("sessionId", "sid-1"); put("messageId", "msg-1")
             }))
             testScheduler.advanceUntilIdle()
@@ -701,7 +701,7 @@ class SessionFeatureT2CoreTest {
             assertTrue(sessionState.sessions["sid-1"]!!.ledger[0].isLocked, "Message should now be locked")
 
             // Toggle back to unlocked
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_LOCKED, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_LOCKED, buildJsonObject {
                 put("sessionId", "sid-1"); put("messageId", "msg-1")
             }))
             testScheduler.advanceUntilIdle()
@@ -722,7 +722,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
                 put("session", "sid-1"); put("messageId", "msg-1")
             }))
             testScheduler.advanceUntilIdle()
@@ -745,7 +745,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_UPDATE_MESSAGE, buildJsonObject {
+            harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_UPDATE_MESSAGE, buildJsonObject {
                 put("session", "sid-1"); put("messageId", "msg-1"); put("newContent", "Modified")
             }))
             testScheduler.advanceUntilIdle()
