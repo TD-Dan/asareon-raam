@@ -331,7 +331,13 @@ open class GatewayFeature(
                 val payload = action.payload ?: return currentFeatureState
                 val providerId = payload["providerId"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
                 val models = Json.decodeFromJsonElement<List<String>>(payload["models"] ?: return currentFeatureState)
-                val newModels = currentFeatureState.availableModels + (providerId to models)
+                // If the provider returned no models (e.g. API key is blank or the call failed),
+                // remove it from the map entirely so it never surfaces in the UI.
+                val newModels = if (models.isEmpty()) {
+                    currentFeatureState.availableModels - providerId
+                } else {
+                    currentFeatureState.availableModels + (providerId to models)
+                }
                 return currentFeatureState.copy(availableModels = newModels)
             }
             ActionRegistry.Names.SETTINGS_LOADED -> {

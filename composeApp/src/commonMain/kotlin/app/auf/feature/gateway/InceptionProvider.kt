@@ -205,7 +205,7 @@ class InceptionProvider(
                 id,
                 "Cannot list models: Inception API Key is not configured."
             )
-            return listOf("<no api key available>")
+            return emptyList()
         }
 
         return try {

@@ -897,16 +897,56 @@ private fun OutputSessionSelector(agent: AgentInstance, agentState: AgentRuntime
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProviderSelector(agent: AgentInstance, agentState: AgentRuntimeState, onUpdate: (AgentInstance) -> Unit) {
-    val availableProviders = remember(agentState.availableModels) { agentState.availableModels.keys.toList() }
-    var isExpanded by remember { mutableStateOf(false) }
+    val availableProviders = remember(agentState.availableModels) {
+        // Only surface providers that have at least one model — this hides any
+        // provider whose API key is blank (their listAvailableModels returns emptyList()).
+        agentState.availableModels.filter { (_, models) -> models.isNotEmpty() }.keys.toList()
+    }
 
+    if (availableProviders.isEmpty()) {
+        // Replace the entire selector with a clear, actionable message. A disabled
+        // dropdown with helper text underneath is ambiguous — when nothing can be
+        // selected there is no reason to show a selector widget at all.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.small
+                )
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Key,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Column {
+                Text(
+                    text = "No providers configured",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "Use settings to configure API keys to enable models.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        return
+    }
+
+    var isExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
         OutlinedTextField(
-            value = if (availableProviders.isEmpty()) "No providers found" else agent.modelProvider,
+            value = agent.modelProvider,
             onValueChange = {}, readOnly = true, label = { Text("Provider") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
-            modifier = Modifier.menuAnchor().fillMaxWidth(),
-            enabled = availableProviders.isNotEmpty()
+            modifier = Modifier.menuAnchor().fillMaxWidth()
         )
         ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
             availableProviders.forEach { providerId ->

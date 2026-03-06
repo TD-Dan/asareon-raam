@@ -187,10 +187,7 @@ class AnthropicProvider(
                 id,
                 "Cannot list models: Anthropic API Key is not configured."
             )
-            // Return fallback list if no API key is configured
-            return listOf(
-                "<no api key available>"
-            )
+            return emptyList()
         }
 
         return try {
