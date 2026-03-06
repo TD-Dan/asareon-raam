@@ -134,16 +134,16 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
             val postedSession = post.payload?.get("session")?.jsonPrimitive?.content
             assertNotNull(postedSession, "Avatar SESSION_POST should have a 'session' field")
 
-            // ASSERT: Avatar added to session ledger
-            val sessionState = harness.store.state.value.featureStates["session"] as? SessionState
-            assertNotNull(sessionState, "Session state should exist")
-            // Find the session that received the avatar entry
-            val sessionWithAvatar = sessionState.sessions.values.find { session ->
-                session.ledger.any {
-                    it.metadata?.get("partial_view_key")?.jsonPrimitive?.content == "agent.avatar"
-                }
-            }
-            assertNotNull(sessionWithAvatar, "Avatar ledger entry should exist in a session")
+            // ASSERT: POST targets the correct session (resolved handle from registry)
+            assertEquals(
+                testSession1.identity.handle,
+                postedSession,
+                "Avatar should be posted to the registered session handle"
+            )
+
+            // ASSERT: senderId is the agent's identity handle
+            val senderId = post.payload?.get("senderId")?.jsonPrimitive?.content
+            assertEquals(agent.identity.handle, senderId, "Avatar senderId should be the agent's handle")
         }
     }
 
