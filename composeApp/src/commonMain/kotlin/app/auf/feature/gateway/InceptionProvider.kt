@@ -10,6 +10,7 @@ import io.ktor.client.call.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
@@ -104,6 +105,8 @@ class InceptionProvider(
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
         install(HttpTimeout) { requestTimeoutMillis = 240_000 }
+        // RATE LIMITING: Do not throw on non-2xx so we can inspect 429 responses.
+        expectSuccess = false
     }
 
     // --- Logic extracted for testability ---
@@ -258,13 +261,44 @@ class InceptionProvider(
             val apiRequest = buildRequestPayload(request)
             val apiUrl = "https://$apiHost/v1/chat/completions"
 
-            val responseBody: String = client.post(apiUrl) {
+            // Capture full HttpResponse for header extraction
+            val httpResponse: HttpResponse = client.post(apiUrl) {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
                 contentType(ContentType.Application.Json)
                 setBody(apiRequest)
-            }.body()
+            }
+            val responseBody: String = httpResponse.body()
 
-            parseResponse(responseBody, request.correlationId)
+            // Extract rate limit snapshot from response headers
+            val rateLimitInfo = httpResponse.extractRateLimitInfo(
+                platformDependencies.currentTimeMillis()
+            )
+
+            // Log rate limit data at DEBUG level for operational visibility
+            if (rateLimitInfo != null) {
+                platformDependencies.log(
+                    LogLevel.DEBUG, id,
+                    "Rate limit for ${request.correlationId}: " +
+                            "requests=${rateLimitInfo.requestsRemaining}/${rateLimitInfo.requestLimit}, " +
+                            "tokens=${rateLimitInfo.tokensRemaining}/${rateLimitInfo.tokenLimit}" +
+                            (rateLimitInfo.retryAfterMs?.let { ", retryAfter=$it" } ?: "")
+                )
+            }
+
+            // Check for HTTP 429 (rate limited) before parsing body
+            if (isRateLimited(httpResponse.status.value)) {
+                return GatewayResponse(
+                    rawContent = null,
+                    errorMessage = "Rate limited by Inception API. Please wait before retrying.",
+                    correlationId = request.correlationId,
+                    rateLimitInfo = rateLimitInfo
+                )
+            }
+
+            // Parse the response body and attach rate limit info
+            parseResponse(responseBody, request.correlationId).copy(
+                rateLimitInfo = rateLimitInfo
+            )
         } catch (e: CancellationException) {
             platformDependencies.log(
                 LogLevel.INFO, id,

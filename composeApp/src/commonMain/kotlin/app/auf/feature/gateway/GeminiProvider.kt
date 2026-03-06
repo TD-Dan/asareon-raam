@@ -10,6 +10,7 @@ import io.ktor.client.call.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
@@ -76,6 +77,8 @@ class GeminiProvider(
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
         install(HttpTimeout) { requestTimeoutMillis = 240_000 }
+        // RATE LIMITING: Do not throw on non-2xx so we can inspect 429 responses.
+        expectSuccess = false
     }
 
     // --- Logic extracted for testability ---
@@ -248,13 +251,46 @@ class GeminiProvider(
             val apiRequest = buildRequestPayload(request)
             val apiUrl = "https://$API_HOST/v1beta/models/${request.modelName}:generateContent"
 
-            val responseBody: String = client.post(apiUrl) {
+            // Capture full HttpResponse for header extraction
+            val httpResponse: HttpResponse = client.post(apiUrl) {
                 parameter("key", apiKey)
                 contentType(ContentType.Application.Json)
                 setBody(apiRequest)
-            }.body()
+            }
+            val responseBody: String = httpResponse.body()
 
-            parseResponse(responseBody, request.correlationId)
+            // Extract rate limit snapshot from response headers.
+            // Note: Gemini does NOT return per-response quota headers (x-ratelimit-*).
+            // This will only produce a RateLimitInfo on 429 responses (via retry-after).
+            val rateLimitInfo = httpResponse.extractRateLimitInfo(
+                platformDependencies.currentTimeMillis()
+            )
+
+            // Log rate limit data at DEBUG level for operational visibility
+            if (rateLimitInfo != null) {
+                platformDependencies.log(
+                    LogLevel.DEBUG, id,
+                    "Rate limit for ${request.correlationId}: " +
+                            "requests=${rateLimitInfo.requestsRemaining}/${rateLimitInfo.requestLimit}, " +
+                            "tokens=${rateLimitInfo.tokensRemaining}/${rateLimitInfo.tokenLimit}" +
+                            (rateLimitInfo.retryAfterMs?.let { ", retryAfter=$it" } ?: "")
+                )
+            }
+
+            // Check for HTTP 429 (rate limited) before parsing body
+            if (isRateLimited(httpResponse.status.value)) {
+                return GatewayResponse(
+                    rawContent = null,
+                    errorMessage = "Rate limited by Gemini API. Please wait before retrying.",
+                    correlationId = request.correlationId,
+                    rateLimitInfo = rateLimitInfo
+                )
+            }
+
+            // Parse the response body and attach rate limit info
+            parseResponse(responseBody, request.correlationId).copy(
+                rateLimitInfo = rateLimitInfo
+            )
         } catch (e: CancellationException) {
             platformDependencies.log(LogLevel.INFO, id, "Gemini request with correlationId '${request.correlationId}' was cancelled.")
             throw e
