@@ -38,6 +38,14 @@ val surfaceContainerLight = Color(0xFFF1EDEC)
 val surfaceContainerHighLight = Color(0xFFEBE7E7)
 val surfaceContainerHighestLight = Color(0xFFE5E2E1)
 
+// ── Extended semantic colors (not part of Material 3 core scheme) ──────────
+// Warning/caution: used for permission danger levels, escalation indicators,
+// and anywhere a "proceed with care" semantic is needed.
+val warningLight = Color(0xFFAB6800)
+val onWarningLight = Color(0xFFFFFFFF)
+val warningContainerLight = Color(0xFFFFDDB0)
+val onWarningContainerLight = Color(0xFF372100)
+
 val primaryDark = Color(0xFF58D8DD)
 val onPrimaryDark = Color(0xFF003739)
 val primaryContainerDark = Color(0xFF17AFB4)
@@ -50,7 +58,7 @@ val tertiaryDark = Color(0xFFFFAAF4)
 val onTertiaryDark = Color(0xFF5B005C)
 val tertiaryContainerDark = Color(0xFFF27DEA)
 val onTertiaryContainerDark = Color(0xFF710072)
-val errorDark = Color(0xFFFFB3B5)
+val errorDark = Color(0xFFFF666B)
 val onErrorDark = Color(0xFF680019)
 val errorContainerDark = Color(0xFF49151C)
 val onErrorContainerDark = Color(0xFFFFF0F0)
@@ -74,9 +82,8 @@ val surfaceContainerDark = Color(0xFF201F1F)
 val surfaceContainerHighDark = Color(0xFF2A2A2A)
 val surfaceContainerHighestDark = Color(0xFF353434)
 
-
-
-
-
-
-
+// ── Extended semantic colors (dark) ───────────────────────────────────────
+val warningDark = Color(0xFFFFB94D)
+val onWarningDark = Color(0xFF5A3C00)
+val warningContainerDark = Color(0xFF3D2700)
+val onWarningContainerDark = Color(0xFFFFDDB0)

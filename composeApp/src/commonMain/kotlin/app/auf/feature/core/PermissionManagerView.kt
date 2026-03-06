@@ -16,23 +16,37 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
+import app.auf.ui.LocalExtendedColors
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 // ============================================================================
-// Color Constants for Danger Levels
+// Theme-Aware Color Helpers
 // ============================================================================
-private val DangerLowColor = Color(0xFF4CAF50)        // Green
-private val DangerCautionColor = Color(0xFFFF9800)     // Orange
-private val DangerDangerColor = Color(0xFFF44336)      // Red
-private val ScrollbarThumbColor = Color(0xFF888888)    // Visible gray for scrollbar thumbs
-private val ScrollbarThumbHoverColor = Color(0xFFAAAAAA) // Lighter gray on hover
 
-// Subtle cell tints when a permission is granted (YES). Alpha-based so they
-// work on both light and dark themes.
-private val CellTintLow = Color(0x1A4CAF50)            // Green tint
-private val CellTintCaution = Color(0x1AFF9800)        // Orange tint
-private val CellTintDanger = Color(0x1AF44336)         // Red tint
+/** Cell background alpha for granted (YES) permissions. */
+private const val CELL_TINT_ALPHA = 0.60f
+
+/**
+ * Returns the theme color for a given danger level.
+ * LOW → primary (teal), CAUTION → warning (amber), DANGER → error (red).
+ */
+@Composable
+private fun dangerColor(dangerLevel: DangerLevel): Color {
+    val extended = LocalExtendedColors.current
+    return when (dangerLevel) {
+        DangerLevel.LOW -> MaterialTheme.colorScheme.primary
+        DangerLevel.CAUTION -> extended.warning
+        DangerLevel.DANGER -> MaterialTheme.colorScheme.error
+    }
+}
+
+/**
+ * Returns a subtle background tint for a YES cell based on danger level.
+ */
+@Composable
+private fun cellTint(dangerLevel: DangerLevel): Color =
+    dangerColor(dangerLevel).copy(alpha = CELL_TINT_ALPHA)
 
 /**
  * Groups permission declarations by their domain (the part before the colon).
@@ -52,24 +66,6 @@ private fun groupPermissionsByDomain(
  * Returns the short capability name from a permission key (part after the colon).
  */
 private fun capabilityName(key: String): String = key.substringAfter(':')
-
-/**
- * Returns the Material color for a given danger level.
- */
-private fun dangerColor(dangerLevel: DangerLevel): Color = when (dangerLevel) {
-    DangerLevel.LOW -> DangerLowColor
-    DangerLevel.CAUTION -> DangerCautionColor
-    DangerLevel.DANGER -> DangerDangerColor
-}
-
-/**
- * Returns a subtle background tint for a YES cell based on danger level.
- */
-private fun cellTint(dangerLevel: DangerLevel): Color = when (dangerLevel) {
-    DangerLevel.LOW -> CellTintLow
-    DangerLevel.CAUTION -> CellTintCaution
-    DangerLevel.DANGER -> CellTintDanger
-}
 
 /**
  * Detects whether an identity's effective permission for a given key represents
@@ -163,11 +159,11 @@ fun PermissionManagerView(store: Store) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Danger levels:", style = MaterialTheme.typography.labelMedium)
-            LegendChip("Low", DangerLowColor)
-            LegendChip("Caution", DangerCautionColor)
-            LegendChip("Danger", DangerDangerColor)
+            LegendChip("Low", dangerColor(DangerLevel.LOW))
+            LegendChip("Caution", dangerColor(DangerLevel.CAUTION))
+            LegendChip("Danger", dangerColor(DangerLevel.DANGER))
             Spacer(Modifier.width(16.dp))
-            Icon(Icons.Default.Warning, null, tint = DangerCautionColor, modifier = Modifier.size(16.dp))
+            Icon(Icons.Default.Warning, null, tint = dangerColor(DangerLevel.CAUTION), modifier = Modifier.size(16.dp))
             Text("= escalated above parent", style = MaterialTheme.typography.labelSmall)
         }
 
@@ -288,8 +284,8 @@ fun PermissionManagerView(store: Store) {
                 thickness = 8.dp,
                 shape = MaterialTheme.shapes.small,
                 hoverDurationMillis = 300,
-                unhoverColor = ScrollbarThumbColor,
-                hoverColor = ScrollbarThumbHoverColor
+                unhoverColor = MaterialTheme.colorScheme.outline,
+                hoverColor = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             // Vertical scrollbar — anchored to the right edge, below the header row
@@ -436,7 +432,7 @@ private fun PermissionCell(
                 Icon(
                     Icons.Default.Warning,
                     contentDescription = "Escalated above parent",
-                    tint = DangerCautionColor,
+                    tint = LocalExtendedColors.current.warning,
                     modifier = Modifier.size(14.dp)
                 )
             }

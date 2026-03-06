@@ -6,9 +6,41 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+
+/**
+ * Extended semantic colors not covered by the Material 3 core color scheme.
+ * Accessed via [MaterialTheme.extendedColors] (provided through [LocalExtendedColors]).
+ */
+@Immutable
+data class ExtendedColors(
+    /** Warning/caution — "proceed with care". Used for permission danger levels, escalation. */
+    val warning: Color,
+    val onWarning: Color,
+    val warningContainer: Color,
+    val onWarningContainer: Color
+)
+
+private val lightExtendedColors = ExtendedColors(
+    warning = warningLight,
+    onWarning = onWarningLight,
+    warningContainer = warningContainerLight,
+    onWarningContainer = onWarningContainerLight
+)
+
+private val darkExtendedColors = ExtendedColors(
+    warning = warningDark,
+    onWarning = onWarningDark,
+    warningContainer = warningContainerDark,
+    onWarningContainer = onWarningContainerDark
+)
+
+val LocalExtendedColors = staticCompositionLocalOf { lightExtendedColors }
 
 private val lightScheme = lightColorScheme(
     primary = primaryLight,
@@ -101,11 +133,22 @@ fun AppTheme(
         lightScheme
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = MaterialTheme.typography,
-        shapes = MaterialTheme.shapes,
-        content = content
-    )
+    val extendedColors = if (darkTheme) darkExtendedColors else lightExtendedColors
+
+    CompositionLocalProvider(LocalExtendedColors provides extendedColors) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = MaterialTheme.typography,
+            shapes = MaterialTheme.shapes,
+            content = content
+        )
+    }
 }
 
+/**
+ * Convenience accessor for extended semantic colors.
+ * Usage: `MaterialTheme.extendedColors.warning`
+ */
+val MaterialTheme.extendedColors: ExtendedColors
+    @Composable @ReadOnlyComposable
+    get() = LocalExtendedColors.current

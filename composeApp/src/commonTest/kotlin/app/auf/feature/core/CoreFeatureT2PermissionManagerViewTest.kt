@@ -24,7 +24,7 @@ import kotlin.test.*
  *   - Escalation detection (child explicitly exceeds parent)
  *   - Danger-level cell tinting for YES grants
  */
-class PermissionManagerViewTest {
+class CoreFeatureT2PermissionManagerViewTest {
 
     // ================================================================
     // SET_PERMISSION toggle dispatched from view
