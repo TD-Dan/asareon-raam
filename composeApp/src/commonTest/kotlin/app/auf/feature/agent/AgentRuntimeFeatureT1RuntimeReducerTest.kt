@@ -22,6 +22,15 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     private val platform = FakePlatformDependencies("test")
     private val json = Json { ignoreUnknownKeys = true }
 
+    // UUID constants for IDs that pass through UUID validation in the reducer.
+    // SESSION_MESSAGE_POSTED validates sessionId with stringIsUUID().
+    // SESSION_SESSION_DELETED validates sessionUUID with stringIsUUID().
+    // MessageDeletedPayload now requires a sessionId field.
+    private val AGENT_1 = "b0000000-0000-0000-0000-000000000001"
+    private val SESSION_1 = "a0000000-0000-0000-0000-000000000001"
+    private val SESSION_2 = "a0000000-0000-0000-0000-000000000002"
+    private val SESSION_OUTPUT = "a0000000-0000-0000-0000-0000000000aa"
+
     // =========================================================================
     // SET_STATUS
     // =========================================================================
@@ -190,37 +199,33 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
 
     @Test
     fun `MESSAGE_POSTED should update lastSeenMessageId`() {
-        val agentId = "agent-1"
-        val sessionId = "session-1"
-        val agent = testAgent(agentId, "Test", subscribedSessionIds = listOf(sessionId))
-        val initialState = AgentRuntimeState(agents = mapOf(uid(agentId) to agent))
+        val agent = testAgent(AGENT_1, "Test", subscribedSessionIds = listOf(SESSION_1))
+        val initialState = AgentRuntimeState(agents = mapOf(uid(AGENT_1) to agent))
 
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", sessionId); put("sessionUUID", sessionId)
+            put("sessionId", SESSION_1); put("sessionUUID", SESSION_1)
             put("entry", buildJsonObject { put("id", "msg-1"); put("senderId", "user"); put("timestamp", 1000L) })
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        assertEquals("msg-1", newState.agentStatuses[uid(agentId)]?.lastSeenMessageId)
+        assertEquals("msg-1", newState.agentStatuses[uid(AGENT_1)]?.lastSeenMessageId)
     }
 
     @Test
     fun `MESSAGE_POSTED should transition IDLE agent to WAITING`() {
-        val agentId = "agent-1"
-        val sessionId = "session-1"
-        val agent = testAgent(agentId, "Test", subscribedSessionIds = listOf(sessionId))
+        val agent = testAgent(AGENT_1, "Test", subscribedSessionIds = listOf(SESSION_1))
         val initialState = AgentRuntimeState(
-            agents = mapOf(uid(agentId) to agent),
-            agentStatuses = mapOf(uid(agentId) to AgentStatusInfo(status = AgentStatus.IDLE))
+            agents = mapOf(uid(AGENT_1) to agent),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(status = AgentStatus.IDLE))
         )
 
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", sessionId); put("sessionUUID", sessionId)
+            put("sessionId", SESSION_1); put("sessionUUID", SESSION_1)
             put("entry", buildJsonObject { put("id", "msg-1"); put("senderId", "user"); put("timestamp", 1000L) })
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        val status = newState.agentStatuses[uid(agentId)]!!
+        val status = newState.agentStatuses[uid(AGENT_1)]!!
 
         assertEquals(AgentStatus.WAITING, status.status)
         assertNotNull(status.waitingSinceTimestamp)
@@ -229,21 +234,19 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
 
     @Test
     fun `MESSAGE_POSTED should NOT change status if agent is PROCESSING`() {
-        val agentId = "agent-1"
-        val sessionId = "session-1"
-        val agent = testAgent(agentId, "Test", subscribedSessionIds = listOf(sessionId))
+        val agent = testAgent(AGENT_1, "Test", subscribedSessionIds = listOf(SESSION_1))
         val initialState = AgentRuntimeState(
-            agents = mapOf(uid(agentId) to agent),
-            agentStatuses = mapOf(uid(agentId) to AgentStatusInfo(status = AgentStatus.PROCESSING, processingSinceTimestamp = 1000L))
+            agents = mapOf(uid(AGENT_1) to agent),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(status = AgentStatus.PROCESSING, processingSinceTimestamp = 1000L))
         )
 
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", sessionId); put("sessionUUID", sessionId)
+            put("sessionId", SESSION_1); put("sessionUUID", SESSION_1)
             put("entry", buildJsonObject { put("id", "msg-1"); put("senderId", "user"); put("timestamp", 2000L) })
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        val status = newState.agentStatuses[uid(agentId)]!!
+        val status = newState.agentStatuses[uid(AGENT_1)]!!
 
         assertEquals(AgentStatus.PROCESSING, status.status)
         assertEquals("msg-1", status.lastSeenMessageId)
@@ -251,21 +254,19 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
 
     @Test
     fun `MESSAGE_POSTED should not re-set waitingSinceTimestamp if already waiting`() {
-        val agentId = "agent-1"
-        val sessionId = "session-1"
-        val agent = testAgent(agentId, "Test", subscribedSessionIds = listOf(sessionId))
+        val agent = testAgent(AGENT_1, "Test", subscribedSessionIds = listOf(SESSION_1))
         val initialState = AgentRuntimeState(
-            agents = mapOf(uid(agentId) to agent),
-            agentStatuses = mapOf(uid(agentId) to AgentStatusInfo(status = AgentStatus.WAITING, waitingSinceTimestamp = 1000L))
+            agents = mapOf(uid(AGENT_1) to agent),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(status = AgentStatus.WAITING, waitingSinceTimestamp = 1000L))
         )
 
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", sessionId); put("sessionUUID", sessionId)
+            put("sessionId", SESSION_1); put("sessionUUID", SESSION_1)
             put("entry", buildJsonObject { put("id", "msg-2"); put("senderId", "user"); put("timestamp", 5000L) })
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        assertEquals(1000L, newState.agentStatuses[uid(agentId)]!!.waitingSinceTimestamp)
+        assertEquals(1000L, newState.agentStatuses[uid(AGENT_1)]!!.waitingSinceTimestamp)
     }
 
     // =========================================================================
@@ -274,21 +275,19 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
 
     @Test
     fun `MESSAGE_POSTED from agent itself should only update lastSeenMessageId (isSelf by UUID)`() {
-        val agentId = "agent-1"
-        val sessionId = "session-1"
-        val agent = testAgent(agentId, "Test", subscribedSessionIds = listOf(sessionId))
+        val agent = testAgent(AGENT_1, "Test", subscribedSessionIds = listOf(SESSION_1))
         val initialState = AgentRuntimeState(
-            agents = mapOf(uid(agentId) to agent),
-            agentStatuses = mapOf(uid(agentId) to AgentStatusInfo(status = AgentStatus.IDLE))
+            agents = mapOf(uid(AGENT_1) to agent),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(status = AgentStatus.IDLE))
         )
 
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", sessionId); put("sessionUUID", sessionId)
-            put("entry", buildJsonObject { put("id", "msg-self"); put("senderId", agentId); put("timestamp", 1000L) })
+            put("sessionId", SESSION_1); put("sessionUUID", SESSION_1)
+            put("entry", buildJsonObject { put("id", "msg-self"); put("senderId", AGENT_1); put("timestamp", 1000L) })
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        val status = newState.agentStatuses[uid(agentId)]!!
+        val status = newState.agentStatuses[uid(AGENT_1)]!!
 
         assertEquals("msg-self", status.lastSeenMessageId)
         assertEquals(AgentStatus.IDLE, status.status)
@@ -297,21 +296,19 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
 
     @Test
     fun `MESSAGE_POSTED from agent itself should detect isSelf by handle`() {
-        val agentId = "agent-1"
-        val sessionId = "session-1"
-        val agent = testAgent(agentId, "Test", subscribedSessionIds = listOf(sessionId))
+        val agent = testAgent(AGENT_1, "Test", subscribedSessionIds = listOf(SESSION_1))
         val initialState = AgentRuntimeState(
-            agents = mapOf(uid(agentId) to agent),
-            agentStatuses = mapOf(uid(agentId) to AgentStatusInfo(status = AgentStatus.IDLE))
+            agents = mapOf(uid(AGENT_1) to agent),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(status = AgentStatus.IDLE))
         )
 
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", sessionId); put("sessionUUID", sessionId)
+            put("sessionId", SESSION_1); put("sessionUUID", SESSION_1)
             put("entry", buildJsonObject { put("id", "msg-self-h"); put("senderId", agent.identityHandle.handle); put("timestamp", 1000L) })
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        val status = newState.agentStatuses[uid(agentId)]!!
+        val status = newState.agentStatuses[uid(AGENT_1)]!!
 
         assertEquals("msg-self-h", status.lastSeenMessageId)
         assertEquals(AgentStatus.IDLE, status.status)
@@ -319,39 +316,38 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
 
     @Test
     fun `MESSAGE_POSTED for unsubscribed session should be ignored`() {
-        val agentId = "agent-1"
-        val agent = testAgent(agentId, "Test", subscribedSessionIds = listOf("other-session"))
+        val otherSession = "a0000000-0000-0000-0000-000000000099"
+        val unrelatedSession = "a0000000-0000-0000-0000-0000000000ff"
+        val agent = testAgent(AGENT_1, "Test", subscribedSessionIds = listOf(otherSession))
         val initialState = AgentRuntimeState(
-            agents = mapOf(uid(agentId) to agent),
-            agentStatuses = mapOf(uid(agentId) to AgentStatusInfo(status = AgentStatus.IDLE))
+            agents = mapOf(uid(AGENT_1) to agent),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(status = AgentStatus.IDLE))
         )
 
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", "unrelated"); put("sessionUUID", "unrelated")
+            put("sessionId", unrelatedSession); put("sessionUUID", unrelatedSession)
             put("entry", buildJsonObject { put("id", "msg-1"); put("senderId", "user"); put("timestamp", 1000L) })
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        assertNull(newState.agentStatuses[uid(agentId)]?.lastSeenMessageId)
+        assertNull(newState.agentStatuses[uid(AGENT_1)]?.lastSeenMessageId)
     }
 
     @Test
     fun `MESSAGE_POSTED from 'system' should NOT update lastSeenMessageId (Sentinel Fix)`() {
-        val agentId = "agent-1"
-        val sessionId = "session-1"
-        val agent = testAgent(agentId, "Test", subscribedSessionIds = listOf(sessionId))
+        val agent = testAgent(AGENT_1, "Test", subscribedSessionIds = listOf(SESSION_1))
         val initialState = AgentRuntimeState(
-            agents = mapOf(uid(agentId) to agent),
-            agentStatuses = mapOf(uid(agentId) to AgentStatusInfo(lastSeenMessageId = "msg-old"))
+            agents = mapOf(uid(AGENT_1) to agent),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(lastSeenMessageId = "msg-old"))
         )
 
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", sessionId); put("sessionUUID", sessionId)
+            put("sessionId", SESSION_1); put("sessionUUID", SESSION_1)
             put("entry", buildJsonObject { put("id", "msg-sentinel"); put("senderId", "system"); put("timestamp", 1000L) })
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        assertEquals("msg-old", newState.agentStatuses[uid(agentId)]?.lastSeenMessageId)
+        assertEquals("msg-old", newState.agentStatuses[uid(AGENT_1)]?.lastSeenMessageId)
     }
 
     // =========================================================================
@@ -360,35 +356,31 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
 
     @Test
     fun `MESSAGE_POSTED with render_as_partial metadata should track avatar card`() {
-        val agentId = "agent-1"
-        val sessionId = "session-1"
-        val agent = testAgent(agentId, "Test", subscribedSessionIds = listOf(sessionId))
+        val agent = testAgent(AGENT_1, "Test", subscribedSessionIds = listOf(SESSION_1))
         val initialState = AgentRuntimeState(
-            agents = mapOf(uid(agentId) to agent),
-            agentStatuses = mapOf(uid(agentId) to AgentStatusInfo(status = AgentStatus.IDLE))
+            agents = mapOf(uid(AGENT_1) to agent),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(status = AgentStatus.IDLE))
         )
 
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", sessionId); put("sessionUUID", sessionId)
+            put("sessionId", SESSION_1); put("sessionUUID", SESSION_1)
             put("entry", buildJsonObject {
-                put("id", "avatar-msg-1"); put("senderId", agentId); put("timestamp", 1000L)
+                put("id", "avatar-msg-1"); put("senderId", AGENT_1); put("timestamp", 1000L)
                 put("metadata", buildJsonObject { put("render_as_partial", true) })
             })
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        assertEquals("avatar-msg-1", newState.agentAvatarCardIds[uid(agentId)]?.get(uid(sessionId)))
+        assertEquals("avatar-msg-1", newState.agentAvatarCardIds[uid(AGENT_1)]?.get(uid(SESSION_1)))
     }
 
     @Test
     fun `MESSAGE_POSTED with avatar metadata resolves agent by handle`() {
-        val agentId = "agent-1"
-        val sessionId = "session-1"
-        val agent = testAgent(agentId, "Test", subscribedSessionIds = listOf(sessionId))
-        val initialState = AgentRuntimeState(agents = mapOf(uid(agentId) to agent))
+        val agent = testAgent(AGENT_1, "Test", subscribedSessionIds = listOf(SESSION_1))
+        val initialState = AgentRuntimeState(agents = mapOf(uid(AGENT_1) to agent))
 
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", sessionId); put("sessionUUID", sessionId)
+            put("sessionId", SESSION_1); put("sessionUUID", SESSION_1)
             put("entry", buildJsonObject {
                 put("id", "avatar-msg-2"); put("senderId", agent.identityHandle.handle); put("timestamp", 1000L)
                 put("metadata", buildJsonObject { put("render_as_partial", true) })
@@ -396,7 +388,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        assertEquals("avatar-msg-2", newState.agentAvatarCardIds[uid(agentId)]?.get(uid(sessionId)))
+        assertEquals("avatar-msg-2", newState.agentAvatarCardIds[uid(AGENT_1)]?.get(uid(SESSION_1)))
     }
 
     // =========================================================================
@@ -409,7 +401,9 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             agentAvatarCardIds = mapOf(uid("a1") to mapOf(uid("s1") to "msg-avatar"))
         )
 
-        val action = Action(ActionRegistry.Names.SESSION_MESSAGE_DELETED, buildJsonObject { put("messageId", "msg-avatar") })
+        val action = Action(ActionRegistry.Names.SESSION_MESSAGE_DELETED, buildJsonObject {
+            put("messageId", "msg-avatar"); put("sessionId", "s1")
+        })
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
 
         assertFalse(newState.agentAvatarCardIds[uid("a1")]!!.containsKey(uid("s1")))
@@ -421,7 +415,9 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             agentAvatarCardIds = mapOf(uid("a1") to mapOf(uid("s1") to "msg-avatar"))
         )
 
-        val action = Action(ActionRegistry.Names.SESSION_MESSAGE_DELETED, buildJsonObject { put("messageId", "msg-unrelated") })
+        val action = Action(ActionRegistry.Names.SESSION_MESSAGE_DELETED, buildJsonObject {
+            put("messageId", "msg-unrelated"); put("sessionId", "s1")
+        })
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
 
         assertEquals("msg-avatar", newState.agentAvatarCardIds[uid("a1")]!![uid("s1")])
@@ -433,44 +429,44 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
 
     @Test
     fun `SESSION_DELETED should remove session from agent subscriptions and trigger persistence`() {
-        val agent = testAgent("a1", "Test", null, "p", "m", subscribedSessionIds = listOf("s1", "s2"))
-        val state = AgentRuntimeState(agents = mapOf(uid("a1") to agent))
+        val agent = testAgent(AGENT_1, "Test", null, "p", "m", subscribedSessionIds = listOf(SESSION_1, SESSION_2))
+        val state = AgentRuntimeState(agents = mapOf(uid(AGENT_1) to agent))
 
-        val action = Action(ActionRegistry.Names.SESSION_SESSION_DELETED, buildJsonObject { put("sessionUUID", "s1") })
+        val action = Action(ActionRegistry.Names.SESSION_SESSION_DELETED, buildJsonObject { put("sessionUUID", SESSION_1) })
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
 
-        val updatedAgent = newState.agents[uid("a1")]!!
+        val updatedAgent = newState.agents[uid(AGENT_1)]!!
         assertEquals(1, updatedAgent.subscribedSessionIds.size)
-        assertEquals(IdentityUUID("s2"), updatedAgent.subscribedSessionIds.first())
-        assertTrue(newState.agentsToPersist?.contains(uid("a1")) == true)
+        assertEquals(IdentityUUID(SESSION_2), updatedAgent.subscribedSessionIds.first())
+        assertTrue(newState.agentsToPersist?.contains(uid(AGENT_1)) == true)
     }
 
     @Test
     fun `SESSION_DELETED should clear outputSessionId if it matches deleted session`() {
-        val agent = testAgent("a1", "Test", null, "p", "m",
-            subscribedSessionIds = listOf("s1"), privateSessionId = "s-output"
+        val agent = testAgent(AGENT_1, "Test", null, "p", "m",
+            subscribedSessionIds = listOf(SESSION_1), privateSessionId = SESSION_OUTPUT
         )
-        val state = AgentRuntimeState(agents = mapOf(uid("a1") to agent))
+        val state = AgentRuntimeState(agents = mapOf(uid(AGENT_1) to agent))
 
-        val action = Action(ActionRegistry.Names.SESSION_SESSION_DELETED, buildJsonObject { put("sessionUUID", "s-output") })
+        val action = Action(ActionRegistry.Names.SESSION_SESSION_DELETED, buildJsonObject { put("sessionUUID", SESSION_OUTPUT) })
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
 
-        assertNull(newState.agents[uid("a1")]!!.outputSessionId)
+        assertNull(newState.agents[uid(AGENT_1)]!!.outputSessionId)
     }
 
     @Test
     fun `SESSION_DELETED should clean up avatar cards for deleted session`() {
-        val agent = testAgent("a1", "Test", null, "p", "m", subscribedSessionIds = listOf("s1", "s2"))
+        val agent = testAgent(AGENT_1, "Test", null, "p", "m", subscribedSessionIds = listOf(SESSION_1, SESSION_2))
         val state = AgentRuntimeState(
-            agents = mapOf(uid("a1") to agent),
-            agentAvatarCardIds = mapOf(uid("a1") to mapOf(uid("s1") to "msg-1", uid("s2") to "msg-2"))
+            agents = mapOf(uid(AGENT_1) to agent),
+            agentAvatarCardIds = mapOf(uid(AGENT_1) to mapOf(uid(SESSION_1) to "msg-1", uid(SESSION_2) to "msg-2"))
         )
 
-        val action = Action(ActionRegistry.Names.SESSION_SESSION_DELETED, buildJsonObject { put("sessionUUID", "s1") })
+        val action = Action(ActionRegistry.Names.SESSION_SESSION_DELETED, buildJsonObject { put("sessionUUID", SESSION_1) })
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
 
-        assertFalse(newState.agentAvatarCardIds[uid("a1")]!!.containsKey(uid("s1")))
-        assertEquals("msg-2", newState.agentAvatarCardIds[uid("a1")]!![uid("s2")])
+        assertFalse(newState.agentAvatarCardIds[uid(AGENT_1)]!!.containsKey(uid(SESSION_1)))
+        assertEquals("msg-2", newState.agentAvatarCardIds[uid(AGENT_1)]!![uid(SESSION_2)])
     }
 
     // =========================================================================
@@ -483,15 +479,15 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
 
         val action = Action(ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED, buildJsonObject {
             put("sessions", buildJsonArray {
-                add(buildJsonObject { put("uuid", "uuid-1"); put("handle", "session.chat"); put("localHandle", "chat"); put("name", "Chat Room") })
-                add(buildJsonObject { put("uuid", "uuid-2"); put("handle", "session.general"); put("localHandle", "general"); put("name", "General") })
+                add(buildJsonObject { put("uuid", SESSION_1); put("handle", "session.chat"); put("localHandle", "chat"); put("name", "Chat Room") })
+                add(buildJsonObject { put("uuid", SESSION_2); put("handle", "session.general"); put("localHandle", "general"); put("name", "General") })
             })
         })
 
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
         assertEquals(2, newState.subscribableSessionNames.size)
-        assertEquals("Chat Room", newState.subscribableSessionNames[uid("uuid-1")])
-        assertEquals("General", newState.subscribableSessionNames[uid("uuid-2")])
+        assertEquals("Chat Room", newState.subscribableSessionNames[uid(SESSION_1)])
+        assertEquals("General", newState.subscribableSessionNames[uid(SESSION_2)])
     }
 
     @Test

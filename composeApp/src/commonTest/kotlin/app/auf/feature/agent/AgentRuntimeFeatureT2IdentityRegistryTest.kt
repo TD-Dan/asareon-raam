@@ -160,7 +160,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             harness.store.processedActions.clear()
 
             // ACT: Dispatch INITIATE_TURN using the agent's UUID
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_INITIATE_TURN,
                 buildJsonObject { put("agentId", agentUUID) }
             ))
@@ -205,7 +205,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             harness.store.processedActions.clear()
 
             // ACT: Dispatch using case-mismatched display name
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_INITIATE_TURN,
                 buildJsonObject { put("agentId", "alpha") }
             ))
@@ -247,7 +247,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             harness.store.processedActions.clear()
 
             // ACT: Dispatch using the agent's full registered handle
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_INITIATE_TURN,
                 buildJsonObject { put("agentId", registeredAgent.handle) }
             ))
@@ -289,7 +289,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             harness.store.processedActions.clear()
 
             // ACT: Dispatch using the agent's localHandle
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_INITIATE_TURN,
                 buildJsonObject { put("agentId", registeredAgent.localHandle) }
             ))
@@ -335,7 +335,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             harness.store.processedActions.clear()
 
             // ACT: Dispatch INITIATE_TURN with a non-existent agent name
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_INITIATE_TURN,
                 buildJsonObject {
                     put("agentId", "nonexistent-agent-xyz")
@@ -392,7 +392,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             harness.store.processedActions.clear()
 
             // ACT
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_INITIATE_TURN,
                 buildJsonObject { put("agentId", agentUUID) }
             ))
@@ -440,7 +440,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             harness.store.processedActions.clear()
 
             // ACT
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_INITIATE_TURN,
                 buildJsonObject { put("agentId", agentUUID) }
             ))
@@ -636,7 +636,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             harness.store.processedActions.clear()
 
             // ACT
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_DELETE,
                 buildJsonObject { put("agentId", agentUUID) }
             ))
@@ -672,7 +672,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             harness.store.processedActions.clear()
 
             // ACT: Create a new agent via AGENT_CREATE
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_CREATE,
                 buildJsonObject {
                     put("name", "Beta")
@@ -718,7 +718,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             harness.store.processedActions.clear()
 
             // ACT: Update agent name
-            harness.store.dispatch("ui", Action(
+            harness.store.dispatch("core", Action(
                 ActionRegistry.Names.AGENT_UPDATE_CONFIG,
                 buildJsonObject {
                     put("agentId", agentUUID)
