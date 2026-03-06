@@ -237,6 +237,45 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     // --- 4. Dropdown Logic (Draft-Based) ---
 
     @Test
+    fun `provider selector shows no-providers message and hint when availableModels is empty`() {
+        // ARRANGE: No API keys configured → availableModels is empty → ProviderSelector
+        // replaces the dropdown entirely with an explanatory message.
+        val agent = testAgent("a1", "Test Agent", null, "p", "m")
+        setViewState(AgentRuntimeState(
+            agents = mapOf(uid("a1") to agent),
+            editingAgentId = uid("a1"),
+            availableModels = emptyMap() // no configured providers
+        ))
+
+        // ASSERT: The informational message is shown in place of the dropdown.
+        composeTestRule.onNodeWithText("No providers configured").assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            "Use settings to configure API keys to enable models."
+        ).assertIsDisplayed()
+
+        // ASSERT: The dropdown field itself should not exist — not just disabled.
+        composeTestRule.onNodeWithText("Provider").assertDoesNotExist()
+    }
+
+    @Test
+    fun `provider selector shows dropdown when providers have models available`() {
+        // ARRANGE: At least one provider has models — normal dropdown should be shown.
+        val agent = testAgent("a1", "Test Agent", null, "gemini", "gemini-pro")
+        setViewState(AgentRuntimeState(
+            agents = mapOf(uid("a1") to agent),
+            editingAgentId = uid("a1"),
+            availableModels = mapOf("gemini" to listOf("gemini-pro", "gemini-flash"))
+        ))
+
+        // ASSERT: Dropdown is rendered; the hint message is absent.
+        composeTestRule.onNodeWithText("Provider").assertIsDisplayed()
+        composeTestRule.onNodeWithText("No providers configured").assertDoesNotExist()
+        composeTestRule.onNodeWithText(
+            "Use settings to configure API keys to enable models."
+        ).assertDoesNotExist()
+    }
+
+    @Test
     fun `agent editor displays available knowledge graphs for sovereign agent`() {
         val agent = testAgent("agent-1", "Test Agent", knowledgeGraphId = "p1", modelProvider = "p", modelName = "m", cognitiveStrategyId = "sovereign_v1")
         val state = AgentRuntimeState(

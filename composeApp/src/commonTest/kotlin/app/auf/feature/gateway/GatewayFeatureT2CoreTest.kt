@@ -365,6 +365,40 @@ class GatewayFeatureT2CoreTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun `MODELS_UPDATED with empty list removes provider from state rather than storing empty entry`() = testScope.runTest {
+        // ARRANGE: Start with provider-1 already in state with models.
+        val harness = createHarness(this, initialLifecycle = AppLifecycle.INITIALIZING)
+        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_LOADED, buildJsonObject {
+            put("gateway.provider-1.apiKey", "k1")
+        }))
+        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+        runCurrent()
+
+        val stateAfterLoad = harness.store.state.value.featureStates["gateway"] as GatewayState
+        assertEquals(listOf("model-1", "model-2"), stateAfterLoad.availableModels["provider-1"],
+            "Pre-condition: provider-1 should have models in state before key is cleared.")
+
+        // ACT: Simulate user clearing the API key — provider returns emptyList() when key is blank.
+        // The FakeUniversalGatewayProvider returns emptyList() when its API key is blank (line 54).
+        harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_VALUE_CHANGED, buildJsonObject {
+            put("key", "gateway.provider-1.apiKey")
+            put("value", "") // blank key → listAvailableModels returns emptyList()
+        }))
+        runCurrent()
+
+        // ASSERT: Provider should be ejected from availableModels entirely, not stored as [].
+        harness.runAndLogOnFailure {
+            val finalState = harness.store.state.value.featureStates["gateway"] as GatewayState
+            assertFalse(
+                finalState.availableModels.containsKey("provider-1"),
+                "provider-1 should be removed from availableModels when its model list is empty. " +
+                        "Storing an empty entry would cause it to appear (disabled) in the UI provider selector."
+            )
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun `CANCEL_REQUEST for unknown correlationId logs warning`() = testScope.runTest {
         val harness = createHarness(this)
         val cancelAction = Action(ActionRegistry.Names.GATEWAY_CANCEL_REQUEST, buildJsonObject {
