@@ -25,8 +25,14 @@ import kotlinx.serialization.json.put
 private val DangerLowColor = Color(0xFF4CAF50)        // Green
 private val DangerCautionColor = Color(0xFFFF9800)     // Orange
 private val DangerDangerColor = Color(0xFFF44336)      // Red
-private val EscalationBgColor = Color(0xFFFFF3E0)      // Light orange background
-private val InheritedBgColor = Color(0xFFF5F5F5)       // Light gray for inherited/default permissions
+private val ScrollbarThumbColor = Color(0xFF888888)    // Visible gray for scrollbar thumbs
+private val ScrollbarThumbHoverColor = Color(0xFFAAAAAA) // Lighter gray on hover
+
+// Subtle cell tints when a permission is granted (YES). Alpha-based so they
+// work on both light and dark themes.
+private val CellTintLow = Color(0x1A4CAF50)            // Green tint
+private val CellTintCaution = Color(0x1AFF9800)        // Orange tint
+private val CellTintDanger = Color(0x1AF44336)         // Red tint
 
 /**
  * Groups permission declarations by their domain (the part before the colon).
@@ -54,6 +60,15 @@ private fun dangerColor(dangerLevel: DangerLevel): Color = when (dangerLevel) {
     DangerLevel.LOW -> DangerLowColor
     DangerLevel.CAUTION -> DangerCautionColor
     DangerLevel.DANGER -> DangerDangerColor
+}
+
+/**
+ * Returns a subtle background tint for a YES cell based on danger level.
+ */
+private fun cellTint(dangerLevel: DangerLevel): Color = when (dangerLevel) {
+    DangerLevel.LOW -> CellTintLow
+    DangerLevel.CAUTION -> CellTintCaution
+    DangerLevel.DANGER -> CellTintDanger
 }
 
 /**
@@ -154,10 +169,6 @@ fun PermissionManagerView(store: Store) {
             Spacer(Modifier.width(16.dp))
             Icon(Icons.Default.Warning, null, tint = DangerCautionColor, modifier = Modifier.size(16.dp))
             Text("= escalated above parent", style = MaterialTheme.typography.labelSmall)
-            Spacer(Modifier.width(16.dp))
-            Box(Modifier.size(10.dp).background(InheritedBgColor, shape = MaterialTheme.shapes.extraSmall).border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.extraSmall))
-            Spacer(Modifier.width(4.dp))
-            Text("= inherited/default", style = MaterialTheme.typography.labelSmall)
         }
 
         HorizontalDivider()
@@ -243,13 +254,12 @@ fun PermissionManagerView(store: Store) {
                                     val effectiveGrant = effective[permKey]
                                     val effectiveLevel = effectiveGrant?.level ?: PermissionLevel.NO
                                     val isChecked = effectiveLevel == PermissionLevel.YES
-                                    val explicitGrant = identity.permissions[permKey]
-                                    val isInherited = explicitGrant == null && effectiveLevel != PermissionLevel.NO
                                     val escalated = isEscalated(identity, permKey, effective, parentEffective)
+                                    val dangerLevel = declarations[permKey]?.dangerLevel ?: DangerLevel.LOW
 
                                     PermissionCell(
                                         isChecked = isChecked,
-                                        isInherited = isInherited,
+                                        dangerLevel = dangerLevel,
                                         isEscalated = escalated,
                                         onToggle = {
                                             val newLevel = if (isChecked) "NO" else "YES"
@@ -271,13 +281,24 @@ fun PermissionManagerView(store: Store) {
                 }
             }
 
+            // Visible scrollbar style for both axes
+            val scrollbarStyle = ScrollbarStyle(
+                minimalHeight = 48.dp,
+                thickness = 8.dp,
+                shape = MaterialTheme.shapes.small,
+                hoverDurationMillis = 300,
+                unhoverColor = ScrollbarThumbColor,
+                hoverColor = ScrollbarThumbHoverColor
+            )
+
             // Vertical scrollbar — anchored to the right edge, below the header row
             VerticalScrollbar(
                 adapter = rememberScrollbarAdapter(verticalScrollState),
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .fillMaxHeight()
-                    .padding(top = 80.dp, bottom = 12.dp)
+                    .padding(top = 80.dp, bottom = 12.dp),
+                style = scrollbarStyle
             )
 
             // Horizontal scrollbar — anchored to the bottom edge, right of the identity column
@@ -286,7 +307,8 @@ fun PermissionManagerView(store: Store) {
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(start = 168.dp, end = 12.dp)
+                    .padding(start = 168.dp, end = 12.dp),
+                style = scrollbarStyle
             )
         }
     }
@@ -374,24 +396,20 @@ private fun PermissionColumnHeader(
 }
 
 /**
- * A single cell in the permission matrix. Shows a checkbox for YES/NO,
- * with visual indicators for inherited and escalated states.
- * - Escalated: light orange background + warning icon
- * - Inherited/default: light gray background to indicate the grant comes from a parent
- * - Explicit grant: transparent background (normal)
+ * A single cell in the permission matrix. Shows a checkbox for YES/NO.
+ * - YES cells are tinted according to the permission's danger level
+ *   (green = low, orange = caution, red = danger) for at-a-glance risk visibility.
+ * - NO / unchecked cells have no background.
+ * - Escalated grants (child exceeds parent) show a warning icon.
  */
 @Composable
 private fun PermissionCell(
     isChecked: Boolean,
-    isInherited: Boolean,
+    dangerLevel: DangerLevel,
     isEscalated: Boolean,
     onToggle: () -> Unit
 ) {
-    val bgColor = when {
-        isEscalated -> EscalationBgColor
-        isInherited -> InheritedBgColor
-        else -> Color.Transparent
-    }
+    val bgColor = if (isChecked) cellTint(dangerLevel) else Color.Transparent
 
     Box(
         modifier = Modifier
@@ -408,15 +426,9 @@ private fun PermissionCell(
                 checked = isChecked,
                 onCheckedChange = { onToggle() },
                 colors = CheckboxDefaults.colors(
-                    checkedColor = if (isInherited)
-                        MaterialTheme.colorScheme.outline
-                    else
-                        MaterialTheme.colorScheme.primary,
+                    checkedColor = MaterialTheme.colorScheme.primary,
                     uncheckedColor = MaterialTheme.colorScheme.outline,
-                    checkmarkColor = MaterialTheme.colorScheme.onPrimary,
-                    // Prevent white box appearance on unchecked/disabled states
-                    disabledCheckedColor = MaterialTheme.colorScheme.outline,
-                    disabledUncheckedColor = MaterialTheme.colorScheme.outlineVariant
+                    checkmarkColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
             if (isEscalated) {

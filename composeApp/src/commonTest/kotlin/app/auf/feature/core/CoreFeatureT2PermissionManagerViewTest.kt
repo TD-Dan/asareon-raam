@@ -210,9 +210,6 @@ class PermissionManagerViewTest {
         )}
 
         val parentEffective = harness.store.resolveEffectivePermissions(parentIdentity)
-        val childEffective = harness.store.resolveEffectivePermissions(childIdentity)
-
-        // Verify escalation: child has YES but parent has NO
         val childExplicit = childIdentity.permissions["gateway:generate"]
         val parentLevel = parentEffective["gateway:generate"]?.level ?: PermissionLevel.NO
         assertNotNull(childExplicit)
@@ -260,7 +257,7 @@ class PermissionManagerViewTest {
         val childIdentity = Identity(
             uuid = "agent-1", handle = "agent.mercury", localHandle = "mercury",
             name = "Mercury", parentHandle = "agent",
-            permissions = emptyMap()  // No explicit grants — only inherited
+            permissions = emptyMap()
         )
 
         harness.store.updateIdentityRegistry { it + mapOf(
@@ -271,59 +268,66 @@ class PermissionManagerViewTest {
             "agent.mercury" to childIdentity
         )}
 
-        // Escalation requires an explicit grant on the child — inherited doesn't count
         val childExplicit = childIdentity.permissions["gateway:generate"]
         assertNull(childExplicit,
             "No explicit grant means no escalation (inherited permissions are not escalations).")
     }
 
     // ================================================================
-    // Inherited state detection (used for gray background in UI)
+    // Cell tint: YES cells tinted by danger level, NO cells transparent
     // ================================================================
 
     @Test
-    fun `inherited state is detected when effective is YES but no explicit grant exists`() {
+    fun `YES cell should be tinted based on danger level`() {
+        // This tests the view's rendering logic:
+        // when isChecked=true, the cell background should use the danger-level tint.
+        // We verify the data that drives the decision.
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
             .build(platform = platform)
 
-        val childIdentity = Identity(
-            uuid = "user-1", handle = "core.alice", localHandle = "alice",
-            name = "Alice", parentHandle = "core",
-            permissions = emptyMap()
-        )
-
         harness.store.updateIdentityRegistry { it + mapOf(
-            "core" to Identity(
-                uuid = null, localHandle = "core", handle = "core", name = "Core",
-                permissions = mapOf("core:read" to PermissionGrant(PermissionLevel.YES))
-            ),
-            "core.alice" to childIdentity
+            "core" to Identity(uuid = null, localHandle = "core", handle = "core", name = "Core"),
+            "core.alice" to Identity(
+                uuid = "user-1", handle = "core.alice", localHandle = "alice",
+                name = "Alice", parentHandle = "core",
+                permissions = mapOf("filesystem:workspace" to PermissionGrant(PermissionLevel.YES))
+            )
         )}
 
-        val effective = harness.store.resolveEffectivePermissions(childIdentity)
-        val effectiveLevel = effective["core:read"]?.level ?: PermissionLevel.NO
-        val explicitGrant = childIdentity.permissions["core:read"]
-        val isInherited = explicitGrant == null && effectiveLevel != PermissionLevel.NO
+        val alice = harness.store.state.value.identityRegistry["core.alice"]!!
+        val effective = harness.store.resolveEffectivePermissions(alice)
+        val effectiveLevel = effective["filesystem:workspace"]?.level ?: PermissionLevel.NO
+        val isChecked = effectiveLevel == PermissionLevel.YES
 
-        assertTrue(isInherited,
-            "Permission should be detected as inherited when effective=YES but no explicit grant.")
+        assertTrue(isChecked,
+            "Cell with YES grant should be checked — and thus tinted by danger level.")
     }
 
     @Test
-    fun `not inherited when identity has explicit grant`() {
-        val childIdentity = Identity(
-            uuid = "user-1", handle = "core.alice", localHandle = "alice",
-            name = "Alice", parentHandle = "core",
-            permissions = mapOf("core:read" to PermissionGrant(PermissionLevel.YES))
-        )
+    fun `NO cell should not be tinted`() {
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .build(platform = platform)
 
-        val explicitGrant = childIdentity.permissions["core:read"]
-        val isInherited = explicitGrant == null
+        harness.store.updateIdentityRegistry { it + mapOf(
+            "core" to Identity(uuid = null, localHandle = "core", handle = "core", name = "Core"),
+            "core.alice" to Identity(
+                uuid = "user-1", handle = "core.alice", localHandle = "alice",
+                name = "Alice", parentHandle = "core",
+                permissions = mapOf("filesystem:workspace" to PermissionGrant(PermissionLevel.NO))
+            )
+        )}
 
-        assertFalse(isInherited,
-            "Permission should NOT be detected as inherited when the identity has an explicit grant.")
+        val alice = harness.store.state.value.identityRegistry["core.alice"]!!
+        val effective = harness.store.resolveEffectivePermissions(alice)
+        val effectiveLevel = effective["filesystem:workspace"]?.level ?: PermissionLevel.NO
+        val isChecked = effectiveLevel == PermissionLevel.YES
+
+        assertFalse(isChecked,
+            "Cell with NO grant should not be checked — and thus not tinted.")
     }
 
     // ================================================================
