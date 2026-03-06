@@ -592,12 +592,51 @@ object AgentCognitivePipeline {
             return
         }
 
+        // ================================================================
+        // Error Handling (with rate limit detection)
+        // ================================================================
         if (decoded.errorMessage != null) {
+            // Check if this is a rate limit error — the gateway sets retryAfterMs on HTTP 429.
+            val retryAfterMs = decoded.rateLimitInfo?.get("retryAfterMs")?.jsonPrimitive?.longOrNull
+
+            if (retryAfterMs != null) {
+                // RATE LIMIT PATH: Set agent to RATE_LIMITED with retry timestamp.
+                // The auto-trigger heartbeat will re-initiate the turn once the window expires.
+                store.platformDependencies.log(
+                    LogLevel.WARN, LOG_TAG,
+                    "Agent '$agentUuid' rate limited by provider '${agent.modelProvider}'. " +
+                            "Retry after: ${store.platformDependencies.formatIsoTimestamp(retryAfterMs)}. " +
+                            "Error: ${decoded.errorMessage}"
+                )
+                store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_STATUS, buildJsonObject {
+                    put("agentId", agentUuid.uuid)
+                    put("status", AgentStatus.RATE_LIMITED.name)
+                    put("error", decoded.errorMessage)
+                    put("rateLimitedUntilMs", retryAfterMs)
+                }))
+                AgentAvatarLogic.updateAgentAvatars(agentUuid, store)
+                return
+            }
+
+            // NORMAL ERROR PATH: No rate limit — show error on avatar.
             AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
             return
         }
 
+        // ================================================================
+        // Success Path
+        // ================================================================
         val rawContent = decoded.rawContent ?: ""
+
+        // Log rate limit info from successful response at DEBUG level
+        decoded.rateLimitInfo?.let { rl ->
+            store.platformDependencies.log(
+                LogLevel.DEBUG, LOG_TAG,
+                "Rate limit snapshot for agent '$agentUuid' (provider '${agent.modelProvider}'): " +
+                        "requests=${rl["requestsRemaining"]?.jsonPrimitive?.intOrNull}/${rl["requestLimit"]?.jsonPrimitive?.intOrNull}, " +
+                        "tokens=${rl["tokensRemaining"]?.jsonPrimitive?.intOrNull}/${rl["tokenLimit"]?.jsonPrimitive?.intOrNull}"
+            )
+        }
 
         // Cognitive Strategy Post-Processing
         val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)

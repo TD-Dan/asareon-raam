@@ -24,7 +24,23 @@ import kotlinx.serialization.json.JsonObject
 
 @Serializable internal data class GraphNamesPayload(val names: Map<String, String>)
 @Serializable internal data class ReservedIdsPayload(val reservedIds: Set<String>)
-@Serializable internal data class GatewayResponsePayload(val correlationId: String, val rawContent: String? = null, val errorMessage: String? = null, val inputTokens: Int? = null, val outputTokens: Int? = null)
+
+/**
+ * Decodes the GATEWAY_RETURN_RESPONSE payload.
+ *
+ * [rateLimitInfo] is the raw JSON object from the gateway's RateLimitInfo serialization.
+ * The agent feature reads specific fields (e.g., retryAfterMs) without importing the
+ * gateway feature's data classes, preserving inter-feature decoupling.
+ */
+@Serializable internal data class GatewayResponsePayload(
+    val correlationId: String,
+    val rawContent: String? = null,
+    val errorMessage: String? = null,
+    val inputTokens: Int? = null,
+    val outputTokens: Int? = null,
+    val rateLimitInfo: JsonObject? = null
+)
+
 @Serializable internal data class LedgerResponsePayload(val correlationId: String, val messages: List<JsonObject>) // Generic JsonObject representing LedgerEntry
 
 /**

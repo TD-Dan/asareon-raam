@@ -15,6 +15,10 @@ import kotlinx.serialization.json.put
  * 1. Debounce: Has enough time passed since the last message received?
  * 2. Timeout: Has the agent been waiting too long overall?
  *
+ * Additionally, it handles automatic retry after API rate limit windows expire.
+ * Rate limit retries apply to ALL agents (not just automatic mode) because any
+ * agent — manual or automatic — may hit a rate limit during generation.
+ *
  * [PHASE 1] Uses typed [IdentityUUID] for map key lookups.
  */
 object AgentAutoTriggerLogic {
@@ -31,6 +35,28 @@ object AgentAutoTriggerLogic {
             val agentUuid = agent.identityUUID
             val statusInfo = state.agentStatuses[agentUuid] ?: AgentStatusInfo()
 
+            // ================================================================
+            // Rate Limit Auto-Retry (applies to ALL agents, not just automatic)
+            //
+            // When an agent is RATE_LIMITED and the retry window has expired,
+            // dispatch INITIATE_TURN to retry the failed request. The reducer's
+            // time-based guard will allow the turn through since the window has passed.
+            // ================================================================
+            if (statusInfo.status == AgentStatus.RATE_LIMITED &&
+                statusInfo.rateLimitedUntilMs != null &&
+                currentTime >= statusInfo.rateLimitedUntilMs &&
+                agent.isAgentActive
+            ) {
+                store.deferredDispatch(featureName, Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
+                    put("agentId", agentUuid.uuid)
+                    put("preview", false)
+                }))
+                return@forEach // Don't also check auto-trigger for this agent on this tick
+            }
+
+            // ================================================================
+            // Automatic Mode Debounce/Timeout (only for automatic agents)
+            // ================================================================
             // Condition: Must be Automatic, Active, Waiting, and have valid timestamps
             if (agent.automaticMode &&
                 agent.isAgentActive &&

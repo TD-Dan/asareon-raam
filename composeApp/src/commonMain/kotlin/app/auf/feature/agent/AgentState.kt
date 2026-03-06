@@ -11,7 +11,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 
 @Serializable
-enum class AgentStatus { IDLE, WAITING, PROCESSING, ERROR }
+enum class AgentStatus { IDLE, WAITING, PROCESSING, RATE_LIMITED, ERROR }
 
 @Serializable
 enum class TurnMode { DIRECT, PREVIEW }
@@ -171,7 +171,13 @@ data class AgentStatusInfo(
     /** Input tokens consumed by the last completed generation request. */
     val lastInputTokens: Int? = null,
     /** Output tokens consumed by the last completed generation request. */
-    val lastOutputTokens: Int? = null
+    val lastOutputTokens: Int? = null,
+    /**
+     * Epoch ms until which the agent must not send requests due to API rate limiting.
+     * Non-null only when status == RATE_LIMITED. The auto-trigger heartbeat checks this
+     * timestamp and re-initiates the turn once the window expires.
+     */
+    val rateLimitedUntilMs: Long? = null
 )
 
 @Serializable

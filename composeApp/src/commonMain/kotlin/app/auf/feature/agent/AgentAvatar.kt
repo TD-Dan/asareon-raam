@@ -191,6 +191,7 @@ fun AgentControlCard(
     platformDependencies: PlatformDependencies
 ) {
     var processingTime by remember { mutableStateOf("00:00") }
+    var rateLimitCountdown by remember { mutableStateOf("") }
     var menuExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(statusInfo.status, statusInfo.processingSinceTimestamp) {
@@ -205,12 +206,38 @@ fun AgentControlCard(
         }
     }
 
+    // Countdown timer for rate-limited agents
+    LaunchedEffect(statusInfo.status, statusInfo.rateLimitedUntilMs) {
+        if (statusInfo.status == AgentStatus.RATE_LIMITED && statusInfo.rateLimitedUntilMs != null) {
+            while (true) {
+                val remainingMs = statusInfo.rateLimitedUntilMs - platformDependencies.currentTimeMillis()
+                if (remainingMs <= 0) {
+                    rateLimitCountdown = "resuming..."
+                    break
+                }
+                val remainingSec = (remainingMs / 1000).toInt()
+                rateLimitCountdown = "${remainingSec}s"
+                delay(1000)
+            }
+        } else {
+            rateLimitCountdown = ""
+        }
+    }
+
+    // RATE_LIMITED is intentionally excluded — trigger must not bypass rate limit.
     val canInitiateTurn = (statusInfo.status == AgentStatus.IDLE || statusInfo.status == AgentStatus.WAITING || statusInfo.status == AgentStatus.ERROR) && (agent.subscribedSessionIds.isNotEmpty() || agent.outputSessionId != null) && agent.isAgentActive
 
     val statusText = when (statusInfo.status) {
         AgentStatus.PROCESSING -> {
             val step = statusInfo.processingStep ?: "Processing..."
             "$step ($processingTime)"
+        }
+        AgentStatus.RATE_LIMITED -> {
+            if (rateLimitCountdown.isNotBlank()) {
+                "Waiting for API limit ($rateLimitCountdown)"
+            } else {
+                "Rate limited"
+            }
         }
         else -> statusInfo.status.name
     }
@@ -237,6 +264,14 @@ fun AgentControlCard(
                     text = statusInfo.errorMessage,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            if (statusInfo.status == AgentStatus.RATE_LIMITED && statusInfo.errorMessage != null) {
+                Text(
+                    text = statusInfo.errorMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }

@@ -94,13 +94,24 @@ object AgentRuntimeReducer {
                 // Guard: Don't interrupt an active turn
                 if (currentStatus.status == AgentStatus.PROCESSING) return state
 
+                // Guard: Don't bypass rate limiting — reject if still within the rate limit window.
+                // Once the window expires, the turn is allowed (auto-trigger or manual).
+                if (currentStatus.status == AgentStatus.RATE_LIMITED) {
+                    val rateLimitExpiry = currentStatus.rateLimitedUntilMs
+                    if (rateLimitExpiry != null && platformDependencies.currentTimeMillis() < rateLimitExpiry) {
+                        return state
+                    }
+                    // Rate limit has expired — allow the turn to proceed
+                }
+
                 val updatedStatus = currentStatus.copy(
                     processingFrontierMessageId = currentStatus.lastSeenMessageId,
                     turnMode = if (payload.preview) TurnMode.PREVIEW else TurnMode.DIRECT,
                     stagedTurnContext = null,
                     transientHkgContext = null,
                     transientWorkspaceContext = null,
-                    contextGatheringStartedAt = null
+                    contextGatheringStartedAt = null,
+                    rateLimitedUntilMs = null // Clear rate limit state on new turn
                 )
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
@@ -310,17 +321,23 @@ object AgentRuntimeReducer {
 
         val newStatusString = payload["status"]?.jsonPrimitive?.contentOrNull ?: return state
         val newStatus = try { AgentStatus.valueOf(newStatusString) } catch (e: Exception) { return state }
-        val newErrorMessage = if (newStatus == AgentStatus.ERROR) payload["error"]?.jsonPrimitive?.contentOrNull else null
+        val newErrorMessage = if (newStatus == AgentStatus.ERROR || newStatus == AgentStatus.RATE_LIMITED) {
+            payload["error"]?.jsonPrimitive?.contentOrNull
+        } else null
 
         // Extract token usage from payload (set when a generation completes)
         val payloadInputTokens = payload["lastInputTokens"]?.jsonPrimitive?.intOrNull
         val payloadOutputTokens = payload["lastOutputTokens"]?.jsonPrimitive?.intOrNull
 
+        // Extract rate limit retry timestamp (set when a generation returns 429)
+        val payloadRateLimitedUntilMs = payload["rateLimitedUntilMs"]?.jsonPrimitive?.longOrNull
+
         // State Transition Logic
         val clearTimers = currentStatus.status == AgentStatus.WAITING && newStatus != AgentStatus.WAITING
         val isStartingProcessing = newStatus == AgentStatus.PROCESSING && currentStatus.status != AgentStatus.PROCESSING
         val isStoppingProcessing = newStatus != AgentStatus.PROCESSING && currentStatus.status == AgentStatus.PROCESSING
-        val shouldClearContext = isStoppingProcessing || newStatus == AgentStatus.IDLE || newStatus == AgentStatus.ERROR
+        val shouldClearContext = isStoppingProcessing || newStatus == AgentStatus.IDLE
+                || newStatus == AgentStatus.ERROR || newStatus == AgentStatus.RATE_LIMITED
 
         val updatedStatus = currentStatus.copy(
             status = newStatus,
@@ -336,7 +353,11 @@ object AgentRuntimeReducer {
             contextGatheringStartedAt = if (shouldClearContext) null else currentStatus.contextGatheringStartedAt,
             // Preserve previous token data unless new data is provided in this update
             lastInputTokens = payloadInputTokens ?: currentStatus.lastInputTokens,
-            lastOutputTokens = payloadOutputTokens ?: currentStatus.lastOutputTokens
+            lastOutputTokens = payloadOutputTokens ?: currentStatus.lastOutputTokens,
+            // Rate limit: set from payload when entering RATE_LIMITED, clear otherwise
+            rateLimitedUntilMs = if (newStatus == AgentStatus.RATE_LIMITED) {
+                payloadRateLimitedUntilMs ?: currentStatus.rateLimitedUntilMs
+            } else null
         )
         // Reset persistence flag as this is pure runtime state
         return state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus), agentsToPersist = null)
@@ -390,6 +411,7 @@ object AgentRuntimeReducer {
 
             if (isRelevant && !isSelf) {
                 // Auto-Waiting Logic (Synchronous)
+                // Only transition to WAITING from IDLE — do NOT override RATE_LIMITED or PROCESSING.
                 val newStatus = if (currentStatus.status == AgentStatus.IDLE) AgentStatus.WAITING else currentStatus.status
 
                 updatedStatuses[agentUuid] = currentStatus.copy(
