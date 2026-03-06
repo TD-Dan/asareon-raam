@@ -3,8 +3,11 @@ package app.auf.feature.agent
 import app.auf.core.Identity
 import app.auf.core.IdentityHandle
 import app.auf.core.IdentityUUID
+import app.auf.core.generated.ActionRegistry
+import app.auf.core.Action
 import app.auf.feature.session.LedgerEntry
 import app.auf.feature.session.Session
+import app.auf.test.TestHarness
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -133,3 +136,46 @@ fun testSession(
     ledger = ledger,
     createdAt = timestamp
 )
+
+// ============================================================================
+// Identity Registration Helpers
+//
+// The Store now strictly validates originators and the cognitive pipeline
+// requires session UUIDs to be in the identity registry. These helpers
+// make it easy to set up the required registrations in integration tests.
+// ============================================================================
+
+/**
+ * Registers an agent identity in the identity registry so that
+ * resolveAgentId (used by INITIATE_TURN) can find it.
+ */
+fun TestHarness.registerAgentIdentity(agent: AgentInstance) {
+    store.dispatch("agent", Action(
+        ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+        buildJsonObject {
+            put("uuid", agent.identity.uuid)
+            put("name", agent.identity.name)
+        }
+    ))
+}
+
+/**
+ * Registers a session identity in the identity registry so that
+ * AgentCognitivePipeline can resolve session UUIDs to handles.
+ */
+fun TestHarness.registerSessionIdentity(uuid: String, name: String) {
+    store.dispatch("session", Action(
+        ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+        buildJsonObject {
+            put("uuid", uuid)
+            put("name", name)
+        }
+    ))
+}
+
+/**
+ * Registers a session identity from a [Session] object.
+ */
+fun TestHarness.registerSessionIdentity(session: Session) {
+    registerSessionIdentity(session.identity.uuid!!, session.identity.name)
+}

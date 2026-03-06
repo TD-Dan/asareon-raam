@@ -4,6 +4,7 @@ import app.auf.core.Action
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.filesystem.FileSystemFeature
+import app.auf.feature.session.SessionFeature
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,8 +22,14 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
     private val scope = CoroutineScope(Dispatchers.Unconfined)
     private val platform = FakePlatformDependencies("test")
     private val feature = AgentRuntimeFeature(platform, scope)
-    private val agent = testAgent("agent-1", "Test", modelProvider = "p", modelName = "m",
-        subscribedSessionIds = listOf("session-1"),
+
+    // All IDs must be valid UUIDs — the Store validates UUID format on REGISTER_IDENTITY
+    // and the reducer validates with stringIsUUID() on SESSION_MESSAGE_POSTED
+    private val agentUUID = "b0000000-0000-0000-0000-000000000001"
+    private val sessionUUID = "a0000000-0000-0000-0000-000000000001"
+
+    private val agent = testAgent(agentUUID, "Test", modelProvider = "p", modelName = "m",
+        subscribedSessionIds = listOf(sessionUUID),
         resources = mapOf("system_instruction" to "res-sys-instruction-v1")
     )
 
@@ -31,16 +38,21 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
         val harness = TestEnvironment.create()
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
+            .withFeature(SessionFeature(platform, scope))
             .withInitialState("agent", AgentRuntimeState(agents = mapOf(agent.identityUUID to agent), resources = testBuiltInResources()))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
+            // Register identities so resolveAgentId and session UUID validation work
+            harness.registerAgentIdentity(agent)
+            harness.registerSessionIdentity(sessionUUID, "Test Session")
+
             val action = Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject { put("agentId", agent.identity.uuid) })
-            harness.store.dispatch("ui", action)
+            harness.store.dispatch("core", action)
 
             val request = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT }
             assertNotNull(request)
-            assertEquals("agent-1", request.payload?.get("correlationId")?.jsonPrimitive?.content)
+            assertEquals(agentUUID, request.payload?.get("correlationId")?.jsonPrimitive?.content)
         }
     }
 
@@ -99,7 +111,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
 
         harness.runAndLogOnFailure {
             val sentinelMsg = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
-                put("sessionId", "session-1")
+                put("sessionId", sessionUUID)
                 put("entry", buildJsonObject {
                     put("id", "msg-1")
                     put("senderId", "system") // <--- Sentinel
@@ -120,7 +132,7 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
     @Test
     fun `startCognitiveCycle should fail gracefully and set ERROR status if agent has no sessions`() = runTest {
         // ARRANGE
-        val orphanAgent = testAgent("orphan-1", "Orphan", modelProvider = "p", modelName = "m", subscribedSessionIds = emptyList(), privateSessionId = null)
+        val orphanAgent = testAgent("b0000000-0000-0000-0000-000000000099", "Orphan", modelProvider = "p", modelName = "m", subscribedSessionIds = emptyList(), privateSessionId = null)
         val harness = TestEnvironment.create()
             .withFeature(feature)
             .withFeature(FileSystemFeature(platform))
@@ -128,8 +140,11 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
+            // Register agent identity so resolveAgentId works
+            harness.registerAgentIdentity(orphanAgent)
+
             // ACT
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
+            harness.store.dispatch("core", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                 put("agentId", orphanAgent.identity.uuid)
             }))
 
