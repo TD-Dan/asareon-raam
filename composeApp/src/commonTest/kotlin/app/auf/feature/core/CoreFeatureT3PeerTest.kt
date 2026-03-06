@@ -93,10 +93,10 @@ class CoreFeatureT3PeerTest {
         val loadedAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITIES_LOADED }
         assertNotNull(loadedAction, "The handleSideEffects handler should dispatch an internal loaded action.")
 
-        // ASSERT 2: Verify the final state is correct.
-        val finalState = harness.store.state.value.featureStates["core"] as CoreState
-        assertEquals(1, finalState.userIdentities.size)
-        assertEquals("Loaded User", finalState.userIdentities.first().name)
+        // ASSERT 2: Verify the identity was loaded into the registry.
+        val registry = harness.store.state.value.identityRegistry
+        val loadedUser = registry.values.find { it.name == "Loaded User" && it.uuid != null }
+        assertNotNull(loadedUser, "Loaded User should be in the identity registry.")
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)

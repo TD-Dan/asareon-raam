@@ -523,7 +523,7 @@ private fun AgentResourcesView(
                             ResourceListItem(
                                 resource = res,
                                 isSelected = res.id == agentState.editingResourceId,
-                                onClick = { store.dispatch("ui.resources", Action(ActionRegistry.Names.AGENT_SELECT_RESOURCE, buildJsonObject { put("resourceId", res.id) })) }
+                                onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SELECT_RESOURCE, buildJsonObject { put("resourceId", res.id) })) }
                             )
                         }
                     }
@@ -550,7 +550,7 @@ private fun AgentResourcesView(
         CreateResourceDialog(
             onDismiss = { showCreateDialog = false },
             onConfirm = { name, type, content ->
-                store.dispatch("ui.resources", Action(ActionRegistry.Names.AGENT_CREATE_RESOURCE, buildJsonObject {
+                store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CREATE_RESOURCE, buildJsonObject {
                     put("name", name)
                     put("type", type.name)
                     if (content != null) put("initialContent", content)
@@ -612,14 +612,14 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
             Row {
                 if (!resource.isBuiltIn) {
                     Button(
-                        onClick = { store.dispatch("ui.resources", Action(ActionRegistry.Names.AGENT_DELETE_RESOURCE, buildJsonObject { put("resourceId", resource.id) })) },
+                        onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_DELETE_RESOURCE, buildJsonObject { put("resourceId", resource.id) })) },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.error)
                     ) {
                         Icon(Icons.Default.Delete, "Delete")
                     }
                     Spacer(Modifier.width(8.dp))
                     Button(
-                        onClick = { store.dispatch("ui.resources", Action(ActionRegistry.Names.AGENT_SAVE_RESOURCE, buildJsonObject {
+                        onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SAVE_RESOURCE, buildJsonObject {
                             put("resourceId", resource.id)
                             put("content", content)
                         })) },
@@ -657,7 +657,7 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
             initialType = resource.type,
             lockType = true,
             onConfirm = { name, type, _ ->
-                store.dispatch("ui.resources", Action(ActionRegistry.Names.AGENT_CREATE_RESOURCE, buildJsonObject {
+                store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CREATE_RESOURCE, buildJsonObject {
                     put("name", name)
                     put("type", type.name)
                     put("initialContent", resource.content)
@@ -672,7 +672,7 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
             currentName = resource.name,
             onDismiss = { showRenameDialog = false },
             onConfirm = { newName ->
-                store.dispatch("ui.resources", Action(ActionRegistry.Names.AGENT_RENAME_RESOURCE, buildJsonObject {
+                store.dispatch("agent", Action(ActionRegistry.Names.AGENT_RENAME_RESOURCE, buildJsonObject {
                     put("resourceId", resource.id)
                     put("newName", newName)
                 }))

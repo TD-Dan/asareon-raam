@@ -80,7 +80,6 @@ class CommandBotFeatureT2CoreTest {
             .withFeature(SessionFeature(platform, this))
             .withFeature(CommandBotFeature(platform))
             .withInitialState("core", CoreState(
-                userIdentities = listOf(testUser),
                 activeUserId = testUser.handle,
                 lifecycle = AppLifecycle.RUNNING
             ))
@@ -125,7 +124,6 @@ class CommandBotFeatureT2CoreTest {
             .withFeature(SessionFeature(platform, this))
             .withFeature(CommandBotFeature(platform))
             .withInitialState("core", CoreState(
-                userIdentities = listOf(testUser),
                 activeUserId = testUser.handle,
                 lifecycle = AppLifecycle.RUNNING
             ))

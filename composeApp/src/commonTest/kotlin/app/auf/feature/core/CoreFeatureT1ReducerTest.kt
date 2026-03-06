@@ -1,7 +1,6 @@
 package app.auf.feature.core
 
 import app.auf.core.Action
-import app.auf.core.Identity
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.buildJsonArray
@@ -96,100 +95,81 @@ class CoreFeatureT1ReducerTest {
     }
 
     // ================================================================
-    // Legacy User Identity Management (deprecated, kept for migration)
+    // User Identity Management (reducer-level)
+    //
+    // Since the deprecation cleanup, identity mutations (add, remove) are
+    // handled entirely in handleSideEffects via the registry. The reducer
+    // only manages activeUserId. These tests verify that contract.
     // ================================================================
 
     @Test
-    fun `reducer on CORE_ADD_USER_IDENTITY adds a new identity`() {
-        val initialState = CoreState(userIdentities = emptyList())
+    fun `reducer on CORE_ADD_USER_IDENTITY is a no-op`() {
+        val initialState = CoreState(activeUserId = "core.alice")
         val action = Action(ActionRegistry.Names.CORE_ADD_USER_IDENTITY, buildJsonObject { put("name", "New User") })
         val newState = feature.reducer(initialState, action) as? CoreState
         assertNotNull(newState)
-        assertEquals(1, newState.userIdentities.size)
-        assertEquals("New User", newState.userIdentities.first().name)
+        assertEquals(initialState, newState, "ADD_USER_IDENTITY should be a reducer no-op (handled in side effects).")
     }
 
     @Test
-    fun `reducer on CORE_REMOVE_USER_IDENTITY removes the specified identity`() {
-        val user1 = Identity("id-1", localHandle = "user-1", handle = "user-1", name = "User 1")
-        val user2 = Identity("id-2", localHandle = "user-2", handle = "user-2", name = "User 2")
-        val initialState = CoreState(userIdentities = listOf(user1, user2), activeUserId = "user-1")
-        val action = Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", "user-1") })
+    fun `reducer on CORE_REMOVE_USER_IDENTITY is a no-op`() {
+        val initialState = CoreState(activeUserId = "core.alice")
+        val action = Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", "core.alice") })
         val newState = feature.reducer(initialState, action) as? CoreState
         assertNotNull(newState)
-        assertEquals(1, newState.userIdentities.size)
-        assertEquals("User 2", newState.userIdentities.first().name)
-    }
-
-    @Test
-    fun `reducer on CORE_REMOVE_USER_IDENTITY correctly reassigns active user if active user was deleted`() {
-        val user1 = Identity("id-1", localHandle = "user-1", handle = "user-1", name = "User 1")
-        val user2 = Identity("id-2", localHandle = "user-2", handle = "user-2", name = "User 2")
-        val initialState = CoreState(userIdentities = listOf(user1, user2), activeUserId = "user-1")
-        val action = Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", "user-1") })
-        val newState = feature.reducer(initialState, action) as? CoreState
-        assertNotNull(newState)
-        assertEquals("user-2", newState.activeUserId, "Active user should be reassigned to the next available user.")
-    }
-
-    @Test
-    fun `reducer on CORE_REMOVE_USER_IDENTITY correctly handles removing the last user`() {
-        val user1 = Identity("id-1", localHandle = "the-last-user", handle = "the-last-user", name = "The Last User")
-        val initialState = CoreState(userIdentities = listOf(user1), activeUserId = "the-last-user")
-        val action = Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", "the-last-user") })
-        val newState = feature.reducer(initialState, action) as? CoreState
-        assertNotNull(newState)
-        assertTrue(newState.userIdentities.isEmpty(), "The user identities list should be empty.")
-        assertNull(newState.activeUserId, "The active user ID should be null when no users are left.")
+        assertEquals(initialState, newState, "REMOVE_USER_IDENTITY should be a reducer no-op (handled in side effects).")
     }
 
     @Test
     fun `reducer on CORE_SET_ACTIVE_USER_IDENTITY sets the active user`() {
-        val user1 = Identity("id-1", localHandle = "user-1", handle = "user-1", name = "User 1")
-        val user2 = Identity("id-2", localHandle = "user-2", handle = "user-2", name = "User 2")
-        val initialState = CoreState(userIdentities = listOf(user1, user2), activeUserId = "user-1")
-        val action = Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", "user-2") })
+        val initialState = CoreState(activeUserId = "core.user-1")
+        val action = Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", "core.user-2") })
         val newState = feature.reducer(initialState, action) as? CoreState
         assertNotNull(newState)
-        assertEquals("user-2", newState.activeUserId)
+        assertEquals("core.user-2", newState.activeUserId)
     }
 
     @Test
-    fun `reducer on CORE_SET_ACTIVE_USER_IDENTITY ignores non-existent identity`() {
-        val user1 = Identity("id-1", localHandle = "user-1", handle = "user-1", name = "User 1")
-        val initialState = CoreState(userIdentities = listOf(user1), activeUserId = "user-1")
-        val action = Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", "non-existent") })
-        val newState = feature.reducer(initialState, action) as? CoreState
-        assertNotNull(newState)
-        assertEquals("user-1", newState.activeUserId, "Active user should remain unchanged for a non-existent ID.")
-    }
-
-    @Test
-    fun `reducer on CORE_INTERNAL_IDENTITIES_LOADED creates a default user if loaded list is empty`() {
-        platform.uuidCounter = 0 // Reset for predictable ID
-        val initialState = CoreState(userIdentities = emptyList())
-        val action = Action(ActionRegistry.Names.CORE_IDENTITIES_LOADED, buildJsonObject { put("identities", buildJsonArray {}) })
-        val newState = feature.reducer(initialState, action) as? CoreState
-        assertNotNull(newState)
-        assertEquals(1, newState.userIdentities.size)
-        assertEquals("DefaultUser", newState.userIdentities.first().name)
-        assertNotNull(newState.activeUserId, "The new default user should be active.")
-    }
-
-    @Test
-    fun `reducer on CORE_INTERNAL_IDENTITIES_LOADED sets active user to first if saved active ID is invalid`() {
+    fun `reducer on CORE_IDENTITIES_LOADED sets activeUserId from payload`() {
         val initialState = CoreState()
         val action = Action(ActionRegistry.Names.CORE_IDENTITIES_LOADED, buildJsonObject {
             put("identities", buildJsonArray {
-                add(buildJsonObject { put("uuid", "uuid-1"); put("localHandle", "user-1"); put("handle", "user-1"); put("name", "User 1") })
-                add(buildJsonObject { put("uuid", "uuid-2"); put("localHandle", "user-2"); put("handle", "user-2"); put("name", "User 2") })
+                add(buildJsonObject { put("uuid", "uuid-1"); put("localHandle", "alice"); put("handle", "core.alice"); put("name", "Alice"); put("parentHandle", "core") })
+                add(buildJsonObject { put("uuid", "uuid-2"); put("localHandle", "bob"); put("handle", "core.bob"); put("name", "Bob"); put("parentHandle", "core") })
+            })
+            put("activeId", "core.bob")
+        })
+        val newState = feature.reducer(initialState, action) as? CoreState
+        assertNotNull(newState)
+        assertEquals("core.bob", newState.activeUserId)
+    }
+
+    @Test
+    fun `reducer on CORE_IDENTITIES_LOADED defaults activeUserId to first core child when saved activeId is invalid`() {
+        val initialState = CoreState()
+        val action = Action(ActionRegistry.Names.CORE_IDENTITIES_LOADED, buildJsonObject {
+            put("identities", buildJsonArray {
+                add(buildJsonObject { put("uuid", "uuid-1"); put("localHandle", "alice"); put("handle", "core.alice"); put("name", "Alice"); put("parentHandle", "core") })
             })
             put("activeId", "invalid-id")
         })
         val newState = feature.reducer(initialState, action) as? CoreState
         assertNotNull(newState)
-        assertEquals(2, newState.userIdentities.size)
-        assertEquals("user-1", newState.activeUserId, "Should default to the first user if active ID is not found.")
+        assertEquals("core.alice", newState.activeUserId, "Should default to the first core child when activeId is invalid.")
+    }
+
+    @Test
+    fun `reducer on CORE_IDENTITIES_LOADED defaults activeUserId when no core children exist`() {
+        val initialState = CoreState()
+        val action = Action(ActionRegistry.Names.CORE_IDENTITIES_LOADED, buildJsonObject {
+            put("identities", buildJsonArray {
+                // Only a feature identity — no core children
+                add(buildJsonObject { put("localHandle", "agent"); put("handle", "agent"); put("name", "Agent Runtime") })
+            })
+        })
+        val newState = feature.reducer(initialState, action) as? CoreState
+        assertNotNull(newState)
+        assertEquals("core.default-user", newState.activeUserId, "Should default to core.default-user when no core children are in the payload.")
     }
 
     // ================================================================
