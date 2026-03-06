@@ -80,8 +80,19 @@ open class Store(
             // Feature identities are structural facts known at compile time.
             // They cannot go through the action bus because during BOOTING,
             // only system.INITIALIZING is permitted (lifecycle guard).
+            //
+            // Default permissions from DefaultPermissions are applied here so
+            // that child identities can inherit from their parent feature
+            // naturally via resolveEffectivePermissions. For example, "agent"
+            // gets filesystem:workspace=YES, and "agent.mercury" inherits it.
             val featureIdentities = features.associate { feature ->
-                feature.identity.handle to feature.identity
+                val defaults = DefaultPermissions.grantsFor(feature.identity.handle)
+                val identityWithDefaults = if (defaults.isNotEmpty()) {
+                    feature.identity.copy(permissions = defaults + feature.identity.permissions)
+                } else {
+                    feature.identity
+                }
+                feature.identity.handle to identityWithDefaults
             }
 
             // Seed AppState directly — single source of truth from the start.

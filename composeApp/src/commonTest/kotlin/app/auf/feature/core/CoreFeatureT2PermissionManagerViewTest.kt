@@ -17,12 +17,12 @@ import kotlin.test.*
  *
  * These tests verify:
  *   - SET_PERMISSION dispatched from the view correctly updates the registry
- *   - Effective permissions are computed correctly for display (inherited, explicit, escalated)
+ *   - Feature identities are shown in the view alongside children
+ *   - Effective permissions via inheritance from parent features
  *   - Toggle behavior: YES→NO and NO→YES round-trips
  *   - Persistence is triggered after permission changes from the view
- *   - View state derivation: editable identities filter, effective perms map, parent perms map
- *   - Escalation detection logic
- *   - Domain grouping of permission declarations
+ *   - Escalation detection (child explicitly exceeds parent)
+ *   - Danger-level cell tinting for YES grants
  */
 class PermissionManagerViewTest {
 
@@ -99,11 +99,11 @@ class PermissionManagerViewTest {
     }
 
     // ================================================================
-    // View state derivation: editable identities filtering
+    // View state derivation: all identities shown, features first
     // ================================================================
 
     @Test
-    fun `only identities with non-null uuid are editable`() {
+    fun `all identities shown with features sorted first`() {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -117,22 +117,25 @@ class PermissionManagerViewTest {
         )}
 
         val registry = harness.store.state.value.identityRegistry
-        val editableIdentities = registry.values
-            .filter { it.uuid != null }
-            .sortedBy { it.handle }
+        val allIdentities = registry.values
+            .sortedWith(compareBy<Identity> { it.uuid != null }.thenBy { it.handle })
 
-        assertEquals(2, editableIdentities.size,
-            "Only non-feature identities (uuid != null) should be editable.")
-        assertEquals("agent.mercury", editableIdentities[0].handle)
-        assertEquals("core.alice", editableIdentities[1].handle)
+        // Features (uuid == null) should come first
+        val features = allIdentities.takeWhile { it.uuid == null }
+        val children = allIdentities.dropWhile { it.uuid == null }
+
+        assertTrue(features.isNotEmpty(), "Features should be included in the view.")
+        assertTrue(children.isNotEmpty(), "Children should be included in the view.")
+        assertTrue(features.all { it.uuid == null }, "Features should be sorted first.")
+        assertTrue(children.all { it.uuid != null }, "Children should come after features.")
     }
 
     // ================================================================
-    // Effective permissions map for display
+    // Effective permissions: inheritance from parent feature
     // ================================================================
 
     @Test
-    fun `effective permissions include inherited grants from parent`() {
+    fun `child inherits permissions from parent feature`() {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -154,11 +157,11 @@ class PermissionManagerViewTest {
         val effective = harness.store.resolveEffectivePermissions(alice)
 
         assertEquals(PermissionLevel.YES, effective["core:read"]?.level,
-            "Alice should inherit core:read from the core feature parent.")
+            "Alice should inherit core:read YES from the core feature parent.")
     }
 
     @Test
-    fun `effective permissions show explicit grant overriding parent`() {
+    fun `child explicit grant overrides parent feature permission`() {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -180,7 +183,7 @@ class PermissionManagerViewTest {
         val effective = harness.store.resolveEffectivePermissions(alice)
 
         assertEquals(PermissionLevel.NO, effective["filesystem:workspace"]?.level,
-            "Alice's explicit NO should override parent's YES.")
+            "Alice's explicit NO should override parent feature's YES.")
     }
 
     // ================================================================
@@ -188,7 +191,7 @@ class PermissionManagerViewTest {
     // ================================================================
 
     @Test
-    fun `escalation is detected when child grant exceeds parent effective level`() {
+    fun `escalation detected when child explicitly exceeds parent feature level`() {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -214,11 +217,40 @@ class PermissionManagerViewTest {
         val parentLevel = parentEffective["gateway:generate"]?.level ?: PermissionLevel.NO
         assertNotNull(childExplicit)
         assertTrue(childExplicit.level > parentLevel,
-            "Child's YES should be detected as an escalation above parent's NO.")
+            "Child's explicit YES should be detected as escalation above parent's NO.")
     }
 
     @Test
-    fun `no escalation when child grant matches parent effective level`() {
+    fun `no escalation when child inherits from parent feature`() {
+        // This is the key test for the new model: parent feature has YES,
+        // child has no explicit grant, inherits YES → NOT escalated.
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .build(platform = platform)
+
+        val childIdentity = Identity(
+            uuid = "agent-1", handle = "agent.mercury", localHandle = "mercury",
+            name = "Mercury", parentHandle = "agent",
+            permissions = emptyMap()  // Inherits from parent — no explicit grant
+        )
+
+        harness.store.updateIdentityRegistry { it + mapOf(
+            "agent" to Identity(
+                uuid = null, localHandle = "agent", handle = "agent", name = "Agent",
+                permissions = mapOf("filesystem:workspace" to PermissionGrant(PermissionLevel.YES))
+            ),
+            "agent.mercury" to childIdentity
+        )}
+
+        // Inherited permissions don't count as escalation
+        val childExplicit = childIdentity.permissions["filesystem:workspace"]
+        assertNull(childExplicit,
+            "No explicit grant → no escalation. Child inherits naturally from parent feature.")
+    }
+
+    @Test
+    fun `no escalation when child explicit grant matches parent feature level`() {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -245,32 +277,6 @@ class PermissionManagerViewTest {
         assertNotNull(childExplicit)
         assertFalse(childExplicit.level > parentLevel,
             "No escalation when child and parent have the same level.")
-    }
-
-    @Test
-    fun `no escalation when child has no explicit grant (inherited only)`() {
-        val platform = FakePlatformDependencies("test")
-        val harness = TestEnvironment.create()
-            .withFeature(CoreFeature(platform))
-            .build(platform = platform)
-
-        val childIdentity = Identity(
-            uuid = "agent-1", handle = "agent.mercury", localHandle = "mercury",
-            name = "Mercury", parentHandle = "agent",
-            permissions = emptyMap()
-        )
-
-        harness.store.updateIdentityRegistry { it + mapOf(
-            "agent" to Identity(
-                uuid = null, localHandle = "agent", handle = "agent", name = "Agent",
-                permissions = mapOf("gateway:generate" to PermissionGrant(PermissionLevel.YES))
-            ),
-            "agent.mercury" to childIdentity
-        )}
-
-        val childExplicit = childIdentity.permissions["gateway:generate"]
-        assertNull(childExplicit,
-            "No explicit grant means no escalation (inherited permissions are not escalations).")
     }
 
     // ================================================================
@@ -461,5 +467,139 @@ class PermissionManagerViewTest {
         assertEquals(PermissionLevel.YES, aliceEffective["filesystem:workspace"]?.level)
         assertEquals(PermissionLevel.NO, bobEffective["filesystem:workspace"]?.level,
             "Each identity's effective permissions should be computed independently.")
+    }
+
+    // ================================================================
+    // Feature identities receive DefaultPermissions at boot
+    // ================================================================
+
+    @Test
+    fun `feature identities have default permissions after boot`() {
+        // initFeatureLifecycles() applies DefaultPermissions to feature identities.
+        // The core feature should have the grants defined in DefaultPermissions.
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .build(platform = platform)
+
+        val core = harness.store.state.value.identityRegistry["core"]
+        assertNotNull(core, "Core feature should be in the registry after boot.")
+
+        // DefaultPermissions grants "core" several permissions
+        val defaults = DefaultPermissions.grantsFor("core")
+        assertTrue(defaults.isNotEmpty(), "DefaultPermissions should define grants for 'core'.")
+
+        for ((key, grant) in defaults) {
+            assertEquals(grant.level, core.permissions[key]?.level,
+                "Feature 'core' should have default permission '$key' = ${grant.level} after boot.")
+        }
+    }
+
+    @Test
+    fun `child inherits permissions from feature parent with no explicit grants`() {
+        // The whole point of the new model: children inherit from their parent
+        // feature's permissions instead of getting explicit per-child grants.
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .build(platform = platform)
+
+        // Core should have defaults applied at boot
+        harness.store.updateIdentityRegistry { it + mapOf(
+            "core.alice" to Identity(
+                uuid = "user-1", handle = "core.alice", localHandle = "alice",
+                name = "Alice", parentHandle = "core",
+                permissions = emptyMap()  // No explicit grants — inherits from core
+            )
+        )}
+
+        val alice = harness.store.state.value.identityRegistry["core.alice"]!!
+        val effective = harness.store.resolveEffectivePermissions(alice)
+
+        // Alice should inherit core's default permissions
+        val coreDefaults = DefaultPermissions.grantsFor("core")
+        for ((key, grant) in coreDefaults) {
+            assertEquals(grant.level, effective[key]?.level,
+                "Alice should inherit '$key' = ${grant.level} from core feature parent.")
+        }
+    }
+
+    // ================================================================
+    // Feature permission edits via SET_PERMISSION
+    // ================================================================
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `SET_PERMISSION on feature identity updates registry and persists`() = runTest {
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .withFeature(app.auf.feature.filesystem.FileSystemFeature(platform))
+            .build(platform = platform)
+
+        // Toggle a permission on the core feature itself
+        harness.store.dispatch("core", Action(
+            ActionRegistry.Names.CORE_SET_PERMISSION,
+            buildJsonObject {
+                put("identityHandle", "core")
+                put("permissionKey", "filesystem:workspace")
+                put("level", "NO")
+            }
+        ))
+        runCurrent()
+
+        val core = harness.store.state.value.identityRegistry["core"]
+        assertNotNull(core)
+        assertEquals(PermissionLevel.NO, core.permissions["filesystem:workspace"]?.level,
+            "Feature permission should be updated in registry.")
+
+        // Persistence should include feature identities
+        val writeAction = harness.processedActions.findLast {
+            it.name == ActionRegistry.Names.FILESYSTEM_WRITE
+        }
+        assertNotNull(writeAction, "FILESYSTEM_WRITE should be dispatched to persist feature permission changes.")
+        val content = writeAction.payload?.get("content")?.toString() ?: ""
+        assertTrue(content.contains("\"handle\":\"core\""),
+            "Persisted content should include the core feature identity with its permissions.")
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `changing feature permission affects child effective permissions`() = runTest {
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .build(platform = platform)
+
+        harness.store.updateIdentityRegistry { it + mapOf(
+            "core.alice" to Identity(
+                uuid = "user-1", handle = "core.alice", localHandle = "alice",
+                name = "Alice", parentHandle = "core",
+                permissions = emptyMap()
+            )
+        )}
+
+        // Verify Alice inherits the default
+        val aliceBefore = harness.store.state.value.identityRegistry["core.alice"]!!
+        val effectiveBefore = harness.store.resolveEffectivePermissions(aliceBefore)
+        assertEquals(PermissionLevel.YES, effectiveBefore["filesystem:workspace"]?.level,
+            "Alice should initially inherit YES from core.")
+
+        // Revoke on the core feature
+        harness.store.dispatch("core", Action(
+            ActionRegistry.Names.CORE_SET_PERMISSION,
+            buildJsonObject {
+                put("identityHandle", "core")
+                put("permissionKey", "filesystem:workspace")
+                put("level", "NO")
+            }
+        ))
+        runCurrent()
+
+        // Alice should now inherit NO
+        val aliceAfter = harness.store.state.value.identityRegistry["core.alice"]!!
+        val effectiveAfter = harness.store.resolveEffectivePermissions(aliceAfter)
+        assertEquals(PermissionLevel.NO, effectiveAfter["filesystem:workspace"]?.level,
+            "Alice should now inherit NO after core feature permission was revoked.")
     }
 }

@@ -208,28 +208,6 @@ class CoreFeature(
         return true
     }
 
-    /**
-     * Applies default permissions from [DefaultPermissions] to a newly registered identity.
-     * Only applies grants that the identity doesn't already have.
-     */
-    private fun applyDefaultPermissions(store: Store, newIdentity: Identity) {
-        val defaults = DefaultPermissions.grantsFor(newIdentity.handle)
-        if (defaults.isEmpty()) return
-
-        // Merge: existing explicit grants take precedence over defaults
-        val merged = defaults + newIdentity.permissions  // existing overwrites defaults
-        if (merged != newIdentity.permissions) {
-            val updatedIdentity = newIdentity.copy(permissions = merged)
-            store.updateIdentityRegistry { it + (newIdentity.handle to updatedIdentity) }
-
-            platformDependencies.log(
-                app.auf.util.LogLevel.INFO, identity.handle,
-                "Applied ${defaults.size} default permission(s) to '${newIdentity.handle}': " +
-                        defaults.keys.joinToString(", ")
-            )
-        }
-    }
-
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
         val latestCoreState = newState as? CoreState
         val prevCoreState = previousState as? CoreState
@@ -422,10 +400,30 @@ class CoreFeature(
                         withoutCoreChildren + registryEntries
                     }
 
-                    // Apply default permissions to any user identities that have no explicit grants.
-                    for ((_, registryIdentity) in registryEntries) {
-                        if (registryIdentity.permissions.isEmpty()) {
-                            applyDefaultPermissions(store, registryIdentity)
+                    // Children inherit from parent feature — no per-child defaults needed.
+
+                    // On load from disk: restore persisted feature permissions.
+                    // Feature identities are seeded at boot with compile-time defaults;
+                    // persisted permissions (from UI edits) override those defaults while
+                    // preserving any newly added compile-time defaults.
+                    if (action.name == ActionRegistry.Names.CORE_IDENTITIES_LOADED) {
+                        val loadedPayload = action.payload?.let { json.decodeFromJsonElement<IdentitiesLoadedPayload>(it) }
+                        val loadedFeatures = loadedPayload?.identities?.filter { it.uuid == null } ?: emptyList()
+                        if (loadedFeatures.isNotEmpty()) {
+                            store.updateIdentityRegistry { current ->
+                                var updated = current
+                                for (loadedFeature in loadedFeatures) {
+                                    val existing = current[loadedFeature.handle] ?: continue
+                                    // Compile-time defaults first, then persisted overrides on top.
+                                    // This means new code defaults appear, but user edits survive.
+                                    val defaults = DefaultPermissions.grantsFor(loadedFeature.handle)
+                                    val merged = defaults + loadedFeature.permissions
+                                    if (merged != existing.permissions) {
+                                        updated = updated + (loadedFeature.handle to existing.copy(permissions = merged))
+                                    }
+                                }
+                                updated
+                            }
                         }
                     }
 
@@ -509,8 +507,8 @@ class CoreFeature(
                 // Delegate storage to the Store
                 store.updateIdentityRegistry { it + (fullHandle to newIdentity) }
 
-                // Apply default permissions from DefaultPermissions (Phase 1 hook)
-                applyDefaultPermissions(store, newIdentity)
+                // Children inherit permissions from their parent feature identity
+                // via resolveEffectivePermissions — no per-child defaults needed.
 
                 // Targeted response to the originator: here's what was approved
                 store.deferredDispatch(identity.handle, Action(
@@ -749,23 +747,31 @@ class CoreFeature(
     }
 
     /**
-     * Persists all user identities (core.* children) from the authoritative identity
-     * registry and broadcasts the legacy IDENTITIES_UPDATED notification.
+     * Persists all identities with permissions from the authoritative identity registry.
+     * Includes both user identities (core.* children) and feature identities that have
+     * permission grants. Feature permissions are persisted so UI edits survive restart.
      *
-     * The registry is the single source of truth — it contains the latest permission
-     * grants from both the legacy userIdentities flow and direct SET_PERMISSION updates.
-     * This replaces the old persistAndBroadcastIdentities which read from the deprecated
-     * CoreState.userIdentities (and could lose permission changes).
+     * On load, feature identities are merged with compile-time defaults from
+     * [DefaultPermissions] — persisted overrides take precedence, but newly added
+     * compile-time defaults also appear.
      */
     private fun persistIdentitiesFromRegistry(store: Store) {
         val registry = store.state.value.identityRegistry
         val coreState = store.state.value.featureStates["core"] as? CoreState ?: return
+
+        // User identities (core.* children) — always persisted
         val userIdentities = registry.values
             .filter { it.parentHandle == "core" }
             .sortedBy { it.handle }
-            .toList()
 
-        val persistencePayload = IdentitiesLoadedPayload(userIdentities, coreState.activeUserId)
+        // Feature identities with permissions — persisted so UI edits survive restart
+        val featureIdentities = registry.values
+            .filter { it.uuid == null && it.permissions.isNotEmpty() }
+            .sortedBy { it.handle }
+
+        val allIdentities = (featureIdentities + userIdentities).toList()
+
+        val persistencePayload = IdentitiesLoadedPayload(allIdentities, coreState.activeUserId)
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
             put("path", identitiesFileName)
             put("content", Json.encodeToString(persistencePayload))
@@ -774,7 +780,7 @@ class CoreFeature(
 
         // Legacy broadcast for features that still listen to IDENTITIES_UPDATED
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_IDENTITIES_UPDATED, buildJsonObject {
-            put("identities", Json.encodeToJsonElement(userIdentities))
+            put("identities", Json.encodeToJsonElement(userIdentities.toList()))
             coreState.activeUserId?.let { put("activeId", it) }
         }))
     }
@@ -832,14 +838,18 @@ class CoreFeature(
             }
             ActionRegistry.Names.CORE_IDENTITIES_LOADED -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<IdentitiesLoadedPayload>(it) } ?: return coreState
+                // Filter to user identities only (uuid != null). Feature identities
+                // (uuid == null) are persisted for their permission overrides but are
+                // restored via handleSideEffects, not the deprecated userIdentities list.
+                val userOnly = payload.identities.filter { it.uuid != null }
                 val identities: List<Identity>
                 val activeId: String?
-                if (payload.identities.isEmpty()) {
+                if (userOnly.isEmpty()) {
                     val defaultUser = Identity(platformDependencies.generateUUID(), name = "DefaultUser", handle = "default-user", localHandle = "default-user")
                     identities = listOf(defaultUser)
                     activeId = defaultUser.handle
                 } else {
-                    identities = payload.identities
+                    identities = userOnly
                     activeId = if (payload.activeId in identities.map { it.handle }) payload.activeId else identities.first().handle
                 }
 

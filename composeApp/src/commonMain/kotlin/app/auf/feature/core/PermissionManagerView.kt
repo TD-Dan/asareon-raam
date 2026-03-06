@@ -116,8 +116,8 @@ fun PermissionManagerView(store: Store) {
 
     val editableIdentities = remember(appState.identityRegistry) {
         appState.identityRegistry.values
-            .filter { it.uuid != null }
-            .sortedBy { it.handle }
+            // Features first (uuid == null), then children — both sorted by handle
+            .sortedWith(compareBy<Identity> { it.uuid != null }.thenBy { it.handle })
     }
 
     val effectivePermsMap = remember(appState.identityRegistry, editableIdentities) {
@@ -147,7 +147,7 @@ fun PermissionManagerView(store: Store) {
     if (editableIdentities.isEmpty()) {
         Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
             Text(
-                "No user or agent identities registered yet.\nCreate a user identity first.",
+                "No identities registered yet.",
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -194,6 +194,7 @@ fun PermissionManagerView(store: Store) {
                     // Identity rows — shares verticalScrollState with the matrix
                     Column(Modifier.weight(1f).verticalScroll(verticalScrollState)) {
                         for (identity in editableIdentities) {
+                            val isFeature = identity.uuid == null
                             Box(
                                 Modifier.height(48.dp).fillMaxWidth().padding(horizontal = 4.dp),
                                 contentAlignment = Alignment.CenterStart
@@ -202,12 +203,12 @@ fun PermissionManagerView(store: Store) {
                                     Text(
                                         identity.name,
                                         style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.Medium,
+                                        fontWeight = if (isFeature) FontWeight.Bold else FontWeight.Medium,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        identity.handle,
+                                        if (isFeature) "feature" else identity.handle,
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,

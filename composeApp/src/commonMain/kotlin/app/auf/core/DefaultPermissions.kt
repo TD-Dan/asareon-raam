@@ -1,25 +1,35 @@
 package app.auf.core
 
 /**
- * Compile-time default permission grants applied to newly registered identities.
+ * Compile-time default permission grants applied to feature identities at boot.
  *
- * When [core.REGISTER_IDENTITY] processes a new identity, CoreFeature matches
- * the identity's handle against [defaultGrants] patterns and applies matching
- * grants. These defaults only apply to identities that lack explicit grants
- * (i.e., not already persisted in identities.json).
+ * These grants are applied to feature identities (e.g., "core", "agent") during
+ * [Store.initFeatureLifecycles]. Child identities (e.g., "core.alice", "agent.mercury")
+ * inherit permissions from their parent feature via [Store.resolveEffectivePermissions].
+ *
+ * This design means:
+ * - Feature identities define the permission baseline for their namespace
+ * - Children inherit naturally — no per-child grant application needed
+ * - The Permission Manager shows features as editable rows, making the
+ *   inheritance hierarchy visible and configurable
+ * - Escalation detection works correctly (child > parent = escalation)
  *
  * To change defaults, modify this file and rebuild. This is intentional —
  * default permissions are a security-critical compile-time decision, not a
  * runtime configuration knob.
+ *
+ * Persisted permission edits (from the Permission Manager UI) take precedence
+ * over these compile-time defaults. See [CoreFeature.restoreFeaturePermissions].
  */
 object DefaultPermissions {
 
     /**
      * A single default grant rule.
      *
-     * @param identityPattern Glob pattern matched against identity handles.
-     *   Supports `*` as a single-segment wildcard (e.g., `core.*` matches
-     *   `core.alice` but not `core.alice.sub`).
+     * @param identityPattern Pattern matched against identity handles.
+     *   Supports exact matches (e.g., "core") and glob patterns with `*`
+     *   as a single-segment wildcard (e.g., "agent.*" matches "agent.sub"
+     *   but not "agent.sub.deep").
      * @param permissionKey The permission key to grant.
      * @param level The default grant level.
      */
@@ -32,10 +42,9 @@ object DefaultPermissions {
     /**
      * Matches an identity handle against a glob pattern.
      * `*` matches exactly one segment (no dots).
-     * Example: "core.*" matches "core.alice" but not "core.alice.sub"
+     * Exact matches are supported naturally (e.g., "core" matches "core").
      */
     fun matchesPattern(handle: String, pattern: String): Boolean {
-        // Split both into segments
         val handleParts = handle.split('.')
         val patternParts = pattern.split('.')
 
@@ -61,25 +70,25 @@ object DefaultPermissions {
     }
 
     val defaultGrants: List<DefaultGrant> = listOf(
-        // ── Human users (core.*) ──────────────────────────────────────
-        DefaultGrant("core.*", "filesystem:workspace",          PermissionLevel.YES),
-        DefaultGrant("core.*", "filesystem:system-files-read",  PermissionLevel.YES),
-        DefaultGrant("core.*", "session:read",                  PermissionLevel.YES),
-        DefaultGrant("core.*", "session:write",                 PermissionLevel.YES),
-        DefaultGrant("core.*", "session:manage",                PermissionLevel.YES),
-        DefaultGrant("core.*", "gateway:generate",              PermissionLevel.YES),
-        DefaultGrant("core.*", "gateway:preview",               PermissionLevel.YES),
-        DefaultGrant("core.*", "core:read",                     PermissionLevel.YES),
-        DefaultGrant("core.*", "core:identity",                 PermissionLevel.YES),
-        DefaultGrant("core.*", "knowledgegraph:read",           PermissionLevel.YES),
-        DefaultGrant("core.*", "knowledgegraph:write",          PermissionLevel.YES),
-        DefaultGrant("core.*", "agent:manage",                  PermissionLevel.YES),
-        DefaultGrant("core.*", "agent:execute",                 PermissionLevel.YES),
+        // ── Core feature — baseline for human users (core.alice etc.) ──
+        DefaultGrant("core", "filesystem:workspace",          PermissionLevel.YES),
+        DefaultGrant("core", "filesystem:system-files-read",  PermissionLevel.YES),
+        DefaultGrant("core", "session:read",                  PermissionLevel.YES),
+        DefaultGrant("core", "session:write",                 PermissionLevel.YES),
+        DefaultGrant("core", "session:manage",                PermissionLevel.YES),
+        DefaultGrant("core", "gateway:generate",              PermissionLevel.YES),
+        DefaultGrant("core", "gateway:preview",               PermissionLevel.YES),
+        DefaultGrant("core", "core:read",                     PermissionLevel.YES),
+        DefaultGrant("core", "core:identity",                 PermissionLevel.YES),
+        DefaultGrant("core", "knowledgegraph:read",           PermissionLevel.YES),
+        DefaultGrant("core", "knowledgegraph:write",          PermissionLevel.YES),
+        DefaultGrant("core", "agent:manage",                  PermissionLevel.YES),
+        DefaultGrant("core", "agent:execute",                 PermissionLevel.YES),
 
-        // ── Agent identities (agent.*) ────────────────────────────────
-        DefaultGrant("agent.*", "filesystem:workspace",         PermissionLevel.YES),
-        DefaultGrant("agent.*", "session:read",                 PermissionLevel.YES),
-        DefaultGrant("agent.*", "session:write",                PermissionLevel.YES),
-        DefaultGrant("agent.*", "knowledgegraph:read",          PermissionLevel.YES),
+        // ── Agent feature — baseline for agents (agent.mercury etc.) ──
+        DefaultGrant("agent", "filesystem:workspace",         PermissionLevel.YES),
+        DefaultGrant("agent", "session:read",                 PermissionLevel.YES),
+        DefaultGrant("agent", "session:write",                PermissionLevel.YES),
+        DefaultGrant("agent", "knowledgegraph:read",          PermissionLevel.YES),
     )
 }
