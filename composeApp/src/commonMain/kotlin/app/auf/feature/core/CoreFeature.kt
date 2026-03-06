@@ -378,12 +378,30 @@ class CoreFeature(
                 if (latestCoreState != null) {
                     // Sync user identities to AppState.identityRegistry via Store.
                     // Build registry entries from the authoritative userIdentities list.
+                    // IMPORTANT: Preserve permissions from existing registry entries,
+                    // because SET_PERMISSION updates the registry directly without
+                    // touching the deprecated CoreState.userIdentities.
+                    val currentRegistry = store.state.value.identityRegistry
                     @Suppress("DEPRECATION")
                     val registryEntries = latestCoreState.userIdentities.associate { userIdentity ->
                         val localHandle = userIdentity.localHandle.ifBlank {
                             userIdentity.name.lowercase().replace(Regex("[^a-z0-9-]"), "-").trimStart('-').ifEmpty { "user" }
                         }
                         val fullHandle = if (userIdentity.handle.startsWith("core.")) userIdentity.handle else "core.$localHandle"
+
+                        // Merge permissions: start with userIdentity's permissions,
+                        // then overlay with any grants from the existing registry entry
+                        // (which may have been updated by SET_PERMISSION directly).
+                        val existingRegistryIdentity = currentRegistry[fullHandle]
+                        val mergedPermissions = if (existingRegistryIdentity != null) {
+                            // Registry is authoritative for permissions — it has the latest
+                            // SET_PERMISSION changes. Use registry permissions, falling back
+                            // to userIdentity permissions for keys not in the registry.
+                            userIdentity.permissions + existingRegistryIdentity.permissions
+                        } else {
+                            userIdentity.permissions
+                        }
+
                         val registryIdentity = Identity(
                             uuid = userIdentity.uuid ?: platformDependencies.generateUUID(),
                             localHandle = localHandle,
@@ -391,7 +409,7 @@ class CoreFeature(
                             name = userIdentity.name,
                             parentHandle = "core",
                             registeredAt = userIdentity.registeredAt.takeIf { it > 0 } ?: platformDependencies.currentTimeMillis(),
-                            permissions = userIdentity.permissions  // Preserve existing permissions
+                            permissions = mergedPermissions
                         )
                         fullHandle to registryIdentity
                     }
@@ -411,7 +429,7 @@ class CoreFeature(
                         }
                     }
 
-                    persistAndBroadcastIdentities(latestCoreState, store)
+                    persistIdentitiesFromRegistry(store)
                     // Broadcast identity registry update so all features get the unified notification
                     store.deferredDispatch(identity.handle, Action(
                         ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
@@ -652,7 +670,7 @@ class CoreFeature(
                 val changed = applyPermissionGrant(store, payload.identityHandle, payload.permissionKey, payload.level)
                 if (changed) {
                     // Persist from registry (authoritative source including permissions)
-                    persistUserIdentitiesFromRegistry(store)
+                    persistIdentitiesFromRegistry(store)
                     store.deferredDispatch(identity.handle, Action(
                         ActionRegistry.Names.CORE_PERMISSIONS_UPDATED
                     ))
@@ -671,7 +689,7 @@ class CoreFeature(
 
                 if (anyChanged) {
                     // Persist from registry (authoritative source including permissions)
-                    persistUserIdentitiesFromRegistry(store)
+                    persistIdentitiesFromRegistry(store)
                     store.deferredDispatch(identity.handle, Action(
                         ActionRegistry.Names.CORE_PERMISSIONS_UPDATED
                     ))
@@ -730,26 +748,16 @@ class CoreFeature(
         }
     }
 
-    private fun persistAndBroadcastIdentities(state: CoreState, store: Store) {
-        val persistencePayload = IdentitiesLoadedPayload(state.userIdentities, state.activeUserId)
-        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
-            put("path", identitiesFileName)
-            put("content", Json.encodeToString(persistencePayload))
-            put("encrypt", true)
-        }))
-
-        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_IDENTITIES_UPDATED, buildJsonObject {
-            put("identities", Json.encodeToJsonElement(state.userIdentities))
-            state.activeUserId?.let { put("activeId", it) }
-        }))
-    }
-
     /**
-     * Persists user identities from the authoritative identity registry (which
-     * includes permissions) rather than from the deprecated CoreState.userIdentities.
-     * Used after permission changes to ensure grants survive restart.
+     * Persists all user identities (core.* children) from the authoritative identity
+     * registry and broadcasts the legacy IDENTITIES_UPDATED notification.
+     *
+     * The registry is the single source of truth — it contains the latest permission
+     * grants from both the legacy userIdentities flow and direct SET_PERMISSION updates.
+     * This replaces the old persistAndBroadcastIdentities which read from the deprecated
+     * CoreState.userIdentities (and could lose permission changes).
      */
-    private fun persistUserIdentitiesFromRegistry(store: Store) {
+    private fun persistIdentitiesFromRegistry(store: Store) {
         val registry = store.state.value.identityRegistry
         val coreState = store.state.value.featureStates["core"] as? CoreState ?: return
         val userIdentities = registry.values
@@ -762,6 +770,12 @@ class CoreFeature(
             put("path", identitiesFileName)
             put("content", Json.encodeToString(persistencePayload))
             put("encrypt", true)
+        }))
+
+        // Legacy broadcast for features that still listen to IDENTITIES_UPDATED
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_IDENTITIES_UPDATED, buildJsonObject {
+            put("identities", Json.encodeToJsonElement(userIdentities))
+            coreState.activeUserId?.let { put("activeId", it) }
         }))
     }
 

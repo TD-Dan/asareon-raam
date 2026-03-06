@@ -26,6 +26,7 @@ private val DangerLowColor = Color(0xFF4CAF50)        // Green
 private val DangerCautionColor = Color(0xFFFF9800)     // Orange
 private val DangerDangerColor = Color(0xFFF44336)      // Red
 private val EscalationBgColor = Color(0xFFFFF3E0)      // Light orange background
+private val InheritedBgColor = Color(0xFFF5F5F5)       // Light gray for inherited/default permissions
 
 /**
  * Groups permission declarations by their domain (the part before the colon).
@@ -153,13 +154,17 @@ fun PermissionManagerView(store: Store) {
             Spacer(Modifier.width(16.dp))
             Icon(Icons.Default.Warning, null, tint = DangerCautionColor, modifier = Modifier.size(16.dp))
             Text("= escalated above parent", style = MaterialTheme.typography.labelSmall)
+            Spacer(Modifier.width(16.dp))
+            Box(Modifier.size(10.dp).background(InheritedBgColor, shape = MaterialTheme.shapes.extraSmall).border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.extraSmall))
+            Spacer(Modifier.width(4.dp))
+            Text("= inherited/default", style = MaterialTheme.typography.labelSmall)
         }
 
         HorizontalDivider()
 
         // Matrix area with scrollbars
-        Box(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxSize().padding(bottom = 8.dp, end = 8.dp)) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            Row(Modifier.fillMaxSize().padding(bottom = 12.dp, end = 12.dp)) {
                 // --- Fixed left column: identity names ---
                 Column(Modifier.width(160.dp)) {
                     // Header cell
@@ -176,7 +181,7 @@ fun PermissionManagerView(store: Store) {
                     HorizontalDivider()
 
                     // Identity rows — shares verticalScrollState with the matrix
-                    Column(Modifier.verticalScroll(verticalScrollState)) {
+                    Column(Modifier.weight(1f).verticalScroll(verticalScrollState)) {
                         for (identity in editableIdentities) {
                             Box(
                                 Modifier.height(48.dp).fillMaxWidth().padding(horizontal = 4.dp),
@@ -207,7 +212,7 @@ fun PermissionManagerView(store: Store) {
                 VerticalDivider()
 
                 // --- Scrollable right section: permission columns ---
-                Column(Modifier.fillMaxSize()) {
+                Column(Modifier.weight(1f).fillMaxHeight()) {
                     // Column headers scroll horizontally but stay pinned vertically
                     Row(Modifier.height(72.dp).horizontalScroll(horizontalScrollState)) {
                         for ((domain, decls) in groupedPermissions) {
@@ -224,7 +229,8 @@ fun PermissionManagerView(store: Store) {
                     // Data rows — shares both scroll states
                     Column(
                         Modifier
-                            .fillMaxSize()
+                            .weight(1f)
+                            .fillMaxWidth()
                             .verticalScroll(verticalScrollState)
                             .horizontalScroll(horizontalScrollState)
                     ) {
@@ -271,7 +277,7 @@ fun PermissionManagerView(store: Store) {
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .fillMaxHeight()
-                    .padding(top = 72.dp)
+                    .padding(top = 80.dp, bottom = 12.dp)
             )
 
             // Horizontal scrollbar — anchored to the bottom edge, right of the identity column
@@ -280,7 +286,7 @@ fun PermissionManagerView(store: Store) {
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(start = 160.dp)
+                    .padding(start = 168.dp, end = 12.dp)
             )
         }
     }
@@ -370,7 +376,9 @@ private fun PermissionColumnHeader(
 /**
  * A single cell in the permission matrix. Shows a checkbox for YES/NO,
  * with visual indicators for inherited and escalated states.
- * Checkbox uses theme-consistent colors — no white fill on unchecked state.
+ * - Escalated: light orange background + warning icon
+ * - Inherited/default: light gray background to indicate the grant comes from a parent
+ * - Explicit grant: transparent background (normal)
  */
 @Composable
 private fun PermissionCell(
@@ -381,6 +389,7 @@ private fun PermissionCell(
 ) {
     val bgColor = when {
         isEscalated -> EscalationBgColor
+        isInherited -> InheritedBgColor
         else -> Color.Transparent
     }
 
@@ -404,7 +413,10 @@ private fun PermissionCell(
                     else
                         MaterialTheme.colorScheme.primary,
                     uncheckedColor = MaterialTheme.colorScheme.outline,
-                    checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                    checkmarkColor = MaterialTheme.colorScheme.onPrimary,
+                    // Prevent white box appearance on unchecked/disabled states
+                    disabledCheckedColor = MaterialTheme.colorScheme.outline,
+                    disabledUncheckedColor = MaterialTheme.colorScheme.outlineVariant
                 )
             )
             if (isEscalated) {
