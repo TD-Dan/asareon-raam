@@ -2,7 +2,6 @@ package app.auf.feature.session
 
 import app.auf.core.Identity
 import app.auf.core.generated.ActionRegistry.ActionDescriptor
-import app.auf.core.generated.ActionRegistry.AgentExposure
 import app.auf.core.generated.ActionRegistry.FeatureDescriptor
 import app.auf.core.generated.ActionRegistry.PayloadField
 import kotlin.test.*
@@ -48,8 +47,7 @@ class SlashCommandEngineTest {
             field("message", desc = "Message text"),
             field("afterMessageId", desc = "Insert after this message ID")
         ),
-        requiredFields = listOf("session", "senderId"),
-        agentExposure = AgentExposure(autoFillRules = mapOf("senderId" to "{agentId}", "session" to "{sessionId}"))
+        requiredFields = listOf("session", "senderId")
     )
 
     private val sessionCreateDescriptor = ActionDescriptor(
@@ -62,8 +60,7 @@ class SlashCommandEngineTest {
             field("name", desc = "Session display name"),
             field("isHidden", type = "boolean", desc = "Whether the session is hidden")
         ),
-        requiredFields = emptyList(),
-        agentExposure = null
+        requiredFields = emptyList()
     )
 
     private val sessionLoadedDescriptor = ActionDescriptor(
@@ -72,7 +69,7 @@ class SlashCommandEngineTest {
         suffix = "LOADED",
         summary = "Dispatched after sessions are read from disk.",
         public = false, broadcast = false, targeted = false,
-        payloadFields = emptyList(), requiredFields = emptyList(), agentExposure = null
+        payloadFields = emptyList(), requiredFields = emptyList()
     )
 
     private val sessionMessagePostedDescriptor = ActionDescriptor(
@@ -81,7 +78,7 @@ class SlashCommandEngineTest {
         suffix = "MESSAGE_POSTED",
         summary = "Broadcast after a message is added to a session.",
         public = false, broadcast = true, targeted = false,
-        payloadFields = emptyList(), requiredFields = emptyList(), agentExposure = null
+        payloadFields = emptyList(), requiredFields = emptyList()
     )
 
     private val sessionResponseLedgerDescriptor = ActionDescriptor(
@@ -90,7 +87,7 @@ class SlashCommandEngineTest {
         suffix = "RETURN_LEDGER",
         summary = "Returns ledger content to the requester.",
         public = false, broadcast = false, targeted = true,
-        payloadFields = emptyList(), requiredFields = emptyList(), agentExposure = null
+        payloadFields = emptyList(), requiredFields = emptyList()
     )
 
     private val agentInitiateTurnDescriptor = ActionDescriptor(
@@ -103,8 +100,7 @@ class SlashCommandEngineTest {
             field("agentHandle", required = true, desc = "The agent's identity handle"),
             field("sessionId", required = true, desc = "Session to respond in")
         ),
-        requiredFields = listOf("agentHandle", "sessionId"),
-        agentExposure = null
+        requiredFields = listOf("agentHandle", "sessionId")
     )
 
     private val agentSetStatusDescriptor = ActionDescriptor(
@@ -113,7 +109,7 @@ class SlashCommandEngineTest {
         suffix = "SET_STATUS",
         summary = "Updates an agent's processing status.",
         public = false, broadcast = false, targeted = false,
-        payloadFields = emptyList(), requiredFields = emptyList(), agentExposure = null
+        payloadFields = emptyList(), requiredFields = emptyList()
     )
 
     private val systemInitializingDescriptor = ActionDescriptor(
@@ -122,7 +118,7 @@ class SlashCommandEngineTest {
         suffix = "INITIALIZING",
         summary = "The first action dispatched at startup.",
         public = false, broadcast = true, targeted = false,
-        payloadFields = emptyList(), requiredFields = emptyList(), agentExposure = null
+        payloadFields = emptyList(), requiredFields = emptyList()
     )
 
     private val systemStartingDescriptor = ActionDescriptor(
@@ -131,7 +127,7 @@ class SlashCommandEngineTest {
         suffix = "STARTING",
         summary = "Second startup action.",
         public = false, broadcast = true, targeted = false,
-        payloadFields = emptyList(), requiredFields = emptyList(), agentExposure = null
+        payloadFields = emptyList(), requiredFields = emptyList()
     )
 
     private val settingsUpdateDescriptor = ActionDescriptor(
@@ -144,8 +140,7 @@ class SlashCommandEngineTest {
             field("key", required = true, desc = "The setting key"),
             field("value", required = true, desc = "The new value")
         ),
-        requiredFields = listOf("key", "value"),
-        agentExposure = null
+        requiredFields = listOf("key", "value")
     )
 
     private val commandbotApproveDescriptor = ActionDescriptor(
@@ -155,8 +150,7 @@ class SlashCommandEngineTest {
         summary = "User approves a pending agent action.",
         public = true, broadcast = true, targeted = false,
         payloadFields = listOf(field("approvalId", required = true)),
-        requiredFields = listOf("approvalId"),
-        agentExposure = null
+        requiredFields = listOf("approvalId")
     )
 
     private val testFeatures: Map<String, FeatureDescriptor> = mapOf(

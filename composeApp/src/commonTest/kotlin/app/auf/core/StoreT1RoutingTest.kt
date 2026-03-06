@@ -121,8 +121,7 @@ class StoreT1RoutingTest {
             broadcast = broadcast,
             targeted = targeted,
             payloadFields = emptyList(),
-            requiredFields = emptyList(),
-            agentExposure = null
+            requiredFields = emptyList()
         )
     }
 

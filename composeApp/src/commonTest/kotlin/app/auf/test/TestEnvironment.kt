@@ -7,7 +7,6 @@ import app.auf.core.FeatureState
 import app.auf.core.Identity
 import app.auf.core.PermissionGrant
 import app.auf.core.PermissionLevel
-import app.auf.core.PrivateDataEnvelope
 import app.auf.core.Store
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
@@ -35,7 +34,6 @@ class RecordingStore(
 ) : Store(initialState, features, platformDependencies) {
 
     val processedActions = mutableListOf<Action>()
-    val deliveredPrivateData = mutableListOf<TestHarness.CapturedPrivateData>()
 
     init {
         // Register with the test hook to receive a copy of all validated actions.
@@ -44,10 +42,6 @@ class RecordingStore(
         }
     }
 
-    override fun deliverPrivateData(originator: String, recipient: String, envelope: PrivateDataEnvelope) {
-        deliveredPrivateData.add(TestHarness.CapturedPrivateData(originator, recipient, envelope))
-        super.deliverPrivateData(originator, recipient, envelope)
-    }
 }
 
 
@@ -59,16 +53,9 @@ data class TestHarness(
     val store: RecordingStore,
     val platform: FakePlatformDependencies
 ) {
-    /** A data class to hold captured private data for test assertions. */
-    data class CapturedPrivateData(val originator: String, val recipient: String, val envelope: PrivateDataEnvelope)
-
     /** A convenience accessor for the list of successfully processed actions. */
     val processedActions: List<Action>
         get() = store.processedActions
-
-    /** A convenience accessor for the list of delivered private data envelopes. */
-    val deliveredPrivateData: List<CapturedPrivateData>
-        get() = store.deliveredPrivateData
 
     /**
      * Executes a block of test code and, if it fails, prints a detailed
@@ -90,15 +77,6 @@ data class TestHarness(
             } else {
                 processedActions.forEachIndexed { index, action ->
                     println("${index.toString().padStart(3, ' ')}: $action")
-                }
-            }
-
-            println("\n--- DELIVERED PRIVATE DATA (${deliveredPrivateData.size}) ---")
-            if (deliveredPrivateData.isEmpty()) {
-                println("No private data was delivered.")
-            } else {
-                deliveredPrivateData.forEachIndexed { index, delivery ->
-                    println("${index.toString().padStart(3, ' ')}: From='${delivery.originator}' To='${delivery.recipient}' Type='${delivery.envelope.type}'")
                 }
             }
 

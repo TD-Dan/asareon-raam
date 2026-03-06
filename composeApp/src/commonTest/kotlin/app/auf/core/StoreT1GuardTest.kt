@@ -7,8 +7,6 @@ import app.auf.feature.core.CoreFeature
 import app.auf.feature.core.CoreState
 import app.auf.test.testDescriptorsFor
 import app.auf.util.LogLevel
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import kotlin.test.*
 
 /**
@@ -47,10 +45,6 @@ class StoreT1GuardTest {
         }
         override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
             if (action.name == "test.CRASH_ON_ACTION") throw IllegalStateException("handleSideEffects deliberately crashed")
-        }
-        @Suppress("DEPRECATION")
-        override fun onPrivateData(envelope: PrivateDataEnvelope, store: Store) {
-            if (envelope.type == "test.CRASH_PRIVATE") throw IllegalStateException("onPrivateData deliberately crashed")
         }
     }
 
@@ -224,40 +218,6 @@ class StoreT1GuardTest {
         assertTrue(log.message.contains("FATAL EXCEPTION in reducer/handleSideEffects"), "Log message should identify the correct generic location.")
     }
 
-
-    @Test
-    fun `deprecated deliverPrivateData bridges to targeted dispatch and rejects unknown action`() {
-        // Phase 3: deliverPrivateData is now a deprecated bridge that converts to
-        // deferredDispatch with targetRecipient. The envelope type becomes the action name,
-        // which flows through processAction with full validation.
-        //
-        // Since "test.CRASH_PRIVATE" is not in actionDescriptors, the Store rejects it
-        // at Step 1 (schema lookup) as an unknown action. The onPrivateData method is
-        // never called — crashes there are no longer possible via this code path.
-        platform.capturedLogs.clear()
-        val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING), CrashingFeature())
-
-        @Suppress("DEPRECATION")
-        val envelope = PrivateDataEnvelope("test.CRASH_PRIVATE", buildJsonObject { put("data", "test") })
-        @Suppress("DEPRECATION")
-        store.deliverPrivateData("test.sender", "crashingfeature", envelope)
-
-        // The bridge should log a deprecation warning
-        val warnLog = platform.capturedLogs.find {
-            it.level == LogLevel.WARN && it.message.contains("DEPRECATED deliverPrivateData")
-        }
-        assertNotNull(warnLog, "The deprecated bridge should log a warning about the deprecated call.")
-
-        // The Store should reject the action as unknown (not in actionDescriptors)
-        val errorLog = platform.capturedLogs.find {
-            it.level == LogLevel.ERROR && it.message.contains("Unknown Action")
-        }
-        assertNotNull(errorLog, "The bridge routes through processAction, which rejects unknown action names.")
-
-        // No toast or FATAL log — the action was simply rejected, not crashed
-        val fatalLog = platform.capturedLogs.find { it.level == LogLevel.FATAL }
-        assertNull(fatalLog, "No FATAL error should occur — the action is cleanly rejected before reaching any feature.")
-    }
 
     // --- handleFeatureException Direct Test ---
 
