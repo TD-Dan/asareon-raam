@@ -185,21 +185,27 @@ object SovereignStrategy : CognitiveStrategy {
         val turnCount = stateObj?.get(KEY_TURN_COUNT)?.jsonPrimitive?.intOrNull ?: 0
 
         if (phase == PHASE_BOOTING) {
-            // Check for sentinel failure
-            if (response.contains(SovereignDefaults.SENTINEL_FAILURE_TOKEN)) {
-                return PostProcessResult(currentState, SentinelAction.HALT_AND_SILENCE)
+            // Gate logic: explicit SUCCESS_CODE required to advance.
+            // This is the safe default — stay in BOOTING unless the sentinel
+            // confirms a well-formed persona was found and embodied.
+            val hasSuccess = response.contains(SovereignDefaults.SENTINEL_SUCCESS_TOKEN)
+            val hasFailure = response.contains(SovereignDefaults.SENTINEL_FAILURE_TOKEN)
+
+            if (hasSuccess && !hasFailure) {
+                // Sentinel passed — transition BOOTING → AWAKE.
+                // The response (boot sequence) is posted via PROCEED_WITH_UPDATE.
+                val awakeState = buildJsonObject {
+                    stateObj?.forEach { (k, v) -> put(k, v) }
+                    put(KEY_PHASE, PHASE_AWAKE)
+                    put(KEY_TURN_COUNT, 1)
+                }
+                return PostProcessResult(awakeState, SentinelAction.PROCEED_WITH_UPDATE)
             }
 
-            // Sentinel passed — transition BOOTING → AWAKE.
-            // This is a firmware-level gate: the strategy controls the boot
-            // transition deterministically. Once AWAKE, the agent uses
-            // UPDATE_NVRAM for self-directed state changes.
-            val awakeState = buildJsonObject {
-                stateObj?.forEach { (k, v) -> put(k, v) }
-                put(KEY_PHASE, PHASE_AWAKE)
-                put(KEY_TURN_COUNT, 1)
-            }
-            return PostProcessResult(awakeState, SentinelAction.PROCEED_WITH_UPDATE)
+            // Failure or ambiguous output — stay in BOOTING.
+            // Post the response so the user sees the diagnostic (failure explanation,
+            // or the confused output if neither token was emitted).
+            return PostProcessResult(currentState, SentinelAction.PROCEED, displayHint = "BOOTING")
         }
 
         // AWAKE: increment turn counter. Other registers (currentTask, posture)

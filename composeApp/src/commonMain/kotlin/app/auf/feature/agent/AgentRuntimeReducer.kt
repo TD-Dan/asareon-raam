@@ -378,6 +378,17 @@ object AgentRuntimeReducer {
         val shouldClearContext = isStoppingProcessing || newStatus == AgentStatus.IDLE
                 || newStatus == AgentStatus.ERROR || newStatus == AgentStatus.RATE_LIMITED
 
+        // Extract strategy display hint (set by postProcessResponse via the pipeline).
+        // If the key is present, use its value (may be null to clear). Otherwise preserve current.
+        // Clear on PROCESSING (new turn starting — stale labels from previous turns are invalid).
+        val payloadStatusLabel = if ("strategyStatusLabel" in payload) {
+            payload["strategyStatusLabel"]?.jsonPrimitive?.contentOrNull
+        } else if (isStartingProcessing) {
+            null // Clear stale label when a new turn begins
+        } else {
+            currentStatus.strategyDisplayHint // Preserve
+        }
+
         val updatedStatus = currentStatus.copy(
             status = newStatus,
             errorMessage = newErrorMessage,
@@ -396,7 +407,8 @@ object AgentRuntimeReducer {
             // Rate limit: set from payload when entering RATE_LIMITED, clear otherwise
             rateLimitedUntilMs = if (newStatus == AgentStatus.RATE_LIMITED) {
                 payloadRateLimitedUntilMs ?: currentStatus.rateLimitedUntilMs
-            } else null
+            } else null,
+            strategyDisplayHint = payloadStatusLabel
         )
         // Reset persistence flag as this is pure runtime state
         return state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus), agentsToPersist = null)

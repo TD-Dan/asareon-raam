@@ -192,7 +192,14 @@ data class AgentStatusInfo(
      * Non-null only when status == RATE_LIMITED. The auto-trigger heartbeat checks this
      * timestamp and re-initiates the turn once the window expires.
      */
-    val rateLimitedUntilMs: Long? = null
+    val rateLimitedUntilMs: Long? = null,
+    /**
+     * Display-only label set by the cognitive strategy via [PostProcessResult.displayHint].
+     * Rendered by the avatar card alongside the runtime status. Has no effect on
+     * runtime flow control — purely informational (e.g., "Booting", "Reflecting").
+     * Null = no label. Cleared when the next turn begins.
+     */
+    val strategyDisplayHint: String? = null
 )
 
 @Serializable

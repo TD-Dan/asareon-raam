@@ -713,17 +713,21 @@ object AgentCognitivePipeline {
         store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
             put("session", targetSessionUUID.uuid); put("senderId", agent.identityHandle.handle); put("message", contentToPost)
         }))
+
+        // Determine post-turn status: always IDLE (runtime-owned).
+        // Strategy display hints are stored separately for the UI.
         AgentAvatarLogic.updateAgentAvatars(agentUuid, store, agentState, AgentStatus.IDLE)
 
-        // Forward token usage to agent state for display on the avatar card
-        if (decoded.inputTokens != null || decoded.outputTokens != null) {
-            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_STATUS, buildJsonObject {
-                put("agentId", agentUuid.uuid)
-                put("status", AgentStatus.IDLE.name)
-                decoded.inputTokens?.let { put("lastInputTokens", it) }
-                decoded.outputTokens?.let { put("lastOutputTokens", it) }
-            }))
-        } else {
+        // Forward token usage and strategy status label to agent state
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_STATUS, buildJsonObject {
+            put("agentId", agentUuid.uuid)
+            put("status", AgentStatus.IDLE.name)
+            decoded.inputTokens?.let { put("lastInputTokens", it) }
+            decoded.outputTokens?.let { put("lastOutputTokens", it) }
+            result.displayHint?.let { put("strategyDisplayHint", it) }
+        }))
+
+        if (decoded.inputTokens == null && decoded.outputTokens == null) {
             store.platformDependencies.log(
                 LogLevel.WARN, LOG_TAG,
                 "Gateway response for agent '$agentUuid' contained no token usage data. " +

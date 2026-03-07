@@ -241,7 +241,7 @@ fun AgentControlCard(
                 "Rate limited"
             }
         }
-        else -> statusInfo.status.name
+        else -> statusInfo.strategyDisplayHint ?: statusInfo.status.name
     }
 
     val agentUuidStr = agent.identityUUID.uuid

@@ -219,10 +219,19 @@ interface CognitiveStrategy {
 
 /**
  * Result of the post-processing phase.
+ *
+ * @param newState The (possibly updated) cognitive state.
+ * @param action The sentinel action controlling response handling.
+ * @param displayHint Optional display label for the agent's post-turn state,
+ *   shown on the avatar card for user visibility (e.g., "Booting", "Reflecting").
+ *   Purely informational — does NOT affect runtime status ([AgentStatus]),
+ *   auto-triggers, turn guards, or any other runtime behavior.
+ *   Stored on [AgentStatusInfo.strategyDisplayHint]. Null clears any previous label.
  */
 data class PostProcessResult(
     val newState: JsonElement,
-    val action: SentinelAction
+    val action: SentinelAction,
+    val displayHint: String? = null
 )
 
 enum class SentinelAction {
