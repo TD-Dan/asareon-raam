@@ -11,6 +11,11 @@
       "key": "agent:execute",
       "description": "Initiate and control agent turns",
       "dangerLevel": "CAUTION"
+    },
+    {
+      "key": "agent:cognition",
+      "description": "Cognitive self-operations (NVRAM writes, phase transitions). Sandbox-enforced: targets only the caller's own agent unless agent:manage is also held.",
+      "dangerLevel": "LOW"
     }
   ],
   "actions": [
@@ -580,7 +585,7 @@
     },
     {
       "action_name": "agent.UPDATE_NVRAM",
-      "summary": "Updates the agent's cognitive state (NVRAM). Can be dispatched by the agent itself via CommandBot or by users. Updates are merged into existing state.",
+      "summary": "Updates the agent's cognitive state (NVRAM). Updates are merged into existing state. Sandbox-enforced: callers with only agent:cognition have agentId rewritten to their own UUID. Callers with agent:manage can target any agent.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -589,11 +594,11 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name. Sandbox-enforced to self for callers without agent:manage."
           },
           "updates": {
             "type": "object",
-            "description": "Key-value pairs to merge into the agent's cognitive state JSON."
+            "description": "Key-value pairs to merge into the agent's cognitive state JSON. Keys are validated against the strategy's NVRAM schema."
           },
           "correlationId": {
             "type": [
@@ -610,7 +615,7 @@
         ]
       },
       "required_permissions": [
-        "agent:manage"
+        "agent:cognition"
       ]
     },
     {

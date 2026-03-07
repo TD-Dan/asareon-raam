@@ -607,7 +607,14 @@ class AgentRuntimeFeature(
 
                 // Apply sandbox rewrite for actions that need it.
                 // Uses UUID because workspace paths are "{uuid}/workspace/".
-                val finalPayload = applySandboxRewrite(actionName, actionPayload, agentUuid)
+                var finalPayload = applySandboxRewrite(actionName, actionPayload, agentUuid)
+
+                // NVRAM self-targeting enforcement: agents with only agent:cognition
+                // have agentId rewritten to their own UUID. Only agent:manage
+                // holders can target a different agent's NVRAM.
+                if (actionName == ActionRegistry.Names.AGENT_UPDATE_NVRAM) {
+                    finalPayload = enforceNvramSelfTarget(finalPayload, agent, store)
+                }
 
                 // Inject correlationId into the payload
                 val enrichedPayload = if (finalPayload["correlationId"] == null) {
@@ -739,6 +746,40 @@ class AgentRuntimeFeature(
             mutablePayload[key] = Json.parseToJsonElement(jsonLiteralValue)
         }
 
+        return JsonObject(mutablePayload)
+    }
+
+    /**
+     * NVRAM self-targeting enforcement for agent-originated UPDATE_NVRAM commands.
+     *
+     * Agents with only `agent:cognition` have the `agentId` field rewritten to their own
+     * UUID — they can only write their own NVRAM. Agents with `agent:manage` (e.g.,
+     * a janitorial agent) can target any agent.
+     *
+     * This is a defense-in-depth measure: the permission guard allows the action
+     * (agent:cognition is satisfied), and this sandbox layer constrains the target.
+     */
+    private fun enforceNvramSelfTarget(payload: JsonObject, agent: AgentInstance, store: Store): JsonObject {
+        val agentIdentity = store.state.value.identityRegistry[agent.identityHandle.handle]
+            ?: return payload // Identity not found — let downstream validation handle it
+
+        val effective = store.resolveEffectivePermissions(agentIdentity)
+        val hasManage = effective["agent:manage"]?.level == PermissionLevel.YES
+
+        if (hasManage) return payload // Full admin — allow cross-agent targeting
+
+        // Self-only: rewrite agentId to the caller's own UUID
+        val targetId = payload["agentId"]?.jsonPrimitive?.contentOrNull
+        if (targetId != null && targetId != agent.identityUUID.uuid && targetId != agent.identityHandle.handle) {
+            platformDependencies.log(
+                LogLevel.WARN, identity.handle,
+                "NVRAM sandbox: Agent '${agent.identityHandle}' attempted to write NVRAM for '$targetId' " +
+                        "without agent:manage. Rewriting target to self (${agent.identityUUID})."
+            )
+        }
+
+        val mutablePayload = payload.toMutableMap()
+        mutablePayload["agentId"] = JsonPrimitive(agent.identityUUID.uuid)
         return JsonObject(mutablePayload)
     }
 
