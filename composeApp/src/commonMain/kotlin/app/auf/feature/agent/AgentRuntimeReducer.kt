@@ -302,7 +302,11 @@ object AgentRuntimeReducer {
                 val updatedAgent = agent.copy(
                     subscribedSessionIds = agent.subscribedSessionIds + sessionId
                 )
-                state.copy(agents = state.agents + (agentId to updatedAgent))
+                // Run strategy validation to repair invariants (e.g., Vanilla auto-assigns
+                // outputSessionId to the first subscription when it was previously null).
+                val strategy = CognitiveStrategyRegistry.get(updatedAgent.cognitiveStrategyId)
+                val validatedAgent = strategy.validateConfig(updatedAgent)
+                state.copy(agents = state.agents + (agentId to validatedAgent))
             }
 
             ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION -> {
@@ -314,7 +318,11 @@ object AgentRuntimeReducer {
                 val updatedAgent = agent.copy(
                     subscribedSessionIds = agent.subscribedSessionIds - sessionId
                 )
-                state.copy(agents = state.agents + (agentId to updatedAgent))
+                // Run strategy validation to repair invariants (e.g., Vanilla clears
+                // outputSessionId when it is no longer in subscribedSessionIds).
+                val strategy = CognitiveStrategyRegistry.get(updatedAgent.cognitiveStrategyId)
+                val validatedAgent = strategy.validateConfig(updatedAgent)
+                state.copy(agents = state.agents + (agentId to validatedAgent))
             }
 
             // ================================================================
