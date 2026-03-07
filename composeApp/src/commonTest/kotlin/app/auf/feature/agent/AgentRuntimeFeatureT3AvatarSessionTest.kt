@@ -115,6 +115,23 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
     private fun agentState(harness: app.auf.test.TestHarness): AgentRuntimeState =
         harness.store.state.value.featureStates["agent"] as AgentRuntimeState
 
+    /**
+     * Returns the current AgentRuntimeState with the given agent's status overridden.
+     * This simulates the "post-reducer state" that callers are expected to provide
+     * when the status change hasn't been applied to the store yet.
+     */
+    private fun agentStateWithStatus(
+        harness: app.auf.test.TestHarness,
+        agentId: IdentityUUID,
+        status: AgentStatus
+    ): AgentRuntimeState {
+        val current = agentState(harness)
+        val existingInfo = current.agentStatuses[agentId] ?: AgentStatusInfo()
+        return current.copy(
+            agentStatuses = current.agentStatuses + (agentId to existingInfo.copy(status = status))
+        )
+    }
+
     // ========================================================================
     // TEST 1: Avatar posted to session on direct updateAgentAvatars call
     // ========================================================================
@@ -191,7 +208,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
         harness.runAndLogOnFailure {
             registerSessions(harness, testSession1)
-            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, agentState(harness), newStatus = AgentStatus.PROCESSING)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, agentStateWithStatus(harness, IdentityUUID(agentId), AgentStatus.PROCESSING), newStatus = AgentStatus.PROCESSING)
 
             val avatarPost = harness.processedActions.avatarPosts().firstOrNull()
             assertNotNull(avatarPost, "Avatar post should be dispatched")

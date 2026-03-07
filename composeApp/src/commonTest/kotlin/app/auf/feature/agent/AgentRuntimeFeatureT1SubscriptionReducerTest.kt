@@ -6,6 +6,8 @@ import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -28,6 +30,17 @@ class AgentRuntimeFeatureT1SubscriptionReducerTest {
     private val sessionUUID3 = "a0000000-0000-0000-0000-000000000003"
 
     private val agentId = "b0000000-0000-0000-0000-000000000001"
+
+    @BeforeTest
+    fun setUp() {
+        CognitiveStrategyRegistry.clearForTesting()
+        CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.MinimalStrategy)
+    }
+
+    @AfterTest
+    fun tearDown() {
+        CognitiveStrategyRegistry.clearForTesting()
+    }
 
     // ========================================================================
     // ADD_SESSION_SUBSCRIPTION
