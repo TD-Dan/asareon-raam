@@ -72,11 +72,15 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
         platform.createDirectories(personaId)
         platform.writeFileContent(path, hkgContent)
 
-        val privateSession = testSession("private-session-1", "p-cognition: Philosopher")
-        val publicSession = testSession("public-session-1", "Public Discussion", timestamp = 2L)
+        val privateSessionUUID = "a0000000-0000-0000-0000-000000000001"
+        val publicSessionUUID = "a0000000-0000-0000-0000-000000000002"
+        val agentUUID = "b0000000-0000-0000-0000-000000000001"
+
+        val privateSession = testSession(privateSessionUUID, "p-cognition: Philosopher")
+        val publicSession = testSession(publicSessionUUID, "Public Discussion", timestamp = 2L)
 
         val philosopherAgent = testAgent(
-            id = "philosopher-1",
+            id = agentUUID,
             name = "Philosopher",
             knowledgeGraphId = personaId,
             modelProvider = "fake",
@@ -100,7 +104,7 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
                     IdentityUUID(privateSession.identity.uuid!!) to privateSession.identity.name,
                     IdentityUUID(publicSession.identity.uuid!!) to publicSession.identity.name
                 ),
-                resources = emptyList()
+                resources = testBuiltInResources()
             ))
             .withInitialState("session", SessionState(
                 sessions = mapOf(privateSession.identity.uuid!! to privateSession, publicSession.identity.uuid!! to publicSession)
@@ -115,14 +119,26 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
     fun `Sovereign agent should use its HKG and post to its PrivateSession`() = runTest {
         val harness = setupTestEnvironment()
         harness.runAndLogOnFailure {
+            // Register identities
+            harness.registerAgentIdentity(
+                harness.store.state.value.let {
+                    (it.featureStates["agent"] as AgentRuntimeState).agents.values.first()
+                }
+            )
+            // Register both sessions so avatar system and pipeline can resolve UUIDs
+            val sessionState = harness.store.state.value.featureStates["session"] as SessionState
+            sessionState.sessions.values.forEach { session ->
+                harness.registerSessionIdentity(session)
+            }
+
             // ACT 1: Force KG to load personas.
             // We use the feature's own discovery mechanism.
             harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.FILESYSTEM_LIST))
             runCurrent()
 
             // ACT 2: Initiate Turn
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
-                put("agentId", "philosopher-1")
+            harness.store.dispatch("core", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
+                put("agentId", "b0000000-0000-0000-0000-000000000001")
             }))
             runCurrent()
 
@@ -136,13 +152,22 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
                 "HKG Context missing from prompt. \nPrompt: $systemPrompt"
             )
 
+            // Avatar system resolves UUIDs → handles, so SESSION_POST uses handles
+            val privateSessionHandle = sessionState.sessions["a0000000-0000-0000-0000-000000000001"]?.identity?.handle
+            val publicSessionHandle = sessionState.sessions["a0000000-0000-0000-0000-000000000002"]?.identity?.handle
+
             val postToPrivate = harness.processedActions.find {
-                it.name == ActionRegistry.Names.SESSION_POST && it.payload?.get("session")?.jsonPrimitive?.content == "private-session-1"
+                it.name == ActionRegistry.Names.SESSION_POST &&
+                        (it.payload?.get("session")?.jsonPrimitive?.content == "a0000000-0000-0000-0000-000000000001" ||
+                                it.payload?.get("session")?.jsonPrimitive?.content == privateSessionHandle)
             }
             assertNotNull(postToPrivate, "Should post to private session.")
 
             val postToPublic = harness.processedActions.find {
-                it.name == ActionRegistry.Names.SESSION_POST && it.payload?.get("session")?.jsonPrimitive?.content == "public-session-1"
+                it.name == ActionRegistry.Names.SESSION_POST &&
+                        (it.payload?.get("session")?.jsonPrimitive?.content == "a0000000-0000-0000-0000-000000000002" ||
+                                it.payload?.get("session")?.jsonPrimitive?.content == publicSessionHandle) &&
+                        it.payload?.containsKey("message") == true
             }
             assertNull(postToPublic, "Should NOT post to public session.")
         }
