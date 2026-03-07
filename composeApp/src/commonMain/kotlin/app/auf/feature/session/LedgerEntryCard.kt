@@ -1,6 +1,7 @@
 package app.auf.feature.session
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -39,17 +40,20 @@ fun LedgerEntryCard(
     }
     var showMenu by remember { mutableStateOf(false) }
 
-    val cardColors = if (isCurrentUserMessage) {
-        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    // All cards share the same dark background. User messages are distinguished
+    // by a subtle primary-colored border rather than a solid fill, keeping the
+    // overall view calm and consistent.
+    val cardColors = CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    )
+    val cardBorder = if (isCurrentUserMessage) {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
     } else {
-        // Explicit surfaceContainerLow instead of CardDefaults — the default
-        // resolves too light in dark theme, producing a mid-gray that fights
-        // with the near-black background. This keeps cards subtle and recessed.
-        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        null
     }
 
 
-    Card(modifier = Modifier.fillMaxWidth(), colors = cardColors) {
+    Card(modifier = Modifier.fillMaxWidth(), colors = cardColors, border = cardBorder) {
         Column(modifier = Modifier.padding(12.dp)) {
             // Header
             Row(
