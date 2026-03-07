@@ -181,10 +181,14 @@ object AgentRuntimeReducer {
 
                 val newAgents = state.agents.mapValues { (_, agent) ->
                     if (agentsToUpdate.any { it.identityUUID == agent.identityUUID }) {
-                        agent.copy(
+                        val cleaned = agent.copy(
                             subscribedSessionIds = agent.subscribedSessionIds - deletedSessionId,
                             outputSessionId = if (agent.outputSessionId == deletedSessionId) null else agent.outputSessionId
                         )
+                        // Run strategy validation to repair invariants (e.g., Vanilla auto-assigns
+                        // outputSessionId to first remaining subscription when it becomes null).
+                        val strategy = CognitiveStrategyRegistry.get(cleaned.cognitiveStrategyId)
+                        strategy.validateConfig(cleaned)
                     } else {
                         agent
                     }

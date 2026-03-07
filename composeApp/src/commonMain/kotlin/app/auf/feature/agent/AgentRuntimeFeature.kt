@@ -570,6 +570,9 @@ class AgentRuntimeFeature(
                 agentState.agentsToPersist?.forEach { agentId ->
                     val agent = agentState.agents[agentId] ?: return@forEach
                     saveAgentConfig(agent, store)
+                    // Refresh avatars so zombie cards for the deleted session are
+                    // cleaned and remaining sessions get updated cards.
+                    AgentAvatarLogic.updateAgentAvatars(agentId, store, agentState)
                 }
                 broadcastAgentNames(agentState, store)
             }
