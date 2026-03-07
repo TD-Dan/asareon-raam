@@ -96,7 +96,7 @@ class AgentRuntimeFeatureT2SubscriptionTest {
             harness.registerSessionIdentity(testSession1)
             harness.registerSessionIdentity(testSession2)
 
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
                 buildJsonObject {
                     put("agentId", agentId1)

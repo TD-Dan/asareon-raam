@@ -48,19 +48,19 @@ object AgentCognitivePipeline {
         val contextSessionUUID = agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
             val msg = "Cannot start turn: Agent has no session for context."
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
-            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, msg)
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, state, AgentStatus.ERROR, msg)
             return
         }
         // Validate the UUID is still in the registry (session may have been deleted)
         if (store.state.value.identityRegistry.findByUUID(contextSessionUUID) == null) {
             val msg = "Cannot start turn: Session UUID '$contextSessionUUID' not in registry."
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
-            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, msg)
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, state, AgentStatus.ERROR, msg)
             return
         }
 
         if (statusInfo.turnMode == TurnMode.DIRECT) {
-            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.PROCESSING)
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, state, AgentStatus.PROCESSING)
         }
 
         store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
@@ -104,19 +104,20 @@ object AgentCognitivePipeline {
         }
         val agentId = IdentityUUID(agentIdStr)
 
+        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: run {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "handleLedgerResponse: Agent feature state missing. Dropping ledger response for correlationId='$agentId'.")
+            return
+        }
+
         val decoded = try {
             json.decodeFromJsonElement<LedgerResponsePayload>(payload)
         } catch (e: Exception) {
             val msg = "Failed to parse ledger response: ${e.message}"
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
-            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, msg)
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, state, AgentStatus.ERROR, msg)
             return
         }
 
-        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: run {
-            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "handleLedgerResponse: Agent feature state missing. Dropping ledger response for correlationId='$agentId'.")
-            return
-        }
         val agent = state.agents[agentId] ?: run {
             store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "handleLedgerResponse: Agent '$agentId' not found in state. Dropping ledger response.")
             return
@@ -211,7 +212,7 @@ object AgentCognitivePipeline {
         if (statusInfo.stagedTurnContext == null) {
             val msg = "Turn Context Missing for '$agentId'. Aborting."
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
-            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, msg)
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, state, AgentStatus.ERROR, msg)
             return
         }
 
@@ -275,7 +276,7 @@ object AgentCognitivePipeline {
         if (ledgerContext == null) {
             val msg = "Context arrived for '$agentId' without staged ledger context. Aborting."
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
-            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, "Context assembly failed.")
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, state, AgentStatus.ERROR, "Context assembly failed.")
             return
         }
 
@@ -334,7 +335,7 @@ object AgentCognitivePipeline {
             "Assembling prompt for '${agentUuid}' using strategy '${strategy.identityHandle}' (State: ${abbreviate(cognitiveState.toString(),30)}).")
 
         // === RESOURCE RESOLUTION ===
-        val resolvedResources = resolveAgentResources(agent, agentState.resources, strategy, platformDependencies, store)
+        val resolvedResources = resolveAgentResources(agent, agentState.resources, strategy, platformDependencies, store, agentState)
         if (resolvedResources == null) {
             return
         }
@@ -487,7 +488,8 @@ object AgentCognitivePipeline {
         loadedResources: List<AgentResource>,
         strategy: CognitiveStrategy,
         platformDeps: PlatformDependencies,
-        store: Store
+        store: Store,
+        agentState: AgentRuntimeState
     ): Map<String, String>? {
         val resolved = mutableMapOf<String, String>()
         val missingRequired = mutableListOf<String>()
@@ -516,7 +518,7 @@ object AgentCognitivePipeline {
         if (missingRequired.isNotEmpty()) {
             val errorMsg = "Missing required resources: ${missingRequired.joinToString(", ")}"
             platformDeps.log(LogLevel.ERROR, LOG_TAG, "Agent '${agent.identityUUID}': $errorMsg")
-            AgentAvatarLogic.updateAgentAvatars(agent.identityUUID, store, AgentStatus.ERROR, errorMsg)
+            AgentAvatarLogic.updateAgentAvatars(agent.identityUUID, store, agentState, AgentStatus.ERROR, errorMsg)
             store.dispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject {
                 put("message", "Agent '${agent.identity.name}': $errorMsg")
             }))
@@ -562,6 +564,10 @@ object AgentCognitivePipeline {
             return
         }
         val agentId = IdentityUUID(agentIdStr)
+        val agentState = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: run {
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleGatewayResponse: Agent state missing.")
+            return
+        }
         val decoded = try {
             json.decodeFromJsonElement<GatewayResponsePayload>(payload)
         } catch (e: Exception) {
@@ -569,11 +575,7 @@ object AgentCognitivePipeline {
                 LogLevel.ERROR, LOG_TAG,
                 "handleGatewayResponse: Failed to parse gateway response for agent '$agentId': ${e.message}"
             )
-            AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.ERROR, "Failed to parse gateway response.")
-            return
-        }
-        val agentState = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: run {
-            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleGatewayResponse: Agent state missing.")
+            AgentAvatarLogic.updateAgentAvatars(agentId, store, agentState, AgentStatus.ERROR, "Failed to parse gateway response.")
             return
         }
         val agent = agentState.agents[agentId] ?: run {
@@ -583,12 +585,12 @@ object AgentCognitivePipeline {
         val agentUuid = agent.identityUUID
         val targetSessionUUID = agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleGatewayResponse: Agent '$agentUuid' has no target session to post response to.")
-            AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.ERROR, "No target session for response.")
+            AgentAvatarLogic.updateAgentAvatars(agentUuid, store, agentState, AgentStatus.ERROR, "No target session for response.")
             return
         }
         if (store.state.value.identityRegistry.findByUUID(targetSessionUUID) == null) {
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleGatewayResponse: Session UUID '$targetSessionUUID' not in registry for agent '$agentUuid'.")
-            AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.ERROR, "Target session not in registry.")
+            AgentAvatarLogic.updateAgentAvatars(agentUuid, store, agentState, AgentStatus.ERROR, "Target session not in registry.")
             return
         }
 
@@ -614,12 +616,12 @@ object AgentCognitivePipeline {
                     put("error", decoded.errorMessage)
                     put("rateLimitedUntilMs", retryAfterMs)
                 }))
-                AgentAvatarLogic.updateAgentAvatars(agentUuid, store)
+                AgentAvatarLogic.updateAgentAvatars(agentUuid, store, agentState)
                 return
             }
 
             // NORMAL ERROR PATH: No rate limit — show error on avatar.
-            AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
+            AgentAvatarLogic.updateAgentAvatars(agentUuid, store, agentState, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
             return
         }
 
@@ -655,7 +657,7 @@ object AgentCognitivePipeline {
         // 2. Handle Sentinel Actions
         if (result.action == SentinelAction.HALT_AND_SILENCE) {
             store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "Agent '$agentUuid' halted by Cognitive Strategy (Sentinel Action).")
-            AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.IDLE, "Halted by Internal Sentinel.")
+            AgentAvatarLogic.updateAgentAvatars(agentUuid, store, agentState, AgentStatus.IDLE, "Halted by Internal Sentinel.")
             return
         }
 
@@ -675,7 +677,7 @@ object AgentCognitivePipeline {
         store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
             put("session", targetSessionUUID.uuid); put("senderId", agent.identityHandle.handle); put("message", contentToPost)
         }))
-        AgentAvatarLogic.updateAgentAvatars(agentUuid, store, AgentStatus.IDLE)
+        AgentAvatarLogic.updateAgentAvatars(agentUuid, store, agentState, AgentStatus.IDLE)
 
         // Forward token usage to agent state for display on the avatar card
         if (decoded.inputTokens != null || decoded.outputTokens != null) {

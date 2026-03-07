@@ -292,7 +292,7 @@ class AgentRuntimeFeature(
                     return
                 }
                 saveAgentConfig(agent, store)
-                AgentAvatarLogic.updateAgentAvatars(agentId, store)
+                AgentAvatarLogic.updateAgentAvatars(agentId, store, agentState)
                 broadcastAgentNames(agentState, store)
 
                 val sessionIdStr = payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: ""
@@ -324,7 +324,7 @@ class AgentRuntimeFeature(
                 if (oldAgent == null || oldAgent.cognitiveState != newAgent.cognitiveState) {
                     saveAgentNvram(newAgent, store)
                 }
-                AgentAvatarLogic.updateAgentAvatars(agentId, store)
+                AgentAvatarLogic.updateAgentAvatars(agentId, store, agentState)
 
                 // Polymorphic infrastructure check.
                 dispatchEnsureInfrastructureForAll(agentState, store)
@@ -495,7 +495,7 @@ class AgentRuntimeFeature(
                     return
                 }
 
-                AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.PROCESSING)
+                AgentAvatarLogic.updateAgentAvatars(agentId, store, agentState, AgentStatus.PROCESSING)
 
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_GENERATE_CONTENT, buildJsonObject {
                     put("providerId", agent.modelProvider)
@@ -531,7 +531,7 @@ class AgentRuntimeFeature(
                 }))
                 activeTurnJobs[agentId]?.cancel()
                 activeTurnJobs.remove(agentId)
-                AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.IDLE, "Turn cancelled by user.")
+                AgentAvatarLogic.updateAgentAvatars(agentId, store, agentState, AgentStatus.IDLE, "Turn cancelled by user.")
                 publishActionResult(store, correlationId, action.name, true, summary = "Turn cancelled for agent '${agent?.identity?.name ?: agentId.uuid}'.")
             }
             ActionRegistry.Names.SESSION_MESSAGE_POSTED -> {
@@ -548,9 +548,10 @@ class AgentRuntimeFeature(
 
                     if (statusChanged || frontierMoved) {
                         avatarUpdateJobs[agentId]?.cancel()
+                        val capturedState = agentState
                         avatarUpdateJobs[agentId] = coroutineScope.launch {
                             delay(50)
-                            AgentAvatarLogic.updateAgentAvatars(agentId, store)
+                            AgentAvatarLogic.updateAgentAvatars(agentId, store, capturedState)
                         }
                     }
                 }
@@ -565,7 +566,7 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.SESSION_SESSION_FEATURE_READY -> {
                 agentState.agents.forEach { (agentId, agent) ->
                     if (agent.isAgentActive) {
-                        AgentAvatarLogic.updateAgentAvatars(agentId, store, AgentStatus.IDLE)
+                        AgentAvatarLogic.updateAgentAvatars(agentId, store, agentState, AgentStatus.IDLE)
                     }
                 }
             }

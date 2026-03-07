@@ -56,6 +56,7 @@ object AgentAvatarLogic {
     fun updateAgentAvatars(
         agentId: IdentityUUID,
         store: Store,
+        agentRuntimeState: AgentRuntimeState,
         newStatus: AgentStatus? = null,
         newError: String? = null
     ) {
@@ -68,12 +69,11 @@ object AgentAvatarLogic {
             }))
         }
 
-        // 2. Fetch Latest State (Needed to get updated frontiers/status)
-        val appState = store.state.value
-        val agentState = appState.featureStates["agent"] as? AgentRuntimeState ?: return
+        // 2. Use the caller-provided post-reducer state to avoid stale reads from store.state.value
+        val agentState = agentRuntimeState
         val agent = agentState.agents[agentId] ?: return
         val statusInfo = agentState.agentStatuses[agentId] ?: AgentStatusInfo()
-        val registry = appState.identityRegistry
+        val registry = store.state.value.identityRegistry
 
         // 3. Determine Target Sessions
         val targetSessions = (agent.subscribedSessionIds + listOfNotNull(agent.outputSessionId)).distinct()

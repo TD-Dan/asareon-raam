@@ -173,7 +173,7 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
             confirmButton = {
                 Button(
                     onClick = {
-                        store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_DELETE, buildJsonObject { put("session", session.identity.localHandle) }))
+                        store.dispatch("session", Action(ActionRegistry.Names.SESSION_DELETE, buildJsonObject { put("session", session.identity.localHandle) }))
                         sessionToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -198,7 +198,7 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
             confirmButton = {
                 Button(
                     onClick = {
-                        store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject { put("session", session.identity.localHandle) }))
+                        store.dispatch("session", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject { put("session", session.identity.localHandle) }))
                         sessionToClear = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -222,7 +222,7 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
                 // Hidden filter toggle — persisted via Settings feature
                 IconButton(onClick = {
                     val newValue = !(sessionState?.hideHiddenInManager ?: true)
-                    store.dispatch("session.ui", Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject {
+                    store.dispatch("session", Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject {
                         put("key", SessionState.SETTING_HIDE_HIDDEN_MANAGER)
                         put("value", newValue.toString())
                     }))
@@ -233,7 +233,7 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
                         tint = if (hideHidden) MaterialTheme.colorScheme.inverseOnSurface else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Button(onClick = { store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_CREATE)) }) {
+                Button(onClick = { store.dispatch("session", Action(ActionRegistry.Names.SESSION_CREATE)) }) {
                     Icon(Icons.Default.Add, contentDescription = "Create New Session", modifier = Modifier.padding(end = 8.dp))
                     Text("New Session")
                 }
@@ -258,7 +258,7 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
                     setList = { reorderableList = it },
                     onDragFinished = { newOrder ->
                         isDragging = false
-                        store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_ORDER, buildJsonObject {
+                        store.dispatch("session", Action(ActionRegistry.Names.SESSION_SET_ORDER, buildJsonObject {
                             put("order", buildJsonArray { newOrder.forEach { add(it) } })
                         }))
                     }
@@ -396,7 +396,7 @@ private fun SessionManagerCard(
 
             // Visibility toggle
             IconButton(onClick = {
-                store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_TOGGLE_SESSION_HIDDEN, buildJsonObject { put("session", session.identity.localHandle) }))
+                store.dispatch("session", Action(ActionRegistry.Names.SESSION_TOGGLE_SESSION_HIDDEN, buildJsonObject { put("session", session.identity.localHandle) }))
             }) {
                 Icon(
                     imageVector = if (session.isHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
@@ -406,7 +406,7 @@ private fun SessionManagerCard(
             // Edit Button
             IconButton(onClick = {
                 val payload = buildJsonObject { put("sessionId", session.identity.localHandle) }
-                store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, payload))
+                store.dispatch("session", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, payload))
             }) {
                 Icon(Icons.Default.Edit, contentDescription = "Edit Session Name")
             }
@@ -422,7 +422,7 @@ private fun SessionManagerCard(
                     DropdownMenuItem(
                         text = { Text("Clone") },
                         onClick = {
-                            store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_CLONE, buildJsonObject { put("session", session.identity.localHandle) }))
+                            store.dispatch("session", Action(ActionRegistry.Names.SESSION_CLONE, buildJsonObject { put("session", session.identity.localHandle) }))
                             menuExpanded = false
                         },
                         leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) }
@@ -463,14 +463,14 @@ private fun SessionManagerCardEditor(session: Session, store: Store) {
 
     val cancelAction = {
         val payload = buildJsonObject { put("sessionId", null as String?) }
-        store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, payload))
+        store.dispatch("session", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, payload))
     }
     val saveAction = {
         val payload = buildJsonObject {
             put("session", session.identity.localHandle)
             put("name", name)
         }
-        store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_UPDATE_CONFIG, payload))
+        store.dispatch("session", Action(ActionRegistry.Names.SESSION_UPDATE_CONFIG, payload))
     }
 
     Card(

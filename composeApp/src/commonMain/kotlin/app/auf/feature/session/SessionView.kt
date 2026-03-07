@@ -83,7 +83,7 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
             // Hidden filter toggle — persisted via Settings feature
             IconButton(onClick = {
                 val newValue = !(sessionState?.hideHiddenInViewer ?: true)
-                store.dispatch("session.ui", Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject {
+                store.dispatch("session", Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject {
                     put("key", SessionState.SETTING_HIDE_HIDDEN_VIEWER)
                     put("value", newValue.toString())
                 }))
@@ -94,7 +94,7 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
                     tint = if (hideHidden) MaterialTheme.colorScheme.inverseOnSurface else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            IconButton(onClick = { store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_CREATE)) }) {
+            IconButton(onClick = { store.dispatch("session", Action(ActionRegistry.Names.SESSION_CREATE)) }) {
                 Icon(Icons.Default.Add, "New Session")
             }
         }
@@ -105,7 +105,7 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
             LedgerPane(store, activeSession, sessionState, features, platformDependencies, Modifier.weight(1f))
             MessageInput(store, activeSession, platformDependencies) { message ->
                 val activeUserId = sessionState?.activeUserId ?: "user"
-                store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+                store.dispatch("session", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                     put("session", activeSession.identity.localHandle); put("senderId", activeUserId); put("message", message)
                 }))
             }
@@ -124,13 +124,13 @@ private fun SessionTab(store: Store, session: Session, isSelected: Boolean, isEd
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
                         Key.Enter -> {
-                            store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_UPDATE_CONFIG, buildJsonObject {
+                            store.dispatch("session", Action(ActionRegistry.Names.SESSION_UPDATE_CONFIG, buildJsonObject {
                                 put("session", session.identity.localHandle); put("name", text)
                             }))
                             return@onKeyEvent true
                         }
                         Key.Escape -> {
-                            store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, buildJsonObject {
+                            store.dispatch("session", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, buildJsonObject {
                                 put("sessionId", null as String?)
                             }))
                             return@onKeyEvent true
@@ -146,10 +146,10 @@ private fun SessionTab(store: Store, session: Session, isSelected: Boolean, isEd
         val tabTextColor = if (session.isHidden) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f) else LocalContentColor.current
         Tab(
             selected = isSelected,
-            onClick = { store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.identity.localHandle) })) },
+            onClick = { store.dispatch("session", Action(ActionRegistry.Names.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.identity.localHandle) })) },
             modifier = Modifier.combinedClickable(
-                onClick = { store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.identity.localHandle) })) },
-                onDoubleClick = { store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, buildJsonObject { put("sessionId", session.identity.localHandle) })) }
+                onClick = { store.dispatch("session", Action(ActionRegistry.Names.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.identity.localHandle) })) },
+                onDoubleClick = { store.dispatch("session", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, buildJsonObject { put("sessionId", session.identity.localHandle) })) }
             )
         ) { Text(session.identity.name, maxLines = 1, modifier = Modifier.padding(vertical = 12.dp), color = tabTextColor) }
     }
@@ -268,7 +268,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
     }
 
     fun dispatchDraftChange(newText: String) {
-        store.dispatch("session.ui", Action(
+        store.dispatch("session", Action(
             ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED,
             buildJsonObject {
                 put("sessionId", sessionLocalHandle)
@@ -413,7 +413,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
             confirmButton = {
                 Button(
                     onClick = {
-                        store.dispatch("session.ui", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject { put("session", session.identity.localHandle) }))
+                        store.dispatch("session", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject { put("session", session.identity.localHandle) }))
                         sessionToClear = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -557,7 +557,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                             if (acState == null && !editMode) {
                                 when (event.key) {
                                     Key.DirectionUp -> {
-                                        store.dispatch("session.ui", Action(
+                                        store.dispatch("session", Action(
                                             ActionRegistry.Names.SESSION_HISTORY_NAVIGATE,
                                             buildJsonObject {
                                                 put("sessionId", sessionLocalHandle)
@@ -567,7 +567,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                                         return@onPreviewKeyEvent true
                                     }
                                     Key.DirectionDown -> {
-                                        store.dispatch("session.ui", Action(
+                                        store.dispatch("session", Action(
                                             ActionRegistry.Names.SESSION_HISTORY_NAVIGATE,
                                             buildJsonObject {
                                                 put("sessionId", sessionLocalHandle)
@@ -657,7 +657,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                                             DropdownMenuItem(
                                                 text = { Text(agentName) },
                                                 onClick = {
-                                                    store.dispatch("session.ui", Action(
+                                                    store.dispatch("session", Action(
                                                         ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
                                                         buildJsonObject {
                                                             put("agentId", agentUuid)

@@ -61,7 +61,7 @@ class SessionFeatureT1SessionManagerViewTest {
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_CREATE }
         assertNotNull(action)
-        assertEquals("session.ui", action.originator)
+        assertEquals("session", action.originator)
     }
 
     // ─────────────────────────────────────────────────────────────

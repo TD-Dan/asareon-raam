@@ -72,7 +72,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED,
                 buildJsonObject {
                     put("sessionId", "sid-1")
@@ -99,7 +99,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED,
                 buildJsonObject { put("sessionId", "non-existent"); put("draft", "text") }
             ))
@@ -129,7 +129,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED,
                 buildJsonObject { put("sessionId", "sid-1"); put("draft", "draft text") }
             ))
@@ -171,7 +171,7 @@ class SessionFeatureT2InputHistoryTest {
         harness.runAndLogOnFailure {
             // Fire three rapid changes — only the last should trigger a write
             for (text in listOf("H", "He", "Hello")) {
-                harness.store.dispatch("session.ui", Action(
+                harness.store.dispatch("session", Action(
                     ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED,
                     buildJsonObject { put("sessionId", "sid-1"); put("draft", text) }
                 ))
@@ -213,7 +213,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_POST,
                 buildJsonObject {
                     put("session", "sid-1")
@@ -244,12 +244,12 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_POST,
                 buildJsonObject { put("session", "sid-1"); put("senderId", "user"); put("message", "First message") }
             ))
             testScheduler.advanceUntilIdle()
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_POST,
                 buildJsonObject { put("session", "sid-1"); put("senderId", "user"); put("message", "Second message") }
             ))
@@ -276,7 +276,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_POST,
                 buildJsonObject { put("session", "sid-1"); put("senderId", "user"); put("message", "   ") }
             ))
@@ -303,7 +303,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_POST,
                 buildJsonObject { put("session", "sid-1"); put("senderId", "user"); put("message", "same message") }
             ))
@@ -330,7 +330,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_POST,
                 buildJsonObject { put("session", "sid-1"); put("senderId", "user"); put("message", "new message") }
             ))
@@ -356,7 +356,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_POST,
                 buildJsonObject { put("session", "sid-1"); put("senderId", "user"); put("message", "about to send") }
             ))
@@ -388,7 +388,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_POST,
                 buildJsonObject { put("session", "sid-1"); put("senderId", "user"); put("message", "New entry") }
             ))
@@ -422,7 +422,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_HISTORY_NAVIGATE,
                 buildJsonObject { put("sessionId", "sid-1"); put("direction", "UP") }
             ))
@@ -450,7 +450,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_HISTORY_NAVIGATE,
                 buildJsonObject { put("sessionId", "sid-1"); put("direction", "UP") }
             ))
@@ -479,7 +479,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            fun pressUp() = harness.store.dispatch("session.ui", Action(
+            fun pressUp() = harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_HISTORY_NAVIGATE,
                 buildJsonObject { put("sessionId", "sid-1"); put("direction", "UP") }
             ))
@@ -513,7 +513,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_HISTORY_NAVIGATE,
                 buildJsonObject { put("sessionId", "sid-1"); put("direction", "UP") }
             ))
@@ -543,7 +543,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_HISTORY_NAVIGATE,
                 buildJsonObject { put("sessionId", "sid-1"); put("direction", "DOWN") }
             ))
@@ -574,7 +574,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_HISTORY_NAVIGATE,
                 buildJsonObject { put("sessionId", "sid-1"); put("direction", "DOWN") }
             ))
@@ -604,7 +604,7 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_HISTORY_NAVIGATE,
                 buildJsonObject { put("sessionId", "sid-1"); put("direction", "DOWN") }
             ))
@@ -638,11 +638,11 @@ class SessionFeatureT2InputHistoryTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED,
                 buildJsonObject { put("sessionId", "sid-1"); put("draft", "draft for session 1") }
             ))
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED,
                 buildJsonObject { put("sessionId", "sid-2"); put("draft", "draft for session 2") }
             ))
@@ -675,7 +675,7 @@ class SessionFeatureT2InputHistoryTest {
 
         harness.runAndLogOnFailure {
             // Navigate UP in session 1 only
-            harness.store.dispatch("session.ui", Action(
+            harness.store.dispatch("session", Action(
                 ActionRegistry.Names.SESSION_HISTORY_NAVIGATE,
                 buildJsonObject { put("sessionId", "sid-1"); put("direction", "UP") }
             ))

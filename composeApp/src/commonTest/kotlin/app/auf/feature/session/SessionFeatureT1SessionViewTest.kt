@@ -99,7 +99,7 @@ class SessionFeatureT1SessionViewTest {
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_SET_ACTIVE_TAB }
         assertNotNull(action)
-        assertEquals("session.ui", action.originator)
+        assertEquals("session", action.originator)
         assertEquals(session2.identity.localHandle, action.payload?.get("session").toString().trim('"'))
     }
 
@@ -117,7 +117,7 @@ class SessionFeatureT1SessionViewTest {
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_POST }
         assertNotNull(action, "Clicking Send should dispatch SESSION_POST")
-        assertEquals("session.ui", action.originator)
+        assertEquals("session", action.originator)
         assertEquals(session1.identity.localHandle, action.payload?.get("session").toString().trim('"'))
         assertEquals("user", action.payload?.get("senderId").toString().trim('"'))
         assertEquals("Hello, world!", action.payload?.get("message").toString().trim('"'))
@@ -332,7 +332,7 @@ class SessionFeatureT1SessionViewTest {
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_POST }
         assertNotNull(action)
-        assertEquals("session.ui", action.originator)
+        assertEquals("session", action.originator)
         assertEquals(session1.identity.localHandle, action.payload?.get("session").toString().trim('"'))
         assertEquals("user", action.payload?.get("senderId").toString().trim('"'))
         assertEquals("Hello, world!", action.payload?.get("message").toString().trim('"'))
