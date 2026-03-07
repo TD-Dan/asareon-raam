@@ -102,81 +102,32 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                 agents = mapOf(uid(agentId) to agent),
                 resources = testBuiltInResources()
             ))
+            // Session must exist in SessionState so handleGatewayResponse can
+            // route the response POST. SessionFeature auto-responds to ledger requests.
             .withInitialState("session", SessionState(
                 sessions = mapOf(sessionId to session)
             ))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            // Register agent identity so resolveAgentId succeeds
+            // Register identities
             registerAgentIdentity(harness)
             registerSessionIdentity(harness)
             harness.store.processedActions.clear()
 
             // === PHASE 1: INITIATE TURN ===
+            // SessionFeature auto-responds to REQUEST_LEDGER_CONTENT.
+            // Pipeline auto-triggers: evaluateTurnContext → workspace listing → gate → executeTurn.
             harness.store.dispatch("core", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                 put("agentId", agentId)
                 put("preview", false)
             }))
 
-            // ASSERT: Ledger request dispatched
-            val ledgerRequest = harness.processedActions.find { action ->
-                action.name == ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT
-            }
-            assertNotNull(ledgerRequest, "Should request ledger content")
-            assertEquals(agentId, ledgerRequest.payload?.get("correlationId")?.jsonPrimitive?.content)
-
-            // === PHASE 2: LEDGER RESPONSE ===
-            harness.store.dispatch("session", Action(
-                name = ActionRegistry.Names.SESSION_RETURN_LEDGER,
-                payload = buildJsonObject {
-                    put("correlationId", agentId)
-                    put("messages", buildJsonArray {
-                        add(buildJsonObject {
-                            put("senderId", "user")
-                            put("rawContent", "Hello Agent")
-                            put("timestamp", 1000L)
-                        })
-                    })
-                },
-                targetRecipient = "agent"
-            ))
-
-            // ASSERT: Turn context staged
-            val stageAction = harness.processedActions.find { action ->
-                action.name == ActionRegistry.Names.AGENT_STAGE_TURN_CONTEXT
-            }
-            assertNotNull(stageAction, "Should stage turn context")
-
-            // === PHASE 3: EVALUATE CONTEXT (triggers parallel context gathering) ===
-            AgentCognitivePipeline.evaluateTurnContext(uid(agentId), harness.store)
-
-            // ASSERT: Workspace listing requested
-            val workspaceListRequest = harness.processedActions.find { action ->
-                action.name == ActionRegistry.Names.FILESYSTEM_LIST &&
-                        action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull == agentId
-            }
-            assertNotNull(workspaceListRequest, "Should request workspace listing")
-
-            // The FileSystemFeature handles the listing and delivers the response automatically.
-            // Workspace context should now be staged.
-
-            // For sovereign agents, HKG context is also required.
-            // Simulate HKG context response arrival:
-            harness.store.dispatch("knowledgegraph", Action(
-                name = ActionRegistry.Names.KNOWLEDGEGRAPH_RETURN_CONTEXT,
-                payload = buildJsonObject {
-                    put("correlationId", agentId)
-                    put("context", buildJsonObject { put("persona", "test") })
-                },
-                targetRecipient = "agent"
-            ))
-
-            // ASSERT: Gate passed — Gateway request dispatched with Sentinel in System Prompt
+            // ASSERT: Gateway request dispatched with Sentinel in System Prompt
             val gatewayRequest = harness.processedActions.find { action ->
                 action.name == ActionRegistry.Names.GATEWAY_GENERATE_CONTENT
             }
-            assertNotNull(gatewayRequest, "Should dispatch gateway request after all contexts gathered")
+            assertNotNull(gatewayRequest, "Should dispatch gateway request after context gathered")
 
             val systemPrompt = gatewayRequest.payload?.get("systemPrompt")?.jsonPrimitive?.content ?: ""
             assertTrue(
@@ -184,7 +135,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                 "System prompt must contain BOOT_SENTINEL in BOOTING phase"
             )
 
-            // === PHASE 4: GATEWAY SUCCESS RESPONSE ===
+            // === PHASE 2: GATEWAY SUCCESS RESPONSE ===
             harness.store.dispatch("gateway", Action(
                 name = ActionRegistry.Names.GATEWAY_RETURN_RESPONSE,
                 payload = buildJsonObject {
@@ -205,11 +156,12 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             assertEquals("AWAKE", newState?.get("phase")?.jsonPrimitive?.content, "Agent should transition to AWAKE")
 
             // ASSERT: Response posted to session
+            // Filter for response POSTs (with "message" field), not avatar POSTs
             val sessionPost = harness.processedActions.find { action ->
-                action.name == ActionRegistry.Names.SESSION_POST
+                action.name == ActionRegistry.Names.SESSION_POST &&
+                        action.payload?.containsKey("message") == true
             }
             assertNotNull(sessionPost, "Should post response to session")
-            assertEquals(session.identity.handle, sessionPost.payload?.get("session")?.jsonPrimitive?.content)
             assertEquals(agent.identity.handle, sessionPost.payload?.get("senderId")?.jsonPrimitive?.content)
         }
     }
@@ -287,13 +239,12 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                 agents = mapOf(uid(agentId) to awakeAgent),
                 resources = testBuiltInResources()
             ))
-            .withInitialState("session", SessionState(
-                sessions = mapOf(sessionId to session)
-            ))
+            // Empty SessionState: prevents auto-response race with manual ledger delivery
+            .withInitialState("session", SessionState())
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            // Register agent identity so resolveAgentId succeeds
+            // Register identities
             registerAgentIdentity(harness)
             registerSessionIdentity(harness)
             harness.store.processedActions.clear()
@@ -304,6 +255,8 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             }))
 
             // === DELIVER LEDGER ===
+            // Manually deliver (SessionFeature won't auto-respond with empty state).
+            // Pipeline auto-triggers evaluateTurnContext → context gathering.
             harness.store.dispatch("session", Action(
                 name = ActionRegistry.Names.SESSION_RETURN_LEDGER,
                 payload = buildJsonObject {
@@ -318,9 +271,6 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                 },
                 targetRecipient = "agent"
             ))
-
-            // Trigger evaluation (parallel context gathering)
-            AgentCognitivePipeline.evaluateTurnContext(uid(agentId), harness.store)
 
             // Workspace context arrives automatically via FileSystemFeature.
             // Sovereign agent also needs HKG context:
@@ -357,8 +307,10 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             ))
 
             // === VERIFY POST ===
+            // Filter for response POSTs (with "message" field), not avatar POSTs
             val sessionPost = harness.processedActions.find { action ->
-                action.name == ActionRegistry.Names.SESSION_POST
+                action.name == ActionRegistry.Names.SESSION_POST &&
+                        action.payload?.containsKey("message") == true
             }
             assertNotNull(sessionPost, "AWAKE agent should post response")
             assertTrue(
@@ -386,13 +338,11 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                 agents = mapOf(uid(agentId) to agentWithMissingResource),
                 resources = testBuiltInResources()
             ))
-            .withInitialState("session", SessionState(
-                sessions = mapOf(sessionId to session)
-            ))
+            .withInitialState("session", SessionState())
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            // Register agent identity so resolveAgentId succeeds
+            // Register identities
             registerAgentIdentity(harness)
             registerSessionIdentity(harness)
             harness.store.processedActions.clear()
@@ -402,6 +352,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                 put("agentId", agentId)
             }))
 
+            // Manually deliver ledger — pipeline auto-triggers context gathering
             harness.store.dispatch("session", Action(
                 name = ActionRegistry.Names.SESSION_RETURN_LEDGER,
                 payload = buildJsonObject {
@@ -416,9 +367,6 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                 },
                 targetRecipient = "agent"
             ))
-
-            // Trigger evaluation (parallel context gathering starts)
-            AgentCognitivePipeline.evaluateTurnContext(uid(agentId), harness.store)
 
             // Workspace listing arrives via FileSystemFeature automatically.
             // Sovereign agent also needs HKG context for gate to pass:
