@@ -167,6 +167,7 @@ private fun formatTokenCount(count: Int): String {
 @Composable
 fun AgentAvatarCard(
     agent: AgentInstance,
+    sessionUUID: String? = null,
     store: Store,
     platformDependencies: PlatformDependencies
 ) {
@@ -177,7 +178,7 @@ fun AgentAvatarCard(
     OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
-        AgentControlCard(agent, statusInfo, store, platformDependencies)
+        AgentControlCard(agent, statusInfo, sessionUUID, store, platformDependencies)
     }
 }
 
@@ -187,6 +188,7 @@ fun AgentAvatarCard(
 fun AgentControlCard(
     agent: AgentInstance,
     statusInfo: AgentStatusInfo = AgentStatusInfo(),
+    sessionUUID: String? = null,
     store: Store,
     platformDependencies: PlatformDependencies
 ) {
@@ -325,6 +327,19 @@ fun AgentControlCard(
                         leadingIcon = { Icon(Icons.Default.Visibility, null) },
                         enabled = canInitiateTurn
                     )
+                    if (sessionUUID != null) {
+                        DropdownMenuItem(
+                            text = { Text("Remove from this session") },
+                            onClick = {
+                                store.dispatch("agent", Action(ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION, buildJsonObject {
+                                    put("agentId", agentUuidStr)
+                                    put("sessionId", sessionUUID)
+                                }))
+                                menuExpanded = false
+                            },
+                            leadingIcon = { Icon(Icons.Default.LinkOff, null) }
+                        )
+                    }
                 }
             }
 

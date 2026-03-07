@@ -180,6 +180,7 @@ class AgentRuntimeFeature(
                 if (store.state.value.identityRegistry.values.any { it.parentHandle == "session" }) {
                     dispatchEnsureInfrastructureForAll(agentState, store)
                 }
+                broadcastAgentNames(agentState, store)
             }
             ActionRegistry.Names.AGENT_VALIDATE_SOVEREIGN_STATE -> {
                 // Generalized: run ensureInfrastructure for all agents.
@@ -230,6 +231,7 @@ class AgentRuntimeFeature(
                 ))
 
                 publishActionResult(store, correlationId, action.name, true, summary = "Agent '${agentToSave.identity.name}' created.")
+                broadcastAgentNames(agentState, store)
             }
             ActionRegistry.Names.AGENT_CLONE -> {
                 val payload = action.payload
@@ -279,6 +281,25 @@ class AgentRuntimeFeature(
                 }
                 publishActionResult(store, correlationId, action.name, true, summary = summary)
             }
+            ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
+            ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION -> {
+                val payload = action.payload
+                val correlationId = payload?.correlationId()
+                val agentId = resolveAgentId(payload, store, correlationId, action.name) ?: return
+                val agent = agentState.agents[agentId] ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "${action.name}: Agent '$agentId' not found in state.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Agent '$agentId' not found.")
+                    return
+                }
+                saveAgentConfig(agent, store)
+                AgentAvatarLogic.updateAgentAvatars(agentId, store)
+                broadcastAgentNames(agentState, store)
+
+                val sessionIdStr = payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: ""
+                val verb = if (action.name == ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION) "added to" else "removed from"
+                publishActionResult(store, correlationId, action.name, true,
+                    summary = "Agent '${agent.identity.name}' $verb session '$sessionIdStr'.")
+            }
             ActionRegistry.Names.AGENT_UPDATE_CONFIG -> {
                 val payload = action.payload
                 val correlationId = payload?.correlationId()
@@ -323,6 +344,7 @@ class AgentRuntimeFeature(
                 }
 
                 publishActionResult(store, correlationId, action.name, true, summary = "Agent '${newAgent.identity.name}' configuration updated.")
+                broadcastAgentNames(agentState, store)
             }
             ActionRegistry.Names.AGENT_NVRAM_LOADED -> {
                 val agentId = action.payload?.agentUUID() ?: return
@@ -370,6 +392,7 @@ class AgentRuntimeFeature(
                 }
 
                 publishActionResult(store, correlationId, action.name, true, summary = "Agent '$deleteName' deleted.")
+                broadcastAgentNames(agentState, store)
             }
 
             // --- Resource CRUD Side Effects ---
@@ -623,6 +646,31 @@ class AgentRuntimeFeature(
                 )
             }
         }
+    }
+
+    /**
+     * Broadcasts the current agent names and subscriptions snapshot.
+     * Called after agent CRUD operations and subscription changes so that
+     * other features (e.g., SessionFeature) can discover agents without
+     * cross-feature imports.
+     */
+    private fun broadcastAgentNames(agentState: AgentRuntimeState, store: Store) {
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED,
+            payload = buildJsonObject {
+                putJsonArray("agents") {
+                    agentState.agents.values.forEach { agent ->
+                        add(buildJsonObject {
+                            put("uuid", agent.identityUUID.uuid)
+                            put("name", agent.identity.name)
+                            putJsonArray("subscribedSessionIds") {
+                                agent.subscribedSessionIds.forEach { sid -> add(sid.uuid) }
+                            }
+                        })
+                    }
+                }
+            }
+        ))
     }
 
     // ========================================================================
@@ -1104,8 +1152,25 @@ class AgentRuntimeFeature(
         @Composable
         override fun PartialView(store: Store, partId: String, context: Any?) {
             if (partId != "agent.avatar") return
-            val agentId = context as? String ?: run {
-                platformDependencies.log(LogLevel.DEBUG, identity.handle, "PartialView: Invalid context type for agent.avatar.")
+            // Context may be a plain String (legacy) or a Map with "senderId" and "sessionUUID"
+            val agentId: String?
+            val sessionUUID: String?
+            when (context) {
+                is Map<*, *> -> {
+                    agentId = context["senderId"] as? String
+                    sessionUUID = context["sessionUUID"] as? String
+                }
+                is String -> {
+                    agentId = context
+                    sessionUUID = null
+                }
+                else -> {
+                    platformDependencies.log(LogLevel.DEBUG, identity.handle, "PartialView: Invalid context type for agent.avatar.")
+                    return
+                }
+            }
+            if (agentId == null) {
+                platformDependencies.log(LogLevel.DEBUG, identity.handle, "PartialView: Null agentId in context for agent.avatar.")
                 return
             }
             val appState by store.state.collectAsState()
@@ -1119,7 +1184,7 @@ class AgentRuntimeFeature(
                             "Known UUIDs: ${state.agents.keys}, known handles: ${state.agents.values.map { it.identityHandle }}")
                 return
             }
-            AgentAvatarCard(agent = agent, store = store, platformDependencies = platformDependencies)
+            AgentAvatarCard(agent = agent, sessionUUID = sessionUUID, store = store, platformDependencies = platformDependencies)
         }
     }
 }

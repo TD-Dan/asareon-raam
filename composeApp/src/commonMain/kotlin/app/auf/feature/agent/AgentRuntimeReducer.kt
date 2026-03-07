@@ -287,6 +287,33 @@ object AgentRuntimeReducer {
             }
 
             // ================================================================
+            // Delta Session Subscription Actions
+            // ================================================================
+            ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION -> {
+                val agentId = action.payload?.agentUUID() ?: return state
+                val sessionIdStr = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return state
+                val sessionId = IdentityUUID(sessionIdStr)
+                val agent = state.agents[agentId] ?: return state
+                if (agent.subscribedSessionIds.contains(sessionId)) return state
+                val updatedAgent = agent.copy(
+                    subscribedSessionIds = agent.subscribedSessionIds + sessionId
+                )
+                state.copy(agents = state.agents + (agentId to updatedAgent))
+            }
+
+            ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION -> {
+                val agentId = action.payload?.agentUUID() ?: return state
+                val sessionIdStr = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return state
+                val sessionId = IdentityUUID(sessionIdStr)
+                val agent = state.agents[agentId] ?: return state
+                if (!agent.subscribedSessionIds.contains(sessionId)) return state
+                val updatedAgent = agent.copy(
+                    subscribedSessionIds = agent.subscribedSessionIds - sessionId
+                )
+                state.copy(agents = state.agents + (agentId to updatedAgent))
+            }
+
+            // ================================================================
             // Pending Command Tracking (ACTION_RESULT / DELIVER_TO_SESSION)
             // ================================================================
             ActionRegistry.Names.AGENT_REGISTER_PENDING_COMMAND -> {

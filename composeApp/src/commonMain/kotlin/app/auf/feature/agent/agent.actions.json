@@ -1045,6 +1045,120 @@
           "correlationId"
         ]
       }
+    },
+    {
+      "action_name": "agent.ADD_SESSION_SUBSCRIPTION",
+      "summary": "Adds a session to an agent's subscribed session list. Delta operation \u2014 callers do not need to know the current subscription list.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Session UUID to add to the agent's subscribed sessions."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionId"
+        ]
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
+    },
+    {
+      "action_name": "agent.REMOVE_SESSION_SUBSCRIPTION",
+      "summary": "Removes a session from an agent's subscribed session list. Delta operation \u2014 callers do not need to know the current subscription list.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Session UUID to remove from the agent's subscribed sessions."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionId"
+        ]
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
+    },
+    {
+      "action_name": "agent.AGENT_NAMES_UPDATED",
+      "summary": "Broadcasts the current snapshot of all agents with their display names and subscribed session UUIDs. Fired on startup after agents load, and whenever agent subscriptions change. Other features use this to discover agents without cross-feature imports.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "array",
+            "description": "Array of agent snapshots.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "uuid": {
+                  "type": "string",
+                  "description": "Immutable agent UUID."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Display name."
+                },
+                "subscribedSessionIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "List of session UUIDs this agent observes."
+                }
+              },
+              "required": [
+                "uuid",
+                "name",
+                "subscribedSessionIds"
+              ]
+            }
+          }
+        },
+        "required": [
+          "agents"
+        ]
+      }
     }
   ]
 }

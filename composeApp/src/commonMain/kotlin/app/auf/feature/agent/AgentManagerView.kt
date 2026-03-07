@@ -205,7 +205,7 @@ private fun AgentReadOnlyView(
     val hasKnowledgeGraph = agent.getKnowledgeGraphId() != null
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        AgentControlCard(agent, statusInfo, store, platformDependencies)
+        AgentControlCard(agent, statusInfo, null, store, platformDependencies)
 
         SelectionContainer {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

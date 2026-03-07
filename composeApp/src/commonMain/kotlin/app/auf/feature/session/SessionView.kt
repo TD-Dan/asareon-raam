@@ -198,10 +198,18 @@ private fun LedgerPane(
                 if (featureName != null && viewKey != null) {
                     // New generalized path: route to whichever feature owns this partial view
                     val targetFeature = featuresByName[featureName]
-                    targetFeature?.composableProvider?.PartialView(store, viewKey, entry.senderId)
+                    val partialContext = mapOf(
+                        "senderId" to entry.senderId,
+                        "sessionUUID" to (activeSession.identity.uuid ?: "")
+                    )
+                    targetFeature?.composableProvider?.PartialView(store, viewKey, partialContext)
                 } else {
                     // Backward compatibility: legacy agent avatar cards without routing metadata
-                    agentFeature?.composableProvider?.PartialView(store, "agent.avatar", entry.senderId)
+                    val partialContext = mapOf(
+                        "senderId" to entry.senderId,
+                        "sessionUUID" to (activeSession.identity.uuid ?: "")
+                    )
+                    agentFeature?.composableProvider?.PartialView(store, "agent.avatar", partialContext)
                 }
             } else {
                 val senderName = remember(entry.senderId, identityRegistry) {
@@ -621,6 +629,36 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                             },
                             leadingIcon = { Icon(Icons.Default.ClearAll, null) }
                         )
+
+                        // --- Add Agent to this session ---
+                        val activeSessionUUID = activeSession.identity.uuid
+                        val agentNames = sessionState?.knownAgentNames ?: emptyMap()
+                        val agentSubs = sessionState?.knownAgentSubscriptions ?: emptyMap()
+                        if (activeSessionUUID != null && agentNames.isNotEmpty()) {
+                            val unsubscribedAgents = agentNames.filter { (uuid, _) ->
+                                val subs = agentSubs[uuid] ?: emptySet()
+                                !subs.contains(activeSessionUUID)
+                            }
+                            if (unsubscribedAgents.isNotEmpty()) {
+                                HorizontalDivider()
+                                unsubscribedAgents.forEach { (agentUuid, agentName) ->
+                                    DropdownMenuItem(
+                                        text = { Text("Add \"$agentName\"") },
+                                        onClick = {
+                                            store.dispatch("session.ui", Action(
+                                                ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
+                                                buildJsonObject {
+                                                    put("agentId", agentUuid)
+                                                    put("sessionId", activeSessionUUID)
+                                                }
+                                            ))
+                                            menuExpanded = false
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.PersonAdd, null) }
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
                 IconButton(onClick = { if (textFieldValue.text.isNotBlank()) { onSend(textFieldValue.text); acState = null; editMode = false } }, enabled = textFieldValue.text.isNotBlank()) {

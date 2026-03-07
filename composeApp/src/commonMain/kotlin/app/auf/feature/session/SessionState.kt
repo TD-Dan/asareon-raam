@@ -214,7 +214,19 @@ data class SessionState(
      * Drained into draftInputs/inputHistories when SESSION_LOADED fires.
      */
     @Transient
-    val pendingInputLoads: Map<String, SessionInputState> = emptyMap()
+    val pendingInputLoads: Map<String, SessionInputState> = emptyMap(),
+
+    // ── Agent subscription discovery (from agent.AGENT_NAMES_UPDATED) ─────
+    // Transient data used by the session view to offer "Add agent to session".
+    // No agent types are imported — the data is stored as plain strings.
+
+    /** Agent UUID → display name, populated from agent.AGENT_NAMES_UPDATED broadcasts. */
+    @Transient
+    val knownAgentNames: Map<String, String> = emptyMap(),
+
+    /** Agent UUID → set of subscribed session UUIDs, populated from agent.AGENT_NAMES_UPDATED broadcasts. */
+    @Transient
+    val knownAgentSubscriptions: Map<String, Set<String>> = emptyMap()
 
 ) : FeatureState {
 
