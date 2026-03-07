@@ -10,6 +10,7 @@ import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.feature.session.SessionFeature
 import app.auf.feature.session.SessionState
 import app.auf.test.TestEnvironment
+import app.auf.test.TestHarness
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
@@ -62,6 +63,21 @@ class AgentRuntimeFeatureT2SubscriptionTest {
         .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
         .build(platform = platform)
 
+    /**
+     * Registers an agent's identity in the identity registry so that
+     * resolveAgentId() can find it during handleSideEffects.
+     * Mirrors registerSessionIdentity but for the agent namespace.
+     */
+    private fun registerAgentIdentity(harness: TestHarness, agent: AgentInstance) {
+        harness.store.dispatch("agent", Action(
+            ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+            buildJsonObject {
+                put("uuid", agent.identityUUID.uuid)
+                put("name", agent.identity.name)
+            }
+        ))
+    }
+
     // ========================================================================
     // ADD_SESSION_SUBSCRIPTION — side effects
     // ========================================================================
@@ -76,6 +92,7 @@ class AgentRuntimeFeatureT2SubscriptionTest {
         val harness = buildHarness(agents = mapOf(IdentityUUID(agentId1) to agent))
 
         harness.runAndLogOnFailure {
+            registerAgentIdentity(harness, agent)
             harness.registerSessionIdentity(testSession1)
             harness.registerSessionIdentity(testSession2)
 
@@ -106,6 +123,7 @@ class AgentRuntimeFeatureT2SubscriptionTest {
         val harness = buildHarness(agents = mapOf(IdentityUUID(agentId1) to agent))
 
         harness.runAndLogOnFailure {
+            registerAgentIdentity(harness, agent)
             harness.registerSessionIdentity(testSession1)
 
             harness.store.dispatch("agent", Action(
@@ -117,7 +135,9 @@ class AgentRuntimeFeatureT2SubscriptionTest {
             ))
 
             val result = harness.processedActions.find {
-                it.name == ActionRegistry.Names.AGENT_ACTION_RESULT
+                it.name == ActionRegistry.Names.AGENT_ACTION_RESULT &&
+                        it.payload?.get("requestAction")?.jsonPrimitive?.contentOrNull ==
+                        ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION
             }
             assertNotNull(result, "ACTION_RESULT should be published")
             assertTrue(
@@ -141,6 +161,7 @@ class AgentRuntimeFeatureT2SubscriptionTest {
         val harness = buildHarness(agents = mapOf(IdentityUUID(agentId1) to agent))
 
         harness.runAndLogOnFailure {
+            registerAgentIdentity(harness, agent)
             harness.registerSessionIdentity(testSession1)
             harness.registerSessionIdentity(testSession2)
 
@@ -187,6 +208,7 @@ class AgentRuntimeFeatureT2SubscriptionTest {
         val harness = buildHarness(agents = mapOf(IdentityUUID(agentId1) to agent))
 
         harness.runAndLogOnFailure {
+            registerAgentIdentity(harness, agent)
             harness.registerSessionIdentity(testSession1)
             harness.registerSessionIdentity(testSession2)
 
@@ -229,6 +251,7 @@ class AgentRuntimeFeatureT2SubscriptionTest {
         val harness = buildHarness(agents = mapOf(IdentityUUID(agentId1) to agent))
 
         harness.runAndLogOnFailure {
+            registerAgentIdentity(harness, agent)
             harness.registerSessionIdentity(testSession1)
 
             harness.store.dispatch("agent", Action(
@@ -240,7 +263,9 @@ class AgentRuntimeFeatureT2SubscriptionTest {
             ))
 
             val result = harness.processedActions.find {
-                it.name == ActionRegistry.Names.AGENT_ACTION_RESULT
+                it.name == ActionRegistry.Names.AGENT_ACTION_RESULT &&
+                        it.payload?.get("requestAction")?.jsonPrimitive?.contentOrNull ==
+                        ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION
             }
             assertNotNull(result)
             assertTrue(result.payload?.get("success")?.jsonPrimitive?.boolean ?: false)
@@ -371,6 +396,7 @@ class AgentRuntimeFeatureT2SubscriptionTest {
         val harness = buildHarness(agents = mapOf(IdentityUUID(agentId1) to agent))
 
         harness.runAndLogOnFailure {
+            registerAgentIdentity(harness, agent)
             harness.registerSessionIdentity(testSession1)
             harness.registerSessionIdentity(testSession2)
 
