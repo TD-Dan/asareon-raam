@@ -236,8 +236,11 @@ enum class SentinelAction {
     HALT_AND_SILENCE,
 
     /**
-     * The response was a Sentinel success message.
-     * Proceed, but potentially hide the raw sentinel text if desired (strategy dependent).
+     * A state transition occurred (e.g., BOOTING → AWAKE) and the new state
+     * should be persisted. The response is posted normally — for Sovereign boot,
+     * this is the persona's first conscious act. Functionally identical to
+     * [PROCEED] for response handling; the distinction enables targeted logging
+     * and future UI indicators (e.g., "state transition" badge on the turn).
      */
     PROCEED_WITH_UPDATE
 }

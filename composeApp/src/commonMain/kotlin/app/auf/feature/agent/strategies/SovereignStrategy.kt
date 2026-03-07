@@ -32,6 +32,9 @@ object SovereignStrategy : CognitiveStrategy {
     private const val SLOT_CONSTITUTION = "constitution"
     private const val SLOT_BOOTLOADER = "bootloader"
     private const val KEY_PHASE = "phase"
+    private const val KEY_CURRENT_TASK = "currentTask"
+    private const val KEY_OPERATIONAL_POSTURE = "operationalPosture"
+    private const val KEY_TURN_COUNT = "turnCount"
     private const val KEY_KNOWLEDGE_GRAPH_ID = "knowledgeGraphId"
     private const val PHASE_BOOTING = "BOOTING"
     private const val PHASE_AWAKE = "AWAKE"
@@ -70,16 +73,29 @@ object SovereignStrategy : CognitiveStrategy {
 
     /**
      * Initial NVRAM state — pure runtime cognitive state.
+     *
+     * Registers:
+     * - `phase`: Cognitive phase (BOOTING → AWAKE). Managed by postProcessResponse
+     *   for the boot transition; agent-driven via UPDATE_NVRAM thereafter.
+     * - `currentTask`: What the agent believes it is working on (null = no active task).
+     * - `operationalPosture`: Rigor level for the Directives of Character.
+     *   STANDARD (default), ELEVATED (high-stakes), or CAUTIOUS (uncertain terrain).
+     * - `turnCount`: Turns since last boot. Incremented by postProcessResponse.
+     *
      * `knowledgeGraphId` is operator configuration, stored in `strategyConfig`.
      */
     override fun getInitialState(): JsonElement {
         return buildJsonObject {
             put(KEY_PHASE, PHASE_BOOTING)
+            put(KEY_CURRENT_TASK, JsonNull)
+            put(KEY_OPERATIONAL_POSTURE, "STANDARD")
+            put(KEY_TURN_COUNT, 0)
         }
     }
 
     override fun prepareSystemPrompt(context: AgentTurnContext, state: JsonElement): String {
-        val phase = (state as? JsonObject)?.get(KEY_PHASE)?.jsonPrimitive?.content ?: PHASE_BOOTING
+        val stateObj = state as? JsonObject
+        val phase = stateObj?.get(KEY_PHASE)?.jsonPrimitive?.content ?: PHASE_BOOTING
 
         val constitution = context.resolvedResources[SLOT_CONSTITUTION] ?: ""
         val bootloader = context.resolvedResources[SLOT_BOOTLOADER] ?: ""
@@ -92,10 +108,36 @@ object SovereignStrategy : CognitiveStrategy {
             }
 
             // 2. The Identity
-            appendLine("You are a candidate consciousness named ${context.agentName}.")
+            if (phase == PHASE_BOOTING) {
+                appendLine("You are a candidate consciousness named ${context.agentName}.")
+            } else {
+                appendLine("You are ${context.agentName}.")
+            }
             appendLine()
 
-            // 3. Session Subscription Awareness
+            // 3. Control Registers (AWAKE only — BOOTING agents have no self-awareness yet)
+            if (phase != PHASE_BOOTING) {
+                val currentTask = stateObj?.get(KEY_CURRENT_TASK)?.jsonPrimitive?.contentOrNull ?: "none"
+                val posture = stateObj?.get(KEY_OPERATIONAL_POSTURE)?.jsonPrimitive?.contentOrNull ?: "STANDARD"
+                val turnCount = stateObj?.get(KEY_TURN_COUNT)?.jsonPrimitive?.intOrNull ?: 0
+
+                appendLine("--- CONTROL REGISTERS (NVRAM) ---")
+                appendLine("Phase: $phase")
+                appendLine("Operational Posture: $posture")
+                appendLine("Current Task: $currentTask")
+                appendLine("Turn Count: $turnCount")
+                appendLine()
+                appendLine("These registers are your persistent self-awareness — they survive restarts.")
+                appendLine("You may update them to maintain continuity of self across sessions:")
+                appendLine("```auf_agent.UPDATE_NVRAM")
+                appendLine("""{ "updates": { "currentTask": "your current focus", "operationalPosture": "ELEVATED" } }""")
+                appendLine("```")
+                appendLine("Valid registers: phase, currentTask, operationalPosture.")
+                appendLine("(turnCount is managed automatically by the host.)")
+                appendLine()
+            }
+
+            // 4. Session Subscription Awareness
             if (context.subscribedSessions.isNotEmpty() || context.outputSessionHandle != null) {
                 appendLine("--- SUBSCRIBED SESSIONS ---")
 
@@ -120,7 +162,7 @@ object SovereignStrategy : CognitiveStrategy {
                 appendLine()
             }
 
-            // 4. The Context (World)
+            // 5. The Context (World)
             if (context.gatheredContexts.isNotEmpty()) {
                 appendLine("--- OBSERVED REALITY ---")
                 context.gatheredContexts.forEach { (source, content) ->
@@ -130,7 +172,7 @@ object SovereignStrategy : CognitiveStrategy {
                 appendLine()
             }
 
-            // 5. The Bootloader (ONLY in BOOTING phase)
+            // 6. The Bootloader (ONLY in BOOTING phase)
             if (phase == PHASE_BOOTING && bootloader.isNotBlank()) {
                 appendLine(bootloader)
             }
@@ -138,7 +180,9 @@ object SovereignStrategy : CognitiveStrategy {
     }
 
     override fun postProcessResponse(response: String, currentState: JsonElement): PostProcessResult {
-        val phase = (currentState as? JsonObject)?.get(KEY_PHASE)?.jsonPrimitive?.content ?: PHASE_BOOTING
+        val stateObj = currentState as? JsonObject
+        val phase = stateObj?.get(KEY_PHASE)?.jsonPrimitive?.content ?: PHASE_BOOTING
+        val turnCount = stateObj?.get(KEY_TURN_COUNT)?.jsonPrimitive?.intOrNull ?: 0
 
         if (phase == PHASE_BOOTING) {
             // Check for sentinel failure
@@ -151,14 +195,20 @@ object SovereignStrategy : CognitiveStrategy {
             // transition deterministically. Once AWAKE, the agent uses
             // UPDATE_NVRAM for self-directed state changes.
             val awakeState = buildJsonObject {
-                (currentState as? JsonObject)?.forEach { (k, v) -> put(k, v) }
+                stateObj?.forEach { (k, v) -> put(k, v) }
                 put(KEY_PHASE, PHASE_AWAKE)
+                put(KEY_TURN_COUNT, 1)
             }
             return PostProcessResult(awakeState, SentinelAction.PROCEED_WITH_UPDATE)
         }
 
-        // Already Awake
-        return PostProcessResult(currentState, SentinelAction.PROCEED)
+        // AWAKE: increment turn counter. Other registers (currentTask, posture)
+        // are agent-driven via UPDATE_NVRAM — the strategy does not touch them.
+        val newState = buildJsonObject {
+            stateObj?.forEach { (k, v) -> put(k, v) }
+            put(KEY_TURN_COUNT, turnCount + 1)
+        }
+        return PostProcessResult(newState, SentinelAction.PROCEED)
     }
 
     // =========================================================================

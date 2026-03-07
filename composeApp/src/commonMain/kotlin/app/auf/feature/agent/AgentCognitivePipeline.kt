@@ -661,25 +661,15 @@ object AgentCognitivePipeline {
             return
         }
 
-        // 3. Handle PROCEED_WITH_UPDATE — state transition succeeded, but the raw
-        //    response is sentinel/boot diagnostics, not conversational content.
-        //    Persist NVRAM (done above), suppress the raw text, and go IDLE.
+        // 3. Handle PROCEED_WITH_UPDATE — a state transition occurred (e.g., BOOTING → AWAKE).
+        //    NVRAM is persisted (done above). The response IS posted — for Sovereign boot,
+        //    this is the persona's first conscious act (running the boot sequence).
+        //    The distinction from PROCEED is for logging and future UI indicators.
         if (result.action == SentinelAction.PROCEED_WITH_UPDATE) {
             store.platformDependencies.log(LogLevel.INFO, LOG_TAG,
                 "Agent '$agentUuid' completed state transition via PROCEED_WITH_UPDATE. " +
-                        "Sentinel output suppressed. New state: ${result.newState}")
-            AgentAvatarLogic.updateAgentAvatars(agentUuid, store, agentState, AgentStatus.IDLE)
-
-            // Forward token usage even for sentinel turns
-            if (decoded.inputTokens != null || decoded.outputTokens != null) {
-                store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_STATUS, buildJsonObject {
-                    put("agentId", agentUuid.uuid)
-                    put("status", AgentStatus.IDLE.name)
-                    decoded.inputTokens?.let { put("lastInputTokens", it) }
-                    decoded.outputTokens?.let { put("lastOutputTokens", it) }
-                }))
-            }
-            return
+                        "New state: ${result.newState}. Response will be posted normally.")
+            // Fall through to the normal posting path below.
         }
 
         // 4. Run system sentinels
