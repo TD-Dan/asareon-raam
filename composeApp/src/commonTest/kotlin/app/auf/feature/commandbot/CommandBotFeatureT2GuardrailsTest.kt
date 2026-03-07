@@ -612,7 +612,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
         val actionCountBefore = harness.processedActions.size
 
-        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.COMMANDBOT_DENY, buildJsonObject {
+        harness.store.dispatch("commandbot", Action(ActionRegistry.Names.COMMANDBOT_DENY, buildJsonObject {
             put("approvalId", "approval-does-not-exist")
         }))
         runCurrent()

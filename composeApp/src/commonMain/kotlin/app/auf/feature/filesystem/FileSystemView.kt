@@ -51,19 +51,19 @@ fun FileSystemView(
         ) {
             Text("Local File System Access", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
             Button(
-                onClick = { store.dispatch("filesystem.ui", Action(ActionRegistry.Names.FILESYSTEM_COPY_SELECTION_TO_CLIPBOARD)) },
+                onClick = { store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_COPY_SELECTION_TO_CLIPBOARD)) },
                 enabled = fsState?.rootItems?.any { findSelectedFiles(listOf(it)).isNotEmpty() } == true
             ) {
                 Text("Copy selection")
             }
             Spacer(Modifier.width(8.dp))
             IconButton(
-                onClick = { parentPath?.let { store.dispatch("filesystem.ui", Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", it) })) } },
+                onClick = { parentPath?.let { store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", it) })) } },
                 enabled = parentPath != null
             ) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Go Up")
             }
-            IconButton(onClick = { store.dispatch("filesystem.ui", Action(ActionRegistry.Names.FILESYSTEM_SELECT_DIRECTORY_UI)) }) {
+            IconButton(onClick = { store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_SELECT_DIRECTORY_UI)) }) {
                 Icon(Icons.Default.FolderOpen, contentDescription = "Select Folder")
             }
 
@@ -85,7 +85,7 @@ fun FileSystemView(
                         DropdownMenuItem(
                             text = { Text(path) },
                             onClick = {
-                                store.dispatch("filesystem.ui", Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", path) }))
+                                store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", path) }))
                                 isWhitelistMenuExpanded = false
                             }
                         )
@@ -109,7 +109,7 @@ fun FileSystemView(
                         DropdownMenuItem(
                             text = { Text(path) },
                             onClick = {
-                                store.dispatch("filesystem.ui", Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", path) }))
+                                store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", path) }))
                                 isFavoritesMenuExpanded = false
                             }
                         )
@@ -159,21 +159,21 @@ private fun FileTree(
             level = level,
             fsState = fsState,
             platformDependencies = platformDependencies,
-            onToggleExpand = { store.dispatch("filesystem.ui", Action(ActionRegistry.Names.FILESYSTEM_TOGGLE_ITEM_EXPANDED, buildJsonObject { put("path", item.path) })) },
+            onToggleExpand = { store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_TOGGLE_ITEM_EXPANDED, buildJsonObject { put("path", item.path) })) },
             onToggleSelect = {
                 val payload = buildJsonObject {
                     put("path", item.path)
                     put("recursive", item.isDirectory)
                 }
-                store.dispatch("filesystem.ui", Action(ActionRegistry.Names.FILESYSTEM_TOGGLE_ITEM_SELECTED, payload))
+                store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_TOGGLE_ITEM_SELECTED, payload))
             },
             onNavigate = {
                 if (item.isDirectory) {
-                    store.dispatch("filesystem.ui", Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", item.path) }))
+                    store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", item.path) }))
                 }
             },
             onContextMenuAction = { actionName ->
-                store.dispatch("filesystem.ui", Action(actionName, buildJsonObject { put("path", item.path) }))
+                store.dispatch("filesystem", Action(actionName, buildJsonObject { put("path", item.path) }))
             }
         )
         if (item.isExpanded && item.children != null) {

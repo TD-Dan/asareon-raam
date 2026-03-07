@@ -186,7 +186,7 @@ class CoreFeatureT3PeerTest {
         assertEquals(originatorFeatureName, stateAfterShow.confirmationRequest?.originator, "Originator should be captured.")
 
         // --- ACT 2: The UI dispatches the confirmation action ---
-        harness.store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
+        harness.store.dispatch("core", Action(ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
             put("confirmed", true)
         }))
         runCurrent()
@@ -232,7 +232,7 @@ class CoreFeatureT3PeerTest {
         runCurrent()
 
         // --- ACT 2: The UI dispatches the dismiss action ---
-        harness.store.dispatch("core.ui", Action(ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
+        harness.store.dispatch("core", Action(ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
             put("confirmed", false)
         }))
         runCurrent()

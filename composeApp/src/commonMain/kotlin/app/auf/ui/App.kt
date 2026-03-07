@@ -23,7 +23,7 @@ fun App(store: Store, features: List<Feature>) {
     coreState?.toastMessage?.let { message ->
         LaunchedEffect(message) {
             snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
-            store.dispatch("system.ui", Action(ActionRegistry.Names.CORE_CLEAR_TOAST))
+            store.dispatch("system", Action(ActionRegistry.Names.CORE_CLEAR_TOAST))
         }
     }
 
@@ -40,13 +40,13 @@ fun App(store: Store, features: List<Feature>) {
                         request = request,
                         onConfirm = {
                             // THE FIX: Dispatch the secure response action.
-                            store.dispatch("system.ui", Action(ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
+                            store.dispatch("system", Action(ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
                                 put("confirmed", true)
                             }))
                         },
                         onDismiss = {
                             // THE FIX: Explicitly dispatch the 'dismiss' response.
-                            store.dispatch("system.ui", Action(ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
+                            store.dispatch("system", Action(ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
                                 put("confirmed", false)
                             }))
                         }

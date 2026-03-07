@@ -971,7 +971,7 @@ class CoreFeature(
 
         @Composable
         override fun RibbonContent(store: Store, activeViewKey: String?) {
-            // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core.ui"
+            // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core"
             IconButton(onClick = { store.dispatch("core", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKeyIdentities) })) }) {
                 Icon(Icons.Default.Person, "Identity Manager", tint = if (activeViewKey == viewKeyIdentities) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -982,7 +982,7 @@ class CoreFeature(
             DropdownMenuItem(
                 text = { Text("About") },
                 onClick = {
-                    // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core.ui"
+                    // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core"
                     store.dispatch("core", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKeyAbout) }))
                     onDismiss()
                 },

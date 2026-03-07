@@ -41,7 +41,7 @@ fun AboutView(store: Store) {
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
         ) {
-            // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core.ui"
+            // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core"
             IconButton(onClick = { store.dispatch("core", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW)) }) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
@@ -153,7 +153,7 @@ fun AboutView(store: Store) {
                 HorizontalDivider()
                 Spacer(Modifier.height(8.dp))
                 Button(
-                    // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core.ui"
+                    // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core"
                     onClick = { store.dispatch("core", Action(ActionRegistry.Names.CORE_OPEN_LOGS_FOLDER)) }
                 ) {
                     Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.padding(end = 8.dp))

@@ -333,7 +333,7 @@ class CommandBotFeatureT2CoreTest {
         val approvalId = commandBotState.pendingApprovals.keys.first()
 
         // ACT: User approves
-        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.COMMANDBOT_APPROVE, buildJsonObject {
+        harness.store.dispatch("commandbot", Action(ActionRegistry.Names.COMMANDBOT_APPROVE, buildJsonObject {
             put("approvalId", approvalId)
         }))
         runCurrent()
@@ -379,7 +379,7 @@ class CommandBotFeatureT2CoreTest {
         val approvalId = commandBotState.pendingApprovals.keys.first()
 
         // ACT: User denies
-        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.COMMANDBOT_DENY, buildJsonObject {
+        harness.store.dispatch("commandbot", Action(ActionRegistry.Names.COMMANDBOT_DENY, buildJsonObject {
             put("approvalId", approvalId)
         }))
         runCurrent()
@@ -425,7 +425,7 @@ class CommandBotFeatureT2CoreTest {
         assertTrue(cardEntryBefore.doNotClear, "Card should have doNotClear=true before resolution.")
 
         // ACT: Approve (triggers doNotClear flip)
-        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.COMMANDBOT_APPROVE, buildJsonObject {
+        harness.store.dispatch("commandbot", Action(ActionRegistry.Names.COMMANDBOT_APPROVE, buildJsonObject {
             put("approvalId", approvalId)
         }))
         runCurrent()
@@ -463,7 +463,7 @@ class CommandBotFeatureT2CoreTest {
         val firstCardId = stateAfterFirst.pendingApprovals.values.first().cardMessageId
 
         // Approve the first
-        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.COMMANDBOT_APPROVE, buildJsonObject {
+        harness.store.dispatch("commandbot", Action(ActionRegistry.Names.COMMANDBOT_APPROVE, buildJsonObject {
             put("approvalId", firstApprovalId)
         }))
         runCurrent()
@@ -509,7 +509,7 @@ class CommandBotFeatureT2CoreTest {
         val cardMessageId = commandBotState.pendingApprovals.values.first().cardMessageId
 
         // Approve it
-        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.COMMANDBOT_APPROVE, buildJsonObject {
+        harness.store.dispatch("commandbot", Action(ActionRegistry.Names.COMMANDBOT_APPROVE, buildJsonObject {
             put("approvalId", approvalId)
         }))
         runCurrent()
@@ -519,7 +519,7 @@ class CommandBotFeatureT2CoreTest {
         assertEquals(1, midState.resolvedApprovals.size, "Should have one resolved approval.")
 
         // ACT: Delete the card message (simulates Dismiss button)
-        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
+        harness.store.dispatch("commandbot", Action(ActionRegistry.Names.SESSION_DELETE_MESSAGE, buildJsonObject {
             put("session", testSession.identity.localHandle)
             put("messageId", cardMessageId)
         }))
@@ -539,7 +539,7 @@ class CommandBotFeatureT2CoreTest {
         runCurrent()
 
         // ACT: Approve a non-existent approval
-        harness.store.dispatch("commandbot.ui", Action(ActionRegistry.Names.COMMANDBOT_APPROVE, buildJsonObject {
+        harness.store.dispatch("commandbot", Action(ActionRegistry.Names.COMMANDBOT_APPROVE, buildJsonObject {
             put("approvalId", "approval-does-not-exist")
         }))
         runCurrent()

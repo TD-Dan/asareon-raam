@@ -98,7 +98,7 @@ class FileSystemFeatureT1ViewComponentTest {
         val dispatchedAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_TOGGLE_ITEM_SELECTED }
 
         assertNotNull(dispatchedAction, "A TOGGLE_ITEM_SELECTED action should have been dispatched.")
-        assertEquals("filesystem.ui", dispatchedAction.originator)
+        assertEquals("filesystem", dispatchedAction.originator)
         assertEquals(
             filePath,
             dispatchedAction.payload?.get("path")?.toString()?.trim('"')

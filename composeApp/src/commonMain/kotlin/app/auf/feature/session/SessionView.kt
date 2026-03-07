@@ -616,7 +616,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                                     val senderName = store.state.value.identityRegistry[entry.senderId]?.name ?: entry.senderId
                                     "$senderName @ $timestamp:\n${entry.rawContent}"
                                 }
-                                store.dispatch("ui.session.input", Action(ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", transcript) }))
+                                store.dispatch("session", Action(ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD, buildJsonObject { put("text", transcript) }))
                                 menuExpanded = false
                             },
                             leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
