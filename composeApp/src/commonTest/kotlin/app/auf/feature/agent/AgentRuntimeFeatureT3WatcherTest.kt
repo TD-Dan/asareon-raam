@@ -69,13 +69,13 @@ class AgentRuntimeFeatureT3WatcherTest {
 
     @Test
     fun `automatic agent should trigger after autoWaitTime debounce period`() = runTest {
-        val agent = testAgent("auto-agent-1", "Debouncer", subscribedSessionIds = listOf("sid-A"), automaticMode = true, autoWaitTimeSeconds = 5)
+        val agent = testAgent("b0000000-0000-0000-0000-000000000001", "Debouncer", subscribedSessionIds = listOf("a0000000-0000-0000-0000-000000000001"), automaticMode = true, autoWaitTimeSeconds = 5)
         setupHarness(agent)
 
         harness.runAndLogOnFailure {
             // ACT: A user message arrives.
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                put("session", "sid-A"); put("senderId", "user"); put("message", "Hello")
+            harness.store.dispatch("core", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+                put("session", "a0000000-0000-0000-0000-000000000001"); put("senderId", "user"); put("message", "Hello")
             }))
             testScope.runCurrent()
 
@@ -98,13 +98,13 @@ class AgentRuntimeFeatureT3WatcherTest {
 
     @Test
     fun `debounce timer should reset when a new message arrives`() = runTest {
-        val agent = testAgent("auto-agent-1", "Debouncer", subscribedSessionIds = listOf("sid-A"), automaticMode = true, autoWaitTimeSeconds = 5)
+        val agent = testAgent("b0000000-0000-0000-0000-000000000001", "Debouncer", subscribedSessionIds = listOf("a0000000-0000-0000-0000-000000000001"), automaticMode = true, autoWaitTimeSeconds = 5)
         setupHarness(agent)
 
         harness.runAndLogOnFailure {
             // ACT 1: First user message arrives.
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                put("session", "sid-A"); put("senderId", "user"); put("message", "First part")
+            harness.store.dispatch("core", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+                put("session", "a0000000-0000-0000-0000-000000000001"); put("senderId", "user"); put("message", "First part")
             }))
             testScope.runCurrent()
 
@@ -113,8 +113,8 @@ class AgentRuntimeFeatureT3WatcherTest {
             assertNull(harness.processedActions.find { it.name == ActionRegistry.Names.AGENT_INITIATE_TURN }, "Agent should not have triggered yet.")
 
             // ACT 3: A second message arrives, resetting the timer.
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                put("session", "sid-A"); put("senderId", "user"); put("message", "Second part")
+            harness.store.dispatch("core", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+                put("session", "a0000000-0000-0000-0000-000000000001"); put("senderId", "user"); put("message", "Second part")
             }))
             testScope.runCurrent()
 
@@ -132,24 +132,24 @@ class AgentRuntimeFeatureT3WatcherTest {
 
     @Test
     fun `automatic agent should trigger after autoMaxWaitTime even with continuous messages`() = runTest {
-        val agent = testAgent("auto-agent-1", "Timeout", subscribedSessionIds = listOf("sid-A"), automaticMode = true, autoWaitTimeSeconds = 10, autoMaxWaitTimeSeconds = 20)
+        val agent = testAgent("b0000000-0000-0000-0000-000000000001", "Timeout", subscribedSessionIds = listOf("a0000000-0000-0000-0000-000000000001"), automaticMode = true, autoWaitTimeSeconds = 10, autoMaxWaitTimeSeconds = 20)
         setupHarness(agent)
 
         harness.runAndLogOnFailure {
             // ACT 1: First message starts the max-wait timer.
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                put("session", "sid-A"); put("senderId", "user"); put("message", "Message 1")
+            harness.store.dispatch("core", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+                put("session", "a0000000-0000-0000-0000-000000000001"); put("senderId", "user"); put("message", "Message 1")
             }))
             testScope.runCurrent() // T=0
 
             // ACT 2: Send messages every 8 seconds, preventing the 10s debounce from ever completing.
             dispatchHeartbeat(8000) // T=8s
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject { put("session", "sid-A"); put("senderId", "user"); put("message", "Message 2") }))
+            harness.store.dispatch("core", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject { put("session", "a0000000-0000-0000-0000-000000000001"); put("senderId", "user"); put("message", "Message 2") }))
             testScope.runCurrent()
             assertNull(harness.processedActions.findLast { it.name == ActionRegistry.Names.AGENT_INITIATE_TURN }, "Should not trigger at T=8s.")
 
             dispatchHeartbeat(8000) // T=16s
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject { put("session", "sid-A"); put("senderId", "user"); put("message", "Message 3") }))
+            harness.store.dispatch("core", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject { put("session", "a0000000-0000-0000-0000-000000000001"); put("senderId", "user"); put("message", "Message 3") }))
             testScope.runCurrent()
             assertNull(harness.processedActions.findLast { it.name == ActionRegistry.Names.AGENT_INITIATE_TURN }, "Should not trigger at T=16s.")
 
@@ -163,13 +163,13 @@ class AgentRuntimeFeatureT3WatcherTest {
 
     @Test
     fun `manual agent in WAITING state should NOT trigger automatically`() = runTest {
-        val agent = testAgent("manual-agent-1", "Manual", subscribedSessionIds = listOf("sid-A"), automaticMode = false, autoWaitTimeSeconds = 3)
+        val agent = testAgent("b0000000-0000-0000-0000-000000000002", "Manual", subscribedSessionIds = listOf("a0000000-0000-0000-0000-000000000001"), automaticMode = false, autoWaitTimeSeconds = 3)
         setupHarness(agent)
 
         harness.runAndLogOnFailure {
             // ACT: A user message arrives, putting agent in WAITING.
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                put("session", "sid-A"); put("senderId", "user"); put("message", "Hello")
+            harness.store.dispatch("core", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+                put("session", "a0000000-0000-0000-0000-000000000001"); put("senderId", "user"); put("message", "Hello")
             }))
             testScope.runCurrent()
 
@@ -184,8 +184,8 @@ class AgentRuntimeFeatureT3WatcherTest {
     @Test
     fun `automatic agent should NOT trigger if isAgentActive is false (Paused)`() = runTest {
         val agent = testAgent(
-            "paused-agent", "Paused",
-            subscribedSessionIds = listOf("sid-A"),
+            "b0000000-0000-0000-0000-000000000003", "Paused",
+            subscribedSessionIds = listOf("a0000000-0000-0000-0000-000000000001"),
             automaticMode = true,
             isAgentActive = false, // Paused
             autoWaitTimeSeconds = 3
@@ -194,8 +194,8 @@ class AgentRuntimeFeatureT3WatcherTest {
 
         harness.runAndLogOnFailure {
             // Simulate message arrival manually to force WAITING state
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                put("session", "sid-A"); put("senderId", "user"); put("message", "Wake up!")
+            harness.store.dispatch("core", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+                put("session", "a0000000-0000-0000-0000-000000000001"); put("senderId", "user"); put("message", "Wake up!")
             }))
             testScope.runCurrent()
 
@@ -213,7 +213,7 @@ class AgentRuntimeFeatureT3WatcherTest {
     @Test
     fun `automatic agent should NOT trigger if timestamps are missing (Safe Startup)`() = runTest {
         // Agent starts IDLE/WAITING but has no timestamps set (simulate fresh load)
-        val agent = testAgent("fresh-agent", "Fresh", subscribedSessionIds = listOf("sid-A"), automaticMode = true, isAgentActive = true)
+        val agent = testAgent("b0000000-0000-0000-0000-000000000004", "Fresh", subscribedSessionIds = listOf("a0000000-0000-0000-0000-000000000001"), automaticMode = true, isAgentActive = true)
         setupHarness(agent)
 
         harness.runAndLogOnFailure {
