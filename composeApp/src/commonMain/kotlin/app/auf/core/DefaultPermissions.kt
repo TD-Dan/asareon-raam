@@ -90,5 +90,8 @@ object DefaultPermissions {
         DefaultGrant("agent", "session:read",                 PermissionLevel.YES),
         DefaultGrant("agent", "session:write",                PermissionLevel.YES),
         DefaultGrant("agent", "knowledgegraph:read",          PermissionLevel.YES),
+
+        // ── Session feature — baseline for sessions (session.chat1 etc.) ──
+        DefaultGrant("session", "filesystem:workspace",       PermissionLevel.YES),
     )
 }
