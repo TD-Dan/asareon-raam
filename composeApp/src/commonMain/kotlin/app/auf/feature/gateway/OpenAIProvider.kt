@@ -63,26 +63,18 @@ class OpenAIProvider(
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
         install(HttpTimeout) { requestTimeoutMillis = 240_000 }
-        // RATE LIMITING: Do not throw on non-2xx so we can inspect 429 responses.
         expectSuccess = false
     }
 
     // --- Logic extracted for testability ---
 
-    /**
-     * Sanitizes a name for the OpenAI `name` field.
-     * OpenAI requires: ^[a-zA-Z0-9_-]{1,64}$
-     * Replaces disallowed characters with underscores and truncates to 64 chars.
-     */
     private fun sanitizeOpenAIName(senderName: String, senderId: String): String {
         val raw = "${senderName}_$senderId"
         return raw.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(64)
     }
 
-    /** Builds the provider-specific JSON payload from a universal request. */
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         val openAiMessages = buildJsonArray {
-            // Add the system prompt if it exists.
             request.systemPrompt?.let {
                 add(buildJsonObject {
                     put("role", "system")
@@ -92,12 +84,7 @@ class OpenAIProvider(
             request.contents.forEach { message ->
                 add(buildJsonObject {
                     put("role", if (message.role == "model") "assistant" else message.role)
-                    // Content enrichment (sender info, timestamps) is handled upstream by the
-                    // AgentCognitivePipeline — providers receive pre-enriched content.
                     put("content", message.content)
-                    // FIX: Include the `name` field for OpenAI. This is a provider-specific
-                    // feature that helps the model distinguish between participants in
-                    // multi-agent conversations. Other providers don't support this field.
                     put("name", sanitizeOpenAIName(message.senderName, message.senderId))
                 })
             }
@@ -108,24 +95,18 @@ class OpenAIProvider(
         }
     }
 
-    /** Parses a raw JSON response body into a universal GatewayResponse. */
     internal fun parseResponse(responseBody: String, correlationId: String): GatewayResponse {
         val response = json.decodeFromString<OpenAIChatResponse>(responseBody)
 
-        // Path 1: Hard API Error
         response.error?.let {
             return GatewayResponse(null, "API Error: ${it.message}", correlationId)
         }
 
-        // Extract token usage
         val inputTokens = response.usage?.promptTokens
         val outputTokens = response.usage?.completionTokens
 
-        // Path 2: Successful Content Generation
         val rawText = response.choices?.firstOrNull()?.message?.content
         if (rawText != null) {
-            // LOGGING: Warn if a successful response has no token usage — may indicate
-            // a deserialization issue or an API change.
             if (inputTokens == null && outputTokens == null) {
                 platformDependencies.log(
                     LogLevel.WARN, id,
@@ -136,15 +117,12 @@ class OpenAIProvider(
             return GatewayResponse(rawText, null, correlationId, inputTokens, outputTokens)
         }
 
-        // Path 3 (Future-Proofing): Unrecognized response format
         platformDependencies.log(
-            LogLevel.ERROR,
-            id,
+            LogLevel.ERROR, id,
             "Unrecognised response format from OpenAI API. Full response: $responseBody"
         )
         return GatewayResponse(null, "Unrecognised response format from OpenAI API.", correlationId)
     }
-
 
     // --- Public Interface Implementation ---
 
@@ -170,7 +148,7 @@ class OpenAIProvider(
             }.body()
             response.data
                 .map { it.id }
-                .filter { it.startsWith("gpt-") } // Filter for common chat models to keep the list clean
+                .filter { it.startsWith("gpt-") }
                 .sorted()
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.WARN, id, "Failed to fetch OpenAI models: ${e.message}")
@@ -178,7 +156,6 @@ class OpenAIProvider(
         }
     }
 
-    // IMPLEMENTATION: New generatePreview method
     override suspend fun generatePreview(request: GatewayRequest, settings: Map<String, String>): String {
         val payload = buildRequestPayload(request)
         return prettyJson.encodeToString(payload)
@@ -193,21 +170,16 @@ class OpenAIProvider(
         return try {
             val apiRequest = buildRequestPayload(request)
             val apiUrl = "https://$apiHost/v1/chat/completions"
+            val currentTimeMs = platformDependencies.currentTimeMillis()
 
-            // Capture full HttpResponse for header extraction
             val httpResponse: HttpResponse = client.post(apiUrl) {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
                 contentType(ContentType.Application.Json)
                 setBody(apiRequest)
             }
             val responseBody: String = httpResponse.body()
+            val rateLimitInfo = httpResponse.extractRateLimitInfo(currentTimeMs)
 
-            // Extract rate limit snapshot from response headers
-            val rateLimitInfo = httpResponse.extractRateLimitInfo(
-                platformDependencies.currentTimeMillis()
-            )
-
-            // Log rate limit data at DEBUG level for operational visibility
             if (rateLimitInfo != null) {
                 platformDependencies.log(
                     LogLevel.DEBUG, id,
@@ -218,20 +190,23 @@ class OpenAIProvider(
                 )
             }
 
-            // Check for HTTP 429 (rate limited) before parsing body
             if (isRateLimited(httpResponse.status.value)) {
-                return GatewayResponse(
-                    rawContent = null,
-                    errorMessage = "Rate limited by OpenAI API. Please wait before retrying.",
-                    correlationId = request.correlationId,
-                    rateLimitInfo = rateLimitInfo
-                )
+                return buildRateLimitedResponse(request.correlationId, rateLimitInfo, "OpenAI", currentTimeMs)
             }
 
-            // Parse the response body and attach rate limit info
-            parseResponse(responseBody, request.correlationId).copy(
-                rateLimitInfo = rateLimitInfo
-            )
+            parseResponse(responseBody, request.correlationId).copy(rateLimitInfo = rateLimitInfo)
+
+        } catch (e: ResponseException) {
+            val currentTimeMs = platformDependencies.currentTimeMillis()
+            val rateLimitInfo = e.extractRateLimitInfo(currentTimeMs)
+            if (isRateLimited(e.response.status.value)) {
+                platformDependencies.log(LogLevel.WARN, id,
+                    "Rate limited (via exception) for correlationId '${request.correlationId}'.")
+                return buildRateLimitedResponse(request.correlationId, rateLimitInfo, "OpenAI", currentTimeMs)
+            }
+            platformDependencies.log(LogLevel.ERROR, id, "HTTP error: ${e.response.status}. ${e.message}")
+            val userMessage = mapExceptionToUserMessage(e)
+            GatewayResponse(null, userMessage, request.correlationId, rateLimitInfo = rateLimitInfo)
         } catch (e: CancellationException) {
             platformDependencies.log(LogLevel.INFO, id, "OpenAI request with correlationId '${request.correlationId}' was cancelled.")
             throw e

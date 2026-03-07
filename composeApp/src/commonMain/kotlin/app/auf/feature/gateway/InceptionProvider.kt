@@ -19,21 +19,16 @@ import kotlinx.serialization.json.*
 import kotlin.coroutines.cancellation.CancellationException
 
 // --- Data Contracts specific to the Inception API ---
-// The Inception API is mostly OpenAI-compatible, but its error field is inconsistent:
-// success/structured errors use {"error": {"message": "..."}}, while auth failures
-// return a bare string: {"error": "Incorrect API key provided"}.
-// We deserialize `error` as a raw JsonElement and normalize it in parseResponse.
 @Serializable
 private data class InceptionChatResponse(
     val choices: List<Choice>? = null,
     val usage: InceptionUsage? = null,
-    val error: JsonElement? = null  // May be JsonPrimitive (string) or JsonObject
+    val error: JsonElement? = null
 )
 
 @Serializable
 private data class Choice(
     val message: InceptionMessage? = null,
-    // Inception streams deltas, but for non-streaming calls `message` is used.
     val delta: InceptionMessage? = null
 )
 
@@ -45,7 +40,6 @@ private data class InceptionMessage(
 
 @Serializable
 private data class InceptionUsage(
-    // OpenAI-compatible snake_case field names
     @kotlinx.serialization.SerialName("prompt_tokens")
     val promptTokens: Int? = null,
     @kotlinx.serialization.SerialName("completion_tokens")
@@ -57,24 +51,16 @@ private data class InceptionUsage(
 @Serializable
 private data class ListModelsResponse(
     val data: List<ModelInfo> = emptyList(),
-    val error: JsonElement? = null  // Same mixed-type error field
+    val error: JsonElement? = null
 )
 
 @Serializable
 private data class ModelInfo(val id: String)
 
-/**
- * Normalizes Inception's mixed error field into a plain string.
- *
- * The API returns one of two shapes depending on the error category:
- *   - Auth errors:       {"error": "Incorrect API key provided"}
- *   - Structured errors: {"error": {"message": "...", "type": "...", "code": "..."}}
- */
 private fun JsonElement.extractErrorMessage(): String =
     when (this) {
-        is JsonPrimitive -> content                           // bare string
-        is JsonObject    -> this["message"]?.jsonPrimitive?.content
-            ?: this.toString()               // object with message key
+        is JsonPrimitive -> content
+        is JsonObject    -> this["message"]?.jsonPrimitive?.content ?: this.toString()
         else             -> toString()
     }
 
@@ -87,8 +73,6 @@ private fun JsonElement.extractErrorMessage(): String =
  *   - Auth:      Authorization: Bearer <key>
  *   - Endpoint:  /v1/chat/completions  (OpenAI chat completion schema)
  *   - Models:    /v1/models            (OpenAI list-models schema)
- *
- * See: https://docs.inceptionlabs.ai/get-started/get-started
  */
 class InceptionProvider(
     private val platformDependencies: PlatformDependencies
@@ -105,24 +89,15 @@ class InceptionProvider(
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
         install(HttpTimeout) { requestTimeoutMillis = 240_000 }
-        // RATE LIMITING: Do not throw on non-2xx so we can inspect 429 responses.
         expectSuccess = false
     }
 
     // --- Logic extracted for testability ---
 
-    /**
-     * Builds the OpenAI-compatible JSON payload from a universal [GatewayRequest].
-     *
-     * Inception does not use a `name` field per message (unlike OpenAI's multi-agent
-     * convention), so we send only `role` and `content`. The system prompt is prepended
-     * as a `system`-role message, matching standard OpenAI convention.
-     */
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         return buildJsonObject {
             put("model", request.modelName)
             put("messages", buildJsonArray {
-                // Prepend system prompt as a system-role message if present.
                 request.systemPrompt?.let {
                     add(buildJsonObject {
                         put("role", "system")
@@ -131,10 +106,7 @@ class InceptionProvider(
                 }
                 request.contents.forEach { message ->
                     add(buildJsonObject {
-                        // Map the internal "model" role to OpenAI's "assistant"
                         put("role", if (message.role == "model") "assistant" else message.role)
-                        // Content enrichment (sender info, timestamps) is handled upstream by the
-                        // AgentCognitivePipeline — providers receive pre-enriched content and pass it through.
                         put("content", message.content)
                     })
                 }
@@ -142,31 +114,18 @@ class InceptionProvider(
         }
     }
 
-    /**
-     * Parses a raw JSON response body into a universal [GatewayResponse].
-     *
-     * Follows the same three-path structure as all other providers:
-     *   1. Hard API error  →  errorMessage populated
-     *   2. Successful text →  rawContent populated, token usage attached
-     *   3. Unrecognised format → errorMessage populated, full body logged
-     */
     internal fun parseResponse(responseBody: String, correlationId: String): GatewayResponse {
         val response = json.decodeFromString<InceptionChatResponse>(responseBody)
 
-        // Path 1: Hard API Error (handles both string and object error shapes)
         response.error?.let {
             return GatewayResponse(null, "API Error: ${it.extractErrorMessage()}", correlationId)
         }
 
-        // Extract token usage (OpenAI-compatible fields)
         val inputTokens = response.usage?.promptTokens
         val outputTokens = response.usage?.completionTokens
 
-        // Path 2: Successful Content Generation
         val rawText = response.choices?.firstOrNull()?.message?.content
         if (rawText != null) {
-            // LOGGING: Warn if a successful response carries no token usage — may indicate
-            // an API change or a deserialization issue with the snake_case fields.
             if (inputTokens == null && outputTokens == null) {
                 platformDependencies.log(
                     LogLevel.WARN, id,
@@ -177,10 +136,8 @@ class InceptionProvider(
             return GatewayResponse(rawText, null, correlationId, inputTokens, outputTokens)
         }
 
-        // Path 3: Unrecognized response format
         platformDependencies.log(
-            LogLevel.ERROR,
-            id,
+            LogLevel.ERROR, id,
             "Unrecognised response format from Inception API. Full response: $responseBody"
         )
         return GatewayResponse(null, "Unrecognised response format from Inception API.", correlationId)
@@ -203,11 +160,7 @@ class InceptionProvider(
     override suspend fun listAvailableModels(settings: Map<String, String>): List<String> {
         val apiKey = settings[apiKeySettingKey].orEmpty()
         if (apiKey.isBlank()) {
-            platformDependencies.log(
-                LogLevel.WARN,
-                id,
-                "Cannot list models: Inception API Key is not configured."
-            )
+            platformDependencies.log(LogLevel.WARN, id, "Cannot list models: Inception API Key is not configured.")
             return emptyList()
         }
 
@@ -217,28 +170,16 @@ class InceptionProvider(
             }.body()
 
             val response = json.decodeFromString<ListModelsResponse>(responseBody)
-
             response.error?.let {
-                platformDependencies.log(
-                    LogLevel.ERROR, id,
-                    "Failed to fetch models from Inception API: ${it.extractErrorMessage()}"
-                )
+                platformDependencies.log(LogLevel.ERROR, id, "Failed to fetch models from Inception API: ${it.extractErrorMessage()}")
                 throw Exception("API Error: ${it.extractErrorMessage()}")
             }
-
             response.data.map { it.id }.sorted()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            platformDependencies.log(
-                LogLevel.ERROR, id,
-                "Failed to list Inception models: ${e.stackTraceToString()}"
-            )
-            // Hardcoded fallback — mirrors known public Mercury models as of 2025-Q1
-            listOf(
-                "mercury-2",
-                "mercury-coder-small"
-            )
+            platformDependencies.log(LogLevel.ERROR, id, "Failed to list Inception models: ${e.stackTraceToString()}")
+            listOf("mercury-2", "mercury-coder-small")
         }
     }
 
@@ -246,10 +187,6 @@ class InceptionProvider(
         val payload = buildRequestPayload(request)
         return prettyJson.encodeToString(payload)
     }
-
-    // countTokens is intentionally not overridden: Inception does not expose a
-    // dedicated token-counting endpoint. The default implementation returns null,
-    // which the GatewayFeature handles gracefully by omitting the estimate.
 
     override suspend fun generateContent(request: GatewayRequest, settings: Map<String, String>): GatewayResponse {
         val apiKey = settings[apiKeySettingKey].orEmpty()
@@ -260,21 +197,16 @@ class InceptionProvider(
         return try {
             val apiRequest = buildRequestPayload(request)
             val apiUrl = "https://$apiHost/v1/chat/completions"
+            val currentTimeMs = platformDependencies.currentTimeMillis()
 
-            // Capture full HttpResponse for header extraction
             val httpResponse: HttpResponse = client.post(apiUrl) {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
                 contentType(ContentType.Application.Json)
                 setBody(apiRequest)
             }
             val responseBody: String = httpResponse.body()
+            val rateLimitInfo = httpResponse.extractRateLimitInfo(currentTimeMs)
 
-            // Extract rate limit snapshot from response headers
-            val rateLimitInfo = httpResponse.extractRateLimitInfo(
-                platformDependencies.currentTimeMillis()
-            )
-
-            // Log rate limit data at DEBUG level for operational visibility
             if (rateLimitInfo != null) {
                 platformDependencies.log(
                     LogLevel.DEBUG, id,
@@ -285,31 +217,28 @@ class InceptionProvider(
                 )
             }
 
-            // Check for HTTP 429 (rate limited) before parsing body
             if (isRateLimited(httpResponse.status.value)) {
-                return GatewayResponse(
-                    rawContent = null,
-                    errorMessage = "Rate limited by Inception API. Please wait before retrying.",
-                    correlationId = request.correlationId,
-                    rateLimitInfo = rateLimitInfo
-                )
+                return buildRateLimitedResponse(request.correlationId, rateLimitInfo, "Inception", currentTimeMs)
             }
 
-            // Parse the response body and attach rate limit info
-            parseResponse(responseBody, request.correlationId).copy(
-                rateLimitInfo = rateLimitInfo
-            )
+            parseResponse(responseBody, request.correlationId).copy(rateLimitInfo = rateLimitInfo)
+
+        } catch (e: ResponseException) {
+            val currentTimeMs = platformDependencies.currentTimeMillis()
+            val rateLimitInfo = e.extractRateLimitInfo(currentTimeMs)
+            if (isRateLimited(e.response.status.value)) {
+                platformDependencies.log(LogLevel.WARN, id,
+                    "Rate limited (via exception) for correlationId '${request.correlationId}'.")
+                return buildRateLimitedResponse(request.correlationId, rateLimitInfo, "Inception", currentTimeMs)
+            }
+            platformDependencies.log(LogLevel.ERROR, id, "HTTP error: ${e.response.status}. ${e.message}")
+            val userMessage = mapExceptionToUserMessage(e)
+            GatewayResponse(null, userMessage, request.correlationId, rateLimitInfo = rateLimitInfo)
         } catch (e: CancellationException) {
-            platformDependencies.log(
-                LogLevel.INFO, id,
-                "Inception request with correlationId '${request.correlationId}' was cancelled."
-            )
+            platformDependencies.log(LogLevel.INFO, id, "Inception request with correlationId '${request.correlationId}' was cancelled.")
             throw e
         } catch (e: Exception) {
-            platformDependencies.log(
-                LogLevel.ERROR, id,
-                "Content generation failed: ${e.stackTraceToString()}"
-            )
+            platformDependencies.log(LogLevel.ERROR, id, "Content generation failed: ${e.stackTraceToString()}")
             val userMessage = mapExceptionToUserMessage(e)
             GatewayResponse(null, userMessage, request.correlationId)
         }

@@ -41,9 +41,6 @@ private data class ContentBlock(
 
 @Serializable
 private data class Usage(
-    // FIX: Anthropic API returns "input_tokens" and "output_tokens" (snake_case).
-    // Without @SerialName, these fields silently deserialize to null, causing token
-    // usage to never be reported. This was the root cause of the missing token stats.
     @kotlinx.serialization.SerialName("input_tokens")
     val inputTokens: Int? = null,
     @kotlinx.serialization.SerialName("output_tokens")
@@ -98,7 +95,9 @@ class AnthropicProvider(
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
         install(HttpTimeout) { requestTimeoutMillis = 240_000 }
-        // RATE LIMITING: Do not throw on non-2xx so we can inspect 429 responses.
+        // Allow inspection of non-2xx responses (e.g., 429) without throwing.
+        // The ResponseException catch below is a safety net for Ktor versions
+        // where this flag may not fully suppress exceptions.
         expectSuccess = false
     }
 
@@ -106,13 +105,9 @@ class AnthropicProvider(
 
     /** Builds the provider-specific JSON payload from a universal request. */
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
-        // Anthropic requires alternating user/assistant messages.
-        // Content enrichment (sender info, timestamps) is handled upstream by the
-        // AgentCognitivePipeline — providers receive pre-enriched content and pass it through.
         val anthropicMessages = buildJsonArray {
             request.contents.forEach { message ->
                 add(buildJsonObject {
-                    // Map roles: "model" -> "assistant", everything else -> "user"
                     put("role", if (message.role == "model") "assistant" else "user")
                     put("content", message.content)
                 })
@@ -121,10 +116,8 @@ class AnthropicProvider(
 
         return buildJsonObject {
             put("model", request.modelName)
-            put("max_tokens", 8192) // Anthropic requires this field
+            put("max_tokens", 8192)
             put("messages", anthropicMessages)
-
-            // System prompt goes at root level for Anthropic
             request.systemPrompt?.let {
                 put("system", it)
             }
@@ -135,20 +128,15 @@ class AnthropicProvider(
     internal fun parseResponse(responseBody: String, correlationId: String): GatewayResponse {
         val response = json.decodeFromString<AnthropicResponse>(responseBody)
 
-        // Path 1: Hard API Error
         response.error?.let {
             return GatewayResponse(null, "API Error: ${it.message}", correlationId)
         }
 
-        // Extract token usage (available on both success and some error paths)
         val inputTokens = response.usage?.inputTokens
         val outputTokens = response.usage?.outputTokens
 
-        // Path 2: Successful Content Generation
         val rawText = response.content?.firstOrNull()?.text
         if (rawText != null) {
-            // LOGGING: Warn if a successful response has no token usage — may indicate
-            // a deserialization issue or an API change.
             if (inputTokens == null && outputTokens == null) {
                 platformDependencies.log(
                     LogLevel.WARN, id,
@@ -159,10 +147,8 @@ class AnthropicProvider(
             return GatewayResponse(rawText, null, correlationId, inputTokens, outputTokens)
         }
 
-        // Path 3 (Future-Proofing): Unrecognized response format
         platformDependencies.log(
-            LogLevel.ERROR,
-            id,
+            LogLevel.ERROR, id,
             "Unrecognised response format from Anthropic API. Full response: $responseBody"
         )
         return GatewayResponse(null, "Unrecognised response format from Anthropic API.", correlationId)
@@ -185,11 +171,7 @@ class AnthropicProvider(
     override suspend fun listAvailableModels(settings: Map<String, String>): List<String> {
         val apiKey = settings[apiKeySettingKey].orEmpty()
         if (apiKey.isBlank()) {
-            platformDependencies.log(
-                LogLevel.WARN,
-                id,
-                "Cannot list models: Anthropic API Key is not configured."
-            )
+            platformDependencies.log(LogLevel.WARN, id, "Cannot list models: Anthropic API Key is not configured.")
             return emptyList()
         }
 
@@ -201,28 +183,15 @@ class AnthropicProvider(
             }.body()
 
             val response = json.decodeFromString<ModelsResponse>(responseBody)
-
-            // Check for API errors
             response.error?.let {
-                platformDependencies.log(
-                    LogLevel.ERROR,
-                    id,
-                    "Failed to fetch models from Anthropic API: ${it.message}"
-                )
+                platformDependencies.log(LogLevel.ERROR, id, "Failed to fetch models from Anthropic API: ${it.message}")
                 throw Exception("API Error: ${it.message}")
             }
-
-            // Extract model IDs from the response
             response.data?.map { it.id } ?: emptyList()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            platformDependencies.log(
-                LogLevel.ERROR,
-                id,
-                "Failed to list models: ${e.stackTraceToString()}"
-            )
-            // Return fallback list on error
+            platformDependencies.log(LogLevel.ERROR, id, "Failed to list models: ${e.stackTraceToString()}")
             listOf(
                 "claude-3-5-sonnet-20241022",
                 "claude-3-5-haiku-20241022",
@@ -238,11 +207,6 @@ class AnthropicProvider(
         return prettyJson.encodeToString(payload)
     }
 
-    /**
-     * Builds a payload specifically for the /v1/messages/count_tokens endpoint.
-     * This differs from the generation payload: it requires model and messages but
-     * must NOT include max_tokens.
-     */
     internal fun buildCountTokensPayload(request: GatewayRequest): JsonElement {
         val anthropicMessages = buildJsonArray {
             request.contents.forEach { message ->
@@ -252,7 +216,6 @@ class AnthropicProvider(
                 })
             }
         }
-
         return buildJsonObject {
             put("model", request.modelName)
             put("messages", anthropicMessages)
@@ -260,10 +223,6 @@ class AnthropicProvider(
         }
     }
 
-    /**
-     * Calls Anthropic's /v1/messages/count_tokens endpoint to estimate input token usage
-     * before execution. This is a lightweight call that does not consume output tokens.
-     */
     override suspend fun countTokens(request: GatewayRequest, settings: Map<String, String>): TokenCountEstimate? {
         val apiKey = settings[apiKeySettingKey].orEmpty()
         if (apiKey.isBlank()) return null
@@ -271,7 +230,6 @@ class AnthropicProvider(
         return try {
             val payload = buildCountTokensPayload(request)
             val apiUrl = "https://$apiHost/v1/messages/count_tokens"
-
             val responseBody: String = client.post(apiUrl) {
                 header("x-api-key", apiKey)
                 header("anthropic-version", apiVersion)
@@ -280,12 +238,10 @@ class AnthropicProvider(
             }.body()
 
             val response = json.decodeFromString<CountTokensResponse>(responseBody)
-
             response.error?.let {
                 platformDependencies.log(LogLevel.WARN, id, "Token counting failed: ${it.message}")
                 return null
             }
-
             response.inputTokens?.let { TokenCountEstimate(it) }
         } catch (e: CancellationException) {
             throw e
@@ -304,8 +260,8 @@ class AnthropicProvider(
         return try {
             val apiRequest = buildRequestPayload(request)
             val apiUrl = "https://$apiHost/v1/messages"
+            val currentTimeMs = platformDependencies.currentTimeMillis()
 
-            // Capture full HttpResponse for header extraction
             val httpResponse: HttpResponse = client.post(apiUrl) {
                 header("x-api-key", apiKey)
                 header("anthropic-version", apiVersion)
@@ -313,11 +269,7 @@ class AnthropicProvider(
                 setBody(apiRequest)
             }
             val responseBody: String = httpResponse.body()
-
-            // Extract rate limit snapshot from response headers
-            val rateLimitInfo = httpResponse.extractRateLimitInfo(
-                platformDependencies.currentTimeMillis()
-            )
+            val rateLimitInfo = httpResponse.extractRateLimitInfo(currentTimeMs)
 
             // Log rate limit data at DEBUG level for operational visibility
             if (rateLimitInfo != null) {
@@ -330,20 +282,27 @@ class AnthropicProvider(
                 )
             }
 
-            // Check for HTTP 429 (rate limited) before parsing body
+            // Check for HTTP 429 (rate limited)
             if (isRateLimited(httpResponse.status.value)) {
-                return GatewayResponse(
-                    rawContent = null,
-                    errorMessage = "Rate limited by Anthropic API. Please wait before retrying.",
-                    correlationId = request.correlationId,
-                    rateLimitInfo = rateLimitInfo
-                )
+                return buildRateLimitedResponse(request.correlationId, rateLimitInfo, "Anthropic", currentTimeMs)
             }
 
-            // Parse the response body and attach rate limit info
-            parseResponse(responseBody, request.correlationId).copy(
-                rateLimitInfo = rateLimitInfo
-            )
+            parseResponse(responseBody, request.correlationId).copy(rateLimitInfo = rateLimitInfo)
+
+        } catch (e: ResponseException) {
+            // SAFETY NET: Catches 4xx/5xx if expectSuccess=false doesn't fully suppress.
+            // This handles Ktor versions where the HttpCallValidator still throws.
+            val currentTimeMs = platformDependencies.currentTimeMillis()
+            val rateLimitInfo = e.extractRateLimitInfo(currentTimeMs)
+            if (isRateLimited(e.response.status.value)) {
+                platformDependencies.log(LogLevel.WARN, id,
+                    "Rate limited (via exception) for correlationId '${request.correlationId}'.")
+                return buildRateLimitedResponse(request.correlationId, rateLimitInfo, "Anthropic", currentTimeMs)
+            }
+            // Non-429 HTTP error — try to parse body for API error details
+            platformDependencies.log(LogLevel.ERROR, id, "HTTP error: ${e.response.status}. ${e.message}")
+            val userMessage = mapExceptionToUserMessage(e)
+            GatewayResponse(null, userMessage, request.correlationId, rateLimitInfo = rateLimitInfo)
         } catch (e: CancellationException) {
             platformDependencies.log(LogLevel.INFO, id, "Anthropic request with correlationId '${request.correlationId}' was cancelled.")
             throw e

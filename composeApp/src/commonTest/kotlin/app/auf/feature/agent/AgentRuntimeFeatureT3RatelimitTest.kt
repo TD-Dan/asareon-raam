@@ -33,11 +33,14 @@ import kotlin.test.*
 class AgentRuntimeFeatureT3RateLimitTest {
 
     // =========================================================================
-    // Test fixtures
+    // Test fixtures — all UUIDs must pass stringIsUUID() validation
     // =========================================================================
 
     private val platform = FakePlatformDependencies("test")
-    private val testAgentUuid = IdentityUUID("agent-uuid-001")
+
+    // Valid UUID v4 format strings for test fixtures
+    private val testAgentUuid = IdentityUUID("a0000000-0000-4000-a000-000000000001")
+    private val testSessionUuid = IdentityUUID("b0000000-0000-4000-b000-000000000001")
 
     /** Creates a minimal AgentInstance for testing. */
     private fun testAgent(
@@ -53,7 +56,7 @@ class AgentRuntimeFeatureT3RateLimitTest {
         ),
         modelProvider = "anthropic",
         modelName = "claude-3-5-sonnet-20241022",
-        subscribedSessionIds = listOf(IdentityUUID("session-uuid-001")),
+        subscribedSessionIds = listOf(testSessionUuid),
         automaticMode = automaticMode,
         isAgentActive = isActive
     )
@@ -289,16 +292,15 @@ class AgentRuntimeFeatureT3RateLimitTest {
     @Test
     fun `MESSAGE_POSTED does not override RATE_LIMITED status`() {
         // ARRANGE: Agent is rate limited and subscribed to a session.
-        val sessionUuid = IdentityUUID("session-uuid-001")
         val state = stateWith(
             status = AgentStatus.RATE_LIMITED,
             rateLimitedUntilMs = platform.currentTimeMillis() + 30_000
         )
 
-        // Simulate a message posted in the subscribed session
+        // Simulate a message posted in the subscribed session (uses valid UUID format)
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", sessionUuid.uuid)
-            put("sessionUUID", sessionUuid.uuid)
+            put("sessionId", testSessionUuid.uuid)
+            put("sessionUUID", testSessionUuid.uuid)
             put("entry", buildJsonObject {
                 put("id", "msg-123")
                 put("senderId", "some-user")
@@ -317,7 +319,7 @@ class AgentRuntimeFeatureT3RateLimitTest {
                     "Only IDLE should transition to WAITING.")
         assertNotNull(statusInfo.rateLimitedUntilMs,
             "rateLimitedUntilMs should still be set.")
-        // But lastSeenMessageId SHOULD be updated (message tracking is independent of status).
+        // lastSeenMessageId SHOULD be updated (message tracking is independent of status).
         assertEquals("msg-123", statusInfo.lastSeenMessageId,
             "lastSeenMessageId should be updated even when RATE_LIMITED.")
     }
@@ -325,11 +327,10 @@ class AgentRuntimeFeatureT3RateLimitTest {
     @Test
     fun `MESSAGE_POSTED still transitions IDLE to WAITING`() {
         // ARRANGE: Sanity check — normal IDLE → WAITING path is not broken.
-        val sessionUuid = IdentityUUID("session-uuid-001")
         val state = stateWith(status = AgentStatus.IDLE)
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
-            put("sessionId", sessionUuid.uuid)
-            put("sessionUUID", sessionUuid.uuid)
+            put("sessionId", testSessionUuid.uuid)
+            put("sessionUUID", testSessionUuid.uuid)
             put("entry", buildJsonObject {
                 put("id", "msg-456")
                 put("senderId", "some-user")

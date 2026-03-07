@@ -1,5 +1,6 @@
 package app.auf.feature.gateway
 
+import io.ktor.client.plugins.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 
@@ -26,6 +27,15 @@ import io.ktor.http.*
  * [HttpResponse.extractRateLimitInfo] is a convenience extension that extracts the
  * relevant headers from a Ktor response and delegates to the pure function.
  */
+
+// --- Constants ---
+
+/**
+ * Default retry-after delay (60 seconds) used when a provider returns HTTP 429
+ * without a Retry-After header. This is a conservative default — most provider
+ * rate limit windows are 60 seconds or less.
+ */
+const val DEFAULT_RETRY_AFTER_MS = 60_000L
 
 // --- Header names (constants to avoid typos) ---
 private const val H_LIMIT_REQUESTS = "x-ratelimit-limit-requests"
@@ -132,7 +142,42 @@ internal fun parseResetValue(value: String?, currentTimeMs: Long): Long? {
 internal fun isRateLimited(statusCode: Int): Boolean =
     statusCode == 429
 
-// --- Ktor Extension ---
+/**
+ * Builds a [GatewayResponse] for a rate-limited (HTTP 429) response.
+ *
+ * Guarantees that [RateLimitInfo.retryAfterMs] is always populated — either from
+ * the provider's Retry-After header or from [DEFAULT_RETRY_AFTER_MS]. This ensures
+ * the agent layer always has a concrete retry timestamp to work with.
+ *
+ * @param correlationId The correlation ID from the original request.
+ * @param rateLimitInfo The rate limit info extracted from headers, or null if no headers were present.
+ * @param providerName A human-readable provider name for the error message (e.g., "Anthropic").
+ * @param currentTimeMs The current epoch milliseconds, used for the default retry-after.
+ */
+internal fun buildRateLimitedResponse(
+    correlationId: String,
+    rateLimitInfo: RateLimitInfo?,
+    providerName: String,
+    currentTimeMs: Long
+): GatewayResponse {
+    // Ensure retryAfterMs is always set — use the header value if available,
+    // otherwise default to 60 seconds from now.
+    val effectiveInfo = (rateLimitInfo ?: RateLimitInfo()).let { info ->
+        if (info.retryAfterMs == null) {
+            info.copy(retryAfterMs = currentTimeMs + DEFAULT_RETRY_AFTER_MS)
+        } else {
+            info
+        }
+    }
+    return GatewayResponse(
+        rawContent = null,
+        errorMessage = "Rate limited by $providerName API. Retrying automatically after cooldown.",
+        correlationId = correlationId,
+        rateLimitInfo = effectiveInfo
+    )
+}
+
+// --- Ktor Extensions ---
 
 /**
  * Convenience extension that extracts rate limit headers from a Ktor [HttpResponse]
@@ -152,4 +197,18 @@ internal fun HttpResponse.extractRateLimitInfo(currentTimeMs: Long): RateLimitIn
         headers[name]?.let { name to it }
     }.toMap()
     return parseRateLimitHeaders(headerMap, currentTimeMs)
+}
+
+/**
+ * Attempts to extract rate limit info from a Ktor [ResponseException].
+ *
+ * When `expectSuccess = true` (Ktor's default), 4xx/5xx responses throw
+ * [ResponseException] before the caller can inspect headers. This extension
+ * allows providers to extract rate limit info from the exception's wrapped response.
+ *
+ * @param currentTimeMs The current epoch milliseconds.
+ * @return A [RateLimitInfo] snapshot, or null if no rate limit headers were present.
+ */
+internal fun ResponseException.extractRateLimitInfo(currentTimeMs: Long): RateLimitInfo? {
+    return response.extractRateLimitInfo(currentTimeMs)
 }

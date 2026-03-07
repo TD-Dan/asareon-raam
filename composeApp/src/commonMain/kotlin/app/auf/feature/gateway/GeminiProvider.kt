@@ -32,7 +32,7 @@ private data class Candidate(
     val finishReason: String? = null
 )
 @Serializable
-private data class Content(val parts: List<Part>? = null, val role: String? = null) // Gemini can return a role in its content block
+private data class Content(val parts: List<Part>? = null, val role: String? = null)
 @Serializable
 private data class Part(val text: String)
 @Serializable
@@ -71,22 +71,17 @@ class GeminiProvider(
     private val API_HOST = "generativelanguage.googleapis.com"
 
     private val json = Json { ignoreUnknownKeys = true }
-    // NEW: Used for preview formatting
     private val prettyJson = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
         install(HttpTimeout) { requestTimeoutMillis = 240_000 }
-        // RATE LIMITING: Do not throw on non-2xx so we can inspect 429 responses.
         expectSuccess = false
     }
 
     // --- Logic extracted for testability ---
 
-    /** Builds the provider-specific JSON payload from a universal request. */
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
-        // Content enrichment (sender info, timestamps) is handled upstream by the
-        // AgentCognitivePipeline — providers receive pre-enriched content and pass it through.
         val apiContents = buildJsonArray {
             request.contents.forEach { message ->
                 add(buildJsonObject {
@@ -97,7 +92,6 @@ class GeminiProvider(
                 })
             }
         }
-        // Construct the system_instruction block first to improve audit legibility.
         return buildJsonObject {
             request.systemPrompt?.let {
                 putJsonObject("system_instruction") {
@@ -110,23 +104,18 @@ class GeminiProvider(
         }
     }
 
-    /** Parses a raw JSON response body into a universal GatewayResponse. */
     internal fun parseResponse(responseBody: String, correlationId: String): GatewayResponse {
         val response = json.decodeFromString<GenerateContentResponse>(responseBody)
 
-        // Path 1: Hard API Error
         response.error?.let {
             return GatewayResponse(null, "API Error: ${it.message}", correlationId)
         }
 
-        // Extract token usage from usageMetadata
         val inputTokens = response.usageMetadata?.promptTokenCount
         val outputTokens = response.usageMetadata?.candidatesTokenCount
 
-        // Path 2: Successful Content Generation
         val rawText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
         if (rawText != null) {
-            // LOGGING: Warn if a successful response has no token usage.
             if (inputTokens == null && outputTokens == null) {
                 platformDependencies.log(
                     LogLevel.WARN, id,
@@ -137,7 +126,6 @@ class GeminiProvider(
             return GatewayResponse(rawText, null, correlationId, inputTokens, outputTokens)
         }
 
-        // Path 3: Safety/Content Filter Block
         response.promptFeedback?.blockReason?.let {
             return GatewayResponse(null, "Blocked by provider: $it", correlationId)
         }
@@ -147,10 +135,8 @@ class GeminiProvider(
             return GatewayResponse("", null, correlationId, inputTokens, outputTokens)
         }
 
-        // Path 5 (Fallback): Unrecognized response format
         platformDependencies.log(
-            LogLevel.ERROR,
-            id,
+            LogLevel.ERROR, id,
             "Unrecognised response format from Gemini API. Full response: $responseBody"
         )
         return GatewayResponse(null, "Unrecognised response format from Gemini API.", correlationId)
@@ -188,30 +174,20 @@ class GeminiProvider(
         }
     }
 
-    // IMPLEMENTATION: New generatePreview method
     override suspend fun generatePreview(request: GatewayRequest, settings: Map<String, String>): String {
-        // For preview, we don't need the API key, just the payload logic.
         val payload = buildRequestPayload(request)
         return prettyJson.encodeToString(payload)
     }
 
-    /**
-     * Calls Gemini's countTokens endpoint to estimate input token usage before execution.
-     * The countTokens endpoint requires the request to be wrapped in a
-     * "generateContentRequest" field, rather than accepting contents/system_instruction at root level.
-     */
     override suspend fun countTokens(request: GatewayRequest, settings: Map<String, String>): TokenCountEstimate? {
         val apiKey = settings[apiKeySettingKey].orEmpty()
         if (apiKey.isBlank()) return null
 
         return try {
             val innerPayload = buildRequestPayload(request)
-            // Wrap in generateContentRequest as required by the countTokens endpoint.
-            // The model must be specified inside the wrapper since it's not inferred from the URL.
             val countPayload = buildJsonObject {
                 putJsonObject("generateContentRequest") {
                     put("model", "models/${request.modelName}")
-                    // Merge in the contents/system_instruction from the inner payload
                     innerPayload.jsonObject.forEach { (key, value) ->
                         put(key, value)
                     }
@@ -226,12 +202,10 @@ class GeminiProvider(
             }.body()
 
             val response = json.decodeFromString<CountTokensResponse>(responseBody)
-
             response.error?.let {
                 platformDependencies.log(LogLevel.WARN, id, "Token counting failed: ${it.message}")
                 return null
             }
-
             response.totalTokens?.let { TokenCountEstimate(it) }
         } catch (e: CancellationException) {
             throw e
@@ -250,8 +224,8 @@ class GeminiProvider(
         return try {
             val apiRequest = buildRequestPayload(request)
             val apiUrl = "https://$API_HOST/v1beta/models/${request.modelName}:generateContent"
+            val currentTimeMs = platformDependencies.currentTimeMillis()
 
-            // Capture full HttpResponse for header extraction
             val httpResponse: HttpResponse = client.post(apiUrl) {
                 parameter("key", apiKey)
                 contentType(ContentType.Application.Json)
@@ -259,14 +233,10 @@ class GeminiProvider(
             }
             val responseBody: String = httpResponse.body()
 
-            // Extract rate limit snapshot from response headers.
-            // Note: Gemini does NOT return per-response quota headers (x-ratelimit-*).
+            // Gemini does NOT return per-response quota headers (x-ratelimit-*).
             // This will only produce a RateLimitInfo on 429 responses (via retry-after).
-            val rateLimitInfo = httpResponse.extractRateLimitInfo(
-                platformDependencies.currentTimeMillis()
-            )
+            val rateLimitInfo = httpResponse.extractRateLimitInfo(currentTimeMs)
 
-            // Log rate limit data at DEBUG level for operational visibility
             if (rateLimitInfo != null) {
                 platformDependencies.log(
                     LogLevel.DEBUG, id,
@@ -277,20 +247,23 @@ class GeminiProvider(
                 )
             }
 
-            // Check for HTTP 429 (rate limited) before parsing body
             if (isRateLimited(httpResponse.status.value)) {
-                return GatewayResponse(
-                    rawContent = null,
-                    errorMessage = "Rate limited by Gemini API. Please wait before retrying.",
-                    correlationId = request.correlationId,
-                    rateLimitInfo = rateLimitInfo
-                )
+                return buildRateLimitedResponse(request.correlationId, rateLimitInfo, "Gemini", currentTimeMs)
             }
 
-            // Parse the response body and attach rate limit info
-            parseResponse(responseBody, request.correlationId).copy(
-                rateLimitInfo = rateLimitInfo
-            )
+            parseResponse(responseBody, request.correlationId).copy(rateLimitInfo = rateLimitInfo)
+
+        } catch (e: ResponseException) {
+            val currentTimeMs = platformDependencies.currentTimeMillis()
+            val rateLimitInfo = e.extractRateLimitInfo(currentTimeMs)
+            if (isRateLimited(e.response.status.value)) {
+                platformDependencies.log(LogLevel.WARN, id,
+                    "Rate limited (via exception) for correlationId '${request.correlationId}'.")
+                return buildRateLimitedResponse(request.correlationId, rateLimitInfo, "Gemini", currentTimeMs)
+            }
+            platformDependencies.log(LogLevel.ERROR, id, "HTTP error: ${e.response.status}. ${e.message}")
+            val userMessage = mapExceptionToUserMessage(e)
+            GatewayResponse(null, userMessage, request.correlationId, rateLimitInfo = rateLimitInfo)
         } catch (e: CancellationException) {
             platformDependencies.log(LogLevel.INFO, id, "Gemini request with correlationId '${request.correlationId}' was cancelled.")
             throw e
