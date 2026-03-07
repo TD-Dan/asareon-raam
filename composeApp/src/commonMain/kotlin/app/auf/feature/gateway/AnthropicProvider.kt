@@ -147,6 +147,22 @@ class AnthropicProvider(
             return GatewayResponse(rawText, null, correlationId, inputTokens, outputTokens)
         }
 
+        // Empty content array with end_turn — known Anthropic API behavior where the model
+        // considers its turn complete without producing text. Common after tool results or
+        // certain conversation patterns. See: https://docs.anthropic.com/en/api/handling-stop-reasons
+        if (response.content != null && response.content.isEmpty() && response.stopReason == "end_turn") {
+            platformDependencies.log(
+                LogLevel.WARN, id,
+                "Anthropic returned empty content with stop_reason=end_turn for correlationId '$correlationId'. " +
+                        "This is a known API behavior (model considered turn complete). Output tokens: $outputTokens"
+            )
+            return GatewayResponse(
+                null,
+                "Model returned an empty response (turn ended without content).",
+                correlationId, inputTokens, outputTokens
+            )
+        }
+
         platformDependencies.log(
             LogLevel.ERROR, id,
             "Unrecognised response format from Anthropic API. Full response: $responseBody"
