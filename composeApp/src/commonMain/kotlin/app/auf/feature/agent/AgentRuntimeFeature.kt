@@ -213,8 +213,8 @@ class AgentRuntimeFeature(
                     return
                 }
                 saveAgentConfig(agentToSave, store)
-                // cognitiveState contains strategy-owned data (e.g. knowledgeGraphId for
-                // Sovereign). saveAgentConfig strips it, so always write NVRAM on creation.
+                // NVRAM is agent-written runtime state. Write initial NVRAM on creation
+                // so the agent has a baseline cognitive state file.
                 saveAgentNvram(agentToSave, store)
 
                 // Polymorphic: let the strategy set up its infrastructure.
@@ -242,14 +242,11 @@ class AgentRuntimeFeature(
                     publishActionResult(store, correlationId, action.name, false, error = "Source agent '$agentId' not found.")
                     return
                 }
-                // knowledgeGraphId is in cognitiveState. The clone payload passes it as a
-                // top-level field so AgentCrudLogic.AGENT_CREATE can merge it into the new
-                // agent's cognitiveState. Read it generically — no strategy import needed.
-                val kgId = (agentToClone.cognitiveState as? JsonObject)
-                    ?.get("knowledgeGraphId")?.jsonPrimitive?.contentOrNull
+                // strategyConfig is a generic JSON object — copy it as-is.
+                // No strategy-specific field names needed in core code.
                 val createPayload = buildJsonObject {
                     put("name", "${agentToClone.identity.name} (Copy)")
-                    kgId?.let { put("knowledgeGraphId", it) }
+                    put("strategyConfig", agentToClone.strategyConfig)
                     put("modelProvider", agentToClone.modelProvider)
                     put("modelName", agentToClone.modelName)
                     put("subscribedSessionIds", buildJsonArray { agentToClone.subscribedSessionIds.forEach { add(it.uuid) } })
@@ -318,12 +315,11 @@ class AgentRuntimeFeature(
                 }
 
                 saveAgentConfig(newAgent, store)
-                // cognitiveState may have changed (e.g. knowledgeGraphId routed into it
-                // by mergeCognitiveStateFromPayload). saveAgentConfig strips cognitiveState,
-                // so we must also write the NVRAM file when it differs.
-                if (oldAgent == null || oldAgent.cognitiveState != newAgent.cognitiveState) {
-                    saveAgentNvram(newAgent, store)
-                }
+
+                // NVRAM is only written when the agent's own cognitive state changes
+                // (e.g., phase transition via postProcessResponse). Config changes
+                // (including strategyConfig) are persisted by saveAgentConfig.
+
                 AgentAvatarLogic.updateAgentAvatars(agentId, store, agentState)
 
                 // Polymorphic infrastructure check.
@@ -548,10 +544,9 @@ class AgentRuntimeFeature(
 
                     if (statusChanged || frontierMoved) {
                         avatarUpdateJobs[agentId]?.cancel()
-                        val capturedState = agentState
                         avatarUpdateJobs[agentId] = coroutineScope.launch {
                             delay(50)
-                            AgentAvatarLogic.updateAgentAvatars(agentId, store, capturedState)
+                            AgentAvatarLogic.updateAgentAvatars(agentId, store, agentState)
                         }
                     }
                 }
@@ -562,19 +557,6 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED -> {
                 // Polymorphic infrastructure check.
                 dispatchEnsureInfrastructureForAll(agentState, store)
-            }
-            ActionRegistry.Names.SESSION_SESSION_DELETED -> {
-                // The reducer already removed the deleted session from agent
-                // subscriptions, outputSessionId, and agentAvatarCardIds.
-                // Persist the updated agent configs so the cleanup survives restarts.
-                agentState.agentsToPersist?.forEach { agentId ->
-                    val agent = agentState.agents[agentId] ?: return@forEach
-                    saveAgentConfig(agent, store)
-                    // Refresh avatars so zombie cards for the deleted session are
-                    // cleaned and remaining sessions get updated cards.
-                    AgentAvatarLogic.updateAgentAvatars(agentId, store, agentState)
-                }
-                broadcastAgentNames(agentState, store)
             }
             ActionRegistry.Names.SESSION_SESSION_FEATURE_READY -> {
                 agentState.agents.forEach { (agentId, agent) ->
@@ -1083,17 +1065,14 @@ class AgentRuntimeFeature(
                             agent = agent.copy(outputSessionId = IdentityUUID(resolved?.uuid ?: oldValue))
                         }
                     }
-                    // Migrate old top-level "knowledgeGraphId" → cognitiveState
+                    // Migrate old top-level "knowledgeGraphId" → strategyConfig
                     val rawJson = json.parseToJsonElement(content).jsonObject
                     val legacyKgId = rawJson["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull
-                    if (legacyKgId != null) {
-                        val currentState = agent.cognitiveState as? JsonObject ?: buildJsonObject {}
-                        if (currentState["knowledgeGraphId"] == null || currentState["knowledgeGraphId"] is JsonNull) {
-                            agent = agent.copy(cognitiveState = buildJsonObject {
-                                currentState.forEach { (k, v) -> put(k, v) }
-                                put("knowledgeGraphId", legacyKgId)
-                            })
-                        }
+                    if (legacyKgId != null && agent.strategyConfig["knowledgeGraphId"] == null) {
+                        agent = agent.copy(strategyConfig = buildJsonObject {
+                            agent.strategyConfig.forEach { (k, v) -> put(k, v) }
+                            put("knowledgeGraphId", legacyKgId)
+                        })
                     }
                     // Migrate legacy handle-based session references → UUIDs
                     // IdentityUUID serializes as a plain string, so old handle strings

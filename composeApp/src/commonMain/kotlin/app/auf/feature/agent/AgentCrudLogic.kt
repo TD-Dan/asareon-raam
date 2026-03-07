@@ -16,8 +16,10 @@ import kotlinx.serialization.json.*
  * All ID extractions from JSON payloads are wrapped in typed value classes at
  * the boundary. Internal logic operates on [IdentityUUID].
  *
- * `knowledgeGraphId` is a strategy-owned key in `cognitiveState`. When the
- * payload contains it, it is merged into cognitiveState.
+ * Strategy-specific operator configuration is stored in [AgentInstance.strategyConfig].
+ * The CRUD logic routes the `strategyConfig` JSON object from the payload generically —
+ * no strategy-specific field names appear here. The strategy's [CognitiveStrategy.getConfigFields]
+ * declarations drive the UI; this reducer simply persists the resulting object.
  *
  * Strategy handle validation: AGENT_CREATE and AGENT_UPDATE_CONFIG reject
  * unknown `cognitiveStrategyId` handles with a clear error log.
@@ -37,32 +39,12 @@ object AgentCrudLogic {
         this[field]?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) }
 
     /**
-     * Merges a `knowledgeGraphId` value from the payload into the agent's cognitiveState.
-     * This is how the UI/command pipeline sets or clears the KG assignment now that
-     * `knowledgeGraphId` is a strategy-owned key in cognitiveState.
-     *
-     * If the payload contains `"knowledgeGraphId"`, the value is merged into
-     * `cognitiveState` under that key. If the value is null/JsonNull,
-     * the key is set to JsonNull (KG revocation).
+     * Extracts `strategyConfig` from the payload if present.
+     * Returns the payload value, or the fallback if not present.
      */
-    private fun mergeCognitiveStateFromPayload(
-        payload: JsonObject,
-        currentCognitiveState: JsonElement
-    ): JsonElement {
-        // Check if payload has knowledgeGraphId to migrate into cognitiveState
-        if ("knowledgeGraphId" !in payload) return currentCognitiveState
-
-        val kgValue = payload["knowledgeGraphId"]
-        val kgJsonValue: JsonElement = when {
-            kgValue == null || kgValue is JsonNull -> JsonNull
-            else -> kgValue
-        }
-
-        val currentObj = currentCognitiveState as? JsonObject ?: buildJsonObject {}
-        return buildJsonObject {
-            currentObj.forEach { (k, v) -> put(k, v) }
-            put("knowledgeGraphId", kgJsonValue)
-        }
+    private fun extractStrategyConfig(payload: JsonObject, fallback: JsonObject): JsonObject {
+        val raw = payload["strategyConfig"] ?: return fallback
+        return raw as? JsonObject ?: fallback
     }
 
     fun reduce(
@@ -91,10 +73,11 @@ object AgentCrudLogic {
 
                 val strategy = CognitiveStrategyRegistry.get(strategyId)
 
-                // Initial cognitiveState comes from the strategy.
-                // If the payload contains `knowledgeGraphId`, merge it in.
-                val initialState = strategy.getInitialState()
-                val cognitiveState = mergeCognitiveStateFromPayload(payload, initialState)
+                // cognitiveState is pure NVRAM — agent-written runtime state.
+                val cognitiveState = strategy.getInitialState()
+
+                // strategyConfig holds operator-set config (e.g., knowledgeGraphId).
+                val strategyConfig = extractStrategyConfig(payload, JsonObject(emptyMap()))
 
                 val newAgent = AgentInstance(
                     identity = Identity(
@@ -108,6 +91,7 @@ object AgentCrudLogic {
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: "gemini-pro",
                     cognitiveStrategyId = strategyId,
                     cognitiveState = cognitiveState,
+                    strategyConfig = strategyConfig,
                     subscribedSessionIds = payload["subscribedSessionIds"]?.jsonArray
                         ?.map { IdentityUUID(it.jsonPrimitive.content) } ?: emptyList(),
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: false,
@@ -140,8 +124,8 @@ object AgentCrudLogic {
                     agentToUpdate.resources
                 }
 
-                // Merge knowledgeGraphId from payload into cognitiveState
-                val updatedCognitiveState = mergeCognitiveStateFromPayload(payload, agentToUpdate.cognitiveState)
+                // strategyConfig: use payload value if present, otherwise keep existing.
+                val updatedStrategyConfig = extractStrategyConfig(payload, agentToUpdate.strategyConfig)
 
                 // Validate strategy handle if one is being set.
                 val resolvedStrategyId = payload["cognitiveStrategyId"]?.jsonPrimitive?.contentOrNull
@@ -169,7 +153,7 @@ object AgentCrudLogic {
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelProvider,
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: agentToUpdate.modelName,
                     cognitiveStrategyId = resolvedStrategyId,
-                    cognitiveState = updatedCognitiveState,
+                    strategyConfig = updatedStrategyConfig,
                     subscribedSessionIds = filteredSubscribedSessionIds,
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: agentToUpdate.automaticMode,
                     autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoWaitTimeSeconds,
@@ -211,8 +195,36 @@ object AgentCrudLogic {
                 )
             }
             ActionRegistry.Names.AGENT_AGENT_LOADED -> {
-                val agent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return state
-                val uuid = agent.identityUUID
+                val rawAgent = action.payload?.let { json.decodeFromJsonElement<AgentInstance>(it) } ?: return state
+                val uuid = rawAgent.identityUUID
+
+                // === Migration: legacy cognitiveState → strategyConfig ===
+                // Old agent.json files may have strategy config keys (e.g., knowledgeGraphId)
+                // stored in cognitiveState. Migrate them to strategyConfig generically using
+                // the strategy's declared config field keys.
+                val strategy = CognitiveStrategyRegistry.get(rawAgent.cognitiveStrategyId)
+                val configFieldKeys = strategy.getConfigFields().map { it.key }.toSet()
+                val cogStateObj = rawAgent.cognitiveState as? JsonObject
+
+                val agent = if (cogStateObj != null && configFieldKeys.isNotEmpty() && rawAgent.strategyConfig.isEmpty()) {
+                    val migratedConfig = buildJsonObject {
+                        configFieldKeys.forEach { key ->
+                            cogStateObj[key]?.let { put(key, it) }
+                        }
+                    }
+                    val cleanedCogState = buildJsonObject {
+                        cogStateObj.forEach { (k, v) ->
+                            if (k !in configFieldKeys) put(k, v)
+                        }
+                    }
+                    rawAgent.copy(
+                        strategyConfig = migratedConfig,
+                        cognitiveState = if (cleanedCogState.isEmpty()) JsonNull else cleanedCogState
+                    )
+                } else {
+                    rawAgent
+                }
+
                 if (!state.agents.containsKey(uuid)) state.copy(agents = state.agents + (uuid to agent)) else state
             }
             // Handle loading resources from disk

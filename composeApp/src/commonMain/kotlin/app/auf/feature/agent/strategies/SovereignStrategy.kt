@@ -22,7 +22,8 @@ import kotlinx.serialization.json.*
  * - Built-in resource provisioning
  * - Config validation permitting out-of-band outputSessionId
  *
- * `knowledgeGraphId` is owned by this strategy via `cognitiveState`.
+ * `knowledgeGraphId` is owned by this strategy via `strategyConfig` (operator configuration).
+ * NVRAM (`cognitiveState`) holds only agent-written runtime state (e.g., phase).
  */
 object SovereignStrategy : CognitiveStrategy {
     override val identityHandle: IdentityHandle = IdentityHandle("agent.strategy.sovereign")
@@ -68,12 +69,12 @@ object SovereignStrategy : CognitiveStrategy {
     )
 
     /**
-     * Initial state includes `knowledgeGraphId` as a well-known key owned by this strategy.
+     * Initial NVRAM state — pure runtime cognitive state.
+     * `knowledgeGraphId` is operator configuration, stored in `strategyConfig`.
      */
     override fun getInitialState(): JsonElement {
         return buildJsonObject {
             put(KEY_PHASE, PHASE_BOOTING)
-            put(KEY_KNOWLEDGE_GRAPH_ID, JsonNull)
         }
     }
 
@@ -337,13 +338,12 @@ object SovereignStrategy : CognitiveStrategy {
     // =========================================================================
 
     /**
-     * Extracts `knowledgeGraphId` from the agent's cognitiveState.
+     * Extracts `knowledgeGraphId` from the agent's strategyConfig.
      * Returns null if not present or null-valued.
      * This is the canonical accessor for knowledgeGraphId, owned by this strategy.
      */
     fun getKnowledgeGraphId(agent: AgentInstance): String? {
-        return (agent.cognitiveState as? JsonObject)
-            ?.get(KEY_KNOWLEDGE_GRAPH_ID)
+        return agent.strategyConfig[KEY_KNOWLEDGE_GRAPH_ID]
             ?.jsonPrimitive
             ?.contentOrNull
     }

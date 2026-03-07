@@ -99,8 +99,15 @@ data class AgentPendingCommand(
 //    registration). Old persisted values like `"vanilla_v1"` are migrated
 //    transparently via `CognitiveStrategyRegistry.migrateStrategyId`.
 //
-// 4. `knowledgeGraphId` is owned by SovereignStrategy as a well-known key
-//    in `cognitiveState`. Old persisted values are migrated at load time.
+// 4. `strategyConfig` holds operator-set, strategy-specific configuration values
+//    (e.g., `knowledgeGraphId` for Sovereign). These are declared by each strategy
+//    via `CognitiveStrategy.getConfigFields()` and rendered generically by the UI.
+//    This is distinct from `cognitiveState` (NVRAM), which holds agent-written
+//    runtime state (phase, mood, task focus, etc.).
+//
+// 5. `cognitiveState` (NVRAM / Control Registers) is exclusively for the agent's
+//    own persistent self-awareness — data the agent writes about itself via
+//    UPDATE_NVRAM. It is never written by the operator or UI.
 // ============================================================================
 
 /**
@@ -127,13 +134,20 @@ data class AgentInstance(
 
     // The "NVRAM" / Control Registers
     // Persisted, so the agent remembers its state across restarts.
-    // Strategy-specific config (e.g., knowledgeGraphId for Sovereign)
-    // lives here as well-known keys managed by the strategy.
+    // Contains ONLY agent-written runtime state (e.g., cognitive phase, current task,
+    // mood). Strategy-specific operator configuration lives in `strategyConfig`.
     val cognitiveState: JsonElement = JsonNull,
 
     // Resource slot → resource UUID.
     // Key (slot ID) remains plain String (strategy-defined constant, not a registered identity).
     val resources: Map<String, IdentityUUID> = emptyMap(),
+
+    // Strategy-specific configuration values set by the operator (e.g., knowledgeGraphId
+    // for Sovereign). Declared by CognitiveStrategy.getConfigFields(), rendered generically
+    // by the UI, and stored here — NOT in cognitiveState (NVRAM).
+    // This is "what the operator configured" vs. cognitiveState which is "what the agent
+    // wrote about itself."
+    val strategyConfig: JsonObject = JsonObject(emptyMap()),
 
     // Configuration
     val automaticMode: Boolean = false,

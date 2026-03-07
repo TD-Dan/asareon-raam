@@ -26,11 +26,9 @@
           "name": {
             "type": "string"
           },
-          "knowledgeGraphId": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "strategyConfig": {
+            "type": "object",
+            "description": "Strategy-specific operator configuration (e.g., knowledgeGraphId for Sovereign). Stored as-is; the runtime does not inspect contents."
           },
           "modelProvider": {
             "type": "string"
@@ -122,11 +120,9 @@
           "name": {
             "type": "string"
           },
-          "knowledgeGraphId": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "strategyConfig": {
+            "type": "object",
+            "description": "Strategy-specific operator configuration. Replaces the full object if provided."
           },
           "outputSessionId": {
             "type": [

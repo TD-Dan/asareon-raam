@@ -24,25 +24,23 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
 // ============================================================================
-// Helpers for knowledgeGraphId, which lives in cognitiveState as a
+// Helpers for knowledgeGraphId, which lives in strategyConfig as a
 // strategy-owned key.
 // ============================================================================
 
-/** Reads `knowledgeGraphId` from the agent's cognitiveState. Null if absent. */
+/** Reads `knowledgeGraphId` from the agent's strategyConfig. Null if absent. */
 private fun AgentInstance.getKnowledgeGraphId(): String? =
-    (cognitiveState as? JsonObject)
-        ?.get("knowledgeGraphId")
+    strategyConfig["knowledgeGraphId"]
         ?.jsonPrimitive
         ?.contentOrNull
 
-/** Returns a copy of this agent with `knowledgeGraphId` set/cleared in cognitiveState. */
+/** Returns a copy of this agent with `knowledgeGraphId` set/cleared in strategyConfig. */
 private fun AgentInstance.withKnowledgeGraphId(kgId: String?): AgentInstance {
-    val currentObj = cognitiveState as? JsonObject ?: buildJsonObject {}
-    val updatedState = buildJsonObject {
-        currentObj.forEach { (k, v) -> put(k, v) }
+    val updatedConfig = buildJsonObject {
+        strategyConfig.forEach { (k, v) -> put(k, v) }
         if (kgId != null) put("knowledgeGraphId", kgId) else put("knowledgeGraphId", JsonNull)
     }
-    return copy(cognitiveState = updatedState)
+    return copy(strategyConfig = updatedConfig)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -307,11 +305,9 @@ private fun AgentEditorView(
             // outputSessionId — strategy-owned primary session selection
             if (draftAgent.outputSessionId != null) put("outputSessionId", draftAgent.outputSessionId!!.uuid)
             else put("outputSessionId", null as String?)
-            // knowledgeGraphId is sent as a top-level payload field;
-            // AgentCrudLogic.mergeCognitiveStateFromPayload() routes it into cognitiveState.
-            val draftKgId = draftAgent.getKnowledgeGraphId()
-            if (draftKgId != null) put("knowledgeGraphId", draftKgId)
-            else put("knowledgeGraphId", null as String?)
+            // strategyConfig holds strategy-specific operator configuration (e.g., knowledgeGraphId).
+            // Sent as a generic JSON object — the CRUD logic stores it without inspecting contents.
+            put("strategyConfig", draftAgent.strategyConfig)
             put("automaticMode", draftAgent.automaticMode)
             autoWaitTimeInput.toIntOrNull()?.let { put("autoWaitTimeSeconds", it) }
             autoMaxWaitTimeInput.toIntOrNull()?.let { put("autoMaxWaitTimeSeconds", it) }
