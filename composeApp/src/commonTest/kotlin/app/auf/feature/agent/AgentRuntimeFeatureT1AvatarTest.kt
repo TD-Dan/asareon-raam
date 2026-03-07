@@ -80,7 +80,7 @@ class AgentRuntimeFeatureT1AvatarTest {
         ))
 
         // ACT
-        AgentAvatarLogic.updateAgentAvatars(uid(agentId), fakeStore, AgentStatus.PROCESSING, null)
+        AgentAvatarLogic.updateAgentAvatars(uid(agentId), fakeStore, state, newStatus = AgentStatus.PROCESSING, newError = null)
 
         // ASSERT
         // 1. Delete Old (Session 1 only)
@@ -123,7 +123,7 @@ class AgentRuntimeFeatureT1AvatarTest {
         ))
 
         // ACT
-        AgentAvatarLogic.updateAgentAvatars(uid(agentId), fakeStore) // Just refresh
+        AgentAvatarLogic.updateAgentAvatars(uid(agentId), fakeStore, state) // Just refresh
 
         // ASSERT
         // 1. Delete Zombie
@@ -152,7 +152,7 @@ class AgentRuntimeFeatureT1AvatarTest {
         ))
 
         // ACT
-        AgentAvatarLogic.updateAgentAvatars(uid("a1"), fakeStore, AgentStatus.IDLE)
+        AgentAvatarLogic.updateAgentAvatars(uid("a1"), fakeStore, state, newStatus = AgentStatus.IDLE)
 
         // ASSERT
         val postActions = fakeStore.dispatchedActions.filter { it.name == ActionRegistry.Names.SESSION_POST }

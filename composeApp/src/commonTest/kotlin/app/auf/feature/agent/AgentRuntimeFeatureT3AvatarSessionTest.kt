@@ -111,6 +111,10 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
         action.name == ActionRegistry.Names.SESSION_DELETE_MESSAGE
     }
 
+    /** Extracts the current AgentRuntimeState from the harness store. */
+    private fun agentState(harness: app.auf.test.TestHarness): AgentRuntimeState =
+        harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+
     // ========================================================================
     // TEST 1: Avatar posted to session on direct updateAgentAvatars call
     // ========================================================================
@@ -123,7 +127,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
             registerSessions(harness, testSession1)
 
             // Direct call — the same path used by AGENT_AGENT_LOADED, AGENT_UPDATE_CONFIG, etc.
-            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, agentState(harness), newStatus = AgentStatus.IDLE)
 
             // ASSERT: Avatar POST dispatched and processed
             val avatarPosts = harness.processedActions.avatarPosts()
@@ -157,7 +161,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
         harness.runAndLogOnFailure {
             registerSessions(harness, testSession1)
-            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, agentState(harness), newStatus = AgentStatus.IDLE)
 
             val avatarPost = harness.processedActions.avatarPosts().firstOrNull()
             assertNotNull(avatarPost, "Avatar post should be dispatched")
@@ -187,7 +191,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
         harness.runAndLogOnFailure {
             registerSessions(harness, testSession1)
-            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.PROCESSING)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, agentState(harness), newStatus = AgentStatus.PROCESSING)
 
             val avatarPost = harness.processedActions.avatarPosts().firstOrNull()
             assertNotNull(avatarPost, "Avatar post should be dispatched")
@@ -236,7 +240,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
         harness.runAndLogOnFailure {
             registerSessions(harness, testSession1, testSession2)
-            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, agentState(harness), newStatus = AgentStatus.IDLE)
 
             val avatarPosts = harness.processedActions.avatarPosts()
             assertEquals(
@@ -262,7 +266,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
         harness.runAndLogOnFailure {
             registerSessions(harness, testSession1)
-            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, agentState(harness), newStatus = AgentStatus.IDLE)
 
             // ASSERT: Old avatar message deleted
             val deleteActions = harness.processedActions.deleteMessages()
@@ -299,7 +303,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
         harness.runAndLogOnFailure {
             registerSessions(harness, testSession1, testSession2)
-            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, agentState(harness), newStatus = AgentStatus.IDLE)
 
             // ASSERT: Zombie avatar in session-uuid-2 deleted
             val deleteActions = harness.processedActions.deleteMessages()
@@ -321,7 +325,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
         harness.runAndLogOnFailure {
             // Should not throw — just log a warning (session UUID not in registry)
-            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, agentState(harness), newStatus = AgentStatus.IDLE)
 
             // ASSERT: Avatar logic should have skipped posting (no session in registry)
             // The exact behaviour depends on whether the registry lookup fails gracefully
@@ -448,7 +452,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
         harness.runAndLogOnFailure {
             registerSessions(harness, testSession1)
-            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, AgentStatus.IDLE)
+            AgentAvatarLogic.updateAgentAvatars(IdentityUUID(agentId), harness.store, agentState(harness), newStatus = AgentStatus.IDLE)
 
             // ASSERT: AVATAR_MOVED dispatched with the new message ID
             val avatarMoved = harness.processedActions.find {
