@@ -727,6 +727,9 @@ class CoreFeature(
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
                 ))
+
+                // Persist updated identities to disk so the rename survives restart.
+                persistIdentitiesFromRegistry(store)
             }
 
             // --- Permission Management (Phase 1 + Phase 2) ---
