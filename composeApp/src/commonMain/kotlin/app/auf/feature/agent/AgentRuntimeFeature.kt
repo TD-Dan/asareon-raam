@@ -563,6 +563,16 @@ class AgentRuntimeFeature(
                 // Polymorphic infrastructure check.
                 dispatchEnsureInfrastructureForAll(agentState, store)
             }
+            ActionRegistry.Names.SESSION_SESSION_DELETED -> {
+                // The reducer already removed the deleted session from agent
+                // subscriptions, outputSessionId, and agentAvatarCardIds.
+                // Persist the updated agent configs so the cleanup survives restarts.
+                agentState.agentsToPersist?.forEach { agentId ->
+                    val agent = agentState.agents[agentId] ?: return@forEach
+                    saveAgentConfig(agent, store)
+                }
+                broadcastAgentNames(agentState, store)
+            }
             ActionRegistry.Names.SESSION_SESSION_FEATURE_READY -> {
                 agentState.agents.forEach { (agentId, agent) ->
                     if (agent.isAgentActive) {
