@@ -174,7 +174,7 @@ class AgentRuntimeFeatureT1AvatarTest {
 
         composeTestRule.setContent {
             AppTheme {
-                AgentAvatarCard(agent, fakeStore, fakePlatform)
+                AgentAvatarCard(agent, null, fakeStore, fakePlatform)
             }
         }
     }

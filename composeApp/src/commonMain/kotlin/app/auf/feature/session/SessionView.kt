@@ -630,7 +630,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                             leadingIcon = { Icon(Icons.Default.ClearAll, null) }
                         )
 
-                        // --- Add Agent to this session ---
+                        // --- Add Agent to this session (submenu) ---
                         val activeSessionUUID = activeSession.identity.uuid
                         val agentNames = sessionState?.knownAgentNames ?: emptyMap()
                         val agentSubs = sessionState?.knownAgentSubscriptions ?: emptyMap()
@@ -640,22 +640,37 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                                 !subs.contains(activeSessionUUID)
                             }
                             if (unsubscribedAgents.isNotEmpty()) {
+                                var addAgentSubmenuExpanded by remember { mutableStateOf(false) }
                                 HorizontalDivider()
-                                unsubscribedAgents.forEach { (agentUuid, agentName) ->
+                                Box {
                                     DropdownMenuItem(
-                                        text = { Text("Add \"$agentName\"") },
-                                        onClick = {
-                                            store.dispatch("session.ui", Action(
-                                                ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
-                                                buildJsonObject {
-                                                    put("agentId", agentUuid)
-                                                    put("sessionId", activeSessionUUID)
-                                                }
-                                            ))
-                                            menuExpanded = false
-                                        },
-                                        leadingIcon = { Icon(Icons.Default.PersonAdd, null) }
+                                        text = { Text("Add agent") },
+                                        onClick = { addAgentSubmenuExpanded = true },
+                                        leadingIcon = { Icon(Icons.Default.PersonAdd, null) },
+                                        trailingIcon = { Icon(Icons.Default.ArrowRight, null) }
                                     )
+                                    DropdownMenu(
+                                        expanded = addAgentSubmenuExpanded,
+                                        onDismissRequest = { addAgentSubmenuExpanded = false }
+                                    ) {
+                                        unsubscribedAgents.forEach { (agentUuid, agentName) ->
+                                            DropdownMenuItem(
+                                                text = { Text(agentName) },
+                                                onClick = {
+                                                    store.dispatch("session.ui", Action(
+                                                        ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
+                                                        buildJsonObject {
+                                                            put("agentId", agentUuid)
+                                                            put("sessionId", activeSessionUUID)
+                                                        }
+                                                    ))
+                                                    addAgentSubmenuExpanded = false
+                                                    menuExpanded = false
+                                                },
+                                                leadingIcon = { Icon(Icons.Default.Bolt, null) }
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
