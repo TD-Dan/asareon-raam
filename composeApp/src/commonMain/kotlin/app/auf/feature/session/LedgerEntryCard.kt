@@ -42,7 +42,10 @@ fun LedgerEntryCard(
     val cardColors = if (isCurrentUserMessage) {
         CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     } else {
-        CardDefaults.cardColors()
+        // Explicit surfaceContainerLow instead of CardDefaults — the default
+        // resolves too light in dark theme, producing a mid-gray that fights
+        // with the near-black background. This keeps cards subtle and recessed.
+        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     }
 
 
@@ -246,10 +249,26 @@ private fun ParsedContentView(store: Store, content: List<ContentBlock>, rawCont
                     is ContentBlock.Text -> Text(block.text)
                     is ContentBlock.CodeBlock -> {
                         val isAufAction = block.language.startsWith("auf_")
-                        val backgroundColor = if (isAufAction) {
-                            MaterialTheme.colorScheme.secondaryContainer
+                        // Action blocks use surfaceDim to visually recede below the
+                        // card surface — de-emphasised, almost blending into the
+                        // background. Regular code blocks keep surfaceVariant.
+                        val blockBackground = if (isAufAction) {
+                            MaterialTheme.colorScheme.surfaceDim
                         } else {
                             MaterialTheme.colorScheme.surfaceVariant
+                        }
+                        val blockContentColor = if (isAufAction) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                        // Header and icons use outline — the most subdued readable
+                        // text slot in M3 — so the action label doesn't compete
+                        // with actual message content.
+                        val blockAccentColor = if (isAufAction) {
+                            MaterialTheme.colorScheme.outline
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
                         }
                         val headerLabel = if (isAufAction) {
                             // "auf_session.POST" → "Action 'session.POST'"
@@ -267,7 +286,8 @@ private fun ParsedContentView(store: Store, content: List<ContentBlock>, rawCont
 
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            color = backgroundColor,
+                            color = blockBackground,
+                            contentColor = blockContentColor,
                             shape = MaterialTheme.shapes.medium
                         ) {
                             Column(modifier = Modifier.padding(8.dp)) {
@@ -282,11 +302,7 @@ private fun ParsedContentView(store: Store, content: List<ContentBlock>, rawCont
                                             text = headerLabel,
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (isAufAction) {
-                                                MaterialTheme.colorScheme.onSecondaryContainer
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            }
+                                            color = blockAccentColor
                                         )
                                         IconButton(
                                             onClick = {
@@ -300,17 +316,13 @@ private fun ParsedContentView(store: Store, content: List<ContentBlock>, rawCont
                                                 imageVector = Icons.Default.ContentCopy,
                                                 contentDescription = "Copy Code Block",
                                                 modifier = Modifier.size(16.dp),
-                                                tint = if (isAufAction) {
-                                                    MaterialTheme.colorScheme.onSecondaryContainer
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                }
+                                                tint = blockContentColor
                                             )
                                         }
                                     }
                                     Spacer(Modifier.height(4.dp))
                                 }
-                                // Code content
+                                // Code content — inherits blockContentColor from Surface
                                 Text(
                                     text = block.code,
                                     style = MaterialTheme.typography.bodyMedium,
