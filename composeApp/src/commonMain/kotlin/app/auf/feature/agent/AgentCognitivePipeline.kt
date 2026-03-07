@@ -396,10 +396,31 @@ object AgentCognitivePipeline {
         // ============================================================
         // Format messages with sender context for multi-agent clarity
         // ============================================================
-        val formattedMessages = ledgerContext.map { msg ->
+        var formattedMessages = ledgerContext.map { msg ->
             val formattedTimestamp = platformDependencies.formatIsoTimestamp(msg.timestamp)
             val formattedContent = "${msg.senderName} (${msg.senderId}) @ $formattedTimestamp: ${msg.content}"
             msg.copy(content = formattedContent)
+        }
+
+        // ============================================================
+        // Empty ledger guard — LLM APIs require at least one message.
+        // This occurs during Sovereign boot (cognition session just created)
+        // or any agent whose first turn is triggered before any messages exist.
+        // The system prompt carries the full context; the trigger message is
+        // a minimal signal to satisfy the API contract.
+        // ============================================================
+        if (formattedMessages.isEmpty()) {
+            platformDependencies.log(LogLevel.INFO, LOG_TAG,
+                "Agent '${agentUuid}': Ledger is empty. Injecting synthetic trigger for turn execution.")
+            formattedMessages = listOf(
+                GatewayMessage(
+                    role = "user",
+                    content = "[SYSTEM: Turn initiated. No prior messages in session.]",
+                    senderId = "system",
+                    senderName = "System",
+                    timestamp = platformDependencies.currentTimeMillis()
+                )
+            )
         }
 
         // ============================================================
@@ -621,6 +642,10 @@ object AgentCognitivePipeline {
             }
 
             // NORMAL ERROR PATH: No rate limit — show error on avatar.
+            store.platformDependencies.log(
+                LogLevel.ERROR, LOG_TAG,
+                "Agent '$agentUuid' generation failed (provider '${agent.modelProvider}', model '${agent.modelName}'): ${decoded.errorMessage}"
+            )
             AgentAvatarLogic.updateAgentAvatars(agentUuid, store, agentState, AgentStatus.ERROR, "[AGENT ERROR] Generation failed: ${decoded.errorMessage}")
             return
         }
