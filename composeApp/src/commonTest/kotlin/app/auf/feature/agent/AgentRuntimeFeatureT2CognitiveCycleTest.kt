@@ -80,6 +80,16 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
         ))
     }
 
+    private fun registerSessionIdentity(harness: app.auf.test.TestHarness) {
+        harness.store.dispatch("session", Action(
+            ActionRegistry.Names.CORE_REGISTER_IDENTITY,
+            buildJsonObject {
+                put("uuid", sessionId)
+                put("name", session.identity.name)
+            }
+        ))
+    }
+
     @Test
     fun `full boot cycle with sentinel validation`() = runTest {
         val feature = AgentRuntimeFeature(platform, scope)
@@ -90,7 +100,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
                 agents = mapOf(uid(agentId) to agent),
-                resources = emptyList()
+                resources = testBuiltInResources()
             ))
             .withInitialState("session", SessionState(
                 sessions = mapOf(sessionId to session)
@@ -100,10 +110,11 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
         harness.runAndLogOnFailure {
             // Register agent identity so resolveAgentId succeeds
             registerAgentIdentity(harness)
+            registerSessionIdentity(harness)
             harness.store.processedActions.clear()
 
             // === PHASE 1: INITIATE TURN ===
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
+            harness.store.dispatch("core", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                 put("agentId", agentId)
                 put("preview", false)
             }))
@@ -198,7 +209,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                 action.name == ActionRegistry.Names.SESSION_POST
             }
             assertNotNull(sessionPost, "Should post response to session")
-            assertEquals(sessionId, sessionPost.payload?.get("session")?.jsonPrimitive?.content)
+            assertEquals(session.identity.handle, sessionPost.payload?.get("session")?.jsonPrimitive?.content)
             assertEquals(agent.identity.handle, sessionPost.payload?.get("senderId")?.jsonPrimitive?.content)
         }
     }
@@ -213,7 +224,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
                 agents = mapOf(uid(agentId) to agent),
-                resources = emptyList()
+                resources = testBuiltInResources()
             ))
             .withInitialState("session", SessionState(
                 sessions = mapOf(sessionId to session)
@@ -223,6 +234,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
         harness.runAndLogOnFailure {
             // Register agent identity so session lookup path works
             registerAgentIdentity(harness)
+            registerSessionIdentity(harness)
             harness.store.processedActions.clear()
 
             // Simulate a gateway failure response with sentinel failure token
@@ -273,7 +285,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
                 agents = mapOf(uid(agentId) to awakeAgent),
-                resources = emptyList()
+                resources = testBuiltInResources()
             ))
             .withInitialState("session", SessionState(
                 sessions = mapOf(sessionId to session)
@@ -283,10 +295,11 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
         harness.runAndLogOnFailure {
             // Register agent identity so resolveAgentId succeeds
             registerAgentIdentity(harness)
+            registerSessionIdentity(harness)
             harness.store.processedActions.clear()
 
             // === INITIATE TURN ===
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
+            harness.store.dispatch("core", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                 put("agentId", agentId)
             }))
 
@@ -371,7 +384,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             .withFeature(FileSystemFeature(platform))
             .withInitialState("agent", AgentRuntimeState(
                 agents = mapOf(uid(agentId) to agentWithMissingResource),
-                resources = emptyList()
+                resources = testBuiltInResources()
             ))
             .withInitialState("session", SessionState(
                 sessions = mapOf(sessionId to session)
@@ -381,10 +394,11 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
         harness.runAndLogOnFailure {
             // Register agent identity so resolveAgentId succeeds
             registerAgentIdentity(harness)
+            registerSessionIdentity(harness)
             harness.store.processedActions.clear()
 
             // Initiate turn and deliver ledger
-            harness.store.dispatch("ui", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
+            harness.store.dispatch("core", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                 put("agentId", agentId)
             }))
 
