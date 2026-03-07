@@ -147,7 +147,7 @@ class CommandBotFeatureT2GuardrailsTest {
      * and publish MESSAGE_POSTED, which CommandBot observes.
      */
     private fun postRawMessage(harness: TestHarness, senderId: String, message: String) {
-        harness.store.dispatch("test", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+        harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
             put("session", testSession.identity.localHandle)
             put("senderId", senderId)
             put("message", message)

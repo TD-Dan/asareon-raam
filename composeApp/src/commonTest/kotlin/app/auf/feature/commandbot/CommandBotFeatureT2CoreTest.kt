@@ -156,7 +156,7 @@ class CommandBotFeatureT2CoreTest {
      * into ContentBlocks and publishes MESSAGE_POSTED, which CommandBot observes.
      */
     private fun postMessage(harness: TestHarness, senderId: String, message: String) {
-        harness.store.dispatch(senderId, Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+        harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
             put("session", testSession.identity.localHandle)
             put("senderId", senderId)
             put("message", message)
@@ -235,7 +235,7 @@ class CommandBotFeatureT2CoreTest {
         val selfOriginatedCommand = "```auf_core.SHOW_TOAST\n{ \"message\": \"This should not be sent\" }\n```"
 
         // ACT: Post with senderId = "commandbot" (the feature's own name)
-        harness.store.dispatch("some-other-feature", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+        harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
             put("session", testSession.identity.localHandle)
             put("senderId", "commandbot")
             put("message", selfOriginatedCommand)
