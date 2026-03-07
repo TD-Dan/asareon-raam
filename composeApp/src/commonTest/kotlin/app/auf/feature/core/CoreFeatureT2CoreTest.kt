@@ -461,6 +461,139 @@ class CoreFeatureT2CoreTest {
     }
 
     // ================================================================
+    // Phase 2 — UPDATE_IDENTITY side effects
+    // ================================================================
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `handleSideEffects for successful UPDATE_IDENTITY persists identities to disk`() = runTest {
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .withFeature(FileSystemFeature(platform))
+            .build(platform = platform)
+        seedIdentities(harness.store, "core", "session",
+            extraRegistry = mapOf(
+                "session.old-name" to Identity(
+                    uuid = "u1", localHandle = "old-name", handle = "session.old-name",
+                    name = "Old Name", parentHandle = "session"
+                )
+            )
+        )
+
+        // ACT: Session feature renames the identity
+        harness.store.dispatch("session", Action(
+            ActionRegistry.Names.CORE_UPDATE_IDENTITY,
+            buildJsonObject { put("handle", "session.old-name"); put("newName", "New Name") }
+        ))
+        runCurrent()
+
+        // ASSERT: identities.json is written with the updated handle
+        val writeActions = harness.processedActions.filter {
+            it.name == ActionRegistry.Names.FILESYSTEM_WRITE &&
+                    it.payload?.get("path")?.jsonPrimitive?.content == "identities.json"
+        }
+        assertTrue(writeActions.isNotEmpty(),
+            "UPDATE_IDENTITY must persist identities.json to disk — this is the bug that caused " +
+                    "stale handles to survive restart.")
+
+        val (identities, _) = parsePersistedContent(writeActions.last())
+        val persistedHandles = identities.map { it["handle"]?.jsonPrimitive?.content }
+        assertTrue("session.new-name" in persistedHandles,
+            "The renamed handle should be in the persisted identities.")
+        assertFalse("session.old-name" in persistedHandles,
+            "The old handle should NOT be in the persisted identities.")
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `handleSideEffects for successful UPDATE_IDENTITY updates registry and broadcasts`() = runTest {
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .build(platform = platform)
+        seedIdentities(harness.store, "core", "session",
+            extraRegistry = mapOf(
+                "session.chat1" to Identity(
+                    uuid = "u1", localHandle = "chat1", handle = "session.chat1",
+                    name = "Chat 1", parentHandle = "session"
+                )
+            )
+        )
+
+        // ACT
+        harness.store.dispatch("session", Action(
+            ActionRegistry.Names.CORE_UPDATE_IDENTITY,
+            buildJsonObject { put("handle", "session.chat1"); put("newName", "Renamed Chat") }
+        ))
+        runCurrent()
+
+        // ASSERT: Response dispatched with correct old/new handles
+        val response = harness.processedActions.find {
+            it.name == ActionRegistry.Names.CORE_RETURN_UPDATE_IDENTITY
+        }
+        assertNotNull(response, "RETURN_UPDATE_IDENTITY should be dispatched.")
+        assertEquals("true", response.payload?.get("success")?.jsonPrimitive?.content)
+        assertEquals("session.chat1", response.payload?.get("oldHandle")?.jsonPrimitive?.content)
+        assertEquals("session.renamed-chat", response.payload?.get("newHandle")?.jsonPrimitive?.content)
+
+        // ASSERT: Registry updated
+        val registry = harness.store.state.value.identityRegistry
+        assertNull(registry["session.chat1"], "Old handle should be removed from registry.")
+        assertNotNull(registry["session.renamed-chat"], "New handle should be in registry.")
+        assertEquals("Renamed Chat", registry["session.renamed-chat"]?.name)
+
+        // ASSERT: Registry broadcast
+        val broadcast = harness.processedActions.find {
+            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+        }
+        assertNotNull(broadcast, "IDENTITY_REGISTRY_UPDATED should be broadcast after UPDATE_IDENTITY.")
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `handleSideEffects for rejected UPDATE_IDENTITY does not persist or broadcast`() = runTest {
+        val platform = FakePlatformDependencies("test")
+        val harness = TestEnvironment.create()
+            .withFeature(CoreFeature(platform))
+            .withFeature(FileSystemFeature(platform))
+            .build(platform = platform)
+        seedIdentities(harness.store, "core", "session", "agent",
+            extraRegistry = mapOf(
+                "session.chat1" to Identity(
+                    uuid = "u1", localHandle = "chat1", handle = "session.chat1",
+                    name = "Chat 1", parentHandle = "session"
+                )
+            )
+        )
+
+        // ACT: Agent tries to rename a session identity — namespace violation
+        harness.store.dispatch("agent", Action(
+            ActionRegistry.Names.CORE_UPDATE_IDENTITY,
+            buildJsonObject { put("handle", "session.chat1"); put("newName", "Hacked Name") }
+        ))
+        runCurrent()
+
+        // ASSERT: No persistence
+        val writeActions = harness.processedActions.filter {
+            it.name == ActionRegistry.Names.FILESYSTEM_WRITE &&
+                    it.payload?.get("path")?.jsonPrimitive?.content == "identities.json"
+        }
+        assertTrue(writeActions.isEmpty(),
+            "Rejected UPDATE_IDENTITY must NOT trigger identities.json persistence.")
+
+        // ASSERT: No registry broadcast
+        val broadcasts = harness.processedActions.filter {
+            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+        }
+        assertTrue(broadcasts.isEmpty(),
+            "IDENTITY_REGISTRY_UPDATED must NOT be broadcast on rejected UPDATE_IDENTITY.")
+
+        // ASSERT: Identity unchanged
+        assertEquals("Chat 1", harness.store.state.value.identityRegistry["session.chat1"]?.name)
+    }
+
+    // ================================================================
     // Phase 2 — Identity registry in AppState (single source of truth)
     // ================================================================
 
