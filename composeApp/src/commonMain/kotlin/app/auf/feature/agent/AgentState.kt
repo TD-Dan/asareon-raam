@@ -20,7 +20,8 @@ enum class TurnMode { DIRECT, PREVIEW }
 enum class AgentResourceType {
     CONSTITUTION,
     BOOTLOADER,
-    SYSTEM_INSTRUCTION
+    SYSTEM_INSTRUCTION,
+    STATE_MACHINE
 }
 
 @Serializable

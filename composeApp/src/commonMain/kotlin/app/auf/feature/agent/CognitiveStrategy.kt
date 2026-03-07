@@ -3,6 +3,7 @@ package app.auf.feature.agent
 import app.auf.core.IdentityHandle
 import app.auf.core.Store
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Declares a strategy-specific configuration field rendered by the Agent Manager UI.
@@ -102,6 +103,24 @@ interface CognitiveStrategy {
      * The strategy owns and manages these keys via cognitiveState.
      */
     fun getInitialState(): JsonElement
+
+    /**
+     * Returns the set of valid NVRAM keys that this strategy recognizes.
+     *
+     * Used by the reducer to validate incoming `UPDATE_NVRAM` payloads — keys
+     * not in this set are dropped with a warning log. This enforces the
+     * principle that strategies own their NVRAM schema.
+     *
+     * Default implementation derives keys from [getInitialState]. Strategies
+     * with dynamic key sets (rare) can override.
+     *
+     * Returns null if the strategy imposes no key restrictions (e.g., Minimal
+     * with JsonNull initial state). Null = all keys accepted (no validation).
+     */
+    fun getValidNvramKeys(): Set<String>? {
+        val initial = getInitialState()
+        return (initial as? JsonObject)?.keys
+    }
 
     /**
      * The Core Function.

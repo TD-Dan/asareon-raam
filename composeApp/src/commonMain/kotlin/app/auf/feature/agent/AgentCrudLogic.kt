@@ -302,11 +302,30 @@ object AgentCrudLogic {
 
                 val agent = state.agents[agentId] ?: return state
 
-                // Merge updates into existing cognitiveState (for UPDATE_NVRAM)
+                // Validate incoming keys against the strategy's declared NVRAM schema.
+                val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
+                val validKeys = strategy.getValidNvramKeys()
+                val filteredUpdates = if (validKeys != null) {
+                    val rejected = updates.keys - validKeys
+                    if (rejected.isNotEmpty()) {
+                        platformDependencies.log(
+                            app.auf.util.LogLevel.WARN, "AgentCrudLogic",
+                            "UPDATE_NVRAM for agent '${agentId.uuid}': Rejected unknown keys $rejected. " +
+                                    "Valid keys for strategy '${strategy.identityHandle.handle}': $validKeys"
+                        )
+                    }
+                    JsonObject(updates.filterKeys { it in validKeys })
+                } else {
+                    updates // Strategy imposes no schema restrictions (e.g., Minimal)
+                }
+
+                if (filteredUpdates.isEmpty()) return state
+
+                // Merge validated updates into existing cognitiveState
                 val currentState = agent.cognitiveState as? JsonObject ?: buildJsonObject {}
                 val mergedState = buildJsonObject {
                     currentState.forEach { (k, v) -> put(k, v) }
-                    updates.forEach { (k, v) -> put(k, v) }
+                    filteredUpdates.forEach { (k, v) -> put(k, v) }
                 }
 
                 val updatedAgent = agent.copy(cognitiveState = mergedState)

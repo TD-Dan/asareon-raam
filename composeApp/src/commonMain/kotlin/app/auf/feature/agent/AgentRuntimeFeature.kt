@@ -118,6 +118,9 @@ class AgentRuntimeFeature(
             app.auf.feature.agent.strategies.SovereignStrategy,
             legacyId = "sovereign_v1"
         )
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.StateMachineStrategy
+        )
 
         coroutineScope.launch {
             while (true) {
