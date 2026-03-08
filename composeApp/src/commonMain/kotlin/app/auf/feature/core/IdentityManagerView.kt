@@ -325,6 +325,9 @@ private fun IdentityRow(
 
     val displayColor = identity.resolveDisplayColor()
     val accentColor = displayColor ?: MaterialTheme.colorScheme.primary
+    val themePrimary = MaterialTheme.colorScheme.primary
+    // Draft accent: when draftColorHex is null (reset to default or never set),
+    // always show theme primary — NOT the persisted identity color.
     val draftAccent = draftColorHex?.let { hex ->
         val clean = hex.removePrefix("#")
         if (clean.length == 6) try {
@@ -335,7 +338,7 @@ private fun IdentityRow(
                 blue = (rgb and 0xFF).toInt() / 255f
             )
         } catch (_: Exception) { null } else null
-    } ?: accentColor
+    } ?: themePrimary
 
     fun commitEdits() {
         // Dispatch UPDATE_IDENTITY with extended payload (name + displayColor)
@@ -468,7 +471,7 @@ private fun IdentityRow(
                                 Spacer(Modifier.width(8.dp))
                                 Text("Set color")
                             }
-                            if (identity.displayColor != null) {
+                            if (draftColorHex != null) {
                                 TextButton(onClick = { draftColorHex = null }) {
                                     Text("Reset to default")
                                 }
