@@ -167,7 +167,9 @@ fun LedgerEntryCard(
 
                         // Chrome overlay — floats top-right, no layout impact
                         if (showChrome) {
-                            ChromeOverlay(store, session, entry, uiState, cardBgColor) { isMenuOpen = it }
+                            ChromeOverlay(store, session, entry, uiState, cardBgColor,
+                                modifier = Modifier.align(Alignment.TopEnd)
+                            ) { isMenuOpen = it }
                         }
                     }
 
@@ -196,7 +198,9 @@ fun LedgerEntryCard(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        ChromeOverlay(store, session, entry, uiState, cardBgColor) { isMenuOpen = it }
+                        ChromeOverlay(store, session, entry, uiState, cardBgColor,
+                            modifier = Modifier.align(Alignment.TopEnd)
+                        ) { isMenuOpen = it }
                     }
                 }
                 // ── Consecutive at rest: no header at all ────────────
@@ -245,10 +249,11 @@ private fun ChromeOverlay(
     entry: LedgerEntry,
     uiState: MessageUiState,
     cardBgColor: Color,
+    modifier: Modifier = Modifier,
     onMenuStateChanged: (Boolean) -> Unit
 ) {
     Row(
-        modifier = Modifier.background(cardBgColor),
+        modifier = modifier.background(cardBgColor),
         verticalAlignment = Alignment.CenterVertically
     ) {
         TooltipBox(
@@ -336,6 +341,10 @@ private fun ChromeOverlay(
                     DropdownMenuItem(
                         text = { Text("Edit") },
                         onClick = {
+                            // Uncollapse if needed so the editor is visible
+                            if (uiState.isCollapsed) {
+                                dispatchToggleCollapsed(store, session, entry)
+                            }
                             store.dispatch("session", Action(
                                 ActionRegistry.Names.SESSION_SET_EDITING_MESSAGE,
                                 buildJsonObject { put("messageId", entry.id) }
