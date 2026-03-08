@@ -1,6 +1,8 @@
 package app.auf.feature.agent
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -199,7 +201,7 @@ fun AgentAvatarCard(
  * - Extended info drawer (subscriptions, model, strategy) — eye-toggled
  * - NVRAM drawer — toggled from kebab menu, local state
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun AgentControlCard(
     agent: AgentInstance,
@@ -208,7 +210,15 @@ fun AgentControlCard(
     store: Store,
     platformDependencies: PlatformDependencies,
     /** Externally controlled extended info visibility (for manager global toggle). Null = local state. */
-    showExtendedInfoOverride: Boolean? = null
+    showExtendedInfoOverride: Boolean? = null,
+    /** When true, kebab shows Clone/Delete instead of Preview Turn/Remove from session. */
+    showManagementActions: Boolean = false,
+    /** Called when the user requests edit mode (kebab or double-click). */
+    onEditRequest: (() -> Unit)? = null,
+    /** Called when the user requests cloning. Only used when showManagementActions = true. */
+    onCloneRequest: (() -> Unit)? = null,
+    /** Called when the user requests deletion. Only used when showManagementActions = true. */
+    onDeleteRequest: (() -> Unit)? = null
 ) {
     val identityRegistry = store.state.collectAsState().value.identityRegistry
     val statusInfo = agentState.agentStatuses[agent.identityUUID] ?: AgentStatusInfo()
@@ -216,10 +226,15 @@ fun AgentControlCard(
     var processingTime by remember { mutableStateOf("00:00") }
     var rateLimitCountdown by remember { mutableStateOf("") }
     var menuExpanded by remember { mutableStateOf(false) }
-    var localShowExtendedInfo by remember { mutableStateOf(false) }
     var localShowNvram by remember { mutableStateOf(false) }
 
-    val showExtendedInfo = showExtendedInfoOverride ?: localShowExtendedInfo
+    // Extended info: local state, initialized from global override.
+    // Individual eye toggle always works. Global toggle resets all cards.
+    var localShowExtendedInfo by remember { mutableStateOf(showExtendedInfoOverride ?: false) }
+    LaunchedEffect(showExtendedInfoOverride) {
+        if (showExtendedInfoOverride != null) localShowExtendedInfo = showExtendedInfoOverride
+    }
+    val showExtendedInfo = localShowExtendedInfo
     val isViewingNvram = localShowNvram
 
     LaunchedEffect(statusInfo.status, statusInfo.processingSinceTimestamp) {
@@ -282,8 +297,13 @@ fun AgentControlCard(
                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
             )
 
-            // Name + Status
-            Column(modifier = Modifier.weight(1f)) {
+            // Name + Status — double-click enters edit mode (manager shortcut)
+            Column(
+                modifier = Modifier.weight(1f).combinedClickable(
+                    onClick = { localShowExtendedInfo = !localShowExtendedInfo },
+                    onDoubleClick = { onEditRequest?.invoke() }
+                )
+            ) {
                 Text(agent.identity.name, style = MaterialTheme.typography.titleMedium)
                 Text("Status: $statusText", style = MaterialTheme.typography.bodyMedium)
                 if (statusInfo.status == AgentStatus.ERROR && statusInfo.errorMessage != null) {
@@ -308,7 +328,7 @@ fun AgentControlCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // Eye toggle for extended info
                 IconButton(onClick = {
-                    if (showExtendedInfoOverride == null) localShowExtendedInfo = !localShowExtendedInfo
+                    localShowExtendedInfo = !localShowExtendedInfo
                 }) {
                     Icon(
                         imageVector = if (showExtendedInfo) Icons.Default.VisibilityOff else Icons.Default.Visibility,
@@ -318,7 +338,7 @@ fun AgentControlCard(
                     )
                 }
 
-                // Kebab menu
+                // Kebab menu — contextual: manager vs avatar
                 Box {
                     IconButton(onClick = { menuExpanded = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "More options")
@@ -327,27 +347,23 @@ fun AgentControlCard(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false }
                     ) {
+                        // Edit Agent — always available
                         DropdownMenuItem(
                             text = { Text("Edit Agent") },
                             onClick = {
-                                store.dispatch("agent", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.manager") }))
-                                store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agentUuidStr) }))
+                                if (onEditRequest != null) {
+                                    onEditRequest()
+                                } else {
+                                    // Avatar context: navigate to manager and open editor
+                                    store.dispatch("agent", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.manager") }))
+                                    store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agentUuidStr) }))
+                                }
                                 menuExpanded = false
                             },
                             leadingIcon = { Icon(Icons.Default.Edit, null) }
                         )
-                        DropdownMenuItem(
-                            text = { Text("Preview Turn") },
-                            onClick = {
-                                store.dispatch("agent", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
-                                    put("agentId", agentUuidStr)
-                                    put("preview", true)
-                                }))
-                                menuExpanded = false
-                            },
-                            leadingIcon = { Icon(Icons.Default.Visibility, null) },
-                            enabled = canInitiateTurn
-                        )
+
+                        // NVRAM — always available
                         DropdownMenuItem(
                             text = { Text(if (isViewingNvram) "Hide NVRAM" else "Inspect NVRAM") },
                             onClick = {
@@ -356,18 +372,58 @@ fun AgentControlCard(
                             },
                             leadingIcon = { Icon(Icons.Default.Memory, null) }
                         )
-                        if (sessionUUID != null) {
+
+                        // ── Avatar-only items ────────────────────────
+                        if (!showManagementActions) {
                             DropdownMenuItem(
-                                text = { Text("Remove from session") },
+                                text = { Text("Preview Turn") },
                                 onClick = {
-                                    store.dispatch("agent", Action(ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION, buildJsonObject {
+                                    store.dispatch("agent", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                                         put("agentId", agentUuidStr)
-                                        put("sessionId", sessionUUID)
+                                        put("preview", true)
                                     }))
                                     menuExpanded = false
                                 },
-                                leadingIcon = { Icon(Icons.Default.LinkOff, null) }
+                                leadingIcon = { Icon(Icons.Default.Visibility, null) },
+                                enabled = canInitiateTurn
                             )
+                            if (sessionUUID != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Remove from session") },
+                                    onClick = {
+                                        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION, buildJsonObject {
+                                            put("agentId", agentUuidStr)
+                                            put("sessionId", sessionUUID)
+                                        }))
+                                        menuExpanded = false
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.LinkOff, null) }
+                                )
+                            }
+                        }
+
+                        // ── Manager-only items ───────────────────────
+                        if (showManagementActions) {
+                            if (onCloneRequest != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Clone Agent") },
+                                    onClick = {
+                                        onCloneRequest()
+                                        menuExpanded = false
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
+                                )
+                            }
+                            if (onDeleteRequest != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Delete Agent") },
+                                    onClick = {
+                                        onDeleteRequest()
+                                        menuExpanded = false
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Delete, null) }
+                                )
+                            }
                         }
                     }
                 }

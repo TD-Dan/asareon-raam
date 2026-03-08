@@ -1,15 +1,10 @@
 package app.auf.feature.agent
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -19,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
@@ -180,55 +176,31 @@ private fun AgentCard(
     platformDependencies: app.auf.util.PlatformDependencies,
     showExtendedInfo: Boolean = false
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isHovered by interactionSource.collectIsHoveredAsState()
-    val cardBgColor = MaterialTheme.colorScheme.surfaceContainerLow
-
     Card(
-        modifier = Modifier.fillMaxWidth().hoverable(interactionSource),
-        colors = CardDefaults.cardColors(containerColor = cardBgColor)
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         if (isEditing) {
             Column(Modifier.padding(16.dp)) {
                 AgentEditorView(agent, agentState, store)
             }
         } else {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                // Base layer: shared AgentControlCard
-                AgentControlCard(
-                    agent = agent,
-                    agentState = agentState,
-                    sessionUUID = null,
-                    store = store,
-                    platformDependencies = platformDependencies,
-                    showExtendedInfoOverride = showExtendedInfo
-                )
-
-                // Hover overlay: edit / clone / delete — top-right
-                if (isHovered) {
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp)
-                            .background(cardBgColor),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = onEditRequest) {
-                            Icon(Icons.Default.Edit, "Edit Agent")
-                        }
-                        IconButton(onClick = {
-                            store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CLONE, buildJsonObject {
-                                put("agentId", agent.identity.uuid)
-                            }))
-                        }) {
-                            Icon(Icons.Default.ContentCopy, "Clone Agent")
-                        }
-                        IconButton(onClick = { onDeleteRequest(agent) }) {
-                            Icon(Icons.Default.Delete, "Delete Agent")
-                        }
-                    }
-                }
-            }
+            AgentControlCard(
+                agent = agent,
+                agentState = agentState,
+                sessionUUID = null,
+                store = store,
+                platformDependencies = platformDependencies,
+                showExtendedInfoOverride = showExtendedInfo,
+                showManagementActions = true,
+                onEditRequest = onEditRequest,
+                onCloneRequest = {
+                    store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CLONE, buildJsonObject {
+                        put("agentId", agent.identity.uuid)
+                    }))
+                },
+                onDeleteRequest = { onDeleteRequest(agent) }
+            )
         }
     }
 }
@@ -278,7 +250,15 @@ private fun AgentEditorView(
         store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", null as String?) }))
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.onKeyEvent { event ->
+            if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                onCancel()
+                true
+            } else false
+        }
+    ) {
 
         // --- ROW 1: Identity (Name + Strategy) ---
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
