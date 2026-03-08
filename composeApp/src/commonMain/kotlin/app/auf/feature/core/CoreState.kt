@@ -58,6 +58,14 @@ data class CoreState(
     // Active user identity handle — resolved from the identity registry.
     val activeUserId: String? = null,
 
+    /**
+     * PERSISTED VIA SETTINGS: When true, the active user's displayColor replaces
+     * the app's primary color scheme. Secondary is derived as hue-30°, S-25%, L-25%.
+     * Hydrated from "core.use_identity_color" via SETTINGS_LOADED / VALUE_CHANGED.
+     */
+    @Transient
+    val useIdentityColorAsPrimary: Boolean = false,
+
     // --- Transient State for Global UI ---
     @Transient
     val confirmationRequest: ConfirmationDialogRequest? = null,

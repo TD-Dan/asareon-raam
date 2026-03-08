@@ -81,6 +81,7 @@ class CoreFeature(
 
     private val settingKeyWidth = "core.window.width"
     private val settingKeyHeight = "core.window.height"
+    private val settingKeyUseIdentityColor = "core.use_identity_color"
     private val identitiesFileName = "identities.json"
 
     companion object {
@@ -226,6 +227,11 @@ class CoreFeature(
                     put("key", settingKeyHeight); put("type", "NUMERIC_LONG"); put("label", "Window Height")
                     put("description", "The height of the application window in pixels.")
                     put("section", "Appearance"); put("defaultValue", "800")
+                }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
+                    put("key", settingKeyUseIdentityColor); put("type", "BOOLEAN"); put("label", "Use Identity Color as App Theme")
+                    put("description", "When enabled, the active user identity's display color replaces the app's primary color. Secondary color is auto-derived.")
+                    put("section", "Appearance"); put("defaultValue", "false")
                 }))
             }
             ActionRegistry.Names.SYSTEM_STARTING -> {
@@ -903,7 +909,12 @@ class CoreFeature(
                 val loadedValues = action.payload
                 val width = loadedValues?.get(settingKeyWidth)?.jsonPrimitive?.content?.toIntOrNull()
                 val height = loadedValues?.get(settingKeyHeight)?.jsonPrimitive?.content?.toIntOrNull()
-                return coreState.copy(windowWidth = width ?: coreState.windowWidth, windowHeight = height ?: coreState.windowHeight)
+                val useIdentityColor = loadedValues?.get(settingKeyUseIdentityColor)?.jsonPrimitive?.content == "true"
+                return coreState.copy(
+                    windowWidth = width ?: coreState.windowWidth,
+                    windowHeight = height ?: coreState.windowHeight,
+                    useIdentityColorAsPrimary = useIdentityColor
+                )
             }
             ActionRegistry.Names.SETTINGS_VALUE_CHANGED -> {
                 val payload = action.payload ?: return coreState
@@ -913,6 +924,7 @@ class CoreFeature(
                 when (key) {
                     settingKeyWidth -> value?.toIntOrNull()?.let { if (it != coreState.windowWidth) newCoreState = coreState.copy(windowWidth = it) }
                     settingKeyHeight -> value?.toIntOrNull()?.let { if (it != coreState.windowHeight) newCoreState = coreState.copy(windowHeight = it) }
+                    settingKeyUseIdentityColor -> newCoreState = coreState.copy(useIdentityColorAsPrimary = value == "true")
                 }
                 return newCoreState
             }

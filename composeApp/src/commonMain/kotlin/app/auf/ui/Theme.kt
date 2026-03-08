@@ -121,16 +121,52 @@ private val darkScheme = darkColorScheme(
 /**
  * The main theme composable for the AUF application, now using Material 3.
  * It automatically selects between the Dark and Light color schemes based on the system theme.
+ *
+ * When [primaryOverride] is non-null, the primary and secondary color families
+ * are replaced with the provided colors, enabling per-user theming.
  */
 @Composable
 fun AppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    primaryOverride: Color? = null,
+    secondaryOverride: Color? = null,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) {
-        darkScheme
+    val baseScheme = if (darkTheme) darkScheme else lightScheme
+
+    val colorScheme = if (primaryOverride != null) {
+        // Compute onPrimary: white for dark colors, black for light.
+        // Simple luminance threshold avoids a full contrast-ratio computation.
+        val primaryLuminance = primaryOverride.red * 0.2126f +
+                primaryOverride.green * 0.7152f +
+                primaryOverride.blue * 0.0722f
+        val onPrimary = if (primaryLuminance > 0.5f) Color.Black else Color.White
+
+        // For containers, lighten in dark theme and darken in light theme.
+        val primaryContainer = if (darkTheme)
+            primaryOverride.copy(alpha = 1f)  // use as-is in dark
+        else
+            primaryOverride.copy(alpha = 1f)
+
+        val resolvedSecondary = secondaryOverride ?: baseScheme.secondary
+        val secondaryLuminance = resolvedSecondary.red * 0.2126f +
+                resolvedSecondary.green * 0.7152f +
+                resolvedSecondary.blue * 0.0722f
+        val onSecondary = if (secondaryLuminance > 0.5f) Color.Black else Color.White
+
+        baseScheme.copy(
+            primary = primaryOverride,
+            onPrimary = onPrimary,
+            primaryContainer = primaryContainer,
+            onPrimaryContainer = onPrimary,
+            inversePrimary = if (darkTheme) primaryOverride else primaryOverride,
+            secondary = resolvedSecondary,
+            onSecondary = onSecondary,
+            secondaryContainer = blendColor(resolvedSecondary, baseScheme.surface, 0.3f),
+            onSecondaryContainer = resolvedSecondary
+        )
     } else {
-        lightScheme
+        baseScheme
     }
 
     val extendedColors = if (darkTheme) darkExtendedColors else lightExtendedColors
@@ -152,3 +188,13 @@ fun AppTheme(
 val MaterialTheme.extendedColors: ExtendedColors
     @Composable @ReadOnlyComposable
     get() = LocalExtendedColors.current
+
+/** Blends [foreground] over [background] at the given [ratio] (0.0 = all background, 1.0 = all foreground). */
+private fun blendColor(foreground: Color, background: Color, ratio: Float): Color {
+    val r = ratio.coerceIn(0f, 1f)
+    return Color(
+        red = foreground.red * r + background.red * (1f - r),
+        green = foreground.green * r + background.green * (1f - r),
+        blue = foreground.blue * r + background.blue * (1f - r)
+    )
+}
