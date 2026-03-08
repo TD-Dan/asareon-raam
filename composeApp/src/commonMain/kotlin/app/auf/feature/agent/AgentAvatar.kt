@@ -317,9 +317,12 @@ fun AgentControlCard(
                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
 
                 if (agentIdentity?.displayEmoji != null) {
+                    // Color is applied to handle letters/unicode symbols (e.g. "Na", "Ω").
+                    // Actual emoji are OS-rendered bitmaps and ignore text color.
                     Text(
                         text = agentIdentity.displayEmoji!!,
                         fontSize = 30.sp,
+                        color = iconTint,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.size(48.dp)
                     )

@@ -353,7 +353,7 @@ private fun AgentEditorView(
             // Current icon preview
             val previewTint = draftColor ?: MaterialTheme.colorScheme.primary
             if (draftIconEmoji != null) {
-                Text(draftIconEmoji!!, fontSize = 24.sp, modifier = Modifier.size(32.dp), textAlign = TextAlign.Center)
+                Text(draftIconEmoji!!, fontSize = 24.sp, color = previewTint, modifier = Modifier.size(32.dp), textAlign = TextAlign.Center)
             } else {
                 val iconVector = IconRegistry.resolve(draftIconKey) ?: IconRegistry.defaultAgentIcon
                 Icon(iconVector, contentDescription = null, modifier = Modifier.size(32.dp), tint = previewTint)
@@ -426,7 +426,7 @@ private fun AgentEditorView(
                         modifier = Modifier.width(120.dp)
                     )
                     if (draftIconEmoji != null) {
-                        Text(draftIconEmoji!!, fontSize = 28.sp)
+                        Text(draftIconEmoji!!, fontSize = 28.sp, color = draftColor ?: MaterialTheme.colorScheme.primary)
                     }
                 }
             }

@@ -19,13 +19,16 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import app.auf.core.*
 import app.auf.core.resolveDisplayColor
 import app.auf.core.generated.ActionRegistry
+import app.auf.ui.components.IconRegistry
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.booleanOrNull
@@ -688,8 +691,13 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                                         onDismissRequest = { addAgentSubmenuExpanded = false }
                                     ) {
                                         unsubscribedAgents.forEach { (agentUuid, agentName) ->
+                                            // Resolve agent identity for icon and color
+                                            val agentIdentity = appState.identityRegistry.values.find { it.uuid == agentUuid }
+                                            val agentColor = agentIdentity?.resolveDisplayColor()
+                                                ?: MaterialTheme.colorScheme.primary
+
                                             DropdownMenuItem(
-                                                text = { Text(agentName) },
+                                                text = { Text(agentName, color = agentColor) },
                                                 onClick = {
                                                     store.dispatch("session", Action(
                                                         ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
@@ -701,7 +709,20 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                                                     addAgentSubmenuExpanded = false
                                                     menuExpanded = false
                                                 },
-                                                leadingIcon = { Icon(Icons.Default.Bolt, null) }
+                                                leadingIcon = {
+                                                    if (agentIdentity?.displayEmoji != null) {
+                                                        Text(
+                                                            agentIdentity.displayEmoji!!,
+                                                            fontSize = 20.sp,
+                                                            color = agentColor,
+                                                            textAlign = TextAlign.Center
+                                                        )
+                                                    } else {
+                                                        val iconVector = IconRegistry.resolve(agentIdentity?.displayIcon)
+                                                            ?: IconRegistry.defaultAgentIcon
+                                                        Icon(iconVector, null, tint = agentColor)
+                                                    }
+                                                }
                                             )
                                         }
                                     }
