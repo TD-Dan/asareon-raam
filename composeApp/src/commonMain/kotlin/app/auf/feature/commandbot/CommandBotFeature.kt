@@ -51,8 +51,8 @@ class CommandBotFeature(
         handle = "commandbot",
         localHandle = "commandbot",
         name = "CommandBot",
-        // Tied to the actual tertiary theme constant so it tracks palette changes.
-        displayColor = app.auf.ui.components.colorToHex(app.auf.ui.tertiaryDark)
+        displayColor = app.auf.ui.components.colorToHex(app.auf.ui.tertiaryDark),
+        displayIcon = "terminal"
     )
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
@@ -644,7 +644,7 @@ class CommandBotFeature(
      * Posts a feedback message to the originating session with CommandBot as the sender.
      */
     private fun postFeedbackToSession(sessionId: String, message: String, store: Store) {
-        val formattedMessage = "```result\n$message\n```"
+        val formattedMessage = "```text\n$message\n```"
         val feedbackAction = Action(
             name = ActionRegistry.Names.SESSION_POST,
             payload = buildJsonObject {

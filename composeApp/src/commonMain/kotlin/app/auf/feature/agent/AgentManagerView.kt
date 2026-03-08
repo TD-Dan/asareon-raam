@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -20,11 +21,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
 import app.auf.ui.components.CodeEditor
 import app.auf.ui.components.ColorPicker
+import app.auf.ui.components.IconRegistry
 import app.auf.ui.components.colorToHex
 import app.auf.ui.components.hexToColor
 import kotlinx.serialization.json.*
@@ -237,6 +241,11 @@ private fun AgentEditorView(
     var showColorPicker by remember { mutableStateOf(false) }
     val draftColor: Color? = draftColorHex?.let { hexToColor(it) }
 
+    // Icon: read from identity registry, draft locally
+    var draftIconKey by remember(agent.identity.uuid) { mutableStateOf(currentIdentity?.displayIcon) }
+    var draftIconEmoji by remember(agent.identity.uuid) { mutableStateOf(currentIdentity?.displayEmoji) }
+    var showIconPicker by remember { mutableStateOf(false) }
+
     val onDraftChanged: (AgentInstance) -> Unit = { draftAgent = it }
 
     val onSave = {
@@ -262,6 +271,11 @@ private fun AgentEditorView(
             // field to core.UPDATE_IDENTITY so it persists in the identity registry.
             if (draftColorHex != null) put("displayColor", draftColorHex)
             else put("displayColor", null as String?)
+            // Icon fields — always include to allow clearing
+            if (draftIconKey != null) put("displayIcon", draftIconKey)
+            else put("displayIcon", null as String?)
+            if (draftIconEmoji != null) put("displayEmoji", draftIconEmoji)
+            else put("displayEmoji", null as String?)
         }))
         store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", null as String?) }))
     }
@@ -328,6 +342,94 @@ private fun AgentEditorView(
                     showColorPicker = false
                 }
             )
+        }
+
+        // --- ROW 1.6: Icon Picker ---
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Current icon preview
+            val previewTint = draftColor ?: MaterialTheme.colorScheme.primary
+            if (draftIconEmoji != null) {
+                Text(draftIconEmoji!!, fontSize = 24.sp, modifier = Modifier.size(32.dp), textAlign = TextAlign.Center)
+            } else {
+                val iconVector = IconRegistry.resolve(draftIconKey) ?: IconRegistry.defaultAgentIcon
+                Icon(iconVector, contentDescription = null, modifier = Modifier.size(32.dp), tint = previewTint)
+            }
+            OutlinedButton(onClick = { showIconPicker = !showIconPicker }) {
+                Icon(Icons.Default.EmojiEmotions, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (showIconPicker) "Hide icon picker" else "Set icon")
+            }
+            if (draftIconKey != null || draftIconEmoji != null) {
+                TextButton(onClick = { draftIconKey = null; draftIconEmoji = null; showIconPicker = false }) {
+                    Text("Reset to default")
+                }
+            }
+        }
+        AnimatedVisibility(visible = showIconPicker) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small)
+                    .background(MaterialTheme.colorScheme.surfaceDim, MaterialTheme.shapes.small)
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Material Icons", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                // Icon grid — FlowRow of tinted icon buttons
+                val iconTint = draftColor ?: MaterialTheme.colorScheme.primary
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    IconRegistry.agentIcons.forEach { key ->
+                        val icon = IconRegistry.resolve(key) ?: return@forEach
+                        val isSelected = draftIconKey == key && draftIconEmoji == null
+                        IconButton(
+                            onClick = { draftIconKey = key; draftIconEmoji = null },
+                            modifier = Modifier.size(40.dp).then(
+                                if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                                else Modifier
+                            )
+                        ) {
+                            Icon(icon, contentDescription = key, tint = iconTint, modifier = Modifier.size(24.dp))
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                // Emoji input
+                Text("Or paste an emoji", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = draftIconEmoji ?: "",
+                        onValueChange = { input ->
+                            if (input.isBlank()) {
+                                draftIconEmoji = null
+                            } else {
+                                // Take first emoji/character cluster
+                                draftIconEmoji = input.take(2) // Most emoji are 1-2 chars
+                                draftIconKey = null
+                            }
+                        },
+                        label = { Text("Emoji") },
+                        singleLine = true,
+                        modifier = Modifier.width(120.dp)
+                    )
+                    if (draftIconEmoji != null) {
+                        Text(draftIconEmoji!!, fontSize = 28.sp)
+                    }
+                }
+            }
         }
 
         // --- ROW 2: Compute (Provider + Model) ---

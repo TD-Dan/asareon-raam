@@ -13,7 +13,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.auf.core.Action
 import app.auf.core.IdentityUUID
 import app.auf.core.Store
@@ -21,6 +23,7 @@ import app.auf.core.findByUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.core.resolveDisplayColor
 import app.auf.ui.components.CodeEditor
+import app.auf.ui.components.IconRegistry
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.delay
@@ -309,13 +312,26 @@ fun AgentControlCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Bolt,
-                    contentDescription = "Agent Icon",
-                    modifier = Modifier.size(48.dp),
-                    tint = if (agent.isAgentActive) accentColor
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                )
+                // Agent icon — emoji (full-color) or Material icon (tinted with accent)
+                val iconTint = if (agent.isAgentActive) accentColor
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+
+                if (agentIdentity?.displayEmoji != null) {
+                    Text(
+                        text = agentIdentity.displayEmoji!!,
+                        fontSize = 30.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.size(48.dp)
+                    )
+                } else {
+                    val iconVector = IconRegistry.resolve(agentIdentity?.displayIcon) ?: IconRegistry.defaultAgentIcon
+                    Icon(
+                        imageVector = iconVector,
+                        contentDescription = "Agent Icon",
+                        modifier = Modifier.size(48.dp),
+                        tint = iconTint
+                    )
+                }
 
                 // Name + Status — double-click enters edit mode (manager shortcut)
                 Column(

@@ -338,11 +338,15 @@ class AgentRuntimeFeature(
                 // Polymorphic infrastructure check.
                 dispatchEnsureInfrastructureForAll(agentState, store)
 
-                // Update identity if name or displayColor changed
+                // Update identity if name, displayColor, displayIcon, or displayEmoji changed
                 val nameChanged = oldAgent != null && oldAgent.identity.name != newAgent.identity.name
                 val newDisplayColor = action.payload?.get("displayColor")
-                val colorChanged = newDisplayColor != null  // key present = explicit update
-                if (nameChanged || colorChanged) {
+                val newDisplayIcon = action.payload?.get("displayIcon")
+                val newDisplayEmoji = action.payload?.get("displayEmoji")
+                val colorChanged = newDisplayColor != null
+                val iconChanged = newDisplayIcon != null
+                val emojiChanged = newDisplayEmoji != null
+                if (nameChanged || colorChanged || iconChanged || emojiChanged) {
                     val currentHandle = newAgent.identityHandle
                     if (currentHandle.handle.isNotBlank()) {
                         store.deferredDispatch(identity.handle, Action(
@@ -354,6 +358,16 @@ class AgentRuntimeFeature(
                                     val colorValue = newDisplayColor?.jsonPrimitive?.contentOrNull
                                     if (colorValue != null) put("displayColor", colorValue)
                                     else put("displayColor", null as String?)
+                                }
+                                if (iconChanged) {
+                                    val iconValue = newDisplayIcon?.jsonPrimitive?.contentOrNull
+                                    if (iconValue != null) put("displayIcon", iconValue)
+                                    else put("displayIcon", null as String?)
+                                }
+                                if (emojiChanged) {
+                                    val emojiValue = newDisplayEmoji?.jsonPrimitive?.contentOrNull
+                                    if (emojiValue != null) put("displayEmoji", emojiValue)
+                                    else put("displayEmoji", null as String?)
                                 }
                             }
                         ))

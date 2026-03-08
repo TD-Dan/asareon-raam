@@ -335,6 +335,14 @@
           "displayColor": {
             "type": ["string", "null"],
             "description": "Optional display color as '#RRGGBB' hex. Used for accent borders and name coloring in session cards."
+          },
+          "displayIcon": {
+            "type": ["string", "null"],
+            "description": "Optional Material icon key (e.g., 'bolt', 'pets', 'science'). Tinted with displayColor when rendered."
+          },
+          "displayEmoji": {
+            "type": ["string", "null"],
+            "description": "Optional emoji override (e.g., '🦊'). Takes precedence over displayIcon, renders full-color."
           }
         },
         "required": ["name"]
@@ -403,6 +411,14 @@
           "displayColor": {
             "type": ["string", "null"],
             "description": "Optional display color as '#RRGGBB' hex. If key is present, updates the color (null clears it). If key is absent, existing color is preserved."
+          },
+          "displayIcon": {
+            "type": ["string", "null"],
+            "description": "Optional Material icon key. Same presence semantics as displayColor."
+          },
+          "displayEmoji": {
+            "type": ["string", "null"],
+            "description": "Optional emoji override. Same presence semantics as displayColor."
           }
         },
         "required": ["handle", "newName"]

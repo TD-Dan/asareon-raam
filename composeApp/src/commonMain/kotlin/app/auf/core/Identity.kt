@@ -160,7 +160,21 @@ data class Identity(
      * Used for left-border accent in session cards and sender name coloring.
      * Null means "use theme defaults".
      */
-    val displayColor: String? = null
+    val displayColor: String? = null,
+
+    /**
+     * Material icon key for this identity (e.g., "bolt", "pets", "science").
+     * Resolved via [IconRegistry.resolve]. Tinted with [displayColor] when rendered.
+     * Null means use a context-appropriate default (bolt for agents, person for users).
+     */
+    val displayIcon: String? = null,
+
+    /**
+     * Emoji override for the identity icon (e.g., "🦊", "🤖").
+     * When non-null, takes precedence over [displayIcon] and renders full-color
+     * (not tinted). Identity color is communicated via accent bar and name instead.
+     */
+    val displayEmoji: String? = null
 ) {
     /** Convenience accessor for typed handle. */
     val identityHandle: IdentityHandle get() = IdentityHandle(handle)

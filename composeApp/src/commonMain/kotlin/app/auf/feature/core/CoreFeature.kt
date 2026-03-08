@@ -47,13 +47,17 @@ class CoreFeature(
         val localHandle: String? = null,
         val name: String,
         val uuid: String? = null,
-        val displayColor: String? = null
+        val displayColor: String? = null,
+        val displayIcon: String? = null,
+        val displayEmoji: String? = null
     )
     @Serializable private data class UnregisterIdentityPayload(val handle: String)
     @Serializable private data class UpdateIdentityPayload(
         val handle: String,
         val newName: String,
-        val displayColor: String? = null
+        val displayColor: String? = null,
+        val displayIcon: String? = null,
+        val displayEmoji: String? = null
     )
 
     // --- Permission management payload classes (Phase 1) ---
@@ -537,10 +541,16 @@ class CoreFeature(
                     val existingByUUID = registry.findByUUID(payload.uuid)
                     if (existingByUUID != null) {
                         // Update name if it changed, but keep the existing handle and permissions.
-                        val reclaimed = if (existingByUUID.name != payload.name || payload.displayColor != existingByUUID.displayColor) {
+                        val reclaimed = if (existingByUUID.name != payload.name
+                            || payload.displayColor != existingByUUID.displayColor
+                            || payload.displayIcon != existingByUUID.displayIcon
+                            || payload.displayEmoji != existingByUUID.displayEmoji
+                        ) {
                             existingByUUID.copy(
                                 name = payload.name,
-                                displayColor = payload.displayColor ?: existingByUUID.displayColor
+                                displayColor = payload.displayColor ?: existingByUUID.displayColor,
+                                displayIcon = payload.displayIcon ?: existingByUUID.displayIcon,
+                                displayEmoji = payload.displayEmoji ?: existingByUUID.displayEmoji
                             )
                         } else {
                             existingByUUID
@@ -583,7 +593,9 @@ class CoreFeature(
                     name = payload.name,
                     parentHandle = parentHandle,
                     registeredAt = platformDependencies.currentTimeMillis(),
-                    displayColor = payload.displayColor
+                    displayColor = payload.displayColor,
+                    displayIcon = payload.displayIcon,
+                    displayEmoji = payload.displayEmoji
                 )
 
                 // Delegate storage to the Store
@@ -699,11 +711,17 @@ class CoreFeature(
                     localHandle = finalLocalHandle,
                     handle = newFullHandle,
                     name = payload.newName,
-                    // Carry displayColor through if explicitly provided in payload,
-                    // otherwise preserve the existing value.
+                    // Carry display fields through if explicitly provided in payload,
+                    // otherwise preserve the existing values.
                     displayColor = if (action.payload?.containsKey("displayColor") == true)
                         payload.displayColor
-                    else existingIdentity.displayColor
+                    else existingIdentity.displayColor,
+                    displayIcon = if (action.payload?.containsKey("displayIcon") == true)
+                        payload.displayIcon
+                    else existingIdentity.displayIcon,
+                    displayEmoji = if (action.payload?.containsKey("displayEmoji") == true)
+                        payload.displayEmoji
+                    else existingIdentity.displayEmoji
                 )
 
                 // Atomic swap: remove old handle, add new handle (may be the same if name→slug didn't change)
