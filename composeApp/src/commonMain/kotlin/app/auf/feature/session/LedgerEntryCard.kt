@@ -109,7 +109,9 @@ fun LedgerEntryCard(
 
             Column(
                 modifier = Modifier.weight(1f).padding(
-                    start = 16.dp, end = 16.dp, bottom = 16.dp,
+                    start = 16.dp, end = 16.dp,
+                    // Tight bottom when collapsed — no wasted space below the header
+                    bottom = if (uiState.isCollapsed) 4.dp else 16.dp,
                     top = if (showSenderInfo) 0.dp else 8.dp
                 )
             ) {
@@ -175,8 +177,8 @@ fun LedgerEntryCard(
                         }
                     }
 
-                    // Content gap
-                    Spacer(Modifier.height(8.dp))
+                    // Content gap — only when expanded
+                    Spacer(Modifier.height(if (uiState.isCollapsed) 0.dp else 8.dp))
 
                 } else if (showChrome) {
                     // ── Consecutive on hover: full header pops in ────────
@@ -276,6 +278,9 @@ private fun ChromeOverlay(
             state = remember { TooltipState() }
         ) {
             IconButton(onClick = {
+                if (uiState.isCollapsed) {
+                    dispatchToggleCollapsed(store, session, entry)
+                }
                 store.dispatch("session", Action(
                     ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_RAW_VIEW,
                     buildJsonObject {
