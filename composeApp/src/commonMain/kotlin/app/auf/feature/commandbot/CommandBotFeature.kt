@@ -644,7 +644,7 @@ class CommandBotFeature(
      * Posts a feedback message to the originating session with CommandBot as the sender.
      */
     private fun postFeedbackToSession(sessionId: String, message: String, store: Store) {
-        val formattedMessage = "```text\n$message\n```"
+        val formattedMessage = "```result\n$message\n```"
         val feedbackAction = Action(
             name = ActionRegistry.Names.SESSION_POST,
             payload = buildJsonObject {
