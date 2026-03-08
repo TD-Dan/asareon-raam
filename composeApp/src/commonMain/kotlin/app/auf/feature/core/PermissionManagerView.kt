@@ -148,6 +148,16 @@ fun PermissionManagerView(store: Store) {
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
+        // Help
+        Text(
+            "Control what each identity is allowed to do. Feature defaults (bold rows) apply to all " +
+                    "children of that feature unless explicitly overridden. Grant permissions to individual " +
+                    "agents or users to override their parent's defaults.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
         // Legend
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
