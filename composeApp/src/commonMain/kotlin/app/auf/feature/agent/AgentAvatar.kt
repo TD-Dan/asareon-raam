@@ -2,6 +2,7 @@ package app.auf.feature.agent
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -10,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import app.auf.core.Action
@@ -17,6 +19,7 @@ import app.auf.core.IdentityUUID
 import app.auf.core.Store
 import app.auf.core.findByUUID
 import app.auf.core.generated.ActionRegistry
+import app.auf.core.resolveDisplayColor
 import app.auf.ui.components.CodeEditor
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
@@ -282,285 +285,303 @@ fun AgentControlCard(
 
     val agentUuidStr = agent.identityUUID.uuid
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // ── Header Row ───────────────────────────────────────────────
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Bolt,
-                contentDescription = "Agent Icon",
-                modifier = Modifier.size(48.dp),
-                tint = if (agent.isAgentActive) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-            )
+    // Resolve display color from identity registry
+    val agentIdentity = identityRegistry[agent.identity.handle]
+    val accentColor: Color = agentIdentity?.resolveDisplayColor()
+        ?: if (agent.isAgentActive) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.outlineVariant
+    val nameColor: Color = agentIdentity?.resolveDisplayColor()
+        ?: MaterialTheme.colorScheme.onSurface
 
-            // Name + Status — double-click enters edit mode (manager shortcut)
-            Column(
-                modifier = Modifier.weight(1f).combinedClickable(
-                    onClick = { localShowExtendedInfo = !localShowExtendedInfo },
-                    onDoubleClick = { onEditRequest?.invoke() }
-                )
+    Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+        // ── Left accent bar ──────────────────────────────────────────
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .fillMaxHeight()
+                .background(accentColor)
+        )
+
+        Column(modifier = Modifier.weight(1f)) {
+            // ── Header Row ───────────────────────────────────────────────
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(agent.identity.name, style = MaterialTheme.typography.titleMedium)
-                Text("Status: $statusText", style = MaterialTheme.typography.bodyMedium)
-                if (statusInfo.status == AgentStatus.ERROR && statusInfo.errorMessage != null) {
-                    Text(
-                        text = statusInfo.errorMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-                if (statusInfo.status == AgentStatus.RATE_LIMITED && statusInfo.errorMessage != null) {
-                    Text(
-                        text = statusInfo.errorMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-            }
+                Icon(
+                    imageVector = Icons.Default.Bolt,
+                    contentDescription = "Agent Icon",
+                    modifier = Modifier.size(48.dp),
+                    tint = if (agent.isAgentActive) accentColor
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                )
 
-            // ── Runtime Controls ─────────────────────────────────────
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Eye toggle for extended info
-                IconButton(onClick = {
-                    localShowExtendedInfo = !localShowExtendedInfo
-                }) {
-                    Icon(
-                        imageVector = if (showExtendedInfo) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                        contentDescription = "Toggle Details",
-                        tint = if (showExtendedInfo) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                // Name + Status — double-click enters edit mode (manager shortcut)
+                Column(
+                    modifier = Modifier.weight(1f).combinedClickable(
+                        onClick = { localShowExtendedInfo = !localShowExtendedInfo },
+                        onDoubleClick = { onEditRequest?.invoke() }
                     )
-                }
-
-                // Kebab menu — contextual: manager vs avatar
-                Box {
-                    IconButton(onClick = { menuExpanded = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                ) {
+                    Text(agent.identity.name, style = MaterialTheme.typography.titleMedium, color = nameColor)
+                    Text("Status: $statusText", style = MaterialTheme.typography.bodyMedium)
+                    if (statusInfo.status == AgentStatus.ERROR && statusInfo.errorMessage != null) {
+                        Text(
+                            text = statusInfo.errorMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
                     }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false }
-                    ) {
-                        // Edit Agent — always available
-                        DropdownMenuItem(
-                            text = { Text("Edit Agent") },
-                            onClick = {
-                                if (onEditRequest != null) {
-                                    onEditRequest()
-                                } else {
-                                    // Avatar context: navigate to manager and open editor
-                                    store.dispatch("agent", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.manager") }))
-                                    store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agentUuidStr) }))
-                                }
-                                menuExpanded = false
-                            },
-                            leadingIcon = { Icon(Icons.Default.Edit, null) }
+                    if (statusInfo.status == AgentStatus.RATE_LIMITED && statusInfo.errorMessage != null) {
+                        Text(
+                            text = statusInfo.errorMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.padding(top = 4.dp)
                         )
+                    }
+                }
 
-                        // NVRAM — always available
-                        DropdownMenuItem(
-                            text = { Text(if (isViewingNvram) "Hide NVRAM" else "Inspect NVRAM") },
-                            onClick = {
-                                localShowNvram = !localShowNvram
-                                menuExpanded = false
-                            },
-                            leadingIcon = { Icon(Icons.Default.Memory, null) }
+                // ── Runtime Controls ─────────────────────────────────────
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Eye toggle for extended info
+                    IconButton(onClick = {
+                        localShowExtendedInfo = !localShowExtendedInfo
+                    }) {
+                        Icon(
+                            imageVector = if (showExtendedInfo) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = "Toggle Details",
+                            tint = if (showExtendedInfo) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                         )
+                    }
 
-                        // ── Avatar-only items ────────────────────────
-                        if (!showManagementActions) {
+                    // Kebab menu — contextual: manager vs avatar
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false }
+                        ) {
+                            // Edit Agent — always available
                             DropdownMenuItem(
-                                text = { Text("Preview Turn") },
+                                text = { Text("Edit Agent") },
                                 onClick = {
-                                    store.dispatch("agent", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
-                                        put("agentId", agentUuidStr)
-                                        put("preview", true)
-                                    }))
+                                    if (onEditRequest != null) {
+                                        onEditRequest()
+                                    } else {
+                                        // Avatar context: navigate to manager and open editor
+                                        store.dispatch("agent", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.manager") }))
+                                        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agentUuidStr) }))
+                                    }
                                     menuExpanded = false
                                 },
-                                leadingIcon = { Icon(Icons.Default.Visibility, null) },
-                                enabled = canInitiateTurn
+                                leadingIcon = { Icon(Icons.Default.Edit, null) }
                             )
-                            if (sessionUUID != null) {
+
+                            // NVRAM — always available
+                            DropdownMenuItem(
+                                text = { Text(if (isViewingNvram) "Hide NVRAM" else "Inspect NVRAM") },
+                                onClick = {
+                                    localShowNvram = !localShowNvram
+                                    menuExpanded = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.Memory, null) }
+                            )
+
+                            // ── Avatar-only items ────────────────────────
+                            if (!showManagementActions) {
                                 DropdownMenuItem(
-                                    text = { Text("Remove from session") },
+                                    text = { Text("Preview Turn") },
                                     onClick = {
-                                        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION, buildJsonObject {
+                                        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                                             put("agentId", agentUuidStr)
-                                            put("sessionId", sessionUUID)
+                                            put("preview", true)
                                         }))
                                         menuExpanded = false
                                     },
-                                    leadingIcon = { Icon(Icons.Default.LinkOff, null) }
+                                    leadingIcon = { Icon(Icons.Default.Visibility, null) },
+                                    enabled = canInitiateTurn
                                 )
+                                if (sessionUUID != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("Remove from session") },
+                                        onClick = {
+                                            store.dispatch("agent", Action(ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION, buildJsonObject {
+                                                put("agentId", agentUuidStr)
+                                                put("sessionId", sessionUUID)
+                                            }))
+                                            menuExpanded = false
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.LinkOff, null) }
+                                    )
+                                }
+                            }
+
+                            // ── Manager-only items ───────────────────────
+                            if (showManagementActions) {
+                                if (onCloneRequest != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("Clone Agent") },
+                                        onClick = {
+                                            onCloneRequest()
+                                            menuExpanded = false
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
+                                    )
+                                }
+                                if (onDeleteRequest != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("Delete Agent") },
+                                        onClick = {
+                                            onDeleteRequest()
+                                            menuExpanded = false
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Delete, null) }
+                                    )
+                                }
                             }
                         }
+                    }
 
-                        // ── Manager-only items ───────────────────────
-                        if (showManagementActions) {
-                            if (onCloneRequest != null) {
-                                DropdownMenuItem(
-                                    text = { Text("Clone Agent") },
-                                    onClick = {
-                                        onCloneRequest()
-                                        menuExpanded = false
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
-                                )
-                            }
-                            if (onDeleteRequest != null) {
-                                DropdownMenuItem(
-                                    text = { Text("Delete Agent") },
-                                    onClick = {
-                                        onDeleteRequest()
-                                        menuExpanded = false
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Delete, null) }
-                                )
-                            }
+                    // Power toggle
+                    val activeSwitchTooltipState = remember { TooltipState() }
+                    TooltipBox(
+                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                        tooltip = { PlainTooltip { Text("Toggle Active State") } },
+                        state = activeSwitchTooltipState
+                    ) {
+                        IconButton(onClick = {
+                            store.dispatch("agent", Action(ActionRegistry.Names.AGENT_TOGGLE_ACTIVE, buildJsonObject { put("agentId", agentUuidStr) }))
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.PowerSettingsNew,
+                                contentDescription = "Toggle Active State",
+                                tint = if (agent.isAgentActive) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            )
                         }
                     }
-                }
 
-                // Power toggle
-                val activeSwitchTooltipState = remember { TooltipState() }
-                TooltipBox(
-                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                    tooltip = { PlainTooltip { Text("Toggle Active State") } },
-                    state = activeSwitchTooltipState
-                ) {
-                    IconButton(onClick = {
-                        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_TOGGLE_ACTIVE, buildJsonObject { put("agentId", agentUuidStr) }))
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.PowerSettingsNew,
-                            contentDescription = "Toggle Active State",
-                            tint = if (agent.isAgentActive) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                        )
-                    }
-                }
-
-                // Auto-mode toggle
-                val autoModeSwitchTooltipState = remember { TooltipState() }
-                TooltipBox(
-                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                    tooltip = { PlainTooltip { Text("Toggle Automatic Mode") } },
-                    state = autoModeSwitchTooltipState
-                ) {
-                    IconButton(onClick = {
-                        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject { put("agentId", agentUuidStr) }))
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Autorenew,
-                            contentDescription = "Toggle Automatic Mode",
-                            tint = if (agent.automaticMode) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-                        )
-                    }
-                }
-
-                // Trigger / Cancel
-                if (statusInfo.status == AgentStatus.PROCESSING) {
-                    Button(
-                        onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agentUuidStr) })) },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                    // Auto-mode toggle
+                    val autoModeSwitchTooltipState = remember { TooltipState() }
+                    TooltipBox(
+                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                        tooltip = { PlainTooltip { Text("Toggle Automatic Mode") } },
+                        state = autoModeSwitchTooltipState
                     ) {
-                        Icon(Icons.Default.Cancel, contentDescription = "Cancel Turn")
+                        IconButton(onClick = {
+                            store.dispatch("agent", Action(ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject { put("agentId", agentUuidStr) }))
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Autorenew,
+                                contentDescription = "Toggle Automatic Mode",
+                                tint = if (agent.automaticMode) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                            )
+                        }
                     }
-                } else {
-                    Button(
-                        onClick = {
-                            store.dispatch("agent", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
-                                put("agentId", agentUuidStr)
-                                put("preview", false)
-                            }))
-                        },
-                        enabled = canInitiateTurn
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Trigger Turn")
+
+                    // Trigger / Cancel
+                    if (statusInfo.status == AgentStatus.PROCESSING) {
+                        Button(
+                            onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agentUuidStr) })) },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                        ) {
+                            Icon(Icons.Default.Cancel, contentDescription = "Cancel Turn")
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                store.dispatch("agent", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
+                                    put("agentId", agentUuidStr)
+                                    put("preview", false)
+                                }))
+                            },
+                            enabled = canInitiateTurn
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = "Trigger Turn")
+                        }
                     }
                 }
             }
-        }
 
-        // ── Extended Info Drawer ─────────────────────────────────────
-        AnimatedVisibility(visible = showExtendedInfo) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                val sessionNames = agent.subscribedSessionIds.mapNotNull { agentState.subscribableSessionNames[it] }
-                val sessionSummary = when {
-                    sessionNames.isEmpty() -> "Not Subscribed"
-                    sessionNames.size == 1 -> sessionNames.first()
-                    else -> sessionNames.joinToString(", ")
+            // ── Extended Info Drawer ─────────────────────────────────────
+            AnimatedVisibility(visible = showExtendedInfo) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    val sessionNames = agent.subscribedSessionIds.mapNotNull { agentState.subscribableSessionNames[it] }
+                    val sessionSummary = when {
+                        sessionNames.isEmpty() -> "Not Subscribed"
+                        sessionNames.size == 1 -> sessionNames.first()
+                        else -> sessionNames.joinToString(", ")
+                    }
+                    Text("Subscribed: $sessionSummary", style = MaterialTheme.typography.bodyMedium)
+
+                    if (agent.outputSessionId != null) {
+                        val outputSessionName = identityRegistry.findByUUID(agent.outputSessionId)?.name
+                            ?: agentState.subscribableSessionNames[agent.outputSessionId]
+                            ?: agent.outputSessionId.uuid
+                        Text("Primary Session: $outputSessionName", style = MaterialTheme.typography.bodyMedium)
+                    }
+
+                    val kgId = agent.strategyConfig["knowledgeGraphId"]
+                        ?.let { it as? JsonPrimitive }
+                        ?.contentOrNull
+                    if (kgId != null) {
+                        val hkgName = agentState.knowledgeGraphNames[kgId] ?: "Unknown"
+                        Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium)
+                    }
+
+                    Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Strategy: ${agent.cognitiveStrategyId}", style = MaterialTheme.typography.bodyMedium)
+
+                    // Token usage from last request
+                    val lastInput = statusInfo.lastInputTokens
+                    val lastOutput = statusInfo.lastOutputTokens
+                    if (lastInput != null || lastOutput != null) {
+                        Text(
+                            text = buildString {
+                                append("Last request: ")
+                                if (lastInput != null) append("${formatTokenCount(lastInput)} input")
+                                if (lastInput != null && lastOutput != null) append(", ")
+                                if (lastOutput != null) append("${formatTokenCount(lastOutput)} output")
+                                append(" tokens")
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
                 }
-                Text("Subscribed: $sessionSummary", style = MaterialTheme.typography.bodyMedium)
+            }
 
-                if (agent.outputSessionId != null) {
-                    val outputSessionName = identityRegistry.findByUUID(agent.outputSessionId)?.name
-                        ?: agentState.subscribableSessionNames[agent.outputSessionId]
-                        ?: agent.outputSessionId.uuid
-                    Text("Primary Session: $outputSessionName", style = MaterialTheme.typography.bodyMedium)
-                }
-
-                val kgId = agent.strategyConfig["knowledgeGraphId"]
-                    ?.let { it as? JsonPrimitive }
-                    ?.contentOrNull
-                if (kgId != null) {
-                    val hkgName = agentState.knowledgeGraphNames[kgId] ?: "Unknown"
-                    Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium)
-                }
-
-                Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
-                Text("Strategy: ${agent.cognitiveStrategyId}", style = MaterialTheme.typography.bodyMedium)
-
-                // Token usage from last request
-                val lastInput = statusInfo.lastInputTokens
-                val lastOutput = statusInfo.lastOutputTokens
-                if (lastInput != null || lastOutput != null) {
+            // ── NVRAM Drawer ─────────────────────────────────────────────
+            AnimatedVisibility(visible = isViewingNvram) {
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Text(
-                        text = buildString {
-                            append("Last request: ")
-                            if (lastInput != null) append("${formatTokenCount(lastInput)} input")
-                            if (lastInput != null && lastOutput != null) append(", ")
-                            if (lastOutput != null) append("${formatTokenCount(lastOutput)} output")
-                            append(" tokens")
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 2.dp)
+                        "Cognitive State (NVRAM)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    val nvramText = remember(agent.cognitiveState) {
+                        prettyJson.encodeToString(agent.cognitiveState)
+                    }
+                    CodeEditor(
+                        value = nvramText,
+                        onValueChange = {},
+                        readOnly = true,
+                        modifier = Modifier.height(150.dp)
                     )
                 }
             }
-        }
-
-        // ── NVRAM Drawer ─────────────────────────────────────────────
-        AnimatedVisibility(visible = isViewingNvram) {
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text(
-                    "Cognitive State (NVRAM)",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary
-                )
-                Spacer(Modifier.height(4.dp))
-                val nvramText = remember(agent.cognitiveState) {
-                    prettyJson.encodeToString(agent.cognitiveState)
-                }
-                CodeEditor(
-                    value = nvramText,
-                    onValueChange = {},
-                    readOnly = true,
-                    modifier = Modifier.height(150.dp)
-                )
-            }
-        }
-    }
+        }  // Column
+    }  // Row (accent bar)
 }

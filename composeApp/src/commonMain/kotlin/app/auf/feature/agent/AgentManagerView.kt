@@ -1,10 +1,13 @@
 package app.auf.feature.agent
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -13,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontWeight
@@ -20,6 +24,9 @@ import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
 import app.auf.ui.components.CodeEditor
+import app.auf.ui.components.ColorPicker
+import app.auf.ui.components.colorToHex
+import app.auf.ui.components.hexToColor
 import kotlinx.serialization.json.*
 
 // ============================================================================
@@ -223,6 +230,13 @@ private fun AgentEditorView(
     var autoWaitTimeInput by remember(agent.identity.uuid) { mutableStateOf(agent.autoWaitTimeSeconds.toString()) }
     var autoMaxWaitTimeInput by remember(agent.identity.uuid) { mutableStateOf(agent.autoMaxWaitTimeSeconds.toString()) }
 
+    // Color: read from identity registry (authoritative), draft locally
+    val identityRegistry = store.state.collectAsState().value.identityRegistry
+    val currentIdentity = identityRegistry[agent.identity.handle]
+    var draftColorHex by remember(agent.identity.uuid) { mutableStateOf(currentIdentity?.displayColor) }
+    var showColorPicker by remember { mutableStateOf(false) }
+    val draftColor: Color? = draftColorHex?.let { hexToColor(it) }
+
     val onDraftChanged: (AgentInstance) -> Unit = { draftAgent = it }
 
     val onSave = {
@@ -243,6 +257,11 @@ private fun AgentEditorView(
             autoWaitTimeInput.toIntOrNull()?.let { put("autoWaitTimeSeconds", it) }
             autoMaxWaitTimeInput.toIntOrNull()?.let { put("autoMaxWaitTimeSeconds", it) }
             put("resources", Json.encodeToJsonElement(draftAgent.resources))
+            // displayColor: include when explicitly set or cleared.
+            // TODO: AgentFeature's AGENT_UPDATE_CONFIG handler must propagate this
+            // field to core.UPDATE_IDENTITY so it persists in the identity registry.
+            if (draftColorHex != null) put("displayColor", draftColorHex)
+            else put("displayColor", null as String?)
         }))
         store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", null as String?) }))
     }
@@ -271,6 +290,44 @@ private fun AgentEditorView(
             Box(Modifier.weight(1f)) {
                 StrategySelector(draftAgent, onDraftChanged)
             }
+        }
+
+        // --- ROW 1.5: Display Color ---
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Swatch preview
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(draftColor ?: MaterialTheme.colorScheme.primary)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+            )
+            OutlinedButton(onClick = { showColorPicker = !showColorPicker }) {
+                Icon(Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (showColorPicker) "Hide color picker" else "Set color")
+            }
+            if (draftColorHex != null) {
+                TextButton(onClick = { draftColorHex = null; showColorPicker = false }) {
+                    Text("Reset to default")
+                }
+            }
+        }
+        AnimatedVisibility(visible = showColorPicker) {
+            ColorPicker(
+                initialColor = draftColor ?: MaterialTheme.colorScheme.primary,
+                onConfirm = { color ->
+                    draftColorHex = colorToHex(color)
+                    showColorPicker = false
+                },
+                onCancel = {
+                    showColorPicker = false
+                }
+            )
         }
 
         // --- ROW 2: Compute (Provider + Model) ---

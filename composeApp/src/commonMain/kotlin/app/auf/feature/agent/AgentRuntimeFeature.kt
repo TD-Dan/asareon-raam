@@ -11,6 +11,8 @@ import androidx.compose.runtime.getValue
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
 import app.auf.core.generated.ActionRegistry
+import app.auf.ui.components.colorToHex
+import app.auf.ui.components.hslToColor
 import app.auf.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -225,11 +227,19 @@ class AgentRuntimeFeature(
                 strategy.onAgentRegistered(agentToSave, store)
 
                 // Register agent identity (no localHandle — CoreFeature generates via slugifyName)
+                // Auto-generate a display color using golden-angle hue rotation from the
+                // primary teal (H≈182, S≈0.66, L≈0.61). Each agent gets a distinct hue that
+                // matches the design language's vibrancy.
+                val agentIndex = agentState.agents.size - 1 // -1 because new agent is already in state
+                val autoHue = ((agentIndex * 137.5f) % 360f)
+                val autoColor = colorToHex(hslToColor(autoHue, 0.66f, 0.61f))
+
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.CORE_REGISTER_IDENTITY,
                     buildJsonObject {
                         put("uuid", agentToSave.identityUUID.uuid)
                         put("name", agentToSave.identity.name)
+                        put("displayColor", autoColor)
                     }
                 ))
 
@@ -328,8 +338,11 @@ class AgentRuntimeFeature(
                 // Polymorphic infrastructure check.
                 dispatchEnsureInfrastructureForAll(agentState, store)
 
-                // If agent name changed, update identity atomically
-                if (oldAgent != null && oldAgent.identity.name != newAgent.identity.name) {
+                // Update identity if name or displayColor changed
+                val nameChanged = oldAgent != null && oldAgent.identity.name != newAgent.identity.name
+                val newDisplayColor = action.payload?.get("displayColor")
+                val colorChanged = newDisplayColor != null  // key present = explicit update
+                if (nameChanged || colorChanged) {
                     val currentHandle = newAgent.identityHandle
                     if (currentHandle.handle.isNotBlank()) {
                         store.deferredDispatch(identity.handle, Action(
@@ -337,6 +350,11 @@ class AgentRuntimeFeature(
                             buildJsonObject {
                                 put("handle", currentHandle.handle)
                                 put("newName", newAgent.identity.name)
+                                if (colorChanged) {
+                                    val colorValue = newDisplayColor?.jsonPrimitive?.contentOrNull
+                                    if (colorValue != null) put("displayColor", colorValue)
+                                    else put("displayColor", null as String?)
+                                }
                             }
                         ))
                     }

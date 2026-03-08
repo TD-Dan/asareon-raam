@@ -24,6 +24,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import app.auf.core.*
+import app.auf.core.resolveDisplayColor
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.launch
@@ -245,8 +246,7 @@ private fun LedgerPane(
                 val isCurrentUserMessage = entry.senderId == activeUserId
                 val showSenderInfo = showSenderInfoFlags.getOrElse(index) { true }
 
-                // Phase 2 will resolve Identity.displayColor here:
-                // val senderColor = identityRegistry[entry.senderId]?.displayColor?.let { Color(it) }
+                val senderColor = identityRegistry[entry.senderId]?.resolveDisplayColor()
 
                 LedgerEntryCard(
                     store = store,
@@ -257,7 +257,8 @@ private fun LedgerPane(
                     isEditingThisMessage = sessionState?.editingMessageId == entry.id,
                     editingContent = sessionState?.editingMessageContent,
                     platformDependencies = platformDependencies,
-                    showSenderInfo = showSenderInfo
+                    showSenderInfo = showSenderInfo,
+                    senderColor = senderColor
                 )
             }
             Spacer(Modifier.height(12.dp))
