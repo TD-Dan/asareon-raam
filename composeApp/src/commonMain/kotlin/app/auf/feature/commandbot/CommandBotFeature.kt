@@ -46,7 +46,14 @@ import kotlinx.serialization.json.put
 class CommandBotFeature(
     private val platformDependencies: PlatformDependencies
 ) : Feature {
-    override val identity: Identity = Identity(uuid = null, handle = "commandbot", localHandle = "commandbot", name="CommandBot")
+    override val identity: Identity = Identity(
+        uuid = null,
+        handle = "commandbot",
+        localHandle = "commandbot",
+        name = "CommandBot",
+        // Tied to the actual tertiary theme constant so it tracks palette changes.
+        displayColor = app.auf.ui.components.colorToHex(app.auf.ui.tertiaryDark)
+    )
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
 
