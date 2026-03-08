@@ -11,6 +11,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
@@ -256,6 +258,18 @@ private fun ChromeOverlay(
         modifier = modifier.background(cardBgColor),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Collapse chevron — hover-only affordance, right-aligned with other chrome
+        IconButton(
+            onClick = { dispatchToggleCollapsed(store, session, entry) },
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                imageVector = if (uiState.isCollapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                contentDescription = if (uiState.isCollapsed) "Expand" else "Collapse",
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         TooltipBox(
             positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
             tooltip = { PlainTooltip { Text("Toggle Raw Content") } },
