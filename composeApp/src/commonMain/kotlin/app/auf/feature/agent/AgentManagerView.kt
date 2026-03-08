@@ -1,7 +1,11 @@
 package app.auf.feature.agent
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
 import app.auf.ui.components.CodeEditor
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
 // ============================================================================
@@ -119,7 +122,19 @@ private fun AgentListView(
     }
 
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), Arrangement.End) {
+        var globalShowExtendedInfo by remember { mutableStateOf(false) }
+
+        Row(Modifier.fillMaxWidth().padding(16.dp), Arrangement.End, Alignment.CenterVertically) {
+            // Global eye toggle — expand/collapse all agent details at once
+            IconButton(onClick = { globalShowExtendedInfo = !globalShowExtendedInfo }) {
+                Icon(
+                    imageVector = if (globalShowExtendedInfo) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                    contentDescription = if (globalShowExtendedInfo) "Collapse All Details" else "Expand All Details",
+                    tint = if (globalShowExtendedInfo) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.width(8.dp))
             Button(onClick = {
                 store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CREATE, buildJsonObject {
                     put("name", "New Agent")
@@ -145,7 +160,8 @@ private fun AgentListView(
                         store = store,
                         onDeleteRequest = { agentToDelete = it },
                         onEditRequest = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.identity.uuid) })) },
-                        platformDependencies = platformDependencies
+                        platformDependencies = platformDependencies,
+                        showExtendedInfo = globalShowExtendedInfo
                     )
                 }
             }
@@ -161,114 +177,57 @@ private fun AgentCard(
     store: Store,
     onDeleteRequest: (AgentInstance) -> Unit,
     onEditRequest: () -> Unit,
-    platformDependencies: app.auf.util.PlatformDependencies
+    platformDependencies: app.auf.util.PlatformDependencies,
+    showExtendedInfo: Boolean = false
 ) {
-    Card(Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
-        Column(Modifier.padding(16.dp), Arrangement.spacedBy(12.dp)) {
-            if (isEditing) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val cardBgColor = MaterialTheme.colorScheme.surfaceContainerLow
+
+    Card(
+        modifier = Modifier.fillMaxWidth().hoverable(interactionSource),
+        colors = CardDefaults.cardColors(containerColor = cardBgColor)
+    ) {
+        if (isEditing) {
+            Column(Modifier.padding(16.dp)) {
                 AgentEditorView(agent, agentState, store)
-            } else {
-                AgentReadOnlyView(agent, agentState, store, platformDependencies)
             }
+        } else {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                // Base layer: shared AgentControlCard
+                AgentControlCard(
+                    agent = agent,
+                    agentState = agentState,
+                    sessionUUID = null,
+                    store = store,
+                    platformDependencies = platformDependencies,
+                    showExtendedInfoOverride = showExtendedInfo
+                )
 
-            HorizontalDivider()
-            if (!isEditing) {
-                Row(Modifier.fillMaxWidth(), Arrangement.End, Alignment.CenterVertically) {
-                    IconButton(onClick = onEditRequest) {
-                        Icon(Icons.Default.Edit, "Edit Agent")
-                    }
-                    IconButton(onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CLONE, buildJsonObject { put("agentId", agent.identity.uuid) })) }) {
-                        Icon(Icons.Default.ContentCopy, "Clone Agent")
-                    }
-                    IconButton(onClick = { onDeleteRequest(agent) }) {
-                        Icon(Icons.Default.Delete, "Delete Agent")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AgentReadOnlyView(
-    agent: AgentInstance,
-    agentState: AgentRuntimeState,
-    store: Store,
-    platformDependencies: app.auf.util.PlatformDependencies
-) {
-    val identityRegistry = store.state.collectAsState().value.identityRegistry
-    val statusInfo = agentState.agentStatuses[agent.identityUUID] ?: AgentStatusInfo()
-
-    var showInternals by remember { mutableStateOf(false) }
-    val hasKnowledgeGraph = agent.getKnowledgeGraphId() != null
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        AgentControlCard(agent, statusInfo, null, store, platformDependencies)
-
-        SelectionContainer {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                // Show all subscribed sessions
-                val sessionNames = agent.subscribedSessionIds.mapNotNull { agentState.subscribableSessionNames[it] }
-                val sessionSummary = when {
-                    sessionNames.isEmpty() -> "Not Subscribed"
-                    sessionNames.size == 1 -> sessionNames.first()
-                    else -> sessionNames.joinToString(", ")
-                }
-                Text("Subscribed: $sessionSummary", style = MaterialTheme.typography.bodyMedium)
-
-                // Show primary/output session for all agents that have one
-                if (agent.outputSessionId != null) {
-                    val outputSessionName = agent.outputSessionId.let {
-                        identityRegistry.findByUUID(it)?.name
-                            ?: agentState.subscribableSessionNames[it]
-                            ?: it.uuid
-                    }
-                    Text("Primary Session: $outputSessionName", style = MaterialTheme.typography.bodyMedium)
-                }
-
-                // Knowledge Graph — only for agents that have one assigned
-                if (hasKnowledgeGraph) {
-                    val hkgName = agent.getKnowledgeGraphId()?.let { agentState.knowledgeGraphNames[it] } ?: "Unknown"
-                    Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium)
-                }
-
-                Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Strategy: ${agent.cognitiveStrategyId}", style = MaterialTheme.typography.bodyMedium)
-                    Spacer(Modifier.width(8.dp))
-                    IconButton(
-                        onClick = { showInternals = !showInternals },
-                        modifier = Modifier.size(20.dp)
+                // Hover overlay: edit / clone / delete — top-right
+                if (isHovered) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
+                            .background(cardBgColor),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            if (showInternals) Icons.Default.ExpandLess else Icons.Default.Info,
-                            contentDescription = "Inspect State",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        IconButton(onClick = onEditRequest) {
+                            Icon(Icons.Default.Edit, "Edit Agent")
+                        }
+                        IconButton(onClick = {
+                            store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CLONE, buildJsonObject {
+                                put("agentId", agent.identity.uuid)
+                            }))
+                        }) {
+                            Icon(Icons.Default.ContentCopy, "Clone Agent")
+                        }
+                        IconButton(onClick = { onDeleteRequest(agent) }) {
+                            Icon(Icons.Default.Delete, "Delete Agent")
+                        }
                     }
                 }
-            }
-        }
-
-        if (showInternals) {
-            val prettyJson = remember(agent.cognitiveState) {
-                val json = Json { prettyPrint = true }
-                json.encodeToString(agent.cognitiveState)
-            }
-
-            Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                Text(
-                    "Cognitive State (NVRAM)",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary
-                )
-                CodeEditor(
-                    value = prettyJson,
-                    onValueChange = {},
-                    readOnly = true,
-                    modifier = Modifier.height(150.dp)
-                )
             }
         }
     }

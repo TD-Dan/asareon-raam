@@ -1,5 +1,6 @@
 package app.auf.feature.agent
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -7,16 +8,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import app.auf.core.Action
 import app.auf.core.IdentityUUID
 import app.auf.core.Store
 import app.auf.core.findByUUID
 import app.auf.core.generated.ActionRegistry
+import app.auf.ui.components.CodeEditor
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.delay
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -155,12 +162,11 @@ object AgentAvatarLogic {
 
 // --- Helpers ---
 
-/**
- * Formats a token count for display. Examples: "1,234", "12,345".
- */
 private fun formatTokenCount(count: Int): String {
     return count.toString().reversed().chunked(3).joinToString(",").reversed()
 }
+
+private val prettyJson = Json { prettyPrint = true }
 
 // --- Composables ---
 
@@ -172,29 +178,49 @@ fun AgentAvatarCard(
     platformDependencies: PlatformDependencies
 ) {
     val appState by store.state.collectAsState()
-    val agentState = appState.featureStates["agent"] as? AgentRuntimeState
-    val statusInfo = agentState?.agentStatuses?.get(agent.identityUUID) ?: AgentStatusInfo()
+    val agentState = appState.featureStates["agent"] as? AgentRuntimeState ?: return
 
-    OutlinedCard(
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        AgentControlCard(agent, statusInfo, sessionUUID, store, platformDependencies)
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        AgentControlCard(
+            agent = agent,
+            agentState = agentState,
+            sessionUUID = sessionUUID,
+            store = store,
+            platformDependencies = platformDependencies
+        )
     }
 }
 
-
+/**
+ * Shared core composable for agent cards. Used by both [AgentAvatarCard] (session embed)
+ * and the Agent Manager card. Renders:
+ * - Header: bolt icon + name + status
+ * - Runtime controls: kebab menu, power, auto-mode, trigger/cancel
+ * - Extended info drawer (subscriptions, model, strategy) — eye-toggled
+ * - NVRAM drawer — toggled from kebab menu, local state
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AgentControlCard(
     agent: AgentInstance,
-    statusInfo: AgentStatusInfo = AgentStatusInfo(),
+    agentState: AgentRuntimeState,
     sessionUUID: String? = null,
     store: Store,
-    platformDependencies: PlatformDependencies
+    platformDependencies: PlatformDependencies,
+    /** Externally controlled extended info visibility (for manager global toggle). Null = local state. */
+    showExtendedInfoOverride: Boolean? = null
 ) {
+    val identityRegistry = store.state.collectAsState().value.identityRegistry
+    val statusInfo = agentState.agentStatuses[agent.identityUUID] ?: AgentStatusInfo()
+
     var processingTime by remember { mutableStateOf("00:00") }
     var rateLimitCountdown by remember { mutableStateOf("") }
     var menuExpanded by remember { mutableStateOf(false) }
+    var localShowExtendedInfo by remember { mutableStateOf(false) }
+    var localShowNvram by remember { mutableStateOf(false) }
+
+    val showExtendedInfo = showExtendedInfoOverride ?: localShowExtendedInfo
+    val isViewingNvram = localShowNvram
 
     LaunchedEffect(statusInfo.status, statusInfo.processingSinceTimestamp) {
         if (statusInfo.status == AgentStatus.PROCESSING && statusInfo.processingSinceTimestamp != null) {
@@ -208,7 +234,6 @@ fun AgentControlCard(
         }
     }
 
-    // Countdown timer for rate-limited agents
     LaunchedEffect(statusInfo.status, statusInfo.rateLimitedUntilMs) {
         if (statusInfo.status == AgentStatus.RATE_LIMITED && statusInfo.rateLimitedUntilMs != null) {
             while (true) {
@@ -226,7 +251,6 @@ fun AgentControlCard(
         }
     }
 
-    // RATE_LIMITED is intentionally excluded — trigger must not bypass rate limit.
     val canInitiateTurn = (statusInfo.status == AgentStatus.IDLE || statusInfo.status == AgentStatus.WAITING || statusInfo.status == AgentStatus.ERROR) && (agent.subscribedSessionIds.isNotEmpty() || agent.outputSessionId != null) && agent.isAgentActive
 
     val statusText = when (statusInfo.status) {
@@ -235,169 +259,251 @@ fun AgentControlCard(
             "$step ($processingTime)"
         }
         AgentStatus.RATE_LIMITED -> {
-            if (rateLimitCountdown.isNotBlank()) {
-                "Waiting for API limit ($rateLimitCountdown)"
-            } else {
-                "Rate limited"
-            }
+            if (rateLimitCountdown.isNotBlank()) "Waiting for API limit ($rateLimitCountdown)"
+            else "Rate limited"
         }
         else -> statusInfo.strategyDisplayHint ?: statusInfo.status.name
     }
 
     val agentUuidStr = agent.identityUUID.uuid
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Icon(
-            imageVector = Icons.Default.Bolt,
-            contentDescription = "Agent Icon",
-            modifier = Modifier.size(48.dp),
-            tint = if (agent.isAgentActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-        )
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // ── Header Row ───────────────────────────────────────────────
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Bolt,
+                contentDescription = "Agent Icon",
+                modifier = Modifier.size(48.dp),
+                tint = if (agent.isAgentActive) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+            )
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(agent.identity.name, style = MaterialTheme.typography.titleMedium)
-            Text("Status: $statusText", style = MaterialTheme.typography.bodyMedium)
-            if (statusInfo.status == AgentStatus.ERROR && statusInfo.errorMessage != null) {
-                Text(
-                    text = statusInfo.errorMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-            if (statusInfo.status == AgentStatus.RATE_LIMITED && statusInfo.errorMessage != null) {
-                Text(
-                    text = statusInfo.errorMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-
-            // Display last request token usage if available
-            val lastInput = statusInfo.lastInputTokens
-            val lastOutput = statusInfo.lastOutputTokens
-            if (lastInput != null || lastOutput != null) {
-                Text(
-                    text = buildString {
-                        append("Last request: ")
-                        if (lastInput != null) append("${formatTokenCount(lastInput)} input")
-                        if (lastInput != null && lastOutput != null) append(", ")
-                        if (lastOutput != null) append("${formatTokenCount(lastOutput)} output")
-                        append(" tokens")
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-        }
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "More options")
+            // Name + Status
+            Column(modifier = Modifier.weight(1f)) {
+                Text(agent.identity.name, style = MaterialTheme.typography.titleMedium)
+                Text("Status: $statusText", style = MaterialTheme.typography.bodyMedium)
+                if (statusInfo.status == AgentStatus.ERROR && statusInfo.errorMessage != null) {
+                    Text(
+                        text = statusInfo.errorMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Edit Agent") },
-                        onClick = {
-                            store.dispatch("agent", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.manager") }))
-                            store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agentUuidStr) }))
-                            menuExpanded = false
-                        },
-                        leadingIcon = { Icon(Icons.Default.Edit, null) }
+                if (statusInfo.status == AgentStatus.RATE_LIMITED && statusInfo.errorMessage != null) {
+                    Text(
+                        text = statusInfo.errorMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.padding(top = 4.dp)
                     )
-                    DropdownMenuItem(
-                        text = { Text("Preview Turn") },
-                        onClick = {
-                            store.dispatch("agent", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
-                                put("agentId", agentUuidStr)
-                                put("preview", true)
-                            }))
-                            menuExpanded = false
-                        },
-                        leadingIcon = { Icon(Icons.Default.Visibility, null) },
-                        enabled = canInitiateTurn
+                }
+            }
+
+            // ── Runtime Controls ─────────────────────────────────────
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Eye toggle for extended info
+                IconButton(onClick = {
+                    if (showExtendedInfoOverride == null) localShowExtendedInfo = !localShowExtendedInfo
+                }) {
+                    Icon(
+                        imageVector = if (showExtendedInfo) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        contentDescription = "Toggle Details",
+                        tint = if (showExtendedInfo) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                     )
-                    if (sessionUUID != null) {
+                }
+
+                // Kebab menu
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
                         DropdownMenuItem(
-                            text = { Text("Remove from this session") },
+                            text = { Text("Edit Agent") },
                             onClick = {
-                                store.dispatch("agent", Action(ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION, buildJsonObject {
+                                store.dispatch("agent", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.manager") }))
+                                store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agentUuidStr) }))
+                                menuExpanded = false
+                            },
+                            leadingIcon = { Icon(Icons.Default.Edit, null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Preview Turn") },
+                            onClick = {
+                                store.dispatch("agent", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                                     put("agentId", agentUuidStr)
-                                    put("sessionId", sessionUUID)
+                                    put("preview", true)
                                 }))
                                 menuExpanded = false
                             },
-                            leadingIcon = { Icon(Icons.Default.LinkOff, null) }
+                            leadingIcon = { Icon(Icons.Default.Visibility, null) },
+                            enabled = canInitiateTurn
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (isViewingNvram) "Hide NVRAM" else "Inspect NVRAM") },
+                            onClick = {
+                                localShowNvram = !localShowNvram
+                                menuExpanded = false
+                            },
+                            leadingIcon = { Icon(Icons.Default.Memory, null) }
+                        )
+                        if (sessionUUID != null) {
+                            DropdownMenuItem(
+                                text = { Text("Remove from session") },
+                                onClick = {
+                                    store.dispatch("agent", Action(ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION, buildJsonObject {
+                                        put("agentId", agentUuidStr)
+                                        put("sessionId", sessionUUID)
+                                    }))
+                                    menuExpanded = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.LinkOff, null) }
+                            )
+                        }
+                    }
+                }
+
+                // Power toggle
+                val activeSwitchTooltipState = remember { TooltipState() }
+                TooltipBox(
+                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                    tooltip = { PlainTooltip { Text("Toggle Active State") } },
+                    state = activeSwitchTooltipState
+                ) {
+                    IconButton(onClick = {
+                        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_TOGGLE_ACTIVE, buildJsonObject { put("agentId", agentUuidStr) }))
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.PowerSettingsNew,
+                            contentDescription = "Toggle Active State",
+                            tint = if (agent.isAgentActive) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                         )
                     }
                 }
-            }
 
-            val activeSwitchTooltipState = remember { TooltipState() }
-            TooltipBox(
-                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                tooltip = { PlainTooltip { Text("Toggle Active State") } },
-                state = activeSwitchTooltipState
-            ) {
-                IconButton(
-                    onClick = {
-                        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_TOGGLE_ACTIVE, buildJsonObject { put("agentId", agentUuidStr) }))
-                    }
+                // Auto-mode toggle
+                val autoModeSwitchTooltipState = remember { TooltipState() }
+                TooltipBox(
+                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                    tooltip = { PlainTooltip { Text("Toggle Automatic Mode") } },
+                    state = autoModeSwitchTooltipState
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.PowerSettingsNew,
-                        contentDescription = "Toggle Active State",
-                        tint = if (agent.isAgentActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                    )
-                }
-            }
-
-            val autoModeSwitchTooltipState = remember { TooltipState() }
-            TooltipBox(
-                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                tooltip = { PlainTooltip { Text("Toggle Automatic Mode") } },
-                state = autoModeSwitchTooltipState
-            ) {
-                IconButton(
-                    onClick = {
+                    IconButton(onClick = {
                         store.dispatch("agent", Action(ActionRegistry.Names.AGENT_TOGGLE_AUTOMATIC_MODE, buildJsonObject { put("agentId", agentUuidStr) }))
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Autorenew,
+                            contentDescription = "Toggle Automatic Mode",
+                            tint = if (agent.automaticMode) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                        )
                     }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Autorenew,
-                        contentDescription = "Toggle Automatic Mode",
-                        tint = if (agent.automaticMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                }
+
+                // Trigger / Cancel
+                if (statusInfo.status == AgentStatus.PROCESSING) {
+                    Button(
+                        onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agentUuidStr) })) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                    ) {
+                        Icon(Icons.Default.Cancel, contentDescription = "Cancel Turn")
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            store.dispatch("agent", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
+                                put("agentId", agentUuidStr)
+                                put("preview", false)
+                            }))
+                        },
+                        enabled = canInitiateTurn
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Trigger Turn")
+                    }
+                }
+            }
+        }
+
+        // ── Extended Info Drawer ─────────────────────────────────────
+        AnimatedVisibility(visible = showExtendedInfo) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                val sessionNames = agent.subscribedSessionIds.mapNotNull { agentState.subscribableSessionNames[it] }
+                val sessionSummary = when {
+                    sessionNames.isEmpty() -> "Not Subscribed"
+                    sessionNames.size == 1 -> sessionNames.first()
+                    else -> sessionNames.joinToString(", ")
+                }
+                Text("Subscribed: $sessionSummary", style = MaterialTheme.typography.bodyMedium)
+
+                if (agent.outputSessionId != null) {
+                    val outputSessionName = identityRegistry.findByUUID(agent.outputSessionId)?.name
+                        ?: agentState.subscribableSessionNames[agent.outputSessionId]
+                        ?: agent.outputSessionId.uuid
+                    Text("Primary Session: $outputSessionName", style = MaterialTheme.typography.bodyMedium)
+                }
+
+                val kgId = agent.strategyConfig["knowledgeGraphId"]
+                    ?.let { it as? JsonPrimitive }
+                    ?.contentOrNull
+                if (kgId != null) {
+                    val hkgName = agentState.knowledgeGraphNames[kgId] ?: "Unknown"
+                    Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium)
+                }
+
+                Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
+                Text("Strategy: ${agent.cognitiveStrategyId}", style = MaterialTheme.typography.bodyMedium)
+
+                // Token usage from last request
+                val lastInput = statusInfo.lastInputTokens
+                val lastOutput = statusInfo.lastOutputTokens
+                if (lastInput != null || lastOutput != null) {
+                    Text(
+                        text = buildString {
+                            append("Last request: ")
+                            if (lastInput != null) append("${formatTokenCount(lastInput)} input")
+                            if (lastInput != null && lastOutput != null) append(", ")
+                            if (lastOutput != null) append("${formatTokenCount(lastOutput)} output")
+                            append(" tokens")
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp)
                     )
                 }
             }
+        }
 
-            if (statusInfo.status == AgentStatus.PROCESSING) {
-                Button(
-                    onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CANCEL_TURN, buildJsonObject { put("agentId", agentUuidStr) })) },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                ) {
-                    Icon(Icons.Default.Cancel, contentDescription = "Cancel Turn")
+        // ── NVRAM Drawer ─────────────────────────────────────────────
+        AnimatedVisibility(visible = isViewingNvram) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Text(
+                    "Cognitive State (NVRAM)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                Spacer(Modifier.height(4.dp))
+                val nvramText = remember(agent.cognitiveState) {
+                    prettyJson.encodeToString(agent.cognitiveState)
                 }
-            } else {
-                Button(
-                    onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
-                        put("agentId", agentUuidStr)
-                        put("preview", false) // Direct execution
-                    })) },
-                    enabled = canInitiateTurn
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Trigger Turn")
-                }
+                CodeEditor(
+                    value = nvramText,
+                    onValueChange = {},
+                    readOnly = true,
+                    modifier = Modifier.height(150.dp)
+                )
             }
         }
     }
