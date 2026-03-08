@@ -331,6 +331,10 @@
           "uuid": {
             "type": ["string", "null"],
             "description": "Optional caller-provided UUID. Must be valid UUID format (8-4-4-4-12 hex). If omitted, auto-generated."
+          },
+          "displayColor": {
+            "type": ["string", "null"],
+            "description": "Optional display color as '#RRGGBB' hex. Used for accent borders and name coloring in session cards."
           }
         },
         "required": ["name"]
@@ -395,7 +399,11 @@
         "type": "object",
         "properties": {
           "handle": { "type": "string" },
-          "newName": { "type": "string" }
+          "newName": { "type": "string" },
+          "displayColor": {
+            "type": ["string", "null"],
+            "description": "Optional display color as '#RRGGBB' hex. If key is present, updates the color (null clears it). If key is absent, existing color is preserved."
+          }
         },
         "required": ["handle", "newName"]
       }

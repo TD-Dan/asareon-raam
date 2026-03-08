@@ -46,12 +46,14 @@ class CoreFeature(
     @Serializable private data class RegisterIdentityPayload(
         val localHandle: String? = null,
         val name: String,
-        val uuid: String? = null
+        val uuid: String? = null,
+        val displayColor: String? = null
     )
     @Serializable private data class UnregisterIdentityPayload(val handle: String)
     @Serializable private data class UpdateIdentityPayload(
         val handle: String,
-        val newName: String
+        val newName: String,
+        val displayColor: String? = null
     )
 
     // --- Permission management payload classes (Phase 1) ---
@@ -529,8 +531,11 @@ class CoreFeature(
                     val existingByUUID = registry.findByUUID(payload.uuid)
                     if (existingByUUID != null) {
                         // Update name if it changed, but keep the existing handle and permissions.
-                        val reclaimed = if (existingByUUID.name != payload.name) {
-                            existingByUUID.copy(name = payload.name)
+                        val reclaimed = if (existingByUUID.name != payload.name || payload.displayColor != existingByUUID.displayColor) {
+                            existingByUUID.copy(
+                                name = payload.name,
+                                displayColor = payload.displayColor ?: existingByUUID.displayColor
+                            )
                         } else {
                             existingByUUID
                         }
@@ -571,7 +576,8 @@ class CoreFeature(
                     handle = fullHandle,
                     name = payload.name,
                     parentHandle = parentHandle,
-                    registeredAt = platformDependencies.currentTimeMillis()
+                    registeredAt = platformDependencies.currentTimeMillis(),
+                    displayColor = payload.displayColor
                 )
 
                 // Delegate storage to the Store
@@ -686,7 +692,12 @@ class CoreFeature(
                 val updatedIdentity = existingIdentity.copy(
                     localHandle = finalLocalHandle,
                     handle = newFullHandle,
-                    name = payload.newName
+                    name = payload.newName,
+                    // Carry displayColor through if explicitly provided in payload,
+                    // otherwise preserve the existing value.
+                    displayColor = if (action.payload?.containsKey("displayColor") == true)
+                        payload.displayColor
+                    else existingIdentity.displayColor
                 )
 
                 // Atomic swap: remove old handle, add new handle (may be the same if name→slug didn't change)

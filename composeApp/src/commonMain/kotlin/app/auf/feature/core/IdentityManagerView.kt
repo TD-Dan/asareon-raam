@@ -1,26 +1,39 @@
 package app.auf.feature.core
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.auf.core.Action
 import app.auf.core.Identity
 import app.auf.core.Store
 import app.auf.core.generated.ActionRegistry
+import app.auf.core.resolveDisplayColor
+import app.auf.ui.components.ColorPicker
+import app.auf.ui.components.colorToHex
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -186,6 +199,7 @@ private fun IdentitiesTabContent(store: Store) {
                         identity = identity,
                         isActive = identity.handle == coreState?.activeUserId,
                         showDetails = showAllIdentities,
+                        store = store,
                         onSetActive = {
                             store.dispatch("core", Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) }))
                         },
@@ -293,74 +307,190 @@ private fun InternalIdentityRow(identity: Identity) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun IdentityRow(
     identity: Identity,
     isActive: Boolean,
     showDetails: Boolean = false,
+    store: Store,
     onSetActive: () -> Unit,
     onDelete: () -> Unit
 ) {
+    var isEditing by remember { mutableStateOf(false) }
+    var editName by remember(identity.name) { mutableStateOf(identity.name) }
+    var showColorPicker by remember { mutableStateOf(false) }
+    // Draft color tracks the picker state; committed on "Use", discarded on "Cancel"
+    var draftColorHex by remember(identity.displayColor) { mutableStateOf(identity.displayColor) }
+
+    val displayColor = identity.resolveDisplayColor()
+    val accentColor = displayColor ?: MaterialTheme.colorScheme.primary
+    val draftAccent = draftColorHex?.let { hex ->
+        val clean = hex.removePrefix("#")
+        if (clean.length == 6) try {
+            val rgb = clean.toLong(16)
+            androidx.compose.ui.graphics.Color(
+                red = ((rgb shr 16) and 0xFF).toInt() / 255f,
+                green = ((rgb shr 8) and 0xFF).toInt() / 255f,
+                blue = (rgb and 0xFF).toInt() / 255f
+            )
+        } catch (_: Exception) { null } else null
+    } ?: accentColor
+
+    fun commitEdits() {
+        // Dispatch UPDATE_IDENTITY with extended payload (name + displayColor)
+        store.dispatch("core", Action(ActionRegistry.Names.CORE_UPDATE_IDENTITY, buildJsonObject {
+            put("handle", identity.handle)
+            put("newName", editName)
+            if (draftColorHex != null) put("displayColor", draftColorHex)
+            else put("displayColor", null as String?)
+        }))
+        isEditing = false
+        showColorPicker = false
+    }
+
+    fun cancelEdits() {
+        editName = identity.name
+        draftColorHex = identity.displayColor
+        isEditing = false
+        showColorPicker = false
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        border = if (isActive) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+        border = if (isActive) BorderStroke(2.dp, draftAccent) else null
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.Top,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(identity.name, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
-                Text("ID: ${identity.handle}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (identity.permissions.isNotEmpty()) {
-                    Text(
-                        "${identity.permissions.size} permission(s)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                .onKeyEvent { event ->
+                    if (isEditing && event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                        cancelEdits(); true
+                    } else false
                 }
-                if (showDetails) {
-                    identity.parentHandle?.let {
-                        Text(
-                            "parent: $it",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    identity.uuid?.let {
-                        Text(
-                            "uuid: $it",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Text(
-                        "localHandle: ${identity.localHandle}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Color swatch — always visible
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(draftAccent)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
                     )
-                    if (identity.registeredAt > 0) {
-                        Text(
-                            "registeredAt: ${formatTimestamp(identity.registeredAt)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+
+                    if (isEditing) {
+                        // Edit mode: name text field
+                        OutlinedTextField(
+                            value = editName,
+                            onValueChange = { editName = it },
+                            label = { Text("Display Name") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
                         )
+                    } else {
+                        // Read mode: name + details, double-click enters edit
+                        Column(
+                            modifier = Modifier.weight(1f).combinedClickable(
+                                onClick = {},
+                                onDoubleClick = { isEditing = true }
+                            )
+                        ) {
+                            Text(identity.name, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
+                            Text(
+                                "ID: ${identity.handle}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (identity.permissions.isNotEmpty()) {
+                                Text(
+                                    "${identity.permissions.size} permission(s)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (showDetails) {
+                                identity.parentHandle?.let {
+                                    Text("parent: $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                identity.uuid?.let {
+                                    Text("uuid: $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Text("localHandle: ${identity.localHandle}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (identity.registeredAt > 0) {
+                                    Text("registeredAt: ${formatTimestamp(identity.registeredAt)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Action buttons
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isEditing) {
+                        TextButton(onClick = { cancelEdits() }) { Text("Cancel") }
+                        Spacer(Modifier.width(4.dp))
+                        Button(onClick = { commitEdits() }, enabled = editName.isNotBlank()) { Text("Save") }
+                    } else {
+                        if (isActive) {
+                            FilledTonalButton(onClick = {}) { Text("Active") }
+                        } else {
+                            Button(onClick = onSetActive) { Text("Set Active") }
+                        }
+                        IconButton(onClick = { isEditing = true }) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit Identity")
+                        }
+                        IconButton(onClick = onDelete) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete Identity")
+                        }
                     }
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (isActive) {
-                    FilledTonalButton(onClick = { /* already active */ }) {
-                        Text("Active")
+
+            // Edit mode: Set color button + color picker
+            AnimatedVisibility(visible = isEditing) {
+                Column(modifier = Modifier.padding(top = 8.dp)) {
+                    if (!showColorPicker) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(onClick = { showColorPicker = true }) {
+                                Icon(Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Set color")
+                            }
+                            if (identity.displayColor != null) {
+                                TextButton(onClick = { draftColorHex = null }) {
+                                    Text("Reset to default")
+                                }
+                            }
+                        }
                     }
-                } else {
-                    Button(onClick = onSetActive) {
-                        Text("Set Active")
+
+                    AnimatedVisibility(visible = showColorPicker) {
+                        ColorPicker(
+                            initialColor = draftAccent,
+                            onConfirm = { color ->
+                                draftColorHex = colorToHex(color)
+                                showColorPicker = false
+                            },
+                            onCancel = {
+                                // Discard draft color, revert to persisted
+                                draftColorHex = identity.displayColor
+                                showColorPicker = false
+                            },
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
                     }
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete Identity")
                 }
             }
         }

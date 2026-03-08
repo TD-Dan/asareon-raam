@@ -153,13 +153,39 @@ data class Identity(
      * Empty map means no explicit grants — inherits from parent, or deny-by-default
      * if no ancestor has grants.
      */
-    val permissions: Map<String, PermissionGrant> = emptyMap()
+    val permissions: Map<String, PermissionGrant> = emptyMap(),
+
+    /**
+     * Display color for this identity, stored as "#RRGGBB" hex.
+     * Used for left-border accent in session cards and sender name coloring.
+     * Null means "use theme defaults".
+     */
+    val displayColor: String? = null
 ) {
     /** Convenience accessor for typed handle. */
     val identityHandle: IdentityHandle get() = IdentityHandle(handle)
 
     /** Convenience accessor for typed UUID. Null for features (no system-assigned UUID). */
     val identityUUID: IdentityUUID? get() = uuid?.let { IdentityUUID(it) }
+}
+
+/**
+ * Resolves [Identity.displayColor] "#RRGGBB" hex to a Compose Color.
+ * Returns null if displayColor is null or unparseable.
+ */
+fun Identity.resolveDisplayColor(): androidx.compose.ui.graphics.Color? {
+    val clean = (displayColor ?: return null).removePrefix("#")
+    if (clean.length != 6) return null
+    return try {
+        val rgb = clean.toLong(16)
+        androidx.compose.ui.graphics.Color(
+            red = ((rgb shr 16) and 0xFF).toInt() / 255f,
+            green = ((rgb shr 8) and 0xFF).toInt() / 255f,
+            blue = (rgb and 0xFF).toInt() / 255f
+        )
+    } catch (_: NumberFormatException) {
+        null
+    }
 }
 
 // ============================================================================
