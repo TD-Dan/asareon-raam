@@ -259,7 +259,7 @@ private fun ParsedContentView(store: Store, content: List<ContentBlock>, rawCont
                         val blockBackground = if (isAufAction) {
                             MaterialTheme.colorScheme.surfaceDim
                         } else {
-                            MaterialTheme.colorScheme.surfaceVariant
+                            MaterialTheme.colorScheme.surfaceDim
                         }
                         val blockContentColor = if (isAufAction) {
                             MaterialTheme.colorScheme.onSurfaceVariant
