@@ -5,6 +5,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -55,26 +56,35 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
     val sessionState = appState.featureStates["session"] as? SessionState
 
     val hideHidden = sessionState?.hideHiddenInViewer ?: true
-    val sessions = remember(sessionState?.sessions, sessionState?.sessionOrder, hideHidden) {
-        deriveOrderedSessions(
-            sessionState?.sessions ?: emptyMap(),
-            sessionState?.sessionOrder ?: emptyList(),
-            hideHidden
-        )
+    // No `remember` for any derived values — avoids stale-index crashes
+    // when the filtered session list changes between recomposition frames.
+    val sessions = deriveOrderedSessions(
+        sessionState?.sessions ?: emptyMap(),
+        sessionState?.sessionOrder ?: emptyList(),
+        hideHidden
+    )
+    val activeSession = sessions.find {
+        it.identity.localHandle == sessionState?.activeSessionLocalHandle
     }
-    val activeSession = remember(sessionState?.activeSessionLocalHandle, sessions) {
-        sessions.find { it.identity.localHandle == sessionState?.activeSessionLocalHandle }
-    }
-    val activeTabIndex = remember(activeSession, sessions) {
-        sessions.indexOf(activeSession).coerceAtLeast(0)
-    }
+    val activeTabIndex = if (sessions.isEmpty()) 0
+    else sessions.indexOf(activeSession).coerceIn(0, sessions.lastIndex)
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (sessions.isNotEmpty()) {
-                TabRow(selectedTabIndex = activeTabIndex, modifier = Modifier.weight(1f)) {
-                    sessions.forEach { session ->
-                        SessionTab(store, session, session.identity.localHandle == activeSession?.identity?.localHandle, session.identity.localHandle == sessionState?.editingSessionLocalHandle)
+                // `key` forces ScrollableTabRow to fully recompose (not just
+                // update) when the tab count changes. Without this, its
+                // internal indicator state can hold a stale index for one
+                // frame, causing IndexOutOfBoundsException.
+                key(sessions.size) {
+                    ScrollableTabRow(
+                        selectedTabIndex = activeTabIndex,
+                        modifier = Modifier.weight(1f),
+                        edgePadding = 8.dp
+                    ) {
+                        sessions.forEach { session ->
+                            SessionTab(store, session, session.identity.localHandle == activeSession?.identity?.localHandle, session.identity.localHandle == sessionState?.editingSessionLocalHandle)
+                        }
                     }
                 }
             } else {
@@ -151,7 +161,7 @@ private fun SessionTab(store: Store, session: Session, isSelected: Boolean, isEd
                 onClick = { store.dispatch("session", Action(ActionRegistry.Names.SESSION_SET_ACTIVE_TAB, buildJsonObject { put("session", session.identity.localHandle) })) },
                 onDoubleClick = { store.dispatch("session", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, buildJsonObject { put("sessionId", session.identity.localHandle) })) }
             )
-        ) { Text(session.identity.name, maxLines = 1, modifier = Modifier.padding(vertical = 12.dp), color = tabTextColor) }
+        ) { Text(session.identity.name, maxLines = 1, modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp), color = tabTextColor) }
     }
 }
 
@@ -182,8 +192,25 @@ private fun LedgerPane(
         }
     }
 
+    // Precompute consecutive-sender grouping: suppress the sender name when the
+    // previous non-partial entry is from the same sender.
+    val showSenderInfoFlags = remember(activeSession.ledger) {
+        var lastNonPartialSenderId: String? = null
+        activeSession.ledger.map { entry ->
+            val isPartial = entry.metadata?.get("render_as_partial")
+                ?.jsonPrimitive?.booleanOrNull ?: false
+            if (isPartial) {
+                true // Partial views don't participate in sender grouping
+            } else {
+                val show = lastNonPartialSenderId != entry.senderId
+                lastNonPartialSenderId = entry.senderId
+                show
+            }
+        }
+    }
+
     LazyColumn(state = listState, modifier = modifier.fillMaxSize().padding(8.dp)) {
-        items(activeSession.ledger, key = { it.id }) { entry ->
+        itemsIndexed(activeSession.ledger, key = { _, entry -> entry.id }) { index, entry ->
             val isPartialView = entry.metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
 
             if (isPartialView) {
@@ -216,6 +243,11 @@ private fun LedgerPane(
                     identityRegistry[entry.senderId]?.name ?: entry.senderId
                 }
                 val isCurrentUserMessage = entry.senderId == activeUserId
+                val showSenderInfo = showSenderInfoFlags.getOrElse(index) { true }
+
+                // Phase 2 will resolve Identity.displayColor here:
+                // val senderColor = identityRegistry[entry.senderId]?.displayColor?.let { Color(it) }
+
                 LedgerEntryCard(
                     store = store,
                     session = activeSession,
@@ -224,10 +256,11 @@ private fun LedgerPane(
                     isCurrentUserMessage = isCurrentUserMessage,
                     isEditingThisMessage = sessionState?.editingMessageId == entry.id,
                     editingContent = sessionState?.editingMessageContent,
-                    platformDependencies = platformDependencies
+                    platformDependencies = platformDependencies,
+                    showSenderInfo = showSenderInfo
                 )
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
         }
     }
 }
