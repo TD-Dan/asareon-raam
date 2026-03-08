@@ -583,7 +583,7 @@ private fun AgentResourcesView(
             modifier = Modifier
                 .weight(0.3f)
                 .fillMaxHeight()
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
         ) {
             Row(
                 Modifier.fillMaxWidth().padding(12.dp),
@@ -657,15 +657,27 @@ private fun AgentResourcesView(
 
 @Composable
 private fun ResourceListItem(resource: AgentResource, isSelected: Boolean, onClick: () -> Unit) {
-    val bgColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .background(bgColor)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .then(
+                if (isSelected) Modifier.background(MaterialTheme.colorScheme.surfaceContainer)
+                else Modifier
+            )
+            .padding(start = if (isSelected) 0.dp else 4.dp)
+            .padding(vertical = 8.dp, horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(36.dp)
+                    .background(MaterialTheme.colorScheme.primary)
+            )
+            Spacer(Modifier.width(8.dp))
+        }
         Column {
             Text(
                 resource.name,
@@ -1005,7 +1017,7 @@ private fun ProviderSelector(agent: AgentInstance, agentState: AgentRuntimeState
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    color = MaterialTheme.colorScheme.surfaceDim,
                     shape = MaterialTheme.shapes.small
                 )
                 .padding(horizontal = 16.dp, vertical = 12.dp),

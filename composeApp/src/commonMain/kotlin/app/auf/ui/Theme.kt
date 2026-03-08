@@ -19,25 +19,51 @@ import androidx.compose.ui.graphics.toArgb
  */
 @Immutable
 data class ExtendedColors(
-    /** Warning/caution — "proceed with care". Used for permission danger levels, escalation. */
+    /** Warning/caution — "proceed with care". Permission CAUTION level, escalation. */
     val warning: Color,
     val onWarning: Color,
     val warningContainer: Color,
-    val onWarningContainer: Color
+    val onWarningContainer: Color,
+    /** Success/safe — permission LOW level, healthy status, confirmations. */
+    val success: Color,
+    val onSuccess: Color,
+    val successContainer: Color,
+    val onSuccessContainer: Color,
+    /** Danger/critical — permission DANGER level, destructive actions, security. */
+    val danger: Color,
+    val onDanger: Color,
+    val dangerContainer: Color,
+    val onDangerContainer: Color
 )
 
 private val lightExtendedColors = ExtendedColors(
     warning = warningLight,
     onWarning = onWarningLight,
     warningContainer = warningContainerLight,
-    onWarningContainer = onWarningContainerLight
+    onWarningContainer = onWarningContainerLight,
+    success = successLight,
+    onSuccess = onSuccessLight,
+    successContainer = successContainerLight,
+    onSuccessContainer = onSuccessContainerLight,
+    danger = dangerLight,
+    onDanger = onDangerLight,
+    dangerContainer = dangerContainerLight,
+    onDangerContainer = onDangerContainerLight
 )
 
 private val darkExtendedColors = ExtendedColors(
     warning = warningDark,
     onWarning = onWarningDark,
     warningContainer = warningContainerDark,
-    onWarningContainer = onWarningContainerDark
+    onWarningContainer = onWarningContainerDark,
+    success = successDark,
+    onSuccess = onSuccessDark,
+    successContainer = successContainerDark,
+    onSuccessContainer = onSuccessContainerDark,
+    danger = dangerDark,
+    onDanger = onDangerDark,
+    dangerContainer = dangerContainerDark,
+    onDangerContainer = onDangerContainerDark
 )
 
 val LocalExtendedColors = staticCompositionLocalOf { lightExtendedColors }

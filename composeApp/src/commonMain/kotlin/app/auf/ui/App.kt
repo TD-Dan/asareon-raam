@@ -43,7 +43,7 @@ fun App(store: Store, features: List<Feature>) {
         if (identityColor != null) {
             primaryOverride = identityColor
             val hsl = colorToHsl(identityColor)
-            val secHue = (hsl[0] - 30f + 360f) % 360f
+            val secHue = (hsl[0] + 20f + 360f) % 360f
             val secSat = (hsl[1] * 0.75f).coerceIn(0f, 1f)
             val secLit = (hsl[2] * 0.75f).coerceIn(0f, 1f)
             secondaryOverride = hslToColor(secHue, secSat, secLit)

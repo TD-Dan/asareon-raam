@@ -251,7 +251,7 @@ private fun InternalIdentityRow(identity: Identity) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = MaterialTheme.colorScheme.surfaceDim
         )
     ) {
         SelectionContainer {

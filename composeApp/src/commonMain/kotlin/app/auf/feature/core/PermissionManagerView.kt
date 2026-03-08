@@ -16,7 +16,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
+import app.auf.core.resolveDisplayColor
 import app.auf.ui.LocalExtendedColors
+import app.auf.ui.components.IconRegistry
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -28,25 +30,19 @@ import kotlinx.serialization.json.put
 private const val CELL_TINT_ALPHA = 0.10f
 
 /**
- * Returns the theme color for a given danger level.
- * LOW → primary (teal), CAUTION → warning (amber), DANGER → error (red).
+ * Returns the semantic color for a given danger level from extended colors.
+ * These are stable regardless of identity-based theme overrides.
+ * LOW → success (green), CAUTION → warning (amber), DANGER → danger (red).
  */
 @Composable
 private fun dangerColor(dangerLevel: DangerLevel): Color {
     val extended = LocalExtendedColors.current
     return when (dangerLevel) {
-        DangerLevel.LOW -> MaterialTheme.colorScheme.primary
+        DangerLevel.LOW -> extended.success
         DangerLevel.CAUTION -> extended.warning
-        DangerLevel.DANGER -> MaterialTheme.colorScheme.error
+        DangerLevel.DANGER -> extended.danger
     }
 }
-
-/**
- * Returns a subtle background tint for a YES cell based on danger level.
- */
-@Composable
-private fun cellTint(dangerLevel: DangerLevel): Color =
-    dangerColor(dangerLevel).copy(alpha = CELL_TINT_ALPHA)
 
 /**
  * Groups permission declarations by their domain (the part before the colon).
@@ -188,10 +184,11 @@ fun PermissionManagerView(store: Store) {
         }
 
         if (hasDangerGrants) {
+            val dangerBannerColor = LocalExtendedColors.current.danger
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.error.copy(alpha = CELL_TINT_ALPHA))
+                    .background(dangerBannerColor.copy(alpha = CELL_TINT_ALPHA))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -199,14 +196,14 @@ fun PermissionManagerView(store: Store) {
                 Icon(
                     Icons.Default.Warning,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
+                    tint = dangerBannerColor,
                     modifier = Modifier.size(18.dp)
                 )
                 Text(
                     "Current permissions allow potentially dangerous operations to take place on your computer! " +
                             "Please consider using incremental disk backup or running inside a virtual machine for added security.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
+                    color = dangerBannerColor
                 )
             }
         }
@@ -256,25 +253,52 @@ fun PermissionManagerView(store: Store) {
                     Column(Modifier.weight(1f).verticalScroll(verticalScrollState)) {
                         for (identity in editableIdentities) {
                             val isFeature = identity.uuid == null
+                            val identityColor = identity.resolveDisplayColor()
                             Box(
                                 Modifier.height(48.dp).fillMaxWidth().padding(horizontal = 4.dp),
                                 contentAlignment = Alignment.CenterStart
                             ) {
-                                Column {
-                                    Text(
-                                        identity.name,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = if (isFeature) FontWeight.Bold else FontWeight.Medium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        if (isFeature) "feature" else identity.handle,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    // Identity icon — emoji or Material icon, tinted
+                                    val iconTint = identityColor ?: MaterialTheme.colorScheme.onSurfaceVariant
+                                    if (identity.displayEmoji != null) {
+                                        Text(
+                                            identity.displayEmoji!!,
+                                            fontSize = 16.sp,
+                                            color = iconTint,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.width(20.dp)
+                                        )
+                                    } else {
+                                        val iconVector = IconRegistry.resolve(identity.displayIcon)
+                                            ?: if (isFeature) IconRegistry.defaultSystemIcon else IconRegistry.defaultAgentIcon
+                                        Icon(
+                                            iconVector,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp),
+                                            tint = iconTint
+                                        )
+                                    }
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            identity.name,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = if (isFeature) FontWeight.Bold else FontWeight.Medium,
+                                            color = identityColor ?: MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            if (isFeature) "feature defaults" else identity.handle,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
                             HorizontalDivider(thickness = 0.5.dp)
@@ -471,13 +495,13 @@ private fun PermissionCell(
     isEscalated: Boolean,
     onToggle: () -> Unit
 ) {
-    val bgColor = if (isChecked) cellTint(dangerLevel) else Color.Transparent
+    val color = dangerColor(dangerLevel)
 
     Box(
         modifier = Modifier
             .width(80.dp)
             .fillMaxHeight()
-            .background(bgColor),
+            .then(if (isChecked) Modifier.background(color.copy(alpha = CELL_TINT_ALPHA)) else Modifier),
         contentAlignment = Alignment.Center
     ) {
         Row(
@@ -488,9 +512,17 @@ private fun PermissionCell(
                 checked = isChecked,
                 onCheckedChange = { onToggle() },
                 colors = CheckboxDefaults.colors(
-                    checkedColor = MaterialTheme.colorScheme.primary,
+                    checkedColor = color,
                     uncheckedColor = MaterialTheme.colorScheme.outline,
-                    checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                    checkmarkColor = if (isChecked) {
+                        // Use appropriate on-color for readability
+                        val extended = LocalExtendedColors.current
+                        when (dangerLevel) {
+                            DangerLevel.LOW -> extended.onSuccess
+                            DangerLevel.CAUTION -> extended.onWarning
+                            DangerLevel.DANGER -> extended.onDanger
+                        }
+                    } else MaterialTheme.colorScheme.onPrimary
                 )
             )
             if (isEscalated) {
