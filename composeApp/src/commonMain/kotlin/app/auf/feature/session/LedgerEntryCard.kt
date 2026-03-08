@@ -46,11 +46,12 @@ fun LedgerEntryCard(
     val uiState = remember(session.messageUiState, entry.id) {
         session.messageUiState[entry.id] ?: MessageUiState()
     }
-    var showMenu by remember { mutableStateOf(false) }
-
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
-    val showChrome = isHovered || showMenu || isEditingThisMessage
+    // Track dropdown open state so chrome stays visible when menu is open
+    // (cursor moves to popup layer, losing hover on the card itself).
+    var isMenuOpen by remember { mutableStateOf(false) }
+    val showChrome = isHovered || isMenuOpen || isEditingThisMessage
 
     val accentColor = senderColor
         ?: if (isCurrentUserMessage) MaterialTheme.colorScheme.primary
@@ -60,7 +61,7 @@ fun LedgerEntryCard(
         ?: if (isCurrentUserMessage) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.onSurface
 
-    val showTimestamp = showChrome || !showSenderInfo
+    // Timestamp is always hover-only. showChrome gates all hover state.
 
     val collapsedPreview = remember(entry.content, entry.rawContent) {
         val firstBlock = entry.content.firstOrNull()
@@ -104,197 +105,107 @@ fun LedgerEntryCard(
                     .background(accentColor)
             )
 
-            Column(modifier = Modifier.weight(1f).padding(16.dp)) {
-                // ── Header (Box overlay — no layout shift on hover) ──────
-                // Min height matches IconButton default (48dp) so the row
-                // never grows vertically when chrome icons appear.
-                Box(
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    // Base layer: clickable header area
-                    Column(
-                        modifier = Modifier.fillMaxWidth().clickable(
-                            enabled = !isEditingThisMessage,
-                            onClick = {
-                                store.dispatch("session", Action(
-                                    ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_COLLAPSED,
-                                    buildJsonObject {
-                                        put("sessionId", session.identity.localHandle)
-                                        put("messageId", entry.id)
-                                    }
-                                ))
-                            }
-                        )
+            Column(
+                modifier = Modifier.weight(1f).padding(
+                    start = 16.dp, end = 16.dp, bottom = 16.dp,
+                    top = if (showSenderInfo) 0.dp else 8.dp
+                )
+            ) {
+                if (showSenderInfo) {
+                    // ── First-in-run: stable header, no pop ──────────────
+                    // Box reserves 48dp so chrome overlay never changes height.
+                    // Timestamp is always laid out; transparent when not hovered.
+                    Box(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        contentAlignment = Alignment.CenterStart
                     ) {
-                        // Top: sender name + lock + collapsed preview
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        Column(
+                            modifier = Modifier.fillMaxWidth().clickable(
+                                enabled = !isEditingThisMessage,
+                                onClick = { dispatchToggleCollapsed(store, session, entry) }
+                            )
                         ) {
-                            if (showSenderInfo) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
                                 Text(
                                     text = senderName,
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = senderNameColor
                                 )
+                                if (entry.isLocked) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = "Locked",
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (uiState.isCollapsed && collapsedPreview.isNotBlank()) {
+                                    Text(
+                                        text = collapsedPreview,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                }
                             }
-                            if (entry.isLocked) {
-                                Icon(
-                                    imageVector = Icons.Default.Lock,
-                                    contentDescription = "Locked",
-                                    modifier = Modifier.size(14.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            if (uiState.isCollapsed && collapsedPreview.isNotBlank()) {
-                                Text(
-                                    text = collapsedPreview,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false)
-                                )
-                            }
+                            // Timestamp: always present for layout stability.
+                            // Transparent when not hovered — no vertical pop.
+                            Text(
+                                text = platformDependencies.formatDisplayTimestamp(entry.timestamp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (showChrome) MaterialTheme.colorScheme.onSurfaceVariant
+                                else Color.Transparent
+                            )
                         }
-                        // Timestamp: always present to reserve space, transparent when hidden.
-                        // Avoids vertical popping when hover toggles visibility.
-                        val timestampText = platformDependencies.formatDisplayTimestamp(entry.timestamp)
-                        Text(
-                            text = timestampText,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (showTimestamp) MaterialTheme.colorScheme.onSurfaceVariant
-                            else Color.Transparent
-                        )
+
+                        // Chrome overlay — floats top-right, no layout impact
+                        if (showChrome) {
+                            ChromeOverlay(store, session, entry, uiState, cardBgColor) { isMenuOpen = it }
+                        }
                     }
 
-                    // Overlay layer: action icons float over the right edge.
-                    // Solid card-color background so they don't clash with text.
-                    if (showChrome) {
-                        Row(
-                            modifier = Modifier
-                                .align(Alignment.CenterEnd)
-                                .background(cardBgColor),
-                            verticalAlignment = Alignment.CenterVertically
+                    // Content gap
+                    Spacer(Modifier.height(8.dp))
+
+                } else if (showChrome) {
+                    // ── Consecutive on hover: full header pops in ────────
+                    // This is the ONE allowed case of visual popping.
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().clickable(
+                                enabled = !isEditingThisMessage,
+                                onClick = { dispatchToggleCollapsed(store, session, entry) }
+                            )
                         ) {
-                            TooltipBox(
-                                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                                tooltip = { PlainTooltip { Text("Toggle Raw Content") } },
-                                state = remember { TooltipState() }
-                            ) {
-                                IconButton(onClick = {
-                                    store.dispatch("session", Action(
-                                        ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_RAW_VIEW,
-                                        buildJsonObject {
-                                            put("sessionId", session.identity.localHandle)
-                                            put("messageId", entry.id)
-                                        }
-                                    ))
-                                }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Code,
-                                        contentDescription = "Toggle Raw Content",
-                                        tint = if (uiState.isRawView) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            TooltipBox(
-                                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                                tooltip = { PlainTooltip { Text("Copy Message Content") } },
-                                state = remember { TooltipState() }
-                            ) {
-                                IconButton(
-                                    onClick = {
-                                        entry.rawContent?.let {
-                                            store.dispatch("session", Action(
-                                                ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD,
-                                                buildJsonObject { put("text", it) }
-                                            ))
-                                        }
-                                    },
-                                    enabled = entry.rawContent != null
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "Copy Message Content",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            Box {
-                                IconButton(onClick = { showMenu = true }) {
-                                    Icon(
-                                        Icons.Default.MoreVert,
-                                        contentDescription = "More options",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                DropdownMenu(
-                                    expanded = showMenu,
-                                    onDismissRequest = { showMenu = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text(if (entry.isLocked) "Unlock" else "Lock") },
-                                        onClick = {
-                                            store.dispatch("session", Action(
-                                                ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_LOCKED,
-                                                buildJsonObject {
-                                                    put("sessionId", session.identity.localHandle)
-                                                    put("messageId", entry.id)
-                                                }
-                                            ))
-                                            showMenu = false
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                imageVector = if (entry.isLocked) Icons.Default.LockOpen
-                                                else Icons.Default.Lock,
-                                                contentDescription = null
-                                            )
-                                        }
-                                    )
-                                    if (entry.rawContent != null) {
-                                        DropdownMenuItem(
-                                            text = { Text("Edit") },
-                                            onClick = {
-                                                store.dispatch("session", Action(
-                                                    ActionRegistry.Names.SESSION_SET_EDITING_MESSAGE,
-                                                    buildJsonObject { put("messageId", entry.id) }
-                                                ))
-                                                showMenu = false
-                                            },
-                                            enabled = !entry.isLocked
-                                        )
-                                    }
-                                    DropdownMenuItem(
-                                        text = { Text("Delete") },
-                                        onClick = {
-                                            store.dispatch("session", Action(
-                                                ActionRegistry.Names.SESSION_DELETE_MESSAGE,
-                                                buildJsonObject {
-                                                    put("session", session.identity.localHandle)
-                                                    put("messageId", entry.id)
-                                                }
-                                            ))
-                                            showMenu = false
-                                        },
-                                        enabled = !entry.isLocked
-                                    )
-                                }
-                            }
+                            Text(
+                                text = senderName,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = senderNameColor
+                            )
+                            Text(
+                                text = platformDependencies.formatDisplayTimestamp(entry.timestamp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
+                        ChromeOverlay(store, session, entry, uiState, cardBgColor) { isMenuOpen = it }
                     }
                 }
+                // ── Consecutive at rest: no header at all ────────────
+                // (neither branch above matches — content starts directly)
 
                 // ── Content ──────────────────────────────────────────────
                 AnimatedVisibility(visible = !uiState.isCollapsed) {
                     SelectionContainer {
                         Column {
-                            Spacer(Modifier.height(8.dp))
                             when {
                                 isEditingThisMessage -> MessageEditor(store, session, entry, editingContent)
                                 uiState.isRawView -> RawContentView(entry.rawContent ?: "--- No Raw Content ---")
@@ -303,6 +214,151 @@ fun LedgerEntryCard(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════════════════════
+
+private fun dispatchToggleCollapsed(store: Store, session: Session, entry: LedgerEntry) {
+    store.dispatch("session", Action(
+        ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_COLLAPSED,
+        buildJsonObject {
+            put("sessionId", session.identity.localHandle)
+            put("messageId", entry.id)
+        }
+    ))
+}
+
+/**
+ * Hover-only action icons overlay. Designed to float inside a Box with
+ * Alignment.TopEnd so it never shifts the base layer layout.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChromeOverlay(
+    store: Store,
+    session: Session,
+    entry: LedgerEntry,
+    uiState: MessageUiState,
+    cardBgColor: Color,
+    onMenuStateChanged: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.background(cardBgColor),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TooltipBox(
+            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+            tooltip = { PlainTooltip { Text("Toggle Raw Content") } },
+            state = remember { TooltipState() }
+        ) {
+            IconButton(onClick = {
+                store.dispatch("session", Action(
+                    ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_RAW_VIEW,
+                    buildJsonObject {
+                        put("sessionId", session.identity.localHandle)
+                        put("messageId", entry.id)
+                    }
+                ))
+            }) {
+                Icon(
+                    imageVector = Icons.Default.Code,
+                    contentDescription = "Toggle Raw Content",
+                    tint = if (uiState.isRawView) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        TooltipBox(
+            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+            tooltip = { PlainTooltip { Text("Copy Message Content") } },
+            state = remember { TooltipState() }
+        ) {
+            IconButton(
+                onClick = {
+                    entry.rawContent?.let {
+                        store.dispatch("session", Action(
+                            ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD,
+                            buildJsonObject { put("text", it) }
+                        ))
+                    }
+                },
+                enabled = entry.rawContent != null
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ContentCopy,
+                    contentDescription = "Copy Message Content",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        var showMenu by remember { mutableStateOf(false) }
+        // Sync menu open/close to parent so hover chrome stays visible
+        // while dropdown is open (cursor leaves the card for popup layer).
+        LaunchedEffect(showMenu) { onMenuStateChanged(showMenu) }
+        Box {
+            IconButton(onClick = { showMenu = true }) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "More options",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text(if (entry.isLocked) "Unlock" else "Lock") },
+                    onClick = {
+                        store.dispatch("session", Action(
+                            ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_LOCKED,
+                            buildJsonObject {
+                                put("sessionId", session.identity.localHandle)
+                                put("messageId", entry.id)
+                            }
+                        ))
+                        showMenu = false
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (entry.isLocked) Icons.Default.LockOpen
+                            else Icons.Default.Lock,
+                            contentDescription = null
+                        )
+                    }
+                )
+                if (entry.rawContent != null) {
+                    DropdownMenuItem(
+                        text = { Text("Edit") },
+                        onClick = {
+                            store.dispatch("session", Action(
+                                ActionRegistry.Names.SESSION_SET_EDITING_MESSAGE,
+                                buildJsonObject { put("messageId", entry.id) }
+                            ))
+                            showMenu = false
+                        },
+                        enabled = !entry.isLocked
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("Delete") },
+                    onClick = {
+                        store.dispatch("session", Action(
+                            ActionRegistry.Names.SESSION_DELETE_MESSAGE,
+                            buildJsonObject {
+                                put("session", session.identity.localHandle)
+                                put("messageId", entry.id)
+                            }
+                        ))
+                        showMenu = false
+                    },
+                    enabled = !entry.isLocked
+                )
             }
         }
     }
