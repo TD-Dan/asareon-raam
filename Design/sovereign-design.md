@@ -43,7 +43,7 @@ Each agent has three separate persistence files:
 
 These are independent systems. NVRAM is never involved in context management. Context state is never involved in cognitive state.
 
-### 2.5 System-Prompt-Only Gateway Architecture *(New — Phase B)*
+### 2.5 System-Prompt-Only Gateway Architecture *(Added in Phase B)*
 
 All conversation context lives in the system prompt. The gateway `contents` (messages array) is always empty. Each provider injects a minimal trigger message (`role: user`) to satisfy API requirements. This architecture:
 
@@ -51,7 +51,7 @@ All conversation context lives in the system prompt. The gateway `contents` (mes
 - Makes conversation logs a first-class context partition that participates in collapse/budget
 - Provides a universal format across all providers (Anthropic, OpenAI, Gemini, Inception)
 
-### 2.6 Structured Delimiter Convention *(New — Phase B)*
+### 2.6 Structured Delimiter Convention *(Added in Phase B)*
 
 All context partitions use a consistent indentation-based delimiter hierarchy:
 
@@ -246,23 +246,158 @@ The HKG view is split into two context partitions: an INDEX (navigational map) a
 
 ### 4.2 INDEX Partition
 
-Built from holon headers only (id, type, name, summary, sub_holons). Uses 2-space indentation per depth level. *(Unchanged from v4.0 — see archived spec for full format.)*
+Built from holon headers only (id, type, name, summary, sub_holons). Uses 2-space indentation per depth level:
+
+```
+--- HOLON_KNOWLEDGE_GRAPH_INDEX ---
+Persona: Meridian | Total holons: 30
+
+meridian-20260312T120000Z (AI_Persona_Root) — "Meridian" [EXPANDED]
+  A cartographic intelligence oriented toward rigorous analysis...
+
+  meridian-foundational-core-20260312T120000Z (Project) [COLLAPSED]
+    Meridian's origin story, first memories, and self-model emergence.
+    <contains 4 sub-holons>
+
+  meridian-session-logs-20260312T120000Z (Project) [COLLAPSED]
+    A master project and chronicle for all sessions.
+    <contains 152 sub-holons>
+
+  shared-knowledge-base-seed-20260312T120000Z (Project) [EXPANDED]
+    The objective, universal knowledge artifacts for safe operation.
+
+    system-holon-definition-20250809T101500Z (System_File) [COLLAPSED]
+      The canonical definition of a Holon...
+
+    cognitive-toolkit-core-20250805T180124Z (System_File) [COLLAPSED]
+      A verified set of mature cognitive techniques...
+
+    ... (9 more sub-holons)
+
+  processes-seed-20260312T120000Z (Project) [COLLAPSED]
+    The defined processes and lifecycle protocols.
+    <contains 3 sub-holons>
+```
+
+**Rules:**
+- COLLAPSED branch: shows holon ID + type + summary + `<contains N sub-holons>` badge. All children are hidden.
+- EXPANDED branch (in INDEX): shows its immediate children (with their summaries). Children themselves may be COLLAPSED.
+- `[EXPANDED]` tag means the holon's file is also open in the FILES section.
+- `[COLLAPSED]` means the file is not open. Uncollapsing it would add it to FILES.
+- Sub-holon count is recursive (counts grandchildren, etc.).
 
 ### 4.3 FILES Partition
 
-Lists all EXPANDED holons as complete JSON files with START/END markers. *(Unchanged from v4.0.)*
+Lists all EXPANDED holons as complete JSON files:
+
+```
+--- HOLON_KNOWLEDGE_GRAPH_FILES ---
+Files currently open: 2 of 30
+
+--- START OF FILE meridian-20260312T120000Z.json ---
+{
+  "header": { ... },
+  "execute": { ... },
+  "payload": { ... }
+}
+--- END OF FILE meridian-20260312T120000Z.json ---
+
+--- START OF FILE shared-knowledge-base-seed-20260312T120000Z.json ---
+{
+  "header": { ... },
+  "payload": { ... }
+}
+--- END OF FILE shared-knowledge-base-seed-20260312T120000Z.json ---
+```
+
+When no files are open:
+
+```
+--- HOLON_KNOWLEDGE_GRAPH_FILES ---
+No files open. Use agent.CONTEXT_UNCOLLAPSE to open holon files.
+```
 
 ### 4.4 Collapse Granularity
 
-*(Unchanged from v4.0 — holon-level and partition-level collapse commands.)*
+**Holon level (preferred):**
+```
+agent.CONTEXT_UNCOLLAPSE { "partitionKey": "hkg:<holonId>", "scope": "single" }
+→ Opens one holon file in FILES. Expands its branch in INDEX.
+
+agent.CONTEXT_COLLAPSE { "partitionKey": "hkg:<holonId>" }
+→ Closes holon file in FILES. Collapses branch in INDEX (hides children).
+```
+
+**Partition level (coarse):**
+```
+agent.CONTEXT_UNCOLLAPSE { "partitionKey": "HOLON_KNOWLEDGE_GRAPH_FILES", "scope": "full" }
+→ Opens ALL holon files. Expensive — agent should prefer per-holon.
+
+agent.CONTEXT_COLLAPSE { "partitionKey": "HOLON_KNOWLEDGE_GRAPH_FILES" }
+→ Closes all holon files.
+```
 
 ### 4.5 Write Guard
 
-*(Unchanged from v4.0 — blocks HKG writes to collapsed holons.)*
+When an agent command targets `knowledgegraph.UPDATE_HOLON_CONTENT` (or any HKG write action), the agent feature checks the target holon's collapse state before forwarding:
+
+```kotlin
+// In AgentRuntimeFeature, in the command forwarding path:
+val targetHolonId = resolvedPayload["holonId"]?.jsonPrimitive?.contentOrNull
+val holonCollapseState = statusInfo.contextCollapseOverrides["hkg:$targetHolonId"]
+
+if (holonCollapseState != CollapseState.EXPANDED) {
+    // Block — post sentinel error to agent's output session
+    postToSession(agent.outputSessionId, "system", """
+SYSTEM SENTINEL: Error: Write blocked! You are attempting to modify holon
+'$targetHolonId' which is not fully expanded in your context. Expand the file:
+```auf_agent.CONTEXT_UNCOLLAPSE
+{ "partitionKey": "hkg:$targetHolonId", "scope": "single" }
+```
+Then retry your write to ensure you are not omitting data.""".trimIndent())
+    return // Do not forward
+}
+```
+
+This lives in the agent feature's command forwarding path — the same code path where sandbox rules are already enforced. CommandBot dispatches `commandbot.ACTION_CREATED`, the agent feature reads it and decides what to do. The write guard is part of that decision.
 
 ### 4.6 HkgContextFormatter
 
-Pipeline-level utility in `app.auf.feature.agent`. *(Interface unchanged from v4.0.)*
+Pipeline-level utility in `app.auf.feature.agent`:
+
+```kotlin
+object HkgContextFormatter {
+
+    data class HolonSummary(
+        val id: String,
+        val type: String,
+        val name: String,
+        val summary: String?,
+        val subHolonRefs: List<SubRef>,
+        val depth: Int
+    )
+
+    data class SubRef(val id: String, val type: String, val summary: String)
+
+    /** Parse holon headers from raw JSON strings. */
+    fun parseHolonHeaders(hkgContext: Map<String, String>): Map<String, HolonSummary>
+
+    /** Build the INDEX tree string. */
+    fun buildIndexTree(
+        headers: Map<String, HolonSummary>,
+        collapseOverrides: Map<String, CollapseState>
+    ): String
+
+    /** Build the FILES section string (expanded holons only). */
+    fun buildFilesSection(
+        hkgContext: Map<String, String>,
+        collapseOverrides: Map<String, CollapseState>
+    ): String
+
+    /** Count sub-holons recursively for badge display. */
+    fun countSubHolons(holonId: String, headers: Map<String, HolonSummary>): Int
+}
+```
 
 ---
 
@@ -270,7 +405,28 @@ Pipeline-level utility in `app.auf.feature.agent`. *(Interface unchanged from v4
 
 ### 5.1 session.SESSION_CREATED Broadcast
 
-Added to the session feature. Fires after the session is fully created and registered. *(Implemented in Phase A.)*
+Added to the session feature. Fires in the `CORE_RETURN_REGISTER_IDENTITY` side-effect handler, after the session is persisted:
+
+```json
+{
+  "action_name": "session.SESSION_CREATED",
+  "summary": "Broadcast when a new session is fully created and registered.",
+  "public": false,
+  "broadcast": true,
+  "payload_schema": {
+    "properties": {
+      "uuid": { "type": "string" },
+      "name": { "type": "string" },
+      "handle": { "type": "string" },
+      "localHandle": { "type": "string" },
+      "isHidden": { "type": "boolean" },
+      "isPrivateTo": { "type": ["string", "null"],
+        "description": "Identity handle of the owner, if private." }
+    },
+    "required": ["uuid", "name", "handle", "localHandle"]
+  }
+}
+```
 
 ### 5.2 Pending Session Guard
 
@@ -279,9 +435,9 @@ Added to the session feature. Fires after the session is fully created and regis
 val pendingPrivateSessionCreation: Boolean = false
 ```
 
-### 5.3 Private Session Flow *(Simplified from v4.0)*
+### 5.3 Private Session Flow
 
-The original design included a registry recovery step (searching the identity registry for sessions with `isPrivateTo`). This was dropped — restart resilience relies on `outputSessionId` being persisted in `agent.json`. The narrow crash window between SESSION_CREATED and agent.json save is accepted; a duplicate private session is recoverable by the operator.
+The implementation uses a two-step guard. The original v4.0 design included a registry recovery step (searching the identity registry for sessions with `isPrivateTo`). This was dropped during implementation — restart resilience relies on `outputSessionId` being persisted in `agent.json`. The narrow crash window between SESSION_CREATED and agent.json save is accepted; a duplicate private session is recoverable by the operator.
 
 ```
 ensureInfrastructure():
@@ -293,33 +449,54 @@ SESSION_CREATED handler in AgentRuntimeFeature:
   1. Read isPrivateTo from payload
   2. Find agent with matching identityHandle
   3. Dispatch AGENT_UPDATE_CONFIG to set outputSessionId
-  4. Dispatch ADD_SESSION_SUBSCRIPTION to subscribe agent to its private session
+  4. Dispatch ADD_SESSION_SUBSCRIPTION to subscribe agent to its own private session
   5. Clear pending flag
 ```
 
-**Key difference from v4.0:** Step 4 subscribes the agent to its own private session. This means the agent sees its private session in the conversation log — it functions as an internal monologue / staging ground.
+Matching by `isPrivateTo` is deterministic — no fragile name conventions.
 
-### 5.4 Private Session Routing in System Prompt *(New — Phase B)*
+Step 4 is new compared to v4.0: the agent is auto-subscribed to its own private session. This means the agent sees its private session in the conversation log — it functions as an internal monologue and staging ground.
+
+### 5.4 Private Session Routing in System Prompt
 
 PrivateSessionStrategy's system prompt includes a dedicated `PRIVATE SESSION ROUTING` section that:
 - Explains that direct responses go to the invisible private session
 - Instructs the agent to use `session.POST` for public communication
 - Provides a concrete fenced code block example (without senderId — auto-filled from originator)
 - Tags sessions as `[PRIVATE]` or `[PUBLIC]` in the subscription listing
+- Lists per-session participants with their type and message count
 
-### 5.5 session.POST senderId Auto-Fill *(New — Phase B)*
+### 5.5 session.POST senderId Auto-Fill
 
-`session.POST` no longer requires `senderId`. If omitted, the session feature falls back to `action.originator` — the identity handle of the dispatching entity. This eliminates a common agent error (wrong senderId) and simplifies the prompt.
+`session.POST` no longer requires `senderId`. If omitted, the session feature falls back to `action.originator` — the identity handle of the dispatching entity. The resolution chain is: explicit payload `senderId` → `action.originator` → `"unknown"`. This eliminates a common agent error (wrong senderId) and simplifies the prompt.
+
+### 5.6 Default System Instruction
+
+The built-in default system instruction for PrivateSessionStrategy agents:
+
+```
+You are a helpful assistant with a private output session.
+Your responses are routed to your private session.
+You observe messages from your subscribed public sessions.
+Use your private session as your internal voice and staging ground before you answer to any sessions. You can also decide to not answer when there is nothing to say or you are the one that replied last.
+```
 
 ---
 
-## 6. Multi-Session Conversation Architecture *(New — Phase B)*
+## 6. Multi-Session Conversation Architecture *(Added in Phase B)*
 
 ### 6.1 System-Prompt-Only Mode
 
 All LLM APIs (Anthropic, OpenAI, Gemini, Inception) are designed for binary user/assistant conversations. Multi-user, multi-session conversations cannot be naturally represented in alternating message roles.
 
-**Solution:** The conversation log moves from the gateway `contents` (messages array) into the system prompt as a structured context partition (`CONVERSATION_LOG`). The `contents` array is always empty. Each provider detects empty contents and injects a minimal trigger message to satisfy API requirements.
+The conversation log moves from the gateway `contents` (messages array) into the system prompt as a structured context partition (`CONVERSATION_LOG`). The `contents` array is always empty. Each provider detects empty contents and injects a minimal trigger message to satisfy API requirements:
+
+- **Anthropic**: `[{"role": "user", "content": "[Turn initiated. Respond based on your system prompt.]"}]` — separate `system` field carries the system prompt
+- **OpenAI**: system prompt as first message, then `[{"role": "user", "content": "[Turn initiated...]"}]`
+- **Inception**: identical to OpenAI (OpenAI-compatible API)
+- **Gemini**: `{"role": "user", "parts": [{"text": "[Turn initiated...]"}]}` — system prompt goes in `system_instruction`
+
+The legacy path (populated `contents`) is preserved but deprecated in all four providers.
 
 ### 6.2 Multi-Session Ledger Accumulation
 
@@ -327,14 +504,17 @@ The pipeline requests ledger content from ALL subscribed sessions in parallel:
 
 ```
 startCognitiveCycle():
-  1. Dispatch SET_PENDING_LEDGER_SESSIONS [s1, s2, s3, ...]
-  2. For each session: dispatch REQUEST_LEDGER_CONTENT with
+  1. Collect all sessions to request: subscribedSessionIds (or outputSessionId fallback)
+  2. Validate all UUIDs are in the identity registry
+  3. Dispatch SET_PENDING_LEDGER_SESSIONS [s1, s2, s3, ...]
+  4. For each session: dispatch REQUEST_LEDGER_CONTENT with
      compound correlationId "agentUUID::sessionUUID"
 
 handleLedgerResponse():
   1. Parse compound correlationId to extract agentId + sessionId
   2. Enrich messages (sender names, roles)
   3. Dispatch ACCUMULATE_SESSION_LEDGER {agentId, sessionId, messages}
+  4. Legacy fallback: if no "::" in correlationId, dispatches STAGE_TURN_CONTEXT
 
 Reducer (ACCUMULATE_SESSION_LEDGER):
   - Stores messages in accumulatedSessionLedgers[sessionId]
@@ -343,6 +523,18 @@ Reducer (ACCUMULATE_SESSION_LEDGER):
 Side-effect (ACCUMULATE_SESSION_LEDGER):
   - If pendingLedgerSessionIds is empty → all arrived → evaluateTurnContext()
 ```
+
+New state fields on `AgentStatusInfo`:
+
+```kotlin
+/** Session UUIDs whose ledger responses have not yet arrived. Empty = all received. */
+val pendingLedgerSessionIds: Set<IdentityUUID> = emptySet()
+
+/** Accumulated per-session ledger messages. Key = session UUID, value = enriched messages. */
+val accumulatedSessionLedgers: Map<IdentityUUID, List<GatewayMessage>> = emptyMap()
+```
+
+Both fields are cleared in INITIATE_TURN (reducer) and on SET_STATUS when `shouldClearContext` is true.
 
 ### 6.3 CONVERSATION_LOG Format
 
@@ -366,9 +558,17 @@ What is your favourite animal?
 --- END OF CONVERSATION LOG ---
 ```
 
+When all sessions are empty:
+
+```
+--- CONVERSATION LOG ---
+No messages in any subscribed session.
+--- END OF CONVERSATION LOG ---
+```
+
 ### 6.4 SUBSCRIBED SESSIONS with Participants
 
-Each session listing includes a per-session participant roster:
+Each session listing includes a per-session participant roster derived from the conversation log:
 
 ```
 --- SUBSCRIBED SESSIONS ---
@@ -376,10 +576,9 @@ Each session listing includes a per-session participant roster:
   - Daniel (user.daniel): Human User, 3 messages
   - Ryan (agent.ryan-2): YOU (this agent), 2 messages
  ---
- --- Ryan-private-session (session.ryan-private) [PRIVATE — ...] | 1 message ---
+ --- Ryan-private-session (session.ryan-private) [PRIVATE — Your direct output is routed here, invisible to others] | 1 message ---
   - Ryan (agent.ryan-2): YOU (this agent), 1 messages
  ---
---- END OF SUBSCRIBED SESSIONS ---
 ```
 
 Data model:
@@ -402,14 +601,30 @@ data class SessionInfo(
 )
 ```
 
+The `participants` and `messageCount` fields have defaults, so existing `SessionInfo` construction sites (Vanilla, StateMachine, Minimal) are unaffected.
+
 ### 6.5 ConversationLogFormatter
 
 Pipeline-level utility in `app.auf.feature.agent`:
 
 ```kotlin
 object ConversationLogFormatter {
-    data class SessionLedgerSnapshot(...)
-    fun format(sessions: List<SessionLedgerSnapshot>, platformDeps: PlatformDependencies): String
+
+    data class SessionLedgerSnapshot(
+        val sessionName: String,
+        val sessionUUID: String,
+        val sessionHandle: String,
+        val messages: List<GatewayMessage>,
+        val isOutputSession: Boolean = false
+    )
+
+    /** Formats multiple session ledgers into a single structured conversation log. */
+    fun format(
+        sessions: List<SessionLedgerSnapshot>,
+        platformDependencies: PlatformDependencies
+    ): String
+
+    /** Extracts unique participants across all sessions for multi-agent context building. */
     fun extractParticipants(sessions: List<SessionLedgerSnapshot>): List<Pair<String, String>>
 }
 ```
@@ -469,7 +684,23 @@ Plumbing upgrades that later phases depend on.
 8. `CollapseState` enum in `AgentState.kt`
 9. `SessionFeature.kt`: senderId auto-fill from originator on session.POST
 
-### Phase B: PrivateSessionStrategy ✅ COMPLETE (tests need update)
+**Success gate — unit tests:**
+- SessionFeature: SESSION_CREATED broadcast fires with correct payload including isPrivateTo
+- SessionFeature: SESSION_CREATED for non-private session has isPrivateTo = null
+- Reducer: CONTEXT_UNCOLLAPSE with scope "single" sets override to EXPANDED
+- Reducer: CONTEXT_UNCOLLAPSE with scope "subtree" sets override to EXPANDED
+- Reducer: CONTEXT_COLLAPSE sets override to COLLAPSED
+- Reducer: CONTEXT_STATE_LOADED populates overrides from loaded data
+- Reducer: SET_PENDING_PRIVATE_SESSION toggles flag
+- Reducer: SET_PENDING_LEDGER_SESSIONS initializes pending set and clears accumulated map
+- Reducer: ACCUMULATE_SESSION_LEDGER stores messages and removes from pending set
+- CrudLogic: CREATE with budget fields → agent has correct budget values
+- CrudLogic: UPDATE_CONFIG with budget fields → agent updated
+- context.json round-trip: save → load → overrides match
+- context.json missing on load → empty overrides, no crash
+- context.json corrupt on load → empty overrides, warning logged
+
+### Phase B: PrivateSessionStrategy ✅ COMPLETE (unit tests need update)
 
 Private session lifecycle validated in isolation and integrated with multi-session pipeline.
 
@@ -481,15 +712,47 @@ Private session lifecycle validated in isolation and integrated with multi-sessi
 5. `AgentCognitivePipeline.kt` — system-prompt-only architecture, multi-session ledger accumulation, ConversationLogFormatter integration, empty gateway contents
 6. Gateway providers updated: `AnthropicProvider.kt`, `OpenAIProvider.kt`, `InceptionProvider.kt`, `GeminiProvider.kt` — empty contents handling with trigger injection
 
-**Architectural changes discovered during Phase B implementation:**
-- **System-prompt-only gateway** (§2.5): All conversation moved from `contents` to system prompt. Deprecated the old message-passing path across all 4 providers.
-- **Multi-session ledger accumulation** (§6.2): Pipeline dispatches N ledger requests, accumulates per-session, builds conversation log from map.
-- **Private session auto-subscription** (§5.3 step 4): Agent subscribes to its own private session for internal monologue visibility.
-- **No registry recovery** (§5.3): Restart resilience relies on agent.json persistence, not identity registry search. Eliminates cross-feature dependency.
-- **senderId auto-fill** (§5.5): session.POST defaults senderId to action.originator.
-- **Participant-aware session listing** (§6.4): SUBSCRIBED SESSIONS includes per-session participant roster.
+**Architectural decisions made during Phase B:**
+- System-prompt-only gateway (§2.5): All conversation moved from `contents` to system prompt. Deprecated the old message-passing path across all 4 providers.
+- Multi-session ledger accumulation (§6.2): Pipeline dispatches N ledger requests, accumulates per-session, builds conversation log from map.
+- Private session auto-subscription (§5.3 step 4): Agent subscribes to its own private session for internal monologue visibility.
+- No registry recovery (§5.3): Restart resilience relies on agent.json persistence, not identity registry search. Eliminates cross-feature dependency.
+- senderId auto-fill (§5.5): session.POST defaults senderId to action.originator.
+- Participant-aware session listing (§6.4): SUBSCRIBED SESSIONS includes per-session participant roster.
 
 **Remaining for Phase B:** Update test file for latest SessionInfo/SessionParticipant changes and session.POST senderId removal. Scheduled for next session.
+
+**Success gate — unit tests (50 tests defined, update pending):**
+- identityHandle: in agent.strategy.* namespace, no collisions
+- getInitialState: returns JsonNull
+- getResourceSlots: declares system_instruction slot
+- getConfigFields: declares outputSessionId field
+- getBuiltInResources: returns default system instruction with unique ID
+- validateConfig: does NOT reset out-of-band outputSessionId
+- validateConfig: does NOT auto-assign when null
+- validateConfig: preserves valid outputSessionId, preserves null with no subscriptions
+- validateConfig: does not modify subscribedSessionIds
+- prepareSystemPrompt: agent name, identity section, system instructions, multi-user awareness
+- prepareSystemPrompt: private session routing section with session.POST example (no senderId)
+- prepareSystemPrompt: tags output session as PRIVATE, non-output as PUBLIC
+- prepareSystemPrompt: explains private session is invisible to others
+- prepareSystemPrompt: lists participants per session with details
+- prepareSystemPrompt: shows "no messages yet" for empty sessions
+- prepareSystemPrompt: multi-agent context before other contexts, no duplication
+- prepareSystemPrompt: omits sections when empty (no sessions, no contexts, no instructions)
+- prepareSystemPrompt: routing section appears before subscribed sessions
+- postProcessResponse: always PROCEED, no state modification, no displayHint
+- getValidNvramKeys: returns null for stateless strategy
+- ensureInfrastructure: dispatches SESSION_CREATE when no outputSessionId and not pending
+- ensureInfrastructure: sets pending flag, targets correct agent, sets isHidden
+- ensureInfrastructure: dispatches pending flag BEFORE session create
+- ensureInfrastructure: dispatches exactly two actions when creating
+- ensureInfrastructure: no-op when outputSessionId set
+- ensureInfrastructure: no-op when pending flag set
+- needsAdditionalContext: returns false
+- requestAdditionalContext: returns false
+- onAgentRegistered / onAgentConfigChanged: no crash
+- strategy is singleton object
 
 ### Phase C: HKGStrategy
 
@@ -606,18 +869,18 @@ Compose all capabilities.
 
 | File | Changes | Phase | Status |
 |------|---------|-------|--------|
-| `AgentState.kt` | Budget fields, CollapseOverrides, pending flag, multi-session ledger fields | A+B | ✅ Shipped |
-| `AgentRuntimeReducer.kt` | CONTEXT_UNCOLLAPSE/COLLAPSE, SET_PENDING_PRIVATE_SESSION, SET_PENDING_LEDGER_SESSIONS, ACCUMULATE_SESSION_LEDGER, cleanup in INITIATE_TURN + SET_STATUS | A+B | ✅ Shipped |
-| `AgentRuntimeFeature.kt` | context.json load/save, SESSION_CREATED handler (with subscription), ACCUMULATE_SESSION_LEDGER side-effect | A+B | ✅ Shipped |
-| `AgentCognitivePipeline.kt` | System-prompt-only mode, multi-session ledger accumulation, ConversationLogFormatter, empty gateway contents | B | ✅ Shipped |
+| `AgentState.kt` | Budget fields on AgentInstance. CollapseOverrides + pending flag + multi-session ledger fields on AgentStatusInfo. CollapseState enum. | A+B | ✅ Shipped |
+| `AgentRuntimeReducer.kt` | CONTEXT_UNCOLLAPSE, CONTEXT_COLLAPSE, CONTEXT_STATE_LOADED, SET_PENDING_PRIVATE_SESSION, SET_PENDING_LEDGER_SESSIONS, ACCUMULATE_SESSION_LEDGER. Cleanup in INITIATE_TURN + SET_STATUS. | A+B | ✅ Shipped |
+| `AgentRuntimeFeature.kt` | context.json load/save, SESSION_CREATED handler (with private session subscription), ACCUMULATE_SESSION_LEDGER side-effect, register new strategies, write guard | A+B+C | ✅ Shipped (A+B parts) |
+| `AgentCognitivePipeline.kt` | System-prompt-only mode, multi-session ledger accumulation, ConversationLogFormatter, empty gateway contents, multi-session SESSION_METADATA | B | ✅ Shipped |
 | `CognitiveStrategy.kt` | SessionParticipant data class, SessionInfo extended with participants + messageCount | B | ✅ Shipped |
-| `AnthropicProvider.kt` | Empty contents → trigger message injection, legacy path preserved | B | ✅ Shipped |
-| `OpenAIProvider.kt` | Empty contents → trigger message injection | B | ✅ Shipped |
-| `InceptionProvider.kt` | Empty contents → trigger message injection | B | ✅ Shipped |
-| `GeminiProvider.kt` | Empty contents → trigger message injection | B | ✅ Shipped |
-| `SessionFeature.kt` | senderId optional on POST, auto-fill from originator | B | ✅ Shipped |
-| `session_actions.json` | SESSION_CREATED, senderId not required on POST | A+B | ✅ Shipped |
-| `agent_actions.json` | All Phase A actions + SET_PENDING_LEDGER_SESSIONS, ACCUMULATE_SESSION_LEDGER | A+B | ✅ Shipped |
+| `AnthropicProvider.kt` | Empty contents → trigger message injection, legacy path preserved. Also in buildCountTokensPayload. | B | ✅ Shipped |
+| `OpenAIProvider.kt` | Empty contents → trigger message injection, legacy path preserved | B | ✅ Shipped |
+| `InceptionProvider.kt` | Empty contents → trigger message injection, legacy path preserved | B | ✅ Shipped |
+| `GeminiProvider.kt` | Empty contents → trigger message injection, legacy path preserved | B | ✅ Shipped |
+| `SessionFeature.kt` | SESSION_CREATED broadcast. senderId optional on POST with originator auto-fill. | A+B | ✅ Shipped |
+| `session_actions.json` | SESSION_CREATED. senderId not required on POST. | A+B | ✅ Shipped |
+| `agent_actions.json` | CONTEXT_UNCOLLAPSE, CONTEXT_COLLAPSE, CONTEXT_STATE_LOADED, SET_PENDING_PRIVATE_SESSION, SET_PENDING_LEDGER_SESSIONS, ACCUMULATE_SESSION_LEDGER | A+B | ✅ Shipped |
 | `AgentCrudLogic.kt` | Budget fields in CREATE/UPDATE_CONFIG | A | ✅ Shipped |
 | `SovereignStrategy.kt` | Updated ensureInfrastructure(), boot auto-uncollapse | E | Planned |
 | `AgentManagerView.kt` | Budget config UI | A or later | Planned |
@@ -737,9 +1000,9 @@ Compose all capabilities.
 | 12 | Sticky overrides | Persisted in context.json. Respected up to hard max. |
 | 13 | HKG vs Filesystem | Not duplicative. Filesystem = sandboxed I/O. HKG = semantic knowledge layer on top. Agent workspace is scratch; HKG is persona identity. |
 | 14 | Phase ordering | A (plumbing) → B (private session) → C (HKG) → D (collapse pipeline) → E (Sovereign). Each gated by tests. |
-| 15 | Multi-session conversations *(new)* | Conversation moves from gateway contents to system prompt. LLM APIs only support binary user/assistant — multi-user context must be in the system prompt. |
-| 16 | Private session restart recovery *(new)* | Relies on agent.json persistence, NOT identity registry search. No cross-feature dependency. Duplicate session on narrow crash window is accepted. |
-| 17 | Private session subscription *(new)* | Agent is auto-subscribed to its private session via ADD_SESSION_SUBSCRIPTION in SESSION_CREATED handler. Private session serves as internal monologue. |
-| 18 | session.POST senderId *(new)* | Optional. Auto-filled from action.originator. Eliminates common agent error. |
-| 19 | Context delimiter convention *(new)* | `---` / ` ---` / `  ---` indentation hierarchy. Content at zero indent between delimiters. |
-| 20 | Session participant metadata *(new)* | SessionInfo carries per-session participant roster (name, type, message count). Rendered in SUBSCRIBED SESSIONS section. |
+| 15 | Multi-session conversations | Conversation moves from gateway contents to system prompt. LLM APIs only support binary user/assistant — multi-user context must be in the system prompt. |
+| 16 | Private session restart recovery | Relies on agent.json persistence, NOT identity registry search. No cross-feature dependency. Duplicate session on narrow crash window is accepted. |
+| 17 | Private session subscription | Agent is auto-subscribed to its private session via ADD_SESSION_SUBSCRIPTION in SESSION_CREATED handler. Private session serves as internal monologue. |
+| 18 | session.POST senderId | Optional. Auto-filled from action.originator. Eliminates common agent error. |
+| 19 | Context delimiter convention | `---` / ` ---` / `  ---` indentation hierarchy. Content at zero indent between delimiters. |
+| 20 | Session participant metadata | SessionInfo carries per-session participant roster (name, type, message count). Rendered in SUBSCRIBED SESSIONS section. |
