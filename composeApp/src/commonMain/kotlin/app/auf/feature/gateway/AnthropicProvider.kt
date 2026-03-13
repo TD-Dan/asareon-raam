@@ -103,14 +103,33 @@ class AnthropicProvider(
 
     // --- Logic extracted for testability ---
 
+    companion object {
+        /**
+         * Minimal trigger message injected when `contents` is empty (system-prompt-only mode).
+         * All conversation context is in the system prompt; this satisfies the API's
+         * requirement for ≥1 user message.
+         */
+        internal const val SYSTEM_PROMPT_TRIGGER = "[Turn initiated. Respond based on your system prompt.]"
+    }
+
     /** Builds the provider-specific JSON payload from a universal request. */
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         val anthropicMessages = buildJsonArray {
-            request.contents.forEach { message ->
+            if (request.contents.isEmpty()) {
+                // System-prompt-only mode: conversation is in the system prompt.
+                // Anthropic requires ≥1 user message.
                 add(buildJsonObject {
-                    put("role", if (message.role == "model") "assistant" else "user")
-                    put("content", message.content)
+                    put("role", "user")
+                    put("content", SYSTEM_PROMPT_TRIGGER)
                 })
+            } else {
+                // Legacy path (deprecated): contents carries conversation messages.
+                request.contents.forEach { message ->
+                    add(buildJsonObject {
+                        put("role", if (message.role == "model") "assistant" else "user")
+                        put("content", message.content)
+                    })
+                }
             }
         }
 
@@ -225,11 +244,18 @@ class AnthropicProvider(
 
     internal fun buildCountTokensPayload(request: GatewayRequest): JsonElement {
         val anthropicMessages = buildJsonArray {
-            request.contents.forEach { message ->
+            if (request.contents.isEmpty()) {
                 add(buildJsonObject {
-                    put("role", if (message.role == "model") "assistant" else "user")
-                    put("content", message.content)
+                    put("role", "user")
+                    put("content", SYSTEM_PROMPT_TRIGGER)
                 })
+            } else {
+                request.contents.forEach { message ->
+                    add(buildJsonObject {
+                        put("role", if (message.role == "model") "assistant" else "user")
+                        put("content", message.content)
+                    })
+                }
             }
         }
         return buildJsonObject {

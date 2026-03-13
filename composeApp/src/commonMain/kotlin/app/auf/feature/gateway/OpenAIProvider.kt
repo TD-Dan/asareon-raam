@@ -68,6 +68,15 @@ class OpenAIProvider(
 
     // --- Logic extracted for testability ---
 
+    companion object {
+        /**
+         * Minimal trigger message injected when `contents` is empty (system-prompt-only mode).
+         * All conversation context is in the system prompt; this satisfies the API's
+         * requirement for ≥1 non-system message.
+         */
+        internal const val SYSTEM_PROMPT_TRIGGER = "[Turn initiated. Respond based on your system prompt.]"
+    }
+
     private fun sanitizeOpenAIName(senderName: String, senderId: String): String {
         val raw = "${senderName}_$senderId"
         return raw.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(64)
@@ -81,12 +90,22 @@ class OpenAIProvider(
                     put("content", it)
                 })
             }
-            request.contents.forEach { message ->
+            if (request.contents.isEmpty()) {
+                // System-prompt-only mode: conversation is in the system prompt.
+                // OpenAI requires ≥1 non-system message.
                 add(buildJsonObject {
-                    put("role", if (message.role == "model") "assistant" else message.role)
-                    put("content", message.content)
-                    put("name", sanitizeOpenAIName(message.senderName, message.senderId))
+                    put("role", "user")
+                    put("content", SYSTEM_PROMPT_TRIGGER)
                 })
+            } else {
+                // Legacy path (deprecated): contents carries conversation messages.
+                request.contents.forEach { message ->
+                    add(buildJsonObject {
+                        put("role", if (message.role == "model") "assistant" else message.role)
+                        put("content", message.content)
+                        put("name", sanitizeOpenAIName(message.senderName, message.senderId))
+                    })
+                }
             }
         }
         return buildJsonObject {

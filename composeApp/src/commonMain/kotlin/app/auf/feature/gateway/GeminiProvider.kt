@@ -81,15 +81,36 @@ class GeminiProvider(
 
     // --- Logic extracted for testability ---
 
+    companion object {
+        /**
+         * Minimal trigger message injected when `contents` is empty (system-prompt-only mode).
+         * All conversation context is in the system prompt; this satisfies the API's
+         * requirement for ≥1 content entry.
+         */
+        internal const val SYSTEM_PROMPT_TRIGGER = "[Turn initiated. Respond based on your system prompt.]"
+    }
+
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         val apiContents = buildJsonArray {
-            request.contents.forEach { message ->
+            if (request.contents.isEmpty()) {
+                // System-prompt-only mode: conversation is in the system prompt.
+                // Gemini requires ≥1 content entry with role "user".
                 add(buildJsonObject {
-                    put("role", message.role)
+                    put("role", "user")
                     put("parts", buildJsonArray {
-                        add(buildJsonObject { put("text", message.content) })
+                        add(buildJsonObject { put("text", SYSTEM_PROMPT_TRIGGER) })
                     })
                 })
+            } else {
+                // Legacy path (deprecated): contents carries conversation messages.
+                request.contents.forEach { message ->
+                    add(buildJsonObject {
+                        put("role", message.role)
+                        put("parts", buildJsonArray {
+                            add(buildJsonObject { put("text", message.content) })
+                        })
+                    })
+                }
             }
         }
         return buildJsonObject {
