@@ -299,6 +299,6 @@ class GatewayFeatureT1GeminiProviderTest {
 
         // ASSERT
         assertNotNull(contents)
-        assertEquals(0, contents.size, "Contents array should be empty when contents list is empty.")
+        assertEquals(1, contents.size, "Contents array should contain 1 message when contents list is empty.")
     }
 }

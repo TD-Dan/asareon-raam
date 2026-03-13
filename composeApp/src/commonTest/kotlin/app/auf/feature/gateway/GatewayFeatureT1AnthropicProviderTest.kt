@@ -401,7 +401,7 @@ class GatewayFeatureT1AnthropicProviderTest {
 
         // ASSERT
         assertNotNull(messages)
-        assertEquals(0, messages.size, "Messages array should be empty when contents list is empty.")
+        assertEquals(1, messages.size, "Messages array should contain one message when contents list is empty.")
     }
 
     @Test

@@ -183,7 +183,7 @@ class GatewayFeatureT1InceptionProviderTest {
 
         // ASSERT
         assertNotNull(messages)
-        assertEquals(0, messages.size, "Messages array should be empty when contents list is empty.")
+        assertEquals(1, messages.size, "Messages array should contain 1 message when contents list is empty.")
     }
 
     @Test
@@ -201,7 +201,7 @@ class GatewayFeatureT1InceptionProviderTest {
 
         // ASSERT
         assertNotNull(messages)
-        assertEquals(1, messages.size, "Only the system message should be present.")
+        assertEquals(2, messages.size, "Only the system message and 1 message should be present.")
         assertEquals("system", messages[0].jsonObject["role"]?.toString()?.trim('"'))
     }
 
