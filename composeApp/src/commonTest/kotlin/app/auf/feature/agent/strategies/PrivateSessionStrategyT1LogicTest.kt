@@ -1,0 +1,730 @@
+package app.auf.feature.agent.strategies
+
+import app.auf.core.*
+import app.auf.core.generated.ActionRegistry
+import app.auf.fakes.FakePlatformDependencies
+import app.auf.fakes.FakeStore
+import app.auf.feature.agent.*
+import app.auf.test.testDescriptorsFor
+import kotlinx.serialization.json.*
+import kotlin.test.*
+
+/**
+ * Tier 1 Unit Tests for PrivateSessionStrategy.
+ *
+ * PrivateSessionStrategy is a reference strategy that validates the private session
+ * lifecycle pattern in isolation (Phase B of the Sovereign Stabilization design).
+ *
+ * ## What PrivateSessionStrategy IS
+ *
+ * A strategy whose agent always has a dedicated private output session, linked by UUID.
+ * The agent can subscribe to multiple public sessions (to observe), but all API
+ * responses route to the private session. The private session is created on-demand
+ * by ensureInfrastructure() and linked back via SESSION_CREATED → UPDATE_CONFIG.
+ *
+ * ## Key Behavioral Contracts
+ *
+ * 1. **Private session lifecycle (ensureInfrastructure)**
+ *    - Creates a private session if none is linked and none is pending.
+ *    - Uses `isPrivateTo = agent.identityHandle` for deterministic matching.
+ *    - Sets the pending guard flag to prevent duplicate creation on rapid heartbeats.
+ *    - Is a complete no-op when the session is already linked.
+ *    - Restart recovery relies on agent.json having persisted outputSessionId.
+ *
+ * 2. **validateConfig: outputSessionId is NOT constrained to subscribedSessionIds**
+ *    - Unlike Vanilla/Minimal, the output session is the private session, which
+ *      is NOT in the public subscription list. validateConfig must NOT reset it.
+ *    - If outputSessionId is null and subscriptions exist, it should NOT auto-assign
+ *      (unlike Vanilla). The private session is assigned via ensureInfrastructure.
+ *
+ * 3. **prepareSystemPrompt: private session awareness**
+ *    - Marks the private session as [PRIMARY] in the session listing.
+ *    - Includes session subscription awareness (like Vanilla).
+ *    - Includes multi-agent context (like Vanilla).
+ *
+ * 4. **postProcessResponse: stateless, always PROCEED**
+ *    - No sentinel checks, no state transitions.
+ *
+ * Tests are organized by concern, each section testing one behavioral contract.
+ * The test naming convention follows: `methodName should behavior when condition`.
+ */
+class PrivateSessionStrategyT1LogicTest {
+
+    // =========================================================================
+    // Test data constants
+    // =========================================================================
+
+    private val agentId = "a0000001-0000-0000-0000-000000000001"
+    private val agentName = "TestBot"
+    private val agentHandle = "agent.testbot"
+
+    private val publicSession1 = "s0000001-0000-0000-0000-000000000001"
+    private val publicSession2 = "s0000002-0000-0000-0000-000000000002"
+    private val privateSessionUUID = "p0000001-0000-0000-0000-000000000001"
+
+    // =========================================================================
+    // Helper: build agents with the PrivateSession strategy
+    // =========================================================================
+
+    /**
+     * Creates a PrivateSessionStrategy agent.
+     *
+     * Note: [outputSessionId] here represents the private session link.
+     * It is intentionally NOT in [subscribedSessionIds] — that's the whole point.
+     */
+    private fun privateSessionAgent(
+        subscribedSessionIds: List<String> = listOf(publicSession1),
+        outputSessionId: String? = null,
+        resources: Map<String, String> = emptyMap()
+    ): AgentInstance = AgentInstance(
+        identity = Identity(
+            uuid = agentId,
+            localHandle = agentName.lowercase(),
+            handle = agentHandle,
+            name = agentName,
+            parentHandle = "agent"
+        ),
+        modelProvider = "mock",
+        modelName = "mock-model",
+        subscribedSessionIds = subscribedSessionIds.map { IdentityUUID(it) },
+        outputSessionId = outputSessionId?.let { IdentityUUID(it) },
+        cognitiveStrategyId = PrivateSessionStrategy.identityHandle,
+        cognitiveState = PrivateSessionStrategy.getInitialState(),
+        resources = resources.mapValues { IdentityUUID(it.value) }
+    )
+
+    /**
+     * Creates a FakeStore pre-populated with the given agent state.
+     * Used for ensureInfrastructure tests that need to dispatch actions.
+     */
+    private fun fakeStoreWith(
+        agent: AgentInstance,
+        pendingPrivateSession: Boolean = false
+    ): FakeStore {
+        val agentState = AgentRuntimeState(
+            agents = mapOf(IdentityUUID(agentId) to agent),
+            agentStatuses = mapOf(
+                IdentityUUID(agentId) to AgentStatusInfo(
+                    pendingPrivateSessionCreation = pendingPrivateSession
+                )
+            )
+        )
+
+        val allDescriptors = testDescriptorsFor(setOf(
+            ActionRegistry.Names.SESSION_CREATE,
+            ActionRegistry.Names.AGENT_UPDATE_CONFIG,
+            ActionRegistry.Names.AGENT_SET_PENDING_PRIVATE_SESSION,
+            ActionRegistry.Names.CORE_REGISTER_IDENTITY
+        ))
+
+        val appState = AppState(
+            featureStates = mapOf("agent" to agentState),
+            actionDescriptors = allDescriptors
+        )
+
+        return FakeStore(appState, FakePlatformDependencies("test"))
+    }
+
+    // =========================================================================
+    // 1. Identity & Registration
+    // =========================================================================
+
+    @Test
+    fun `identityHandle should be in agent strategy namespace`() {
+        assertTrue(
+            PrivateSessionStrategy.identityHandle.handle.startsWith("agent.strategy."),
+            "Strategy handle must be in agent.strategy.* namespace"
+        )
+    }
+
+    @Test
+    fun `identityHandle should be unique and not collide with existing strategies`() {
+        val existingHandles = setOf(
+            "agent.strategy.vanilla",
+            "agent.strategy.minimal",
+            "agent.strategy.sovereign",
+            "agent.strategy.statemachine"
+        )
+        assertFalse(
+            PrivateSessionStrategy.identityHandle.handle in existingHandles,
+            "PrivateSessionStrategy handle must not collide with existing strategies"
+        )
+    }
+
+    @Test
+    fun `displayName should be human readable`() {
+        assertTrue(PrivateSessionStrategy.displayName.isNotBlank())
+    }
+
+    // =========================================================================
+    // 2. getInitialState
+    // =========================================================================
+
+    @Test
+    fun `getInitialState should return JsonNull`() {
+        assertEquals(JsonNull, PrivateSessionStrategy.getInitialState())
+    }
+
+    // =========================================================================
+    // 3. getResourceSlots
+    // =========================================================================
+
+    @Test
+    fun `getResourceSlots should declare system instruction slot`() {
+        val slots = PrivateSessionStrategy.getResourceSlots()
+
+        assertEquals(1, slots.size, "Should have exactly one resource slot")
+        val slot = slots.first()
+        assertEquals("system_instruction", slot.slotId)
+        assertEquals(AgentResourceType.SYSTEM_INSTRUCTION, slot.type)
+        assertTrue(slot.isRequired, "System instruction should be required")
+    }
+
+    // =========================================================================
+    // 4. getConfigFields
+    // =========================================================================
+
+    @Test
+    fun `getConfigFields should declare outputSessionId field`() {
+        val fields = PrivateSessionStrategy.getConfigFields()
+
+        assertTrue(fields.any { it.key == "outputSessionId" },
+            "Should expose output session config field for the UI")
+        val outputField = fields.first { it.key == "outputSessionId" }
+        assertEquals(StrategyConfigFieldType.OUTPUT_SESSION, outputField.type)
+    }
+
+    // =========================================================================
+    // 5. getBuiltInResources
+    // =========================================================================
+
+    @Test
+    fun `getBuiltInResources should return default system instruction`() {
+        val resources = PrivateSessionStrategy.getBuiltInResources()
+
+        assertTrue(resources.isNotEmpty(), "Should provide at least one built-in resource")
+        val sysInstruction = resources.find { it.type == AgentResourceType.SYSTEM_INSTRUCTION }
+        assertNotNull(sysInstruction, "Should include a system instruction resource")
+        assertTrue(sysInstruction.isBuiltIn)
+        assertTrue(sysInstruction.content.isNotBlank())
+    }
+
+    @Test
+    fun `getBuiltInResources should have unique IDs`() {
+        val resources = PrivateSessionStrategy.getBuiltInResources()
+        val ids = resources.map { it.id }
+        assertEquals(ids.distinct().size, ids.size, "Resource IDs must be unique")
+    }
+
+    // =========================================================================
+    // 6. validateConfig — the critical behavioral divergence from Vanilla
+    // =========================================================================
+
+    @Test
+    fun `validateConfig should NOT reset outputSessionId when it is not in subscribedSessionIds`() {
+        val agent = privateSessionAgent(
+            subscribedSessionIds = listOf(publicSession1, publicSession2),
+            outputSessionId = privateSessionUUID
+        )
+
+        val validated = PrivateSessionStrategy.validateConfig(agent)
+
+        assertEquals(
+            IdentityUUID(privateSessionUUID), validated.outputSessionId,
+            "Must NOT reset outputSessionId — private session is intentionally out-of-band"
+        )
+    }
+
+    @Test
+    fun `validateConfig should NOT auto-assign outputSessionId when null`() {
+        val agent = privateSessionAgent(
+            subscribedSessionIds = listOf(publicSession1),
+            outputSessionId = null
+        )
+
+        val validated = PrivateSessionStrategy.validateConfig(agent)
+
+        assertNull(
+            validated.outputSessionId,
+            "Must NOT auto-assign — private session is created by ensureInfrastructure"
+        )
+    }
+
+    @Test
+    fun `validateConfig should preserve valid outputSessionId`() {
+        val agent = privateSessionAgent(outputSessionId = privateSessionUUID)
+        val validated = PrivateSessionStrategy.validateConfig(agent)
+        assertEquals(IdentityUUID(privateSessionUUID), validated.outputSessionId)
+    }
+
+    @Test
+    fun `validateConfig should preserve null outputSessionId with no subscriptions`() {
+        val agent = privateSessionAgent(
+            subscribedSessionIds = emptyList(),
+            outputSessionId = null
+        )
+        val validated = PrivateSessionStrategy.validateConfig(agent)
+        assertNull(validated.outputSessionId)
+    }
+
+    @Test
+    fun `validateConfig should not modify subscribedSessionIds`() {
+        val agent = privateSessionAgent(
+            subscribedSessionIds = listOf(publicSession1, publicSession2),
+            outputSessionId = privateSessionUUID
+        )
+
+        val validated = PrivateSessionStrategy.validateConfig(agent)
+
+        assertEquals(
+            listOf(IdentityUUID(publicSession1), IdentityUUID(publicSession2)),
+            validated.subscribedSessionIds,
+            "validateConfig must never modify subscriptions"
+        )
+    }
+
+    // =========================================================================
+    // 7. prepareSystemPrompt
+    // =========================================================================
+
+    @Test
+    fun `prepareSystemPrompt should include agent name and identity section`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = emptyMap()
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertTrue(prompt.contains("You are $agentName."), "Should include agent name")
+        assertTrue(prompt.contains("YOUR IDENTITY AND ROLE"), "Should have identity section")
+    }
+
+    @Test
+    fun `prepareSystemPrompt should include system instructions when provided`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = mapOf("system_instruction" to "Be concise and helpful."),
+            gatheredContexts = emptyMap()
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertTrue(prompt.contains("SYSTEM INSTRUCTIONS"))
+        assertTrue(prompt.contains("Be concise and helpful."))
+    }
+
+    @Test
+    fun `prepareSystemPrompt should not include instructions section when empty`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = emptyMap()
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertFalse(prompt.contains("SYSTEM INSTRUCTIONS"))
+    }
+
+    @Test
+    fun `prepareSystemPrompt should include multi-user environment awareness`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = emptyMap()
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertTrue(prompt.contains("multi-user"), "Should mention multi-user environment")
+        assertTrue(prompt.contains("Maintain your own boundaries"),
+            "Should include boundary instruction")
+    }
+
+    @Test
+    fun `prepareSystemPrompt should list subscribed sessions with PRIMARY tag on output session`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = emptyMap(),
+            subscribedSessions = listOf(
+                SessionInfo(
+                    uuid = publicSession1,
+                    handle = "session.chat",
+                    name = "Chat",
+                    isOutput = false
+                ),
+                SessionInfo(
+                    uuid = privateSessionUUID,
+                    handle = "session.testbot-private",
+                    name = "TestBot Private",
+                    isOutput = true
+                )
+            ),
+            outputSessionHandle = "session.testbot-private"
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertTrue(prompt.contains("SUBSCRIBED SESSIONS"), "Should have session section")
+        assertTrue(prompt.contains("Chat"), "Should list public session")
+        assertTrue(prompt.contains("TestBot Private"), "Should list private session")
+        assertTrue(prompt.contains("[PRIMARY"), "Should tag the output session as PRIMARY")
+    }
+
+    @Test
+    fun `prepareSystemPrompt should include multi-agent context when present`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = mapOf(
+                "MULTI_AGENT_CONTEXT" to "There are 2 agents in this environment."
+            )
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertTrue(prompt.contains("There are 2 agents in this environment."))
+    }
+
+    @Test
+    fun `prepareSystemPrompt should include multi-agent context before other contexts`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = mapOf(
+                "MULTI_AGENT_CONTEXT" to "Agent roster here.",
+                "WORKSPACE" to "Project files listing."
+            )
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        val multiAgentPos = prompt.indexOf("Agent roster here.")
+        val contextPos = prompt.indexOf("--- CONTEXT ---")
+        assertTrue(multiAgentPos < contextPos,
+            "MULTI_AGENT_CONTEXT should appear before generic context section")
+    }
+
+    @Test
+    fun `prepareSystemPrompt should include other gathered contexts in context section`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = mapOf(
+                "WORKSPACE" to "file1.txt, file2.txt"
+            )
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertTrue(prompt.contains("--- CONTEXT ---"))
+        assertTrue(prompt.contains("WORKSPACE"))
+        assertTrue(prompt.contains("file1.txt, file2.txt"))
+    }
+
+    @Test
+    fun `prepareSystemPrompt should not include context section when no contexts`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = emptyMap()
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertFalse(prompt.contains("--- CONTEXT ---"),
+            "Should omit context section when no contexts present")
+    }
+
+    @Test
+    fun `prepareSystemPrompt should not duplicate MULTI_AGENT_CONTEXT in generic context section`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = mapOf(
+                "MULTI_AGENT_CONTEXT" to "Multi-agent info.",
+                "WORKSPACE" to "Files."
+            )
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        val occurrences = prompt.windowed("Multi-agent info.".length)
+            .count { it == "Multi-agent info." }
+        assertEquals(1, occurrences,
+            "MULTI_AGENT_CONTEXT content must appear exactly once")
+    }
+
+    // =========================================================================
+    // 8. postProcessResponse
+    // =========================================================================
+
+    @Test
+    fun `postProcessResponse should always return PROCEED`() {
+        val result = PrivateSessionStrategy.postProcessResponse("Hello world.", JsonNull)
+        assertEquals(SentinelAction.PROCEED, result.action)
+    }
+
+    @Test
+    fun `postProcessResponse should not modify state`() {
+        val result = PrivateSessionStrategy.postProcessResponse("Any response.", JsonNull)
+        assertEquals(JsonNull, result.newState)
+    }
+
+    @Test
+    fun `postProcessResponse should return PROCEED even for sentinel-like content`() {
+        val result = PrivateSessionStrategy.postProcessResponse(
+            "[FAILURE_CODE: integrity_check_failed]", JsonNull)
+        assertEquals(SentinelAction.PROCEED, result.action)
+    }
+
+    @Test
+    fun `postProcessResponse should have no displayHint`() {
+        val result = PrivateSessionStrategy.postProcessResponse("Response.", JsonNull)
+        assertNull(result.displayHint,
+            "Simple strategy should not set display hints")
+    }
+
+    // =========================================================================
+    // 9. getValidNvramKeys
+    // =========================================================================
+
+    @Test
+    fun `getValidNvramKeys should return null for stateless strategy`() {
+        assertNull(PrivateSessionStrategy.getValidNvramKeys(),
+            "Stateless strategy should impose no NVRAM key restrictions")
+    }
+
+    // =========================================================================
+    // 10. ensureInfrastructure — Private Session Lifecycle
+    //
+    // Two-step guard: linked → no-op, pending → no-op, else → create.
+    // Restart recovery relies on agent.json having persisted outputSessionId.
+    // =========================================================================
+
+    @Test
+    fun `ensureInfrastructure should dispatch SESSION_CREATE when no outputSessionId and not pending`() {
+        val agent = privateSessionAgent(outputSessionId = null)
+        val store = fakeStoreWith(agent)
+
+        PrivateSessionStrategy.ensureInfrastructure(agent, store.state.value.featureStates["agent"] as AgentRuntimeState, store)
+
+        val sessionCreate = store.dispatchedActions.find {
+            it.name == ActionRegistry.Names.SESSION_CREATE
+        }
+        assertNotNull(sessionCreate, "Should dispatch SESSION_CREATE for private session")
+
+        val payload = sessionCreate.payload!!
+        assertEquals(agentHandle, payload["isPrivateTo"]?.jsonPrimitive?.content,
+            "SESSION_CREATE must set isPrivateTo to agent's identity handle")
+
+        val sessionName = payload["name"]?.jsonPrimitive?.content
+        assertNotNull(sessionName, "SESSION_CREATE must include a session name")
+        assertTrue(sessionName.contains(agentName) || sessionName.contains(agentName.lowercase()),
+            "Private session name should reference the agent name, got: '$sessionName'")
+    }
+
+    @Test
+    fun `ensureInfrastructure should set pending flag when creating session`() {
+        val agent = privateSessionAgent(outputSessionId = null)
+        val store = fakeStoreWith(agent)
+
+        PrivateSessionStrategy.ensureInfrastructure(agent, store.state.value.featureStates["agent"] as AgentRuntimeState, store)
+
+        val pendingAction = store.dispatchedActions.find {
+            it.name == ActionRegistry.Names.AGENT_SET_PENDING_PRIVATE_SESSION
+        }
+        assertNotNull(pendingAction, "Should dispatch SET_PENDING_PRIVATE_SESSION")
+        assertTrue(
+            pendingAction.payload?.get("pending")?.jsonPrimitive?.boolean == true,
+            "Should set pending to true"
+        )
+        assertEquals(
+            agentId,
+            pendingAction.payload?.get("agentId")?.jsonPrimitive?.content,
+            "Should target the correct agent"
+        )
+    }
+
+    @Test
+    fun `ensureInfrastructure should be no-op when outputSessionId is already set`() {
+        val agent = privateSessionAgent(outputSessionId = privateSessionUUID)
+        val store = fakeStoreWith(agent)
+
+        PrivateSessionStrategy.ensureInfrastructure(agent, store.state.value.featureStates["agent"] as AgentRuntimeState, store)
+
+        assertTrue(store.dispatchedActions.isEmpty(),
+            "Should dispatch nothing when private session is already linked")
+    }
+
+    @Test
+    fun `ensureInfrastructure should be no-op when pending flag is set`() {
+        val agent = privateSessionAgent(outputSessionId = null)
+        val store = fakeStoreWith(agent, pendingPrivateSession = true)
+
+        PrivateSessionStrategy.ensureInfrastructure(agent, store.state.value.featureStates["agent"] as AgentRuntimeState, store)
+
+        assertTrue(store.dispatchedActions.isEmpty(),
+            "Should dispatch nothing when session creation is already pending")
+    }
+
+    @Test
+    fun `ensureInfrastructure should set SESSION_CREATE isHidden to true`() {
+        val agent = privateSessionAgent(outputSessionId = null)
+        val store = fakeStoreWith(agent)
+
+        PrivateSessionStrategy.ensureInfrastructure(agent, store.state.value.featureStates["agent"] as AgentRuntimeState, store)
+
+        val sessionCreate = store.dispatchedActions.find {
+            it.name == ActionRegistry.Names.SESSION_CREATE
+        }
+        assertNotNull(sessionCreate)
+        assertTrue(
+            sessionCreate.payload?.get("isHidden")?.jsonPrimitive?.boolean == true,
+            "Private session should be hidden from public session list"
+        )
+    }
+
+    @Test
+    fun `ensureInfrastructure should dispatch pending flag BEFORE session create`() {
+        val agent = privateSessionAgent(outputSessionId = null)
+        val store = fakeStoreWith(agent)
+
+        PrivateSessionStrategy.ensureInfrastructure(agent, store.state.value.featureStates["agent"] as AgentRuntimeState, store)
+
+        val pendingIndex = store.dispatchedActions.indexOfFirst {
+            it.name == ActionRegistry.Names.AGENT_SET_PENDING_PRIVATE_SESSION
+        }
+        val createIndex = store.dispatchedActions.indexOfFirst {
+            it.name == ActionRegistry.Names.SESSION_CREATE
+        }
+
+        assertTrue(pendingIndex >= 0, "Should dispatch pending flag")
+        assertTrue(createIndex >= 0, "Should dispatch session create")
+        assertTrue(pendingIndex < createIndex,
+            "Pending flag must be dispatched BEFORE SESSION_CREATE to prevent duplicate creation")
+    }
+
+    @Test
+    fun `ensureInfrastructure should dispatch exactly two actions when creating`() {
+        val agent = privateSessionAgent(outputSessionId = null)
+        val store = fakeStoreWith(agent)
+
+        PrivateSessionStrategy.ensureInfrastructure(agent, store.state.value.featureStates["agent"] as AgentRuntimeState, store)
+
+        assertEquals(2, store.dispatchedActions.size,
+            "Should dispatch exactly SET_PENDING + SESSION_CREATE, nothing else")
+    }
+
+    // =========================================================================
+    // 11. needsAdditionalContext / requestAdditionalContext
+    // =========================================================================
+
+    @Test
+    fun `needsAdditionalContext should return false`() {
+        val agent = privateSessionAgent()
+        assertFalse(PrivateSessionStrategy.needsAdditionalContext(agent))
+    }
+
+    @Test
+    fun `requestAdditionalContext should return false`() {
+        val agent = privateSessionAgent()
+        val store = fakeStoreWith(agent)
+        assertFalse(PrivateSessionStrategy.requestAdditionalContext(agent, store))
+    }
+
+    // =========================================================================
+    // 12. Lifecycle hooks — no-op verification
+    // =========================================================================
+
+    @Test
+    fun `onAgentRegistered should not crash`() {
+        val agent = privateSessionAgent()
+        val store = fakeStoreWith(agent)
+        PrivateSessionStrategy.onAgentRegistered(agent, store)
+    }
+
+    @Test
+    fun `onAgentConfigChanged should not crash`() {
+        val oldAgent = privateSessionAgent(outputSessionId = null)
+        val newAgent = privateSessionAgent(outputSessionId = privateSessionUUID)
+        val store = fakeStoreWith(newAgent)
+        PrivateSessionStrategy.onAgentConfigChanged(oldAgent, newAgent, store)
+    }
+
+    // =========================================================================
+    // 13. Prompt structure edge cases
+    // =========================================================================
+
+    @Test
+    fun `prepareSystemPrompt with no sessions should omit session section`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = mapOf("system_instruction" to "Test instructions."),
+            gatheredContexts = emptyMap(),
+            subscribedSessions = emptyList()
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertFalse(prompt.contains("SUBSCRIBED SESSIONS"),
+            "Should omit session section when no sessions are subscribed")
+    }
+
+    @Test
+    fun `prepareSystemPrompt should handle single session that is both subscribed and output`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = emptyMap(),
+            subscribedSessions = listOf(
+                SessionInfo(
+                    uuid = privateSessionUUID,
+                    handle = "session.testbot-private",
+                    name = "TestBot Private",
+                    isOutput = true
+                )
+            ),
+            outputSessionHandle = "session.testbot-private"
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertTrue(prompt.contains("TestBot Private"))
+        assertTrue(prompt.contains("[PRIMARY"))
+    }
+
+    @Test
+    fun `prepareSystemPrompt should tag first session as PRIMARY when no explicit output`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = emptyMap(),
+            subscribedSessions = listOf(
+                SessionInfo(
+                    uuid = publicSession1,
+                    handle = "session.chat",
+                    name = "Chat",
+                    isOutput = false
+                )
+            ),
+            outputSessionHandle = null
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertTrue(prompt.contains("[PRIMARY"))
+    }
+
+    // =========================================================================
+    // 14. Singleton check
+    // =========================================================================
+
+    @Test
+    fun `strategy should be a singleton object`() {
+        assertSame(PrivateSessionStrategy, PrivateSessionStrategy)
+    }
+}
