@@ -48,6 +48,7 @@ class AgentRuntimeFeature(
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val agentConfigFILENAME = "agent.json"
     private val nvramFILENAME = "nvram.json"
+    private val contextFILENAME = "context.json"
 
     private val workspacePathMarker = "/workspace/"
 
@@ -122,6 +123,9 @@ class AgentRuntimeFeature(
         )
         CognitiveStrategyRegistry.register(
             app.auf.feature.agent.strategies.StateMachineStrategy
+        )
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.PrivateSessionStrategy
         )
 
         coroutineScope.launch {
@@ -593,6 +597,49 @@ class AgentRuntimeFeature(
                 // Polymorphic infrastructure check.
                 dispatchEnsureInfrastructureForAll(agentState, store)
             }
+            // ================================================================
+            // Phase A: SESSION_CREATED handler — link private sessions to agents
+            // ================================================================
+            ActionRegistry.Names.SESSION_SESSION_CREATED -> {
+                val payload = action.payload ?: return
+                val isPrivateTo = payload["isPrivateTo"]?.jsonPrimitive?.contentOrNull ?: return
+                val sessionUUID = payload["uuid"]?.jsonPrimitive?.contentOrNull ?: return
+
+                // Find the agent whose identityHandle matches isPrivateTo
+                val matchingAgent = agentState.agents.values.find {
+                    it.identityHandle.handle == isPrivateTo
+                } ?: return
+
+                platformDependencies.log(LogLevel.INFO, identity.handle,
+                    "SESSION_CREATED: Linking private session '$sessionUUID' to agent '${matchingAgent.identityUUID}' (matched via isPrivateTo='$isPrivateTo').")
+
+                // Link the session to the agent
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.AGENT_UPDATE_CONFIG,
+                    buildJsonObject {
+                        put("agentId", matchingAgent.identityUUID.uuid)
+                        put("outputSessionId", sessionUUID)
+                    }
+                ))
+
+                // Clear the pending flag
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.AGENT_SET_PENDING_PRIVATE_SESSION,
+                    buildJsonObject {
+                        put("agentId", matchingAgent.identityUUID.uuid)
+                        put("pending", false)
+                    }
+                ))
+            }
+            // ================================================================
+            // Phase A: Context collapse persistence
+            // ================================================================
+            ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE,
+            ActionRegistry.Names.AGENT_CONTEXT_COLLAPSE -> {
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) } ?: return
+                val agent = agentState.agents[agentId] ?: return
+                saveContextState(agent, agentState, store)
+            }
             ActionRegistry.Names.SESSION_SESSION_FEATURE_READY -> {
                 agentState.agents.forEach { (agentId, agent) ->
                     if (agent.isAgentActive) {
@@ -834,6 +881,26 @@ class AgentRuntimeFeature(
         }))
     }
 
+    /**
+     * Persists the agent's context collapse overrides to context.json (§3.8).
+     * Written on change (same pattern as nvram.json).
+     */
+    private fun saveContextState(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
+        val overrides = agentState.agentStatuses[agent.identityUUID]?.contextCollapseOverrides ?: emptyMap()
+        val contextJson = buildJsonObject {
+            put("version", JsonPrimitive(1))
+            put("collapseOverrides", buildJsonObject {
+                overrides.forEach { (key, value) ->
+                    put(key, value.name)
+                }
+            })
+        }
+        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
+            put("path", "${agent.identityUUID.uuid}/$contextFILENAME")
+            put("content", json.encodeToString(contextJson))
+        }))
+    }
+
     private fun saveResourceConfig(resource: AgentResource, store: Store) {
         resource.path?.let { path ->
             store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
@@ -991,6 +1058,9 @@ class AgentRuntimeFeature(
                             }))
                             store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject {
                                 put("path", "$agentDir/$nvramFILENAME")
+                            }))
+                            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject {
+                                put("path", "$agentDir/$contextFILENAME")
                             }))
                         }
                     }
@@ -1195,6 +1265,27 @@ class AgentRuntimeFeature(
                     }))
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "Failed to load NVRAM from $path (agent will use initial state): ${e.message}")
+                }
+            }
+            // Phase A: Context collapse overrides (§3.8)
+            path.endsWith("/$contextFILENAME") -> {
+                val agentIdStr = path.substringBeforeLast("/")
+                try {
+                    val contextData = json.parseToJsonElement(content).jsonObject
+                    val overridesJson = contextData["collapseOverrides"]?.jsonObject ?: buildJsonObject {}
+
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_CONTEXT_STATE_LOADED, buildJsonObject {
+                        put("agentId", agentIdStr)
+                        put("overrides", overridesJson)
+                    }))
+                } catch (e: Exception) {
+                    platformDependencies.log(LogLevel.WARN, identity.handle,
+                        "Failed to load context.json from $path (agent '$agentIdStr' will use empty overrides): ${e.message}")
+                    // Graceful degradation: dispatch empty overrides
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_CONTEXT_STATE_LOADED, buildJsonObject {
+                        put("agentId", agentIdStr)
+                        put("overrides", buildJsonObject {})
+                    }))
                 }
             }
             // Unknown file
