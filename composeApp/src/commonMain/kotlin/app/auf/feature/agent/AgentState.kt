@@ -250,7 +250,22 @@ data class AgentStatusInfo(
     // ========================================================================
 
     /** True when a private session creation is in-flight. */
-    val pendingPrivateSessionCreation: Boolean = false
+    val pendingPrivateSessionCreation: Boolean = false,
+
+    // ========================================================================
+    // Phase B.2: Multi-Session Ledger Accumulation
+    //
+    // When a turn starts, the pipeline dispatches N REQUEST_LEDGER_CONTENT
+    // actions (one per subscribed session). As responses arrive, each session's
+    // messages are accumulated here. When pendingLedgerSessionIds is empty,
+    // all ledgers have arrived and the turn can proceed.
+    // ========================================================================
+
+    /** Session UUIDs whose ledger responses have not yet arrived. Empty = all received. */
+    val pendingLedgerSessionIds: Set<IdentityUUID> = emptySet(),
+
+    /** Accumulated per-session ledger messages. Key = session UUID, value = enriched messages. */
+    val accumulatedSessionLedgers: Map<IdentityUUID, List<GatewayMessage>> = emptyMap()
 )
 
 @Serializable

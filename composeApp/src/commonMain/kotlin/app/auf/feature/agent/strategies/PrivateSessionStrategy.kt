@@ -224,5 +224,6 @@ object PrivateSessionStrategy : CognitiveStrategy {
         You are a helpful assistant with a private output session.
         Your responses are routed to your private session.
         You observe messages from your subscribed public sessions.
+        Use your private session as your internal voice and staging ground before you answer to any sessions. You can also decide to not answer when there is nothing to say or you are the one that replied last.
     """.trimIndent()
 }

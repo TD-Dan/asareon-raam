@@ -45,15 +45,26 @@ object AgentCognitivePipeline {
             return
         }
 
-        val contextSessionUUID = agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull() ?: run {
+        // Collect all sessions to request ledger from.
+        // For agents with subscribedSessionIds, request from all of them.
+        // For agents with no subscriptions, fall back to outputSessionId.
+        val sessionsToRequest = agent.subscribedSessionIds.ifEmpty {
+            listOfNotNull(agent.outputSessionId)
+        }
+
+        if (sessionsToRequest.isEmpty()) {
             val msg = "Cannot start turn: Agent has no session for context."
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
             AgentAvatarLogic.updateAgentAvatars(agentId, store, state, AgentStatus.ERROR, msg)
             return
         }
-        // Validate the UUID is still in the registry (session may have been deleted)
-        if (store.state.value.identityRegistry.findByUUID(contextSessionUUID) == null) {
-            val msg = "Cannot start turn: Session UUID '$contextSessionUUID' not in registry."
+
+        // Validate all session UUIDs are in the registry
+        val validSessions = sessionsToRequest.filter { sessionUUID ->
+            store.state.value.identityRegistry.findByUUID(sessionUUID) != null
+        }
+        if (validSessions.isEmpty()) {
+            val msg = "Cannot start turn: None of agent's sessions are in the registry."
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
             AgentAvatarLogic.updateAgentAvatars(agentId, store, state, AgentStatus.ERROR, msg)
             return
@@ -66,10 +77,24 @@ object AgentCognitivePipeline {
         store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
             put("agentId", agentId.uuid); put("step", "Requesting Ledger")
         }))
-        // Send UUID — the session feature's resolveSessionId handles UUID lookup
-        store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject {
-            put("sessionId", contextSessionUUID.uuid); put("correlationId", agentId.uuid)
+
+        // Initialize multi-session ledger accumulation
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PENDING_LEDGER_SESSIONS, buildJsonObject {
+            put("agentId", agentId.uuid)
+            put("sessionIds", buildJsonArray {
+                validSessions.forEach { add(it.uuid) }
+            })
         }))
+
+        // Request ledger from each subscribed session.
+        // Compound correlationId "agentUUID::sessionUUID" lets handleLedgerResponse
+        // identify which session the response belongs to.
+        validSessions.forEach { sessionUUID ->
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT, buildJsonObject {
+                put("sessionId", sessionUUID.uuid)
+                put("correlationId", "${agentId.uuid}::${sessionUUID.uuid}")
+            }))
+        }
     }
 
     /**
@@ -98,14 +123,19 @@ object AgentCognitivePipeline {
     }
 
     private fun handleLedgerResponse(payload: JsonObject, store: Store) {
-        val agentIdStr = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: run {
+        val rawCorrelationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: run {
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleLedgerResponse: Missing correlationId.")
             return
         }
+
+        // Compound correlationId: "agentUUID::sessionUUID"
+        val parts = rawCorrelationId.split("::", limit = 2)
+        val agentIdStr = parts[0]
+        val sessionIdStr = if (parts.size == 2) parts[1] else null
         val agentId = IdentityUUID(agentIdStr)
 
         val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: run {
-            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "handleLedgerResponse: Agent feature state missing. Dropping ledger response for correlationId='$agentId'.")
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG, "handleLedgerResponse: Agent feature state missing. Dropping ledger response for correlationId='$rawCorrelationId'.")
             return
         }
 
@@ -152,10 +182,22 @@ object AgentCognitivePipeline {
             }
         }
 
-        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_STAGE_TURN_CONTEXT, buildJsonObject {
-            put("agentId", agent.identityUUID.uuid)
-            put("messages", json.encodeToJsonElement(enrichedMessages))
-        }))
+        if (sessionIdStr != null) {
+            // Multi-session path: accumulate per-session ledger
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_ACCUMULATE_SESSION_LEDGER, buildJsonObject {
+                put("agentId", agentId.uuid)
+                put("sessionId", sessionIdStr)
+                put("messages", json.encodeToJsonElement(enrichedMessages))
+            }))
+        } else {
+            // Legacy path: single correlationId without "::" separator.
+            // Fall back to the old STAGE_TURN_CONTEXT for backward compatibility
+            // with any callers that haven't been migrated yet.
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_STAGE_TURN_CONTEXT, buildJsonObject {
+                put("agentId", agent.identityUUID.uuid)
+                put("messages", json.encodeToJsonElement(enrichedMessages))
+            }))
+        }
     }
 
     /**
@@ -209,7 +251,7 @@ object AgentCognitivePipeline {
             return
         }
 
-        if (statusInfo.stagedTurnContext == null) {
+        if (statusInfo.stagedTurnContext == null && statusInfo.accumulatedSessionLedgers.isEmpty()) {
             val msg = "Turn Context Missing for '$agentId'. Aborting."
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
             AgentAvatarLogic.updateAgentAvatars(agentId, store, state, AgentStatus.ERROR, msg)
@@ -272,9 +314,27 @@ object AgentCognitivePipeline {
             return
         }
 
-        val ledgerContext = statusInfo.stagedTurnContext
-        if (ledgerContext == null) {
-            val msg = "Context arrived for '$agentId' without staged ledger context. Aborting."
+        // Resolve ledger data from either:
+        //   (a) Multi-session: accumulatedSessionLedgers (pendingLedgerSessionIds must be empty)
+        //   (b) Legacy: stagedTurnContext (single-session flat list)
+        val sessionLedgers: Map<IdentityUUID, List<GatewayMessage>>
+        if (statusInfo.accumulatedSessionLedgers.isNotEmpty() || statusInfo.pendingLedgerSessionIds.isNotEmpty()) {
+            // Multi-session path — only ready when all pending sessions have arrived
+            if (statusInfo.pendingLedgerSessionIds.isNotEmpty() && !isTimeout) {
+                // Still waiting for sessions — not ready yet, let the next arrival re-evaluate
+                return
+            }
+            sessionLedgers = statusInfo.accumulatedSessionLedgers
+        } else if (statusInfo.stagedTurnContext != null) {
+            // Legacy single-session path — wrap in a map with a synthetic key
+            val contextSessionUUID = agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull()
+            sessionLedgers = if (contextSessionUUID != null) {
+                mapOf(contextSessionUUID to statusInfo.stagedTurnContext)
+            } else {
+                mapOf(IdentityUUID("unknown") to statusInfo.stagedTurnContext)
+            }
+        } else {
+            val msg = "Context arrived for '$agentId' without any ledger context. Aborting."
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, msg)
             AgentAvatarLogic.updateAgentAvatars(agentId, store, state, AgentStatus.ERROR, "Context assembly failed.")
             return
@@ -294,7 +354,7 @@ object AgentCognitivePipeline {
                 put("agentId", agentId.uuid)
                 put("startedAt", JsonNull)
             }))
-            executeTurn(agent, ledgerContext, statusInfo.transientHkgContext, state, store)
+            executeTurn(agent, sessionLedgers, statusInfo.transientHkgContext, state, store)
         } else if (isTimeout) {
             val missing = mutableListOf<String>()
             if (!workspaceReady) missing.add("workspace")
@@ -306,7 +366,7 @@ object AgentCognitivePipeline {
                 put("agentId", agentId.uuid)
                 put("startedAt", JsonNull)
             }))
-            executeTurn(agent, ledgerContext, statusInfo.transientHkgContext, state, store)
+            executeTurn(agent, sessionLedgers, statusInfo.transientHkgContext, state, store)
         }
     }
 
@@ -319,7 +379,7 @@ object AgentCognitivePipeline {
 
     private fun executeTurn(
         agent: AgentInstance,
-        ledgerContext: List<GatewayMessage>,
+        sessionLedgers: Map<IdentityUUID, List<GatewayMessage>>,
         hkgContext: JsonObject?,
         agentState: AgentRuntimeState,
         store: Store
@@ -400,23 +460,24 @@ object AgentCognitivePipeline {
         // context partition. Providers receive empty contents and inject
         // a minimal trigger message to satisfy API requirements.
         //
-        // Current: single-session ledger from stagedTurnContext.
-        // TODO (Phase 2): multi-session from accumulated per-session ledgers.
+        // sessionLedgers maps session UUID → enriched messages for that
+        // session. Each entry becomes a SessionLedgerSnapshot.
         // ============================================================
         val outputSessionUUID = agent.outputSessionId
         val outputSessionHandle = outputSessionUUID?.let { identityRegistry.findByUUID(it)?.handle }
 
-        val contextSessionUUID = outputSessionUUID ?: agent.subscribedSessionIds.firstOrNull()
-        val contextSessionIdentity = contextSessionUUID?.let { identityRegistry.findByUUID(it) }
-        val sessionSnapshots = listOf(
+        val sessionSnapshots = sessionLedgers.map { (sessionUUID, messages) ->
+            val sessIdentity = identityRegistry.findByUUID(sessionUUID)
             ConversationLogFormatter.SessionLedgerSnapshot(
-                sessionName = contextSessionIdentity?.name ?: "Unknown Session",
-                sessionUUID = contextSessionUUID?.uuid ?: "unknown",
-                sessionHandle = contextSessionIdentity?.handle ?: "unknown",
-                messages = ledgerContext,
-                isOutputSession = contextSessionUUID == outputSessionUUID
+                sessionName = sessIdentity?.name
+                    ?: agentState.subscribableSessionNames[sessionUUID]
+                    ?: sessionUUID.uuid,
+                sessionUUID = sessionUUID.uuid,
+                sessionHandle = sessIdentity?.handle ?: sessionUUID.uuid,
+                messages = messages,
+                isOutputSession = sessionUUID == outputSessionUUID
             )
-        )
+        }
 
         contextMap["CONVERSATION_LOG"] = ConversationLogFormatter.format(sessionSnapshots, platformDependencies)
 

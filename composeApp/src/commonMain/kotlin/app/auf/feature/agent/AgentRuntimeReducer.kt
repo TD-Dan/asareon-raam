@@ -111,7 +111,9 @@ object AgentRuntimeReducer {
                     transientHkgContext = null,
                     transientWorkspaceContext = null,
                     contextGatheringStartedAt = null,
-                    rateLimitedUntilMs = null // Clear rate limit state on new turn
+                    rateLimitedUntilMs = null, // Clear rate limit state on new turn
+                    pendingLedgerSessionIds = emptySet(),
+                    accumulatedSessionLedgers = emptyMap()
                 )
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
@@ -405,6 +407,40 @@ object AgentRuntimeReducer {
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
 
+            // ================================================================
+            // Phase B.2: Multi-Session Ledger Accumulation
+            // ================================================================
+            ActionRegistry.Names.AGENT_SET_PENDING_LEDGER_SESSIONS -> {
+                val payload = action.payload ?: return state
+                val agentId = payload.agentUUID() ?: return state
+                val sessionIds = payload["sessionIds"]?.jsonArray
+                    ?.mapNotNull { it.jsonPrimitive.contentOrNull?.let { id -> IdentityUUID(id) } }
+                    ?.toSet()
+                    ?: return state
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val updatedStatus = currentStatus.copy(
+                    pendingLedgerSessionIds = sessionIds,
+                    accumulatedSessionLedgers = emptyMap() // Clear stale data from previous turn
+                )
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
+            ActionRegistry.Names.AGENT_ACCUMULATE_SESSION_LEDGER -> {
+                val payload = action.payload ?: return state
+                val agentId = payload.agentUUID() ?: return state
+                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull
+                    ?.let { IdentityUUID(it) } ?: return state
+                val messages = payload["messages"]?.let {
+                    json.decodeFromJsonElement<List<GatewayMessage>>(it)
+                } ?: return state
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val updatedStatus = currentStatus.copy(
+                    accumulatedSessionLedgers = currentStatus.accumulatedSessionLedgers + (sessionId to messages),
+                    pendingLedgerSessionIds = currentStatus.pendingLedgerSessionIds - sessionId
+                )
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
             else -> state
         }
     }
@@ -457,6 +493,8 @@ object AgentRuntimeReducer {
             transientHkgContext = if (shouldClearContext) null else currentStatus.transientHkgContext,
             transientWorkspaceContext = if (shouldClearContext) null else currentStatus.transientWorkspaceContext,
             contextGatheringStartedAt = if (shouldClearContext) null else currentStatus.contextGatheringStartedAt,
+            pendingLedgerSessionIds = if (shouldClearContext) emptySet() else currentStatus.pendingLedgerSessionIds,
+            accumulatedSessionLedgers = if (shouldClearContext) emptyMap() else currentStatus.accumulatedSessionLedgers,
             // Preserve previous token data unless new data is provided in this update
             lastInputTokens = payloadInputTokens ?: currentStatus.lastInputTokens,
             lastOutputTokens = payloadOutputTokens ?: currentStatus.lastOutputTokens,

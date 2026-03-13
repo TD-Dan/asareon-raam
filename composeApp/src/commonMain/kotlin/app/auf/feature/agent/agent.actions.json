@@ -1267,6 +1267,60 @@
           "pending"
         ]
       }
+    },
+    {
+      "action_name": "agent.SET_PENDING_LEDGER_SESSIONS",
+      "summary": "[INTERNAL] Initializes multi-session ledger accumulation. Sets which session UUIDs are expected and clears any stale accumulated data. Dispatched by startCognitiveCycle before requesting ledgers.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "sessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of session UUIDs whose ledger responses are expected."
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionIds"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.ACCUMULATE_SESSION_LEDGER",
+      "summary": "[INTERNAL] Stores one session's enriched ledger messages and removes the session from the pending set. When all pending sessions have been accumulated, the side-effect handler triggers evaluateTurnContext.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "The session UUID whose ledger was received."
+          },
+          "messages": {
+            "type": "array",
+            "description": "Enriched GatewayMessage objects for this session."
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionId",
+          "messages"
+        ]
+      }
     }
   ]
 }

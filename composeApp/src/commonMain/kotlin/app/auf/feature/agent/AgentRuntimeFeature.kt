@@ -492,6 +492,17 @@ class AgentRuntimeFeature(
                 val agentId = action.payload?.agentUUID() ?: return
                 AgentCognitivePipeline.evaluateTurnContext(agentId, store)
             }
+            ActionRegistry.Names.AGENT_ACCUMULATE_SESSION_LEDGER -> {
+                // After the reducer stores this session's ledger and removes it
+                // from pendingLedgerSessionIds, check if all sessions have arrived.
+                val agentId = action.payload?.agentUUID() ?: return
+                val updatedState = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
+                val statusInfo = updatedState.agentStatuses[agentId] ?: return
+                if (statusInfo.pendingLedgerSessionIds.isEmpty()) {
+                    // All session ledgers accumulated — proceed to context gathering
+                    AgentCognitivePipeline.evaluateTurnContext(agentId, store)
+                }
+            }
             ActionRegistry.Names.AGENT_SET_HKG_CONTEXT -> {
                 val agentId = action.payload?.agentUUID() ?: return
                 AgentCognitivePipeline.evaluateFullContext(agentId, store)
