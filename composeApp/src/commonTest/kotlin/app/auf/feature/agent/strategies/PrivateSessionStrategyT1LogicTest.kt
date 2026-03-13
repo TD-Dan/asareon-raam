@@ -361,7 +361,7 @@ class PrivateSessionStrategyT1LogicTest {
     }
 
     @Test
-    fun `prepareSystemPrompt should include session POST example with agent name`() {
+    fun `prepareSystemPrompt should include session POST example without senderId`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
@@ -372,8 +372,10 @@ class PrivateSessionStrategyT1LogicTest {
 
         assertTrue(prompt.contains("auf_session.POST"),
             "Should include a fenced code block example for session.POST")
-        assertTrue(prompt.contains("\"senderId\": \"$agentName\""),
-            "session.POST example should use the agent's name as senderId")
+        assertTrue(prompt.contains("\"message\""),
+            "session.POST example should include a message field")
+        assertFalse(prompt.contains("\"senderId\""),
+            "session.POST example should NOT include senderId — it is filled from the originator")
     }
 
     @Test
@@ -452,6 +454,60 @@ class PrivateSessionStrategyT1LogicTest {
 
         assertTrue(prompt.contains("invisible to others") || prompt.contains("only you can see"),
             "Should clearly state that the private session is not visible to others")
+    }
+
+    @Test
+    fun `prepareSystemPrompt should list participants per session with details`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = emptyMap(),
+            subscribedSessions = listOf(
+                SessionInfo(
+                    uuid = publicSession1,
+                    handle = "session.chat",
+                    name = "Chat",
+                    isOutput = false,
+                    participants = listOf(
+                        SessionParticipant("user.daniel", "Daniel", "Human User", 3),
+                        SessionParticipant(agentHandle, agentName, "YOU (this agent)", 2)
+                    ),
+                    messageCount = 5
+                )
+            )
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertTrue(prompt.contains("Daniel"), "Should list participant name")
+        assertTrue(prompt.contains("user.daniel"), "Should list participant senderId")
+        assertTrue(prompt.contains("Human User"), "Should list participant type")
+        assertTrue(prompt.contains("3 messages"), "Should list participant message count")
+        assertTrue(prompt.contains("5 messages"), "Should list session message count")
+    }
+
+    @Test
+    fun `prepareSystemPrompt should show no messages yet for empty session`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = emptyMap(),
+            subscribedSessions = listOf(
+                SessionInfo(
+                    uuid = publicSession1,
+                    handle = "session.chat",
+                    name = "Chat",
+                    isOutput = false,
+                    participants = emptyList(),
+                    messageCount = 0
+                )
+            )
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertTrue(prompt.contains("no messages yet"),
+            "Should indicate empty session has no messages")
     }
 
     @Test

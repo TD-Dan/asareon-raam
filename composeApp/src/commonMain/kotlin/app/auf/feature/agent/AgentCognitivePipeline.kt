@@ -509,7 +509,7 @@ object AgentCognitivePipeline {
         }
 
         // ============================================================
-        // Build structured session subscription context
+        // Build structured session subscription context with participants
         // ============================================================
         val subscribedSessionInfos = agent.subscribedSessionIds.mapNotNull { sessUUID ->
             val sessIdentity = identityRegistry.findByUUID(sessUUID)
@@ -517,11 +517,30 @@ object AgentCognitivePipeline {
                 ?: agentState.subscribableSessionNames[sessUUID]
                 ?: sessUUID.uuid
             val sessHandle = sessIdentity?.handle ?: sessUUID.uuid
+
+            // Derive participants from the session's ledger messages
+            val sessMessages = sessionLedgers[sessUUID] ?: emptyList()
+            val participants = sessMessages
+                .groupBy { it.senderId }
+                .map { (senderId, messages) ->
+                    val senderName = messages.first().senderName
+                    val isSelf = (senderId == agentUuid.uuid || senderId == agent.identityHandle.handle)
+                    val type = when {
+                        isSelf -> "YOU (this agent)"
+                        agentState.agents.values.any { it.identityUUID.uuid == senderId || it.identityHandle.handle == senderId } -> "AI Agent"
+                        agentState.userIdentities.any { it.handle == senderId } -> "Human User"
+                        else -> "User/System"
+                    }
+                    SessionParticipant(senderId, senderName, type, messages.size)
+                }
+
             SessionInfo(
                 uuid = sessUUID.uuid,
                 handle = sessHandle,
                 name = sessName,
-                isOutput = sessUUID == outputSessionUUID
+                isOutput = sessUUID == outputSessionUUID,
+                participants = participants,
+                messageCount = sessMessages.size
             )
         }
 

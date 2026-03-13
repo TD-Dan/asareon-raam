@@ -103,25 +103,34 @@ object PrivateSessionStrategy : CognitiveStrategy {
             appendLine()
             appendLine("Example — posting to a public session:")
             appendLine("```auf_session.POST")
-            appendLine("""{ "session": "<session name or handle>", "senderId": "${context.agentName}", "message": "Your message here." }""")
+            appendLine("""{ "session": "<session name or handle>", "message": "Your message here." }""")
             appendLine("```")
             appendLine()
             appendLine("The conversation messages in your context come from ALL your subscribed sessions.")
             appendLine("Your direct response text goes to your private session (invisible to others).")
             appendLine("Always use session.POST when you want others to see your message.")
 
-            // 4. Session subscription awareness
+            // 4. Session subscription awareness with participants
             if (context.subscribedSessions.isNotEmpty()) {
                 appendLine()
                 appendLine("--- SUBSCRIBED SESSIONS ---")
-                appendLine("You are currently subscribed to the following sessions:")
                 context.subscribedSessions.forEach { session ->
-                    val primaryTag = if (session.isOutput || (context.outputSessionHandle == null && session == context.subscribedSessions.first())) {
-                        " [PRIVATE — Your direct output is routed here, invisible to others]"
+                    val tag = if (session.isOutput || (context.outputSessionHandle == null && session == context.subscribedSessions.first())) {
+                        "PRIVATE — Your direct output is routed here, invisible to others"
                     } else {
-                        " [PUBLIC — Use session.POST to communicate here]"
+                        "PUBLIC — Use session.POST to communicate here"
                     }
-                    appendLine("  - ${session.name} (${session.handle})$primaryTag")
+                    appendLine(" --- ${session.name} (${session.handle}) [$tag] | ${session.messageCount} messages ---")
+
+                    if (session.participants.isNotEmpty()) {
+                        session.participants.forEach { participant ->
+                            appendLine("  - ${participant.senderName} (${participant.senderId}): ${participant.type}, ${participant.messageCount} messages")
+                        }
+                    } else {
+                        appendLine("  (no messages yet)")
+                    }
+
+                    appendLine(" ---")
                 }
                 appendLine()
             }

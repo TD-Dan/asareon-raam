@@ -29,7 +29,7 @@ class SessionFeature(
     @Serializable private data class ClonePayload(val session: String)
     @Serializable private data class UpdateConfigPayload(val session: String, val name: String)
     @Serializable private data class SessionTargetPayload(val session: String)
-    @Serializable private data class PostPayload(val session: String, val senderId: String, val message: String? = null, val messageId: String? = null, val metadata: JsonObject? = null, val afterMessageId: String? = null, val doNotClear: Boolean = false)
+    @Serializable private data class PostPayload(val session: String, val senderId: String? = null, val message: String? = null, val messageId: String? = null, val metadata: JsonObject? = null, val afterMessageId: String? = null, val doNotClear: Boolean = false)
     @Serializable private data class UpdateMessagePayload(val session: String, val messageId: String, val newContent: String? = null, val newMetadata: JsonObject? = null, val doNotClear: Boolean? = null)
     @Serializable private data class MessageTargetPayload(val session: String, val messageId: String)
     @Serializable private data class SetEditingSessionPayload(val sessionId: String?)
@@ -448,6 +448,7 @@ class SessionFeature(
                 // so the cleared draft and updated history are persisted without waiting.
                 val activeUserId = (previousState as? SessionState)?.activeUserId ?: "user"
                 val postedSenderId = action.payload?.get("senderId")?.jsonPrimitive?.contentOrNull
+                    ?: action.originator
                 if (postedSenderId == activeUserId) {
                     draftDebounceJobs[localHandle]?.cancel()
                     draftDebounceJobs.remove(localHandle)
@@ -961,10 +962,14 @@ class SessionFeature(
                 val decoded = payload?.let { json.decodeFromJsonElement<PostPayload>(it) } ?: return currentFeatureState
                 val localHandle = resolveSessionId(decoded.session, currentFeatureState) ?: return currentFeatureState
                 val targetSession = currentFeatureState.sessions[localHandle] ?: return currentFeatureState
+
+                // Resolve senderId: explicit payload field → action originator → fallback
+                val resolvedSenderId = decoded.senderId ?: action.originator ?: "unknown"
+
                 val newEntry = LedgerEntry(
                     id = decoded.messageId ?: platformDependencies.generateUUID(),
                     timestamp = platformDependencies.currentTimeMillis(),
-                    senderId = decoded.senderId,
+                    senderId = resolvedSenderId,
                     rawContent = decoded.message,
                     content = decoded.message?.let { blockParser.parse(it) } ?: emptyList(),
                     metadata = decoded.metadata,
@@ -984,7 +989,7 @@ class SessionFeature(
 
                 // ── Draft / history management for user posts ──────────────────────
                 val activeUserId = currentFeatureState.activeUserId ?: "user"
-                val isUserPost = decoded.senderId == activeUserId
+                val isUserPost = resolvedSenderId == activeUserId
                 val messageText = decoded.message
 
                 var newDraftInputs = currentFeatureState.draftInputs

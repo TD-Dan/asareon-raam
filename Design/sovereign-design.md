@@ -1,8 +1,8 @@
-# Sovereign Strategy Stabilization: Final Design
+# Sovereign Strategy Stabilization: Design Document
 
-## Status: FOR RATIFICATION
+## Status: IN PROGRESS — Phases A & B Complete
 
-## Document Version: 4.0 (Final)
+## Document Version: 5.0
 
 ---
 
@@ -29,7 +29,7 @@ All user-facing and agent-facing numbers use **tokens**. Character-based estimat
 
 ### 2.3 Absolute Strategy Decoupling
 
-Every strategy implementation is self-contained. SovereignStrategy imports nothing from VanillaStrategy, PrivateSessionStrategy, HKGStrategy, or any other strategy. If two strategies need identical logic, the code is duplicated. Shared infrastructure lives in the `app.auf.feature.agent` package as pipeline-level utilities (e.g., `HkgContextFormatter`, `ContextCollapseLogic`) — never in the `strategies` subpackage.
+Every strategy implementation is self-contained. SovereignStrategy imports nothing from VanillaStrategy, PrivateSessionStrategy, HKGStrategy, or any other strategy. If two strategies need identical logic, the code is duplicated. Shared infrastructure lives in the `app.auf.feature.agent` package as pipeline-level utilities (e.g., `HkgContextFormatter`, `ContextCollapseLogic`, `ConversationLogFormatter`) — never in the `strategies` subpackage.
 
 ### 2.4 Three Files, Three Concerns
 
@@ -42,6 +42,26 @@ Each agent has three separate persistence files:
 | `context.json` | Context collapse system | Collapse overrides: which partitions/holons are expanded |
 
 These are independent systems. NVRAM is never involved in context management. Context state is never involved in cognitive state.
+
+### 2.5 System-Prompt-Only Gateway Architecture *(New — Phase B)*
+
+All conversation context lives in the system prompt. The gateway `contents` (messages array) is always empty. Each provider injects a minimal trigger message (`role: user`) to satisfy API requirements. This architecture:
+
+- Eliminates the user/assistant role-mapping problem for multi-user, multi-session conversations
+- Makes conversation logs a first-class context partition that participates in collapse/budget
+- Provides a universal format across all providers (Anthropic, OpenAI, Gemini, Inception)
+
+### 2.6 Structured Delimiter Convention *(New — Phase B)*
+
+All context partitions use a consistent indentation-based delimiter hierarchy:
+
+```
+---              → top-level section boundary (CONVERSATION LOG, CONTEXT, etc.)
+ ---             → partition-level boundary (individual session, individual context source)
+  ---            → entry-level boundary (individual message, individual file)
+```
+
+Content (message bodies, file contents) sits at zero indent between delimiters, making it unambiguous even if content contains markdown `---` rules.
 
 ---
 
@@ -226,187 +246,31 @@ The HKG view is split into two context partitions: an INDEX (navigational map) a
 
 ### 4.2 INDEX Partition
 
-Built from holon headers only (id, type, name, summary, sub_holons). Uses 2-space indentation per depth level:
-
-```
---- HOLON_KNOWLEDGE_GRAPH_INDEX ---
-Persona: Meridian | Total holons: 30
-
-meridian-20260312T120000Z (AI_Persona_Root) — "Meridian" [EXPANDED]
-  A cartographic intelligence oriented toward rigorous analysis...
-
-  meridian-foundational-core-20260312T120000Z (Project) [COLLAPSED]
-    Meridian's origin story, first memories, and self-model emergence.
-    <contains 4 sub-holons>
-
-  meridian-session-logs-20260312T120000Z (Project) [COLLAPSED]
-    A master project and chronicle for all sessions.
-    <contains 152 sub-holons>
-
-  shared-knowledge-base-seed-20260312T120000Z (Project) [EXPANDED]
-    The objective, universal knowledge artifacts for safe operation.
-
-    system-holon-definition-20250809T101500Z (System_File) [COLLAPSED]
-      The canonical definition of a Holon...
-
-    cognitive-toolkit-core-20250805T180124Z (System_File) [COLLAPSED]
-      A verified set of mature cognitive techniques...
-
-    ... (9 more sub-holons)
-
-  processes-seed-20260312T120000Z (Project) [COLLAPSED]
-    The defined processes and lifecycle protocols.
-    <contains 3 sub-holons>
-```
-
-**Rules:**
-- COLLAPSED branch: shows holon ID + type + summary + `<contains N sub-holons>` badge. All children are hidden.
-- EXPANDED branch (in INDEX): shows its immediate children (with their summaries). Children themselves may be COLLAPSED.
-- `[EXPANDED]` tag means the holon's file is also open in the FILES section.
-- `[COLLAPSED]` means the file is not open. Uncollapsing it would add it to FILES.
-- Sub-holon count is recursive (counts grandchildren, etc.).
+Built from holon headers only (id, type, name, summary, sub_holons). Uses 2-space indentation per depth level. *(Unchanged from v4.0 — see archived spec for full format.)*
 
 ### 4.3 FILES Partition
 
-Lists all EXPANDED holons as complete JSON files:
-
-```
---- HOLON_KNOWLEDGE_GRAPH_FILES ---
-Files currently open: 2 of 30
-
---- START OF FILE meridian-20260312T120000Z.json ---
-{
-  "header": { ... },
-  "execute": { ... },
-  "payload": { ... }
-}
---- END OF FILE meridian-20260312T120000Z.json ---
-
---- START OF FILE shared-knowledge-base-seed-20260312T120000Z.json ---
-{
-  "header": { ... },
-  "payload": { ... }
-}
---- END OF FILE shared-knowledge-base-seed-20260312T120000Z.json ---
-```
-
-When no files are open:
-
-```
---- HOLON_KNOWLEDGE_GRAPH_FILES ---
-No files open. Use agent.CONTEXT_UNCOLLAPSE to open holon files.
-```
+Lists all EXPANDED holons as complete JSON files with START/END markers. *(Unchanged from v4.0.)*
 
 ### 4.4 Collapse Granularity
 
-**Holon level (preferred):**
-```
-agent.CONTEXT_UNCOLLAPSE { "partitionKey": "hkg:<holonId>", "scope": "single" }
-→ Opens one holon file in FILES. Expands its branch in INDEX.
-
-agent.CONTEXT_COLLAPSE { "partitionKey": "hkg:<holonId>" }
-→ Closes holon file in FILES. Collapses branch in INDEX (hides children).
-```
-
-**Partition level (coarse):**
-```
-agent.CONTEXT_UNCOLLAPSE { "partitionKey": "HOLON_KNOWLEDGE_GRAPH_FILES", "scope": "full" }
-→ Opens ALL holon files. Expensive — agent should prefer per-holon.
-
-agent.CONTEXT_COLLAPSE { "partitionKey": "HOLON_KNOWLEDGE_GRAPH_FILES" }
-→ Closes all holon files.
-```
+*(Unchanged from v4.0 — holon-level and partition-level collapse commands.)*
 
 ### 4.5 Write Guard
 
-When an agent command targets `knowledgegraph.UPDATE_HOLON_CONTENT` (or any HKG write action), the agent feature checks the target holon's collapse state before forwarding:
-
-```kotlin
-// In AgentRuntimeFeature, in the command forwarding path:
-val targetHolonId = resolvedPayload["holonId"]?.jsonPrimitive?.contentOrNull
-val holonCollapseState = statusInfo.contextCollapseOverrides["hkg:$targetHolonId"]
-
-if (holonCollapseState != CollapseState.EXPANDED) {
-    // Block — post sentinel error to agent's output session
-    postToSession(agent.outputSessionId, "system", """
-SYSTEM SENTINEL: Error: Write blocked! You are attempting to modify holon
-'$targetHolonId' which is not fully expanded in your context. Expand the file:
-```auf_agent.CONTEXT_UNCOLLAPSE
-{ "partitionKey": "hkg:$targetHolonId", "scope": "single" }
-```
-Then retry your write to ensure you are not omitting data.""".trimIndent())
-    return // Do not forward
-}
-```
-
-This lives in the agent feature's command forwarding path — the same code path where sandbox rules are already enforced. CommandBot dispatches `commandbot.ACTION_CREATED`, the agent feature reads it and decides what to do. The write guard is part of that decision.
+*(Unchanged from v4.0 — blocks HKG writes to collapsed holons.)*
 
 ### 4.6 HkgContextFormatter
 
-Pipeline-level utility in `app.auf.feature.agent`:
-
-```kotlin
-object HkgContextFormatter {
-
-    data class HolonSummary(
-        val id: String,
-        val type: String,
-        val name: String,
-        val summary: String?,
-        val subHolonRefs: List<SubRef>,
-        val depth: Int
-    )
-
-    data class SubRef(val id: String, val type: String, val summary: String)
-
-    /** Parse holon headers from raw JSON strings. */
-    fun parseHolonHeaders(hkgContext: Map<String, String>): Map<String, HolonSummary>
-
-    /** Build the INDEX tree string. */
-    fun buildIndexTree(
-        headers: Map<String, HolonSummary>,
-        collapseOverrides: Map<String, CollapseState>
-    ): String
-
-    /** Build the FILES section string (expanded holons only). */
-    fun buildFilesSection(
-        hkgContext: Map<String, String>,
-        collapseOverrides: Map<String, CollapseState>
-    ): String
-
-    /** Count sub-holons recursively for badge display. */
-    fun countSubHolons(holonId: String, headers: Map<String, HolonSummary>): Int
-}
-```
+Pipeline-level utility in `app.auf.feature.agent`. *(Interface unchanged from v4.0.)*
 
 ---
 
-## 5. Private Session Lifecycle
+## 5. Private Session Lifecycle *(Implemented — Phase B)*
 
-### 5.1 New: session.SESSION_CREATED Broadcast
+### 5.1 session.SESSION_CREATED Broadcast
 
-Added to the session feature. Fires in the `CORE_RETURN_REGISTER_IDENTITY` side-effect handler, after the session is persisted:
-
-```json
-{
-  "action_name": "session.SESSION_CREATED",
-  "summary": "Broadcast when a new session is fully created and registered.",
-  "public": false,
-  "broadcast": true,
-  "payload_schema": {
-    "properties": {
-      "uuid": { "type": "string" },
-      "name": { "type": "string" },
-      "handle": { "type": "string" },
-      "localHandle": { "type": "string" },
-      "isHidden": { "type": "boolean" },
-      "isPrivateTo": { "type": ["string", "null"],
-        "description": "Identity handle of the owner, if private." }
-    },
-    "required": ["uuid", "name", "handle", "localHandle"]
-  }
-}
-```
+Added to the session feature. Fires after the session is fully created and registered. *(Implemented in Phase A.)*
 
 ### 5.2 Pending Session Guard
 
@@ -415,30 +279,146 @@ Added to the session feature. Fires in the `CORE_RETURN_REGISTER_IDENTITY` side-
 val pendingPrivateSessionCreation: Boolean = false
 ```
 
-### 5.3 Private Session Flow
+### 5.3 Private Session Flow *(Simplified from v4.0)*
+
+The original design included a registry recovery step (searching the identity registry for sessions with `isPrivateTo`). This was dropped — restart resilience relies on `outputSessionId` being persisted in `agent.json`. The narrow crash window between SESSION_CREATED and agent.json save is accepted; a duplicate private session is recoverable by the operator.
 
 ```
 ensureInfrastructure():
-  1. agent.outputSessionId != null → DONE (trust the pointer)
+  1. agent.outputSessionId != null → DONE (trust the persisted pointer)
   2. statusInfo.pendingPrivateSessionCreation == true → DONE (waiting)
-  3. Search identity registry for session with isPrivateTo == agent handle
-  4. Found with UUID → dispatch AGENT_UPDATE_CONFIG to link → DONE
-  5. Not found → set pending flag, dispatch SESSION_CREATE with isPrivateTo
+  3. Set pending flag, dispatch SESSION_CREATE with isPrivateTo + isHidden
 
 SESSION_CREATED handler in AgentRuntimeFeature:
   1. Read isPrivateTo from payload
   2. Find agent with matching identityHandle
   3. Dispatch AGENT_UPDATE_CONFIG to set outputSessionId
-  4. Clear pending flag
+  4. Dispatch ADD_SESSION_SUBSCRIPTION to subscribe agent to its private session
+  5. Clear pending flag
 ```
 
-Matching by `isPrivateTo` is deterministic — no fragile name conventions.
+**Key difference from v4.0:** Step 4 subscribes the agent to its own private session. This means the agent sees its private session in the conversation log — it functions as an internal monologue / staging ground.
+
+### 5.4 Private Session Routing in System Prompt *(New — Phase B)*
+
+PrivateSessionStrategy's system prompt includes a dedicated `PRIVATE SESSION ROUTING` section that:
+- Explains that direct responses go to the invisible private session
+- Instructs the agent to use `session.POST` for public communication
+- Provides a concrete fenced code block example (without senderId — auto-filled from originator)
+- Tags sessions as `[PRIVATE]` or `[PUBLIC]` in the subscription listing
+
+### 5.5 session.POST senderId Auto-Fill *(New — Phase B)*
+
+`session.POST` no longer requires `senderId`. If omitted, the session feature falls back to `action.originator` — the identity handle of the dispatching entity. This eliminates a common agent error (wrong senderId) and simplifies the prompt.
 
 ---
 
-## 6. SovereignStrategy Upgrade
+## 6. Multi-Session Conversation Architecture *(New — Phase B)*
 
-### 6.1 Changes
+### 6.1 System-Prompt-Only Mode
+
+All LLM APIs (Anthropic, OpenAI, Gemini, Inception) are designed for binary user/assistant conversations. Multi-user, multi-session conversations cannot be naturally represented in alternating message roles.
+
+**Solution:** The conversation log moves from the gateway `contents` (messages array) into the system prompt as a structured context partition (`CONVERSATION_LOG`). The `contents` array is always empty. Each provider detects empty contents and injects a minimal trigger message to satisfy API requirements.
+
+### 6.2 Multi-Session Ledger Accumulation
+
+The pipeline requests ledger content from ALL subscribed sessions in parallel:
+
+```
+startCognitiveCycle():
+  1. Dispatch SET_PENDING_LEDGER_SESSIONS [s1, s2, s3, ...]
+  2. For each session: dispatch REQUEST_LEDGER_CONTENT with
+     compound correlationId "agentUUID::sessionUUID"
+
+handleLedgerResponse():
+  1. Parse compound correlationId to extract agentId + sessionId
+  2. Enrich messages (sender names, roles)
+  3. Dispatch ACCUMULATE_SESSION_LEDGER {agentId, sessionId, messages}
+
+Reducer (ACCUMULATE_SESSION_LEDGER):
+  - Stores messages in accumulatedSessionLedgers[sessionId]
+  - Removes sessionId from pendingLedgerSessionIds
+
+Side-effect (ACCUMULATE_SESSION_LEDGER):
+  - If pendingLedgerSessionIds is empty → all arrived → evaluateTurnContext()
+```
+
+### 6.3 CONVERSATION_LOG Format
+
+Uses the delimiter convention (§2.6):
+
+```
+--- CONVERSATION LOG ---
+ --- SESSION: Private testing session | uuid: xxx | 3 messages ---
+  --- Daniel (user.daniel) @ 2026-03-13T17:18:08Z ---
+PeepBoob answer with a boop!
+  ---
+  --- Ryan (agent.ryan-2) @ 2026-03-13T17:18:12Z ---
+Hello! I'm Ryan, ready to assist.
+  ---
+ --- END OF SESSION ---
+ --- SESSION: Pet language studies | uuid: yyy | 1 message ---
+  --- Daniel (user.daniel) @ 2026-03-13T17:13:56Z ---
+What is your favourite animal?
+  ---
+ --- END OF SESSION ---
+--- END OF CONVERSATION LOG ---
+```
+
+### 6.4 SUBSCRIBED SESSIONS with Participants
+
+Each session listing includes a per-session participant roster:
+
+```
+--- SUBSCRIBED SESSIONS ---
+ --- Chat (session.chat) [PUBLIC — Use session.POST to communicate here] | 5 messages ---
+  - Daniel (user.daniel): Human User, 3 messages
+  - Ryan (agent.ryan-2): YOU (this agent), 2 messages
+ ---
+ --- Ryan-private-session (session.ryan-private) [PRIVATE — ...] | 1 message ---
+  - Ryan (agent.ryan-2): YOU (this agent), 1 messages
+ ---
+--- END OF SUBSCRIBED SESSIONS ---
+```
+
+Data model:
+
+```kotlin
+data class SessionParticipant(
+    val senderId: String,
+    val senderName: String,
+    val type: String,       // "Human User", "AI Agent", "YOU (this agent)", "User/System"
+    val messageCount: Int
+)
+
+data class SessionInfo(
+    val uuid: String,
+    val handle: String,
+    val name: String,
+    val isOutput: Boolean,
+    val participants: List<SessionParticipant> = emptyList(),
+    val messageCount: Int = 0
+)
+```
+
+### 6.5 ConversationLogFormatter
+
+Pipeline-level utility in `app.auf.feature.agent`:
+
+```kotlin
+object ConversationLogFormatter {
+    data class SessionLedgerSnapshot(...)
+    fun format(sessions: List<SessionLedgerSnapshot>, platformDeps: PlatformDependencies): String
+    fun extractParticipants(sessions: List<SessionLedgerSnapshot>): List<Pair<String, String>>
+}
+```
+
+---
+
+## 7. SovereignStrategy Upgrade
+
+### 7.1 Changes
 
 | Area | Change |
 |------|--------|
@@ -448,7 +428,7 @@ Matching by `isPrivateTo` is deterministic — no fragile name conventions.
 | `requestAdditionalContext()` | No change — HKG request is correct |
 | `validateConfig()` | No change — permits out-of-band outputSessionId |
 
-### 6.2 Boot Phase Auto-Uncollapse
+### 7.2 Boot Phase Auto-Uncollapse
 
 During BOOTING, the pipeline auto-expands the persona root holon so the boot sentinel can verify constitutional embodiment:
 
@@ -465,61 +445,51 @@ if (phase == "BOOTING") {
 
 After boot succeeds (AWAKE), the root can be collapsed and the agent navigates via explicit commands.
 
-### 6.3 Response Routing
+### 7.3 Response Routing
 
 - Gateway response → private cognition session (outputSessionId). **No change.**
 - Public posts → agent emits `session.POST` commands → CommandBot dispatches. **Already working.**
 
 ---
 
-## 7. Implementation Phases
+## 8. Implementation Phases
 
-### Phase A: Supporting Infrastructure
+### Phase A: Supporting Infrastructure ✅ COMPLETE
 
 Plumbing upgrades that later phases depend on.
 
-**Deliverables:**
+**Deliverables (all shipped):**
 1. `session.SESSION_CREATED` broadcast in SessionFeature
-2. `session_actions.json` updated
-3. `AgentState.kt`: add to AgentInstance: `contextBudgetChars`, `contextMaxBudgetChars`, `contextMaxPartialChars`. Add to AgentStatusInfo: `contextCollapseOverrides`, `pendingPrivateSessionCreation`
+2. `session_actions.json` updated (SESSION_CREATED + senderId optional on POST)
+3. `AgentState.kt`: budget fields on AgentInstance, CollapseOverrides + pendingPrivateSessionCreation + multi-session ledger fields on AgentStatusInfo, CollapseState enum
 4. `AgentCrudLogic.kt`: accept budget fields in CREATE/UPDATE_CONFIG
-5. `AgentRuntimeReducer.kt`: handle `CONTEXT_UNCOLLAPSE`, `CONTEXT_COLLAPSE`, `CONTEXT_STATE_LOADED`, `SET_PENDING_PRIVATE_SESSION`
-6. `AgentRuntimeFeature.kt`: `context.json` load/save scaffolding, `SESSION_CREATED` handler
-7. `agent_actions.json`: add new actions
-8. `CollapseState` enum (can live in `AgentState.kt` or `ContextCollapseLogic.kt`)
+5. `AgentRuntimeReducer.kt`: handle CONTEXT_UNCOLLAPSE, CONTEXT_COLLAPSE, CONTEXT_STATE_LOADED, SET_PENDING_PRIVATE_SESSION, SET_PENDING_LEDGER_SESSIONS, ACCUMULATE_SESSION_LEDGER
+6. `AgentRuntimeFeature.kt`: context.json load/save scaffolding, SESSION_CREATED handler (with private session subscription), ACCUMULATE_SESSION_LEDGER side-effect handler
+7. `agent_actions.json`: all new actions including multi-session ledger actions
+8. `CollapseState` enum in `AgentState.kt`
+9. `SessionFeature.kt`: senderId auto-fill from originator on session.POST
 
-**Success gate — unit tests:**
-- SessionFeature: SESSION_CREATED broadcast fires with correct payload including isPrivateTo
-- SessionFeature: SESSION_CREATED for non-private session has isPrivateTo = null
-- Reducer: CONTEXT_UNCOLLAPSE with scope "single" sets override to EXPANDED
-- Reducer: CONTEXT_UNCOLLAPSE with scope "subtree" sets override to EXPANDED
-- Reducer: CONTEXT_COLLAPSE sets override to COLLAPSED
-- Reducer: CONTEXT_STATE_LOADED populates overrides from loaded data
-- Reducer: SET_PENDING_PRIVATE_SESSION toggles flag
-- CrudLogic: CREATE with budget fields → agent has correct budget values
-- CrudLogic: UPDATE_CONFIG with budget fields → agent updated
-- context.json round-trip: save → load → overrides match
-- context.json missing on load → empty overrides, no crash
-- context.json corrupt on load → empty overrides, warning logged
+### Phase B: PrivateSessionStrategy ✅ COMPLETE (tests need update)
 
-### Phase B: PrivateSessionStrategy
+Private session lifecycle validated in isolation and integrated with multi-session pipeline.
 
-Test private session lifecycle in isolation.
+**Deliverables (all shipped):**
+1. `PrivateSessionStrategy.kt` — reference strategy with private session routing prompt
+2. `PrivateSessionStrategyT1LogicTest.kt` — 50 tests (needs updating for latest SessionInfo/participant changes)
+3. `ConversationLogFormatter.kt` — pipeline utility for structured multi-session conversation logs
+4. `CognitiveStrategy.kt` — SessionInfo extended with participants, SessionParticipant data class
+5. `AgentCognitivePipeline.kt` — system-prompt-only architecture, multi-session ledger accumulation, ConversationLogFormatter integration, empty gateway contents
+6. Gateway providers updated: `AnthropicProvider.kt`, `OpenAIProvider.kt`, `InceptionProvider.kt`, `GeminiProvider.kt` — empty contents handling with trigger injection
 
-**Deliverables:**
-1. `PrivateSessionStrategy.kt` — reference strategy
-2. Registered in `AgentRuntimeFeature.init()`
+**Architectural changes discovered during Phase B implementation:**
+- **System-prompt-only gateway** (§2.5): All conversation moved from `contents` to system prompt. Deprecated the old message-passing path across all 4 providers.
+- **Multi-session ledger accumulation** (§6.2): Pipeline dispatches N ledger requests, accumulates per-session, builds conversation log from map.
+- **Private session auto-subscription** (§5.3 step 4): Agent subscribes to its own private session for internal monologue visibility.
+- **No registry recovery** (§5.3): Restart resilience relies on agent.json persistence, not identity registry search. Eliminates cross-feature dependency.
+- **senderId auto-fill** (§5.5): session.POST defaults senderId to action.originator.
+- **Participant-aware session listing** (§6.4): SUBSCRIBED SESSIONS includes per-session participant roster.
 
-**Success gate — unit tests:**
-- ensureInfrastructure: no outputSessionId, no pending → dispatches SESSION_CREATE + sets pending
-- ensureInfrastructure: pending flag set → no-op
-- ensureInfrastructure: outputSessionId set → no-op
-- SESSION_CREATED with matching isPrivateTo → UPDATE_CONFIG dispatched, pending cleared
-- SESSION_CREATED with non-matching isPrivateTo → no-op
-- Full lifecycle: create agent → ensureInfrastructure → SESSION_CREATE → SESSION_CREATED → linked
-- Restart resilience: outputSessionId already set → ensureInfrastructure is no-op
-- prepareSystemPrompt: includes private session as primary output
-- postProcessResponse: always PROCEED (no sentinel)
+**Remaining for Phase B:** Update test file for latest SessionInfo/SessionParticipant changes and session.POST senderId removal. Scheduled for next session.
 
 ### Phase C: HKGStrategy
 
@@ -619,31 +589,38 @@ Compose all capabilities.
 
 ---
 
-## 8. File Change Summary
+## 9. File Change Summary
 
 ### New Files
 
-| File | Package | Phase |
-|------|---------|-------|
-| `PrivateSessionStrategy.kt` | `strategies` | B |
-| `HKGStrategy.kt` | `strategies` | C |
-| `HkgContextFormatter.kt` | `agent` | C |
-| `ContextCollapseLogic.kt` | `agent` | D |
+| File | Package | Phase | Status |
+|------|---------|-------|--------|
+| `PrivateSessionStrategy.kt` | `strategies` | B | ✅ Shipped |
+| `PrivateSessionStrategyT1LogicTest.kt` | `strategies` (test) | B | ✅ Shipped (needs test update) |
+| `ConversationLogFormatter.kt` | `agent` | B | ✅ Shipped |
+| `HKGStrategy.kt` | `strategies` | C | Planned |
+| `HkgContextFormatter.kt` | `agent` | C | Planned |
+| `ContextCollapseLogic.kt` | `agent` | D | Planned |
 
 ### Modified Files
 
-| File | Changes | Phase |
-|------|---------|-------|
-| `AgentState.kt` | Budget fields on AgentInstance. CollapseOverrides + pending flag on AgentStatusInfo. CollapseState enum. | A |
-| `AgentRuntimeReducer.kt` | CONTEXT_UNCOLLAPSE, CONTEXT_COLLAPSE, CONTEXT_STATE_LOADED, SET_PENDING_PRIVATE_SESSION | A |
-| `AgentRuntimeFeature.kt` | context.json load/save, SESSION_CREATED handler, register new strategies, write guard | A+B+C |
-| `AgentCrudLogic.kt` | Budget fields in CREATE/UPDATE_CONFIG | A |
-| `AgentCognitivePipeline.kt` | Collapse integration in executeTurn(), HKG INDEX+FILES split | D |
-| `SovereignStrategy.kt` | Updated ensureInfrastructure(), boot auto-uncollapse | E |
-| `SessionFeature.kt` | SESSION_CREATED broadcast | A |
-| `session_actions.json` | SESSION_CREATED | A |
-| `agent_actions.json` | CONTEXT_UNCOLLAPSE, CONTEXT_COLLAPSE, CONTEXT_STATE_LOADED, SET_PENDING_PRIVATE_SESSION | A |
-| `AgentManagerView.kt` | Budget config UI | A or later |
+| File | Changes | Phase | Status |
+|------|---------|-------|--------|
+| `AgentState.kt` | Budget fields, CollapseOverrides, pending flag, multi-session ledger fields | A+B | ✅ Shipped |
+| `AgentRuntimeReducer.kt` | CONTEXT_UNCOLLAPSE/COLLAPSE, SET_PENDING_PRIVATE_SESSION, SET_PENDING_LEDGER_SESSIONS, ACCUMULATE_SESSION_LEDGER, cleanup in INITIATE_TURN + SET_STATUS | A+B | ✅ Shipped |
+| `AgentRuntimeFeature.kt` | context.json load/save, SESSION_CREATED handler (with subscription), ACCUMULATE_SESSION_LEDGER side-effect | A+B | ✅ Shipped |
+| `AgentCognitivePipeline.kt` | System-prompt-only mode, multi-session ledger accumulation, ConversationLogFormatter, empty gateway contents | B | ✅ Shipped |
+| `CognitiveStrategy.kt` | SessionParticipant data class, SessionInfo extended with participants + messageCount | B | ✅ Shipped |
+| `AnthropicProvider.kt` | Empty contents → trigger message injection, legacy path preserved | B | ✅ Shipped |
+| `OpenAIProvider.kt` | Empty contents → trigger message injection | B | ✅ Shipped |
+| `InceptionProvider.kt` | Empty contents → trigger message injection | B | ✅ Shipped |
+| `GeminiProvider.kt` | Empty contents → trigger message injection | B | ✅ Shipped |
+| `SessionFeature.kt` | senderId optional on POST, auto-fill from originator | B | ✅ Shipped |
+| `session_actions.json` | SESSION_CREATED, senderId not required on POST | A+B | ✅ Shipped |
+| `agent_actions.json` | All Phase A actions + SET_PENDING_LEDGER_SESSIONS, ACCUMULATE_SESSION_LEDGER | A+B | ✅ Shipped |
+| `AgentCrudLogic.kt` | Budget fields in CREATE/UPDATE_CONFIG | A | ✅ Shipped |
+| `SovereignStrategy.kt` | Updated ensureInfrastructure(), boot auto-uncollapse | E | Planned |
+| `AgentManagerView.kt` | Budget config UI | A or later | Planned |
 
 ### Unchanged (Decoupled)
 
@@ -655,35 +632,37 @@ Compose all capabilities.
 | `KnowledgeGraphFeature.kt` | buildContextForPersona unchanged — collapse is pipeline-side |
 | `KnowledgeGraphState.kt` | No changes |
 | `SovereignDefaults.kt` | Constitution + boot sentinel unchanged |
-| `CognitiveStrategy.kt` | Interface unchanged |
 | `CognitiveStrategyRegistry.kt` | No structural changes (just new registrations) |
 
 ---
 
-## 9. Architecture Overview
+## 10. Architecture Overview
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                      AgentCognitivePipeline                            │
 │                                                                        │
-│  1. Gather Context                                                     │
-│     ├── Ledger (SessionFeature)                                        │
+│  1. Gather Context (Multi-Session)                                     │
+│     ├── Ledger × N (one per subscribed session, accumulated)           │
 │     ├── HKG raw holons (KnowledgeGraphFeature — unchanged)             │
 │     ├── Workspace (FilesystemFeature)                                  │
 │     └── Strategy-specific (polymorphic)                                │
 │                                                                        │
-│  2. Context Collapse [Phase D]                                         │
-│     ├── Load overrides (context.json → AgentStatusInfo)                │
-│     ├── HkgContextFormatter → INDEX partition (always full)            │
-│     ├── HkgContextFormatter → FILES partition (expanded holons only)   │
-│     ├── ContextCollapseLogic.collapse(partitions, budget, overrides)   │
-│     ├── Oversized partial sentinel                                     │
-│     └── CONTEXT_BUDGET_REPORT partition                                │
+│  2. Context Assembly                                                   │
+│     ├── ConversationLogFormatter → CONVERSATION_LOG partition           │
+│     │   (multi-session, delimiter convention, per-session snapshots)    │
+│     ├── HkgContextFormatter → INDEX + FILES partitions [Phase C+D]     │
+│     ├── ContextCollapseLogic.collapse() [Phase D]                      │
+│     ├── SESSION_METADATA (multi-session aware)                         │
+│     ├── AVAILABLE_ACTIONS (exposed actions)                            │
+│     └── WORKSPACE_FILES                                                │
 │                                                                        │
 │  3. Strategy.prepareSystemPrompt(context, cognitiveState)              │
-│     └── Receives pre-collapsed contextMap. No collapse logic.          │
+│     └── Receives assembled contextMap. Strategy owns prompt structure. │
 │                                                                        │
-│  4. Gateway dispatch                                                   │
+│  4. Gateway dispatch (system-prompt-only mode)                         │
+│     ├── contents = [] (empty — conversation is in system prompt)       │
+│     └── Provider injects minimal trigger to satisfy API requirements   │
 └────────────────────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -702,9 +681,9 @@ Compose all capabilities.
 │  ┌──────────┐ ┌──────────┐ ┌──────────────┐                           │
 │  │ Minimal  │ │ Vanilla  │ │ StateMachine │  ← existing, unchanged    │
 │  └──────────┘ └──────────┘ └──────────────┘                           │
-│  ┌────────────────┐ ┌───────────┐                                      │
-│  │PrivateSession  │ │    HKG    │  ← reference test harnesses         │
-│  └────────────────┘ └───────────┘                                      │
+│  ┌──────────────────┐ ┌───────────┐                                    │
+│  │PrivateSession ✅ │ │    HKG    │  ← reference test harnesses       │
+│  └──────────────────┘ └───────────┘                                    │
 │  ┌──────────────────────────────────────────────────────────────────┐  │
 │  │ Sovereign (duplicates private session + HKG code internally)    │  │
 │  └──────────────────────────────────────────────────────────────────┘  │
@@ -713,19 +692,34 @@ Compose all capabilities.
 ┌────────────────────────────────────────────────────────────────────────┐
 │  Pipeline Utilities (shared, in app.auf.feature.agent)                 │
 │                                                                        │
-│  ┌─────────────────────┐  ┌────────────────────┐                      │
-│  │ ContextCollapseLogic │  │ HkgContextFormatter │                     │
-│  │ - CollapseState      │  │ - parseHolonHeaders │                     │
-│  │ - ContextPartition   │  │ - buildIndexTree    │                     │
-│  │ - collapse()         │  │ - buildFilesSection │                     │
-│  │ - buildBudgetReport  │  │ - countSubHolons    │                     │
-│  └─────────────────────┘  └────────────────────┘                      │
+│  ┌─────────────────────────┐  ┌────────────────────┐                  │
+│  │ ConversationLogFormatter │  │ HkgContextFormatter │                 │
+│  │ - SessionLedgerSnapshot  │  │ - parseHolonHeaders │                 │
+│  │ - format()               │  │ - buildIndexTree    │                 │
+│  │ - extractParticipants()  │  │ - buildFilesSection │                 │
+│  └─────────────────────────┘  │ - countSubHolons    │                 │
+│  ┌─────────────────────┐      └────────────────────┘                  │
+│  │ ContextCollapseLogic │                                              │
+│  │ - ContextPartition   │                                              │
+│  │ - collapse()         │                                              │
+│  │ - buildBudgetReport  │                                              │
+│  └─────────────────────┘                                               │
+└────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────┐
+│  Gateway Providers (system-prompt-only mode)                           │
+│                                                                        │
+│  ┌───────────┐ ┌────────┐ ┌───────────┐ ┌────────┐                   │
+│  │ Anthropic │ │ OpenAI │ │ Inception │ │ Gemini │                    │
+│  │ ✅ Updated │ │✅ Upd. │ │ ✅ Updated │ │✅ Upd. │                   │
+│  └───────────┘ └────────┘ └───────────┘ └────────┘                    │
+│  Empty contents → inject trigger. Legacy path preserved (deprecated). │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 10. Resolved Design Questions
+## 11. Resolved Design Questions
 
 | # | Question | Resolution |
 |---|----------|------------|
@@ -743,3 +737,9 @@ Compose all capabilities.
 | 12 | Sticky overrides | Persisted in context.json. Respected up to hard max. |
 | 13 | HKG vs Filesystem | Not duplicative. Filesystem = sandboxed I/O. HKG = semantic knowledge layer on top. Agent workspace is scratch; HKG is persona identity. |
 | 14 | Phase ordering | A (plumbing) → B (private session) → C (HKG) → D (collapse pipeline) → E (Sovereign). Each gated by tests. |
+| 15 | Multi-session conversations *(new)* | Conversation moves from gateway contents to system prompt. LLM APIs only support binary user/assistant — multi-user context must be in the system prompt. |
+| 16 | Private session restart recovery *(new)* | Relies on agent.json persistence, NOT identity registry search. No cross-feature dependency. Duplicate session on narrow crash window is accepted. |
+| 17 | Private session subscription *(new)* | Agent is auto-subscribed to its private session via ADD_SESSION_SUBSCRIPTION in SESSION_CREATED handler. Private session serves as internal monologue. |
+| 18 | session.POST senderId *(new)* | Optional. Auto-filled from action.originator. Eliminates common agent error. |
+| 19 | Context delimiter convention *(new)* | `---` / ` ---` / `  ---` indentation hierarchy. Content at zero indent between delimiters. |
+| 20 | Session participant metadata *(new)* | SessionInfo carries per-session participant roster (name, type, message count). Rendered in SUBSCRIBED SESSIONS section. |

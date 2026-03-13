@@ -255,14 +255,27 @@ enum class SentinelAction {
 }
 
 /**
- * Describes a session the agent is subscribed to, enriched with display name
- * and whether it is the designated output target.
+ * Describes a participant in a session, derived from ledger messages.
+ */
+data class SessionParticipant(
+    val senderId: String,
+    val senderName: String,
+    /** e.g., "Human User", "AI Agent", "YOU (this agent)", "User/System" */
+    val type: String,
+    val messageCount: Int
+)
+
+/**
+ * Describes a session the agent is subscribed to, enriched with display name,
+ * output flag, and participant roster derived from the conversation log.
  */
 data class SessionInfo(
     val uuid: String,
     val handle: String,
     val name: String,
-    val isOutput: Boolean
+    val isOutput: Boolean,
+    val participants: List<SessionParticipant> = emptyList(),
+    val messageCount: Int = 0
 )
 
 /**
