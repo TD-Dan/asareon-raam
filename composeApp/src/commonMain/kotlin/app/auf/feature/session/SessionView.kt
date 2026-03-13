@@ -196,23 +196,6 @@ private fun LedgerPane(
         }
     }
 
-    // Precompute consecutive-sender grouping: suppress the sender name when the
-    // previous non-partial entry is from the same sender.
-    val showSenderInfoFlags = remember(activeSession.ledger) {
-        var lastNonPartialSenderId: String? = null
-        activeSession.ledger.map { entry ->
-            val isPartial = entry.metadata?.get("render_as_partial")
-                ?.jsonPrimitive?.booleanOrNull ?: false
-            if (isPartial) {
-                true // Partial views don't participate in sender grouping
-            } else {
-                val show = lastNonPartialSenderId != entry.senderId
-                lastNonPartialSenderId = entry.senderId
-                show
-            }
-        }
-    }
-
     LazyColumn(state = listState, modifier = modifier.fillMaxSize().padding(8.dp)) {
         itemsIndexed(activeSession.ledger, key = { _, entry -> entry.id }) { index, entry ->
             val isPartialView = entry.metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
@@ -247,7 +230,6 @@ private fun LedgerPane(
                     identityRegistry[entry.senderId]?.name ?: entry.senderId
                 }
                 val isCurrentUserMessage = entry.senderId == activeUserId
-                val showSenderInfo = showSenderInfoFlags.getOrElse(index) { true }
 
                 val senderColor = identityRegistry[entry.senderId]?.resolveDisplayColor()
 
@@ -260,7 +242,6 @@ private fun LedgerPane(
                     isEditingThisMessage = sessionState?.editingMessageId == entry.id,
                     editingContent = sessionState?.editingMessageContent,
                     platformDependencies = platformDependencies,
-                    showSenderInfo = showSenderInfo,
                     senderColor = senderColor
                 )
             }

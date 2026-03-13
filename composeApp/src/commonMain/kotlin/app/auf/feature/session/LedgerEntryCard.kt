@@ -42,7 +42,6 @@ fun LedgerEntryCard(
     isEditingThisMessage: Boolean,
     editingContent: String?,
     platformDependencies: PlatformDependencies,
-    showSenderInfo: Boolean = true,
     senderColor: Color? = null
 ) {
     val uiState = remember(session.messageUiState, entry.id) {
@@ -112,83 +111,26 @@ fun LedgerEntryCard(
                     start = 16.dp, end = 16.dp,
                     // Tight bottom when collapsed — no wasted space below the header
                     bottom = if (uiState.isCollapsed) 4.dp else 16.dp,
-                    top = if (showSenderInfo) 0.dp else 8.dp
+                    top = 0.dp
                 )
             ) {
-                if (showSenderInfo) {
-                    // ── First-in-run: stable header, no pop ──────────────
-                    // Box reserves 48dp so chrome overlay never changes height.
-                    // Timestamp is always laid out; transparent when not hovered.
-                    Box(
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                        contentAlignment = Alignment.CenterStart
+                // ── Sender header ─────────────────────────────────
+                // Box reserves 48dp so chrome overlay never changes height.
+                // Timestamp is always laid out; transparent when not hovered.
+                Box(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().clickable(
+                            enabled = !isEditingThisMessage,
+                            onClick = { dispatchToggleCollapsed(store, session, entry) }
+                        )
                     ) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().clickable(
-                                enabled = !isEditingThisMessage,
-                                onClick = { dispatchToggleCollapsed(store, session, entry) }
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = senderName,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = senderNameColor
-                                )
-                                if (entry.isLocked) {
-                                    Icon(
-                                        imageVector = Icons.Default.Lock,
-                                        contentDescription = "Locked",
-                                        modifier = Modifier.size(14.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                if (uiState.isCollapsed && collapsedPreview.isNotBlank()) {
-                                    Text(
-                                        text = collapsedPreview,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f, fill = false)
-                                    )
-                                }
-                            }
-                            // Timestamp: always present for layout stability.
-                            // Transparent when not hovered — no vertical pop.
-                            Text(
-                                text = platformDependencies.formatDisplayTimestamp(entry.timestamp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (showChrome) MaterialTheme.colorScheme.onSurfaceVariant
-                                else Color.Transparent
-                            )
-                        }
-
-                        // Chrome overlay — floats top-right, no layout impact
-                        if (showChrome) {
-                            ChromeOverlay(store, session, entry, uiState, cardBgColor,
-                                modifier = Modifier.align(Alignment.TopEnd)
-                            ) { isMenuOpen = it }
-                        }
-                    }
-
-                    // Content gap — only when expanded
-                    Spacer(Modifier.height(if (uiState.isCollapsed) 0.dp else 8.dp))
-
-                } else if (showChrome) {
-                    // ── Consecutive on hover: full header pops in ────────
-                    // This is the ONE allowed case of visual popping.
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().clickable(
-                                enabled = !isEditingThisMessage,
-                                onClick = { dispatchToggleCollapsed(store, session, entry) }
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
                                 text = senderName,
@@ -196,19 +138,45 @@ fun LedgerEntryCard(
                                 fontWeight = FontWeight.Bold,
                                 color = senderNameColor
                             )
-                            Text(
-                                text = platformDependencies.formatDisplayTimestamp(entry.timestamp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            if (entry.isLocked) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = "Locked",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (uiState.isCollapsed && collapsedPreview.isNotBlank()) {
+                                Text(
+                                    text = collapsedPreview,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                            }
                         }
+                        // Timestamp: always present for layout stability.
+                        // Transparent when not hovered — no vertical pop.
+                        Text(
+                            text = platformDependencies.formatDisplayTimestamp(entry.timestamp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (showChrome) MaterialTheme.colorScheme.onSurfaceVariant
+                            else Color.Transparent
+                        )
+                    }
+
+                    // Chrome overlay — floats top-right, no layout impact
+                    if (showChrome) {
                         ChromeOverlay(store, session, entry, uiState, cardBgColor,
                             modifier = Modifier.align(Alignment.TopEnd)
                         ) { isMenuOpen = it }
                     }
                 }
-                // ── Consecutive at rest: no header at all ────────────
-                // (neither branch above matches — content starts directly)
+
+                // Content gap — only when expanded
+                Spacer(Modifier.height(if (uiState.isCollapsed) 0.dp else 8.dp))
 
                 // ── Content ──────────────────────────────────────────────
                 AnimatedVisibility(visible = !uiState.isCollapsed) {
