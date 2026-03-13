@@ -91,28 +91,47 @@ object PrivateSessionStrategy : CognitiveStrategy {
                 appendLine(instructions)
             }
 
-            // 3. Session subscription awareness
+            // 3. Private session routing explanation
+            appendLine()
+            appendLine("--- PRIVATE SESSION ROUTING ---")
+            appendLine()
+            appendLine("Your responses are routed to your PRIVATE session. This session is your")
+            appendLine("internal workspace — only you can see it. Other participants cannot read it.")
+            appendLine()
+            appendLine("To communicate with users and other agents, you MUST use the session.POST")
+            appendLine("action to post messages to the public sessions you are subscribed to.")
+            appendLine()
+            appendLine("Example — posting to a public session:")
+            appendLine("```auf_session.POST")
+            appendLine("""{ "session": "<session name or handle>", "senderId": "${context.agentName}", "message": "Your message here." }""")
+            appendLine("```")
+            appendLine()
+            appendLine("The conversation messages in your context come from ALL your subscribed sessions.")
+            appendLine("Your direct response text goes to your private session (invisible to others).")
+            appendLine("Always use session.POST when you want others to see your message.")
+
+            // 4. Session subscription awareness
             if (context.subscribedSessions.isNotEmpty()) {
-                appendLine("\n--- SUBSCRIBED SESSIONS ---")
+                appendLine()
+                appendLine("--- SUBSCRIBED SESSIONS ---")
                 appendLine("You are currently subscribed to the following sessions:")
                 context.subscribedSessions.forEach { session ->
                     val primaryTag = if (session.isOutput || (context.outputSessionHandle == null && session == context.subscribedSessions.first())) {
-                        " [PRIMARY — Your output and tool results are routed here]"
+                        " [PRIVATE — Your direct output is routed here, invisible to others]"
                     } else {
-                        ""
+                        " [PUBLIC — Use session.POST to communicate here]"
                     }
                     appendLine("  - ${session.name} (${session.handle})$primaryTag")
                 }
-                appendLine("You observe messages from all subscribed sessions. Your responses are posted to the primary session.")
                 appendLine()
             }
 
-            // 4. Multi-agent context (before generic contexts)
+            // 5. Multi-agent context (before generic contexts)
             context.gatheredContexts["MULTI_AGENT_CONTEXT"]?.let {
                 appendLine(it)
             }
 
-            // 5. Other gathered contexts (excluding MULTI_AGENT_CONTEXT to avoid duplication)
+            // 6. Other gathered contexts (excluding MULTI_AGENT_CONTEXT to avoid duplication)
             val otherContexts = context.gatheredContexts.filterKeys { it != "MULTI_AGENT_CONTEXT" }
             if (otherContexts.isNotEmpty()) {
                 appendLine("\n--- CONTEXT ---")

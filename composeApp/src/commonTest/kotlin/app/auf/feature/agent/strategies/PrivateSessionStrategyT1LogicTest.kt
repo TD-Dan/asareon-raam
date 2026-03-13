@@ -38,7 +38,7 @@ import kotlin.test.*
  *      (unlike Vanilla). The private session is assigned via ensureInfrastructure.
  *
  * 3. **prepareSystemPrompt: private session awareness**
- *    - Marks the private session as [PRIMARY] in the session listing.
+ *    - Tags the private session as [PRIVATE] and public sessions as [PUBLIC].
  *    - Includes session subscription awareness (like Vanilla).
  *    - Includes multi-agent context (like Vanilla).
  *
@@ -344,7 +344,40 @@ class PrivateSessionStrategyT1LogicTest {
     }
 
     @Test
-    fun `prepareSystemPrompt should list subscribed sessions with PRIMARY tag on output session`() {
+    fun `prepareSystemPrompt should include private session routing section`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = emptyMap()
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertTrue(prompt.contains("PRIVATE SESSION ROUTING"), "Should have routing section")
+        assertTrue(prompt.contains("session.POST"),
+            "Should instruct agent to use session.POST for public communication")
+        assertTrue(prompt.contains("private session"),
+            "Should explain that responses go to private session")
+    }
+
+    @Test
+    fun `prepareSystemPrompt should include session POST example with agent name`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = emptyMap()
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertTrue(prompt.contains("auf_session.POST"),
+            "Should include a fenced code block example for session.POST")
+        assertTrue(prompt.contains("\"senderId\": \"$agentName\""),
+            "session.POST example should use the agent's name as senderId")
+    }
+
+    @Test
+    fun `prepareSystemPrompt should tag output session as PRIVATE`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
@@ -371,7 +404,54 @@ class PrivateSessionStrategyT1LogicTest {
         assertTrue(prompt.contains("SUBSCRIBED SESSIONS"), "Should have session section")
         assertTrue(prompt.contains("Chat"), "Should list public session")
         assertTrue(prompt.contains("TestBot Private"), "Should list private session")
-        assertTrue(prompt.contains("[PRIMARY"), "Should tag the output session as PRIMARY")
+        assertTrue(prompt.contains("[PRIVATE"),
+            "Should tag the output session as PRIVATE, not PRIMARY")
+    }
+
+    @Test
+    fun `prepareSystemPrompt should tag non-output sessions as PUBLIC`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = emptyMap(),
+            subscribedSessions = listOf(
+                SessionInfo(
+                    uuid = publicSession1,
+                    handle = "session.chat",
+                    name = "Chat",
+                    isOutput = false
+                ),
+                SessionInfo(
+                    uuid = privateSessionUUID,
+                    handle = "session.testbot-private",
+                    name = "TestBot Private",
+                    isOutput = true
+                )
+            ),
+            outputSessionHandle = "session.testbot-private"
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        // The Chat session should be tagged as PUBLIC
+        val chatLine = prompt.lines().find { it.contains("Chat") && it.contains("session.chat") }
+        assertNotNull(chatLine, "Should have a line for the Chat session")
+        assertTrue(chatLine.contains("[PUBLIC"),
+            "Non-output sessions should be tagged [PUBLIC], got: '$chatLine'")
+    }
+
+    @Test
+    fun `prepareSystemPrompt should explain that direct output is invisible to others`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = emptyMap()
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        assertTrue(prompt.contains("invisible to others") || prompt.contains("only you can see"),
+            "Should clearly state that the private session is not visible to others")
     }
 
     @Test
@@ -694,11 +774,12 @@ class PrivateSessionStrategyT1LogicTest {
         val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
 
         assertTrue(prompt.contains("TestBot Private"))
-        assertTrue(prompt.contains("[PRIMARY"))
+        assertTrue(prompt.contains("[PRIVATE"))
     }
 
     @Test
-    fun `prepareSystemPrompt should tag first session as PRIMARY when no explicit output`() {
+    fun `prepareSystemPrompt should tag first session as PRIVATE when no explicit output handle`() {
+        // Fallback: when outputSessionHandle is null, first session is treated as output
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
@@ -716,7 +797,32 @@ class PrivateSessionStrategyT1LogicTest {
 
         val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
 
-        assertTrue(prompt.contains("[PRIMARY"))
+        // First session gets the output tag in the fallback case
+        assertTrue(prompt.contains("[PRIVATE"))
+    }
+
+    @Test
+    fun `prepareSystemPrompt routing section should appear before subscribed sessions`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContexts = emptyMap(),
+            subscribedSessions = listOf(
+                SessionInfo(
+                    uuid = publicSession1,
+                    handle = "session.chat",
+                    name = "Chat",
+                    isOutput = false
+                )
+            )
+        )
+
+        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+
+        val routingPos = prompt.indexOf("PRIVATE SESSION ROUTING")
+        val sessionsPos = prompt.indexOf("SUBSCRIBED SESSIONS")
+        assertTrue(routingPos < sessionsPos,
+            "Routing explanation should appear before session listing so agent understands the paradigm first")
     }
 
     // =========================================================================
