@@ -242,6 +242,26 @@ class SessionFeature(
                             put("content", "")
                         }
                     ))
+
+                    // Phase A: Broadcast SESSION_CREATED (§5.1)
+                    // Fires after the session is persisted and identity approved.
+                    // Agents listen for this to detect their private cognition session via isPrivateTo.
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.SESSION_SESSION_CREATED,
+                        buildJsonObject {
+                            put("uuid", uuid)
+                            put("name", session.identity.name)
+                            put("handle", session.identity.handle)
+                            put("localHandle", localHandle)
+                            put("isHidden", session.isHidden)
+                            val privateTo = session.isPrivateTo?.handle
+                            if (privateTo != null) {
+                                put("isPrivateTo", privateTo)
+                            } else {
+                                put("isPrivateTo", JsonNull)
+                            }
+                        }
+                    ))
                 }
                 if (newLocalHandles.isNotEmpty()) {
                     broadcastSessionNames(sessionState, store)

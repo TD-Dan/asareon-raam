@@ -778,6 +778,202 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     }
 
     // =========================================================================
+    // Context Collapse Actions (Phase A — §3.6)
+    // =========================================================================
+
+    @Test
+    fun `CONTEXT_UNCOLLAPSE with scope single sets override to EXPANDED`() {
+        val agentId = uid("a1")
+        val state = AgentRuntimeState(
+            agents = mapOf(agentId to testAgent("a1", "Test")),
+            agentStatuses = mapOf(agentId to AgentStatusInfo())
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE,
+            buildJsonObject {
+                put("agentId", "a1"); put("partitionKey", "hkg:some-holon-id"); put("scope", "single")
+            }
+        ), platform)
+
+        assertEquals(CollapseState.EXPANDED, result.agentStatuses[agentId]?.contextCollapseOverrides?.get("hkg:some-holon-id"))
+    }
+
+    @Test
+    fun `CONTEXT_UNCOLLAPSE with scope subtree sets override to EXPANDED`() {
+        val agentId = uid("a1")
+        val state = AgentRuntimeState(
+            agents = mapOf(agentId to testAgent("a1", "Test")),
+            agentStatuses = mapOf(agentId to AgentStatusInfo())
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE,
+            buildJsonObject {
+                put("agentId", "a1"); put("partitionKey", "hkg:parent-holon"); put("scope", "subtree")
+            }
+        ), platform)
+
+        assertEquals(CollapseState.EXPANDED, result.agentStatuses[agentId]?.contextCollapseOverrides?.get("hkg:parent-holon"))
+    }
+
+    @Test
+    fun `CONTEXT_UNCOLLAPSE preserves existing overrides`() {
+        val agentId = uid("a1")
+        val existing = mapOf("hkg:existing" to CollapseState.COLLAPSED)
+        val state = AgentRuntimeState(
+            agents = mapOf(agentId to testAgent("a1", "Test")),
+            agentStatuses = mapOf(agentId to AgentStatusInfo(contextCollapseOverrides = existing))
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE,
+            buildJsonObject {
+                put("agentId", "a1"); put("partitionKey", "hkg:new-holon"); put("scope", "single")
+            }
+        ), platform)
+
+        val overrides = result.agentStatuses[agentId]!!.contextCollapseOverrides
+        assertEquals(2, overrides.size)
+        assertEquals(CollapseState.COLLAPSED, overrides["hkg:existing"])
+        assertEquals(CollapseState.EXPANDED, overrides["hkg:new-holon"])
+    }
+
+    @Test
+    fun `CONTEXT_COLLAPSE sets override to COLLAPSED`() {
+        val agentId = uid("a1")
+        val existing = mapOf("hkg:some-holon" to CollapseState.EXPANDED)
+        val state = AgentRuntimeState(
+            agents = mapOf(agentId to testAgent("a1", "Test")),
+            agentStatuses = mapOf(agentId to AgentStatusInfo(contextCollapseOverrides = existing))
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_CONTEXT_COLLAPSE,
+            buildJsonObject {
+                put("agentId", "a1"); put("partitionKey", "hkg:some-holon")
+            }
+        ), platform)
+
+        assertEquals(CollapseState.COLLAPSED, result.agentStatuses[agentId]?.contextCollapseOverrides?.get("hkg:some-holon"))
+    }
+
+    @Test
+    fun `CONTEXT_STATE_LOADED populates overrides from loaded data`() {
+        val agentId = uid("a1")
+        val state = AgentRuntimeState(
+            agents = mapOf(agentId to testAgent("a1", "Test")),
+            agentStatuses = mapOf(agentId to AgentStatusInfo())
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_CONTEXT_STATE_LOADED,
+            buildJsonObject {
+                put("agentId", "a1")
+                put("overrides", buildJsonObject {
+                    put("hkg:meridian-root", "EXPANDED")
+                    put("AVAILABLE_ACTIONS", "COLLAPSED")
+                })
+            }
+        ), platform)
+
+        val overrides = result.agentStatuses[agentId]!!.contextCollapseOverrides
+        assertEquals(CollapseState.EXPANDED, overrides["hkg:meridian-root"])
+        assertEquals(CollapseState.COLLAPSED, overrides["AVAILABLE_ACTIONS"])
+    }
+
+    @Test
+    fun `CONTEXT_STATE_LOADED with empty overrides results in empty map`() {
+        val agentId = uid("a1")
+        val state = AgentRuntimeState(
+            agents = mapOf(agentId to testAgent("a1", "Test")),
+            agentStatuses = mapOf(agentId to AgentStatusInfo())
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_CONTEXT_STATE_LOADED,
+            buildJsonObject {
+                put("agentId", "a1"); put("overrides", buildJsonObject {})
+            }
+        ), platform)
+
+        assertTrue(result.agentStatuses[agentId]!!.contextCollapseOverrides.isEmpty())
+    }
+
+    @Test
+    fun `context json round trip — save then load via reducer produces matching overrides`() {
+        val agentId = uid("a1")
+        var state = AgentRuntimeState(
+            agents = mapOf(agentId to testAgent("a1", "Test")),
+            agentStatuses = mapOf(agentId to AgentStatusInfo())
+        )
+
+        // Build overrides via reducer
+        state = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE,
+            buildJsonObject { put("agentId", "a1"); put("partitionKey", "hkg:root"); put("scope", "single") }
+        ), platform)
+        state = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_CONTEXT_COLLAPSE,
+            buildJsonObject { put("agentId", "a1"); put("partitionKey", "AVAILABLE_ACTIONS") }
+        ), platform)
+
+        val saved = state.agentStatuses[agentId]!!.contextCollapseOverrides
+
+        // Simulate context.json serialization round-trip
+        val serializedOverrides = buildJsonObject {
+            saved.forEach { (k, v) -> put(k, v.name) }
+        }
+
+        val freshState = AgentRuntimeState(
+            agents = mapOf(agentId to testAgent("a1", "Test")),
+            agentStatuses = mapOf(agentId to AgentStatusInfo())
+        )
+        val reloaded = AgentRuntimeReducer.reduce(freshState, Action(
+            ActionRegistry.Names.AGENT_CONTEXT_STATE_LOADED,
+            buildJsonObject { put("agentId", "a1"); put("overrides", serializedOverrides) }
+        ), platform)
+
+        assertEquals(saved, reloaded.agentStatuses[agentId]!!.contextCollapseOverrides)
+    }
+
+    // =========================================================================
+    // Pending Private Session Guard (Phase A — §5.2)
+    // =========================================================================
+
+    @Test
+    fun `SET_PENDING_PRIVATE_SESSION toggles flag to true`() {
+        val agentId = uid("a1")
+        val state = AgentRuntimeState(
+            agents = mapOf(agentId to testAgent("a1", "Test")),
+            agentStatuses = mapOf(agentId to AgentStatusInfo(pendingPrivateSessionCreation = false))
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_SET_PENDING_PRIVATE_SESSION,
+            buildJsonObject { put("agentId", "a1"); put("pending", true) }
+        ), platform)
+
+        assertTrue(result.agentStatuses[agentId]!!.pendingPrivateSessionCreation)
+    }
+
+    @Test
+    fun `SET_PENDING_PRIVATE_SESSION toggles flag to false`() {
+        val agentId = uid("a1")
+        val state = AgentRuntimeState(
+            agents = mapOf(agentId to testAgent("a1", "Test")),
+            agentStatuses = mapOf(agentId to AgentStatusInfo(pendingPrivateSessionCreation = true))
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_SET_PENDING_PRIVATE_SESSION,
+            buildJsonObject { put("agentId", "a1"); put("pending", false) }
+        ), platform)
+
+        assertFalse(result.agentStatuses[agentId]!!.pendingPrivateSessionCreation)
+    }
+
+    // =========================================================================
     // Boundary / Malformed Payload Tests
     // =========================================================================
 

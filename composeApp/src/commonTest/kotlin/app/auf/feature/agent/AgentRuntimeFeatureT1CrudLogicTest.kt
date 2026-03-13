@@ -56,6 +56,41 @@ class AgentRuntimeFeatureT1CrudLogicTest {
         assertEquals(agent.identityUUID, newState.editingAgentId)
     }
 
+    @Test
+    fun `CREATE with budget fields produces agent with correct budget values`() {
+        val state = AgentRuntimeState()
+
+        val result = AgentCrudLogic.reduce(state, Action(
+            ActionRegistry.Names.AGENT_CREATE,
+            buildJsonObject {
+                put("name", "BudgetAgent")
+                put("contextBudgetChars", 80_000)
+                put("contextMaxBudgetChars", 200_000)
+                put("contextMaxPartialChars", 30_000)
+            }
+        ), platform)
+
+        val agent = result.agents.values.first()
+        assertEquals(80_000, agent.contextBudgetChars)
+        assertEquals(200_000, agent.contextMaxBudgetChars)
+        assertEquals(30_000, agent.contextMaxPartialChars)
+    }
+
+    @Test
+    fun `CREATE without budget fields uses design doc defaults`() {
+        val state = AgentRuntimeState()
+
+        val result = AgentCrudLogic.reduce(state, Action(
+            ActionRegistry.Names.AGENT_CREATE,
+            buildJsonObject { put("name", "DefaultAgent") }
+        ), platform)
+
+        val agent = result.agents.values.first()
+        assertEquals(50_000, agent.contextBudgetChars)
+        assertEquals(150_000, agent.contextMaxBudgetChars)
+        assertEquals(20_000, agent.contextMaxPartialChars)
+    }
+
     // =========================================================================
     // AGENT_UPDATE_CONFIG
     // =========================================================================
@@ -116,7 +151,6 @@ class AgentRuntimeFeatureT1CrudLogicTest {
 
     @Test
     fun `UPDATE_CONFIG should merge knowledgeGraphId into cognitiveState`() {
-        // Start with a sovereign agent that has an existing cognitiveState
         val agent = testAgent("a1", "Sovereign", "kg-old", "p", "m", cognitiveStrategyId = "sovereign_v1")
         val state = AgentRuntimeState(agents = mapOf(uid("a1") to agent))
 
@@ -128,10 +162,8 @@ class AgentRuntimeFeatureT1CrudLogicTest {
         val newState = AgentCrudLogic.reduce(state, action, platform)
         val updatedAgent = newState.agents[uid("a1")]!!
 
-        // Verify knowledgeGraphId was merged into cognitiveState
         val cogState = updatedAgent.cognitiveState as JsonObject
         assertEquals("kg-new", cogState["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull)
-        // Phase should be preserved
         assertEquals("BOOTING", cogState["phase"]?.jsonPrimitive?.contentOrNull)
     }
 
@@ -164,6 +196,44 @@ class AgentRuntimeFeatureT1CrudLogicTest {
         val newState = AgentCrudLogic.reduce(state, action, platform)
         val cogState = newState.agents[uid("a1")]!!.cognitiveState as JsonObject
         assertEquals("kg-keep", cogState["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun `UPDATE_CONFIG with budget fields updates agent`() {
+        val agentId = uid("a1")
+        val state = AgentRuntimeState(agents = mapOf(agentId to testAgent("a1", "Test")))
+
+        val result = AgentCrudLogic.reduce(state, Action(
+            ActionRegistry.Names.AGENT_UPDATE_CONFIG,
+            buildJsonObject {
+                put("agentId", "a1")
+                put("contextBudgetChars", 100_000)
+                put("contextMaxBudgetChars", 300_000)
+                put("contextMaxPartialChars", 40_000)
+            }
+        ), platform)
+
+        val updated = result.agents[agentId]!!
+        assertEquals(100_000, updated.contextBudgetChars)
+        assertEquals(300_000, updated.contextMaxBudgetChars)
+        assertEquals(40_000, updated.contextMaxPartialChars)
+    }
+
+    @Test
+    fun `UPDATE_CONFIG without budget fields preserves existing values`() {
+        val agentId = uid("a1")
+        val agent = testAgent("a1", "Test")
+        val state = AgentRuntimeState(agents = mapOf(agentId to agent))
+
+        val result = AgentCrudLogic.reduce(state, Action(
+            ActionRegistry.Names.AGENT_UPDATE_CONFIG,
+            buildJsonObject { put("agentId", "a1"); put("name", "Renamed") }
+        ), platform)
+
+        val updated = result.agents[agentId]!!
+        assertEquals(agent.contextBudgetChars, updated.contextBudgetChars)
+        assertEquals(agent.contextMaxBudgetChars, updated.contextMaxBudgetChars)
+        assertEquals(agent.contextMaxPartialChars, updated.contextMaxPartialChars)
     }
 
     // =========================================================================
@@ -430,13 +500,12 @@ class AgentRuntimeFeatureT1CrudLogicTest {
 
         assertEquals("AWAKE", cogState["phase"]?.jsonPrimitive?.contentOrNull)
         assertEquals("MAXIMUM", cogState["rigor"]?.jsonPrimitive?.contentOrNull)
-        // Original knowledgeGraphId should be preserved
         assertEquals("kg1", cogState["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull)
     }
 
     @Test
     fun `UPDATE_NVRAM on vanilla agent should create cognitiveState from scratch`() {
-        val agent = testAgent("a1", "Vanilla", null, "p", "m") // cognitiveState = JsonNull
+        val agent = testAgent("a1", "Vanilla", null, "p", "m")
         val state = AgentRuntimeState(agents = mapOf(uid("a1") to agent))
 
         val action = Action(ActionRegistry.Names.AGENT_UPDATE_NVRAM, buildJsonObject {

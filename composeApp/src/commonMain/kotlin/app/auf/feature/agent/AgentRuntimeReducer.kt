@@ -349,6 +349,62 @@ object AgentRuntimeReducer {
                 )
             }
 
+            // ================================================================
+            // Phase A: Context Collapse Actions (§3.6)
+            // ================================================================
+            ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE -> {
+                val payload = action.payload ?: return state
+                val agentId = payload.agentUUID() ?: return state
+                val partitionKey = payload["partitionKey"]?.jsonPrimitive?.contentOrNull ?: return state
+                // scope is informational for the pipeline (single/subtree/full).
+                // At the reducer level, all scopes set the key to EXPANDED.
+                // The pipeline interprets scope when building the INDEX tree.
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val updatedOverrides = currentStatus.contextCollapseOverrides + (partitionKey to CollapseState.EXPANDED)
+                val updatedStatus = currentStatus.copy(contextCollapseOverrides = updatedOverrides)
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
+            ActionRegistry.Names.AGENT_CONTEXT_COLLAPSE -> {
+                val payload = action.payload ?: return state
+                val agentId = payload.agentUUID() ?: return state
+                val partitionKey = payload["partitionKey"]?.jsonPrimitive?.contentOrNull ?: return state
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val updatedOverrides = currentStatus.contextCollapseOverrides + (partitionKey to CollapseState.COLLAPSED)
+                val updatedStatus = currentStatus.copy(contextCollapseOverrides = updatedOverrides)
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
+            ActionRegistry.Names.AGENT_CONTEXT_STATE_LOADED -> {
+                val payload = action.payload ?: return state
+                val agentId = payload.agentUUID() ?: return state
+                val overridesJson = payload["overrides"]?.jsonObject ?: return state
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+
+                val loadedOverrides = overridesJson.mapValues { (_, value) ->
+                    try {
+                        CollapseState.valueOf(value.jsonPrimitive.content)
+                    } catch (_: Exception) {
+                        CollapseState.COLLAPSED // Safe default for unrecognized values
+                    }
+                }
+
+                val updatedStatus = currentStatus.copy(contextCollapseOverrides = loadedOverrides)
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
+            // ================================================================
+            // Phase A: Pending Private Session Guard (§5.2)
+            // ================================================================
+            ActionRegistry.Names.AGENT_SET_PENDING_PRIVATE_SESSION -> {
+                val payload = action.payload ?: return state
+                val agentId = payload.agentUUID() ?: return state
+                val pending = payload["pending"]?.jsonPrimitive?.booleanOrNull ?: return state
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val updatedStatus = currentStatus.copy(pendingPrivateSessionCreation = pending)
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
             else -> state
         }
     }

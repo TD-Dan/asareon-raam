@@ -755,4 +755,73 @@ class SessionFeatureT2CoreTest {
                 "Locked message content should not be changed")
         }
     }
+
+    // =========================================================================
+    // SESSION_CREATED Broadcast (Phase A — §5.1)
+    // =========================================================================
+
+    @Test
+    fun `SESSION_CREATED should fire with correct payload including isPrivateTo for private session`() = runTest {
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withFeature(fileSystemFeature)
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("agent", Action(
+                ActionRegistry.Names.SESSION_CREATE,
+                buildJsonObject {
+                    put("name", "Cognition: TestAgent")
+                    put("isHidden", true)
+                    put("isPrivateTo", "agent.test-agent")
+                }
+            ))
+            testScheduler.advanceUntilIdle()
+
+            val created = harness.processedActions.find {
+                it.name == ActionRegistry.Names.SESSION_SESSION_CREATED
+            }
+            assertNotNull(created, "SESSION_CREATED should be broadcast after session creation")
+
+            val payload = created.payload!!
+            assertNotNull(payload["uuid"]?.jsonPrimitive?.contentOrNull, "Should include uuid")
+            assertNotNull(payload["name"]?.jsonPrimitive?.contentOrNull, "Should include name")
+            assertNotNull(payload["handle"]?.jsonPrimitive?.contentOrNull, "Should include handle")
+            assertNotNull(payload["localHandle"]?.jsonPrimitive?.contentOrNull, "Should include localHandle")
+            assertEquals("agent.test-agent", payload["isPrivateTo"]?.jsonPrimitive?.contentOrNull,
+                "isPrivateTo should match the owner handle")
+        }
+    }
+
+    @Test
+    fun `SESSION_CREATED for non-private session has isPrivateTo as null`() = runTest {
+        val harness = TestEnvironment.create()
+            .withFeature(sessionFeature)
+            .withFeature(fileSystemFeature)
+            .withInitialState("core", CoreState(lifecycle = AppLifecycle.RUNNING))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", Action(
+                ActionRegistry.Names.SESSION_CREATE,
+                buildJsonObject {
+                    put("name", "Public Chat")
+                }
+            ))
+            testScheduler.advanceUntilIdle()
+
+            val created = harness.processedActions.find {
+                it.name == ActionRegistry.Names.SESSION_SESSION_CREATED
+            }
+            assertNotNull(created, "SESSION_CREATED should be broadcast for public sessions too")
+
+            val payload = created.payload!!
+            val isPrivateTo = payload["isPrivateTo"]
+            assertTrue(
+                isPrivateTo == null || isPrivateTo is JsonNull,
+                "isPrivateTo should be null for non-private session, got: $isPrivateTo"
+            )
+        }
+    }
 }

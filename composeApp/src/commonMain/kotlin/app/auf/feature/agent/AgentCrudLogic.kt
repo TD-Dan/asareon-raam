@@ -96,7 +96,10 @@ object AgentCrudLogic {
                         ?.map { IdentityUUID(it.jsonPrimitive.content) } ?: emptyList(),
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: false,
                     autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: 5,
-                    autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: 30
+                    autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: 30,
+                    contextBudgetChars = payload["contextBudgetChars"]?.jsonPrimitive?.intOrNull ?: 50_000,
+                    contextMaxBudgetChars = payload["contextMaxBudgetChars"]?.jsonPrimitive?.intOrNull ?: 150_000,
+                    contextMaxPartialChars = payload["contextMaxPartialChars"]?.jsonPrimitive?.intOrNull ?: 20_000
                 )
                 state.copy(agents = state.agents + (uuid to newAgent), editingAgentId = uuid)
             }
@@ -158,6 +161,9 @@ object AgentCrudLogic {
                     automaticMode = payload["automaticMode"]?.jsonPrimitive?.booleanOrNull ?: agentToUpdate.automaticMode,
                     autoWaitTimeSeconds = payload["autoWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoWaitTimeSeconds,
                     autoMaxWaitTimeSeconds = payload["autoMaxWaitTimeSeconds"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.autoMaxWaitTimeSeconds,
+                    contextBudgetChars = payload["contextBudgetChars"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.contextBudgetChars,
+                    contextMaxBudgetChars = payload["contextMaxBudgetChars"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.contextMaxBudgetChars,
+                    contextMaxPartialChars = payload["contextMaxPartialChars"]?.jsonPrimitive?.intOrNull ?: agentToUpdate.contextMaxPartialChars,
                     resources = updatedResources
                 )
 

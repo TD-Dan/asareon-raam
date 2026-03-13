@@ -886,6 +886,51 @@
           "messages"
         ]
       }
+    },
+    {
+      "action_name": "session.SESSION_CREATED",
+      "summary": "Broadcast when a new session is fully created and registered. Agents listen for this to detect their private cognition session via the isPrivateTo field.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "The session's immutable UUID."
+          },
+          "name": {
+            "type": "string",
+            "description": "The session's display name."
+          },
+          "handle": {
+            "type": "string",
+            "description": "The session's full identity handle."
+          },
+          "localHandle": {
+            "type": "string",
+            "description": "The session's local handle (map key in SessionState)."
+          },
+          "isHidden": {
+            "type": "boolean",
+            "description": "Whether the session is hidden from the session list."
+          },
+          "isPrivateTo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Identity handle of the owner if private, null otherwise."
+          }
+        },
+        "required": [
+          "uuid",
+          "name",
+          "handle",
+          "localHandle"
+        ]
+      }
     }
   ],
   "definitions": {

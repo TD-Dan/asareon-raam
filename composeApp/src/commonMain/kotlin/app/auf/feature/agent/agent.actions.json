@@ -1160,6 +1160,113 @@
           "agents"
         ]
       }
+    },
+    {
+      "action_name": "agent.CONTEXT_UNCOLLAPSE",
+      "summary": "Expands a context partition or holon file so the agent can see its full content in the next turn. Persisted as a sticky override in context.json.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "partitionKey": {
+            "type": "string",
+            "description": "Partition key (e.g., 'AVAILABLE_ACTIONS') or 'hkg:<holonId>' for a specific holon."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "full",
+              "subtree",
+              "single"
+            ],
+            "default": "single",
+            "description": "'single': one holon. 'subtree': holon + reveal children in INDEX. 'full': entire partition."
+          }
+        },
+        "required": [
+          "agentId",
+          "partitionKey"
+        ]
+      },
+      "required_permissions": [
+        "agent:cognition"
+      ]
+    },
+    {
+      "action_name": "agent.CONTEXT_COLLAPSE",
+      "summary": "Collapses a context partition or holon file so it shows only a summary in the next turn. Persisted as a sticky override in context.json.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "partitionKey": {
+            "type": "string",
+            "description": "Partition key (e.g., 'AVAILABLE_ACTIONS') or 'hkg:<holonId>' for a specific holon."
+          }
+        },
+        "required": [
+          "agentId",
+          "partitionKey"
+        ]
+      },
+      "required_permissions": [
+        "agent:cognition"
+      ]
+    },
+    {
+      "action_name": "agent.CONTEXT_STATE_LOADED",
+      "summary": "[INTERNAL] Dispatched after context.json has been loaded from disk during startup. Populates the agent's collapse overrides.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "overrides": {
+            "type": "object",
+            "description": "Map of partition key to CollapseState name (EXPANDED or COLLAPSED)."
+          }
+        },
+        "required": [
+          "agentId",
+          "overrides"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.SET_PENDING_PRIVATE_SESSION",
+      "summary": "[INTERNAL] Sets or clears the pending private session creation flag. Prevents duplicate SESSION_CREATE dispatches on rapid heartbeat ticks.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "pending": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agentId",
+          "pending"
+        ]
+      }
     }
   ]
 }

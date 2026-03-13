@@ -16,6 +16,22 @@ enum class AgentStatus { IDLE, WAITING, PROCESSING, RATE_LIMITED, ERROR }
 @Serializable
 enum class TurnMode { DIRECT, PREVIEW }
 
+// ============================================================================
+// Phase A: Context Collapse State
+// ============================================================================
+
+/**
+ * Two-state collapse model for context partitions. §3.1 of the design doc.
+ *
+ * There is no TRUNCATED state — truncation is a pipeline sentinel for oversized
+ * partials, not an architectural state.
+ */
+@Serializable
+enum class CollapseState {
+    EXPANDED,   // Show full content
+    COLLAPSED   // Show summary/header only
+}
+
 @Serializable
 enum class AgentResourceType {
     CONSTITUTION,
@@ -150,6 +166,20 @@ data class AgentInstance(
     // wrote about itself."
     val strategyConfig: JsonObject = JsonObject(emptyMap()),
 
+    // ========================================================================
+    // Phase A: Context Budget Configuration (§3.2)
+    //
+    // Per-agent, operator-configured. The UI displays these as approximate tokens.
+    // Strategies can recommend defaults.
+    // ========================================================================
+
+    /** Soft target for context size in characters. ~12,500 tokens at ≈4 chars/token. */
+    val contextBudgetChars: Int = 50_000,
+    /** Hard maximum for context size in characters. ~37,500 tokens. Safety net ceiling. */
+    val contextMaxBudgetChars: Int = 150_000,
+    /** Maximum single-partial size in characters before truncation sentinel fires. ~5,000 tokens. */
+    val contextMaxPartialChars: Int = 20_000,
+
     // Configuration
     val automaticMode: Boolean = false,
     val autoWaitTimeSeconds: Int = 5,
@@ -199,7 +229,28 @@ data class AgentStatusInfo(
      * runtime flow control — purely informational (e.g., "Booting", "Reflecting").
      * Null = no label. Cleared when the next turn begins.
      */
-    val strategyDisplayHint: String? = null
+    val strategyDisplayHint: String? = null,
+
+    // ========================================================================
+    // Phase A: Context Collapse Overrides (§3.7)
+    //
+    // Agent collapse/uncollapse choices persist across turns until explicitly changed.
+    // Persisted to context.json. The pipeline respects sticky overrides up to the
+    // hard maximum.
+    // ========================================================================
+
+    /** Sticky collapse overrides. Key = partition key or "hkg:<holonId>". */
+    val contextCollapseOverrides: Map<String, CollapseState> = emptyMap(),
+
+    // ========================================================================
+    // Phase A: Pending Private Session Guard (§5.2)
+    //
+    // Set when a SESSION_CREATE has been dispatched but SESSION_CREATED has not
+    // yet arrived. Prevents duplicate session creation on rapid heartbeat ticks.
+    // ========================================================================
+
+    /** True when a private session creation is in-flight. */
+    val pendingPrivateSessionCreation: Boolean = false
 )
 
 @Serializable
