@@ -9,6 +9,7 @@ import app.auf.feature.session.LedgerEntry
 import app.auf.feature.session.Session
 import app.auf.test.TestHarness
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -94,6 +95,16 @@ fun testAgent(
         JsonNull
     }
 
+    // Build strategyConfig: knowledgeGraphId is operator config stored in strategyConfig.
+    // SovereignStrategy.getKnowledgeGraphId() reads from here.
+    val strategyConfig = if (knowledgeGraphId != null) {
+        buildJsonObject {
+            put("knowledgeGraphId", knowledgeGraphId)
+        }
+    } else {
+        JsonObject(emptyMap())
+    }
+
     return AgentInstance(
         identity = Identity(
             uuid = id,
@@ -108,6 +119,7 @@ fun testAgent(
         outputSessionId = privateSessionId?.let { IdentityUUID(it) },
         cognitiveStrategyId = resolvedStrategy,
         cognitiveState = cognitiveState,
+        strategyConfig = strategyConfig,
         resources = resources.mapValues { IdentityUUID(it.value) },
         automaticMode = automaticMode,
         autoWaitTimeSeconds = autoWaitTimeSeconds,

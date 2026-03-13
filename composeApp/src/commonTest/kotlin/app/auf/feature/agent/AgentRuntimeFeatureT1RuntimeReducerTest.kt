@@ -31,6 +31,21 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     private val SESSION_2 = "a0000000-0000-0000-0000-000000000002"
     private val SESSION_OUTPUT = "a0000000-0000-0000-0000-0000000000aa"
 
+    @BeforeTest
+    fun setUp() {
+        // SESSION_DELETED calls strategy.validateConfig() which requires registered strategies.
+        CognitiveStrategyRegistry.clearForTesting()
+        CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.MinimalStrategy)
+        CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.VanillaStrategy, legacyId = "vanilla_v1")
+        CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.SovereignStrategy, legacyId = "sovereign_v1")
+        CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.StateMachineStrategy)
+    }
+
+    @AfterTest
+    fun tearDown() {
+        CognitiveStrategyRegistry.clearForTesting()
+    }
+
     // =========================================================================
     // SET_STATUS
     // =========================================================================
@@ -443,8 +458,10 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
 
     @Test
     fun `SESSION_DELETED should clear outputSessionId if it matches deleted session`() {
+        // subscribedSessionIds is empty so Vanilla's validateConfig cannot auto-assign
+        // outputSessionId to a remaining subscription after it's cleared.
         val agent = testAgent(AGENT_1, "Test", null, "p", "m",
-            subscribedSessionIds = listOf(SESSION_1), privateSessionId = SESSION_OUTPUT
+            subscribedSessionIds = emptyList(), privateSessionId = SESSION_OUTPUT
         )
         val state = AgentRuntimeState(agents = mapOf(uid(AGENT_1) to agent))
 

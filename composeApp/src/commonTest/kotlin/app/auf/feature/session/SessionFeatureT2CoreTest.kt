@@ -117,8 +117,8 @@ class SessionFeatureT2CoreTest {
             assertNotNull(sessionState)
             assertTrue(sessionState.sessions.isEmpty())
 
-            // Phase 4: Delete now removes the UUID folder, not a flat .json file
-            val deleteAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_DELETE_FILE }
+            // Phase 4: Delete now removes the UUID folder via DELETE_DIRECTORY
+            val deleteAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_DELETE_DIRECTORY }
             assertNotNull(deleteAction)
             assertEquals(session.identity.uuid, deleteAction.payload?.get("path")?.jsonPrimitive?.content,
                 "Should delete the UUID-named folder")

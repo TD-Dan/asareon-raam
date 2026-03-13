@@ -150,21 +150,21 @@ class AgentRuntimeFeatureT1CrudLogicTest {
     }
 
     @Test
-    fun `UPDATE_CONFIG should merge knowledgeGraphId into cognitiveState`() {
+    fun `UPDATE_CONFIG should update knowledgeGraphId in strategyConfig`() {
         val agent = testAgent("a1", "Sovereign", "kg-old", "p", "m", cognitiveStrategyId = "sovereign_v1")
         val state = AgentRuntimeState(agents = mapOf(uid("a1") to agent))
 
         val action = Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
             put("agentId", "a1")
-            put("knowledgeGraphId", "kg-new")
+            put("strategyConfig", buildJsonObject { put("knowledgeGraphId", "kg-new") })
         })
 
         val newState = AgentCrudLogic.reduce(state, action, platform)
         val updatedAgent = newState.agents[uid("a1")]!!
 
-        val cogState = updatedAgent.cognitiveState as JsonObject
-        assertEquals("kg-new", cogState["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull)
-        assertEquals("BOOTING", cogState["phase"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("kg-new", updatedAgent.strategyConfig["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull)
+        // cognitiveState (NVRAM) should be untouched by config changes
+        assertEquals("BOOTING", (updatedAgent.cognitiveState as JsonObject)["phase"]?.jsonPrimitive?.contentOrNull)
     }
 
     @Test
@@ -174,18 +174,17 @@ class AgentRuntimeFeatureT1CrudLogicTest {
 
         val action = Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
             put("agentId", "a1")
-            put("knowledgeGraphId", JsonNull)
+            put("strategyConfig", buildJsonObject { put("knowledgeGraphId", JsonNull) })
         })
 
         val newState = AgentCrudLogic.reduce(state, action, platform)
         val updatedAgent = newState.agents[uid("a1")]!!
 
-        val cogState = updatedAgent.cognitiveState as JsonObject
-        assertTrue(cogState["knowledgeGraphId"] is JsonNull)
+        assertTrue(updatedAgent.strategyConfig["knowledgeGraphId"] is JsonNull)
     }
 
     @Test
-    fun `UPDATE_CONFIG without knowledgeGraphId preserves existing cognitiveState`() {
+    fun `UPDATE_CONFIG without strategyConfig preserves existing knowledgeGraphId`() {
         val agent = testAgent("a1", "Sovereign", "kg-keep", "p", "m", cognitiveStrategyId = "sovereign_v1")
         val state = AgentRuntimeState(agents = mapOf(uid("a1") to agent))
 
@@ -194,8 +193,8 @@ class AgentRuntimeFeatureT1CrudLogicTest {
         })
 
         val newState = AgentCrudLogic.reduce(state, action, platform)
-        val cogState = newState.agents[uid("a1")]!!.cognitiveState as JsonObject
-        assertEquals("kg-keep", cogState["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull)
+        val updatedAgent = newState.agents[uid("a1")]!!
+        assertEquals("kg-keep", updatedAgent.strategyConfig["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull)
     }
 
     @Test
@@ -491,7 +490,7 @@ class AgentRuntimeFeatureT1CrudLogicTest {
             put("agentId", "a1")
             put("updates", buildJsonObject {
                 put("phase", "AWAKE")
-                put("rigor", "MAXIMUM")
+                put("operationalPosture", "ELEVATED")
             })
         })
 
@@ -499,7 +498,8 @@ class AgentRuntimeFeatureT1CrudLogicTest {
         val cogState = newState.agents[uid("a1")]!!.cognitiveState as JsonObject
 
         assertEquals("AWAKE", cogState["phase"]?.jsonPrimitive?.contentOrNull)
-        assertEquals("MAXIMUM", cogState["rigor"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("ELEVATED", cogState["operationalPosture"]?.jsonPrimitive?.contentOrNull)
+        // knowledgeGraphId lives in cognitiveState via testAgent (legacy) — preserved by merge
         assertEquals("kg1", cogState["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull)
     }
 
