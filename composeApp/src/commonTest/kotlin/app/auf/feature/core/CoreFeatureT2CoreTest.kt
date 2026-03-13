@@ -84,10 +84,13 @@ class CoreFeatureT2CoreTest {
         runCurrent()
 
         // ASSERT: Verify that the correct side-effects (dispatching ADD actions) occurred.
-        val addActions = harness.processedActions.filter { it.name == ActionRegistry.Names.SETTINGS_ADD }
-        assertEquals(2, addActions.size, "Should dispatch two SETTINGS_ADD actions.")
-        assertNotNull(addActions.find { it.payload?.get("key").toString().contains("width") })
-        assertNotNull(addActions.find { it.payload?.get("key").toString().contains("height") })
+        harness.runAndLogOnFailure {
+            val addActions = harness.processedActions.filter { it.name == ActionRegistry.Names.SETTINGS_ADD }
+            assertEquals(3, addActions.size, "Should dispatch three SETTINGS_ADD actions (width, height, use_identity_color).")
+            assertNotNull(addActions.find { it.payload?.get("key").toString().contains("width") })
+            assertNotNull(addActions.find { it.payload?.get("key").toString().contains("height") })
+            assertNotNull(addActions.find { it.payload?.get("key").toString().contains("use_identity_color") })
+        }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -108,11 +111,13 @@ class CoreFeatureT2CoreTest {
         runCurrent()
 
         // ASSERT
-        assertEquals(textToCopy, platform.clipboardContent, "The text should be copied to the platform's clipboard.")
+        harness.runAndLogOnFailure {
+            assertEquals(textToCopy, platform.clipboardContent, "The text should be copied to the platform's clipboard.")
 
-        val toastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
-        assertNotNull(toastAction, "A toast message should be shown.")
-        assertEquals("Copied to clipboard.", toastAction.payload?.get("message")?.jsonPrimitive?.content)
+            val toastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
+            assertNotNull(toastAction, "A toast message should be shown.")
+            assertEquals("Copied to clipboard.", toastAction.payload?.get("message")?.jsonPrimitive?.content)
+        }
     }
 
     // ================================================================
@@ -135,25 +140,27 @@ class CoreFeatureT2CoreTest {
         runCurrent()
 
         // ASSERT: Persistence
-        val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
-        assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
-        assertEquals("identities.json", writeAction.payload?.get("path")?.jsonPrimitive?.content)
-        assertFalse(writeAction.payload?.get("encrypt").toString().toBoolean(), "Persistence encryption is temporarily disabled for debugging.")
-        val (identities, _) = parsePersistedContent(writeAction)
-        assertTrue(identities.any { it["name"]?.jsonPrimitive?.content == "Test User" },
-            "The new user should be in the persisted identities.")
+        harness.runAndLogOnFailure {
+            val writeAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
+            assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
+            assertEquals("identities.json", writeAction.payload?.get("path")?.jsonPrimitive?.content)
+            assertFalse(writeAction.payload?.get("encrypt").toString().toBoolean(), "Persistence encryption is temporarily disabled for debugging.")
+            val (identities, _) = parsePersistedContent(writeAction)
+            assertTrue(identities.any { it["name"]?.jsonPrimitive?.content == "Test User" },
+                "The new user should be in the persisted identities.")
 
-        // ASSERT: Broadcasting
-        val broadcastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITIES_UPDATED }
-        assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
-        val broadcastIdentities = broadcastAction.payload?.get("identities")?.jsonArray
-        assertNotNull(broadcastIdentities)
-        assertTrue(broadcastIdentities.any { it.jsonObject["name"]?.jsonPrimitive?.content == "Test User" },
-            "The new user should be in the broadcast payload.")
+            // ASSERT: Broadcasting
+            val broadcastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITIES_UPDATED }
+            assertNotNull(broadcastAction, "A broadcast action should be dispatched.")
+            val broadcastIdentities = broadcastAction.payload?.get("identities")?.jsonArray
+            assertNotNull(broadcastIdentities)
+            assertTrue(broadcastIdentities.any { it.jsonObject["name"]?.jsonPrimitive?.content == "Test User" },
+                "The new user should be in the broadcast payload.")
 
-        // ASSERT: Phase 2 registry broadcast
-        val registryBroadcast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED }
-        assertNotNull(registryBroadcast, "An IDENTITY_REGISTRY_UPDATED broadcast should be dispatched for legacy user identity changes.")
+            // ASSERT: Phase 2 registry broadcast
+            val registryBroadcast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED }
+            assertNotNull(registryBroadcast, "An IDENTITY_REGISTRY_UPDATED broadcast should be dispatched for legacy user identity changes.")
+        }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -182,23 +189,26 @@ class CoreFeatureT2CoreTest {
         }))
         runCurrent()
 
-        // ASSERT: Identity removed from registry
-        assertNull(harness.store.state.value.identityRegistry["core.user-1"],
-            "User 1 should be removed from the registry.")
-        assertNotNull(harness.store.state.value.identityRegistry["core.user-2"],
-            "User 2 should remain in the registry.")
+        // ASSERT
+        harness.runAndLogOnFailure {
+            // Identity removed from registry
+            assertNull(harness.store.state.value.identityRegistry["core.user-1"],
+                "User 1 should be removed from the registry.")
+            assertNotNull(harness.store.state.value.identityRegistry["core.user-2"],
+                "User 2 should remain in the registry.")
 
-        // ASSERT: Persistence
-        val writeAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
-        assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
-        val (identities, _) = parsePersistedContent(writeAction)
-        val persistedNames = identities.map { it["name"]?.jsonPrimitive?.content }
-        assertTrue("User 2" in persistedNames, "User 2 should be in the persisted identities.")
-        assertFalse("User 1" in persistedNames, "User 1 should NOT be in the persisted identities.")
+            // Persistence
+            val writeAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
+            assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
+            val (identities, _) = parsePersistedContent(writeAction)
+            val persistedNames = identities.map { it["name"]?.jsonPrimitive?.content }
+            assertTrue("User 2" in persistedNames, "User 2 should be in the persisted identities.")
+            assertFalse("User 1" in persistedNames, "User 1 should NOT be in the persisted identities.")
 
-        // ASSERT: Registry broadcast
-        val registryBroadcast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED }
-        assertNotNull(registryBroadcast, "IDENTITY_REGISTRY_UPDATED should be broadcast.")
+            // Registry broadcast
+            val registryBroadcast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED }
+            assertNotNull(registryBroadcast, "IDENTITY_REGISTRY_UPDATED should be broadcast.")
+        }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -227,18 +237,19 @@ class CoreFeatureT2CoreTest {
         }))
         runCurrent()
 
-        // ASSERT: activeUserId updated in CoreState
-        val coreState = harness.store.state.value.featureStates["core"] as CoreState
-        assertEquals("core.user-2", coreState.activeUserId)
+        // ASSERT
+        harness.runAndLogOnFailure {
+            val coreState = harness.store.state.value.featureStates["core"] as CoreState
+            assertEquals("core.user-2", coreState.activeUserId)
 
-        // ASSERT: Persistence
-        val writeAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
-        assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
-        val (identities, activeId) = parsePersistedContent(writeAction)
-        val persistedNames = identities.map { it["name"]?.jsonPrimitive?.content }
-        assertTrue("User 1" in persistedNames && "User 2" in persistedNames,
-            "Both users should be in the persisted identities.")
-        assertEquals("core.user-2", activeId, "The new activeId should be persisted.")
+            val writeAction = harness.processedActions.findLast { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
+            assertNotNull(writeAction, "A write action to persist identities should be dispatched.")
+            val (identities, activeId) = parsePersistedContent(writeAction)
+            val persistedNames = identities.map { it["name"]?.jsonPrimitive?.content }
+            assertTrue("User 1" in persistedNames && "User 2" in persistedNames,
+                "Both users should be in the persisted identities.")
+            assertEquals("core.user-2", activeId, "The new activeId should be persisted.")
+        }
     }
 
     // ================================================================
@@ -262,25 +273,25 @@ class CoreFeatureT2CoreTest {
         ))
         runCurrent()
 
-        // ASSERT: A success response should be dispatched
-        val responseAction = harness.processedActions.find {
-            it.name == ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY
-        }
-        assertNotNull(responseAction, "A RETURN_REGISTER_IDENTITY should be dispatched on success.")
-        assertEquals("true", responseAction.payload?.get("success")?.jsonPrimitive?.content)
-        assertEquals("chat-cats", responseAction.payload?.get("requestedLocalHandle")?.jsonPrimitive?.content)
-        assertEquals("chat-cats", responseAction.payload?.get("approvedLocalHandle")?.jsonPrimitive?.content)
-        assertEquals("session.chat-cats", responseAction.payload?.get("handle")?.jsonPrimitive?.content)
-        assertEquals("session", responseAction.payload?.get("parentHandle")?.jsonPrimitive?.content)
+        // ASSERT
+        harness.runAndLogOnFailure {
+            val responseAction = harness.processedActions.find {
+                it.name == ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY
+            }
+            assertNotNull(responseAction, "A RETURN_REGISTER_IDENTITY should be dispatched on success.")
+            assertEquals("true", responseAction.payload?.get("success")?.jsonPrimitive?.content)
+            assertEquals("chat-cats", responseAction.payload?.get("requestedLocalHandle")?.jsonPrimitive?.content)
+            assertEquals("chat-cats", responseAction.payload?.get("approvedLocalHandle")?.jsonPrimitive?.content)
+            assertEquals("session.chat-cats", responseAction.payload?.get("handle")?.jsonPrimitive?.content)
+            assertEquals("session", responseAction.payload?.get("parentHandle")?.jsonPrimitive?.content)
 
-        // ASSERT: IDENTITY_REGISTRY_UPDATED broadcast should be dispatched
-        val registryBroadcast = harness.processedActions.find {
-            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
-        }
-        assertNotNull(registryBroadcast, "IDENTITY_REGISTRY_UPDATED should be broadcast after a successful registration.")
+            val registryBroadcast = harness.processedActions.find {
+                it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+            }
+            assertNotNull(registryBroadcast, "IDENTITY_REGISTRY_UPDATED should be broadcast after a successful registration.")
 
-        // ASSERT: The identity is in AppState.identityRegistry (single source of truth)
-        assertNotNull(harness.store.state.value.identityRegistry["session.chat-cats"])
+            assertNotNull(harness.store.state.value.identityRegistry["session.chat-cats"])
+        }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -308,15 +319,17 @@ class CoreFeatureT2CoreTest {
         runCurrent()
 
         // ASSERT: Response should show the deduplicated handle
-        val responseAction = harness.processedActions.find {
-            it.name == ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY
+        harness.runAndLogOnFailure {
+            val responseAction = harness.processedActions.find {
+                it.name == ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY
+            }
+            assertNotNull(responseAction)
+            assertEquals("true", responseAction.payload?.get("success")?.jsonPrimitive?.content)
+            assertEquals("chat1", responseAction.payload?.get("requestedLocalHandle")?.jsonPrimitive?.content)
+            assertEquals("chat1-2", responseAction.payload?.get("approvedLocalHandle")?.jsonPrimitive?.content,
+                "Response should contain the deduplicated localHandle.")
+            assertEquals("session.chat1-2", responseAction.payload?.get("handle")?.jsonPrimitive?.content)
         }
-        assertNotNull(responseAction)
-        assertEquals("true", responseAction.payload?.get("success")?.jsonPrimitive?.content)
-        assertEquals("chat1", responseAction.payload?.get("requestedLocalHandle")?.jsonPrimitive?.content)
-        assertEquals("chat1-2", responseAction.payload?.get("approvedLocalHandle")?.jsonPrimitive?.content,
-            "Response should contain the deduplicated localHandle.")
-        assertEquals("session.chat1-2", responseAction.payload?.get("handle")?.jsonPrimitive?.content)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -335,20 +348,21 @@ class CoreFeatureT2CoreTest {
         ))
         runCurrent()
 
-        // ASSERT: A failure response should be dispatched
-        val responseAction = harness.processedActions.find {
-            it.name == ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY
-        }
-        assertNotNull(responseAction, "A RETURN_REGISTER_IDENTITY should be dispatched even on failure.")
-        assertEquals("false", responseAction.payload?.get("success")?.jsonPrimitive?.content)
-        assertNotNull(responseAction.payload?.get("error")?.jsonPrimitive?.content, "Error message should be present.")
+        // ASSERT
+        harness.runAndLogOnFailure {
+            val responseAction = harness.processedActions.find {
+                it.name == ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY
+            }
+            assertNotNull(responseAction, "A RETURN_REGISTER_IDENTITY should be dispatched even on failure.")
+            assertEquals("false", responseAction.payload?.get("success")?.jsonPrimitive?.content)
+            assertNotNull(responseAction.payload?.get("error")?.jsonPrimitive?.content, "Error message should be present.")
 
-        // ASSERT: IDENTITY_REGISTRY_UPDATED should NOT be broadcast on rejection
-        val registryBroadcasts = harness.processedActions.filter {
-            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+            val registryBroadcasts = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+            }
+            assertTrue(registryBroadcasts.isEmpty(),
+                "IDENTITY_REGISTRY_UPDATED must NOT be broadcast when a registration is rejected.")
         }
-        assertTrue(registryBroadcasts.isEmpty(),
-            "IDENTITY_REGISTRY_UPDATED must NOT be broadcast when a registration is rejected.")
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -368,11 +382,13 @@ class CoreFeatureT2CoreTest {
         ))
         runCurrent()
 
-        val registryBroadcasts = harness.processedActions.filter {
-            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+        harness.runAndLogOnFailure {
+            val registryBroadcasts = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+            }
+            assertTrue(registryBroadcasts.isEmpty(),
+                "IDENTITY_REGISTRY_UPDATED must NOT be broadcast when registration fails due to unknown parent.")
         }
-        assertTrue(registryBroadcasts.isEmpty(),
-            "IDENTITY_REGISTRY_UPDATED must NOT be broadcast when registration fails due to unknown parent.")
     }
 
     // ================================================================
@@ -399,11 +415,13 @@ class CoreFeatureT2CoreTest {
         ))
         runCurrent()
 
-        // ASSERT: Registry broadcast should fire
-        val registryBroadcast = harness.processedActions.find {
-            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+        // ASSERT
+        harness.runAndLogOnFailure {
+            val registryBroadcast = harness.processedActions.find {
+                it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+            }
+            assertNotNull(registryBroadcast, "IDENTITY_REGISTRY_UPDATED should be broadcast after successful unregistration.")
         }
-        assertNotNull(registryBroadcast, "IDENTITY_REGISTRY_UPDATED should be broadcast after successful unregistration.")
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -426,15 +444,16 @@ class CoreFeatureT2CoreTest {
         ))
         runCurrent()
 
-        // ASSERT: No registry broadcast
-        val registryBroadcasts = harness.processedActions.filter {
-            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
-        }
-        assertTrue(registryBroadcasts.isEmpty(),
-            "IDENTITY_REGISTRY_UPDATED must NOT be broadcast when unregistration is rejected by namespace enforcement.")
+        // ASSERT
+        harness.runAndLogOnFailure {
+            val registryBroadcasts = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+            }
+            assertTrue(registryBroadcasts.isEmpty(),
+                "IDENTITY_REGISTRY_UPDATED must NOT be broadcast when unregistration is rejected by namespace enforcement.")
 
-        // ASSERT: Identity should still exist in AppState.identityRegistry (single source of truth)
-        assertNotNull(harness.store.state.value.identityRegistry["session.chat1"], "Identity should remain after rejected unregistration.")
+            assertNotNull(harness.store.state.value.identityRegistry["session.chat1"], "Identity should remain after rejected unregistration.")
+        }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -453,11 +472,13 @@ class CoreFeatureT2CoreTest {
         ))
         runCurrent()
 
-        val registryBroadcasts = harness.processedActions.filter {
-            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+        harness.runAndLogOnFailure {
+            val registryBroadcasts = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+            }
+            assertTrue(registryBroadcasts.isEmpty(),
+                "IDENTITY_REGISTRY_UPDATED must NOT be broadcast for a no-op unregistration (handle not in registry).")
         }
-        assertTrue(registryBroadcasts.isEmpty(),
-            "IDENTITY_REGISTRY_UPDATED must NOT be broadcast for a no-op unregistration (handle not in registry).")
     }
 
     // ================================================================
@@ -488,21 +509,23 @@ class CoreFeatureT2CoreTest {
         ))
         runCurrent()
 
-        // ASSERT: identities.json is written with the updated handle
-        val writeActions = harness.processedActions.filter {
-            it.name == ActionRegistry.Names.FILESYSTEM_WRITE &&
-                    it.payload?.get("path")?.jsonPrimitive?.content == "identities.json"
-        }
-        assertTrue(writeActions.isNotEmpty(),
-            "UPDATE_IDENTITY must persist identities.json to disk — this is the bug that caused " +
-                    "stale handles to survive restart.")
+        // ASSERT
+        harness.runAndLogOnFailure {
+            val writeActions = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.FILESYSTEM_WRITE &&
+                        it.payload?.get("path")?.jsonPrimitive?.content == "identities.json"
+            }
+            assertTrue(writeActions.isNotEmpty(),
+                "UPDATE_IDENTITY must persist identities.json to disk — this is the bug that caused " +
+                        "stale handles to survive restart.")
 
-        val (identities, _) = parsePersistedContent(writeActions.last())
-        val persistedHandles = identities.map { it["handle"]?.jsonPrimitive?.content }
-        assertTrue("session.new-name" in persistedHandles,
-            "The renamed handle should be in the persisted identities.")
-        assertFalse("session.old-name" in persistedHandles,
-            "The old handle should NOT be in the persisted identities.")
+            val (identities, _) = parsePersistedContent(writeActions.last())
+            val persistedHandles = identities.map { it["handle"]?.jsonPrimitive?.content }
+            assertTrue("session.new-name" in persistedHandles,
+                "The renamed handle should be in the persisted identities.")
+            assertFalse("session.old-name" in persistedHandles,
+                "The old handle should NOT be in the persisted identities.")
+        }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -528,26 +551,26 @@ class CoreFeatureT2CoreTest {
         ))
         runCurrent()
 
-        // ASSERT: Response dispatched with correct old/new handles
-        val response = harness.processedActions.find {
-            it.name == ActionRegistry.Names.CORE_RETURN_UPDATE_IDENTITY
-        }
-        assertNotNull(response, "RETURN_UPDATE_IDENTITY should be dispatched.")
-        assertEquals("true", response.payload?.get("success")?.jsonPrimitive?.content)
-        assertEquals("session.chat1", response.payload?.get("oldHandle")?.jsonPrimitive?.content)
-        assertEquals("session.renamed-chat", response.payload?.get("newHandle")?.jsonPrimitive?.content)
+        // ASSERT
+        harness.runAndLogOnFailure {
+            val response = harness.processedActions.find {
+                it.name == ActionRegistry.Names.CORE_RETURN_UPDATE_IDENTITY
+            }
+            assertNotNull(response, "RETURN_UPDATE_IDENTITY should be dispatched.")
+            assertEquals("true", response.payload?.get("success")?.jsonPrimitive?.content)
+            assertEquals("session.chat1", response.payload?.get("oldHandle")?.jsonPrimitive?.content)
+            assertEquals("session.renamed-chat", response.payload?.get("newHandle")?.jsonPrimitive?.content)
 
-        // ASSERT: Registry updated
-        val registry = harness.store.state.value.identityRegistry
-        assertNull(registry["session.chat1"], "Old handle should be removed from registry.")
-        assertNotNull(registry["session.renamed-chat"], "New handle should be in registry.")
-        assertEquals("Renamed Chat", registry["session.renamed-chat"]?.name)
+            val registry = harness.store.state.value.identityRegistry
+            assertNull(registry["session.chat1"], "Old handle should be removed from registry.")
+            assertNotNull(registry["session.renamed-chat"], "New handle should be in registry.")
+            assertEquals("Renamed Chat", registry["session.renamed-chat"]?.name)
 
-        // ASSERT: Registry broadcast
-        val broadcast = harness.processedActions.find {
-            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+            val broadcast = harness.processedActions.find {
+                it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+            }
+            assertNotNull(broadcast, "IDENTITY_REGISTRY_UPDATED should be broadcast after UPDATE_IDENTITY.")
         }
-        assertNotNull(broadcast, "IDENTITY_REGISTRY_UPDATED should be broadcast after UPDATE_IDENTITY.")
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -574,23 +597,23 @@ class CoreFeatureT2CoreTest {
         ))
         runCurrent()
 
-        // ASSERT: No persistence
-        val writeActions = harness.processedActions.filter {
-            it.name == ActionRegistry.Names.FILESYSTEM_WRITE &&
-                    it.payload?.get("path")?.jsonPrimitive?.content == "identities.json"
-        }
-        assertTrue(writeActions.isEmpty(),
-            "Rejected UPDATE_IDENTITY must NOT trigger identities.json persistence.")
+        // ASSERT
+        harness.runAndLogOnFailure {
+            val writeActions = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.FILESYSTEM_WRITE &&
+                        it.payload?.get("path")?.jsonPrimitive?.content == "identities.json"
+            }
+            assertTrue(writeActions.isEmpty(),
+                "Rejected UPDATE_IDENTITY must NOT trigger identities.json persistence.")
 
-        // ASSERT: No registry broadcast
-        val broadcasts = harness.processedActions.filter {
-            it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
-        }
-        assertTrue(broadcasts.isEmpty(),
-            "IDENTITY_REGISTRY_UPDATED must NOT be broadcast on rejected UPDATE_IDENTITY.")
+            val broadcasts = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.CORE_IDENTITY_REGISTRY_UPDATED
+            }
+            assertTrue(broadcasts.isEmpty(),
+                "IDENTITY_REGISTRY_UPDATED must NOT be broadcast on rejected UPDATE_IDENTITY.")
 
-        // ASSERT: Identity unchanged
-        assertEquals("Chat 1", harness.store.state.value.identityRegistry["session.chat1"]?.name)
+            assertEquals("Chat 1", harness.store.state.value.identityRegistry["session.chat1"]?.name)
+        }
     }
 
     // ================================================================
@@ -613,10 +636,12 @@ class CoreFeatureT2CoreTest {
         ))
         runCurrent()
 
-        // ASSERT: AppState.identityRegistry (single source of truth) should contain the new identity
-        val appState = harness.store.state.value
-        assertNotNull(appState.identityRegistry["session.chat1"],
-            "The identity should be visible in AppState.identityRegistry after registration.")
+        // ASSERT
+        harness.runAndLogOnFailure {
+            val appState = harness.store.state.value
+            assertNotNull(appState.identityRegistry["session.chat1"],
+                "The identity should be visible in AppState.identityRegistry after registration.")
+        }
     }
 
     // ================================================================
@@ -631,9 +656,11 @@ class CoreFeatureT2CoreTest {
             .withFeature(CoreFeature(platform))
             .build(platform = platform)
 
-        // ASSERT: The core feature identity should be in AppState.identityRegistry from boot
-        val appState = harness.store.state.value
-        assertNotNull(appState.identityRegistry["core"],
-            "Core feature identity should be seeded during initFeatureLifecycles().")
+        // ASSERT
+        harness.runAndLogOnFailure {
+            val appState = harness.store.state.value
+            assertNotNull(appState.identityRegistry["core"],
+                "Core feature identity should be seeded during initFeatureLifecycles().")
+        }
     }
 }
