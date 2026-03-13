@@ -613,7 +613,7 @@ class AgentRuntimeFeature(
                 platformDependencies.log(LogLevel.INFO, identity.handle,
                     "SESSION_CREATED: Linking private session '$sessionUUID' to agent '${matchingAgent.identityUUID}' (matched via isPrivateTo='$isPrivateTo').")
 
-                // Link the session to the agent
+                // 1. Link the session as the agent's output target
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.AGENT_UPDATE_CONFIG,
                     buildJsonObject {
@@ -622,7 +622,18 @@ class AgentRuntimeFeature(
                     }
                 ))
 
-                // Clear the pending flag
+                // 2. Subscribe the agent to its own private session so it appears
+                //    in the conversation log (the agent can see its own prior actions
+                //    and internal monologue).
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
+                    buildJsonObject {
+                        put("agentId", matchingAgent.identityUUID.uuid)
+                        put("sessionId", sessionUUID)
+                    }
+                ))
+
+                // 3. Clear the pending flag
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.AGENT_SET_PENDING_PRIVATE_SESSION,
                     buildJsonObject {

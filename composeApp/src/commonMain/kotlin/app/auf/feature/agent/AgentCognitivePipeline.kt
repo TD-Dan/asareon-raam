@@ -350,10 +350,11 @@ object AgentCognitivePipeline {
 
         // === SESSION METADATA (with token usage context) ===
         val identityRegistry = store.state.value.identityRegistry
-        val sessionUUID = agent.subscribedSessionIds.firstOrNull()
-        val sessionIdentity = sessionUUID?.let { identityRegistry.findByUUID(it) }
-        val sessionName = sessionIdentity?.name ?: "Unknown Session"
-        val sessionHandleDisplay = sessionIdentity?.handle ?: sessionUUID?.uuid ?: "none"
+        val subscribedSessionNames = agent.subscribedSessionIds.mapNotNull { uuid ->
+            identityRegistry.findByUUID(uuid)?.name
+        }
+        val sessionListDisplay = if (subscribedSessionNames.isNotEmpty())
+            subscribedSessionNames.joinToString(", ") else "none"
         val lastInput = statusInfo.lastInputTokens
         val lastOutput = statusInfo.lastOutputTokens
         val tokenUsageContext = if (lastInput != null || lastOutput != null) {
@@ -370,7 +371,7 @@ object AgentCognitivePipeline {
             
             You are running on platform: 'AUF App ${Version.APP_VERSION} (Windows), a multi-agent, multi-session agent/chat platform.'
             Your Host LLM (API connection): '${agent.modelProvider}' / '${agent.modelName}'
-            You are currently participating in a multi-party chat session: '${sessionName}', id: '${sessionHandleDisplay}'
+            Subscribed sessions: $sessionListDisplay
             Your agent handle is: '${agent.identityHandle}'
             Your agent id (internal): '${agentUuid}'
             Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())}
@@ -392,43 +393,37 @@ object AgentCognitivePipeline {
             contextMap["WORKSPACE_FILES"] = it
         }
 
+        // ============================================================
+        // Build CONVERSATION_LOG context partition
+        //
+        // The conversation lives in the system prompt as a structured
+        // context partition. Providers receive empty contents and inject
+        // a minimal trigger message to satisfy API requirements.
+        //
+        // Current: single-session ledger from stagedTurnContext.
+        // TODO (Phase 2): multi-session from accumulated per-session ledgers.
+        // ============================================================
+        val outputSessionUUID = agent.outputSessionId
+        val outputSessionHandle = outputSessionUUID?.let { identityRegistry.findByUUID(it)?.handle }
 
-        // ============================================================
-        // Format messages with sender context for multi-agent clarity
-        // ============================================================
-        var formattedMessages = ledgerContext.map { msg ->
-            val formattedTimestamp = platformDependencies.formatIsoTimestamp(msg.timestamp)
-            val formattedContent = "${msg.senderName} (${msg.senderId}) @ $formattedTimestamp: ${msg.content}"
-            msg.copy(content = formattedContent)
-        }
-
-        // ============================================================
-        // Empty ledger guard — LLM APIs require at least one message.
-        // This occurs during Sovereign boot (cognition session just created)
-        // or any agent whose first turn is triggered before any messages exist.
-        // The system prompt carries the full context; the trigger message is
-        // a minimal signal to satisfy the API contract.
-        // ============================================================
-        if (formattedMessages.isEmpty()) {
-            platformDependencies.log(LogLevel.INFO, LOG_TAG,
-                "Agent '${agentUuid}': Ledger is empty. Injecting synthetic trigger for turn execution.")
-            formattedMessages = listOf(
-                GatewayMessage(
-                    role = "user",
-                    content = "[SYSTEM: Turn initiated. No prior messages in session.]",
-                    senderId = "system",
-                    senderName = "System",
-                    timestamp = platformDependencies.currentTimeMillis()
-                )
+        val contextSessionUUID = outputSessionUUID ?: agent.subscribedSessionIds.firstOrNull()
+        val contextSessionIdentity = contextSessionUUID?.let { identityRegistry.findByUUID(it) }
+        val sessionSnapshots = listOf(
+            ConversationLogFormatter.SessionLedgerSnapshot(
+                sessionName = contextSessionIdentity?.name ?: "Unknown Session",
+                sessionUUID = contextSessionUUID?.uuid ?: "unknown",
+                sessionHandle = contextSessionIdentity?.handle ?: "unknown",
+                messages = ledgerContext,
+                isOutputSession = contextSessionUUID == outputSessionUUID
             )
-        }
+        )
+
+        contextMap["CONVERSATION_LOG"] = ConversationLogFormatter.format(sessionSnapshots, platformDependencies)
 
         // ============================================================
         // Build multi-agent context for system prompt
         // ============================================================
-        val participants = ledgerContext
-            .map { it.senderId to it.senderName }
-            .distinct()
+        val participants = ConversationLogFormatter.extractParticipants(sessionSnapshots)
 
         if (participants.size > 2) {
             val multiAgentContext = buildString {
@@ -445,9 +440,8 @@ object AgentCognitivePipeline {
                     appendLine("- $name ($id): $type")
                 }
                 appendLine()
-                appendLine("IMPORTANT: Each message in the conversation is prefixed with 'SenderName (senderId) @ timestamp:'")
-                appendLine("This helps you understand who said what and when.")
-                appendLine("When YOU respond, do NOT include this prefix. Just write your response naturally.")
+                appendLine("IMPORTANT: Each message in the conversation log is wrapped with sender headers.")
+                appendLine("When YOU respond, do NOT include these headers. Just write your response naturally.")
                 appendLine("The system will automatically add your name and timestamp to your messages.")
             }
             contextMap["MULTI_AGENT_CONTEXT"] = multiAgentContext
@@ -456,8 +450,6 @@ object AgentCognitivePipeline {
         // ============================================================
         // Build structured session subscription context
         // ============================================================
-        val outputSessionUUID = agent.outputSessionId
-        val outputSessionHandle = outputSessionUUID?.let { identityRegistry.findByUUID(it)?.handle }
         val subscribedSessionInfos = agent.subscribedSessionIds.mapNotNull { sessUUID ->
             val sessIdentity = identityRegistry.findByUUID(sessUUID)
             val sessName = sessIdentity?.name
@@ -490,11 +482,13 @@ object AgentCognitivePipeline {
             put("agentId", agentUuid.uuid); put("step", step)
         }))
 
+        // System-prompt-only mode: conversation is in CONVERSATION_LOG context partition.
+        // Providers inject a minimal trigger message to satisfy API requirements.
         store.deferredDispatch("agent", Action(requestActionName, buildJsonObject {
             put("providerId", agent.modelProvider)
             put("modelName", agent.modelName)
             put("correlationId", agentUuid.uuid)
-            put("contents", json.encodeToJsonElement(formattedMessages))
+            put("contents", buildJsonArray {}) // Empty — conversation is in systemPrompt
             put("systemPrompt", systemPrompt)
         }))
     }
