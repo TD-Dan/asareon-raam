@@ -505,7 +505,20 @@ class FileSystemFeature(
                     ?.let { json.decodeFromJsonElement<PathPayload>(it) }
                     ?.path
                     ?: ""
-                platformDependencies.openFolderInExplorer("${platformDependencies.getBasePathFor(BasePath.APP_ZONE)}${platformDependencies.pathSeparator}${path}")
+                val sandboxPath = getSandboxPathFor(originator)
+                val fullPath = if (path.isNotBlank()) "$sandboxPath${platformDependencies.pathSeparator}$path" else sandboxPath
+                try {
+                    if (!platformDependencies.fileExists(fullPath)) {
+                        platformDependencies.createDirectories(fullPath)
+                        platformDependencies.log(LogLevel.INFO, identity.handle, "Created workspace directory before opening: $fullPath")
+                    }
+                    platformDependencies.openFolderInExplorer(fullPath)
+                } catch (e: Exception) {
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to open workspace folder '$fullPath': ${e.message}", e)
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject {
+                        put("message", "Failed to open workspace folder: ${e.message}")
+                    }))
+                }
             }
         }
     }

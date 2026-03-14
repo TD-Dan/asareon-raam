@@ -412,6 +412,19 @@ fun AgentControlCard(
                                 leadingIcon = { Icon(Icons.Default.Memory, null) }
                             )
 
+                            // Open agent workspace folder in OS file explorer
+                            DropdownMenuItem(
+                                text = { Text("Show agent workspace") },
+                                onClick = {
+                                    store.dispatch("agent", Action(
+                                        ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER,
+                                        buildJsonObject { put("path", "$agentUuidStr/workspace") }
+                                    ))
+                                    menuExpanded = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.FolderOpen, null) }
+                            )
+
                             // ── Avatar-only items ────────────────────────
                             if (!showManagementActions) {
                                 DropdownMenuItem(

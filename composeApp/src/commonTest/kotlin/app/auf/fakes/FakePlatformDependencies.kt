@@ -29,6 +29,8 @@ open class FakePlatformDependencies(
     val capturedLogs = mutableListOf<CapturedLog>()
     val writtenFiles = mutableMapOf<String, String>()
     var selectedDirectoryPathToReturn: String? = null
+    val openedFolderPaths = mutableListOf<String>()
+    var openFolderShouldThrow = false
 
     /** Tracks all scheduled callbacks for test assertions and manual firing. */
     data class ScheduledCallback(val delayMs: Long, val callback: () -> Unit, var cancelled: Boolean = false)
@@ -142,7 +144,10 @@ open class FakePlatformDependencies(
     override fun getUserHomePath(): String = "/fake/user/home"
 
     override fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String) { /* No-op */ }
-    override fun openFolderInExplorer(path: String) { /* No-op */ }
+    override fun openFolderInExplorer(path: String) {
+        if (openFolderShouldThrow) throw Exception("Fake openFolderInExplorer error for path: $path")
+        openedFolderPaths.add(path)
+    }
     override fun selectDirectoryPath(): String? = selectedDirectoryPathToReturn
 
     override fun currentTimeMillis(): Long = currentTime

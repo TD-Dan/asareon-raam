@@ -644,4 +644,116 @@ class FileSystemFeatureT2CoreTest {
             assertEquals("good-content", contents["good.txt"]?.jsonPrimitive?.content)
         }
     }
+
+    // ========================================================================
+    // OPEN_WORKSPACE_FOLDER Tests (Regression: sandbox path resolution)
+    // ========================================================================
+
+    @Test
+    fun `OPEN_WORKSPACE_FOLDER resolves path through originator sandbox`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val originator = "agent"
+        val agentUuid = "eebb42a0-7467-4636-b441-67e519fcd13a"
+        val subPath = "$agentUuid/workspace"
+        val expectedSandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator/$subPath"
+
+        // Pre-create the directory so openFolderInExplorer has a valid target
+        platform.createDirectories(expectedSandboxPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER, buildJsonObject {
+            put("path", subPath)
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch(originator, action)
+
+            // The key regression guard: the opened path MUST include the originator segment.
+            // Before the fix, the path was APP_ZONE/{uuid}/workspace (missing "agent/").
+            assertTrue(
+                platform.openedFolderPaths.any { it == expectedSandboxPath },
+                "openFolderInExplorer must be called with the originator-sandboxed path. " +
+                        "Expected: $expectedSandboxPath, Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_WORKSPACE_FOLDER auto-creates directory when it does not exist`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val originator = "agent"
+        val agentUuid = "aabb1122-0000-0000-0000-000000000000"
+        val subPath = "$agentUuid/workspace"
+        val expectedSandboxPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator/$subPath"
+
+        // Do NOT pre-create the directory — the handler should create it.
+        assertFalse(platform.fileExists(expectedSandboxPath), "Precondition: directory should not exist yet.")
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER, buildJsonObject {
+            put("path", subPath)
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch(originator, action)
+
+            assertTrue(platform.fileExists(expectedSandboxPath),
+                "The handler should auto-create the workspace directory before opening it.")
+            assertTrue(
+                platform.openedFolderPaths.any { it == expectedSandboxPath },
+                "openFolderInExplorer should still be called after auto-creating the directory."
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_WORKSPACE_FOLDER with empty path opens the originator sandbox root`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val originator = "agent"
+        val expectedSandboxRoot = platform.getBasePathFor(BasePath.APP_ZONE) + "/$originator"
+        platform.createDirectories(expectedSandboxRoot)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER, buildJsonObject {
+            put("path", "")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch(originator, action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == expectedSandboxRoot },
+                "An empty path should open the originator's sandbox root, not APP_ZONE root."
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_WORKSPACE_FOLDER shows toast on failure`() {
+        val platform = FakePlatformDependencies("test")
+        platform.openFolderShouldThrow = true
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val originator = "agent"
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER, buildJsonObject {
+            put("path", "some-uuid/workspace")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch(originator, action)
+
+            val toastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
+            assertNotNull(toastAction, "A toast should be shown when openFolderInExplorer fails.")
+            assertTrue(
+                toastAction.payload?.get("message")?.jsonPrimitive?.content?.contains("Failed to open workspace folder") == true,
+                "Toast message should describe the failure."
+            )
+            val errorLog = platform.capturedLogs.find { it.message.contains("Failed to open workspace folder") }
+            assertNotNull(errorLog, "An error should be logged when openFolderInExplorer fails.")
+        }
+    }
 }
