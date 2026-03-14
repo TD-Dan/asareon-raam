@@ -1,16 +1,14 @@
 package app.auf.feature.knowledgegraph
 
 import app.auf.core.Action
-import app.auf.core.Feature
-import app.auf.core.FeatureState
 import app.auf.core.Identity
-import app.auf.core.Store
+import app.auf.core.PermissionGrant
+import app.auf.core.PermissionLevel
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
 import app.auf.test.TestEnvironment
-import app.auf.test.TestHarness
 import app.auf.util.FileEntry
 import app.auf.util.LogLevel
 import kotlinx.coroutines.CoroutineScope
@@ -40,10 +38,9 @@ import kotlin.test.assertTrue
  *   - Updated assertions from `deliveredPrivateData` to `processedActions` for targeted actions.
  *
  * [PHASE C FIX] Tests updated for Store originator validation:
- *   - Agent originators ("agent-alpha", "agent-beta") must be registered identities.
- *   - A stub "agent" feature is added to the harness so identities can be registered
- *     in the "agent.*" namespace via CORE_REGISTER_IDENTITY.
- *   - Agent handles are now namespaced: "agent.agent-alpha", "agent.agent-beta".
+ *   - Agent originators must be registered identities with KG permissions.
+ *   - Pre-seeded via TestEnvironment.withIdentity() with knowledgegraph:read + knowledgegraph:write grants.
+ *   - Agent handles are namespaced: "agent.agent-alpha", "agent.agent-beta".
  */
 class KnowledgeGraphFeatureT2CoreTest {
 
@@ -52,32 +49,35 @@ class KnowledgeGraphFeatureT2CoreTest {
     private val platform = FakePlatformDependencies("test")
     private val feature = KnowledgeGraphFeature(platform, testScope)
 
-    // Namespaced agent handles — registered via registerTestAgents()
+    // Namespaced agent handles — pre-seeded via withIdentity() with KG permissions
     private val AGENT_ALPHA = "agent.agent-alpha"
     private val AGENT_BETA = "agent.agent-beta"
 
-    /**
-     * Stub feature that provides the "agent" namespace for registering test agent identities.
-     * Only needed because the Store validates action originators against registered identities/features.
-     */
-    private val agentFeatureStub = object : Feature {
-        override val identity = Identity(uuid = null, handle = "agent", localHandle = "agent", name = "Agent", parentHandle = null)
-        override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {}
-        override fun reducer(state: FeatureState?, action: Action): FeatureState? = state
-    }
+    /** Agent identity with full KG read+write permissions. */
+    private val agentAlphaIdentity = Identity(
+        uuid = "a0000000-0000-0000-0000-00000000aa01",
+        localHandle = "agent-alpha",
+        handle = AGENT_ALPHA,
+        name = "Agent Alpha",
+        parentHandle = "agent",
+        permissions = mapOf(
+            "knowledgegraph:read" to PermissionGrant(PermissionLevel.YES),
+            "knowledgegraph:write" to PermissionGrant(PermissionLevel.YES)
+        )
+    )
 
-    /**
-     * Registers AGENT_ALPHA and AGENT_BETA as identities in the "agent.*" namespace.
-     * Must be called after harness.build() and before dispatching from these handles.
-     */
-    private fun registerTestAgents(harness: TestHarness) {
-        harness.store.dispatch("agent", Action(ActionRegistry.Names.CORE_REGISTER_IDENTITY, buildJsonObject {
-            put("name", "Agent Alpha"); put("localHandle", "agent-alpha")
-        }))
-        harness.store.dispatch("agent", Action(ActionRegistry.Names.CORE_REGISTER_IDENTITY, buildJsonObject {
-            put("name", "Agent Beta"); put("localHandle", "agent-beta")
-        }))
-    }
+    /** Agent identity with full KG read+write permissions. */
+    private val agentBetaIdentity = Identity(
+        uuid = "a0000000-0000-0000-0000-00000000bb02",
+        localHandle = "agent-beta",
+        handle = AGENT_BETA,
+        name = "Agent Beta",
+        parentHandle = "agent",
+        permissions = mapOf(
+            "knowledgegraph:read" to PermissionGrant(PermissionLevel.YES),
+            "knowledgegraph:write" to PermissionGrant(PermissionLevel.YES)
+        )
+    )
 
     private val persona1Content = """
         {
@@ -186,12 +186,11 @@ class KnowledgeGraphFeatureT2CoreTest {
         )
         val harness = TestEnvironment.create()
             .withFeature(feature)
-            .withFeature(agentFeatureStub)
+            .withIdentity(agentAlphaIdentity).withIdentity(agentBetaIdentity)
             .withInitialState("knowledgegraph", initialState)
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            registerTestAgents(harness)
 
             // ACT
             harness.store.dispatch(AGENT_ALPHA, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_REQUEST_CONTEXT, buildJsonObject {
@@ -268,9 +267,8 @@ class KnowledgeGraphFeatureT2CoreTest {
 
     @Test
     fun `onAction RESERVE_HKG should broadcast the updated reservations list`() {
-        val harness = TestEnvironment.create().withFeature(feature).withFeature(agentFeatureStub).build(platform = platform)
+        val harness = TestEnvironment.create().withFeature(feature).withIdentity(agentAlphaIdentity).withIdentity(agentBetaIdentity).build(platform = platform)
         harness.runAndLogOnFailure {
-            registerTestAgents(harness)
 
             // ACT
             harness.store.dispatch(AGENT_ALPHA, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject {
@@ -310,11 +308,10 @@ class KnowledgeGraphFeatureT2CoreTest {
                 reservations = mapOf(personaId to ownerAgent),
                 holons = mapOf(holonId to holon, personaId to Holon(HolonHeader(personaId, "AI_Persona_Root", "P"), buildJsonObject{}))
             )
-            val harness = TestEnvironment.create().withFeature(feature).withFeature(agentFeatureStub)
+            val harness = TestEnvironment.create().withFeature(feature).withIdentity(agentAlphaIdentity).withIdentity(agentBetaIdentity)
                 .withInitialState("knowledgegraph", initialState).build(platform = platform)
 
             harness.runAndLogOnFailure {
-                registerTestAgents(harness)
 
                 // ACT: Another agent tries to modify
                 harness.store.dispatch(otherAgent, actionToDispatch)
@@ -347,11 +344,10 @@ class KnowledgeGraphFeatureT2CoreTest {
                 reservations = mapOf(personaId to ownerAgent),
                 holons = mapOf(holonId to holon, personaId to Holon(HolonHeader(personaId, "AI_Persona_Root", "P"), buildJsonObject{}))
             )
-            val harness = TestEnvironment.create().withFeature(feature).withFeature(agentFeatureStub)
+            val harness = TestEnvironment.create().withFeature(feature).withIdentity(agentAlphaIdentity).withIdentity(agentBetaIdentity)
                 .withInitialState("knowledgegraph", initialState).build(platform = platform)
 
             harness.runAndLogOnFailure {
-                registerTestAgents(harness)
 
                 // ACT: The owner agent tries to modify
                 harness.store.dispatch(ownerAgent, actionToDispatch)
@@ -366,11 +362,10 @@ class KnowledgeGraphFeatureT2CoreTest {
     @Test
     fun `onAction should block re reserving an already reserved HKG`() {
         val initialState = KnowledgeGraphState(reservations = mapOf("persona-1" to AGENT_ALPHA))
-        val harness = TestEnvironment.create().withFeature(feature).withFeature(agentFeatureStub)
+        val harness = TestEnvironment.create().withFeature(feature).withIdentity(agentAlphaIdentity).withIdentity(agentBetaIdentity)
             .withInitialState("knowledgegraph", initialState).build(platform = platform)
 
         harness.runAndLogOnFailure {
-            registerTestAgents(harness)
 
             // ACT: Another agent tries to reserve the same HKG
             harness.store.dispatch(AGENT_BETA, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG, buildJsonObject {
@@ -432,12 +427,11 @@ class KnowledgeGraphFeatureT2CoreTest {
         val initialState = KnowledgeGraphState(reservations = mapOf("persona-1" to AGENT_ALPHA))
         val harness = TestEnvironment.create()
             .withFeature(feature)
-            .withFeature(agentFeatureStub)
+            .withIdentity(agentAlphaIdentity).withIdentity(agentBetaIdentity)
             .withInitialState("knowledgegraph", initialState)
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            registerTestAgents(harness)
 
             harness.store.dispatch(AGENT_ALPHA, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_RELEASE_HKG, buildJsonObject {
                 put("personaId", "persona-1")
@@ -574,10 +568,9 @@ class KnowledgeGraphFeatureT2CoreTest {
 
     @Test
     fun `side effects with missing payload fields should log warnings`() {
-        val harness = TestEnvironment.create().withFeature(feature).withFeature(agentFeatureStub).build(platform = platform)
+        val harness = TestEnvironment.create().withFeature(feature).withIdentity(agentAlphaIdentity).withIdentity(agentBetaIdentity).build(platform = platform)
 
         harness.runAndLogOnFailure {
-            registerTestAgents(harness)
 
             // Dispatch actions with missing required fields
             harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_CREATE_PERSONA, buildJsonObject { }))
