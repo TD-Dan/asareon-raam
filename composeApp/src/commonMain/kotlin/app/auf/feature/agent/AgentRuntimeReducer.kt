@@ -18,6 +18,7 @@ import kotlinx.serialization.json.*
 object AgentRuntimeReducer {
 
     private val json = Json { ignoreUnknownKeys = true }
+    private const val LOG_TAG = "AgentRuntimeReducer"
 
     // ---- Boundary helpers ----
     private fun JsonObject.agentUUID(field: String = "agentId"): IdentityUUID? =
@@ -355,9 +356,18 @@ object AgentRuntimeReducer {
             // Phase A: Context Collapse Actions (§3.6)
             // ================================================================
             ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE -> {
-                val payload = action.payload ?: return state
-                val agentId = payload.agentUUID() ?: return state
-                val partitionKey = payload["partitionKey"]?.jsonPrimitive?.contentOrNull ?: return state
+                val payload = action.payload ?: run {
+                    platformDependencies.log(LogLevel.WARN, LOG_TAG, "CONTEXT_UNCOLLAPSE: Missing payload. Ignoring.")
+                    return state
+                }
+                val agentId = payload.agentUUID() ?: run {
+                    platformDependencies.log(LogLevel.WARN, LOG_TAG, "CONTEXT_UNCOLLAPSE: Missing or invalid 'agentId' in payload. Ignoring. Keys: ${payload.keys}")
+                    return state
+                }
+                val partitionKey = payload["partitionKey"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, LOG_TAG, "CONTEXT_UNCOLLAPSE: Missing 'partitionKey' for agent '$agentId'. Ignoring.")
+                    return state
+                }
                 // scope is informational for the pipeline (single/subtree/full).
                 // At the reducer level, all scopes set the key to EXPANDED.
                 // The pipeline interprets scope when building the INDEX tree.
@@ -368,9 +378,18 @@ object AgentRuntimeReducer {
             }
 
             ActionRegistry.Names.AGENT_CONTEXT_COLLAPSE -> {
-                val payload = action.payload ?: return state
-                val agentId = payload.agentUUID() ?: return state
-                val partitionKey = payload["partitionKey"]?.jsonPrimitive?.contentOrNull ?: return state
+                val payload = action.payload ?: run {
+                    platformDependencies.log(LogLevel.WARN, LOG_TAG, "CONTEXT_COLLAPSE: Missing payload. Ignoring.")
+                    return state
+                }
+                val agentId = payload.agentUUID() ?: run {
+                    platformDependencies.log(LogLevel.WARN, LOG_TAG, "CONTEXT_COLLAPSE: Missing or invalid 'agentId' in payload. Ignoring. Keys: ${payload.keys}")
+                    return state
+                }
+                val partitionKey = payload["partitionKey"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, LOG_TAG, "CONTEXT_COLLAPSE: Missing 'partitionKey' for agent '$agentId'. Ignoring.")
+                    return state
+                }
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
                 val updatedOverrides = currentStatus.contextCollapseOverrides + (partitionKey to CollapseState.COLLAPSED)
                 val updatedStatus = currentStatus.copy(contextCollapseOverrides = updatedOverrides)
@@ -383,11 +402,14 @@ object AgentRuntimeReducer {
                 val overridesJson = payload["overrides"]?.jsonObject ?: return state
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
 
-                val loadedOverrides = overridesJson.mapValues { (_, value) ->
+                val loadedOverrides = overridesJson.mapValues { (key, value) ->
                     try {
                         CollapseState.valueOf(value.jsonPrimitive.content)
                     } catch (_: Exception) {
-                        CollapseState.COLLAPSED // Safe default for unrecognized values
+                        platformDependencies.log(LogLevel.WARN, LOG_TAG,
+                            "CONTEXT_STATE_LOADED: Unrecognized CollapseState '${value}' for key '$key' " +
+                                    "(agent '$agentId'). Defaulting to COLLAPSED.")
+                        CollapseState.COLLAPSED
                     }
                 }
 

@@ -227,6 +227,16 @@ object AgentCognitivePipeline {
         }
         val hkgContext = payload["context"]?.jsonObject
 
+        if (hkgContext == null) {
+            val personaId = payload["personaId"]?.jsonPrimitive?.contentOrNull ?: "unknown"
+            store.platformDependencies.log(
+                LogLevel.WARN, LOG_TAG,
+                "handleHkgContextResponse: Null or missing 'context' for agent '$agentIdStr' " +
+                        "(personaId='$personaId'). Agent will see empty HKG. " +
+                        "Check that the persona is loaded in KnowledgeGraphFeature."
+            )
+        }
+
         store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_HKG_CONTEXT, buildJsonObject {
             put("agentId", agentIdStr)
             put("context", hkgContext ?: buildJsonObject {})
@@ -431,11 +441,19 @@ object AgentCognitivePipeline {
             // Resolve persona name from root holon header
             val personaName = hkgHeaders.values.find { it.parentId == null }?.name
 
+            if (personaName == null && hkgHeaders.isNotEmpty()) {
+                platformDependencies.log(
+                    LogLevel.WARN, LOG_TAG,
+                    "HKG for agent '${agentUuid}': No root holon (parentId == null) found among " +
+                            "${hkgHeaders.size} holons. INDEX will render without a root — possible broken tree structure."
+                )
+            }
+
             contextMap["HOLON_KNOWLEDGE_GRAPH_INDEX"] = HkgContextFormatter.buildIndexTree(
                 hkgHeaders, effectiveOverrides, personaName
             )
             contextMap["HOLON_KNOWLEDGE_GRAPH_FILES"] = HkgContextFormatter.buildFilesSection(
-                hkgContext, effectiveOverrides
+                hkgContext, effectiveOverrides, platformDependencies
             )
         }
 

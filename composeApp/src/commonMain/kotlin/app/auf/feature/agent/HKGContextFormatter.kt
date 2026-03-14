@@ -74,7 +74,14 @@ object HkgContextFormatter {
             try {
                 val rawContent = rawValue.jsonPrimitive.content
                 val holonJson = json.parseToJsonElement(rawContent).jsonObject
-                val header = holonJson["header"]?.jsonObject ?: continue
+                val header = holonJson["header"]?.jsonObject
+                if (header == null) {
+                    platformDependencies?.log(
+                        LogLevel.WARN, LOG_TAG,
+                        "Holon '$holonId' has valid JSON but no 'header' object. Skipping."
+                    )
+                    continue
+                }
 
                 val id = header["id"]?.jsonPrimitive?.contentOrNull ?: holonId
                 val type = header["type"]?.jsonPrimitive?.contentOrNull ?: "Unknown"
@@ -90,7 +97,13 @@ object HkgContextFormatter {
                             type = sub["type"]?.jsonPrimitive?.contentOrNull,
                             summary = sub["summary"]?.jsonPrimitive?.contentOrNull
                         )
-                    } catch (_: Exception) { null }
+                    } catch (e: Exception) {
+                        platformDependencies?.log(
+                            LogLevel.WARN, LOG_TAG,
+                            "Malformed sub_holon entry in holon '$holonId': ${e.message}. Skipping entry."
+                        )
+                        null
+                    }
                 } ?: emptyList()
 
                 rawSummaries[id] = HolonSummary(
@@ -218,7 +231,8 @@ object HkgContextFormatter {
      */
     fun buildFilesSection(
         hkgContext: JsonObject,
-        collapseOverrides: Map<String, CollapseState>
+        collapseOverrides: Map<String, CollapseState>,
+        platformDependencies: PlatformDependencies? = null
     ): String {
         val expandedIds = hkgContext.keys.filter { holonId ->
             resolveCollapseState(holonId, collapseOverrides) == CollapseState.EXPANDED
@@ -234,7 +248,15 @@ object HkgContextFormatter {
                 appendLine()
 
                 for (holonId in expandedIds) {
-                    val rawContent = hkgContext[holonId]?.jsonPrimitive?.contentOrNull ?: continue
+                    val rawContent = hkgContext[holonId]?.jsonPrimitive?.contentOrNull
+                    if (rawContent == null) {
+                        platformDependencies?.log(
+                            LogLevel.WARN, LOG_TAG,
+                            "Holon '$holonId' is EXPANDED but its content could not be read as a string. " +
+                                    "It will appear as [EXPANDED] in INDEX but be missing from FILES."
+                        )
+                        continue
+                    }
                     appendLine("--- START OF FILE $holonId.json ---")
                     appendLine(rawContent)
                     appendLine("--- END OF FILE $holonId.json ---")

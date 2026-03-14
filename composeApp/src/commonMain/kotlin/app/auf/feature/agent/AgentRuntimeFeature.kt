@@ -661,8 +661,16 @@ class AgentRuntimeFeature(
             // ================================================================
             ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE,
             ActionRegistry.Names.AGENT_CONTEXT_COLLAPSE -> {
-                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) } ?: return
-                val agent = agentState.agents[agentId] ?: return
+                val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) } ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle,
+                        "${action.name} side-effect: Missing agentId in payload. Context state not persisted.")
+                    return
+                }
+                val agent = agentState.agents[agentId] ?: run {
+                    platformDependencies.log(LogLevel.DEBUG, identity.handle,
+                        "${action.name} side-effect: Agent '$agentId' not found (may have been deleted). Context state not persisted.")
+                    return
+                }
                 saveContextState(agent, agentState, store)
 
                 // Publish ACTION_RESULT if this came from CommandBot (has correlationId)
@@ -783,6 +791,12 @@ class AgentRuntimeFeature(
                             )
                             return // Do not forward the action
                         }
+                    } else {
+                        platformDependencies.log(
+                            LogLevel.DEBUG, identity.handle,
+                            "HKG Write Guard: UPDATE_HOLON_CONTENT from agent '$agentUuid' has no 'holonId'. " +
+                                    "Guard bypassed — KnowledgeGraphFeature will reject downstream."
+                        )
                     }
                 }
 
