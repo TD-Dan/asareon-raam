@@ -228,13 +228,9 @@ object AgentCognitivePipeline {
 
         val agentId = IdentityUUID(agentIdStr)
 
-        // 1. Store the raw listing for INDEX tree building
-        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_WORKSPACE_LISTING, buildJsonObject {
-            put("agentId", agentIdStr)
-            put("listing", listing)
-        }))
-
-        // 2. Determine which workspace files need content fetched
+        // 2. Determine which workspace files need content fetched (BEFORE storing the listing,
+        //    because storing the listing triggers evaluateFullContext via side-effect — the
+        //    pending flag must already be in state when that gate check runs).
         val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
         val statusInfo = state.agentStatuses[agentId] ?: AgentStatusInfo()
         val agent = state.agents[agentId] ?: return
@@ -265,13 +261,27 @@ object AgentCognitivePipeline {
         val expandedFilePaths = WorkspaceContextFormatter.getExpandedFilePaths(entries, effectiveOverrides)
 
         if (expandedFilePaths.isNotEmpty()) {
-            // 3a. Dispatch READ_MULTIPLE for expanded files and set pending flag
+            // 3a. Set pending flag FIRST — before the listing is stored.
+            // CRITICAL ORDERING: SET_WORKSPACE_LISTING's side-effect calls evaluateFullContext.
+            // If pendingWorkspaceFileReads is still false when that gate runs, the turn fires
+            // prematurely without waiting for file contents. Setting the flag first ensures
+            // the gate sees pending=true and waits.
             store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PENDING_WORKSPACE_FILES, buildJsonObject {
                 put("agentId", agentIdStr)
                 put("pending", true)
             }))
+        }
 
-            // Paths must be sandbox-relative (prefixed with the agent's workspace path)
+        // 1. Store the raw listing for INDEX tree building.
+        // Side-effect: triggers evaluateFullContext. If expanded files exist, the pending
+        // flag (set above) keeps the gate closed until file contents arrive.
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_WORKSPACE_LISTING, buildJsonObject {
+            put("agentId", agentIdStr)
+            put("listing", listing)
+        }))
+
+        if (expandedFilePaths.isNotEmpty()) {
+            // 3b. Dispatch READ_MULTIPLE for the expanded files
             val sandboxPaths = expandedFilePaths.map { "$workspacePrefix/$it" }
 
             store.deferredDispatch("agent", Action(ActionRegistry.Names.FILESYSTEM_READ_MULTIPLE, buildJsonObject {
@@ -282,7 +292,7 @@ object AgentCognitivePipeline {
             store.platformDependencies.log(LogLevel.DEBUG, LOG_TAG,
                 "handleWorkspaceListingResponse: Dispatched READ_MULTIPLE for ${expandedFilePaths.size} expanded workspace files for agent '$agentIdStr'.")
         } else {
-            // 3b. No expanded files — workspace context is fully ready with just the listing
+            // 3c. No expanded files — workspace context is fully ready with just the listing
             store.platformDependencies.log(LogLevel.DEBUG, LOG_TAG,
                 "handleWorkspaceListingResponse: No expanded workspace files for agent '$agentIdStr'. Listing-only context ready.")
         }
@@ -682,7 +692,7 @@ object AgentCognitivePipeline {
                 |```
                 |
                 |IMPORTANT: The prefix is "ws:", not "workspace:". Directory paths end with "/".
-                |Example: "ws:readme.md", "ws:src/", "ws:src/main.kt"
+                |Example: "ws:sovereign-design.md", "ws:src/", "ws:src/main.kt"
                 |You must expand a workspace file before writing to it.
                 |The system will block writes to collapsed files to prevent data loss.
                 |
