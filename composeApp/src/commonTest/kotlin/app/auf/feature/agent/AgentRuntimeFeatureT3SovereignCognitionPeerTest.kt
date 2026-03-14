@@ -46,7 +46,7 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
                 }
                 store.dispatch(
                     identity.handle,
-                    Action(ActionRegistry.Names.GATEWAY_RETURN_RESPONSE, responsePayload)
+                    Action(ActionRegistry.Names.GATEWAY_RETURN_RESPONSE, responsePayload, targetRecipient = "agent")
                 )
             }
         }
@@ -85,9 +85,14 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
             knowledgeGraphId = personaId,
             modelProvider = "fake",
             modelName = "fake",
+            cognitiveStrategyId = "sovereign_v1",
             privateSessionId = privateSession.identity.uuid!!,
             subscribedSessionIds = listOf(publicSession.identity.uuid!!),
-            resources = mapOf("system_instruction" to "res-sys-instruction-v1")
+            resources = mapOf(
+                "system_instruction" to "res-sys-instruction-v1",
+                "constitution" to "res-sovereign-constitution-v1",
+                "bootloader" to "res-boot-sentinel-v1"
+            )
         )
         val philosopherUUID = IdentityUUID(philosopherAgent.identity.uuid!!)
 

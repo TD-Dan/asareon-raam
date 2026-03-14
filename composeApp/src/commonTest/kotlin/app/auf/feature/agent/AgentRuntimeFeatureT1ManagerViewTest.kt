@@ -62,6 +62,12 @@ class AgentRuntimeFeatureT1ManagerViewTest {
             app.auf.feature.agent.strategies.SovereignStrategy,
             legacyId = "sovereign_v1"
         )
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.StateMachineStrategy
+        )
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.PrivateSessionStrategy
+        )
     }
 
     @After
@@ -97,11 +103,15 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     }
 
     @Test
-    fun `clicking 'Delete' icon shows dialog and confirming dispatches AGENT_DELETE`() {
+    fun `clicking 'Delete' in kebab menu shows dialog and confirming dispatches AGENT_DELETE`() {
         val agent = testAgent("a1", "Test Agent", null, "p", "m")
         setViewState(AgentRuntimeState(agents = mapOf(uid("a1") to agent)))
 
-        composeTestRule.onNodeWithContentDescription("Delete Agent").performClick()
+        // Delete is now in the kebab dropdown menu (showManagementActions = true)
+        composeTestRule.onNodeWithContentDescription("More options").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Delete Agent").performClick()
+
         composeTestRule.onNodeWithText("Delete Agent?").assertIsDisplayed()
         composeTestRule.onNodeWithText("Delete").performClick()
 
@@ -111,11 +121,14 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     }
 
     @Test
-    fun `clicking 'Clone' icon dispatches AGENT_CLONE`() {
+    fun `clicking 'Clone' in kebab menu dispatches AGENT_CLONE`() {
         val agent = testAgent("a1", "Test Agent", null, "p", "m")
         setViewState(AgentRuntimeState(agents = mapOf(uid("a1") to agent)))
 
-        composeTestRule.onNodeWithContentDescription("Clone Agent").performClick()
+        // Clone is now in the kebab dropdown menu (showManagementActions = true)
+        composeTestRule.onNodeWithContentDescription("More options").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Clone Agent").performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_CLONE }
         assertNotNull(action)
@@ -125,11 +138,14 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     // --- 2. Editing Mode (Transitions) ---
 
     @Test
-    fun `clicking 'Edit' icon dispatches AGENT_SET_EDITING`() {
+    fun `clicking 'Edit' in kebab menu dispatches AGENT_SET_EDITING`() {
         val agent = testAgent("a1", "Test Agent", null, "p", "m")
         setViewState(AgentRuntimeState(agents = mapOf(uid("a1") to agent)))
 
-        composeTestRule.onNodeWithContentDescription("Edit Agent").performClick()
+        // Edit is now in the kebab dropdown menu
+        composeTestRule.onNodeWithContentDescription("More options").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Edit Agent").performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_SET_EDITING }
         assertNotNull(action)
@@ -312,14 +328,16 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         // 2. Save
         composeTestRule.onNodeWithContentDescription("Save").performScrollTo().performClick()
 
-        // 3. Verify payload
+        // 3. Verify payload — knowledgeGraphId lives inside strategyConfig
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
         assertNotNull(action)
-        assertEquals("p2", action.payload?.get("knowledgeGraphId")?.jsonPrimitive?.contentOrNull)
+        val strategyConfig = action.payload?.get("strategyConfig")?.jsonObject
+        assertNotNull(strategyConfig, "Save payload must include strategyConfig")
+        assertEquals("p2", strategyConfig["knowledgeGraphId"]?.jsonPrimitive?.contentOrNull)
     }
 
     @Test
-    fun `clicking 'Inspect State' displays formatted cognitive state JSON`() {
+    fun `clicking 'Inspect NVRAM' in kebab menu displays formatted cognitive state JSON`() {
         val stateJson = buildJsonObject {
             put("phase", "BOOTING")
             put("sentinel_check", "PENDING")
@@ -334,7 +352,12 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         setViewState(AgentRuntimeState(agents = mapOf(uid("a1") to agent)))
 
         composeTestRule.onNodeWithText("phase", substring = true).assertDoesNotExist()
-        composeTestRule.onNodeWithContentDescription("Inspect State").performClick()
+
+        // Inspect NVRAM is in the kebab dropdown menu
+        composeTestRule.onNodeWithContentDescription("More options").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Inspect NVRAM").performClick()
+
         composeTestRule.onNodeWithText("BOOTING", substring = true).assertIsDisplayed()
         composeTestRule.onNodeWithText("sentinel_check", substring = true).assertIsDisplayed()
     }
@@ -416,8 +439,8 @@ class AgentRuntimeFeatureT1ManagerViewTest {
             editingAgentId = uid("a1")
         ))
 
-        // Verify the System Instruction dropdown is visible
-        composeTestRule.onNodeWithText("System Instructions").assertIsDisplayed()
+        // Resource slot selectors are at the bottom of the editor — scroll into view
+        composeTestRule.onNodeWithText("System Instructions").performScrollTo().assertIsDisplayed()
 
         // Verify sovereign selectors are NOT visible
         composeTestRule.onNodeWithText("Constitution").assertDoesNotExist()
@@ -435,9 +458,9 @@ class AgentRuntimeFeatureT1ManagerViewTest {
             editingAgentId = uid("a1")
         ))
 
-        // Verify sovereign selectors are visible
-        composeTestRule.onNodeWithText("Constitution").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Bootloader (Sentinel)").assertIsDisplayed()
+        // Resource slot selectors are at the bottom of the editor — scroll into view
+        composeTestRule.onNodeWithText("Constitution").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Bootloader (Sentinel)").performScrollTo().assertIsDisplayed()
 
         // Verify vanilla selector is NOT visible
         composeTestRule.onNodeWithText("System Instructions").assertDoesNotExist()
@@ -470,6 +493,6 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         assertNotNull(action)
         val resourcesPayload = action.payload?.get("resources")?.jsonObject
         assertNotNull(resourcesPayload)
-        assertEquals("si-1", resourcesPayload["SYSTEM_INSTRUCTION"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("si-1", resourcesPayload["system_instruction"]?.jsonPrimitive?.contentOrNull)
     }
 }

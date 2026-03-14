@@ -256,11 +256,11 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
 
             // === DELIVER LEDGER ===
             // Manually deliver (SessionFeature won't auto-respond with empty state).
-            // Pipeline auto-triggers evaluateTurnContext → context gathering.
+            // Phase B: compound correlationId "agentUUID::sessionUUID" for multi-session accumulation.
             harness.store.dispatch("session", Action(
                 name = ActionRegistry.Names.SESSION_RETURN_LEDGER,
                 payload = buildJsonObject {
-                    put("correlationId", agentId)
+                    put("correlationId", "$agentId::$sessionId")
                     put("messages", buildJsonArray {
                         add(buildJsonObject {
                             put("senderId", "user")
@@ -352,11 +352,11 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
                 put("agentId", agentId)
             }))
 
-            // Manually deliver ledger — pipeline auto-triggers context gathering
+            // Manually deliver ledger — Phase B compound correlationId
             harness.store.dispatch("session", Action(
                 name = ActionRegistry.Names.SESSION_RETURN_LEDGER,
                 payload = buildJsonObject {
-                    put("correlationId", agentId)
+                    put("correlationId", "$agentId::$sessionId")
                     put("messages", buildJsonArray {
                         add(buildJsonObject {
                             put("senderId", "user")

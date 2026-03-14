@@ -39,6 +39,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.VanillaStrategy, legacyId = "vanilla_v1")
         CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.SovereignStrategy, legacyId = "sovereign_v1")
         CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.StateMachineStrategy)
+        CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.PrivateSessionStrategy)
     }
 
     @AfterTest
@@ -1004,5 +1005,271 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     fun `unrecognized action name should be a no-op`() {
         val state = AgentRuntimeState()
         assertEquals(state, AgentRuntimeReducer.reduce(state, Action("completely.unknown.action", buildJsonObject { put("foo", "bar") }), platform))
+    }
+
+    // =========================================================================
+    // Multi-Session Ledger Accumulation (Phase B — §6.2)
+    // =========================================================================
+
+    @Test
+    fun `SET_PENDING_LEDGER_SESSIONS initializes pending set from payload`() {
+        val state = AgentRuntimeState(
+            agents = mapOf(uid(AGENT_1) to testAgent(AGENT_1, "Test")),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo())
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_SET_PENDING_LEDGER_SESSIONS,
+            buildJsonObject {
+                put("agentId", AGENT_1)
+                put("sessionIds", buildJsonArray { add(SESSION_1); add(SESSION_2) })
+            }
+        ), platform)
+
+        assertEquals(
+            setOf(IdentityUUID(SESSION_1), IdentityUUID(SESSION_2)),
+            result.agentStatuses[uid(AGENT_1)]!!.pendingLedgerSessionIds
+        )
+    }
+
+    @Test
+    fun `SET_PENDING_LEDGER_SESSIONS clears accumulated ledgers from previous turn`() {
+        val staleAccumulated = mapOf(
+            IdentityUUID(SESSION_1) to listOf(GatewayMessage("user", "old", "u1", "User", 1000L))
+        )
+        val state = AgentRuntimeState(
+            agents = mapOf(uid(AGENT_1) to testAgent(AGENT_1, "Test")),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(
+                accumulatedSessionLedgers = staleAccumulated
+            ))
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_SET_PENDING_LEDGER_SESSIONS,
+            buildJsonObject {
+                put("agentId", AGENT_1)
+                put("sessionIds", buildJsonArray { add(SESSION_2) })
+            }
+        ), platform)
+
+        assertTrue(result.agentStatuses[uid(AGENT_1)]!!.accumulatedSessionLedgers.isEmpty(),
+            "Should clear stale accumulated data from previous turn")
+    }
+
+    @Test
+    fun `SET_PENDING_LEDGER_SESSIONS with missing sessionIds returns state unchanged`() {
+        val state = AgentRuntimeState(
+            agents = mapOf(uid(AGENT_1) to testAgent(AGENT_1, "Test")),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo())
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_SET_PENDING_LEDGER_SESSIONS,
+            buildJsonObject { put("agentId", AGENT_1) }
+        ), platform)
+
+        assertTrue(result === state)
+    }
+
+    @Test
+    fun `ACCUMULATE_SESSION_LEDGER stores messages and removes session from pending`() {
+        val messages = listOf(
+            GatewayMessage("user", "Hello", "u1", "Alice", 1000L),
+            GatewayMessage("model", "Hi!", "a1", "Bot", 2000L)
+        )
+
+        val state = AgentRuntimeState(
+            agents = mapOf(uid(AGENT_1) to testAgent(AGENT_1, "Test")),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(
+                pendingLedgerSessionIds = setOf(IdentityUUID(SESSION_1), IdentityUUID(SESSION_2)),
+                accumulatedSessionLedgers = emptyMap()
+            ))
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_ACCUMULATE_SESSION_LEDGER,
+            buildJsonObject {
+                put("agentId", AGENT_1)
+                put("sessionId", SESSION_1)
+                put("messages", json.encodeToJsonElement(messages))
+            }
+        ), platform)
+
+        val status = result.agentStatuses[uid(AGENT_1)]!!
+        assertEquals(setOf(IdentityUUID(SESSION_2)), status.pendingLedgerSessionIds,
+            "Should remove the arrived session from pending set")
+        assertEquals(2, status.accumulatedSessionLedgers[IdentityUUID(SESSION_1)]!!.size)
+        assertEquals("Hello", status.accumulatedSessionLedgers[IdentityUUID(SESSION_1)]!![0].content)
+    }
+
+    @Test
+    fun `ACCUMULATE_SESSION_LEDGER accumulates multiple sessions independently`() {
+        val msg1 = listOf(GatewayMessage("user", "From S1", "u1", "Alice", 1000L))
+        val msg2 = listOf(GatewayMessage("user", "From S2", "u2", "Bob", 2000L))
+
+        var state = AgentRuntimeState(
+            agents = mapOf(uid(AGENT_1) to testAgent(AGENT_1, "Test")),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(
+                pendingLedgerSessionIds = setOf(IdentityUUID(SESSION_1), IdentityUUID(SESSION_2))
+            ))
+        )
+
+        state = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_ACCUMULATE_SESSION_LEDGER,
+            buildJsonObject {
+                put("agentId", AGENT_1); put("sessionId", SESSION_1)
+                put("messages", json.encodeToJsonElement(msg1))
+            }
+        ), platform)
+
+        state = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_ACCUMULATE_SESSION_LEDGER,
+            buildJsonObject {
+                put("agentId", AGENT_1); put("sessionId", SESSION_2)
+                put("messages", json.encodeToJsonElement(msg2))
+            }
+        ), platform)
+
+        val status = state.agentStatuses[uid(AGENT_1)]!!
+        assertTrue(status.pendingLedgerSessionIds.isEmpty(), "All sessions should have arrived")
+        assertEquals("From S1", status.accumulatedSessionLedgers[IdentityUUID(SESSION_1)]!!.first().content)
+        assertEquals("From S2", status.accumulatedSessionLedgers[IdentityUUID(SESSION_2)]!!.first().content)
+    }
+
+    @Test
+    fun `ACCUMULATE_SESSION_LEDGER with last pending session empties the pending set`() {
+        val messages = listOf(GatewayMessage("user", "Done", "u1", "Alice", 1000L))
+
+        val state = AgentRuntimeState(
+            agents = mapOf(uid(AGENT_1) to testAgent(AGENT_1, "Test")),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(
+                pendingLedgerSessionIds = setOf(IdentityUUID(SESSION_1))
+            ))
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_ACCUMULATE_SESSION_LEDGER,
+            buildJsonObject {
+                put("agentId", AGENT_1); put("sessionId", SESSION_1)
+                put("messages", json.encodeToJsonElement(messages))
+            }
+        ), platform)
+
+        assertTrue(result.agentStatuses[uid(AGENT_1)]!!.pendingLedgerSessionIds.isEmpty())
+    }
+
+    @Test
+    fun `ACCUMULATE_SESSION_LEDGER with empty messages stores empty list`() {
+        val state = AgentRuntimeState(
+            agents = mapOf(uid(AGENT_1) to testAgent(AGENT_1, "Test")),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(
+                pendingLedgerSessionIds = setOf(IdentityUUID(SESSION_1))
+            ))
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_ACCUMULATE_SESSION_LEDGER,
+            buildJsonObject {
+                put("agentId", AGENT_1); put("sessionId", SESSION_1)
+                put("messages", json.encodeToJsonElement(emptyList<GatewayMessage>()))
+            }
+        ), platform)
+
+        val stored = result.agentStatuses[uid(AGENT_1)]!!.accumulatedSessionLedgers[IdentityUUID(SESSION_1)]
+        assertNotNull(stored)
+        assertTrue(stored.isEmpty())
+    }
+
+    @Test
+    fun `INITIATE_TURN clears pendingLedgerSessionIds and accumulatedSessionLedgers`() {
+        val state = AgentRuntimeState(
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(
+                status = AgentStatus.IDLE,
+                pendingLedgerSessionIds = setOf(IdentityUUID(SESSION_1)),
+                accumulatedSessionLedgers = mapOf(
+                    IdentityUUID(SESSION_2) to listOf(GatewayMessage("user", "stale", "u1", "Alice", 1000L))
+                )
+            ))
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_INITIATE_TURN,
+            buildJsonObject { put("agentId", AGENT_1); put("preview", false) }
+        ), platform)
+
+        val status = result.agentStatuses[uid(AGENT_1)]!!
+        assertTrue(status.pendingLedgerSessionIds.isEmpty())
+        assertTrue(status.accumulatedSessionLedgers.isEmpty())
+    }
+
+    @Test
+    fun `SET_STATUS to IDLE clears multi-session ledger fields`() {
+        val state = AgentRuntimeState(
+            agents = mapOf(uid(AGENT_1) to testAgent(AGENT_1, "Test")),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(
+                status = AgentStatus.PROCESSING,
+                processingSinceTimestamp = 1000L,
+                pendingLedgerSessionIds = setOf(IdentityUUID(SESSION_1)),
+                accumulatedSessionLedgers = mapOf(
+                    IdentityUUID(SESSION_2) to listOf(GatewayMessage("user", "x", "u1", "U", 1L))
+                )
+            ))
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_SET_STATUS,
+            buildJsonObject { put("agentId", AGENT_1); put("status", "IDLE") }
+        ), platform)
+
+        val status = result.agentStatuses[uid(AGENT_1)]!!
+        assertTrue(status.pendingLedgerSessionIds.isEmpty())
+        assertTrue(status.accumulatedSessionLedgers.isEmpty())
+    }
+
+    @Test
+    fun `SET_STATUS to ERROR clears multi-session ledger fields`() {
+        val state = AgentRuntimeState(
+            agents = mapOf(uid(AGENT_1) to testAgent(AGENT_1, "Test")),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(
+                status = AgentStatus.PROCESSING,
+                processingSinceTimestamp = 1000L,
+                pendingLedgerSessionIds = setOf(IdentityUUID(SESSION_1)),
+                accumulatedSessionLedgers = mapOf(
+                    IdentityUUID(SESSION_1) to listOf(GatewayMessage("user", "x", "u1", "U", 1L))
+                )
+            ))
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_SET_STATUS,
+            buildJsonObject { put("agentId", AGENT_1); put("status", "ERROR"); put("error", "fail") }
+        ), platform)
+
+        val status = result.agentStatuses[uid(AGENT_1)]!!
+        assertTrue(status.pendingLedgerSessionIds.isEmpty())
+        assertTrue(status.accumulatedSessionLedgers.isEmpty())
+    }
+
+    @Test
+    fun `SET_STATUS to RATE_LIMITED clears multi-session ledger fields`() {
+        val state = AgentRuntimeState(
+            agents = mapOf(uid(AGENT_1) to testAgent(AGENT_1, "Test")),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(
+                status = AgentStatus.PROCESSING,
+                processingSinceTimestamp = 1000L,
+                pendingLedgerSessionIds = setOf(IdentityUUID(SESSION_1))
+            ))
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_SET_STATUS,
+            buildJsonObject {
+                put("agentId", AGENT_1); put("status", "RATE_LIMITED")
+                put("error", "429"); put("rateLimitedUntilMs", 9999L)
+            }
+        ), platform)
+
+        assertTrue(result.agentStatuses[uid(AGENT_1)]!!.pendingLedgerSessionIds.isEmpty())
+        assertTrue(result.agentStatuses[uid(AGENT_1)]!!.accumulatedSessionLedgers.isEmpty())
     }
 }

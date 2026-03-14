@@ -17,7 +17,7 @@ import kotlin.test.*
  * Replaces the monolithic T2CoreTest.
  * Verifies the Cognitive Cycle: Ledger -> Context -> Prompt -> Gateway
  */
-class AgentRuntimeFeatureT2T3ThinkerTest {
+class AgentRuntimeFeatureT3ThinkerTest {
 
     private val scope = CoroutineScope(Dispatchers.Unconfined)
     private val platform = FakePlatformDependencies("test")
@@ -52,7 +52,11 @@ class AgentRuntimeFeatureT2T3ThinkerTest {
 
             val request = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_REQUEST_LEDGER_CONTENT }
             assertNotNull(request)
-            assertEquals(agentUUID, request.payload?.get("correlationId")?.jsonPrimitive?.content)
+            // Phase B: correlationId is now compound "agentUUID::sessionUUID" for multi-session accumulation
+            val correlationId = request.payload?.get("correlationId")?.jsonPrimitive?.content
+            assertNotNull(correlationId)
+            assertTrue(correlationId.startsWith(agentUUID),
+                "Compound correlationId should start with agent UUID, got: $correlationId")
         }
     }
 

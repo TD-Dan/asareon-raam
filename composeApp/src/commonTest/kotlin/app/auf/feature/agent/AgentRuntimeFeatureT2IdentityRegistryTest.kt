@@ -182,8 +182,8 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             }
             assertNotNull(errorStatus, "Expected SET_STATUS ERROR (from session guard, not from resolution)")
             val errorMsg = errorStatus.payload?.get("error")?.jsonPrimitive?.content ?: ""
-            assertTrue(errorMsg.contains("Session UUID"),
-                "Error should be about session UUID (not agent resolution), got: $errorMsg")
+            assertTrue(errorMsg.contains("sessions are in the registry"),
+                "Error should be about session registry (not agent resolution), got: $errorMsg")
         }
     }
 
@@ -223,8 +223,8 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
                         it.payload?.get("status")?.jsonPrimitive?.content == "ERROR"
             }
             val errorMsg = errorStatus?.payload?.get("error")?.jsonPrimitive?.content ?: ""
-            assertTrue(errorMsg.contains("Session UUID"),
-                "Error should be about session UUID (not agent resolution), got: $errorMsg")
+            assertTrue(errorMsg.contains("sessions are in the registry"),
+                "Error should be about session registry (not agent resolution), got: $errorMsg")
         }
     }
 
@@ -265,8 +265,8 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
                         it.payload?.get("status")?.jsonPrimitive?.content == "ERROR"
             }
             val errorMsg = errorStatus?.payload?.get("error")?.jsonPrimitive?.content ?: ""
-            assertTrue(errorMsg.contains("Session UUID"),
-                "Error should be about session UUID (not agent resolution), got: $errorMsg")
+            assertTrue(errorMsg.contains("sessions are in the registry"),
+                "Error should be about session registry (not agent resolution), got: $errorMsg")
         }
     }
 
@@ -307,8 +307,8 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
                         it.payload?.get("status")?.jsonPrimitive?.content == "ERROR"
             }
             val errorMsg = errorStatus?.payload?.get("error")?.jsonPrimitive?.content ?: ""
-            assertTrue(errorMsg.contains("Session UUID"),
-                "Error should be about session UUID (not agent resolution), got: $errorMsg")
+            assertTrue(errorMsg.contains("sessions are in the registry"),
+                "Error should be about session registry (not agent resolution), got: $errorMsg")
         }
     }
 
@@ -402,8 +402,8 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
             val status = state.agentStatuses[uid(agentUUID)]
             assertEquals(AgentStatus.ERROR, status?.status,
                 "Agent should be in ERROR when session UUID is not in identity registry")
-            assertTrue(status?.errorMessage?.contains("not in registry") == true,
-                "Error message should mention 'not in registry', got: ${status?.errorMessage}")
+            assertTrue(status?.errorMessage?.contains("sessions are in the registry") == true,
+                "Error message should mention sessions not in registry, got: ${status?.errorMessage}")
 
             // Should NOT have dispatched a ledger request
             assertNull(

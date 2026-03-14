@@ -380,7 +380,11 @@ class AgentRuntimeFeatureT3LifecycleTest {
             name = "Lifecycle Agent",
             modelProvider = "mock",
             modelName = "mock-model",
-            subscribedSessionIds = listOf(sessionUUID2),
+            // subscribedSessionIds is intentionally empty — we only care about
+            // outputSessionId being cleared. If subscriptions existed, Vanilla's
+            // validateConfig would auto-assign outputSessionId to the first remaining
+            // subscription, defeating the purpose of this test.
+            subscribedSessionIds = emptyList(),
             privateSessionId = sessionUUID1  // outputSessionId = session being deleted
         )
 

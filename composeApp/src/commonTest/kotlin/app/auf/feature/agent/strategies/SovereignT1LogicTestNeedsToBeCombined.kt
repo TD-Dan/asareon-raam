@@ -1,17 +1,17 @@
-package app.auf.feature.agent
+package app.auf.feature.agent.strategies
 
 import app.auf.core.AppState
 import app.auf.core.Identity
-import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
-import app.auf.feature.agent.strategies.SovereignStrategy
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
+import app.auf.feature.agent.AgentRuntimeState
+import app.auf.feature.agent.testAgent
+import app.auf.feature.agent.uid
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -29,7 +29,7 @@ import kotlin.test.assertTrue
  * - needsAdditionalContext
  * - validateConfig (passthrough)
  */
-class AgentRuntimeFeatureT1SovereignAgentLogicTest {
+class SovereignT1LogicTestNeedsToBeCombined {
 
     private val platform = FakePlatformDependencies("test")
     private val fakeStore = FakeStore(AppState(), platform)
@@ -63,10 +63,12 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
             handle = "session.p-cognition-sovereign-a1",
             name = "p-cognition: Sovereign (a1)", parentHandle = "session"
         )
-        fakeStore.setState(AppState(
-            featureStates = mapOf("agent" to state),
-            identityRegistry = mapOf(sessionIdentity.handle to sessionIdentity)
-        ))
+        fakeStore.setState(
+            AppState(
+                featureStates = mapOf("agent" to state),
+                identityRegistry = mapOf(sessionIdentity.handle to sessionIdentity)
+            )
+        )
 
         SovereignStrategy.ensureInfrastructure(agent, state, fakeStore)
 
@@ -178,7 +180,8 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
     @Test
     fun `onAgentConfigChanged should dispatch RELEASE_HKG and truncate when KG is revoked`() {
         fakeStore.dispatchedActions.clear()
-        val old = testAgent("a1", "Agent", "kg-old", "p", "m",
+        val old = testAgent(
+            "a1", "Agent", "kg-old", "p", "m",
             subscribedSessionIds = listOf("s1", "s2", "s3"),
             cognitiveStrategyId = "sovereign_v1"
         )
@@ -270,7 +273,8 @@ class AgentRuntimeFeatureT1SovereignAgentLogicTest {
 
     @Test
     fun `validateConfig should return agent unchanged (Sovereign permits out-of-band outputSessionId)`() {
-        val agent = testAgent("a1", "Sovereign", "kg1", "p", "m",
+        val agent = testAgent(
+            "a1", "Sovereign", "kg1", "p", "m",
             subscribedSessionIds = listOf("s1"),
             privateSessionId = "s-private" // NOT in subscribedSessionIds — intentional
         )

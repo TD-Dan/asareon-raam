@@ -165,6 +165,10 @@ class AgentRuntimeFeatureT1AvatarTest {
     // --- 2. UI Verification (AgentAvatarCard) ---
 
     private fun renderAgentCard(agent: AgentInstance, status: AgentStatusInfo) {
+        renderAgentCard(agent, status, sessionUUID = null)
+    }
+
+    private fun renderAgentCard(agent: AgentInstance, status: AgentStatusInfo, sessionUUID: String?) {
         val agentUuid = agent.identityUUID
         val state = AgentRuntimeState(
             agents = mapOf(agentUuid to agent),
@@ -174,7 +178,7 @@ class AgentRuntimeFeatureT1AvatarTest {
 
         composeTestRule.setContent {
             AppTheme {
-                AgentAvatarCard(agent, null, fakeStore, fakePlatform)
+                AgentAvatarCard(agent, sessionUUID, fakeStore, fakePlatform)
             }
         }
     }
@@ -204,5 +208,61 @@ class AgentRuntimeFeatureT1AvatarTest {
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_CANCEL_TURN }
         assertNotNull(action)
         assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
+    }
+
+    // --- 3. Remove From Session (kebab menu, avatar context) ---
+
+    private val testSessionUUID = "a0000000-0000-0000-0000-000000000001"
+
+    @Test
+    fun `Remove from session appears in kebab menu when sessionUUID is provided`() {
+        val agent = testAgent("a1", "Test Agent", null, "p", "m", subscribedSessionIds = listOf(testSessionUUID))
+        renderAgentCard(agent, AgentStatusInfo(status = AgentStatus.IDLE), sessionUUID = testSessionUUID)
+
+        composeTestRule.onNodeWithContentDescription("More options").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText("Remove from session").assertIsDisplayed()
+    }
+
+    @Test
+    fun `Remove from session is absent when sessionUUID is null`() {
+        val agent = testAgent("a1", "Test Agent", null, "p", "m", subscribedSessionIds = listOf(testSessionUUID))
+        renderAgentCard(agent, AgentStatusInfo(status = AgentStatus.IDLE), sessionUUID = null)
+
+        composeTestRule.onNodeWithContentDescription("More options").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText("Remove from session").assertDoesNotExist()
+    }
+
+    @Test
+    fun `clicking Remove from session dispatches REMOVE_SESSION_SUBSCRIPTION`() {
+        val agent = testAgent("a1", "Test Agent", null, "p", "m", subscribedSessionIds = listOf(testSessionUUID))
+        renderAgentCard(agent, AgentStatusInfo(status = AgentStatus.IDLE), sessionUUID = testSessionUUID)
+
+        composeTestRule.onNodeWithContentDescription("More options").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Remove from session").performClick()
+
+        val action = fakeStore.dispatchedActions.find {
+            it.name == ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION
+        }
+        assertNotNull(action, "AGENT_REMOVE_SESSION_SUBSCRIPTION should be dispatched")
+        assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
+        assertEquals(testSessionUUID, action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun `Edit Agent and Preview Turn appear in kebab menu alongside Remove from session`() {
+        val agent = testAgent("a1", "Test Agent", null, "p", "m", subscribedSessionIds = listOf(testSessionUUID))
+        renderAgentCard(agent, AgentStatusInfo(status = AgentStatus.IDLE), sessionUUID = testSessionUUID)
+
+        composeTestRule.onNodeWithContentDescription("More options").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText("Edit Agent").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Preview Turn").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Remove from session").assertIsDisplayed()
     }
 }
