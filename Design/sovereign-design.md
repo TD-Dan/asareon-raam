@@ -1,8 +1,8 @@
 # Sovereign Strategy Stabilization: Design Document
 
-## Status: IN PROGRESS — Phases A & B Complete
+## Status: IN PROGRESS — Phases A, B & C Complete
 
-## Document Version: 5.0
+## Document Version: 6.0
 
 ---
 
@@ -754,28 +754,58 @@ Private session lifecycle validated in isolation and integrated with multi-sessi
 - onAgentRegistered / onAgentConfigChanged: no crash
 - strategy is singleton object
 
-### Phase C: HKGStrategy
+### Phase C: HKGStrategy ✅ COMPLETE
 
-Test HKG integration in isolation.
+HKG integration validated in isolation. Two-partition INDEX + FILES view working. Write guard operational.
 
-**Deliverables:**
-1. `HKGStrategy.kt` — reference strategy
-2. `HkgContextFormatter.kt` — INDEX tree builder, FILES formatter
-3. Registered in `AgentRuntimeFeature.init()`
+**Deliverables (all shipped):**
+1. `HkgContextFormatter.kt` — pipeline utility: parseHolonHeaders (tree depth/parent BFS), buildIndexTree (collapse tags, sub-holon badges, 2-space indentation), buildFilesSection (expanded holons with START/END markers), countSubHolons (recursive), resolveCollapseState
+2. `HKGStrategy.kt` — reference strategy: system_instruction + HKG, knowledgeGraphId in strategyConfig, requestAdditionalContext/needsAdditionalContext lifecycle, vanilla-style validateConfig, navigation instructions in prompt
+3. `AgentCognitivePipeline.kt` — executeTurn: flat HKG dump replaced with INDEX + FILES via HkgContextFormatter, root auto-uncollapse (effective overrides), null HKG context warning
+4. `AgentRuntimeFeature.kt` — HKGStrategy registration in init(), agentId injection for CONTEXT_UNCOLLAPSE/COLLAPSE commands, HKG write guard (§4.5) in ACTION_CREATED handler, ACTION_RESULT feedback for context commands
+5. `AgentRuntimeReducer.kt` — WARN logging on all silent failure paths in context collapse actions
+6. `HkgContextFormatterT1Test.kt` — 22 tests (NEW)
+7. `HKGStrategyT1LogicTest.kt` — 25 tests (NEW)
+8. `AgentRuntimeFeatureT1RuntimeReducerTest.kt` — 4 new tests added for failure-path diagnostics
 
-**Success gate — unit tests:**
-- requestAdditionalContext: dispatches KNOWLEDGEGRAPH_REQUEST_CONTEXT with correct personaId
-- needsAdditionalContext: true when knowledgeGraphId is set, false otherwise
-- HkgContextFormatter: INDEX tree from Meridian-like headers
-- HkgContextFormatter: COLLAPSED branch shows badge, hides children
-- HkgContextFormatter: EXPANDED branch shows immediate children
-- HkgContextFormatter: sub-holon count is recursive
-- HkgContextFormatter: FILES section lists only EXPANDED holons with START/END markers
-- HkgContextFormatter: empty FILES (all collapsed) shows appropriate message
-- HkgContextFormatter: mixed collapse states render correctly
-- prepareSystemPrompt: includes INDEX (always) and FILES (expanded holons only)
-- Write guard: write to collapsed holon → sentinel error
-- Write guard: write to expanded holon → forwarded
+**Architectural decisions made during Phase C:**
+
+- **Root auto-uncollapse**: Root holons (parentId == null) default to EXPANDED in the pipeline's effective overrides, so the agent always sees its persona root on first turn. Agent sticky overrides take priority — if the agent explicitly collapses the root, that persists. This is pipeline-level behavior, not formatter-level.
+- **agentId injection for context commands**: When agents dispatch CONTEXT_UNCOLLAPSE/COLLAPSE via CommandBot, the payload has no agentId (the agent doesn't know its own UUID). The ACTION_CREATED handler injects it, same self-targeting pattern as NVRAM. This was a live bug discovered during Meridian testing — commands silently no-oped because the reducer couldn't find the agent.
+- **ACTION_RESULT feedback**: Context collapse/uncollapse commands now publish ACTION_RESULT when they arrive via CommandBot (have correlationId), giving agents visible confirmation (e.g., "OK ✓ agent.CONTEXT_UNCOLLAPSE — Expanded partition 'hkg:meridian-foundational-core-20260312T120000Z'.").
+- **9 silent failure points diagnosed and fixed**: WARN/DEBUG logging added across reducer (3 guards + bad CollapseState), formatter (missing header, malformed sub_holons, unreadable FILES content), pipeline (null HKG context, no root holon), and feature (write guard null holonId bypass, deleted agent race in side-effect handler).
+- **FakePlatformDependencies.formatIsoTimestamp fixed**: Was returning `"ISO_TIMESTAMP_$timestamp"` which crashed `normalizeHolonId` timestamp parsing. Now returns valid ISO 8601 (`"2026-01-01T00:00:05Z"` style).
+- **KnowledgeGraphFeatureT2CoreTest tech debt fixed**: 8 pre-existing test failures from Store originator validation — agent handles registered via `TestEnvironment.withIdentity()` with explicit `knowledgegraph:read` + `knowledgegraph:write` permission grants.
+
+**Success gate — unit tests (51 tests, all passing):**
+
+*HkgContextFormatterT1Test (22 tests):*
+- parseHolonHeaders: extracts all holons, correct depth, correct parentId, sub-holon refs, empty context, missing header skipped, malformed sub_holon graceful
+- countSubHolons: recursive counting, unknown ID returns 0
+- resolveCollapseState: default COLLAPSED, override convention with hkg: prefix
+- buildIndexTree: all-collapsed with badges, EXPANDED reveals children, COLLAPSED hides children, mixed states, empty context, 2-space indentation
+- buildFilesSection: only EXPANDED with markers, empty message, JSON content present, single expanded
+
+*HKGStrategyT1LogicTest (25 tests):*
+- Identity: handle in agent.strategy.* namespace, singleton object
+- getInitialState: JsonObject with turnCount 0
+- getResourceSlots: system_instruction slot
+- getConfigFields: knowledgeGraphId + outputSessionId
+- getBuiltInResources: unique ID, KG content
+- getValidNvramKeys: contains turnCount
+- validateConfig: 4 tests (same invariant as Vanilla)
+- prepareSystemPrompt: 8 tests (name + HKG awareness, instructions, INDEX, FILES, no-nav without INDEX, HKG excluded from CONTEXT, sessions, multi-agent ordering, navigation instructions)
+- postProcessResponse: PROCEED, turnCount increment, no displayHint
+- needsAdditionalContext: true/false based on knowledgeGraphId
+- requestAdditionalContext: false without KG, false without KG feature
+- getKnowledgeGraphId: extracts from strategyConfig, null when absent
+- Lifecycle hooks: no-crash, ensureInfrastructure is no-op
+
+*AgentRuntimeFeatureT1RuntimeReducerTest (4 new tests):*
+- CONTEXT_UNCOLLAPSE without agentId: no-op (the Meridian bug)
+- CONTEXT_COLLAPSE without agentId: no-op
+- CONTEXT_UNCOLLAPSE without partitionKey: no-op
+- CONTEXT_STATE_LOADED with invalid CollapseState: defaults to COLLAPSED
 
 ### Phase D: Context Collapse Pipeline Integration
 
@@ -861,8 +891,10 @@ Compose all capabilities.
 | `PrivateSessionStrategy.kt` | `strategies` | B | ✅ Shipped |
 | `PrivateSessionStrategyT1LogicTest.kt` | `strategies` (test) | B | ✅ Shipped (needs test update) |
 | `ConversationLogFormatter.kt` | `agent` | B | ✅ Shipped |
-| `HKGStrategy.kt` | `strategies` | C | Planned |
-| `HkgContextFormatter.kt` | `agent` | C | Planned |
+| `HKGStrategy.kt` | `strategies` | C | ✅ Shipped |
+| `HkgContextFormatter.kt` | `agent` | C | ✅ Shipped |
+| `HkgContextFormatterT1Test.kt` | `agent` (test) | C | ✅ Shipped |
+| `HKGStrategyT1LogicTest.kt` | `strategies` (test) | C | ✅ Shipped |
 | `ContextCollapseLogic.kt` | `agent` | D | Planned |
 
 ### Modified Files
@@ -870,9 +902,9 @@ Compose all capabilities.
 | File | Changes | Phase | Status |
 |------|---------|-------|--------|
 | `AgentState.kt` | Budget fields on AgentInstance. CollapseOverrides + pending flag + multi-session ledger fields on AgentStatusInfo. CollapseState enum. | A+B | ✅ Shipped |
-| `AgentRuntimeReducer.kt` | CONTEXT_UNCOLLAPSE, CONTEXT_COLLAPSE, CONTEXT_STATE_LOADED, SET_PENDING_PRIVATE_SESSION, SET_PENDING_LEDGER_SESSIONS, ACCUMULATE_SESSION_LEDGER. Cleanup in INITIATE_TURN + SET_STATUS. | A+B | ✅ Shipped |
-| `AgentRuntimeFeature.kt` | context.json load/save, SESSION_CREATED handler (with private session subscription), ACCUMULATE_SESSION_LEDGER side-effect, register new strategies, write guard | A+B+C | ✅ Shipped (A+B parts) |
-| `AgentCognitivePipeline.kt` | System-prompt-only mode, multi-session ledger accumulation, ConversationLogFormatter, empty gateway contents, multi-session SESSION_METADATA | B | ✅ Shipped |
+| `AgentRuntimeReducer.kt` | CONTEXT_UNCOLLAPSE, CONTEXT_COLLAPSE, CONTEXT_STATE_LOADED, SET_PENDING_PRIVATE_SESSION, SET_PENDING_LEDGER_SESSIONS, ACCUMULATE_SESSION_LEDGER. Cleanup in INITIATE_TURN + SET_STATUS. Phase C: WARN logging on all context collapse silent failure paths, LOG_TAG constant. | A+B+C | ✅ Shipped |
+| `AgentRuntimeFeature.kt` | context.json load/save, SESSION_CREATED handler (with private session subscription), ACCUMULATE_SESSION_LEDGER side-effect, register new strategies, write guard. Phase C: HKGStrategy registration, agentId injection for CONTEXT_UNCOLLAPSE/COLLAPSE, HKG write guard (§4.5), ACTION_RESULT feedback for context commands, WARN/DEBUG logging on side-effect failure paths. | A+B+C | ✅ Shipped |
+| `AgentCognitivePipeline.kt` | System-prompt-only mode, multi-session ledger accumulation, ConversationLogFormatter, empty gateway contents, multi-session SESSION_METADATA. Phase C: flat HKG dump → INDEX + FILES via HkgContextFormatter, root auto-uncollapse, null HKG context WARN, no-root-holon WARN, platformDependencies passed to buildFilesSection. | B+C | ✅ Shipped |
 | `CognitiveStrategy.kt` | SessionParticipant data class, SessionInfo extended with participants + messageCount | B | ✅ Shipped |
 | `AnthropicProvider.kt` | Empty contents → trigger message injection, legacy path preserved. Also in buildCountTokensPayload. | B | ✅ Shipped |
 | `OpenAIProvider.kt` | Empty contents → trigger message injection, legacy path preserved | B | ✅ Shipped |
@@ -882,6 +914,10 @@ Compose all capabilities.
 | `session_actions.json` | SESSION_CREATED. senderId not required on POST. | A+B | ✅ Shipped |
 | `agent_actions.json` | CONTEXT_UNCOLLAPSE, CONTEXT_COLLAPSE, CONTEXT_STATE_LOADED, SET_PENDING_PRIVATE_SESSION, SET_PENDING_LEDGER_SESSIONS, ACCUMULATE_SESSION_LEDGER | A+B | ✅ Shipped |
 | `AgentCrudLogic.kt` | Budget fields in CREATE/UPDATE_CONFIG | A | ✅ Shipped |
+| `FakePlatformDependencies.kt` | formatIsoTimestamp: valid ISO 8601 output (was crashing normalizeHolonId). parseIsoTimestamp: backward-compatible. | C (tech debt) | ✅ Shipped |
+| `KnowledgeGraphFeatureT2CoreTest.kt` | Pre-seeded agent identities with KG permissions via withIdentity() (was failing on Store originator validation). DELETE_HOLON NPE fix. | C (tech debt) | ✅ Shipped |
+| `AgentRuntimeFeatureT1ConversationLogFormatterTest.kt` | Timestamp assertion updated for new ISO format. | C (tech debt) | ✅ Shipped |
+| `AgentRuntimeFeatureT1RuntimeReducerTest.kt` | 4 new tests for context collapse failure paths. HKGStrategy registered in setUp. | C | ✅ Shipped |
 | `SovereignStrategy.kt` | Updated ensureInfrastructure(), boot auto-uncollapse | E | Planned |
 | `AgentManagerView.kt` | Budget config UI | A or later | Planned |
 
@@ -914,7 +950,7 @@ Compose all capabilities.
 │  2. Context Assembly                                                   │
 │     ├── ConversationLogFormatter → CONVERSATION_LOG partition           │
 │     │   (multi-session, delimiter convention, per-session snapshots)    │
-│     ├── HkgContextFormatter → INDEX + FILES partitions [Phase C+D]     │
+│     ├── HkgContextFormatter → INDEX + FILES partitions [Phase C ✅]  │
 │     ├── ContextCollapseLogic.collapse() [Phase D]                      │
 │     ├── SESSION_METADATA (multi-session aware)                         │
 │     ├── AVAILABLE_ACTIONS (exposed actions)                            │
@@ -945,7 +981,7 @@ Compose all capabilities.
 │  │ Minimal  │ │ Vanilla  │ │ StateMachine │  ← existing, unchanged    │
 │  └──────────┘ └──────────┘ └──────────────┘                           │
 │  ┌──────────────────┐ ┌───────────┐                                    │
-│  │PrivateSession ✅ │ │    HKG    │  ← reference test harnesses       │
+│  │PrivateSession ✅ │ │  HKG ✅   │  ← reference test harnesses       │
 │  └──────────────────┘ └───────────┘                                    │
 │  ┌──────────────────────────────────────────────────────────────────┐  │
 │  │ Sovereign (duplicates private session + HKG code internally)    │  │
@@ -1006,3 +1042,9 @@ Compose all capabilities.
 | 18 | session.POST senderId | Optional. Auto-filled from action.originator. Eliminates common agent error. |
 | 19 | Context delimiter convention | `---` / ` ---` / `  ---` indentation hierarchy. Content at zero indent between delimiters. |
 | 20 | Session participant metadata | SessionInfo carries per-session participant roster (name, type, message count). Rendered in SUBSCRIBED SESSIONS section. |
+| 21 | Root holon default state | Root holons (parentId == null) auto-expand in effective overrides. Agent sticky overrides take priority. Pipeline-level, not formatter-level. |
+| 22 | Context command agentId | Agents don't include their own agentId in CONTEXT_UNCOLLAPSE/COLLAPSE payloads. The ACTION_CREATED handler injects it (same self-targeting pattern as NVRAM). |
+| 23 | Context command feedback | CONTEXT_UNCOLLAPSE/COLLAPSE publish ACTION_RESULT when dispatched via CommandBot (have correlationId). Agents see visible confirmation. |
+| 24 | HKG partition keys | Two partitions: `HOLON_KNOWLEDGE_GRAPH_INDEX` (always present, navigational) and `HOLON_KNOWLEDGE_GRAPH_FILES` (expanded holons only, carries token weight). Collapse overrides use `hkg:<holonId>` key convention. |
+| 25 | Formatter vs pipeline responsibility | HkgContextFormatter is a pure renderer — no side effects, no defaults. Root auto-uncollapse and effective override computation are pipeline responsibilities in executeTurn(). |
+| 26 | Silent failure logging | All `?: return state` / `?: continue` / `catch` paths in context collapse flow now log WARN (operational) or DEBUG (defensive). 9 paths diagnosed and fixed in Phase C. |

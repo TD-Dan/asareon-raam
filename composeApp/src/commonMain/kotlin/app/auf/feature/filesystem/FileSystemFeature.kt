@@ -380,6 +380,9 @@ class FileSystemFeature(
             }
             ActionRegistry.Names.FILESYSTEM_READ_MULTIPLE -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<ReadFilesContentPayload>(it) } ?: return
+                // Pass through correlationId if provided (e.g., workspace file reads use "ws:<agentId>").
+                // ReadFilesContentPayload doesn't model this field, so extract from raw payload.
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
                 val sandboxPath = getSandboxPathFor(originator)
                 val contentMap = mutableMapOf<String, String>()
                 payload.paths.forEach { path ->
@@ -392,7 +395,7 @@ class FileSystemFeature(
                     }
                 }
                 val responsePayload = buildJsonObject {
-                    put("correlationId", JsonNull)
+                    correlationId?.let { put("correlationId", it) } ?: put("correlationId", JsonNull)
                     put("contents", Json.encodeToJsonElement(contentMap))
                 }
                 store.deferredDispatch(identity.handle, Action(

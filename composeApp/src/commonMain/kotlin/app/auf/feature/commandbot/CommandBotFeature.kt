@@ -401,9 +401,15 @@ class CommandBotFeature(
                     platformDependencies.log(LogLevel.WARN, identity.handle, "CLEAR_PENDING_RESULT side-effect: Missing 'correlationId'.")
                     return
                 }
-                // If the entry existed in previousState, it means the reducer just removed it.
-                // If it was already absent (consumed by ACTION_RESULT match earlier in the same
-                // dispatch cycle), previousState won't have it either — no timeout feedback needed.
+
+                // If the clear was triggered by a successful ACTION_RESULT or PERMISSION_DENIED
+                // match, reason="matched" — no timeout feedback needed.
+                val reason = action.payload?.get("reason")?.jsonPrimitive?.contentOrNull
+                if (reason == "matched") return
+
+                // If the entry existed in previousState, it means the reducer just removed it
+                // due to TTL expiry. Post timeout feedback so the agent knows its command was
+                // not handled.
                 val prevState = previousState as? CommandBotState
                 val expiredResult = prevState?.pendingResults?.get(correlationId)
                 if (expiredResult != null) {
@@ -477,7 +483,10 @@ class CommandBotFeature(
 
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.COMMANDBOT_CLEAR_PENDING_RESULT,
-                    buildJsonObject { put("correlationId", matchingEntry.key) }
+                    buildJsonObject {
+                        put("correlationId", matchingEntry.key)
+                        put("reason", "matched")
+                    }
                 ))
 
                 platformDependencies.log(
@@ -536,9 +545,14 @@ class CommandBotFeature(
 
                 postFeedbackToSession(pendingResult.sessionId, feedbackMessage, store)
 
+                // Clear with reason="matched" so the TTL side-effect handler knows
+                // this was consumed by a real ACTION_RESULT, not an expiry timeout.
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.COMMANDBOT_CLEAR_PENDING_RESULT,
-                    buildJsonObject { put("correlationId", correlationId) }
+                    buildJsonObject {
+                        put("correlationId", correlationId)
+                        put("reason", "matched")
+                    }
                 ))
 
                 platformDependencies.log(

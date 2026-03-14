@@ -100,6 +100,14 @@
             "items": {
               "type": "string"
             }
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID passed through to the RETURN_FILES_CONTENT response envelope.",
+            "default": null
           }
         },
         "required": [

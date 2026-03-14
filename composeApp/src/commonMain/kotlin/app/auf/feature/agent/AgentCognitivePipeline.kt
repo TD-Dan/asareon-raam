@@ -648,6 +648,49 @@ object AgentCognitivePipeline {
         }
 
         // ============================================================
+        // Inject workspace navigation instructions
+        //
+        // Parallel to the HKG NAVIGATION section — tells the agent the
+        // correct key conventions for workspace collapse/uncollapse.
+        // Only injected when the workspace has content.
+        // ============================================================
+        if (contextMap.containsKey("WORKSPACE_INDEX")) {
+            contextMap["WORKSPACE_NAVIGATION"] = """
+                |--- WORKSPACE NAVIGATION ---
+                |
+                |Your workspace is presented as a WORKSPACE_INDEX (tree overview) and WORKSPACE_FILES (open file contents).
+                |By default, all files are closed. Use these commands to navigate:
+                |
+                |Open a single workspace file:
+                |```auf_agent.CONTEXT_UNCOLLAPSE
+                |{ "partitionKey": "ws:<relativePath>", "scope": "single" }
+                |```
+                |
+                |Expand a directory (reveal its contents in the tree, without opening files):
+                |```auf_agent.CONTEXT_UNCOLLAPSE
+                |{ "partitionKey": "ws:<dirPath>/", "scope": "single" }
+                |```
+                |
+                |Expand a directory and all sub-directories (tree navigation only, no files opened):
+                |```auf_agent.CONTEXT_UNCOLLAPSE
+                |{ "partitionKey": "ws:<dirPath>/", "scope": "subtree" }
+                |```
+                |
+                |Close a workspace file or collapse a directory:
+                |```auf_agent.CONTEXT_COLLAPSE
+                |{ "partitionKey": "ws:<relativePath>" }
+                |```
+                |
+                |IMPORTANT: The prefix is "ws:", not "workspace:". Directory paths end with "/".
+                |Example: "ws:readme.md", "ws:src/", "ws:src/main.kt"
+                |You must expand a workspace file before writing to it.
+                |The system will block writes to collapsed files to prevent data loss.
+                |
+                |--- END OF WORKSPACE NAVIGATION ---
+            """.trimMargin()
+        }
+
+        // ============================================================
         // Build CONVERSATION_LOG context partition
         //
         // The conversation lives in the system prompt as a structured
