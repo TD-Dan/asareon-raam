@@ -7,6 +7,7 @@ import app.auf.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
@@ -160,7 +161,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             agents = mapOf(uid(agentId) to testAgent(agentId, "Test")),
             agentStatuses = mapOf(uid(agentId) to AgentStatusInfo(
                 status = AgentStatus.PROCESSING, processingSinceTimestamp = 1000L,
-                transientWorkspaceContext = "some context", contextGatheringStartedAt = 500L
+                transientWorkspaceListing = JsonArray(emptyList()), contextGatheringStartedAt = 500L
             ))
         )
 
@@ -173,7 +174,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
 
         assertEquals(AgentStatus.ERROR, newStatus.status)
         assertEquals("Gateway timeout", newStatus.errorMessage)
-        assertNull(newStatus.transientWorkspaceContext)
+        assertNull(newStatus.transientWorkspaceListing)
         assertNull(newStatus.contextGatheringStartedAt)
     }
 
@@ -675,7 +676,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     fun `INITIATE_TURN should clear workspace context and gathering timestamp`() {
         val agentId = "agent-1"
         val initialStatus = AgentStatusInfo(
-            status = AgentStatus.IDLE, transientWorkspaceContext = "old", contextGatheringStartedAt = 1234L,
+            status = AgentStatus.IDLE, transientWorkspaceListing = JsonArray(emptyList()), contextGatheringStartedAt = 1234L,
             stagedTurnContext = listOf(GatewayMessage("user", "old", "u", "U", 0L))
         )
         val state = AgentRuntimeState(agentStatuses = mapOf(uid(agentId) to initialStatus))
@@ -684,7 +685,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
         val s = newState.agentStatuses[uid(agentId)]!!
 
-        assertNull(s.transientWorkspaceContext); assertNull(s.contextGatheringStartedAt)
+        assertNull(s.transientWorkspaceListing); assertNull(s.contextGatheringStartedAt)
         assertNull(s.stagedTurnContext); assertNull(s.transientHkgContext)
     }
 
@@ -742,16 +743,19 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     // =========================================================================
 
     @Test
-    fun `SET_WORKSPACE_CONTEXT should stage workspace context on agent status`() {
+    fun `SET_WORKSPACE_LISTING should stage workspace listing on agent status`() {
         val agentId = "agent-1"
         val state = AgentRuntimeState(agentStatuses = mapOf(uid(agentId) to AgentStatusInfo()))
 
-        val action = Action(ActionRegistry.Names.AGENT_SET_WORKSPACE_CONTEXT, buildJsonObject {
-            put("agentId", agentId); put("context", "Your workspace has 3 files.")
+        val listing = buildJsonArray {
+            add(buildJsonObject { put("path", "file.txt"); put("isDirectory", false) })
+        }
+        val action = Action(ActionRegistry.Names.AGENT_SET_WORKSPACE_LISTING, buildJsonObject {
+            put("agentId", agentId); put("listing", listing)
         })
 
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
-        assertEquals("Your workspace has 3 files.", newState.agentStatuses[uid(agentId)]!!.transientWorkspaceContext)
+        assertEquals(listing, newState.agentStatuses[uid(agentId)]!!.transientWorkspaceListing)
     }
 
     @Test
@@ -780,7 +784,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     fun `SET_STATUS to IDLE should clear workspace context and gathering timestamp`() {
         val agentId = "agent-1"
         val initialStatus = AgentStatusInfo(
-            status = AgentStatus.PROCESSING, transientWorkspaceContext = "workspace data",
+            status = AgentStatus.PROCESSING, transientWorkspaceListing = JsonArray(emptyList()),
             contextGatheringStartedAt = 5555L, processingSinceTimestamp = 1000L
         )
         val state = AgentRuntimeState(
@@ -792,7 +796,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         val newStatus = AgentRuntimeReducer.reduce(state, action, platform).agentStatuses[uid(agentId)]!!
 
         assertEquals(AgentStatus.IDLE, newStatus.status)
-        assertNull(newStatus.transientWorkspaceContext)
+        assertNull(newStatus.transientWorkspaceListing)
         assertNull(newStatus.contextGatheringStartedAt)
     }
 

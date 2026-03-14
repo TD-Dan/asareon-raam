@@ -11,6 +11,7 @@ import app.auf.test.TestEnvironment
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -233,7 +234,7 @@ class AgentRuntimeFeatureT3RateLimitTest {
                 processingSinceTimestamp = platform.currentTimeMillis() - 5000,
                 processingStep = "Generating Content",
                 stagedTurnContext = listOf(GatewayMessage("user", "Hello", "u1", "User", 1L)),
-                transientWorkspaceContext = "some workspace listing",
+                transientWorkspaceListing = JsonArray(emptyList()),
                 contextGatheringStartedAt = platform.currentTimeMillis() - 3000
             ))
         )
@@ -251,7 +252,7 @@ class AgentRuntimeFeatureT3RateLimitTest {
         val statusInfo = newState.agentStatuses[uuid]!!
         assertEquals(AgentStatus.RATE_LIMITED, statusInfo.status)
         assertNull(statusInfo.stagedTurnContext, "Staged context should be cleared on RATE_LIMITED.")
-        assertNull(statusInfo.transientWorkspaceContext, "Workspace context should be cleared.")
+        assertNull(statusInfo.transientWorkspaceListing, "Workspace listing should be cleared.")
         assertNull(statusInfo.contextGatheringStartedAt, "Context gathering timestamp should be cleared.")
         assertNull(statusInfo.processingSinceTimestamp, "Processing timestamp should be cleared.")
         assertNull(statusInfo.processingStep, "Processing step should be cleared.")

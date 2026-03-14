@@ -484,7 +484,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
                 GatewayMessage("user", "Hello", "user-1", "User", 1000L)
             ),
             contextGatheringStartedAt = platform.currentTimeMillis(),
-            transientWorkspaceContext = "Your workspace is empty."
+            transientWorkspaceListing = JsonArray(emptyList())
         )
 
         val harness = TestEnvironment.create()

@@ -205,7 +205,7 @@ class AgentRuntimeFeatureT3ThinkerTest {
             status = AgentStatus.PROCESSING,
             stagedTurnContext = null,
             contextGatheringStartedAt = platform.currentTimeMillis(),
-            transientWorkspaceContext = "Your workspace is empty."
+            transientWorkspaceListing = JsonArray(emptyList())
         )
         val harness = TestEnvironment.create()
             .withFeature(feature)
