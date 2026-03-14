@@ -844,12 +844,23 @@ class AgentRuntimeFeature(
                 // ============================================================
                 // Phase C: HKG Write Guard (§4.5)
                 //
-                // When an agent targets knowledgegraph.UPDATE_HOLON_CONTENT,
-                // verify the target holon is EXPANDED in the agent's context.
-                // Block the write if not — the agent must expand the file first
-                // to avoid writing stale or partial data.
+                // For agent-dispatched KG write actions, apply appropriate
+                // guards based on the action type:
+                //
+                // - CREATE_HOLON:  No expand check needed (holon is new).
+                //                  Only verify the *parent* is in state.
+                // - REPLACE_HOLON: Require target holon EXPANDED in context
+                //                  (agent must have seen full content).
+                // - UPDATE_HOLON_CONTENT: Should not be reachable by agents
+                //                  (now internal), but guard defensively.
                 // ============================================================
-                if (actionName == ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT) {
+                if (actionName == ActionRegistry.Names.KNOWLEDGEGRAPH_CREATE_HOLON) {
+                    // CREATE: No expand guard on the new holon (it doesn't exist yet).
+                    // The KnowledgeGraphFeature handler will reject if parent is missing.
+                    // Pass through.
+                }
+                else if (actionName == ActionRegistry.Names.KNOWLEDGEGRAPH_REPLACE_HOLON ||
+                    actionName == ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT) {
                     val targetHolonId = finalPayload["holonId"]?.jsonPrimitive?.contentOrNull
                     if (targetHolonId != null) {
                         val agentStatusInfo = agentState.agentStatuses[agentUuid] ?: AgentStatusInfo()
@@ -888,7 +899,7 @@ class AgentRuntimeFeature(
                     } else {
                         platformDependencies.log(
                             LogLevel.DEBUG, identity.handle,
-                            "HKG Write Guard: UPDATE_HOLON_CONTENT from agent '$agentUuid' has no 'holonId'. " +
+                            "HKG Write Guard: $actionName from agent '$agentUuid' has no 'holonId'. " +
                                     "Guard bypassed — KnowledgeGraphFeature will reject downstream."
                         )
                     }

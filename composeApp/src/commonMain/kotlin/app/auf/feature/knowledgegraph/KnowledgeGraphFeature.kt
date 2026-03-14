@@ -303,6 +303,185 @@ class KnowledgeGraphFeature(
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
                 }
             }
+            ActionRegistry.Names.KNOWLEDGEGRAPH_CREATE_HOLON -> {
+                val parentId = payload?.get("parentId")?.jsonPrimitive?.content ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_HOLON: Missing required 'parentId' field. Ignoring.")
+                    return
+                }
+                val typeName = payload["type"]?.jsonPrimitive?.content ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_HOLON: Missing required 'type' field. Ignoring.")
+                    return
+                }
+                val name = payload["name"]?.jsonPrimitive?.content ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_HOLON: Missing required 'name' field. Ignoring.")
+                    return
+                }
+                val newPayload = payload["payload"] ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_HOLON: Missing required 'payload' field. Ignoring.")
+                    return
+                }
+                val summary = payload["summary"]?.jsonPrimitive?.contentOrNull
+                val newExecute = payload["execute"]
+
+                if (isModificationLocked(holonId = parentId, originator = originator, kgState = kgState, store = store)) return
+
+                val parentHolon = kgState.holons[parentId] ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_HOLON: Parent holon '$parentId' not found in state. Ignoring.")
+                    return
+                }
+
+                // --- Generate ID and timestamps ---
+                val timestamp = platformDependencies.currentTimeMillis()
+                val isoTimestamp = platformDependencies.formatIsoTimestamp(timestamp)
+                val fileSafeTimestamp = isoTimestamp.replace(":", "").replace("-", "")
+                val newId = try {
+                    normalizeHolonId("${name.lowercase().replace(" ", "-")}-${fileSafeTimestamp}")
+                } catch (e: IllegalArgumentException) {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_HOLON: Invalid name for ID generation: ${e.message}")
+                    return
+                }
+
+                // --- Derive file path from parent's path ---
+                // Parent is at: {personaId}/.../parentId/parentId.json
+                // New child at: {personaId}/.../parentId/newId/newId.json
+                val parentDir = platformDependencies.getParentDirectory(parentHolon.header.filePath) ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_HOLON: Could not resolve parent directory for '$parentId'. Ignoring.")
+                    return
+                }
+                val newFilePath = "$parentDir/$newId/$newId.json"
+
+                // --- Build the new holon ---
+                val newHeader = HolonHeader(
+                    id = newId,
+                    type = typeName,
+                    name = name,
+                    summary = summary,
+                    version = "1.0.0",
+                    createdAt = isoTimestamp,
+                    modifiedAt = isoTimestamp,
+                    filePath = newFilePath,
+                    parentId = parentId,
+                    depth = parentHolon.header.depth + 1
+                )
+                val newHolon = Holon(header = newHeader, payload = newPayload, execute = newExecute)
+                val newHolonContent = prepareHolonForWriting(newHolon)
+
+                // --- Update parent's sub_holons list ---
+                val updatedParentSubHolons = parentHolon.header.subHolons + SubHolonRef(
+                    id = newId,
+                    type = typeName,
+                    summary = summary ?: name
+                )
+                val newParentTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())
+                val updatedParentHeader = parentHolon.header.copy(
+                    subHolons = updatedParentSubHolons,
+                    modifiedAt = newParentTimestamp
+                )
+                val updatedParent = parentHolon.copy(header = updatedParentHeader)
+                val finalSyncedParent = synchronizeRawContent(updatedParent)
+
+                // --- Write both files ---
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
+                    put("path", newFilePath)
+                    put("content", newHolonContent)
+                }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
+                    put("path", finalSyncedParent.header.filePath)
+                    put("content", prepareHolonForWriting(finalSyncedParent))
+                }))
+
+                // --- Reload the persona ---
+                findRootPersonaId(parentId, kgState)?.let {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
+                }
+            }
+            ActionRegistry.Names.KNOWLEDGEGRAPH_REPLACE_HOLON -> {
+                val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "REPLACE_HOLON: Missing required 'holonId' field. Ignoring.")
+                    return
+                }
+                val newPayload = payload["payload"] ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "REPLACE_HOLON: Missing required 'payload' field. Ignoring.")
+                    return
+                }
+
+                if (isModificationLocked(holonId = holonId, originator = originator, kgState = kgState, store = store)) return
+
+                val existingHolon = kgState.holons[holonId] ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "REPLACE_HOLON: Holon '$holonId' not found in state. Ignoring.")
+                    return
+                }
+
+                val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())
+
+                // --- Build replaced header, preserving structural fields ---
+                val replacedHeader = existingHolon.header.copy(
+                    // Structural (NEVER overwritten by agent):
+                    //   id, filePath, parentId, depth, subHolons, createdAt
+                    // Agent-replaceable:
+                    type = payload["type"]?.jsonPrimitive?.contentOrNull ?: existingHolon.header.type,
+                    name = payload["name"]?.jsonPrimitive?.contentOrNull ?: existingHolon.header.name,
+                    summary = payload["summary"]?.jsonPrimitive?.contentOrNull ?: existingHolon.header.summary,
+                    version = payload["version"]?.jsonPrimitive?.contentOrNull ?: existingHolon.header.version,
+                    relationships = payload["relationships"]?.let { json.decodeFromJsonElement<List<Relationship>>(it) }
+                        ?: existingHolon.header.relationships,
+                    // System-managed:
+                    modifiedAt = newTimestamp
+                )
+
+                // --- Handle execute: omitted key = preserve, explicit null = remove ---
+                val replacedExecute = if (payload.containsKey("execute")) {
+                    val execValue = payload["execute"]
+                    if (execValue is JsonNull) null else execValue
+                } else {
+                    existingHolon.execute
+                }
+
+                val replacedHolon = existingHolon.copy(
+                    header = replacedHeader,
+                    payload = newPayload,
+                    execute = replacedExecute
+                )
+                val finalSyncedHolon = synchronizeRawContent(replacedHolon)
+
+                // --- Update parent's sub_holon ref if name/type/summary changed ---
+                existingHolon.header.parentId?.let { parentId ->
+                    kgState.holons[parentId]?.let { parentHolon ->
+                        val updatedSubHolons = parentHolon.header.subHolons.map { ref ->
+                            if (ref.id == holonId) {
+                                ref.copy(
+                                    type = replacedHeader.type,
+                                    summary = replacedHeader.summary ?: replacedHeader.name
+                                )
+                            } else ref
+                        }
+                        if (updatedSubHolons != parentHolon.header.subHolons) {
+                            val updatedParent = parentHolon.copy(
+                                header = parentHolon.header.copy(
+                                    subHolons = updatedSubHolons,
+                                    modifiedAt = newTimestamp
+                                )
+                            )
+                            val syncedParent = synchronizeRawContent(updatedParent)
+                            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
+                                put("path", syncedParent.header.filePath)
+                                put("content", prepareHolonForWriting(syncedParent))
+                            }))
+                        }
+                    }
+                }
+
+                // --- Write the replaced holon ---
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
+                    put("path", finalSyncedHolon.header.filePath)
+                    put("content", prepareHolonForWriting(finalSyncedHolon))
+                }))
+
+                // --- Reload the persona ---
+                findRootPersonaId(holonId, kgState)?.let {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
+                }
+            }
             ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON -> {
                 val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "RENAME_HOLON: Missing required 'holonId' field. Ignoring.")

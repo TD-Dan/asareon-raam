@@ -355,9 +355,9 @@
     },
     {
       "action_name": "knowledgegraph.UPDATE_HOLON_CONTENT",
-      "summary": "Updates the user-editable 'payload' and 'execute' sections of a holon. This action protects the holon's header from direct modification.",
-      "public": true,
-      "broadcast": true,
+      "summary": "[INTERNAL] Updates the user-editable 'payload' and 'execute' sections of a holon via the in-app editor. This action protects the holon's header from direct modification.",
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -376,6 +376,102 @@
         },
         "required": [
           "holonId"
+        ]
+      },
+      "required_permissions": [
+        "knowledgegraph:write"
+      ]
+    },
+    {
+      "action_name": "knowledgegraph.CREATE_HOLON",
+      "summary": "Creates a new holon as a child of an existing parent within a loaded HKG. The system generates the ID, timestamps, and file path, and wires the parent's sub_holons list.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "parentId": {
+            "type": "string",
+            "description": "The ID of the existing parent holon. Must be loaded in state."
+          },
+          "type": {
+            "type": "string",
+            "description": "The holon archetype (e.g., 'Project', 'System_File', 'Log_Entry')."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable display name for the new holon."
+          },
+          "summary": {
+            "type": "string",
+            "description": "A one-line summary of the holon's purpose."
+          },
+          "payload": {
+            "type": "object",
+            "description": "The cognitive content of the new holon."
+          },
+          "execute": {
+            "type": "object",
+            "description": "Optional agentic behavior block."
+          }
+        },
+        "required": [
+          "parentId",
+          "type",
+          "name",
+          "payload"
+        ]
+      },
+      "required_permissions": [
+        "knowledgegraph:write"
+      ]
+    },
+    {
+      "action_name": "knowledgegraph.REPLACE_HOLON",
+      "summary": "Performs a full content replacement of an existing holon. Preserves structural integrity fields (id, filePath, parentId, depth, sub_holons) and stamps modified_at. The agent must have the holon expanded in context.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "holonId": {
+            "type": "string",
+            "description": "The ID of the holon to replace."
+          },
+          "type": {
+            "type": "string",
+            "description": "The holon archetype. If omitted, preserves the existing type."
+          },
+          "name": {
+            "type": "string",
+            "description": "The new display name. If omitted, preserves the existing name."
+          },
+          "summary": {
+            "type": "string",
+            "description": "The new summary. If omitted, preserves the existing summary."
+          },
+          "version": {
+            "type": "string",
+            "description": "The new version string. If omitted, preserves the existing version."
+          },
+          "relationships": {
+            "type": "array",
+            "description": "The new relationships list. If omitted, preserves existing."
+          },
+          "payload": {
+            "type": "object",
+            "description": "The complete new payload object. Required."
+          },
+          "execute": {
+            "type": ["object", "null"],
+            "description": "The complete new execute block. Pass null to remove. If key is omitted, preserves existing."
+          }
+        },
+        "required": [
+          "holonId",
+          "payload"
         ]
       },
       "required_permissions": [
