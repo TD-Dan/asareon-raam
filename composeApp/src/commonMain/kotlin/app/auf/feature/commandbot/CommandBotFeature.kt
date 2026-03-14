@@ -95,7 +95,11 @@ class CommandBotFeature(
             when (partId) {
                 "commandbot.approval" -> {
                     // context is the approvalId (set as senderId when the card entry is posted)
-                    val approvalId = context as? String ?: return
+                    val approvalId = context as? String ?: run {
+                        platformDependencies.log(LogLevel.WARN, identity.handle,
+                            "PartialView: Invalid or missing context for approval card (partId='$partId', context=$context).")
+                        return
+                    }
                     ApprovalCard(store, approvalId = approvalId)
                 }
             }
@@ -111,14 +115,37 @@ class CommandBotFeature(
 
         return when (action.name) {
             ActionRegistry.Names.COMMANDBOT_STAGE_APPROVAL -> {
-                val payload = action.payload ?: return currentState
+                val payload = action.payload ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "STAGE_APPROVAL reducer: Missing payload. Approval not staged.")
+                    return currentState
+                }
+                val approvalId = payload["approvalId"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "STAGE_APPROVAL reducer: Missing 'approvalId'. Approval not staged.")
+                    return currentState
+                }
+                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "STAGE_APPROVAL reducer: Missing 'sessionId' for approvalId='$approvalId'. Approval not staged.")
+                    return currentState
+                }
+                val cardMessageId = payload["cardMessageId"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "STAGE_APPROVAL reducer: Missing 'cardMessageId' for approvalId='$approvalId'. Approval not staged.")
+                    return currentState
+                }
+                val requestingAgentId = payload["requestingAgentId"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "STAGE_APPROVAL reducer: Missing 'requestingAgentId' for approvalId='$approvalId'. Approval not staged.")
+                    return currentState
+                }
+                val actionName = payload["actionName"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "STAGE_APPROVAL reducer: Missing 'actionName' for approvalId='$approvalId'. Approval not staged.")
+                    return currentState
+                }
                 val approval = PendingApproval(
-                    approvalId = payload["approvalId"]?.jsonPrimitive?.contentOrNull ?: return currentState,
-                    sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: return currentState,
-                    cardMessageId = payload["cardMessageId"]?.jsonPrimitive?.contentOrNull ?: return currentState,
-                    requestingAgentId = payload["requestingAgentId"]?.jsonPrimitive?.contentOrNull ?: return currentState,
+                    approvalId = approvalId,
+                    sessionId = sessionId,
+                    cardMessageId = cardMessageId,
+                    requestingAgentId = requestingAgentId,
                     requestingAgentName = payload["requestingAgentName"]?.jsonPrimitive?.contentOrNull ?: "Unknown Agent",
-                    actionName = payload["actionName"]?.jsonPrimitive?.contentOrNull ?: return currentState,
+                    actionName = actionName,
                     payload = payload["payload"]?.jsonObject ?: buildJsonObject {},
                     requestedAt = platformDependencies.currentTimeMillis()
                 )
@@ -128,12 +155,27 @@ class CommandBotFeature(
             }
 
             ActionRegistry.Names.COMMANDBOT_RESOLVE_APPROVAL -> {
-                val payload = action.payload ?: return currentState
-                val approvalId = payload["approvalId"]?.jsonPrimitive?.contentOrNull ?: return currentState
-                val resolutionStr = payload["resolution"]?.jsonPrimitive?.contentOrNull ?: return currentState
-                val resolution = try { Resolution.valueOf(resolutionStr) } catch (_: Exception) { return currentState }
+                val payload = action.payload ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "RESOLVE_APPROVAL reducer: Missing payload. Resolution dropped.")
+                    return currentState
+                }
+                val approvalId = payload["approvalId"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "RESOLVE_APPROVAL reducer: Missing 'approvalId'. Resolution dropped.")
+                    return currentState
+                }
+                val resolutionStr = payload["resolution"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "RESOLVE_APPROVAL reducer: Missing 'resolution' for approvalId='$approvalId'. Resolution dropped.")
+                    return currentState
+                }
+                val resolution = try { Resolution.valueOf(resolutionStr) } catch (_: Exception) {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "RESOLVE_APPROVAL reducer: Invalid resolution value '$resolutionStr' for approvalId='$approvalId'. Expected APPROVED or DENIED.")
+                    return currentState
+                }
 
-                val pending = currentState.pendingApprovals[approvalId] ?: return currentState
+                val pending = currentState.pendingApprovals[approvalId] ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "RESOLVE_APPROVAL reducer: No pending approval found for approvalId='$approvalId'. May have already been resolved.")
+                    return currentState
+                }
 
                 val resolved = ApprovalResolution(
                     approvalId = approvalId,
@@ -166,14 +208,32 @@ class CommandBotFeature(
 
             // --- Pending Result Tracking ---
             ActionRegistry.Names.COMMANDBOT_REGISTER_PENDING_RESULT -> {
-                val payload = action.payload ?: return currentState
-                val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return currentState
+                val payload = action.payload ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "REGISTER_PENDING_RESULT reducer: Missing payload. Pending result not tracked.")
+                    return currentState
+                }
+                val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "REGISTER_PENDING_RESULT reducer: Missing 'correlationId'. Pending result not tracked.")
+                    return currentState
+                }
+                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "REGISTER_PENDING_RESULT reducer: Missing 'sessionId' for correlationId='$correlationId'. Pending result not tracked.")
+                    return currentState
+                }
+                val originatorId = payload["originatorId"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "REGISTER_PENDING_RESULT reducer: Missing 'originatorId' for correlationId='$correlationId'. Pending result not tracked.")
+                    return currentState
+                }
+                val actionName = payload["actionName"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "REGISTER_PENDING_RESULT reducer: Missing 'actionName' for correlationId='$correlationId'. Pending result not tracked.")
+                    return currentState
+                }
                 val pendingResult = PendingResult(
                     correlationId = correlationId,
-                    sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: return currentState,
-                    originatorId = payload["originatorId"]?.jsonPrimitive?.contentOrNull ?: return currentState,
+                    sessionId = sessionId,
+                    originatorId = originatorId,
                     originatorName = payload["originatorName"]?.jsonPrimitive?.contentOrNull ?: "Unknown",
-                    actionName = payload["actionName"]?.jsonPrimitive?.contentOrNull ?: return currentState,
+                    actionName = actionName,
                     createdAt = platformDependencies.currentTimeMillis()
                 )
                 currentState.copy(
@@ -182,7 +242,10 @@ class CommandBotFeature(
             }
 
             ActionRegistry.Names.COMMANDBOT_CLEAR_PENDING_RESULT -> {
-                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull ?: return currentState
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "CLEAR_PENDING_RESULT reducer: Missing 'correlationId'. Cannot clear pending result.")
+                    return currentState
+                }
                 currentState.copy(
                     pendingResults = currentState.pendingResults - correlationId
                 )
@@ -200,9 +263,15 @@ class CommandBotFeature(
         when (action.name) {
             // --- Approval Resolution ---
             ActionRegistry.Names.COMMANDBOT_APPROVE -> {
-                val approvalId = action.payload?.get("approvalId")?.jsonPrimitive?.contentOrNull ?: return
+                val approvalId = action.payload?.get("approvalId")?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "APPROVE: Missing 'approvalId' in payload. Cannot process approval.")
+                    return
+                }
                 // Read the pending approval from CURRENT state (reducer doesn't handle APPROVE).
-                val commandBotState = newState as? CommandBotState ?: return
+                val commandBotState = newState as? CommandBotState ?: run {
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "APPROVE: CommandBotState is null or wrong type. Feature state corrupted?")
+                    return
+                }
                 val approval = commandBotState.pendingApprovals[approvalId]
                 if (approval == null) {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "APPROVE: No pending approval found for '$approvalId'.")
@@ -233,9 +302,15 @@ class CommandBotFeature(
             }
 
             ActionRegistry.Names.COMMANDBOT_DENY -> {
-                val approvalId = action.payload?.get("approvalId")?.jsonPrimitive?.contentOrNull ?: return
+                val approvalId = action.payload?.get("approvalId")?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "DENY: Missing 'approvalId' in payload. Cannot process denial.")
+                    return
+                }
                 // Read the pending approval from CURRENT state (reducer doesn't handle DENY).
-                val commandBotState = newState as? CommandBotState ?: return
+                val commandBotState = newState as? CommandBotState ?: run {
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "DENY: CommandBotState is null or wrong type. Feature state corrupted?")
+                    return
+                }
                 val approval = commandBotState.pendingApprovals[approvalId]
                 if (approval == null) {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "DENY: No pending approval found for '$approvalId'.")
@@ -266,15 +341,28 @@ class CommandBotFeature(
 
             // --- Core Command Processing ---
             ActionRegistry.Names.SESSION_MESSAGE_POSTED -> {
-                val payload = action.payload ?: return
-                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: return
-                val entry = payload["entry"]?.jsonObject ?: return
-                val senderId = entry["senderId"]?.jsonPrimitive?.contentOrNull ?: return
+                val payload = action.payload ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "SESSION_MESSAGE_POSTED: Missing payload. Cannot scan for commands.")
+                    return
+                }
+                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "SESSION_MESSAGE_POSTED: Missing 'sessionId'. Cannot scan for commands.")
+                    return
+                }
+                val entry = payload["entry"]?.jsonObject ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "SESSION_MESSAGE_POSTED: Missing 'entry' in payload for session '$sessionId'. Cannot scan for commands.")
+                    return
+                }
+                val senderId = entry["senderId"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "SESSION_MESSAGE_POSTED: Missing 'senderId' in entry for session '$sessionId'. Cannot attribute commands.")
+                    return
+                }
 
                 // Guardrail (CAG-001): Self-Reaction Prevention.
                 if (senderId == identity.handle) return
 
                 // Read pre-parsed content blocks directly from the JSON payload.
+                // Messages without content blocks are normal (e.g., metadata-only entries).
                 val contentBlocks = entry["content"]?.jsonArray ?: return
 
                 contentBlocks.forEach { blockElement ->
@@ -293,7 +381,10 @@ class CommandBotFeature(
 
             // --- TTL Scheduling for Pending Results ---
             ActionRegistry.Names.COMMANDBOT_REGISTER_PENDING_RESULT -> {
-                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull ?: return
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "REGISTER_PENDING_RESULT side-effect: Missing 'correlationId'. TTL cleanup not scheduled.")
+                    return
+                }
                 // Schedule TTL cleanup after 5 minutes.
                 store.scheduleDelayed(PENDING_RESULT_TTL_MS, identity.handle, Action(
                     ActionRegistry.Names.COMMANDBOT_CLEAR_PENDING_RESULT,
@@ -301,28 +392,82 @@ class CommandBotFeature(
                 ))
             }
 
+            // --- TTL Timeout Feedback ---
+            // When a pending result is cleared, check if it expired (wasn't consumed by a
+            // matching ACTION_RESULT). If so, post timeout feedback to the originating session
+            // so the agent knows its command was not handled.
+            ActionRegistry.Names.COMMANDBOT_CLEAR_PENDING_RESULT -> {
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "CLEAR_PENDING_RESULT side-effect: Missing 'correlationId'.")
+                    return
+                }
+                // If the entry existed in previousState, it means the reducer just removed it.
+                // If it was already absent (consumed by ACTION_RESULT match earlier in the same
+                // dispatch cycle), previousState won't have it either — no timeout feedback needed.
+                val prevState = previousState as? CommandBotState
+                val expiredResult = prevState?.pendingResults?.get(correlationId)
+                if (expiredResult != null) {
+                    val feedbackMessage = "TIMEOUT ⏱ ${expiredResult.actionName} — " +
+                            "No response received within ${PENDING_RESULT_TTL_MS / 1000}s. " +
+                            "The command may not have been handled by any feature."
+                    postFeedbackToSession(expiredResult.sessionId, feedbackMessage, store)
+                    platformDependencies.log(
+                        LogLevel.WARN, identity.handle,
+                        "Pending result EXPIRED for '${expiredResult.actionName}' " +
+                                "(correlationId=$correlationId, originator=${expiredResult.originatorId}). " +
+                                "Timeout feedback posted to session '${expiredResult.sessionId}'."
+                    )
+                }
+            }
+
             // --- Data Delivery from Core/Agent ---
             ActionRegistry.Names.COMMANDBOT_DELIVER_TO_SESSION -> {
-                val payload = action.payload ?: return
-                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: return
-                val message = payload["message"]?.jsonPrimitive?.contentOrNull ?: return
+                val payload = action.payload ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "DELIVER_TO_SESSION: Missing payload. Cannot deliver message.")
+                    return
+                }
+                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "DELIVER_TO_SESSION: Missing 'sessionId'. Cannot deliver message.")
+                    return
+                }
+                val message = payload["message"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "DELIVER_TO_SESSION: Missing 'message' for session '$sessionId'. Nothing to deliver.")
+                    return
+                }
                 postRawToSession(sessionId, message, store)
             }
 
             // --- Permission Denial Feedback ---
             ActionRegistry.Names.CORE_PERMISSION_DENIED -> {
-                val payload = action.payload ?: return
-                val blockedAction = payload["blockedAction"]?.jsonPrimitive?.contentOrNull ?: return
-                val originatorHandle = payload["originatorHandle"]?.jsonPrimitive?.contentOrNull ?: return
+                val payload = action.payload ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "PERMISSION_DENIED: Missing payload. Cannot provide denial feedback.")
+                    return
+                }
+                val blockedAction = payload["blockedAction"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "PERMISSION_DENIED: Missing 'blockedAction'. Cannot provide denial feedback.")
+                    return
+                }
+                val originatorHandle = payload["originatorHandle"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "PERMISSION_DENIED: Missing 'originatorHandle' for blockedAction='$blockedAction'. Cannot match to pending result.")
+                    return
+                }
                 val missingPermissions = payload["missingPermissions"]?.jsonArray
                     ?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
 
-                val commandBotState = newState as? CommandBotState ?: return
+                val commandBotState = newState as? CommandBotState ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "PERMISSION_DENIED: CommandBotState unavailable. Cannot match to pending result for blockedAction='$blockedAction'.")
+                    return
+                }
 
                 // Match the denied action against pending results by originator + action name
                 val matchingEntry = commandBotState.pendingResults.entries.find { (_, pending) ->
                     pending.actionName == blockedAction && pending.originatorId == originatorHandle
-                } ?: return
+                } ?: run {
+                    platformDependencies.log(LogLevel.DEBUG, identity.handle,
+                        "PERMISSION_DENIED: No matching pending result for blockedAction='$blockedAction', originator='$originatorHandle'. " +
+                                "Denial may have originated from a non-CommandBot dispatch path.")
+                    return
+                }
 
                 val pendingResult = matchingEntry.value
                 val permList = missingPermissions.joinToString(", ")
@@ -344,10 +489,16 @@ class CommandBotFeature(
             // --- ACTION_RESULT Interception ---
             else -> {
                 if (!action.name.endsWith(".ACTION_RESULT")) return
-                val payload = action.payload ?: return
-                val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
-                val commandBotState = newState as? CommandBotState ?: return
-                val pendingResult = commandBotState.pendingResults[correlationId] ?: return
+                val payload = action.payload ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "ACTION_RESULT (${action.name}): Missing payload. Cannot match to pending result.")
+                    return
+                }
+                val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return // No correlationId = not a CommandBot-originated action; silent return is correct.
+                val commandBotState = newState as? CommandBotState ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "ACTION_RESULT (${action.name}): CommandBotState unavailable. Cannot match correlationId='$correlationId'.")
+                    return
+                }
+                val pendingResult = commandBotState.pendingResults[correlationId] ?: return // Not our correlationId — another consumer's result; silent return is correct.
 
                 // Security: validate source feature matches the feature that owns the action
                 val expectedFeature = pendingResult.actionName.substringBefore('.')

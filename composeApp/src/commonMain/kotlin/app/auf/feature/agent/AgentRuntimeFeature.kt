@@ -705,19 +705,51 @@ class AgentRuntimeFeature(
             // ACTION_CREATED: Handle validated commands from CommandBot
             // ========================================================================
             ActionRegistry.Names.COMMANDBOT_ACTION_CREATED -> {
-                val payload = action.payload ?: return
-                val originatorId = payload["originatorId"]?.jsonPrimitive?.contentOrNull ?: return
+                val payload = action.payload ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "ACTION_CREATED: Missing payload. Cannot handle command.")
+                    return
+                }
+                val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "ACTION_CREATED: Missing 'correlationId'. Cannot handle command.")
+                    return
+                }
+                val originatorId = payload["originatorId"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "ACTION_CREATED: Missing 'originatorId' (correlationId=$correlationId). Cannot resolve agent.")
+                    return
+                }
                 val originatorName = payload["originatorName"]?.jsonPrimitive?.contentOrNull ?: originatorId
-                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: return
-                val actionName = payload["actionName"]?.jsonPrimitive?.contentOrNull ?: return
+                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "ACTION_CREATED: Missing 'sessionId' for originator '$originatorId' (correlationId=$correlationId).")
+                    publishActionResult(store, correlationId, "unknown", false, error = "Malformed ACTION_CREATED: missing sessionId.")
+                    return
+                }
+                val actionName = payload["actionName"]?.jsonPrimitive?.contentOrNull ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "ACTION_CREATED: Missing 'actionName' for originator '$originatorId' (correlationId=$correlationId).")
+                    publishActionResult(store, correlationId, "unknown", false, error = "Malformed ACTION_CREATED: missing actionName.")
+                    return
+                }
                 val actionPayload = payload["actionPayload"]?.jsonObject ?: buildJsonObject {}
-                val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
 
                 // Resolve originator: originatorId may be a UUID (direct key match)
                 // or a handle like "agent.flash" (identity registry format).
                 val agent = agentState.agents[IdentityUUID(originatorId)]
                     ?: agentState.agents.values.find { it.identityHandle.handle == originatorId }
-                if (agent == null) return  // Not our agent — ignore
+                if (agent == null) {
+                    // Not our agent — publish a failure result so CommandBot can report the
+                    // unhandled command to the session instead of silently timing out.
+                    platformDependencies.log(
+                        LogLevel.WARN, identity.handle,
+                        "ACTION_CREATED: Originator '$originatorId' is not a known agent. " +
+                                "Ignoring action '$actionName' (correlationId=$correlationId). " +
+                                "The command will go unhandled unless another feature picks it up."
+                    )
+                    // NOTE: We intentionally do NOT publish ACTION_RESULT here. The originator
+                    // may be a non-agent entity (e.g., a human user dispatching through CommandBot)
+                    // whose command is routed to a different feature. Publishing a failure here
+                    // would produce false negatives. CommandBot's TTL timeout will catch truly
+                    // unhandled commands.
+                    return
+                }
                 val agentUuid = agent.identityUUID
 
                 platformDependencies.log(
