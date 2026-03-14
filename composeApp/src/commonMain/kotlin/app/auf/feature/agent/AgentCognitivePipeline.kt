@@ -407,16 +407,35 @@ object AgentCognitivePipeline {
         // FILES carries token weight and is subject to collapse overrides (default: all closed).
         if (hkgContext != null && hkgContext.isNotEmpty()) {
             val hkgHeaders = HkgContextFormatter.parseHolonHeaders(hkgContext, platformDependencies)
-            val collapseOverrides = statusInfo.contextCollapseOverrides
+            val agentOverrides = statusInfo.contextCollapseOverrides
+
+            // Build effective overrides: agent sticky overrides + root auto-expand.
+            // Root holons (parentId == null) default to EXPANDED so the agent always
+            // sees its persona root and immediate children in the INDEX, and has the
+            // root file open in FILES. If the agent has explicitly collapsed the root,
+            // that sticky override is respected.
+            val effectiveOverrides = buildMap {
+                // 1. Seed with root defaults (EXPANDED unless agent overrode)
+                hkgHeaders.values
+                    .filter { it.parentId == null }
+                    .forEach { root ->
+                        val key = "hkg:${root.id}"
+                        if (key !in agentOverrides) {
+                            put(key, CollapseState.EXPANDED)
+                        }
+                    }
+                // 2. Layer agent sticky overrides on top (always win)
+                putAll(agentOverrides)
+            }
 
             // Resolve persona name from root holon header
             val personaName = hkgHeaders.values.find { it.parentId == null }?.name
 
             contextMap["HOLON_KNOWLEDGE_GRAPH_INDEX"] = HkgContextFormatter.buildIndexTree(
-                hkgHeaders, collapseOverrides, personaName
+                hkgHeaders, effectiveOverrides, personaName
             )
             contextMap["HOLON_KNOWLEDGE_GRAPH_FILES"] = HkgContextFormatter.buildFilesSection(
-                hkgContext, collapseOverrides
+                hkgContext, effectiveOverrides
             )
         }
 
