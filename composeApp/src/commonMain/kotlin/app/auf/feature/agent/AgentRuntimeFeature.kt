@@ -127,6 +127,9 @@ class AgentRuntimeFeature(
         CognitiveStrategyRegistry.register(
             app.auf.feature.agent.strategies.PrivateSessionStrategy
         )
+        CognitiveStrategyRegistry.register(
+            app.auf.feature.agent.strategies.HKGStrategy
+        )
 
         coroutineScope.launch {
             while (true) {
@@ -715,6 +718,53 @@ class AgentRuntimeFeature(
                 // holders can target a different agent's NVRAM.
                 if (actionName == ActionRegistry.Names.AGENT_UPDATE_NVRAM) {
                     finalPayload = enforceNvramSelfTarget(finalPayload, agent, store)
+                }
+
+                // ============================================================
+                // Phase C: HKG Write Guard (§4.5)
+                //
+                // When an agent targets knowledgegraph.UPDATE_HOLON_CONTENT,
+                // verify the target holon is EXPANDED in the agent's context.
+                // Block the write if not — the agent must expand the file first
+                // to avoid writing stale or partial data.
+                // ============================================================
+                if (actionName == ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT) {
+                    val targetHolonId = finalPayload["holonId"]?.jsonPrimitive?.contentOrNull
+                    if (targetHolonId != null) {
+                        val agentStatusInfo = agentState.agentStatuses[agentUuid] ?: AgentStatusInfo()
+                        val holonCollapseState = agentStatusInfo.contextCollapseOverrides["hkg:$targetHolonId"]
+
+                        if (holonCollapseState != CollapseState.EXPANDED) {
+                            // Block — post sentinel error to agent's output session
+                            val targetSessionUUID = agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull()
+                            if (targetSessionUUID != null) {
+                                store.deferredDispatch(identity.handle, Action(
+                                    ActionRegistry.Names.SESSION_POST,
+                                    buildJsonObject {
+                                        put("session", targetSessionUUID.uuid)
+                                        put("senderId", "system")
+                                        put("message", "SYSTEM SENTINEL: Error: Write blocked! You are attempting to modify holon " +
+                                                "'$targetHolonId' which is not fully expanded in your context. Expand the file first:\n" +
+                                                "```auf_agent.CONTEXT_UNCOLLAPSE\n" +
+                                                "{ \"partitionKey\": \"hkg:$targetHolonId\", \"scope\": \"single\" }\n" +
+                                                "```\n" +
+                                                "Then retry your write to ensure you are not omitting data.")
+                                    }
+                                ))
+                            }
+
+                            platformDependencies.log(
+                                LogLevel.WARN, identity.handle,
+                                "HKG Write Guard: Blocked write to collapsed holon '$targetHolonId' by agent '$agentUuid'."
+                            )
+
+                            publishActionResult(
+                                store, correlationId, actionName, success = false,
+                                error = "Write blocked: holon '$targetHolonId' is not expanded in agent context."
+                            )
+                            return // Do not forward the action
+                        }
+                    }
                 }
 
                 // Inject correlationId into the payload

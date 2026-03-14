@@ -402,10 +402,22 @@ object AgentCognitivePipeline {
 
         val contextMap = mutableMapOf<String, String>()
 
-        if (hkgContext != null) {
-            contextMap["HOLON_KNOWLEDGE_GRAPH"] = hkgContext.entries.joinToString("\n\n---\n\n") { (holonId, content) ->
-                "--- START OF FILE $holonId.json ---\n${content.jsonPrimitive.content}\n--- END OF FILE $holonId.json ---"
-            }
+        // Phase C: Two-partition HKG view (INDEX + FILES).
+        // INDEX is always present — the agent's navigational awareness of its knowledge graph.
+        // FILES carries token weight and is subject to collapse overrides (default: all closed).
+        if (hkgContext != null && hkgContext.isNotEmpty()) {
+            val hkgHeaders = HkgContextFormatter.parseHolonHeaders(hkgContext, platformDependencies)
+            val collapseOverrides = statusInfo.contextCollapseOverrides
+
+            // Resolve persona name from root holon header
+            val personaName = hkgHeaders.values.find { it.parentId == null }?.name
+
+            contextMap["HOLON_KNOWLEDGE_GRAPH_INDEX"] = HkgContextFormatter.buildIndexTree(
+                hkgHeaders, collapseOverrides, personaName
+            )
+            contextMap["HOLON_KNOWLEDGE_GRAPH_FILES"] = HkgContextFormatter.buildFilesSection(
+                hkgContext, collapseOverrides
+            )
         }
 
         // === SESSION METADATA (with token usage context) ===
