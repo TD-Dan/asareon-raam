@@ -2,6 +2,8 @@ package app.auf.feature.commandbot
 
 import app.auf.core.Action
 import app.auf.core.Identity
+import app.auf.core.PermissionGrant
+import app.auf.core.PermissionLevel
 import app.auf.core.generated.ActionRegistry
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreFeature
@@ -27,6 +29,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.junit.jupiter.api.Disabled
 
 /**
  * Tier 2 Guardrail & Edge-Case Tests for CommandBotFeature.
@@ -93,20 +96,31 @@ class CommandBotFeatureT2GuardrailsTest {
     /** The full bus handle for the default test agent, derived from the identity hierarchy. */
     private val testAgentHandle = "agent.test-agent-1"
 
+    /** Default permissions granted to the test agent for actions tested in this suite. */
+    private val defaultAgentPermissions = mapOf(
+        "session:manage" to PermissionGrant(PermissionLevel.YES),
+        "session:write" to PermissionGrant(PermissionLevel.YES),
+        "session:read" to PermissionGrant(PermissionLevel.YES)
+    )
+
     /**
      * Builds a harness and registers one agent in the identity registry.
-     * This makes the agent visible to CAG-004/006/007 enforcement.
+     * This makes the agent visible to permission enforcement (CAG-004).
      *
      * Phase 4: Seeds the identity registry directly instead of the former
      * Proactive Broadcast (AGENT_NAMES_UPDATED) pattern.
      *
      * Also seeds the test user identity so CoreFeature can claim human-originated
      * ACTION_CREATED events.
+     *
+     * @param agentPermissions Permissions to grant the agent. Defaults to standard session
+     *   permissions. Pass `emptyMap()` to test permission denial paths.
      */
     private fun TestScope.buildHarnessWithKnownAgent(
         platform: FakePlatformDependencies = FakePlatformDependencies("test"),
         agentHandle: String = testAgentHandle,
-        agentName: String = "Test Agent"
+        agentName: String = "Test Agent",
+        agentPermissions: Map<String, PermissionGrant> = defaultAgentPermissions
     ): TestHarness {
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -132,7 +146,8 @@ class CommandBotFeatureT2GuardrailsTest {
                     localHandle = agentHandle.substringAfterLast('.'),
                     handle = agentHandle,
                     name = agentName,
-                    parentHandle = "agent"
+                    parentHandle = "agent",
+                    permissions = agentPermissions
                 )
             )
         }
@@ -189,14 +204,16 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         // After registration, testAgentHandle is in identityRegistry with parentHandle="agent".
-        // core.SHOW_TOAST is not in agentAllowedNames → should be blocked (CAG-004).
+        // CommandBot publishes ACTION_CREATED, but no feature claims an agent-originated
+        // core.SHOW_TOAST (CoreFeature only claims core-user-originated ACTION_CREATEDs,
+        // and AgentRuntimeFeature is not in this test harness).
         postRawMessage(harness, testAgentHandle, "```auf_core.SHOW_TOAST\n{ \"message\": \"Blocked\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
             val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertNull(toast,
-                "After registration, the agent should be subject to CAG-004 enforcement.")
+                "Agent-originated ACTION_CREATED for core.SHOW_TOAST should not be claimed by any feature in this harness.")
         }
     }
 
@@ -289,50 +306,53 @@ class CommandBotFeatureT2GuardrailsTest {
     }
 
     // ========================================================================
-    // 2. CAG-004: Agent Action Restriction
+    // 2. CAG-004: Agent Permission Enforcement
     // ========================================================================
 
     @Test
-    fun `CAG-004 - agent blocked from non-exposed action receives feedback message`() = runTest {
-        val harness = buildHarnessWithKnownAgent()
+    fun `CAG-004 - agent without required permissions receives denial feedback`() = runTest {
+        // Agent with NO permissions — session.CREATE requires session:manage
+        val harness = buildHarnessWithKnownAgent(agentPermissions = emptyMap())
         runCurrent()
 
-        postRawMessage(harness, testAgentHandle, "```auf_core.SHOW_TOAST\n{ \"message\": \"Blocked\" }\n```")
+        postRawMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Blocked\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
-            // The target action must NOT be dispatched
-            val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
-            assertNull(toast, "Non-exposed action must be blocked for known agents.")
+            // No ACTION_CREATED should be published — the pre-check blocks early
+            val actionCreated = harness.processedActions.find {
+                it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED
+            }
+            assertNull(actionCreated, "ACTION_CREATED must NOT be published when permissions are missing.")
 
             // A feedback SESSION_POST should be dispatched by CommandBot
             val feedbackPost = harness.processedActions.filter {
                 it.name == ActionRegistry.Names.SESSION_POST && it.originator == "commandbot"
             }.lastOrNull()
-            assertNotNull(feedbackPost, "CommandBot should post feedback about the blocked action.")
+            assertNotNull(feedbackPost, "CommandBot should post feedback about the permission denial.")
 
             val msg = feedbackPost.payload?.get("message")?.jsonPrimitive?.contentOrNull ?: ""
-            assertTrue(msg.contains("not available to agents"),
-                "Feedback should explain the action is restricted. Got: $msg")
-            assertTrue(msg.contains("core.SHOW_TOAST"),
+            assertTrue(msg.contains("Permission denied"),
+                "Feedback should indicate permission denial. Got: $msg")
+            assertTrue(msg.contains("session.CREATE"),
                 "Feedback should name the blocked action. Got: $msg")
         }
     }
 
     @Test
-    fun `CAG-004 - human user is unrestricted for same non-exposed action`() = runTest {
+    fun `CAG-004 - human user is unrestricted for same action`() = runTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        // Human user sends the exact same command that would be blocked for an agent.
+        // Human user sends the same command that would be blocked for an unpermissioned agent.
         // CommandBot publishes ACTION_CREATED → CoreFeature claims it → dispatches domain action.
-        postRawMessage(harness, testUser.handle, "```auf_core.SHOW_TOAST\n{ \"message\": \"Human OK\" }\n```")
+        postRawMessage(harness, testUser.handle, "```auf_session.CREATE\n{ \"name\": \"Human OK\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
-            val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
-            assertNotNull(toast, "Human users bypass CAG-004 — CoreFeature should dispatch the domain action.")
-            assertEquals(testUser.handle, toast.originator, "CAG-002: originator should be the human user.")
+            val createAction = harness.processedActions.find { it.name == ActionRegistry.Names.SESSION_CREATE }
+            assertNotNull(createAction, "Human users bypass agent permission checks — CoreFeature should dispatch the domain action.")
+            assertEquals(testUser.handle, createAction.originator, "CAG-002: originator should be the human user.")
         }
     }
 
@@ -341,12 +361,13 @@ class CommandBotFeatureT2GuardrailsTest {
     // ========================================================================
 
     @Test
-    fun `CAG-007 - session POST auto-fills senderId with agentId`() = runTest {
+    fun `CAG-007 - session POST from agent publishes ACTION_CREATED with agent as originator`() = runTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        // Agent sends a session.POST command — the auto-fill rule should inject senderId.
-        // Note: the payload deliberately omits senderId.
+        // Agent sends a session.POST command. CommandBot publishes ACTION_CREATED
+        // with the agent as originator. senderId injection is handled downstream
+        // by AgentRuntimeFeature's sandbox rewrite (not at the CommandBot level).
         postRawMessage(
             harness, testAgentHandle,
             "```auf_session.POST\n{ \"session\": \"${testSession.identity.localHandle}\", \"message\": \"Agent message\" }\n```"
@@ -354,7 +375,6 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         harness.runAndLogOnFailure {
-            // Agent commands now go through ACTION_CREATED, not direct dispatch
             val actionCreated = harness.processedActions.find {
                 it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED &&
                         it.payload?.get("actionName")?.jsonPrimitive?.contentOrNull == "session.POST"
@@ -362,12 +382,17 @@ class CommandBotFeatureT2GuardrailsTest {
 
             assertNotNull(actionCreated, "CommandBot should publish ACTION_CREATED for the agent's session.POST.")
 
+            // CAG-002: originator attribution
+            assertEquals(testAgentHandle,
+                actionCreated.payload?.get("originatorId")?.jsonPrimitive?.contentOrNull,
+                "ACTION_CREATED should identify the requesting agent as originator.")
+
+            // Payload should be preserved
             val actionPayload = actionCreated.payload?.get("actionPayload")?.jsonObject
             assertNotNull(actionPayload, "ACTION_CREATED must include an actionPayload.")
-
-            val senderId = actionPayload["senderId"]?.jsonPrimitive?.contentOrNull
-            assertEquals(testAgentHandle, senderId,
-                "CAG-007 should auto-fill senderId with the requesting agent's handle in the actionPayload.")
+            assertEquals("Agent message",
+                actionPayload["message"]?.jsonPrimitive?.contentOrNull,
+                "The original message should be preserved in the actionPayload.")
         }
     }
 
@@ -508,6 +533,7 @@ class CommandBotFeatureT2GuardrailsTest {
     // 5. Approval Card Metadata Verification
     // ========================================================================
 
+    @Disabled("CAG-006: Approval gate is DEFERRED pending the ASK permission system.")
     @Test
     fun `approval card is posted with correct PartialView metadata`() = runTest {
         val harness = buildHarnessWithKnownAgent()
@@ -550,6 +576,7 @@ class CommandBotFeatureT2GuardrailsTest {
         }
     }
 
+    @Disabled("CAG-006: Approval gate is DEFERRED pending the ASK permission system.")
     @Test
     fun `approval card uses generated approvalId as senderId for PartialView context`() = runTest {
         val harness = buildHarnessWithKnownAgent()
@@ -576,6 +603,7 @@ class CommandBotFeatureT2GuardrailsTest {
         }
     }
 
+    @Disabled("CAG-006: Approval gate is DEFERRED pending the ASK permission system.")
     @Test
     fun `approval card messageId matches the staged PendingApproval cardMessageId`() = runTest {
         val harness = buildHarnessWithKnownAgent()
@@ -635,6 +663,7 @@ class CommandBotFeatureT2GuardrailsTest {
     // 7. Agent Name Display in Approvals
     // ========================================================================
 
+    @Disabled("CAG-006: Approval gate is DEFERRED pending the ASK permission system.")
     @Test
     fun `staged approval uses display name from identity registry`() = runTest {
         val platform = FakePlatformDependencies("test")

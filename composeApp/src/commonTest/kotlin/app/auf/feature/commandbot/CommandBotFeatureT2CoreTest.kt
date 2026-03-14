@@ -2,6 +2,8 @@ package app.auf.feature.commandbot
 
 import app.auf.core.Action
 import app.auf.core.Identity
+import app.auf.core.PermissionGrant
+import app.auf.core.PermissionLevel
 import app.auf.core.generated.ActionRegistry
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreFeature
@@ -25,6 +27,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.junit.jupiter.api.Disabled
 
 /**
  * Tier 2 Core Tests for CommandBotFeature.
@@ -101,6 +104,13 @@ class CommandBotFeatureT2CoreTest {
     /** The full bus handle for the default test agent, derived from the identity hierarchy. */
     private val testAgentHandle = "agent.test-agent-1"
 
+    /** Default permissions granted to the test agent for actions tested in this suite. */
+    private val defaultAgentPermissions = mapOf(
+        "session:manage" to PermissionGrant(PermissionLevel.YES),
+        "session:write" to PermissionGrant(PermissionLevel.YES),
+        "session:read" to PermissionGrant(PermissionLevel.YES)
+    )
+
     /**
      * Builds a harness with a known agent registered in the identity registry.
      * This makes the agent visible to CommandBot's guardrails (CAG-004/006/007).
@@ -117,7 +127,8 @@ class CommandBotFeatureT2CoreTest {
     private fun TestScope.buildHarnessWithKnownAgent(
         platform: FakePlatformDependencies = FakePlatformDependencies("test"),
         agentHandle: String = testAgentHandle,
-        agentName: String = "Test Agent"
+        agentName: String = "Test Agent",
+        agentPermissions: Map<String, PermissionGrant> = defaultAgentPermissions
     ): TestHarness {
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
@@ -143,7 +154,8 @@ class CommandBotFeatureT2CoreTest {
                     localHandle = agentHandle.substringAfterLast('.'),
                     handle = agentHandle,
                     name = agentName,
-                    parentHandle = "agent"
+                    parentHandle = "agent",
+                    permissions = agentPermissions
                 )
             )
         }
@@ -284,6 +296,7 @@ class CommandBotFeatureT2CoreTest {
     // 4. Approval Workflow
     // ========================================================================
 
+    @Disabled("CAG-006: Approval gate is DEFERRED pending the ASK permission system. Re-enable when stageApproval is reactivated.")
     @Test
     fun `approval gate - agent action requiring approval stages a PendingApproval`() = runTest {
         val harness = buildHarnessWithKnownAgent()
@@ -320,6 +333,7 @@ class CommandBotFeatureT2CoreTest {
         }
     }
 
+    @Disabled("CAG-006: Approval gate is DEFERRED pending the ASK permission system.")
     @Test
     fun `approval gate - APPROVE dispatches staged action and resolves state`() = runTest {
         val harness = buildHarnessWithKnownAgent()
@@ -367,6 +381,7 @@ class CommandBotFeatureT2CoreTest {
         }
     }
 
+    @Disabled("CAG-006: Approval gate is DEFERRED pending the ASK permission system.")
     @Test
     fun `approval gate - DENY resolves state without dispatching the action`() = runTest {
         val harness = buildHarnessWithKnownAgent()
@@ -405,6 +420,7 @@ class CommandBotFeatureT2CoreTest {
         }
     }
 
+    @Disabled("CAG-006: Approval gate is DEFERRED pending the ASK permission system.")
     @Test
     fun `approval gate - resolved card becomes clearable after resolution`() = runTest {
         val harness = buildHarnessWithKnownAgent()
@@ -449,6 +465,7 @@ class CommandBotFeatureT2CoreTest {
         }
     }
 
+    @Disabled("CAG-006: Approval gate is DEFERRED pending the ASK permission system.")
     @Test
     fun `approval gate - SESSION_CLEAR removes resolved card but not pending card`() = runTest {
         val harness = buildHarnessWithKnownAgent()
@@ -496,6 +513,7 @@ class CommandBotFeatureT2CoreTest {
         }
     }
 
+    @Disabled("CAG-006: Approval gate is DEFERRED pending the ASK permission system.")
     @Test
     fun `approval gate - resolved approval state cleaned up when card is deleted`() = runTest {
         val harness = buildHarnessWithKnownAgent()
