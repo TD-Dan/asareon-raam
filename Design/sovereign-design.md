@@ -700,7 +700,7 @@ Plumbing upgrades that later phases depend on.
 - context.json missing on load → empty overrides, no crash
 - context.json corrupt on load → empty overrides, warning logged
 
-### Phase B: PrivateSessionStrategy ✅ COMPLETE (unit tests need update)
+### Phase B: PrivateSessionStrategy ✅ COMPLETE
 
 Private session lifecycle validated in isolation and integrated with multi-session pipeline.
 
@@ -722,7 +722,7 @@ Private session lifecycle validated in isolation and integrated with multi-sessi
 
 **Remaining for Phase B:** Update test file for latest SessionInfo/SessionParticipant changes and session.POST senderId removal. Scheduled for next session.
 
-**Success gate — unit tests (50 tests defined, update pending):**
+**Success gate — unit tests (50 tests defined):**
 - identityHandle: in agent.strategy.* namespace, no collisions
 - getInitialState: returns JsonNull
 - getResourceSlots: declares system_instruction slot
