@@ -657,13 +657,21 @@ class AgentRuntimeFeature(
                 ))
             }
             // ================================================================
-            // Phase A: Context collapse persistence
+            // Phase A+C: Context collapse persistence + feedback
             // ================================================================
             ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE,
             ActionRegistry.Names.AGENT_CONTEXT_COLLAPSE -> {
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) } ?: return
                 val agent = agentState.agents[agentId] ?: return
                 saveContextState(agent, agentState, store)
+
+                // Publish ACTION_RESULT if this came from CommandBot (has correlationId)
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+                if (correlationId != null) {
+                    val partitionKey = action.payload?.get("partitionKey")?.jsonPrimitive?.contentOrNull ?: "unknown"
+                    val verb = if (action.name == ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE) "Expanded" else "Collapsed"
+                    publishActionResult(store, correlationId, action.name, success = true, summary = "$verb partition '$partitionKey'.")
+                }
             }
             ActionRegistry.Names.SESSION_SESSION_FEATURE_READY -> {
                 agentState.agents.forEach { (agentId, agent) ->
@@ -718,6 +726,17 @@ class AgentRuntimeFeature(
                 // holders can target a different agent's NVRAM.
                 if (actionName == ActionRegistry.Names.AGENT_UPDATE_NVRAM) {
                     finalPayload = enforceNvramSelfTarget(finalPayload, agent, store)
+                }
+
+                // Context collapse/uncollapse self-targeting: inject agentId if missing.
+                // The agent's payload only contains partitionKey (+ scope), but the
+                // reducer needs agentId to know whose overrides to update. Always
+                // self-targeted — agents can only manage their own context.
+                if (actionName == ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE ||
+                    actionName == ActionRegistry.Names.AGENT_CONTEXT_COLLAPSE) {
+                    if (finalPayload["agentId"] == null) {
+                        finalPayload = JsonObject(finalPayload + ("agentId" to JsonPrimitive(agentUuid.uuid)))
+                    }
                 }
 
                 // ============================================================
