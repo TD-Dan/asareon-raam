@@ -395,7 +395,7 @@ class FileSystemFeature(
                     }
                 }
                 val responsePayload = buildJsonObject {
-                    correlationId?.let { put("correlationId", it) } ?: put("correlationId", JsonNull)
+                    correlationId?.let { put("correlationId", it) }
                     put("contents", Json.encodeToJsonElement(contentMap))
                 }
                 store.deferredDispatch(identity.handle, Action(
