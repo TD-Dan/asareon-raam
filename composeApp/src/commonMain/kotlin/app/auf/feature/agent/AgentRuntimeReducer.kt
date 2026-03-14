@@ -56,11 +56,33 @@ object AgentRuntimeReducer {
                 state.copy(agentStatuses = state.agentStatuses + (payload.agentId to updatedStatus))
             }
 
-            ActionRegistry.Names.AGENT_SET_WORKSPACE_CONTEXT -> {
+            ActionRegistry.Names.AGENT_SET_WORKSPACE_LISTING -> {
                 val agentId = action.payload?.agentUUID() ?: return state
-                val context = action.payload?.get("context")?.jsonPrimitive?.contentOrNull ?: return state
+                val listing = action.payload?.get("listing")?.jsonArray ?: return state
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
-                val updatedStatus = currentStatus.copy(transientWorkspaceContext = context)
+                val updatedStatus = currentStatus.copy(transientWorkspaceListing = listing)
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
+            ActionRegistry.Names.AGENT_SET_PENDING_WORKSPACE_FILES -> {
+                val agentId = action.payload?.agentUUID() ?: return state
+                val pending = action.payload?.get("pending")?.jsonPrimitive?.booleanOrNull ?: return state
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val updatedStatus = currentStatus.copy(pendingWorkspaceFileReads = pending)
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
+            ActionRegistry.Names.AGENT_SET_WORKSPACE_FILE_CONTENTS -> {
+                val agentId = action.payload?.agentUUID() ?: return state
+                val contentsJson = action.payload?.get("contents")?.jsonObject ?: return state
+                val contents = contentsJson.mapValues { (_, value) ->
+                    value.jsonPrimitive.contentOrNull ?: ""
+                }
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val updatedStatus = currentStatus.copy(
+                    transientWorkspaceFileContents = contents,
+                    pendingWorkspaceFileReads = false
+                )
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
 
@@ -110,7 +132,9 @@ object AgentRuntimeReducer {
                     turnMode = if (payload.preview) TurnMode.PREVIEW else TurnMode.DIRECT,
                     stagedTurnContext = null,
                     transientHkgContext = null,
-                    transientWorkspaceContext = null,
+                    transientWorkspaceListing = null,
+                    transientWorkspaceFileContents = emptyMap(),
+                    pendingWorkspaceFileReads = false,
                     contextGatheringStartedAt = null,
                     rateLimitedUntilMs = null, // Clear rate limit state on new turn
                     pendingLedgerSessionIds = emptySet(),
@@ -513,7 +537,9 @@ object AgentRuntimeReducer {
             processingStep = if (isStoppingProcessing) null else currentStatus.processingStep,
             stagedTurnContext = if(shouldClearContext) null else currentStatus.stagedTurnContext,
             transientHkgContext = if (shouldClearContext) null else currentStatus.transientHkgContext,
-            transientWorkspaceContext = if (shouldClearContext) null else currentStatus.transientWorkspaceContext,
+            transientWorkspaceListing = if (shouldClearContext) null else currentStatus.transientWorkspaceListing,
+            transientWorkspaceFileContents = if (shouldClearContext) emptyMap() else currentStatus.transientWorkspaceFileContents,
+            pendingWorkspaceFileReads = if (shouldClearContext) false else currentStatus.pendingWorkspaceFileReads,
             contextGatheringStartedAt = if (shouldClearContext) null else currentStatus.contextGatheringStartedAt,
             pendingLedgerSessionIds = if (shouldClearContext) emptySet() else currentStatus.pendingLedgerSessionIds,
             accumulatedSessionLedgers = if (shouldClearContext) emptyMap() else currentStatus.accumulatedSessionLedgers,

@@ -929,28 +929,6 @@
       }
     },
     {
-      "action_name": "agent.SET_WORKSPACE_CONTEXT",
-      "summary": "[INTERNAL] Stages the formatted workspace file listing string on the agent's status.",
-      "public": false,
-      "broadcast": false,
-      "targeted": false,
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "agentId": {
-            "type": "string"
-          },
-          "context": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "agentId",
-          "context"
-        ]
-      }
-    },
-    {
       "action_name": "agent.SET_CONTEXT_GATHERING_STARTED",
       "summary": "[INTERNAL] Records the timestamp when parallel context gathering began. Used for timeout validation.",
       "public": false,
@@ -1163,7 +1141,7 @@
     },
     {
       "action_name": "agent.CONTEXT_UNCOLLAPSE",
-      "summary": "Expands a context partition or holon file so the agent can see its full content in the next turn. Persisted as a sticky override in context.json.",
+      "summary": "Expands a context partition, holon file, or workspace entry so the agent can see its full content in the next turn. Persisted as a sticky override in context.json.",
       "public": false,
       "broadcast": false,
       "targeted": false,
@@ -1175,7 +1153,7 @@
           },
           "partitionKey": {
             "type": "string",
-            "description": "Partition key (e.g., 'AVAILABLE_ACTIONS') or 'hkg:<holonId>' for a specific holon."
+            "description": "Partition key. Conventions: 'hkg:<holonId>' for a specific holon, 'ws:<relativePath>' for a workspace directory or file (e.g., 'ws:src/', 'ws:src/main.kt'), or a bare partition name (e.g., 'AVAILABLE_ACTIONS')."
           },
           "scope": {
             "type": "string",
@@ -1185,7 +1163,7 @@
               "single"
             ],
             "default": "single",
-            "description": "'single': one holon. 'subtree': holon + reveal children in INDEX. 'full': entire partition."
+            "description": "'single': one item. 'subtree': for HKG holons, reveal children in INDEX; for workspace directories, expand the directory and all nested sub-directories (but not files). 'full': entire partition."
           }
         },
         "required": [
@@ -1199,7 +1177,7 @@
     },
     {
       "action_name": "agent.CONTEXT_COLLAPSE",
-      "summary": "Collapses a context partition or holon file so it shows only a summary in the next turn. Persisted as a sticky override in context.json.",
+      "summary": "Collapses a context partition, holon file, or workspace entry so it shows only a summary in the next turn. Persisted as a sticky override in context.json.",
       "public": false,
       "broadcast": false,
       "targeted": false,
@@ -1211,7 +1189,7 @@
           },
           "partitionKey": {
             "type": "string",
-            "description": "Partition key (e.g., 'AVAILABLE_ACTIONS') or 'hkg:<holonId>' for a specific holon."
+            "description": "Partition key. Conventions: 'hkg:<holonId>' for a specific holon, 'ws:<relativePath>' for a workspace directory or file, or a bare partition name."
           }
         },
         "required": [
@@ -1321,6 +1299,77 @@
           "messages"
         ]
       }
+    },
+    {
+      "action_name": "agent.SET_WORKSPACE_LISTING",
+      "summary": "[INTERNAL] Stores the raw workspace directory listing (JsonArray) from filesystem.RETURN_LIST on the agent status for INDEX tree building.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "listing": {
+            "type": "array",
+            "description": "Raw listing entries from filesystem.RETURN_LIST."
+          }
+        },
+        "required": [
+          "agentId",
+          "listing"
+        ]
+      },
+      "required_permissions": []
+    },
+    {
+      "action_name": "agent.SET_PENDING_WORKSPACE_FILES",
+      "summary": "[INTERNAL] Sets or clears the pending workspace file reads flag. True when a READ_MULTIPLE request for expanded workspace files is in-flight.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "pending": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agentId",
+          "pending"
+        ]
+      },
+      "required_permissions": []
+    },
+    {
+      "action_name": "agent.SET_WORKSPACE_FILE_CONTENTS",
+      "summary": "[INTERNAL] Stores the fetched contents of expanded workspace files and clears the pending flag. Received after a filesystem.READ_MULTIPLE response.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "contents": {
+            "type": "object",
+            "description": "Map of workspace-relative path to file content string."
+          }
+        },
+        "required": [
+          "agentId",
+          "contents"
+        ]
+      },
+      "required_permissions": []
     }
   ]
 }

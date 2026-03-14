@@ -111,6 +111,7 @@ object AgentCognitivePipeline {
             ActionRegistry.Names.SESSION_RETURN_LEDGER -> handleLedgerResponse(payload, store)
             ActionRegistry.Names.KNOWLEDGEGRAPH_RETURN_CONTEXT -> handleHkgContextResponse(payload, store)
             ActionRegistry.Names.FILESYSTEM_RETURN_LIST -> handleWorkspaceListingResponse(payload, store)
+            ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT -> handleWorkspaceFileContentsResponse(payload, store)
             ActionRegistry.Names.GATEWAY_RETURN_RESPONSE -> handleGatewayResponse(payload, store)
             ActionRegistry.Names.GATEWAY_RETURN_PREVIEW -> handleGatewayPreviewResponse(payload, store)
             else -> {
@@ -202,7 +203,14 @@ object AgentCognitivePipeline {
 
     /**
      * Handles the workspace listing response from the filesystem feature.
-     * Extracts the correlationId (agentId), formats the listing, and stages it via action.
+     * Extracts the correlationId (agentId), stores the raw listing, and dispatches
+     * file reads for any EXPANDED workspace files.
+     *
+     * Phase 1: Store the raw listing (AGENT_SET_WORKSPACE_LISTING) — this unblocks
+     * the INDEX tree building even if no files are expanded.
+     * Phase 2: If any workspace files are EXPANDED in collapse overrides, dispatch
+     * a single READ_MULTIPLE request and set pendingWorkspaceFileReads = true.
+     * If no files are expanded, workspace context is immediately ready.
      */
     private fun handleWorkspaceListingResponse(payload: JsonObject, store: Store) {
         val agentIdStr = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: run {
@@ -212,11 +220,108 @@ object AgentCognitivePipeline {
             return
         }
 
-        val formattedContext = WorkspaceContextProvider.formatListingResponse(payload, store.platformDependencies)
+        val listing = payload["listing"]?.jsonArray ?: run {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
+                "handleWorkspaceListingResponse: Missing 'listing' in payload for agent '$agentIdStr'. Storing empty listing.")
+            JsonArray(emptyList())
+        }
 
-        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_WORKSPACE_CONTEXT, buildJsonObject {
+        val agentId = IdentityUUID(agentIdStr)
+
+        // 1. Store the raw listing for INDEX tree building
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_WORKSPACE_LISTING, buildJsonObject {
             put("agentId", agentIdStr)
-            put("context", formattedContext)
+            put("listing", listing)
+        }))
+
+        // 2. Determine which workspace files need content fetched
+        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
+        val statusInfo = state.agentStatuses[agentId] ?: AgentStatusInfo()
+        val agent = state.agents[agentId] ?: return
+
+        val safeAgentId = agentIdStr.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+        val workspacePrefix = "$safeAgentId/workspace"
+
+        val entries = WorkspaceContextFormatter.parseListingEntries(
+            listing, workspacePrefix, store.platformDependencies
+        )
+
+        // Build effective overrides: root directory auto-expanded (same pattern as HKG root).
+        // Root-level entries (parentPath == null, isDirectory) get EXPANDED unless agent overrode.
+        val agentOverrides = statusInfo.contextCollapseOverrides
+        val effectiveOverrides = buildMap {
+            // Seed with root directory default — ensure top-level tree is always visible
+            entries
+                .filter { it.parentPath == null && it.isDirectory }
+                .forEach { rootDir ->
+                    val key = "ws:${rootDir.relativePath}"
+                    if (key !in agentOverrides) {
+                        put(key, CollapseState.EXPANDED)
+                    }
+                }
+            putAll(agentOverrides)
+        }
+
+        val expandedFilePaths = WorkspaceContextFormatter.getExpandedFilePaths(entries, effectiveOverrides)
+
+        if (expandedFilePaths.isNotEmpty()) {
+            // 3a. Dispatch READ_MULTIPLE for expanded files and set pending flag
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PENDING_WORKSPACE_FILES, buildJsonObject {
+                put("agentId", agentIdStr)
+                put("pending", true)
+            }))
+
+            // Paths must be sandbox-relative (prefixed with the agent's workspace path)
+            val sandboxPaths = expandedFilePaths.map { "$workspacePrefix/$it" }
+
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.FILESYSTEM_READ_MULTIPLE, buildJsonObject {
+                put("paths", buildJsonArray { sandboxPaths.forEach { add(it) } })
+                put("correlationId", "ws:$agentIdStr")
+            }))
+
+            store.platformDependencies.log(LogLevel.DEBUG, LOG_TAG,
+                "handleWorkspaceListingResponse: Dispatched READ_MULTIPLE for ${expandedFilePaths.size} expanded workspace files for agent '$agentIdStr'.")
+        } else {
+            // 3b. No expanded files — workspace context is fully ready with just the listing
+            store.platformDependencies.log(LogLevel.DEBUG, LOG_TAG,
+                "handleWorkspaceListingResponse: No expanded workspace files for agent '$agentIdStr'. Listing-only context ready.")
+        }
+    }
+
+    /**
+     * Handles the READ_MULTIPLE response containing expanded workspace file contents.
+     * Strips the workspace prefix from paths to produce workspace-relative keys,
+     * then stores the contents via AGENT_SET_WORKSPACE_FILE_CONTENTS.
+     */
+    private fun handleWorkspaceFileContentsResponse(payload: JsonObject, store: Store) {
+        val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
+        if (!correlationId.startsWith("ws:")) return // Not a workspace file read
+
+        val agentIdStr = correlationId.removePrefix("ws:")
+        val contentsJson = payload["contents"]?.jsonObject
+
+        if (contentsJson == null) {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
+                "handleWorkspaceFileContentsResponse: Missing 'contents' for agent '$agentIdStr'. Storing empty map.")
+        }
+
+        // Strip the sandbox prefix from paths to produce workspace-relative keys.
+        // The READ_MULTIPLE response uses sandbox-relative paths like "{agentId}/workspace/src/main.kt".
+        // We need just "src/main.kt" to match the WorkspaceContextFormatter key convention.
+        val safeAgentId = agentIdStr.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+        val workspacePrefix = "$safeAgentId/workspace/"
+
+        val relativeContents = buildJsonObject {
+            contentsJson?.forEach { (path, content) ->
+                val normalizedPath = path.replace("\\", "/")
+                val relativePath = normalizedPath.removePrefix(workspacePrefix)
+                put(relativePath, content)
+            }
+        }
+
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_WORKSPACE_FILE_CONTENTS, buildJsonObject {
+            put("agentId", agentIdStr)
+            put("contents", relativeContents)
         }))
     }
 
@@ -350,7 +455,7 @@ object AgentCognitivePipeline {
             return
         }
 
-        val workspaceReady = statusInfo.transientWorkspaceContext != null
+        val workspaceReady = statusInfo.transientWorkspaceListing != null && !statusInfo.pendingWorkspaceFileReads
 
         // Polymorphic: ask the strategy if it expects additional context.
         val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
@@ -496,10 +601,50 @@ object AgentCognitivePipeline {
         }
 
         // ============================================================
-        // Inject workspace file awareness context
+        // Inject workspace context (Two-Partition Model: INDEX + FILES)
+        //
+        // INDEX: navigational tree with [EXPANDED]/[COLLAPSED] badges.
+        // FILES: full content of expanded files only.
+        // Mirrors the HKG two-partition approach.
         // ============================================================
-        statusInfo.transientWorkspaceContext?.takeIf { it.isNotBlank() }?.let {
-            contextMap["WORKSPACE_FILES"] = it
+        val workspaceListing = statusInfo.transientWorkspaceListing
+        if (workspaceListing != null && workspaceListing.isNotEmpty()) {
+            val safeAgentIdForWs = agent.identityUUID.uuid.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+            val workspacePrefix = "$safeAgentIdForWs/workspace"
+
+            val wsEntries = WorkspaceContextFormatter.parseListingEntries(
+                workspaceListing, workspacePrefix, platformDependencies
+            )
+
+            if (wsEntries.isNotEmpty()) {
+                val agentOverrides = statusInfo.contextCollapseOverrides
+
+                // Build effective overrides: root directories auto-expanded
+                // (agent sees top-level contents by default).
+                val effectiveWsOverrides = buildMap {
+                    wsEntries
+                        .filter { it.parentPath == null && it.isDirectory }
+                        .forEach { rootDir ->
+                            val key = "ws:${rootDir.relativePath}"
+                            if (key !in agentOverrides) {
+                                put(key, CollapseState.EXPANDED)
+                            }
+                        }
+                    putAll(agentOverrides)
+                }
+
+                contextMap["WORKSPACE_INDEX"] = WorkspaceContextFormatter.buildIndexTree(
+                    wsEntries, effectiveWsOverrides
+                )
+
+                // FILES section: only if there are expanded files with content
+                val fileContents = statusInfo.transientWorkspaceFileContents
+                if (fileContents.isNotEmpty()) {
+                    contextMap["WORKSPACE_FILES"] = WorkspaceContextFormatter.buildFilesSection(
+                        fileContents, effectiveWsOverrides, platformDependencies
+                    )
+                }
+            }
         }
 
         // ============================================================

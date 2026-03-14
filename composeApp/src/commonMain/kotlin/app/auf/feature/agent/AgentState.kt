@@ -6,6 +6,7 @@ import app.auf.core.IdentityHandle
 import app.auf.core.IdentityUUID
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -209,8 +210,21 @@ data class AgentStatusInfo(
     val stagedPreviewData: StagedPreviewData? = null,
     val stagedTurnContext: List<GatewayMessage>? = null,
     val transientHkgContext: JsonObject? = null,
-    /** Formatted workspace file listing for injection into the system prompt. Null = not yet received. */
-    val transientWorkspaceContext: String? = null,
+
+    // ========================================================================
+    // Workspace Context (Two-Partition Model)
+    //
+    // Raw listing from filesystem.RETURN_LIST — used by WorkspaceContextFormatter
+    // to build the WORKSPACE_INDEX tree with collapse badges.
+    // ========================================================================
+
+    /** Raw workspace listing entries from filesystem.RETURN_LIST. Null = not yet received. */
+    val transientWorkspaceListing: JsonArray? = null,
+    /** File contents for EXPANDED workspace files. Key = relative path, value = content. */
+    val transientWorkspaceFileContents: Map<String, String> = emptyMap(),
+    /** True while a filesystem.READ_MULTIPLE request for expanded workspace files is in-flight. */
+    val pendingWorkspaceFileReads: Boolean = false,
+
     /** Timestamp (epoch ms) when context gathering started. Used for timeout validation. */
     val contextGatheringStartedAt: Long? = null,
     /** Input tokens consumed by the last completed generation request. */

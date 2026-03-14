@@ -510,7 +510,14 @@ class AgentRuntimeFeature(
                 val agentId = action.payload?.agentUUID() ?: return
                 AgentCognitivePipeline.evaluateFullContext(agentId, store)
             }
-            ActionRegistry.Names.AGENT_SET_WORKSPACE_CONTEXT -> {
+            ActionRegistry.Names.AGENT_SET_WORKSPACE_LISTING -> {
+                // Listing received — evaluateFullContext checks if file reads are pending.
+                // If no expanded files, workspace is ready and the gate proceeds.
+                val agentId = action.payload?.agentUUID() ?: return
+                AgentCognitivePipeline.evaluateFullContext(agentId, store)
+            }
+            ActionRegistry.Names.AGENT_SET_WORKSPACE_FILE_CONTENTS -> {
+                // Expanded file contents received — workspace context is now complete.
                 val agentId = action.payload?.agentUUID() ?: return
                 AgentCognitivePipeline.evaluateFullContext(agentId, store)
             }
@@ -671,6 +678,61 @@ class AgentRuntimeFeature(
                         "${action.name} side-effect: Agent '$agentId' not found (may have been deleted). Context state not persisted.")
                     return
                 }
+
+                // ============================================================
+                // Workspace subtree scope expansion (§ Two-Axis Collapse Model)
+                //
+                // When scope == "subtree" and the partitionKey targets a workspace
+                // directory ("ws:src/"), expand all nested sub-directories so the
+                // agent sees the full tree structure — but do NOT expand any files
+                // (the agent explicitly opens files it needs).
+                //
+                // The reducer has already set the target key to EXPANDED. Here we
+                // fan out individual CONTEXT_UNCOLLAPSE dispatches for each child
+                // directory in the subtree.
+                // ============================================================
+                if (action.name == ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE) {
+                    val scope = action.payload?.get("scope")?.jsonPrimitive?.contentOrNull ?: "single"
+                    val partitionKey = action.payload?.get("partitionKey")?.jsonPrimitive?.contentOrNull
+
+                    if (scope == "subtree" && partitionKey != null && partitionKey.startsWith("ws:")) {
+                        val directoryPath = partitionKey.removePrefix("ws:")
+                        val statusInfo = agentState.agentStatuses[agentId]
+                        val workspaceListing = statusInfo?.transientWorkspaceListing
+
+                        if (workspaceListing != null) {
+                            val safeAgentIdStr = agentId.uuid.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+                            val workspacePrefix = "$safeAgentIdStr/workspace"
+                            val entries = WorkspaceContextFormatter.parseListingEntries(
+                                workspaceListing, workspacePrefix, platformDependencies
+                            )
+                            val subtreeDirs = WorkspaceContextFormatter.getSubtreeDirectoryPaths(directoryPath, entries)
+
+                            // Dispatch individual CONTEXT_UNCOLLAPSE for each sub-directory
+                            // (the target directory itself was already handled by the reducer)
+                            subtreeDirs
+                                .filter { it != directoryPath } // Skip the target — already expanded
+                                .forEach { dirPath ->
+                                    store.deferredDispatch(identity.handle, Action(
+                                        ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE,
+                                        buildJsonObject {
+                                            put("agentId", agentId.uuid)
+                                            put("partitionKey", "ws:$dirPath")
+                                            // scope = "single" for children — prevent recursive re-entry
+                                        }
+                                    ))
+                                }
+
+                            platformDependencies.log(LogLevel.DEBUG, identity.handle,
+                                "CONTEXT_UNCOLLAPSE subtree: Expanded ${subtreeDirs.size} directories under '$directoryPath' for agent '$agentId'.")
+                        } else {
+                            platformDependencies.log(LogLevel.WARN, identity.handle,
+                                "CONTEXT_UNCOLLAPSE subtree: No workspace listing available for agent '$agentId'. " +
+                                        "Subtree expansion deferred to next turn when listing is refreshed.")
+                        }
+                    }
+                }
+
                 saveContextState(agent, agentState, store)
 
                 // Publish ACTION_RESULT if this came from CommandBot (has correlationId)
@@ -829,6 +891,71 @@ class AgentRuntimeFeature(
                             "HKG Write Guard: UPDATE_HOLON_CONTENT from agent '$agentUuid' has no 'holonId'. " +
                                     "Guard bypassed — KnowledgeGraphFeature will reject downstream."
                         )
+                    }
+                }
+
+                // ============================================================
+                // Workspace Write Guard
+                //
+                // When an agent targets filesystem.WRITE for a file in its
+                // workspace, verify the target file is EXPANDED in the agent's
+                // context. Block the write if not — the agent must expand the
+                // file first to avoid writing stale or partial data.
+                // Same rationale as the HKG Write Guard above.
+                // ============================================================
+                if (actionName == ActionRegistry.Names.FILESYSTEM_WRITE) {
+                    val targetPath = finalPayload["path"]?.jsonPrimitive?.contentOrNull
+                    if (targetPath != null) {
+                        val safeAgentIdStr = agentUuid.uuid.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+                        val workspaceMarker = "$safeAgentIdStr/workspace/"
+
+                        if (targetPath.startsWith(workspaceMarker)) {
+                            val relativePath = targetPath.removePrefix(workspaceMarker)
+                            val agentStatusInfo = agentState.agentStatuses[agentUuid] ?: AgentStatusInfo()
+                            val fileCollapseState = agentStatusInfo.contextCollapseOverrides["ws:$relativePath"]
+
+                            // Only guard writes to files that already exist in the workspace listing.
+                            // New file creation (file not in listing) is always allowed — the agent
+                            // can create files without first expanding them.
+                            val workspaceListing = agentStatusInfo.transientWorkspaceListing
+                            val fileExistsInListing = workspaceListing != null && workspaceListing.any { entry ->
+                                val entryPath = entry.jsonObject["path"]?.jsonPrimitive?.contentOrNull
+                                    ?.replace("\\", "/")
+                                    ?.removePrefix(workspaceMarker)
+                                entryPath == relativePath
+                            }
+
+                            if (fileExistsInListing && fileCollapseState != CollapseState.EXPANDED) {
+                                // Block — post sentinel error to agent's output session
+                                val targetSessionUUID = agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull()
+                                if (targetSessionUUID != null) {
+                                    store.deferredDispatch(identity.handle, Action(
+                                        ActionRegistry.Names.SESSION_POST,
+                                        buildJsonObject {
+                                            put("session", targetSessionUUID.uuid)
+                                            put("senderId", "system")
+                                            put("message", "SYSTEM SENTINEL: Error: Write blocked! You are attempting to modify workspace file " +
+                                                    "'$relativePath' which is not expanded in your context. Expand the file first:\n" +
+                                                    "```auf_agent.CONTEXT_UNCOLLAPSE\n" +
+                                                    "{ \"partitionKey\": \"ws:$relativePath\", \"scope\": \"single\" }\n" +
+                                                    "```\n" +
+                                                    "Then retry your write to ensure you are not omitting data.")
+                                        }
+                                    ))
+                                }
+
+                                platformDependencies.log(
+                                    LogLevel.WARN, identity.handle,
+                                    "Workspace Write Guard: Blocked write to collapsed file '$relativePath' by agent '$agentUuid'."
+                                )
+
+                                publishActionResult(
+                                    store, correlationId, actionName, success = false,
+                                    error = "Write blocked: workspace file '$relativePath' is not expanded in agent context."
+                                )
+                                return // Do not forward the action
+                            }
+                        }
                     }
                 }
 
@@ -1082,7 +1209,13 @@ class AgentRuntimeFeature(
             }
             ActionRegistry.Names.FILESYSTEM_RETURN_READ -> handleFileSystemReadResponse(payload, store)
             ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT -> {
-                // Currently only received via command responses — would have been handled above
+                // Route workspace file content responses (correlationId starts with "ws:") to the pipeline.
+                // Other RETURN_FILES_CONTENT responses are command responses handled above.
+                val wsCorrelationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
+                if (wsCorrelationId != null && wsCorrelationId.startsWith("ws:")) {
+                    AgentCognitivePipeline.handleTargetedAction(action, store)
+                }
+                // If not a workspace response and not handled as a pending command above, ignore.
             }
         }
     }
