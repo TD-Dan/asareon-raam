@@ -22,7 +22,7 @@ class KnowledgeGraphFeature(
     override val identity: Identity = Identity(uuid = null, handle = "knowledgegraph", localHandle = "knowledgegraph", name="Knowledge Graph")
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
 
-    @Serializable data class FilesContentPayload(val correlationId: String?, val contents: Map<String, String>)
+    @Serializable data class FilesContentPayload(val correlationId: String? = null, val contents: Map<String, String>)
     @Serializable data class AnalysisCompletePayload(val items: List<ImportItem>, val selectedActions: Map<String, ImportAction>, val contents: Map<String, String>)
 
     private fun isModificationLocked(
