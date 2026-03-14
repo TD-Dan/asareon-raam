@@ -95,7 +95,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
         val result = ConversationLogFormatter.format(sessions, platform)
 
         assertTrue(result.contains("Alice (user.alice)"), "Should include sender name and ID")
-        assertTrue(result.contains("ISO_TIMESTAMP_5000"), "Should format timestamp via platform")
+        assertTrue(result.contains("2026-01-01T00:00:05Z"), "Should format timestamp via platform")
         assertTrue(result.contains("What is 2+2?"), "Should include message content")
     }
 

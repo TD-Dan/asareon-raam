@@ -158,14 +158,30 @@ open class FakePlatformDependencies(
         val hex = uuidCounter.toString(16).padStart(12, '0')
         return "00000000-0000-4000-a000-$hex"
     }
-    override fun formatIsoTimestamp(timestamp: Long): String = "ISO_TIMESTAMP_$timestamp"
+    override fun formatIsoTimestamp(timestamp: Long): String {
+        // Return a valid ISO 8601 timestamp that normalizeHolonId can parse.
+        // Deterministic per input value — encodes the timestamp into time fields.
+        val totalSeconds = timestamp / 1000
+        val s = (totalSeconds % 60).toInt()
+        val m = ((totalSeconds / 60) % 60).toInt()
+        val h = ((totalSeconds / 3600) % 24).toInt()
+        val days = (totalSeconds / 86400).toInt()
+        // Spread days across a plausible date range starting from 2026-01-01
+        val d = (days % 28) + 1 // 1-28
+        val mo = ((days / 28) % 12) + 1 // 1-12
+        val y = 2026 + (days / 336)
+        return "${y.toString().padStart(4, '0')}-${mo.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}T${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}Z"
+    }
     override fun parseIsoTimestamp(timestamp: String): Long? {
-        // Support the fake format produced by formatIsoTimestamp
-        return if (timestamp.startsWith("ISO_TIMESTAMP_")) {
-            timestamp.removePrefix("ISO_TIMESTAMP_").toLongOrNull()
-        } else {
-            null
+        // Support the old fake format for backward compatibility
+        if (timestamp.startsWith("ISO_TIMESTAMP_")) {
+            return timestamp.removePrefix("ISO_TIMESTAMP_").toLongOrNull()
         }
+        // Support valid ISO 8601 format — return currentTime as approximation
+        if (timestamp.matches(Regex("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z"))) {
+            return currentTime
+        }
+        return null
     }
     override fun formatDisplayTimestamp(timestamp: Long): String = "DISPLAY_TIMESTAMP_$timestamp"
     override fun copyToClipboard(text: String) { clipboardContent = text }
