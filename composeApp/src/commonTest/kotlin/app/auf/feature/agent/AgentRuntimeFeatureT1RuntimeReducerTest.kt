@@ -40,6 +40,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.SovereignStrategy, legacyId = "sovereign_v1")
         CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.StateMachineStrategy)
         CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.PrivateSessionStrategy)
+        CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.HKGStrategy)
     }
 
     @AfterTest
@@ -953,6 +954,89 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         ), platform)
 
         assertEquals(saved, reloaded.agentStatuses[agentId]!!.contextCollapseOverrides)
+    }
+
+    // =========================================================================
+    // Context Collapse — Silent failure diagnostics (Phase C)
+    // =========================================================================
+
+    @Test
+    fun `CONTEXT_UNCOLLAPSE without agentId should be no-op`() {
+        val agentId = uid("a1")
+        val state = AgentRuntimeState(
+            agents = mapOf(agentId to testAgent("a1", "Test")),
+            agentStatuses = mapOf(agentId to AgentStatusInfo())
+        )
+
+        // Payload has partitionKey but NO agentId — this was the live Meridian bug
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE,
+            buildJsonObject {
+                put("partitionKey", "hkg:some-holon"); put("scope", "single")
+            }
+        ), platform)
+
+        // State should be completely unchanged
+        assertEquals(state, result)
+        assertTrue(result.agentStatuses[agentId]!!.contextCollapseOverrides.isEmpty())
+    }
+
+    @Test
+    fun `CONTEXT_COLLAPSE without agentId should be no-op`() {
+        val agentId = uid("a1")
+        val existing = mapOf("hkg:some-holon" to CollapseState.EXPANDED)
+        val state = AgentRuntimeState(
+            agents = mapOf(agentId to testAgent("a1", "Test")),
+            agentStatuses = mapOf(agentId to AgentStatusInfo(contextCollapseOverrides = existing))
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_CONTEXT_COLLAPSE,
+            buildJsonObject { put("partitionKey", "hkg:some-holon") }
+        ), platform)
+
+        // EXPANDED override should remain — action was silently dropped
+        assertEquals(CollapseState.EXPANDED, result.agentStatuses[agentId]!!.contextCollapseOverrides["hkg:some-holon"])
+    }
+
+    @Test
+    fun `CONTEXT_UNCOLLAPSE without partitionKey should be no-op`() {
+        val agentId = uid("a1")
+        val state = AgentRuntimeState(
+            agents = mapOf(agentId to testAgent("a1", "Test")),
+            agentStatuses = mapOf(agentId to AgentStatusInfo())
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE,
+            buildJsonObject { put("agentId", "a1"); put("scope", "single") }
+        ), platform)
+
+        assertEquals(state, result)
+    }
+
+    @Test
+    fun `CONTEXT_STATE_LOADED with invalid CollapseState value should default to COLLAPSED`() {
+        val agentId = uid("a1")
+        val state = AgentRuntimeState(
+            agents = mapOf(agentId to testAgent("a1", "Test")),
+            agentStatuses = mapOf(agentId to AgentStatusInfo())
+        )
+
+        val result = AgentRuntimeReducer.reduce(state, Action(
+            ActionRegistry.Names.AGENT_CONTEXT_STATE_LOADED,
+            buildJsonObject {
+                put("agentId", "a1")
+                put("overrides", buildJsonObject {
+                    put("hkg:good-key", "EXPANDED")
+                    put("hkg:bad-key", "FOOBAR_INVALID")
+                })
+            }
+        ), platform)
+
+        val overrides = result.agentStatuses[agentId]!!.contextCollapseOverrides
+        assertEquals(CollapseState.EXPANDED, overrides["hkg:good-key"])
+        assertEquals(CollapseState.COLLAPSED, overrides["hkg:bad-key"])
     }
 
     // =========================================================================
