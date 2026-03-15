@@ -11,9 +11,9 @@
       "action_name": "core.SET_ACTIVE_VIEW",
       "summary": "Changes the main view displayed in the UI.",
       "public": true,
-      "broadcast": true,
+      "broadcast": false,
       "targeted": false,
-      "required_permissions": [],
+      "hidden": true,
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -24,7 +24,8 @@
         "required": [
           "key"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.SHOW_DEFAULT_VIEW",
@@ -32,6 +33,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "hidden": true,
       "required_permissions": []
     },
     {
@@ -40,7 +42,6 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -55,7 +56,8 @@
           "width",
           "height"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.SHOW_TOAST",
@@ -63,7 +65,6 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -74,7 +75,8 @@
         "required": [
           "message"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.CLEAR_TOAST",
@@ -82,6 +84,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "hidden": true,
       "required_permissions": []
     },
     {
@@ -117,7 +120,6 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": ["core:identity"],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -128,7 +130,8 @@
         "required": [
           "name"
         ]
-      }
+      },
+      "required_permissions": ["core:identity"]
     },
     {
       "action_name": "core.REMOVE_USER_IDENTITY",
@@ -136,7 +139,6 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": ["core:identity"],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -147,7 +149,8 @@
         "required": [
           "id"
         ]
-      }
+      },
+      "required_permissions": ["core:identity"]
     },
     {
       "action_name": "core.SET_ACTIVE_USER_IDENTITY",
@@ -155,7 +158,6 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -166,7 +168,8 @@
         "required": [
           "id"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.SHOW_CONFIRMATION_DIALOG",
@@ -174,7 +177,6 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -208,7 +210,8 @@
           "confirmButtonText",
           "requestId"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.DISMISS_CONFIRMATION_DIALOG",
@@ -216,7 +219,6 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -228,7 +230,8 @@
         "required": [
           "confirmed"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.IDENTITIES_UPDATED",
@@ -236,7 +239,6 @@
       "public": false,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -257,7 +259,8 @@
         "required": [
           "identities"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.IDENTITIES_LOADED",
@@ -265,7 +268,6 @@
       "public": false,
       "broadcast": false,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -285,7 +287,8 @@
         "required": [
           "identities"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.RETURN_CONFIRMATION",
@@ -293,7 +296,6 @@
       "public": false,
       "broadcast": false,
       "targeted": true,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -308,7 +310,8 @@
           "requestId",
           "confirmed"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.REGISTER_IDENTITY",
@@ -316,7 +319,6 @@
       "public": true,
       "broadcast": false,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -346,7 +348,8 @@
           }
         },
         "required": ["name"]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.RETURN_REGISTER_IDENTITY",
@@ -354,7 +357,6 @@
       "public": false,
       "broadcast": false,
       "targeted": true,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -368,7 +370,8 @@
           "error": { "type": "string" }
         },
         "required": ["success"]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.UNREGISTER_IDENTITY",
@@ -376,7 +379,6 @@
       "public": true,
       "broadcast": false,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -386,7 +388,8 @@
           }
         },
         "required": ["handle"]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.IDENTITY_REGISTRY_UPDATED",
@@ -402,7 +405,6 @@
       "public": true,
       "broadcast": false,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -422,7 +424,8 @@
           }
         },
         "required": ["handle", "newName"]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.RETURN_UPDATE_IDENTITY",
@@ -430,7 +433,6 @@
       "public": false,
       "broadcast": false,
       "targeted": true,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -444,7 +446,8 @@
           "error": { "type": "string" }
         },
         "required": ["success", "oldHandle"]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.REGISTER_PENDING_COMMAND",
@@ -452,7 +455,6 @@
       "public": false,
       "broadcast": false,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -462,7 +464,8 @@
           "originatorId": { "type": "string" }
         },
         "required": ["correlationId", "sessionId", "actionName", "originatorId"]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.CLEAR_PENDING_COMMAND",
@@ -470,14 +473,14 @@
       "public": false,
       "broadcast": false,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
           "correlationId": { "type": "string" }
         },
         "required": ["correlationId"]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.SET_PERMISSION",
@@ -485,7 +488,6 @@
       "public": false,
       "broadcast": false,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -494,7 +496,8 @@
           "level": { "type": "string", "description": "The permission level. ASK and APP_LIFETIME are reserved for the ASK system." }
         },
         "required": ["identityHandle", "permissionKey", "level"]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.SET_PERMISSIONS_BATCH",
@@ -502,7 +505,6 @@
       "public": false,
       "broadcast": false,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -520,7 +522,8 @@
           }
         },
         "required": ["grants"]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.PERMISSIONS_UPDATED",
@@ -536,7 +539,6 @@
       "public": false,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -546,7 +548,8 @@
           "sessionId": { "type": ["string", "null"], "description": "Session context for feedback, if available." }
         },
         "required": ["blockedAction", "originatorHandle", "missingPermissions"]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.REQUEST_PERMISSION_ESCALATION",
@@ -554,7 +557,6 @@
       "public": true,
       "broadcast": false,
       "targeted": true,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -563,7 +565,8 @@
           "reason": { "type": "string", "description": "Human-readable justification for the escalation." }
         },
         "required": ["requestingHandle", "requestedPermissions"]
-      }
+      },
+      "required_permissions": []
     }
   ]
 }

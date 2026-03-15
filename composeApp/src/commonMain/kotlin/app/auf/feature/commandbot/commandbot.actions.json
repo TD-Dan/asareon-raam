@@ -9,6 +9,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "hidden": true,
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -29,6 +30,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "hidden": true,
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -212,6 +214,7 @@
       "public": true,
       "broadcast": false,
       "targeted": false,
+      "hidden": true,
       "payload_schema": {
         "type": "object",
         "properties": {

@@ -393,63 +393,6 @@
       ]
     },
     {
-      "action_name": "agent.SET_EDITING",
-      "summary": "Sets which agent is currently being edited in the UI.",
-      "public": true,
-      "broadcast": true,
-      "targeted": false,
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "agentId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
-      },
-      "required_permissions": []
-    },
-    {
-      "action_name": "agent.SET_MANAGER_TAB",
-      "summary": "Switches the active tab in the Agent Manager View.",
-      "public": true,
-      "broadcast": true,
-      "targeted": false,
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "tabIndex": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "tabIndex"
-        ]
-      },
-      "required_permissions": []
-    },
-    {
-      "action_name": "agent.SELECT_RESOURCE",
-      "summary": "Selects a system resource for viewing/editing.",
-      "public": true,
-      "broadcast": true,
-      "targeted": false,
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "resourceId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
-      },
-      "required_permissions": []
-    },
-    {
       "action_name": "agent.SAVE_RESOURCE",
       "summary": "Saves changes to a system resource.",
       "public": true,
@@ -706,6 +649,63 @@
       "payload_schema": {
         "type": "object"
       }
+    },
+    {
+      "action_name": "agent.SET_EDITING",
+      "summary": "[INTERNAL] Sets which agent is currently being edited in the UI.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "required_permissions": []
+    },
+    {
+      "action_name": "agent.SELECT_RESOURCE",
+      "summary": "[INTERNAL] Selects a system resource for viewing/editing.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "resourceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "required_permissions": []
+    },
+    {
+      "action_name": "agent.SET_MANAGER_TAB",
+      "summary": "Switches the active tab in the Agent Manager View.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "tabIndex": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tabIndex"
+        ]
+      },
+      "required_permissions": []
     },
     {
       "action_name": "agent.VALIDATE_SOVEREIGN_STATE",
