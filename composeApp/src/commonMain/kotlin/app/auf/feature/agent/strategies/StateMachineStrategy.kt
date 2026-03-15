@@ -7,32 +7,11 @@ import kotlinx.serialization.json.*
 /**
  * A strategy driven by a user-provided State Machine definition document.
  *
- * Designed as a clean test harness for NVRAM read/write cycles, and as a
- * general-purpose framework for phased agent behavior (OODA, plan-execute-reflect,
- * custom workflows, etc.).
+ * ## Delimiter Convention
  *
- * ## Design
- * - The state machine document (a markdown resource) defines phases and transition rules
- *   in natural language. The strategy does NOT parse the markdown structurally — it
- *   includes the full document in the system prompt and tells the agent its current phase.
- * - The agent reads the rules for its current phase and calls `UPDATE_NVRAM` when it
- *   determines a transition is warranted.
- * - `postProcessResponse` increments the turn counter but does NOT enforce transitions —
- *   phase changes are agent-driven via the NVRAM self-write path.
- *
- * ## NVRAM Schema (3 registers)
- * - `phase`: Current operational phase (string). Initialized to "READY".
- * - `previousPhase`: The phase before the last transition (string|null). For audit trail.
- * - `turnCount`: Monotonically increasing turn counter (int). Incremented by postProcess.
- *
- * ## Resource Slots
- * - `system_instruction`: Identity and behavioral instructions.
- * - `state_machine`: The state machine definition document (markdown).
- *
- * ## Lifecycle
- * - Session subscription awareness (like Vanilla).
- * - `validateConfig` enforces outputSessionId ∈ subscribedSessionIds (like Vanilla).
- * - Built-in resources provide a default OODA loop definition.
+ * Strategy-owned sections use [ContextDelimiters.h1]. Gathered contexts arrive
+ * pre-wrapped from the pipeline. The `[[[ - SYSTEM PROMPT - ]]]` wrapper is
+ * pipeline-owned.
  */
 object StateMachineStrategy : CognitiveStrategy {
     override val identityHandle: IdentityHandle = IdentityHandle("agent.strategy.statemachine")
@@ -93,82 +72,69 @@ object StateMachineStrategy : CognitiveStrategy {
         val stateMachineDoc = context.resolvedResources[SLOT_STATE_MACHINE] ?: ""
 
         return buildString {
-            // 1. Identity
-            appendLine("--- YOUR IDENTITY AND ROLE ---")
-            appendLine()
-            appendLine("You are ${context.agentName}.")
-            appendLine("You are a participant in a multi-user, multi-session agent environment.")
-            appendLine("Maintain your own boundaries and role, do not respond on behalf of other participants.")
+            // 1. Identity (strategy-owned, PROTECTED)
+            val identityContent = buildString {
+                appendLine("You are ${context.agentName}.")
+                appendLine("You are a participant in a multi-user, multi-session agent environment.")
+                appendLine("Maintain your own boundaries and role, do not respond on behalf of other participants.")
+            }
+            append(ContextDelimiters.h1("YOUR IDENTITY AND ROLE", identityContent.length, ContextDelimiters.PROTECTED))
+            append(identityContent)
+            append(ContextDelimiters.h1End("YOUR IDENTITY AND ROLE"))
 
-            // 2. System Instructions
+            // 2. System Instructions (strategy-owned, PROTECTED)
             if (instructions.isNotBlank()) {
-                appendLine()
-                appendLine("--- SYSTEM INSTRUCTIONS ---")
-                appendLine()
+                append(ContextDelimiters.h1("SYSTEM INSTRUCTIONS", instructions.length, ContextDelimiters.PROTECTED))
                 appendLine(instructions)
+                append(ContextDelimiters.h1End("SYSTEM INSTRUCTIONS"))
             }
 
-            // 3. State Machine — current state + full document
-            appendLine()
-            appendLine("--- STATE MACHINE ---")
-            appendLine()
-            appendLine("Current Phase: $phase")
-            appendLine("Previous Phase: $previousPhase")
-            appendLine("Turn Count: $turnCount")
-            appendLine()
-
-            if (stateMachineDoc.isNotBlank()) {
-                appendLine("The following document defines your operational phases and transition rules.")
-                appendLine("Follow the rules for your current phase. When you determine a transition is")
-                appendLine("warranted according to the rules, update your phase using the command below.")
+            // 3. State Machine (strategy-owned, PROTECTED)
+            val smContent = buildString {
+                appendLine("Current Phase: $phase")
+                appendLine("Previous Phase: $previousPhase")
+                appendLine("Turn Count: $turnCount")
                 appendLine()
-                appendLine(stateMachineDoc)
-            } else {
-                appendLine("No state machine definition loaded. Operate in your current phase until instructed otherwise.")
+                if (stateMachineDoc.isNotBlank()) {
+                    appendLine("The following document defines your operational phases and transition rules.")
+                    appendLine("Follow the rules for your current phase. When you determine a transition is")
+                    appendLine("warranted according to the rules, update your phase using the command below.")
+                    appendLine()
+                    appendLine(stateMachineDoc)
+                } else {
+                    appendLine("No state machine definition loaded. Operate in your current phase until instructed otherwise.")
+                }
             }
+            append(ContextDelimiters.h1("STATE MACHINE", smContent.length, ContextDelimiters.PROTECTED))
+            append(smContent)
+            append(ContextDelimiters.h1End("STATE MACHINE"))
 
-            // 4. Phase transition instruction
-            appendLine()
-            appendLine("--- PHASE TRANSITION ---")
-            appendLine()
-            appendLine("To change your operational phase, include this command block in your response:")
-            appendLine("```auf_agent.UPDATE_NVRAM")
-            appendLine("""{ "updates": { "phase": "NEW_PHASE_NAME", "previousPhase": "$phase" } }""")
-            appendLine("```")
-            appendLine("Replace NEW_PHASE_NAME with the target phase from the state machine definition.")
-            appendLine("Only transition when the rules for your current phase indicate you should.")
+            // 4. Phase transition instruction (strategy-owned, PROTECTED)
+            val transContent = buildString {
+                appendLine("To change your operational phase, include this command block in your response:")
+                appendLine("```auf_agent.UPDATE_NVRAM")
+                appendLine("""{ "updates": { "phase": "NEW_PHASE_NAME", "previousPhase": "$phase" } }""")
+                appendLine("```")
+                appendLine("Replace NEW_PHASE_NAME with the target phase from the state machine definition.")
+                appendLine("Only transition when the rules for your current phase indicate you should.")
+            }
+            append(ContextDelimiters.h1("PHASE TRANSITION", transContent.length, ContextDelimiters.PROTECTED))
+            append(transContent)
+            append(ContextDelimiters.h1End("PHASE TRANSITION"))
 
-            // 5. Session subscription awareness
+            // 5. Session subscription awareness (strategy-owned, PROTECTED)
             if (context.subscribedSessions.isNotEmpty()) {
-                appendLine()
-                appendLine("--- SUBSCRIBED SESSIONS ---")
-                appendLine("You are currently subscribed to the following sessions:")
-                context.subscribedSessions.forEach { session ->
-                    val primaryTag = if (session.isOutput || (context.outputSessionHandle == null && session == context.subscribedSessions.first())) {
-                        " [PRIMARY — Your output and tool results are routed here]"
-                    } else {
-                        ""
-                    }
-                    appendLine("  - ${session.name} (${session.handle})$primaryTag")
-                }
-                appendLine("You observe messages from all subscribed sessions. Your responses are posted to the primary session.")
-                appendLine()
+                val sessContent = buildSubscribedSessionsContent(context)
+                append(ContextDelimiters.h1("SUBSCRIBED SESSIONS", sessContent.length, ContextDelimiters.PROTECTED))
+                append(sessContent)
+                append(ContextDelimiters.h1End("SUBSCRIBED SESSIONS"))
             }
 
-            // 6. Multi-agent context
-            context.gatheredContexts["MULTI_AGENT_CONTEXT"]?.let {
-                appendLine(it)
-            }
-
-            // 7. Other contexts
-            val otherContexts = context.gatheredContexts.filterKeys { it != "MULTI_AGENT_CONTEXT" }
-            if (otherContexts.isNotEmpty()) {
-                appendLine()
-                appendLine("--- CONTEXT ---")
-                otherContexts.forEach { (source, content) ->
-                    appendLine("[$source]:\n $content\n")
-                }
-            }
+            // 6. Gathered contexts — pre-wrapped by pipeline.
+            context.gatheredContexts["MULTI_AGENT_CONTEXT"]?.let { append(it) }
+            context.gatheredContexts
+                .filterKeys { it != "MULTI_AGENT_CONTEXT" }
+                .forEach { (_, content) -> append(content) }
         }
     }
 
@@ -177,8 +143,6 @@ object StateMachineStrategy : CognitiveStrategy {
             ?: return PostProcessResult(currentState, SentinelAction.PROCEED)
 
         val turnCount = stateObj[KEY_TURN_COUNT]?.jsonPrimitive?.intOrNull ?: 0
-
-        // Increment turn counter. Phase transitions are agent-driven via UPDATE_NVRAM.
         val newState = buildJsonObject {
             stateObj.forEach { (k, v) -> put(k, v) }
             put(KEY_TURN_COUNT, turnCount + 1)
@@ -191,10 +155,6 @@ object StateMachineStrategy : CognitiveStrategy {
     // Lifecycle hooks
     // =========================================================================
 
-    /**
-     * Provides built-in resources: a default system instruction and an OODA loop
-     * state machine definition for out-of-the-box testing.
-     */
     override fun getBuiltInResources(): List<AgentResource> = listOf(
         AgentResource(
             id = "res-sm-sys-instruction-v1",
@@ -212,10 +172,6 @@ object StateMachineStrategy : CognitiveStrategy {
         )
     )
 
-    /**
-     * Enforces the same invariant as [VanillaStrategy]: outputSessionId must be
-     * a member of subscribedSessionIds (or null).
-     */
     override fun validateConfig(agent: AgentInstance): AgentInstance {
         val outputId = agent.outputSessionId
         return when {

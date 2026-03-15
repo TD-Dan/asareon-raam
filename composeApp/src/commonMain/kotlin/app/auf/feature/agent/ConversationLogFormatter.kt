@@ -6,47 +6,40 @@ import app.auf.util.PlatformDependencies
  * Formats multi-session conversation ledgers into a structured text partition
  * for injection into the agent's system prompt.
  *
- * ## Delimiter Convention
+ * ## Delimiter Convention (ContextDelimiters §2.6)
+ *
+ * This formatter produces content at h2/h3 level. The h1 wrapper
+ * (`- [ CONVERSATION_LOG ] -`) is added by the pipeline.
  *
  * ```
- * ---              → top-level section boundary
- *  ---             → partition-level boundary (individual session)
- *   ---            → entry-level boundary (individual message)
- * ```
+ * --- SESSION: Pet language studies | uuid: xxx | 3 messages (~400 tokens) [EXPANDED] ---
  *
- * Content (message bodies) sits at zero indent between `  ---` delimiters,
- * making it unambiguous even if messages contain markdown `---` rules.
- *
- * ## Output Format
- *
- * ```
- * --- CONVERSATION LOG ---
- *  --- SESSION: Pet language studies | uuid: xxx | 3 messages ---
  *   --- Daniel (user.daniel) @ 2026-03-13T17:13:56Z ---
+ *
  * What is your favourite animal?
+ *
  *   ---
- *  --- END OF SESSION ---
- * --- END OF CONVERSATION LOG ---
+ *
+ * --- END OF SESSION ---
  * ```
+ *
+ * ## Truncation Direction
+ *
+ * Sessions truncate from the START (oldest messages removed first).
+ * This is set via [ContextCollapseLogic.ContextPartition.truncateFromStart]
+ * in the pipeline, not by this formatter.
  *
  * ## Design Decisions
  *
  * - Session order follows the order of [sessions] input (caller controls priority).
- * - Messages within each session are in chronological order (as received from ledger).
+ * - Messages within each session are in chronological order.
  * - The formatter is a pure function — no state, no side effects.
- * - This is a pipeline-level utility, not strategy-owned (§2.3 absolute decoupling).
- * - Designed as a context partition that participates in the collapse/budget system.
+ * - Pipeline-level utility, not strategy-owned (§2.3 absolute decoupling).
  */
 object ConversationLogFormatter {
 
     /**
      * A snapshot of one session's ledger for formatting.
-     *
-     * @param sessionName Human-readable session name.
-     * @param sessionUUID Immutable session UUID.
-     * @param sessionHandle Session handle (e.g., "session.pet-language-studies").
-     * @param messages Chronologically ordered messages from this session's ledger.
-     * @param isOutputSession True if this is the agent's primary output session.
      */
     data class SessionLedgerSnapshot(
         val sessionName: String,
@@ -59,19 +52,15 @@ object ConversationLogFormatter {
     /**
      * Formats multiple session ledgers into a single structured conversation log.
      *
-     * @param sessions The session ledgers to format. Order is preserved.
-     * @param platformDependencies Used for timestamp formatting.
-     * @return The formatted conversation log string, or an empty-session notice.
+     * Returns raw content (no h1 wrapper — pipeline adds it via ContextDelimiters).
+     * Each session is an h2 section with token count and collapse state badge.
      */
     fun format(
         sessions: List<SessionLedgerSnapshot>,
         platformDependencies: PlatformDependencies
     ): String = buildString {
-        appendLine("--- CONVERSATION LOG ---")
-
         if (sessions.isEmpty() || sessions.all { it.messages.isEmpty() }) {
             appendLine("No messages in any subscribed session.")
-            appendLine("--- END OF CONVERSATION LOG ---")
             return@buildString
         }
 
@@ -79,29 +68,31 @@ object ConversationLogFormatter {
             val messageCount = session.messages.size
             val outputTag = if (session.isOutputSession) " | output: true" else ""
 
-            appendLine(" --- SESSION: ${session.sessionName} | uuid: ${session.sessionUUID} | $messageCount messages$outputTag ---")
-
-            if (session.messages.isEmpty()) {
-                appendLine("  (no messages)")
-            } else {
-                for (msg in session.messages) {
-                    val formattedTimestamp = platformDependencies.formatIsoTimestamp(msg.timestamp)
-                    appendLine("  --- ${msg.senderName} (${msg.senderId}) @ $formattedTimestamp ---")
-                    appendLine(msg.content)
-                    appendLine("  ---")
+            // Build session content to measure tokens
+            val sessionContent = buildString {
+                if (session.messages.isEmpty()) {
+                    appendLine("(no messages)")
+                } else {
+                    for (msg in session.messages) {
+                        val formattedTimestamp = platformDependencies.formatIsoTimestamp(msg.timestamp)
+                        append(ContextDelimiters.h3("${msg.senderName} (${msg.senderId}) @ $formattedTimestamp"))
+                        appendLine(msg.content)
+                        append(ContextDelimiters.h3End())
+                    }
                 }
             }
 
-            appendLine(" --- END OF SESSION ---")
-        }
+            val sessionLabel = "SESSION: ${session.sessionName} | uuid: ${session.sessionUUID} | $messageCount messages$outputTag"
+            val state = if (session.messages.isEmpty()) ContextDelimiters.COLLAPSED else ContextDelimiters.EXPANDED
 
-        appendLine("--- END OF CONVERSATION LOG ---")
+            append(ContextDelimiters.h2(sessionLabel, sessionContent.length, state))
+            append(sessionContent)
+            append(ContextDelimiters.h2End("SESSION"))
+        }
     }
 
     /**
      * Extracts unique participants across all sessions for multi-agent context building.
-     *
-     * @return List of (senderId, senderName) pairs, deduplicated.
      */
     fun extractParticipants(sessions: List<SessionLedgerSnapshot>): List<Pair<String, String>> {
         return sessions

@@ -8,18 +8,11 @@ import kotlinx.serialization.json.JsonNull
 /**
  * The absolute minimum cognitive strategy.
  *
- * Designed for the simplest possible agent: one system instruction, one output
- * session, zero infrastructure overhead. No HKG, no multi-agent context, no
- * session subscription awareness, no state machine.
+ * One system instruction, one output session, zero infrastructure overhead.
+ * No HKG, no multi-agent context, no session subscription awareness, no state machine.
  *
- * Use this when you need an agent to respond in a session and nothing else.
- *
- * Compared to [VanillaStrategy]:
- * - No session subscription awareness injected into the prompt.
- * - No multi-agent context gathering.
- * - No [getConfigFields] — the output session is the sole subscribed session
- *   and is enforced by [validateConfig], same as Vanilla.
- * - System prompt is the raw system instruction only, prefixed by the agent name.
+ * Strategy-owned sections use [ContextDelimiters.h1]. Gathered contexts (if any)
+ * arrive pre-wrapped from the pipeline.
  */
 object MinimalStrategy : CognitiveStrategy {
     override val identityHandle: IdentityHandle = IdentityHandle("agent.strategy.minimal")
@@ -28,10 +21,6 @@ object MinimalStrategy : CognitiveStrategy {
     private const val SLOT_SYSTEM_INSTRUCTION = "system_instruction"
 
     val DEFAULT_SYSTEM_INSTRUCTION = "You are an AI."
-
-    // =========================================================================
-    // Core methods
-    // =========================================================================
 
     override fun getResourceSlots(): List<ResourceSlot> = listOf(
         ResourceSlot(
@@ -51,9 +40,17 @@ object MinimalStrategy : CognitiveStrategy {
             ?: DEFAULT_SYSTEM_INSTRUCTION
 
         return buildString {
-            appendLine("You are ${context.agentName}.")
-            appendLine()
-            appendLine(instructions)
+            val content = buildString {
+                appendLine("You are ${context.agentName}.")
+                appendLine()
+                appendLine(instructions)
+            }
+            append(ContextDelimiters.h1("SYSTEM INSTRUCTIONS", content.length, ContextDelimiters.PROTECTED))
+            append(content)
+            append(ContextDelimiters.h1End("SYSTEM INSTRUCTIONS"))
+
+            // Gathered contexts — pre-wrapped by pipeline (unlikely for Minimal, but safe)
+            context.gatheredContexts.forEach { (_, wrappedContent) -> append(wrappedContent) }
         }
     }
 
@@ -65,9 +62,6 @@ object MinimalStrategy : CognitiveStrategy {
     // Lifecycle hooks
     // =========================================================================
 
-    /**
-     * Provides the built-in default system instruction resource.
-     */
     override fun getBuiltInResources(): List<AgentResource> = listOf(
         AgentResource(
             id = "res-minimal-sys-instruction-v1",
@@ -78,12 +72,6 @@ object MinimalStrategy : CognitiveStrategy {
         )
     )
 
-    /**
-     * Enforces the same invariant as [VanillaStrategy]: outputSessionId must be
-     * a member of subscribedSessionIds (or null). Since Minimal exposes no
-     * separate output session config field, the output session is always expected
-     * to be the sole subscribed session.
-     */
     override fun validateConfig(agent: AgentInstance): AgentInstance {
         if (agent.outputSessionId != null && agent.outputSessionId !in agent.subscribedSessionIds) {
             return agent.copy(outputSessionId = agent.subscribedSessionIds.firstOrNull())

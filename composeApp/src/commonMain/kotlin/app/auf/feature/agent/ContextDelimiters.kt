@@ -155,14 +155,16 @@ object ContextDelimiters {
     }
 
     /**
-     * Rounds a token count UP to 2 significant figures.
+     * Rounds a token count UP to 2 significant figures, with a minimum
+     * rounding granularity of 10.
      *
-     * Examples: 2389→2400, 551→560, 22476→23000, 8→8, 100→100
+     * Examples: 2389→2400, 551→560, 22476→23000, 12→20, 8→10, 0→0
      */
     fun roundTokensUp(tokens: Int): Int {
-        if (tokens < 10) return tokens
+        if (tokens <= 0) return 0
         val digits = tokens.toString().length
-        val factor = 10.0.pow(digits - 2).toInt()
+        // Minimum factor of 10 ensures low-end values like 12→20, 8→10
+        val factor = maxOf(10, 10.0.pow(digits - 2).toInt())
         return ((tokens + factor - 1) / factor) * factor
     }
 

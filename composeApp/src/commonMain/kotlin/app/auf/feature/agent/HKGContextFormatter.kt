@@ -202,7 +202,7 @@ object HkgContextFormatter {
         personaName: String? = null
     ): String {
         if (headers.isEmpty()) {
-            return "--- HOLON_KNOWLEDGE_GRAPH_INDEX ---\nNo knowledge graph loaded.\n--- END OF HOLON_KNOWLEDGE_GRAPH_INDEX ---"
+            return "No knowledge graph loaded."
         }
 
         // Find root(s)
@@ -211,16 +211,13 @@ object HkgContextFormatter {
         val totalHolons = headers.size
 
         return buildString {
-            appendLine("--- HOLON_KNOWLEDGE_GRAPH_INDEX ---")
             appendLine("Persona: $displayName | Total holons: $totalHolons")
             appendLine()
 
             for (root in roots) {
                 appendHolonToIndex(root, headers, collapseOverrides, this)
             }
-
-            appendLine("--- END OF HOLON_KNOWLEDGE_GRAPH_INDEX ---")
-        }.trimEnd() // Remove trailing newline for clean joining
+        }.trimEnd()
     }
 
     /**
@@ -239,13 +236,10 @@ object HkgContextFormatter {
         }.sorted()
 
         return buildString {
-            appendLine("--- HOLON_KNOWLEDGE_GRAPH_FILES ---")
-
             if (expandedIds.isEmpty()) {
                 appendLine("No files open. Use agent.CONTEXT_UNCOLLAPSE to open holon files.")
             } else {
                 appendLine("Files currently open: ${expandedIds.size} of ${hkgContext.size}")
-                appendLine()
 
                 for (holonId in expandedIds) {
                     val rawContent = hkgContext[holonId]?.jsonPrimitive?.contentOrNull
@@ -257,14 +251,16 @@ object HkgContextFormatter {
                         )
                         continue
                     }
-                    appendLine("--- START OF FILE $holonId.json ---")
+                    // h2 for each file with token count and EXPANDED state
+                    append(ContextDelimiters.h2(
+                        "FILE $holonId.json",
+                        rawContent.length,
+                        ContextDelimiters.EXPANDED
+                    ))
                     appendLine(rawContent)
-                    appendLine("--- END OF FILE $holonId.json ---")
-                    appendLine()
+                    append(ContextDelimiters.h2End("FILE $holonId.json"))
                 }
             }
-
-            appendLine("--- END OF HOLON_KNOWLEDGE_GRAPH_FILES ---")
         }.trimEnd()
     }
 

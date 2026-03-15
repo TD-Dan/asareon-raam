@@ -762,11 +762,12 @@ object AgentCognitivePipeline {
         // 1. Build ContextPartitions from the contextMap
         // 2. Run the auto-collapse algorithm against the agent's budget
         // 3. Apply collapse results back to the contextMap
-        // 4. Inject the CONTEXT_BUDGET_REPORT partition
+        // 4. Wrap each entry with h1 headers (pipeline-owned per §2.6)
+        // 5. Inject the CONTEXT_BUDGET partition
         //
-        // The agent's sticky overrides are pre-applied via buildPartition.
-        // The algorithm respects overrides up to the hard maximum, then
-        // force-collapses with a warning.
+        // The pipeline owns h1 wrapping of contextMap entries. Strategies
+        // receive pre-wrapped content and include it directly. Strategies
+        // use ContextDelimiters for their own sections (IDENTITY, etc.).
         // ============================================================
 
         store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
@@ -787,34 +788,48 @@ object AgentCognitivePipeline {
             agentId = agentUuid.uuid
         )
 
-        // Apply collapse results back to contextMap.
-        // Expanded partitions get their (possibly truncated) full content.
-        // Collapsed partitions get their collapsed summary content.
-        val collapsedContextMap = mutableMapOf<String, String>()
+        // Apply collapse results and wrap each entry with h1 headers.
+        // The pipeline owns h1 wrapping — strategies receive pre-wrapped content.
+        val wrappedContextMap = mutableMapOf<String, String>()
         for (partition in collapseResult.partitions) {
-            val content = if (partition.state == CollapseState.EXPANDED) {
+            val rawContent = if (partition.state == CollapseState.EXPANDED) {
                 partition.fullContent
             } else {
                 partition.collapsedContent
             }
-            // Include the partition even if collapsed — strategies may want to
-            // see the collapsed summary (e.g., "[AVAILABLE_ACTIONS collapsed]").
-            if (content.isNotBlank()) {
-                collapsedContextMap[partition.key] = content
+            if (rawContent.isNotBlank()) {
+                // Resolve the display state badge
+                val stateBadge = when {
+                    !partition.isAutoCollapsible -> ContextDelimiters.PROTECTED
+                    partition.key in collapseResult.truncatedKeys -> ContextDelimiters.TRUNCATED
+                    partition.state == CollapseState.EXPANDED -> ContextDelimiters.EXPANDED
+                    else -> ContextDelimiters.COLLAPSED
+                }
+                // Wrap with h1 header + closing tag
+                val wrapped = buildString {
+                    append(ContextDelimiters.h1(partition.key, rawContent.length, stateBadge))
+                    append(rawContent)
+                    append(ContextDelimiters.h1End(partition.key))
+                }
+                wrappedContextMap[partition.key] = wrapped
             }
         }
 
-        // Inject the budget report as a gathered context partition.
+        // Inject the budget report (PROTECTED, pipeline-wrapped)
         val budgetReport = ContextCollapseLogic.buildBudgetReport(
             result = collapseResult,
             softBudgetChars = agent.contextBudgetChars,
             maxBudgetChars = agent.contextMaxBudgetChars
         )
-        collapsedContextMap["CONTEXT_BUDGET"] = budgetReport
+        wrappedContextMap["CONTEXT_BUDGET"] = buildString {
+            append(ContextDelimiters.h1("CONTEXT_BUDGET", budgetReport.length, ContextDelimiters.PROTECTED))
+            append(budgetReport)
+            append(ContextDelimiters.h1End("CONTEXT_BUDGET"))
+        }
 
-        // Replace the contextMap with the collapse-resolved version.
+        // Replace the contextMap with collapse-resolved, h1-wrapped entries.
         contextMap.clear()
-        contextMap.putAll(collapsedContextMap)
+        contextMap.putAll(wrappedContextMap)
 
         // ============================================================
         // Build structured session subscription context with participants
@@ -861,7 +876,11 @@ object AgentCognitivePipeline {
             outputSessionHandle = outputSessionHandle
         )
 
-        val systemPrompt = strategy.prepareSystemPrompt(context, cognitiveState)
+        val rawPrompt = strategy.prepareSystemPrompt(context, cognitiveState)
+
+        // Pipeline-owned: wrap the strategy's output with the outermost delimiters.
+        // The strategy never sees these — they frame the entire system prompt.
+        val systemPrompt = ContextDelimiters.wrapSystemPrompt(rawPrompt)
 
         val requestActionName = if (statusInfo.turnMode == TurnMode.PREVIEW) ActionRegistry.Names.GATEWAY_PREPARE_PREVIEW else ActionRegistry.Names.GATEWAY_GENERATE_CONTENT
         val step = if (statusInfo.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"

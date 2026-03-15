@@ -14,34 +14,18 @@ import kotlinx.serialization.json.put
 /**
  * A strategy that routes all agent output to a dedicated private session.
  *
- * Designed as a reference implementation and test harness for the private session
- * lifecycle pattern (Phase B of the Sovereign Stabilization design). This same
- * pattern is duplicated independently in SovereignStrategy per §2.3 (absolute
- * strategy decoupling).
+ * ## Delimiter Convention
  *
- * ## Key Behavioral Difference from Vanilla
- *
- * The agent's `outputSessionId` points to a private session that is NOT in
- * `subscribedSessionIds`. The agent subscribes to public sessions for observation,
- * but all API responses route to the private session. This means:
- *
- * - `validateConfig` must NOT enforce `outputSessionId ∈ subscribedSessionIds`.
- * - `validateConfig` must NOT auto-assign `outputSessionId` from subscriptions.
- * - The private session is created and linked via `ensureInfrastructure`.
+ * Strategy-owned sections use [ContextDelimiters.h1]. Gathered contexts arrive
+ * pre-wrapped from the pipeline. The `[[[ - SYSTEM PROMPT - ]]]` wrapper is
+ * pipeline-owned.
  *
  * ## Private Session Lifecycle
  *
  * `ensureInfrastructure` implements a two-step guard:
- * 1. `outputSessionId` already set → no-op (trust the pointer).
- * 2. `pendingPrivateSessionCreation` flag set → no-op (creation in-flight).
+ * 1. `outputSessionId` already set → no-op.
+ * 2. `pendingPrivateSessionCreation` flag set → no-op.
  * 3. Otherwise → set pending flag, dispatch SESSION_CREATE with `isPrivateTo`.
- *
- * The linking is completed by AgentRuntimeFeature's SESSION_CREATED handler,
- * which matches `isPrivateTo` to the agent and dispatches UPDATE_CONFIG + clears
- * the pending flag.
- *
- * Restart recovery relies on `agent.json` having persisted `outputSessionId`
- * before the crash — step 1 catches it on the next ensureInfrastructure call.
  */
 object PrivateSessionStrategy : CognitiveStrategy {
     override val identityHandle: IdentityHandle = IdentityHandle("agent.strategy.privatesession")
@@ -79,75 +63,58 @@ object PrivateSessionStrategy : CognitiveStrategy {
         val instructions = context.resolvedResources[SLOT_SYSTEM_INSTRUCTION] ?: ""
 
         return buildString {
-            // 1. Identity
-            appendLine("\n\n--- YOUR IDENTITY AND ROLE ---\n\n")
-            appendLine("You are ${context.agentName}.")
-            appendLine("You are a participant in a multi-user, multi-session agent environment.")
-            appendLine("Maintain your own boundaries and role, do not respond on behalf of other participants.")
+            // 1. Identity (strategy-owned, PROTECTED)
+            val identityContent = buildString {
+                appendLine("You are ${context.agentName}.")
+                appendLine("You are a participant in a multi-user, multi-session agent environment.")
+                appendLine("Maintain your own boundaries and role, do not respond on behalf of other participants.")
+            }
+            append(ContextDelimiters.h1("YOUR IDENTITY AND ROLE", identityContent.length, ContextDelimiters.PROTECTED))
+            append(identityContent)
+            append(ContextDelimiters.h1End("YOUR IDENTITY AND ROLE"))
 
-            // 2. System instructions
+            // 2. System instructions (strategy-owned, PROTECTED)
             if (instructions.isNotBlank()) {
-                appendLine("\n--- SYSTEM INSTRUCTIONS ---\n")
+                append(ContextDelimiters.h1("SYSTEM INSTRUCTIONS", instructions.length, ContextDelimiters.PROTECTED))
                 appendLine(instructions)
+                append(ContextDelimiters.h1End("SYSTEM INSTRUCTIONS"))
             }
 
-            // 3. Private session routing explanation
-            appendLine()
-            appendLine("--- PRIVATE SESSION ROUTING ---")
-            appendLine()
-            appendLine("Your responses are routed to your PRIVATE session. This session is your")
-            appendLine("internal workspace — only you can see it. Other participants cannot read it.")
-            appendLine()
-            appendLine("To communicate with users and other agents, you MUST use the session.POST")
-            appendLine("action to post messages to the public sessions you are subscribed to.")
-            appendLine()
-            appendLine("Example — posting to a public session:")
-            appendLine("```auf_session.POST")
-            appendLine("""{ "session": "<session name or handle>", "message": "Your message here." }""")
-            appendLine("```")
-            appendLine()
-            appendLine("The conversation messages in your context come from ALL your subscribed sessions.")
-            appendLine("Your direct response text goes to your private session (invisible to others).")
-            appendLine("Always use session.POST when you want others to see your message.")
+            // 3. Private session routing explanation (strategy-owned, PROTECTED)
+            val routingContent = buildString {
+                appendLine("Your responses are routed to your PRIVATE session. This session is your")
+                appendLine("internal workspace — only you can see it. Other participants cannot read it.")
+                appendLine()
+                appendLine("To communicate with users and other agents, you MUST use the session.POST")
+                appendLine("action to post messages to the public sessions you are subscribed to.")
+                appendLine()
+                appendLine("Example — posting to a public session:")
+                appendLine("```auf_session.POST")
+                appendLine("""{ "session": "<session name or handle>", "message": "Your message here." }""")
+                appendLine("```")
+                appendLine()
+                appendLine("The conversation messages in your context come from ALL your subscribed sessions.")
+                appendLine("Your direct response text goes to your private session (invisible to others).")
+                appendLine("Always use session.POST when you want others to see your message.")
+            }
+            append(ContextDelimiters.h1("PRIVATE SESSION ROUTING", routingContent.length, ContextDelimiters.PROTECTED))
+            append(routingContent)
+            append(ContextDelimiters.h1End("PRIVATE SESSION ROUTING"))
 
-            // 4. Session subscription awareness with participants
+            // 4. Session subscriptions with participants (strategy-owned, PROTECTED)
             if (context.subscribedSessions.isNotEmpty()) {
-                appendLine()
-                appendLine("--- SUBSCRIBED SESSIONS ---")
-                context.subscribedSessions.forEach { session ->
-                    val tag = if (session.isOutput || (context.outputSessionHandle == null && session == context.subscribedSessions.first())) {
-                        "PRIVATE — Your direct output is routed here, invisible to others"
-                    } else {
-                        "PUBLIC — Use session.POST to communicate here"
-                    }
-                    appendLine(" --- ${session.name} (${session.handle}) [$tag] | ${session.messageCount} messages ---")
-
-                    if (session.participants.isNotEmpty()) {
-                        session.participants.forEach { participant ->
-                            appendLine("  - ${participant.senderName} (${participant.senderId}): ${participant.type}, ${participant.messageCount} messages")
-                        }
-                    } else {
-                        appendLine("  (no messages yet)")
-                    }
-
-                    appendLine(" ---")
-                }
-                appendLine()
+                val sessContent = buildPrivateSubscribedSessionsContent(context)
+                append(ContextDelimiters.h1("SUBSCRIBED SESSIONS", sessContent.length, ContextDelimiters.PROTECTED))
+                append(sessContent)
+                append(ContextDelimiters.h1End("SUBSCRIBED SESSIONS"))
             }
 
-            // 5. Multi-agent context (before generic contexts)
-            context.gatheredContexts["MULTI_AGENT_CONTEXT"]?.let {
-                appendLine(it)
-            }
-
-            // 6. Other gathered contexts (excluding MULTI_AGENT_CONTEXT to avoid duplication)
-            val otherContexts = context.gatheredContexts.filterKeys { it != "MULTI_AGENT_CONTEXT" }
-            if (otherContexts.isNotEmpty()) {
-                appendLine("\n--- CONTEXT ---")
-                otherContexts.forEach { (source, content) ->
-                    appendLine("[$source]:\n $content\n")
-                }
-            }
+            // 5. Gathered contexts — pre-wrapped by pipeline with h1 headers.
+            // Multi-agent context first, then all others.
+            context.gatheredContexts["MULTI_AGENT_CONTEXT"]?.let { append(it) }
+            context.gatheredContexts
+                .filterKeys { it != "MULTI_AGENT_CONTEXT" }
+                .forEach { (_, content) -> append(content) }
         }
     }
 
@@ -169,44 +136,18 @@ object PrivateSessionStrategy : CognitiveStrategy {
         )
     )
 
-    /**
-     * Permits out-of-band `outputSessionId`.
-     *
-     * Unlike [VanillaStrategy], the private session is intentionally NOT in
-     * `subscribedSessionIds`. Returns the agent unchanged — no validation,
-     * no auto-assignment. The private session link is managed exclusively
-     * by [ensureInfrastructure].
-     */
     override fun validateConfig(agent: AgentInstance): AgentInstance = agent
 
-    /**
-     * Creates the agent's private output session if it doesn't exist yet.
-     *
-     * Two-step guard prevents duplicate creation on rapid heartbeat ticks:
-     * 1. `outputSessionId` already set → trust the pointer, no-op.
-     * 2. `pendingPrivateSessionCreation` flag set → creation in-flight, no-op.
-     * 3. Otherwise → set pending flag, then dispatch SESSION_CREATE.
-     *
-     * The pending flag is dispatched BEFORE SESSION_CREATE to close the race
-     * window between two consecutive heartbeat ticks.
-     *
-     * Must be idempotent — called on every heartbeat tick for every active agent.
-     */
     override fun ensureInfrastructure(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
-        // Step 1: Already linked
         if (agent.outputSessionId != null) return
-
-        // Step 2: Creation already in-flight
         val statusInfo = agentState.agentStatuses[agent.identityUUID] ?: AgentStatusInfo()
         if (statusInfo.pendingPrivateSessionCreation) return
 
-        // Step 3: Create new private session
         store.platformDependencies.log(
             LogLevel.INFO, LOG_TAG,
             "Creating private session for agent '${agent.identityUUID}' (${agent.identity.name})."
         )
 
-        // CRITICAL: Set pending flag BEFORE dispatching SESSION_CREATE.
         store.dispatch("agent", Action(
             ActionRegistry.Names.AGENT_SET_PENDING_PRIVATE_SESSION,
             buildJsonObject {
