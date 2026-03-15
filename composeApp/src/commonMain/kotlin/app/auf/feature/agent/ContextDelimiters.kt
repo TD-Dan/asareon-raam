@@ -70,7 +70,7 @@ object ContextDelimiters {
 
     /** Wraps a complete system prompt with the outermost delimiters. */
     fun wrapSystemPrompt(content: String): String =
-        "\n\n[[[ - SYSTEM PROMPT - ]]]\n\n${content}\n\n[[[ - END OF SYSTEM PROMPT - ]]]\n\n"
+        "\n[[[ - SYSTEM PROMPT - ]]]\n\n${content}\n[[[ - END OF SYSTEM PROMPT - ]]]\n"
 
     // =========================================================================
     // h1 — Top-level partition boundary
@@ -86,11 +86,11 @@ object ContextDelimiters {
     fun h1(name: String, chars: Int? = null, state: String? = null): String {
         val tokenPart = chars?.let { " (~${approxTokens(it)} tokens)" } ?: ""
         val statePart = state?.let { " [$it]" } ?: ""
-        return "\n\n\n- [ $name ]${tokenPart}${statePart} -\n\n"
+        return "\n\n- [ $name ]${tokenPart}${statePart} -\n"
     }
 
     /** Closes an h1 section. Double newline before and after. */
-    fun h1End(name: String): String = "\n\n- [ END OF $name ] -\n\n"
+    fun h1End(name: String): String = "\n- [ END OF $name ] -\n"
 
     // =========================================================================
     // h2 — Sub-partition boundary (no indent)
@@ -106,7 +106,7 @@ object ContextDelimiters {
     fun h2(text: String, chars: Int? = null, state: String? = null): String {
         val tokenPart = chars?.let { " (~${approxTokens(it)} tokens)" } ?: ""
         val statePart = state?.let { " [$it]" } ?: ""
-        return "\n\n--- ${text}${tokenPart}${statePart} ---\n\n"
+        return "\n--- ${text}${tokenPart}${statePart} ---\n"
     }
 
     /** Closes an h2 section. Double newline before and after. */
@@ -119,11 +119,11 @@ object ContextDelimiters {
     fun h3(text: String, chars: Int? = null, state: String? = null): String {
         val tokenPart = chars?.let { " (~${approxTokens(it)} tokens)" } ?: ""
         val statePart = state?.let { " [$it]" } ?: ""
-        return "\n\n  --- ${text}${tokenPart}${statePart} ---\n\n"
+        return "\n  --- ${text}${tokenPart}${statePart} ---\n"
     }
 
     /** Closes an h3 section. */
-    fun h3End(): String = "\n\n  ---\n\n"
+    fun h3End(): String = "\n  ---\n"
 
     // =========================================================================
     // h4 — Sub-entry boundary (4-space indent)
@@ -132,11 +132,11 @@ object ContextDelimiters {
     fun h4(text: String, chars: Int? = null, state: String? = null): String {
         val tokenPart = chars?.let { " (~${approxTokens(it)} tokens)" } ?: ""
         val statePart = state?.let { " [$it]" } ?: ""
-        return "\n\n    --- ${text}${tokenPart}${statePart} ---\n\n"
+        return "\n    --- ${text}${tokenPart}${statePart} ---\n"
     }
 
     /** Closes an h4 section. */
-    fun h4End(): String = "\n\n    ---\n\n"
+    fun h4End(): String = "\n    ---\n"
 
     // =========================================================================
     // Token estimation (§2.2)

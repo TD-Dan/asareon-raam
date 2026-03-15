@@ -1141,8 +1141,8 @@
     },
     {
       "action_name": "agent.CONTEXT_UNCOLLAPSE",
-      "summary": "Expands a context partition, holon file, or workspace entry so the agent can see its full content in the next turn. Persisted as a sticky override in context.json.",
-      "public": false,
+      "summary": "Expands a context partition, holon file, or workspace entry so the agent can see its full content in the next turn.",
+      "public": true,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
@@ -1177,8 +1177,8 @@
     },
     {
       "action_name": "agent.CONTEXT_COLLAPSE",
-      "summary": "Collapses a context partition, holon file, or workspace entry so it shows only a summary in the next turn. Persisted as a sticky override in context.json.",
-      "public": false,
+      "summary": "Collapses a context partition, holon file, or workspace entry so it shows only a summary in the next turn.",
+      "public": true,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {

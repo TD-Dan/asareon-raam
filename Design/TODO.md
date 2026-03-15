@@ -60,6 +60,10 @@
 
 - Dont show the AVAILABLE_ACTIONS partial if no actions are available for the agent.
 
+- Show newest 3 files in the WORKSPACE_INDEX
+
+- WORKSPACE_INDEX should default to uncollapsed?
+
 ## HIGH PRIORITY:
 
 - AUTOMATIC INCREMENTAL BACKUP at app start! And a backup central.
