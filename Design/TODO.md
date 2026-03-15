@@ -54,6 +54,12 @@
 
 - CONTEXT_NAVIGATION_REFERENCE: gather all context navigation information to one partial
 
+- TOGGLE_MESSAGE_COLLAPSED could allow none as message to toggle all messages states at once
+
+- Many of the actions can be consolidated into one action: f.ex. TOGGLE_MESSAGE_LOCKED / LOCK_MESSAGE / UNLOCK_MESSAGE to save tokens
+
+- Dont show the AVAILABLE_ACTIONS partial if no actions are available for the agent.
+
 ## HIGH PRIORITY:
 
 - AUTOMATIC INCREMENTAL BACKUP at app start! And a backup central.

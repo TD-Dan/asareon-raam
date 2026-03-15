@@ -84,14 +84,13 @@ object DefaultPermissions {
         DefaultGrant("core", "knowledgegraph:write",          PermissionLevel.YES),
         DefaultGrant("core", "agent:manage",                  PermissionLevel.YES),
         DefaultGrant("core", "agent:execute",                 PermissionLevel.YES),
-        DefaultGrant("core", "agent:cognition",                    PermissionLevel.YES),
+        DefaultGrant("core", "agent:cognition",               PermissionLevel.YES),
 
         // ── Agent feature — baseline for agents (agent.mercury etc.) ──
         DefaultGrant("agent", "filesystem:workspace",         PermissionLevel.YES),
         DefaultGrant("agent", "session:read",                 PermissionLevel.YES),
         DefaultGrant("agent", "session:write",                PermissionLevel.YES),
-        DefaultGrant("agent", "knowledgegraph:read",          PermissionLevel.YES),
-        DefaultGrant("agent", "agent:cognition",                   PermissionLevel.YES),
+        DefaultGrant("agent", "agent:cognition",              PermissionLevel.YES),
 
         // ── Session feature — baseline for sessions (session.chat1 etc.) ──
         DefaultGrant("session", "filesystem:workspace",       PermissionLevel.YES),

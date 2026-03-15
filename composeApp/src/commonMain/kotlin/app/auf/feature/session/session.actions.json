@@ -259,7 +259,7 @@
       "action_name": "session.SET_ACTIVE_TAB",
       "summary": "[INTERNAL] Sets the currently visible session in the main tabbed view.",
       "public": false,
-      "broadcast": true,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -272,14 +272,13 @@
         "required": [
           "session"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "session.SET_EDITING_SESSION_NAME",
-      "summary": "Sets which session name is currently being edited in the UI.",
-      "public": true,
-      "broadcast": true,
+      "summary": "[INTERNAL] Sets which session name is currently being edited in the UI.",
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -291,14 +290,13 @@
             ]
           }
         }
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "session.SET_EDITING_MESSAGE",
-      "summary": "Sets which message is currently being edited in the UI and pre-loads its content. Blocked if the target message is locked.",
-      "public": true,
-      "broadcast": true,
+      "summary": "[INTERNAL] Sets which message is currently being edited in the UI and pre-loads its content. Blocked if the target message is locked.",
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -310,8 +308,7 @@
             ]
           }
         }
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "session.TOGGLE_MESSAGE_COLLAPSED",
@@ -334,13 +331,13 @@
           "messageId"
         ]
       },
-      "required_permissions": []
+      "required_permissions": ["session:manage"]
     },
     {
       "action_name": "session.TOGGLE_MESSAGE_RAW_VIEW",
       "summary": "Toggles the raw/parsed view for a single message.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -356,14 +353,13 @@
           "sessionId",
           "messageId"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "session.REORDER",
       "summary": "Moves a session to a new position in the canonical display ordering. Updates the session's persistent orderIndex and persists affected sessions to disk.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -381,16 +377,13 @@
           "sessionId",
           "toIndex"
         ]
-      },
-      "required_permissions": [
-        "session:manage"
-      ]
+      }
     },
     {
       "action_name": "session.SET_ORDER",
       "summary": "Replaces the canonical session display ordering with the provided list. Assigns contiguous orderIndex values (0, 1, 2, \u2026) and persists all sessions whose orderIndex changed. Sessions present in the existing order but absent from the provided list are appended at the end (e.g., hidden sessions filtered out of the drag-reorder view).",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -406,14 +399,11 @@
         "required": [
           "order"
         ]
-      },
-      "required_permissions": [
-        "session:manage"
-      ]
+      }
     },
     {
       "action_name": "session.TOGGLE_SESSION_HIDDEN",
-      "summary": "Toggles the isHidden flag on a specific session. Used from the session manager.",
+      "summary": "Toggles the isHidden flag on a specific session.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -455,7 +445,7 @@
         ]
       },
       "required_permissions": [
-        "session:write"
+        "session:manage"
       ]
     },
     {
