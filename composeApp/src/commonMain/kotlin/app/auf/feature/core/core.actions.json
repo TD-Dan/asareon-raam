@@ -4,7 +4,7 @@
   "permissions": [
     { "key": "core:read", "description": "Read core state and identity information", "dangerLevel": "LOW" },
     { "key": "core:identity", "description": "Modify identity records", "dangerLevel": "CAUTION" },
-    { "key": "core:administrator", "description": "Full administrative access to core operations", "dangerLevel": "DANGER" }
+    { "key": "core:admin", "description": "Full administrative access to core operations", "dangerLevel": "DANGER" }
   ],
   "actions": [
     {
@@ -42,6 +42,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "hidden": true,
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -101,7 +102,6 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": [],
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -112,7 +112,8 @@
         "required": [
           "text"
         ]
-      }
+      },
+      "required_permissions": []
     },
     {
       "action_name": "core.ADD_USER_IDENTITY",
@@ -169,7 +170,7 @@
           "id"
         ]
       },
-      "required_permissions": []
+      "required_permissions": ["core:admin"]
     },
     {
       "action_name": "core.SHOW_CONFIRMATION_DIALOG",
@@ -177,6 +178,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "hidden": true,
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -219,6 +221,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "hidden": true,
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -349,7 +352,7 @@
         },
         "required": ["name"]
       },
-      "required_permissions": []
+      "required_permissions": ["core:identity"]
     },
     {
       "action_name": "core.RETURN_REGISTER_IDENTITY",
@@ -389,7 +392,7 @@
         },
         "required": ["handle"]
       },
-      "required_permissions": []
+      "required_permissions": ["core:admin"]
     },
     {
       "action_name": "core.IDENTITY_REGISTRY_UPDATED",
@@ -425,7 +428,7 @@
         },
         "required": ["handle", "newName"]
       },
-      "required_permissions": []
+      "required_permissions": ["core:admin"]
     },
     {
       "action_name": "core.RETURN_UPDATE_IDENTITY",
@@ -566,7 +569,7 @@
         },
         "required": ["requestingHandle", "requestedPermissions"]
       },
-      "required_permissions": []
+      "required_permissions": ["core:admin"]
     }
   ]
 }
