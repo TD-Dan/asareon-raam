@@ -9,16 +9,16 @@
     },
     {
       "key": "knowledgegraph:write",
-      "description": "Modify holons, import data, manage personas",
+      "description": "Modify holons, manage personas",
       "dangerLevel": "CAUTION"
     }
   ],
   "actions": [
     {
       "action_name": "knowledgegraph.SET_VIEW_MODE",
-      "summary": "Switches the primary view of the Knowledge Graph feature (e.g., to Inspector, Import, Export).",
-      "public": true,
-      "broadcast": true,
+      "summary": "[INTERNAL] Switches the primary view of the Knowledge Graph feature (e.g., to Inspector, Import, Export).",
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -35,9 +35,9 @@
     },
     {
       "action_name": "knowledgegraph.LOAD_PERSONA",
-      "summary": "Initiates the loading or reloading of a single, complete Holon Knowledge Graph from its root persona ID.",
-      "public": true,
-      "broadcast": true,
+      "summary": "[INTERNAL] Initiates the loading or reloading of a single, complete Holon Knowledge Graph from its root persona ID.",
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -99,7 +99,7 @@
         ]
       },
       "required_permissions": [
-        "knowledgegraph:read"
+        "knowledgegraph:write"
       ]
     },
     {
@@ -120,14 +120,14 @@
         ]
       },
       "required_permissions": [
-        "knowledgegraph:read"
+        "knowledgegraph:write"
       ]
     },
     {
       "action_name": "knowledgegraph.SET_ACTIVE_VIEW_HOLON",
-      "summary": "A UI-facing action to select a specific holon for detailed inspection within the active view.",
-      "public": true,
-      "broadcast": true,
+      "summary": "[INTERNAL] A UI-facing action to select a specific holon for detailed inspection within the active view.",
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -139,14 +139,13 @@
             ]
           }
         }
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "knowledgegraph.TOGGLE_HOLON_EXPANDED",
       "summary": "Toggles the collapsed/expanded state of a single holon in the tree view.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -158,22 +157,20 @@
         "required": [
           "holonId"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "knowledgegraph.TOGGLE_SHOW_SUMMARIES",
       "summary": "Toggles the visibility of summary text in the holon tree view.",
-      "public": true,
-      "broadcast": true,
-      "targeted": false,
-      "required_permissions": []
+      "public": false,
+      "broadcast": false,
+      "targeted": false
     },
     {
       "action_name": "knowledgegraph.SET_TYPE_FILTERS",
       "summary": "Sets the set of holon types to display in the tree view. An empty set means show all.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -188,24 +185,20 @@
         "required": [
           "types"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "knowledgegraph.START_IMPORT_ANALYSIS",
       "summary": "Initiates the user-facing workflow to select and analyze a directory for HKG import.",
-      "public": true,
-      "broadcast": true,
-      "targeted": false,
-      "required_permissions": [
-        "knowledgegraph:write"
-      ]
+      "public": false,
+      "broadcast": false,
+      "targeted": false
     },
     {
       "action_name": "knowledgegraph.SET_IMPORT_RECURSIVE",
       "summary": "Sets whether the import analysis should search sub-folders recursively.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -217,22 +210,20 @@
         "required": [
           "recursive"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "knowledgegraph.TOGGLE_SHOW_ONLY_CHANGED",
       "summary": "Toggles whether the import view should only show files with a proposed change.",
-      "public": true,
-      "broadcast": true,
-      "targeted": false,
-      "required_permissions": []
+      "public": false,
+      "broadcast": false,
+      "targeted": false
     },
     {
       "action_name": "knowledgegraph.UPDATE_IMPORT_ACTION",
       "summary": "Allows the user to override the automatically determined import action for a specific file.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -248,30 +239,21 @@
           "sourcePath",
           "action"
         ]
-      },
-      "required_permissions": [
-        "knowledgegraph:write"
-      ]
+      }
     },
     {
       "action_name": "knowledgegraph.EXECUTE_IMPORT",
       "summary": "Triggers the execution of the currently staged import plan.",
-      "public": true,
-      "broadcast": true,
-      "targeted": false,
-      "required_permissions": [
-        "knowledgegraph:write"
-      ]
+      "public": false,
+      "broadcast": false,
+      "targeted": false
     },
     {
       "action_name": "knowledgegraph.COPY_ANALYSIS_TO_CLIPBOARD",
       "summary": "Formats the current import analysis into a string and copies it to the clipboard.",
-      "public": true,
-      "broadcast": true,
-      "targeted": false,
-      "required_permissions": [
-        "knowledgegraph:read"
-      ]
+      "public": false,
+      "broadcast": false,
+      "targeted": false
     },
     {
       "action_name": "knowledgegraph.CREATE_PERSONA",
@@ -318,8 +300,8 @@
     {
       "action_name": "knowledgegraph.SET_PERSONA_TO_DELETE",
       "summary": "A UI action to stage a persona for deletion, triggering a confirmation dialog.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -331,14 +313,13 @@
             ]
           }
         }
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "knowledgegraph.SET_CREATING_PERSONA",
       "summary": "A UI action to toggle the visibility of the 'Create New Persona' dialog.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -350,8 +331,7 @@
         "required": [
           "isCreating"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "knowledgegraph.UPDATE_HOLON_CONTENT",
@@ -377,10 +357,7 @@
         "required": [
           "holonId"
         ]
-      },
-      "required_permissions": [
-        "knowledgegraph:write"
-      ]
+      }
     },
     {
       "action_name": "knowledgegraph.CREATE_HOLON",
@@ -527,8 +504,8 @@
     {
       "action_name": "knowledgegraph.SET_HOLON_TO_DELETE",
       "summary": "A UI action to stage a single holon for deletion, triggering a confirmation dialog.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -540,14 +517,13 @@
             ]
           }
         }
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "knowledgegraph.SET_HOLON_TO_EDIT",
       "summary": "A UI action to enter or exit the holon editor view.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -559,14 +535,13 @@
             ]
           }
         }
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "knowledgegraph.SET_HOLON_TO_RENAME",
       "summary": "A UI action to show or hide the holon rename dialog.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -578,8 +553,7 @@
             ]
           }
         }
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "knowledgegraph.AVAILABLE_PERSONAS_UPDATED",

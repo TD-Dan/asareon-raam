@@ -6,11 +6,6 @@
       "key": "gateway:generate",
       "description": "Request AI content generation from providers",
       "dangerLevel": "CAUTION"
-    },
-    {
-      "key": "gateway:preview",
-      "description": "Request turn preview / token estimation",
-      "dangerLevel": "LOW"
     }
   ],
   "actions": [
@@ -72,6 +67,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
+      "hidden": true,
       "payload_schema": {
         "type": "object",
         "properties": {
@@ -114,9 +110,7 @@
           "contents"
         ]
       },
-      "required_permissions": [
-        "gateway:preview"
-      ]
+      "required_permissions": []
     },
     {
       "action_name": "gateway.REQUEST_AVAILABLE_MODELS",
@@ -124,7 +118,7 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": []
+      "required_permissions": ["gateway:generate"]
     },
     {
       "action_name": "gateway.CANCEL_REQUEST",

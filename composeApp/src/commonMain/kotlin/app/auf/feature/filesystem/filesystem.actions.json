@@ -47,13 +47,6 @@
           }
         }
       },
-      "agent_exposure": {
-        "requires_approval": false,
-        "sandbox_rule": {
-          "strategy": "AGENT_WORKSPACE",
-          "path_prefix_template": "{agentId}/workspace"
-        }
-      },
       "required_permissions": [
         "filesystem:workspace"
       ]
@@ -74,13 +67,6 @@
         "required": [
           "path"
         ]
-      },
-      "agent_exposure": {
-        "requires_approval": false,
-        "sandbox_rule": {
-          "strategy": "AGENT_WORKSPACE",
-          "path_prefix_template": "{agentId}/workspace"
-        }
       },
       "required_permissions": [
         "filesystem:workspace"
@@ -144,16 +130,6 @@
           "content"
         ]
       },
-      "agent_exposure": {
-        "requires_approval": false,
-        "sandbox_rule": {
-          "strategy": "AGENT_WORKSPACE",
-          "path_prefix_template": "{agentId}/workspace",
-          "payload_rewrites": {
-            "encrypt": "False"
-          }
-        }
-      },
       "required_permissions": [
         "filesystem:workspace"
       ]
@@ -202,13 +178,6 @@
         "required": [
           "path"
         ]
-      },
-      "agent_exposure": {
-        "requires_approval": false,
-        "sandbox_rule": {
-          "strategy": "AGENT_WORKSPACE",
-          "path_prefix_template": "{agentId}/workspace"
-        }
       },
       "required_permissions": [
         "filesystem:workspace"
@@ -294,8 +263,8 @@
     {
       "action_name": "filesystem.EXPAND_ALL",
       "summary": "Recursively expands a directory in the tree view to a safe depth.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -307,14 +276,13 @@
         "required": [
           "path"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "filesystem.COLLAPSE_ALL",
       "summary": "Recursively collapses a directory and all its children in the tree view.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -326,14 +294,13 @@
         "required": [
           "path"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "filesystem.ADD_WHITELIST_PATH",
       "summary": "Adds a new directory path to the security whitelist.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -345,16 +312,13 @@
         "required": [
           "path"
         ]
-      },
-      "required_permissions": [
-        "filesystem:system-files-read"
-      ]
+      }
     },
     {
       "action_name": "filesystem.REMOVE_WHITELIST_PATH",
       "summary": "Removes a directory path from the security whitelist.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -366,16 +330,13 @@
         "required": [
           "path"
         ]
-      },
-      "required_permissions": [
-        "filesystem:system-files-read"
-      ]
+      }
     },
     {
       "action_name": "filesystem.ADD_FAVORITE_PATH",
       "summary": "Adds a new directory path to the user's favorites.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -387,14 +348,13 @@
         "required": [
           "path"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "filesystem.REMOVE_FAVORITE_PATH",
       "summary": "Removes a directory path from the user's favorites.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -406,14 +366,13 @@
         "required": [
           "path"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "filesystem.TOGGLE_ITEM_EXPANDED",
       "summary": "Toggles the expanded/collapsed state of a directory in the tree view.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -425,14 +384,13 @@
         "required": [
           "path"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "filesystem.TOGGLE_ITEM_SELECTED",
       "summary": "Toggles the selected/deselected state of a file or directory.",
-      "public": true,
-      "broadcast": true,
+      "public": false,
+      "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
@@ -448,8 +406,7 @@
         "required": [
           "path"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "filesystem.COPY_SELECTION_TO_CLIPBOARD",
