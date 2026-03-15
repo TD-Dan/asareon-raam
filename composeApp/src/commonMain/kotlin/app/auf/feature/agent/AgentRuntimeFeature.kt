@@ -977,13 +977,13 @@ class AgentRuntimeFeature(
                     finalPayload
                 }
 
-                // Dispatch the domain action attributed to the agent.
-                // Pre-Phase 1 fix: dispatch as the agent's identity handle (e.g., "agent.coder-1")
-                // instead of the feature handle ("agent") so the Store permission guard
-                // evaluates the correct identity's effective permissions.
-                store.deferredDispatch(agent.identityHandle.handle, Action(name = actionName, payload = enrichedPayload))
-
-                // Track the pending command in state
+                // Track the pending command in state BEFORE dispatching the domain
+                // action. The domain action's targeted response (e.g., FILESYSTEM_RETURN_LIST)
+                // is routed via handleTargetedResponse → routeCommandResponseToSession, which
+                // looks up pendingCommands[correlationId]. If the domain action is dispatched
+                // first, its response may arrive before REGISTER_PENDING_COMMAND is processed,
+                // causing the lookup to miss and the data to be misrouted to the cognitive
+                // pipeline instead of the session.
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.AGENT_REGISTER_PENDING_COMMAND,
                     buildJsonObject {
@@ -994,6 +994,13 @@ class AgentRuntimeFeature(
                         put("actionName", actionName)
                     }
                 ))
+
+                // Dispatch the domain action attributed to the agent.
+                // Pre-Phase 1 fix: dispatch as the agent's identity handle (e.g., "agent.coder-1")
+                // instead of the feature handle ("agent") so the Store permission guard
+                // evaluates the correct identity's effective permissions.
+                store.deferredDispatch(agent.identityHandle.handle, Action(name = actionName, payload = enrichedPayload))
+
                 // Schedule TTL cleanup.
                 store.scheduleDelayed(PENDING_COMMAND_TTL_MS, identity.handle, Action(
                     ActionRegistry.Names.AGENT_CLEAR_PENDING_COMMAND,
