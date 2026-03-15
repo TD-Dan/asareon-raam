@@ -40,8 +40,23 @@
 
 - user files should go to core/<username> instead of core root.
 
+- Preview window shows on top a bar with every context partials percentage of the total context
+
+- KG Editor needs the export KG button
+
+- KG editor needs the graph vizualisation
+
+- KG Editor needs approx token sizes for holons and also total approx for parent holons
+
+- Allow selecting a custom root for App files (move to C:/Daniel for automatic backups)
+
+- AVAILABLE_ACTIONS: collpasible by feature to [EXPANDED / ESSENTIAL / COLLAPSED]
+
+- CONTEXT_NAVIGATION_REFERENCE: gather all context navigation information to one partial
 
 ## HIGH PRIORITY:
+
+- AUTOMATIC INCREMENTAL BACKUP at app start! And a backup central.
 
 - Get Sovereigns to work -> offloading design issue tracking and AUF App. Needs Boot and NVRAM functionality.
 

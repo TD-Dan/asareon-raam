@@ -756,6 +756,67 @@ object AgentCognitivePipeline {
         }
 
         // ============================================================
+        // Phase D: Context Collapse Pipeline Integration (§3.4)
+        //
+        // After all context is assembled but before prepareSystemPrompt:
+        // 1. Build ContextPartitions from the contextMap
+        // 2. Run the auto-collapse algorithm against the agent's budget
+        // 3. Apply collapse results back to the contextMap
+        // 4. Inject the CONTEXT_BUDGET_REPORT partition
+        //
+        // The agent's sticky overrides are pre-applied via buildPartition.
+        // The algorithm respects overrides up to the hard maximum, then
+        // force-collapses with a warning.
+        // ============================================================
+
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
+            put("agentId", agentUuid.uuid); put("step", "Applying Context Budget")
+        }))
+
+        val agentCollapseOverrides = statusInfo.contextCollapseOverrides
+
+        val partitions = contextMap.map { (key, content) ->
+            ContextCollapseLogic.buildPartition(key, content, agentCollapseOverrides)
+        }
+
+        val collapseResult = ContextCollapseLogic.collapse(
+            partitions = partitions,
+            maxBudgetChars = agent.contextMaxBudgetChars,
+            maxPartialChars = agent.contextMaxPartialChars,
+            platformDependencies = platformDependencies,
+            agentId = agentUuid.uuid
+        )
+
+        // Apply collapse results back to contextMap.
+        // Expanded partitions get their (possibly truncated) full content.
+        // Collapsed partitions get their collapsed summary content.
+        val collapsedContextMap = mutableMapOf<String, String>()
+        for (partition in collapseResult.partitions) {
+            val content = if (partition.state == CollapseState.EXPANDED) {
+                partition.fullContent
+            } else {
+                partition.collapsedContent
+            }
+            // Include the partition even if collapsed — strategies may want to
+            // see the collapsed summary (e.g., "[AVAILABLE_ACTIONS collapsed]").
+            if (content.isNotBlank()) {
+                collapsedContextMap[partition.key] = content
+            }
+        }
+
+        // Inject the budget report as a gathered context partition.
+        val budgetReport = ContextCollapseLogic.buildBudgetReport(
+            result = collapseResult,
+            softBudgetChars = agent.contextBudgetChars,
+            maxBudgetChars = agent.contextMaxBudgetChars
+        )
+        collapsedContextMap["CONTEXT_BUDGET"] = budgetReport
+
+        // Replace the contextMap with the collapse-resolved version.
+        contextMap.clear()
+        contextMap.putAll(collapsedContextMap)
+
+        // ============================================================
         // Build structured session subscription context with participants
         // ============================================================
         val subscribedSessionInfos = agent.subscribedSessionIds.mapNotNull { sessUUID ->

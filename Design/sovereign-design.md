@@ -1,8 +1,8 @@
 # Sovereign Strategy Stabilization: Design Document
 
-## Status: IN PROGRESS — Phases A, B & C Complete
+## Status: IN PROGRESS — Phases A, B, C & D Complete
 
-## Document Version: 6.0
+## Document Version: 7.0
 
 ---
 
@@ -807,40 +807,57 @@ HKG integration validated in isolation. Two-partition INDEX + FILES view working
 - CONTEXT_UNCOLLAPSE without partitionKey: no-op
 - CONTEXT_STATE_LOADED with invalid CollapseState: defaults to COLLAPSED
 
-### Phase D: Context Collapse Pipeline Integration
+### Phase D: Context Collapse Pipeline Integration ✅ COMPLETE
 
-Universal budget management.
+Universal budget management. Auto-collapse algorithm, budget report, oversized partial sentinel, and operator UI.
 
-**Deliverables:**
-1. `ContextCollapseLogic.kt` — partition model, auto-collapse algorithm, budget report
-2. `AgentCognitivePipeline.kt` — integrate collapse into `executeTurn()`
-3. Pipeline sentinel for oversized partials
+**Deliverables (all shipped):**
+1. `ContextCollapseLogic.kt` — pipeline utility: `ContextPartition` model, `collapse()` auto-collapse algorithm (priority-sorted, agent-override-aware, two-pass with force-collapse), `buildBudgetReport()` with token estimates and auto-collapse/force-collapse/truncation warnings, `buildPartition()` factory with well-known key defaults, oversized partial sentinel with diagnostic message injection
+2. `AgentCognitivePipeline.kt` — Phase D integration block in `executeTurn()`: builds partitions from contextMap, runs collapse against agent budget config, applies results back to contextMap (expanded → full content, collapsed → summary), injects CONTEXT_BUDGET partition with budget report
+3. `AgentManagerView.kt` — Context Budget UI section: three operator-configurable token fields (Optimal, Maximum, Max Partial) with chars↔tokens conversion at the boundary, supporting text hints, digit-only input filtering
+4. `ContextCollapseLogicT1Test.kt` — 30 tests (NEW)
 
-**Success gate — unit tests:**
+**Architectural decisions made during Phase D:**
 
-*ContextCollapseLogic:*
-- Under budget → no collapse applied
-- Over max budget → lowest-priority, largest partitions collapsed first
-- Agent sticky EXPANDED respected when under max
-- Agent sticky EXPANDED force-collapsed when over max, with warning
+- **Partition priority scale**: 1000 (never-collapse: INDEX, SESSION_METADATA), 100 (high: CONVERSATION_LOG, MULTI_AGENT_CONTEXT), 50 (medium: WORKSPACE_INDEX, WORKSPACE_NAVIGATION), 10 (standard: AVAILABLE_ACTIONS, WORKSPACE_FILES), 0 (low: HKG_FILES, unknown). Higher priority = collapses last.
+- **Two-pass collapse**: First pass collapses auto-collapsible, non-agent-overridden partitions (lowest priority, largest first). Second pass force-collapses agent-overridden partitions only if still over budget. Force-collapse logs at ERROR level.
+- **Non-auto-collapsible partitions**: INDEX, SESSION_METADATA, WORKSPACE_INDEX, WORKSPACE_NAVIGATION, and CONTEXT_BUDGET itself are never touched by the budget algorithm. They are always present regardless of budget pressure.
+- **Collapsed content preserved in contextMap**: Collapsed partitions emit their summary string (e.g., "[AVAILABLE_ACTIONS collapsed — ~2,100 tokens. Use agent.CONTEXT_UNCOLLAPSE to expand.]") into the contextMap. Strategies see the summary and can reference it. Blank collapsed content is omitted.
+- **Sentinel truncation is in-place**: Oversized partitions are truncated to `maxPartialChars` characters with a diagnostic message appended. The partition stays EXPANDED with truncated content — it doesn't switch to COLLAPSED. This preserves useful partial content.
+- **Tokens as the UI unit**: The Agent Manager displays all three budget fields as approximate tokens. The `≈4 chars/token` conversion happens at the draft initialization boundary (chars→tokens) and the save dispatch boundary (tokens→chars). Internal state and persistence remain in chars.
+- **Budget report always present**: The CONTEXT_BUDGET partition is injected after collapse resolution, so it reflects the post-collapse state. It has priority 1000 and is non-auto-collapsible — the report itself is never collapsed.
+- **Pipeline insertion point**: The collapse logic runs after all context partitions are assembled (HKG, workspace, conversation log, actions, multi-agent context) but before `prepareSystemPrompt()`. This ensures the strategy receives the post-collapse contextMap.
+
+**Success gate — unit tests (30 tests, all passing):**
+
+*ContextCollapseLogicT1Test (30 tests):*
+- effectiveCharCount: EXPANDED returns charCount, COLLAPSED returns collapsedCharCount
+- Under budget: no collapse applied, all partitions remain EXPANDED
+- Over max budget: lowest-priority largest partitions collapsed first
+- Over max budget: multiple partitions collapsed until under budget
+- Agent sticky EXPANDED: respected when under max budget
+- Agent sticky EXPANDED: force-collapsed when over max, forceCollapseApplied = true
+- Agent-overridden: skipped in first pass, collapsed in second pass only if needed
 - Priority ordering: high-priority partitions collapse last
-- Budget report generated with correct approximate token counts
-- Budget report includes auto-collapse warning when triggered
-- Oversized partial sentinel: single partition > threshold → truncated with message
-
-*Pipeline integration:*
-- executeTurn with HKG context → INDEX + FILES partitions built correctly
-- executeTurn with collapsed HKG → FILES section empty, INDEX present
-- executeTurn with mixed overrides → correct partitions in prompt
-- Budget report present in all turns
-- Auto-collapse fires and budget report reflects it
-
-*Cross-strategy verification (all non-Sovereign strategies pass):*
-- MinimalStrategy: existing tests still pass
-- VanillaStrategy: existing tests still pass
-- StateMachineStrategy: existing tests still pass
-- PrivateSessionStrategy: Phase B tests still pass with pipeline changes
-- HKGStrategy: Phase C tests still pass with pipeline changes
+- Non-auto-collapsible: never collapsed even when over budget
+- Budget report: correct approximate token counts (Optimal, Maximum, Current)
+- Budget report: includes auto-collapse warning with partition list and saved tokens
+- Budget report: includes force-collapse warning with "FORCED — overrode your choice"
+- Oversized partial sentinel: partition over threshold truncated with diagnostic message
+- Oversized partial sentinel: normal partition not truncated
+- Oversized partial sentinel: collapsed partition not truncated (sentinel only fires on EXPANDED)
+- buildPartition: HKG INDEX non-auto-collapsible, priority 1000
+- buildPartition: HKG FILES auto-collapsible, priority 0
+- buildPartition: CONVERSATION_LOG high priority 100
+- buildPartition: AVAILABLE_ACTIONS standard priority 10
+- buildPartition: SESSION_METADATA non-auto-collapsible
+- buildPartition: agent override applied correctly
+- buildPartition: unknown key gets default priority 0, auto-collapsible
+- Edge: empty partition list returns empty result
+- Edge: already-collapsed partitions not re-collapsed
+- Edge: exactly at max budget — no collapse
+- Edge: one char over max budget triggers collapse
+- Edge: collapse and sentinel can both fire on same turn
 
 ### Phase E: Sovereign Stabilization
 
@@ -895,7 +912,8 @@ Compose all capabilities.
 | `HkgContextFormatter.kt` | `agent` | C | ✅ Shipped |
 | `HkgContextFormatterT1Test.kt` | `agent` (test) | C | ✅ Shipped |
 | `HKGStrategyT1LogicTest.kt` | `strategies` (test) | C | ✅ Shipped |
-| `ContextCollapseLogic.kt` | `agent` | D | Planned |
+| `ContextCollapseLogic.kt` | `agent` | D | ✅ Shipped |
+| `ContextCollapseLogicT1Test.kt` | `agent` (test) | D | ✅ Shipped |
 
 ### Modified Files
 
@@ -904,7 +922,7 @@ Compose all capabilities.
 | `AgentState.kt` | Budget fields on AgentInstance. CollapseOverrides + pending flag + multi-session ledger fields on AgentStatusInfo. CollapseState enum. | A+B | ✅ Shipped |
 | `AgentRuntimeReducer.kt` | CONTEXT_UNCOLLAPSE, CONTEXT_COLLAPSE, CONTEXT_STATE_LOADED, SET_PENDING_PRIVATE_SESSION, SET_PENDING_LEDGER_SESSIONS, ACCUMULATE_SESSION_LEDGER. Cleanup in INITIATE_TURN + SET_STATUS. Phase C: WARN logging on all context collapse silent failure paths, LOG_TAG constant. | A+B+C | ✅ Shipped |
 | `AgentRuntimeFeature.kt` | context.json load/save, SESSION_CREATED handler (with private session subscription), ACCUMULATE_SESSION_LEDGER side-effect, register new strategies, write guard. Phase C: HKGStrategy registration, agentId injection for CONTEXT_UNCOLLAPSE/COLLAPSE, HKG write guard (§4.5), ACTION_RESULT feedback for context commands, WARN/DEBUG logging on side-effect failure paths. | A+B+C | ✅ Shipped |
-| `AgentCognitivePipeline.kt` | System-prompt-only mode, multi-session ledger accumulation, ConversationLogFormatter, empty gateway contents, multi-session SESSION_METADATA. Phase C: flat HKG dump → INDEX + FILES via HkgContextFormatter, root auto-uncollapse, null HKG context WARN, no-root-holon WARN, platformDependencies passed to buildFilesSection. | B+C | ✅ Shipped |
+| `AgentCognitivePipeline.kt` | System-prompt-only mode, multi-session ledger accumulation, ConversationLogFormatter, empty gateway contents, multi-session SESSION_METADATA. Phase C: flat HKG dump → INDEX + FILES via HkgContextFormatter, root auto-uncollapse, null HKG context WARN, no-root-holon WARN, platformDependencies passed to buildFilesSection. Phase D: ContextCollapseLogic integration in executeTurn() — builds partitions, runs collapse, applies results to contextMap, injects CONTEXT_BUDGET report. | B+C+D | ✅ Shipped |
 | `CognitiveStrategy.kt` | SessionParticipant data class, SessionInfo extended with participants + messageCount | B | ✅ Shipped |
 | `AnthropicProvider.kt` | Empty contents → trigger message injection, legacy path preserved. Also in buildCountTokensPayload. | B | ✅ Shipped |
 | `OpenAIProvider.kt` | Empty contents → trigger message injection, legacy path preserved | B | ✅ Shipped |
@@ -919,7 +937,7 @@ Compose all capabilities.
 | `AgentRuntimeFeatureT1ConversationLogFormatterTest.kt` | Timestamp assertion updated for new ISO format. | C (tech debt) | ✅ Shipped |
 | `AgentRuntimeFeatureT1RuntimeReducerTest.kt` | 4 new tests for context collapse failure paths. HKGStrategy registered in setUp. | C | ✅ Shipped |
 | `SovereignStrategy.kt` | Updated ensureInfrastructure(), boot auto-uncollapse | E | Planned |
-| `AgentManagerView.kt` | Budget config UI | A or later | Planned |
+| `AgentManagerView.kt` | Phase D: Context Budget UI section — three operator-configurable token fields (Optimal, Maximum, Max Partial) with chars↔tokens conversion, supporting text, digit-only filtering. Included in AGENT_UPDATE_CONFIG save payload. | D | ✅ Shipped |
 
 ### Unchanged (Decoupled)
 
@@ -951,7 +969,7 @@ Compose all capabilities.
 │     ├── ConversationLogFormatter → CONVERSATION_LOG partition           │
 │     │   (multi-session, delimiter convention, per-session snapshots)    │
 │     ├── HkgContextFormatter → INDEX + FILES partitions [Phase C ✅]  │
-│     ├── ContextCollapseLogic.collapse() [Phase D]                      │
+│     ├── ContextCollapseLogic.collapse() [Phase D ✅]                    │
 │     ├── SESSION_METADATA (multi-session aware)                         │
 │     ├── AVAILABLE_ACTIONS (exposed actions)                            │
 │     └── WORKSPACE_FILES                                                │
@@ -1002,6 +1020,7 @@ Compose all capabilities.
 │  │ - ContextPartition   │                                              │
 │  │ - collapse()         │                                              │
 │  │ - buildBudgetReport  │                                              │
+│  │ - buildPartition()   │                                              │
 │  └─────────────────────┘                                               │
 └────────────────────────────────────────────────────────────────────────┘
 
@@ -1048,3 +1067,8 @@ Compose all capabilities.
 | 24 | HKG partition keys | Two partitions: `HOLON_KNOWLEDGE_GRAPH_INDEX` (always present, navigational) and `HOLON_KNOWLEDGE_GRAPH_FILES` (expanded holons only, carries token weight). Collapse overrides use `hkg:<holonId>` key convention. |
 | 25 | Formatter vs pipeline responsibility | HkgContextFormatter is a pure renderer — no side effects, no defaults. Root auto-uncollapse and effective override computation are pipeline responsibilities in executeTurn(). |
 | 26 | Silent failure logging | All `?: return state` / `?: continue` / `catch` paths in context collapse flow now log WARN (operational) or DEBUG (defensive). 9 paths diagnosed and fixed in Phase C. |
+| 27 | Partition priority scale | 1000 (never-collapse), 100 (high), 50 (medium), 10 (standard), 0 (low/default). Higher priority = collapses last. HKG FILES is priority 0 — heaviest partition, collapses first. |
+| 28 | Two-pass collapse with force | First pass skips agent-overridden EXPANDED partitions. Second pass force-collapses them only if still over budget. Force-collapse logs ERROR — it means the agent's context choices are incompatible with its budget. |
+| 29 | Collapsed content in contextMap | Collapsed partitions emit a summary string into the contextMap (not removed). Strategies see "[PARTITION_NAME collapsed — use CONTEXT_UNCOLLAPSE to expand.]" and can reference it. Blank collapsed content is omitted. |
+| 30 | Budget report self-protection | CONTEXT_BUDGET partition has priority 1000 and isAutoCollapsible = false. The report is never collapsed by the system it reports on. |
+| 31 | Budget UI token convention | Agent Manager shows all three budget fields as approximate tokens. Conversion (×4 / ÷4) happens at the UI boundary. Internal state and persistence remain in chars. Consistent with §2.2. |

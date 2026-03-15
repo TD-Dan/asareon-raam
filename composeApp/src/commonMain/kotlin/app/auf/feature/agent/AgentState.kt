@@ -174,12 +174,12 @@ data class AgentInstance(
     // Strategies can recommend defaults.
     // ========================================================================
 
-    /** Soft target for context size in characters. ~12,500 tokens at ≈4 chars/token. */
-    val contextBudgetChars: Int = 50_000,
-    /** Hard maximum for context size in characters. ~37,500 tokens. Safety net ceiling. */
-    val contextMaxBudgetChars: Int = 150_000,
-    /** Maximum single-partial size in characters before truncation sentinel fires. ~5,000 tokens. */
-    val contextMaxPartialChars: Int = 20_000,
+    /** Soft target for context size in characters. ~50,000 tokens at ≈4 chars/token. */
+    val contextBudgetChars: Int = 200_000,
+    /** Hard maximum for context size in characters. ~125,000 tokens. Safety net ceiling. */
+    val contextMaxBudgetChars: Int = 500_000,
+    /** Maximum single-partial size in characters before truncation sentinel fires. ~25,000 tokens. */
+    val contextMaxPartialChars: Int = 100_000,
 
     // Configuration
     val automaticMode: Boolean = false,

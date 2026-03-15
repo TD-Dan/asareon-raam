@@ -234,6 +234,11 @@ private fun AgentEditorView(
     var autoWaitTimeInput by remember(agent.identity.uuid) { mutableStateOf(agent.autoWaitTimeSeconds.toString()) }
     var autoMaxWaitTimeInput by remember(agent.identity.uuid) { mutableStateOf(agent.autoMaxWaitTimeSeconds.toString()) }
 
+    // Context Budget — stored as chars, displayed as approximate tokens (§2.2: ≈4 chars/token)
+    var budgetOptimalTokensInput by remember(agent.identity.uuid) { mutableStateOf((agent.contextBudgetChars / 4).toString()) }
+    var budgetMaxTokensInput by remember(agent.identity.uuid) { mutableStateOf((agent.contextMaxBudgetChars / 4).toString()) }
+    var budgetMaxPartialTokensInput by remember(agent.identity.uuid) { mutableStateOf((agent.contextMaxPartialChars / 4).toString()) }
+
     // Color: read from identity registry (authoritative), draft locally
     val identityRegistry = store.state.collectAsState().value.identityRegistry
     val currentIdentity = identityRegistry[agent.identity.handle]
@@ -265,6 +270,10 @@ private fun AgentEditorView(
             put("automaticMode", draftAgent.automaticMode)
             autoWaitTimeInput.toIntOrNull()?.let { put("autoWaitTimeSeconds", it) }
             autoMaxWaitTimeInput.toIntOrNull()?.let { put("autoMaxWaitTimeSeconds", it) }
+            // Context Budget — convert approximate tokens back to chars (§2.2: ≈4 chars/token)
+            budgetOptimalTokensInput.toIntOrNull()?.let { put("contextBudgetChars", it * 4) }
+            budgetMaxTokensInput.toIntOrNull()?.let { put("contextMaxBudgetChars", it * 4) }
+            budgetMaxPartialTokensInput.toIntOrNull()?.let { put("contextMaxPartialChars", it * 4) }
             put("resources", Json.encodeToJsonElement(draftAgent.resources))
             // displayColor: include when explicitly set or cleared.
             // TODO: AgentFeature's AGENT_UPDATE_CONFIG handler must propagate this
@@ -553,6 +562,46 @@ private fun AgentEditorView(
                 value = autoMaxWaitTimeInput,
                 onValueChange = { autoMaxWaitTimeInput = it.filter { c -> c.isDigit() } },
                 label = { Text("Max Wait (s)") },
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        // --- ROW 7: Context Budget (§3.2) ---
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        Text(
+            "Context Budget",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+        Text(
+            "Controls the agent's context window size. Values are approximate tokens (~4 chars/token). " +
+                    "The system auto-collapses partitions when the maximum is exceeded.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = budgetOptimalTokensInput,
+                onValueChange = { budgetOptimalTokensInput = it.filter { c -> c.isDigit() } },
+                label = { Text("Optimal (~tokens)") },
+                supportingText = { Text("Soft target for best coherence") },
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedTextField(
+                value = budgetMaxTokensInput,
+                onValueChange = { budgetMaxTokensInput = it.filter { c -> c.isDigit() } },
+                label = { Text("Maximum (~tokens)") },
+                supportingText = { Text("Hard ceiling — auto-collapse fires") },
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedTextField(
+                value = budgetMaxPartialTokensInput,
+                onValueChange = { budgetMaxPartialTokensInput = it.filter { c -> c.isDigit() } },
+                label = { Text("Max Partial (~tokens)") },
+                supportingText = { Text("Single partition truncation limit") },
                 modifier = Modifier.weight(1f)
             )
         }
