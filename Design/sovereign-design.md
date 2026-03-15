@@ -2,7 +2,7 @@
 
 ## Status: IN PROGRESS — Phases A, B, C & D Complete
 
-## Document Version: 7.0
+## Document Version: 8.0
 
 ---
 
@@ -51,17 +51,51 @@ All conversation context lives in the system prompt. The gateway `contents` (mes
 - Makes conversation logs a first-class context partition that participates in collapse/budget
 - Provides a universal format across all providers (Anthropic, OpenAI, Gemini, Inception)
 
-### 2.6 Structured Delimiter Convention *(Added in Phase B)*
+### 2.6 Structured Delimiter Convention *(Revised in Phase D)*
 
-All context partitions use a consistent indentation-based delimiter hierarchy:
+All context partitions use a unique, non-naturally-occurring delimiter hierarchy.
+Markdown (`#`) and XML (`<tag>`) conventions are avoided because both appear
+routinely in agent-generated content and knowledge graphs.
 
 ```
----              → top-level section boundary (CONVERSATION LOG, CONTEXT, etc.)
- ---             → partition-level boundary (individual session, individual context source)
-  ---            → entry-level boundary (individual message, individual file)
+[[[ - SYSTEM PROMPT - ]]]                  → Outermost wrapper (pipeline-owned)
+
+- [ PARTIAL NAME ] (~tokens) [STATE] -     → h1: Top-level partition boundary
+- [ END OF PARTIAL NAME ] -                → h1 closing tag
+
+--- TEXT (~tokens) [STATE] ---             → h2: Sub-partition (session, file)
+--- END OF TEXT ---                        → h2 closing tag
+
+  --- TEXT (~tokens) [STATE] ---           → h3: Entry-level (2-space indent)
+  ---                                      → h3 closing tag
+
+    --- TEXT (~tokens) [STATE] ---         → h4: Sub-entry (4-space indent)
+    ---                                    → h4 closing tag
 ```
 
-Content (message bodies, file contents) sits at zero indent between delimiters, making it unambiguous even if content contains markdown `---` rules.
+Spacing rules:
+- h1 tags: triple `\n` before, double `\n` after (own line, surrounded by blanks)
+- h1 closing, h2–h4 tags: double `\n` before and after
+- Content sits at zero indent between delimiters
+
+Collapse state badges:
+- `[PROTECTED]`: Never collapsed by the budget system. Always present.
+- `[EXPANDED]`: Showing full content. Agent can collapse it.
+- `[COLLAPSED]`: Showing summary only. Agent can expand it.
+- `[TRUNCATED]`: Was truncated by the pipeline sentinel.
+
+Per-header token estimates use the `≈4 chars/token` heuristic, rounded UP to
+2 significant figures with a minimum granularity of 10 (e.g., 2389→2400,
+551→560, 8→10). Implemented by `ContextDelimiters.roundTokensUp()`.
+
+Ownership:
+- **Pipeline** owns: `[[[ ]]]` outer wrapper, h1 headers on each contextMap entry
+- **Formatters** own: internal h2/h3/h4 structure within a partition
+- **Strategies** own: ordering of partitions, strategy-specific h1 sections
+  (IDENTITY, INSTRUCTIONS, NAVIGATION, etc.)
+
+All delimiter logic lives in `ContextDelimiters.kt` — a pipeline-level utility
+in `app.auf.feature.agent`.
 
 ---
 
@@ -538,32 +572,48 @@ Both fields are cleared in INITIATE_TURN (reducer) and on SET_STATUS when `shoul
 
 ### 6.3 CONVERSATION_LOG Format
 
-Uses the delimiter convention (§2.6):
+Uses the delimiter convention (§2.6). The h1 wrapper is pipeline-owned.
+Internal structure uses h2 for sessions (with token counts and state badges)
+and h3 for individual messages:
 
 ```
---- CONVERSATION LOG ---
- --- SESSION: Private testing session | uuid: xxx | 3 messages ---
+- [ CONVERSATION_LOG ] (~2,500 tokens) [EXPANDED] -
+
+--- SESSION: Private testing session | uuid: xxx | 3 messages (~1,600 tokens) [EXPANDED] ---
+
   --- Daniel (user.daniel) @ 2026-03-13T17:18:08Z ---
+
 PeepBoob answer with a boop!
+
   ---
+
   --- Ryan (agent.ryan-2) @ 2026-03-13T17:18:12Z ---
+
 Hello! I'm Ryan, ready to assist.
+
   ---
- --- END OF SESSION ---
- --- SESSION: Pet language studies | uuid: yyy | 1 message ---
+
+--- END OF SESSION ---
+
+--- SESSION: Pet language studies | uuid: yyy | 1 message (~400 tokens) [EXPANDED] ---
+
   --- Daniel (user.daniel) @ 2026-03-13T17:13:56Z ---
+
 What is your favourite animal?
+
   ---
- --- END OF SESSION ---
---- END OF CONVERSATION LOG ---
+
+--- END OF SESSION ---
+
+- [ END OF CONVERSATION_LOG ] -
 ```
 
 When all sessions are empty:
 
 ```
---- CONVERSATION LOG ---
+- [ CONVERSATION_LOG ] (~20 tokens) [PROTECTED] -
 No messages in any subscribed session.
---- END OF CONVERSATION LOG ---
+- [ END OF CONVERSATION_LOG ] -
 ```
 
 ### 6.4 SUBSCRIBED SESSIONS with Participants
@@ -809,55 +859,59 @@ HKG integration validated in isolation. Two-partition INDEX + FILES view working
 
 ### Phase D: Context Collapse Pipeline Integration ✅ COMPLETE
 
-Universal budget management. Auto-collapse algorithm, budget report, oversized partial sentinel, and operator UI.
+Universal budget management, structured delimiter standardization, and operator UI.
 
 **Deliverables (all shipped):**
-1. `ContextCollapseLogic.kt` — pipeline utility: `ContextPartition` model, `collapse()` auto-collapse algorithm (priority-sorted, agent-override-aware, two-pass with force-collapse), `buildBudgetReport()` with token estimates and auto-collapse/force-collapse/truncation warnings, `buildPartition()` factory with well-known key defaults, oversized partial sentinel with diagnostic message injection
-2. `AgentCognitivePipeline.kt` — Phase D integration block in `executeTurn()`: builds partitions from contextMap, runs collapse against agent budget config, applies results back to contextMap (expanded → full content, collapsed → summary), injects CONTEXT_BUDGET partition with budget report
-3. `AgentManagerView.kt` — Context Budget UI section: three operator-configurable token fields (Optimal, Maximum, Max Partial) with chars↔tokens conversion at the boundary, supporting text hints, digit-only input filtering
-4. `ContextCollapseLogicT1Test.kt` — 30 tests (NEW)
+1. `ContextDelimiters.kt` — shared delimiter convention: `h1()`–`h4()` with token counts and state badges, closing tags, `wrapSystemPrompt()` for `[[[ ]]]` outer wrapper, `roundTokensUp()` (2 sig figs, min granularity 10), `approxTokens()` (chars→rounded token display), `formatWithCommas()`. State badge constants: PROTECTED, EXPANDED, COLLAPSED, TRUNCATED.
+2. `ContextCollapseLogic.kt` — pipeline utility: `ContextPartition` model with `truncateFromStart` for directional truncation, `collapse()` two-pass auto-collapse algorithm, `buildBudgetReport()` with token estimates and directional truncation warnings, `buildPartition()` factory with well-known key defaults, oversized partial sentinel (sessions truncate from START, others from END)
+3. `AgentCognitivePipeline.kt` — Phase D integration: builds partitions from contextMap, runs collapse against agent budget config, wraps each entry with `ContextDelimiters.h1()` + closing tag and state badge, injects CONTEXT_BUDGET partition, wraps final system prompt with `[[[ - SYSTEM PROMPT - ]]]` via `ContextDelimiters.wrapSystemPrompt()`
+4. `AgentManagerView.kt` — Context Budget UI section: three operator-configurable token fields (Optimal, Maximum, Max Partial) with chars↔tokens conversion at the boundary, supporting text hints, digit-only input filtering
+5. `ConversationLogFormatter.kt` — updated: removed self-wrapping h1 (pipeline adds it), sessions use `ContextDelimiters.h2()` with token counts and state badges, messages use `ContextDelimiters.h3()` with closing tags
+6. `HkgContextFormatter.kt` — updated: removed self-wrapping h1, individual files use `ContextDelimiters.h2()` with token counts and `[EXPANDED]` state
+7. `VanillaStrategy.kt` — updated: strategy-owned sections use `ContextDelimiters.h1()` with PROTECTED badge and closing tags, gathered contexts arrive pre-wrapped and appended directly, extracted shared `buildSubscribedSessionsContent()` and `buildPrivateSubscribedSessionsContent()` helpers
+8. `MinimalStrategy.kt` — updated: ContextDelimiters h1 for SYSTEM INSTRUCTIONS, gathered contexts pre-wrapped
+9. `PrivateSessionStrategy.kt` — updated: ContextDelimiters h1 for IDENTITY, INSTRUCTIONS, PRIVATE SESSION ROUTING, SUBSCRIBED SESSIONS with participant-aware h2 sessions
+10. `HKGStrategy.kt` — updated: ContextDelimiters h1, explicit ordering of HKG INDEX/FILES before other contexts, HKG NAVIGATION section
+11. `StateMachineStrategy.kt` — updated: ContextDelimiters h1 for IDENTITY, INSTRUCTIONS, STATE MACHINE, PHASE TRANSITION
+12. `ContextDelimitersT1Test.kt` — 19 tests (NEW)
+13. `ContextCollapseLogicT1Test.kt` — 30 tests (UPDATED for directional truncation)
 
 **Architectural decisions made during Phase D:**
 
-- **Partition priority scale**: 1000 (never-collapse: INDEX, SESSION_METADATA), 100 (high: CONVERSATION_LOG, MULTI_AGENT_CONTEXT), 50 (medium: WORKSPACE_INDEX, WORKSPACE_NAVIGATION), 10 (standard: AVAILABLE_ACTIONS, WORKSPACE_FILES), 0 (low: HKG_FILES, unknown). Higher priority = collapses last.
-- **Two-pass collapse**: First pass collapses auto-collapsible, non-agent-overridden partitions (lowest priority, largest first). Second pass force-collapses agent-overridden partitions only if still over budget. Force-collapse logs at ERROR level.
-- **Non-auto-collapsible partitions**: INDEX, SESSION_METADATA, WORKSPACE_INDEX, WORKSPACE_NAVIGATION, and CONTEXT_BUDGET itself are never touched by the budget algorithm. They are always present regardless of budget pressure.
-- **Collapsed content preserved in contextMap**: Collapsed partitions emit their summary string (e.g., "[AVAILABLE_ACTIONS collapsed — ~2,100 tokens. Use agent.CONTEXT_UNCOLLAPSE to expand.]") into the contextMap. Strategies see the summary and can reference it. Blank collapsed content is omitted.
-- **Sentinel truncation is in-place**: Oversized partitions are truncated to `maxPartialChars` characters with a diagnostic message appended. The partition stays EXPANDED with truncated content — it doesn't switch to COLLAPSED. This preserves useful partial content.
-- **Tokens as the UI unit**: The Agent Manager displays all three budget fields as approximate tokens. The `≈4 chars/token` conversion happens at the draft initialization boundary (chars→tokens) and the save dispatch boundary (tokens→chars). Internal state and persistence remain in chars.
-- **Budget report always present**: The CONTEXT_BUDGET partition is injected after collapse resolution, so it reflects the post-collapse state. It has priority 1000 and is non-auto-collapsible — the report itself is never collapsed.
-- **Pipeline insertion point**: The collapse logic runs after all context partitions are assembled (HKG, workspace, conversation log, actions, multi-agent context) but before `prepareSystemPrompt()`. This ensures the strategy receives the post-collapse contextMap.
+- **Pipeline-owned h1 wrapping**: The pipeline wraps each contextMap entry with `ContextDelimiters.h1("KEY", chars, STATE)` + `h1End("KEY")` after collapse resolution. Strategies receive pre-wrapped gathered contexts and include them directly. This guarantees consistent formatting with accurate token counts and state badges.
+- **Pipeline-owned system prompt wrapper**: `[[[ - SYSTEM PROMPT - ]]]` is added by the pipeline after `prepareSystemPrompt()` returns. Strategies never see the outer wrapper.
+- **Strategy-owned internal sections**: Strategies use `ContextDelimiters.h1()` for their own sections (IDENTITY, INSTRUCTIONS, NAVIGATION, etc.) with `[PROTECTED]` badge. These are not collapsible by the budget system.
+- **Unique delimiters**: `- [ ] -` for h1 and `--- ---` for h2+ are chosen to never naturally occur in agent-generated content, HKG JSON, or markdown. Avoids false-positive parsing.
+- **Token rounding**: All display token counts use `roundTokensUp()` — 2 significant figures with minimum granularity of 10. Examples: 2389→2400, 551→560, 8→10. Avoids false precision.
+- **Directional truncation**: `CONVERSATION_LOG` has `truncateFromStart = true` — oldest messages removed first, keeping recent context. All other partitions truncate from the END. The sentinel message indicates direction.
+- **Partition priority scale**: 1000 (never-collapse: INDEX, SESSION_METADATA), 100 (high: CONVERSATION_LOG, MULTI_AGENT_CONTEXT), 50 (medium: WORKSPACE_INDEX, WORKSPACE_NAVIGATION), 10 (standard: AVAILABLE_ACTIONS, WORKSPACE_FILES), 0 (low: HKG FILES, unknown). Higher priority = collapses last.
+- **Two-pass collapse with force**: First pass skips agent-overridden EXPANDED partitions. Second pass force-collapses them only if still over budget. Force-collapse logs ERROR.
+- **Collapsed content preserved in contextMap**: Collapsed partitions emit a summary string wrapped with h1 headers into the contextMap. Strategies see the summary. Blank collapsed content is omitted.
+- **Shared strategy helpers**: `buildSubscribedSessionsContent()` and `buildPrivateSubscribedSessionsContent()` extracted to VanillaStrategy.kt (internal visibility) for reuse across strategies, avoiding duplication while maintaining strategy decoupling.
 
-**Success gate — unit tests (30 tests, all passing):**
+**Success gate — unit tests (49 tests, all passing):**
+
+*ContextDelimitersT1Test (19 tests):*
+- roundTokensUp: zero, single digits round to 10, 2-digit values to nearest 10, 3-digit to nearest 10, 4-digit to nearest 100, 5-digit to nearest 1000
+- approxTokens: chars to rounded tokens with commas, small char counts round to 10
+- formatWithCommas: correct formatting
+- h1: includes name, tokens, state; triple newline before; omits when null
+- h1End: closing tag format
+- h2: includes text, tokens, state; h2End closing tag
+- h3: 2-space indent; h4: 4-space indent
+- wrapSystemPrompt: outer delimiters
+- state badge constants
 
 *ContextCollapseLogicT1Test (30 tests):*
-- effectiveCharCount: EXPANDED returns charCount, COLLAPSED returns collapsedCharCount
-- Under budget: no collapse applied, all partitions remain EXPANDED
-- Over max budget: lowest-priority largest partitions collapsed first
-- Over max budget: multiple partitions collapsed until under budget
-- Agent sticky EXPANDED: respected when under max budget
-- Agent sticky EXPANDED: force-collapsed when over max, forceCollapseApplied = true
-- Agent-overridden: skipped in first pass, collapsed in second pass only if needed
-- Priority ordering: high-priority partitions collapse last
-- Non-auto-collapsible: never collapsed even when over budget
-- Budget report: correct approximate token counts (Optimal, Maximum, Current)
-- Budget report: includes auto-collapse warning with partition list and saved tokens
-- Budget report: includes force-collapse warning with "FORCED — overrode your choice"
-- Oversized partial sentinel: partition over threshold truncated with diagnostic message
-- Oversized partial sentinel: normal partition not truncated
-- Oversized partial sentinel: collapsed partition not truncated (sentinel only fires on EXPANDED)
-- buildPartition: HKG INDEX non-auto-collapsible, priority 1000
-- buildPartition: HKG FILES auto-collapsible, priority 0
-- buildPartition: CONVERSATION_LOG high priority 100
-- buildPartition: AVAILABLE_ACTIONS standard priority 10
-- buildPartition: SESSION_METADATA non-auto-collapsible
-- buildPartition: agent override applied correctly
-- buildPartition: unknown key gets default priority 0, auto-collapsible
-- Edge: empty partition list returns empty result
-- Edge: already-collapsed partitions not re-collapsed
-- Edge: exactly at max budget — no collapse
-- Edge: one char over max budget triggers collapse
-- Edge: collapse and sentinel can both fire on same turn
+- ContextPartition: effectiveCharCount for EXPANDED and COLLAPSED
+- Under budget: no collapse applied
+- Over max budget: lowest-priority largest first, multiple partitions until under budget
+- Agent sticky overrides: respected under max, force-collapsed over max, skipped in first pass
+- Priority ordering: high priority last, non-auto-collapsible never collapsed
+- Budget report: correct tokens, auto-collapse warning, force-collapse warning, truncation direction
+- Oversized sentinel: end truncation (default), start truncation (sessions), normal/collapsed not truncated
+- buildPartition: 7 well-known key defaults (including CONVERSATION_LOG truncateFromStart), agent override, unknown key
+- Edge cases: empty list, already collapsed, exactly at budget, one over budget
 
 ### Phase E: Sovereign Stabilization
 
@@ -914,6 +968,8 @@ Compose all capabilities.
 | `HKGStrategyT1LogicTest.kt` | `strategies` (test) | C | ✅ Shipped |
 | `ContextCollapseLogic.kt` | `agent` | D | ✅ Shipped |
 | `ContextCollapseLogicT1Test.kt` | `agent` (test) | D | ✅ Shipped |
+| `ContextDelimiters.kt` | `agent` | D | ✅ Shipped |
+| `ContextDelimitersT1Test.kt` | `agent` (test) | D | ✅ Shipped |
 
 ### Modified Files
 
@@ -922,8 +978,9 @@ Compose all capabilities.
 | `AgentState.kt` | Budget fields on AgentInstance. CollapseOverrides + pending flag + multi-session ledger fields on AgentStatusInfo. CollapseState enum. | A+B | ✅ Shipped |
 | `AgentRuntimeReducer.kt` | CONTEXT_UNCOLLAPSE, CONTEXT_COLLAPSE, CONTEXT_STATE_LOADED, SET_PENDING_PRIVATE_SESSION, SET_PENDING_LEDGER_SESSIONS, ACCUMULATE_SESSION_LEDGER. Cleanup in INITIATE_TURN + SET_STATUS. Phase C: WARN logging on all context collapse silent failure paths, LOG_TAG constant. | A+B+C | ✅ Shipped |
 | `AgentRuntimeFeature.kt` | context.json load/save, SESSION_CREATED handler (with private session subscription), ACCUMULATE_SESSION_LEDGER side-effect, register new strategies, write guard. Phase C: HKGStrategy registration, agentId injection for CONTEXT_UNCOLLAPSE/COLLAPSE, HKG write guard (§4.5), ACTION_RESULT feedback for context commands, WARN/DEBUG logging on side-effect failure paths. | A+B+C | ✅ Shipped |
-| `AgentCognitivePipeline.kt` | System-prompt-only mode, multi-session ledger accumulation, ConversationLogFormatter, empty gateway contents, multi-session SESSION_METADATA. Phase C: flat HKG dump → INDEX + FILES via HkgContextFormatter, root auto-uncollapse, null HKG context WARN, no-root-holon WARN, platformDependencies passed to buildFilesSection. Phase D: ContextCollapseLogic integration in executeTurn() — builds partitions, runs collapse, applies results to contextMap, injects CONTEXT_BUDGET report. | B+C+D | ✅ Shipped |
+| `AgentCognitivePipeline.kt` | System-prompt-only mode, multi-session ledger accumulation, ConversationLogFormatter, empty gateway contents, multi-session SESSION_METADATA. Phase C: flat HKG dump → INDEX + FILES via HkgContextFormatter, root auto-uncollapse, null HKG context WARN, no-root-holon WARN, platformDependencies passed to buildFilesSection. Phase D: ContextCollapseLogic + ContextDelimiters integration — builds partitions, runs collapse, wraps each entry with h1 headers and state badges, injects CONTEXT_BUDGET, wraps final prompt with `[[[ - SYSTEM PROMPT - ]]]`. | B+C+D | ✅ Shipped |
 | `CognitiveStrategy.kt` | SessionParticipant data class, SessionInfo extended with participants + messageCount | B | ✅ Shipped |
+| `ConversationLogFormatter.kt` | Phase B: multi-session structured conversation logs. Phase D: removed self-wrapping h1 (pipeline adds it), sessions use ContextDelimiters.h2() with token counts and state badges, messages use ContextDelimiters.h3(). | B+D | ✅ Shipped |
 | `AnthropicProvider.kt` | Empty contents → trigger message injection, legacy path preserved. Also in buildCountTokensPayload. | B | ✅ Shipped |
 | `OpenAIProvider.kt` | Empty contents → trigger message injection, legacy path preserved | B | ✅ Shipped |
 | `InceptionProvider.kt` | Empty contents → trigger message injection, legacy path preserved | B | ✅ Shipped |
@@ -943,13 +1000,21 @@ Compose all capabilities.
 
 | File | Reason |
 |------|--------|
-| `VanillaStrategy.kt` | No shared code |
-| `MinimalStrategy.kt` | No shared code |
-| `StateMachineStrategy.kt` | No shared code |
 | `KnowledgeGraphFeature.kt` | buildContextForPersona unchanged — collapse is pipeline-side |
 | `KnowledgeGraphState.kt` | No changes |
 | `SovereignDefaults.kt` | Constitution + boot sentinel unchanged |
 | `CognitiveStrategyRegistry.kt` | No structural changes (just new registrations) |
+
+### Modified by Delimiter Standardization (Phase D)
+
+| File | Changes | Phase | Status |
+|------|---------|-------|--------|
+| `VanillaStrategy.kt` | Phase D: ContextDelimiters h1 for IDENTITY, INSTRUCTIONS, SUBSCRIBED SESSIONS with PROTECTED badges and closing tags. Gathered contexts pre-wrapped. Extracted shared `buildSubscribedSessionsContent()` and `buildPrivateSubscribedSessionsContent()` helpers. | D | ✅ Shipped |
+| `MinimalStrategy.kt` | Phase D: ContextDelimiters h1 for SYSTEM INSTRUCTIONS with PROTECTED badge. Gathered contexts pre-wrapped. | D | ✅ Shipped |
+| `StateMachineStrategy.kt` | Phase D: ContextDelimiters h1 for IDENTITY, INSTRUCTIONS, STATE MACHINE, PHASE TRANSITION with PROTECTED badges and closing tags. Gathered contexts pre-wrapped. | D | ✅ Shipped |
+| `PrivateSessionStrategy.kt` | Phase B: private session lifecycle (unchanged). Phase D: ContextDelimiters h1 for IDENTITY, INSTRUCTIONS, PRIVATE SESSION ROUTING, SUBSCRIBED SESSIONS with participant-aware h2. | B+D | ✅ Shipped |
+| `HKGStrategy.kt` | Phase C: HKG integration (unchanged). Phase D: ContextDelimiters h1, explicit ordering of HKG INDEX/FILES, HKG NAVIGATION section, gathered contexts pre-wrapped. | C+D | ✅ Shipped |
+| `HkgContextFormatter.kt` | Phase C: two-partition INDEX+FILES view. Phase D: removed self-wrapping h1 (pipeline adds it), individual files use ContextDelimiters.h2() with token counts and [EXPANDED] state. | C+D | ✅ Shipped |
 
 ---
 
@@ -1022,6 +1087,13 @@ Compose all capabilities.
 │  │ - buildBudgetReport  │                                              │
 │  │ - buildPartition()   │                                              │
 │  └─────────────────────┘                                               │
+│  ┌─────────────────────┐                                               │
+│  │ ContextDelimiters    │                                              │
+│  │ - h1/h2/h3/h4()     │                                              │
+│  │ - wrapSystemPrompt() │                                              │
+│  │ - approxTokens()     │                                              │
+│  │ - roundTokensUp()    │                                              │
+│  └─────────────────────┘                                               │
 └────────────────────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -1072,3 +1144,10 @@ Compose all capabilities.
 | 29 | Collapsed content in contextMap | Collapsed partitions emit a summary string into the contextMap (not removed). Strategies see "[PARTITION_NAME collapsed — use CONTEXT_UNCOLLAPSE to expand.]" and can reference it. Blank collapsed content is omitted. |
 | 30 | Budget report self-protection | CONTEXT_BUDGET partition has priority 1000 and isAutoCollapsible = false. The report is never collapsed by the system it reports on. |
 | 31 | Budget UI token convention | Agent Manager shows all three budget fields as approximate tokens. Conversion (×4 / ÷4) happens at the UI boundary. Internal state and persistence remain in chars. Consistent with §2.2. |
+| 32 | Delimiter uniqueness | `- [ ] -` for h1 and `--- ---` for h2+ are chosen to never naturally occur in agent-generated content, HKG JSON, or markdown. Avoids false-positive parsing by both pipeline and agent. |
+| 33 | Pipeline-owned h1 wrapping | The pipeline wraps each contextMap entry with `ContextDelimiters.h1()` + `h1End()` after collapse. Strategies receive pre-wrapped gathered contexts. Eliminates formatting duplication and guarantees accurate token counts. |
+| 34 | Pipeline-owned system prompt wrapper | `[[[ - SYSTEM PROMPT - ]]]` is added by the pipeline after `prepareSystemPrompt()`. Strategies never see the outer wrapper. No duplication across strategies. |
+| 35 | Strategy-owned internal sections | Strategies use `ContextDelimiters.h1()` for their own sections (IDENTITY, INSTRUCTIONS, etc.) with `[PROTECTED]` badge. Not collapsible by the budget system. |
+| 36 | Session truncation direction | CONVERSATION_LOG truncates from the START (oldest messages removed). All other partitions truncate from the END. Direction indicated in sentinel message and budget report. |
+| 37 | Token rounding spec | `roundTokensUp()` rounds to 2 significant figures with minimum granularity of 10. Examples: 2389→2400, 551→560, 8→10, 0→0. Used everywhere tokens are displayed. |
+| 38 | Shared strategy helpers | `buildSubscribedSessionsContent()` and `buildPrivateSubscribedSessionsContent()` extracted to VanillaStrategy.kt with `internal` visibility. Reused by all strategies that show session awareness. Avoids duplication while maintaining strategy decoupling (helpers are in `strategies` package, not imported cross-strategy). |
