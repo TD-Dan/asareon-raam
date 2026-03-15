@@ -1250,16 +1250,18 @@ class AgentRuntimeFeature(
         val formatted = formatResponseForSession(action)
 
         if (formatted != null) {
-            val sessionHandle = resolveSessionHandle(pending.sessionId, store) ?: run {
-                platformDependencies.log(LogLevel.ERROR, identity.handle,
-                    "routeCommandResponseToSession: Session UUID '${pending.sessionId}' not in registry. Cannot deliver.")
-                return
-            }
+            // The sessionId from CommandBot (via MESSAGE_POSTED) is the session's
+            // localHandle (e.g., "pet-studies"), not a UUID. Pass it through directly
+            // to DELIVER_TO_SESSION → CommandBot.postRawToSession → SESSION_POST,
+            // which accepts localHandles for session identification.
+            // Note: resolveSessionHandle(findByUUID) cannot be used here because
+            // the sessionId is a localHandle, not a UUID.
+            val sessionId = pending.sessionId.uuid
             store.deferredDispatch(identity.handle, Action(
                 ActionRegistry.Names.COMMANDBOT_DELIVER_TO_SESSION,
                 buildJsonObject {
                     put("correlationId", pending.correlationId)
-                    put("sessionId", sessionHandle)
+                    put("sessionId", sessionId)
                     put("message", formatted)
                 }
             ))
