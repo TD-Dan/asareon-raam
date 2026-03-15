@@ -618,6 +618,31 @@ class CommandBotFeature(
         val actionName = language.removePrefix("auf_")
         val isAgent = isAgent(originalSenderId, store)
 
+        // --- Descriptor lookup & hidden guard ---
+        // Reject unknown and hidden actions before any further processing.
+        // Hidden actions are public (dispatchable by features) but not user/agent-invocable.
+        val descriptor = ActionRegistry.byActionName[actionName]
+        if (descriptor == null) {
+            postFeedbackToSession(
+                sessionId,
+                "[COMMAND BOT ERROR] Unknown action: '$actionName'",
+                store
+            )
+            return
+        }
+        if (descriptor.hidden) {
+            platformDependencies.log(
+                LogLevel.WARN, identity.handle,
+                "Blocked hidden action '$actionName' from '$originalSenderId'. Hidden actions are not user/agent-invocable."
+            )
+            postFeedbackToSession(
+                sessionId,
+                "[COMMAND BOT] Action '$actionName' is not available.",
+                store
+            )
+            return
+        }
+
         try {
             var payloadJson = if (code.isNotBlank()) {
                 json.parseToJsonElement(code) as JsonObject

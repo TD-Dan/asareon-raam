@@ -180,11 +180,20 @@ tasks.register("generateActionRegistry") {
                         val publicFlag = obj["public"]?.jsonPrimitive?.content?.toBoolean() ?: false
                         val broadcastFlag = obj["broadcast"]?.jsonPrimitive?.content?.toBoolean() ?: false
                         val targetedFlag = obj["targeted"]?.jsonPrimitive?.content?.toBoolean() ?: false
+                        val hiddenFlag = obj["hidden"]?.jsonPrimitive?.content?.toBoolean() ?: false
 
                         // Validate: targeted + broadcast is forbidden
                         if (targetedFlag && broadcastFlag) {
                             throw GradleException(
                                 "Action '$actionName' in ${manifestFile.path} has both targeted=true and broadcast=true. These are mutually exclusive."
+                            )
+                        }
+
+                        // Validate: hidden is only meaningful on public actions
+                        if (hiddenFlag && !publicFlag) {
+                            throw GradleException(
+                                "Action '$actionName' in ${manifestFile.path} has hidden=true but public=false. " +
+                                        "Hidden is only meaningful on public actions (non-public actions are already feature-restricted)."
                             )
                         }
 
@@ -273,6 +282,7 @@ tasks.register("generateActionRegistry") {
                             "public" to publicFlag,
                             "broadcast" to broadcastFlag,
                             "targeted" to targetedFlag,
+                            "hidden" to hiddenFlag,
                             "payloadFields" to payloadFields,
                             "requiredFields" to requiredFields,
                             "autoFillRules" to autoFillRules,
@@ -396,6 +406,7 @@ tasks.register("generateActionRegistry") {
                 |                    public = ${action["public"]},
                 |                    broadcast = ${action["broadcast"]},
                 |                    targeted = ${action["targeted"]},
+                |                    hidden = ${action["hidden"]},
                 |                    payloadFields = $fieldsStr,
                 |                    requiredFields = $reqFieldsStr,
                 |                    autoFillRules = $autoFillStr,
@@ -475,6 +486,7 @@ tasks.register("generateActionRegistry") {
             |        val public: Boolean,
             |        val broadcast: Boolean,
             |        val targeted: Boolean,
+            |        val hidden: Boolean = false,
             |        val payloadFields: List<PayloadField>,
             |        val requiredFields: List<String>,
             |        val autoFillRules: Map<String, String> = emptyMap(),
@@ -489,6 +501,8 @@ tasks.register("generateActionRegistry") {
             |        val isInternal: Boolean get() = !public && !broadcast && !targeted
             |        /** A Response is a restricted-origin targeted delivery (reply to a requester). */
             |        val isResponse: Boolean get() = !public && targeted
+            |        /** A hidden action is public but not discoverable by users or agents. Feature-to-feature only. */
+            |        val isHiddenCommand: Boolean get() = public && hidden
             |    }
             |
             |    data class FeatureDescriptor(
@@ -522,6 +536,11 @@ tasks.register("generateActionRegistry") {
             |    /** All action descriptors keyed by full action name (e.g., "session.POST"). */
             |    val byActionName: Map<String, ActionDescriptor> = features.values
             |        .flatMap { it.actions.values }.associateBy { it.fullName }
+            |
+            |    /** Actions visible to users and agents (excludes hidden actions). */
+            |    val visibleActions: Map<String, ActionDescriptor> = byActionName.values
+            |        .filter { !it.hidden }
+            |        .associateBy { it.fullName }
             |
             |    /** Auto-fill rules for agent actions (field name → template). */
             |    val agentAutoFillRules: Map<String, Map<String, String>> = byActionName.values

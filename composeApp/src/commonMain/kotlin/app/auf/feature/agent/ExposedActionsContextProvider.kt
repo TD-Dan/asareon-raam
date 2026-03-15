@@ -66,6 +66,8 @@ object ExposedActionsContextProvider {
             .filter { desc ->
                 // Must be public (agents dispatch cross-feature)
                 desc.public &&
+                        // Must not be hidden (feature-to-feature only, not agent-invocable)
+                        !desc.hidden &&
                         // Must have declared required_permissions
                         desc.requiredPermissions != null &&
                         // Agent must have YES for all required permissions
