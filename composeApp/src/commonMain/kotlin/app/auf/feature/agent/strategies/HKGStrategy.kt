@@ -173,6 +173,56 @@ object HKGStrategy : CognitiveStrategy {
         )
     )
 
+    /**
+     * After an HKG agent is created, ensure its knowledge graph reservation
+     * is bootstrapped.
+     */
+    override fun onAgentRegistered(agent: AgentInstance, store: Store) {
+        val agentState = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
+        ensureInfrastructure(agent, agentState, store)
+    }
+
+    /**
+     * Detects HKG-specific configuration transitions:
+     * - KG assignment: reserve the HKG
+     * - KG revocation: release the HKG
+     */
+    override fun onAgentConfigChanged(old: AgentInstance, new: AgentInstance, store: Store) {
+        val oldKgId = getKnowledgeGraphId(old)
+        val newKgId = getKnowledgeGraphId(new)
+
+        // KG assigned
+        if (newKgId != null && oldKgId == null) {
+            store.deferredDispatch(new.identityHandle.handle, Action(
+                ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG,
+                buildJsonObject { put("personaId", newKgId) }
+            ))
+        }
+
+        // KG revoked
+        if (oldKgId != null && newKgId == null) {
+            store.deferredDispatch(new.identityHandle.handle, Action(
+                ActionRegistry.Names.KNOWLEDGEGRAPH_RELEASE_HKG,
+                buildJsonObject { put("personaId", oldKgId) }
+            ))
+        }
+    }
+
+    /**
+     * Ensures the HKG reservation exists for this agent. Idempotent —
+     * called on heartbeat ticks and after config changes.
+     */
+    override fun ensureInfrastructure(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
+        val kgId = getKnowledgeGraphId(agent) ?: return
+
+        if (!agentState.hkgReservedIds.contains(kgId)) {
+            store.deferredDispatch(agent.identityHandle.handle, Action(
+                ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG,
+                buildJsonObject { put("personaId", kgId) }
+            ))
+        }
+    }
+
     override fun validateConfig(agent: AgentInstance): AgentInstance {
         val outputId = agent.outputSessionId
         return when {

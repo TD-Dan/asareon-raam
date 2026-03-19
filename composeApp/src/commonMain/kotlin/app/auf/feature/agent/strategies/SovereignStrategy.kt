@@ -346,7 +346,7 @@ object SovereignStrategy : CognitiveStrategy {
 
         // Just became Sovereign (KG assigned)
         if (newKgId != null && oldKgId == null) {
-            store.deferredDispatch("agent", Action(
+            store.deferredDispatch(new.identityHandle.handle, Action(
                 ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG,
                 buildJsonObject { put("personaId", newKgId) }
             ))
@@ -365,7 +365,7 @@ object SovereignStrategy : CognitiveStrategy {
                     })
                 }
             ))
-            store.deferredDispatch("agent", Action(
+            store.deferredDispatch(new.identityHandle.handle, Action(
                 ActionRegistry.Names.KNOWLEDGEGRAPH_RELEASE_HKG,
                 buildJsonObject { put("personaId", oldKgId) }
             ))
@@ -390,7 +390,7 @@ object SovereignStrategy : CognitiveStrategy {
 
         // 1. HKG Reservation — ensure reservation exists
         if (!agentState.hkgReservedIds.contains(kgId)) {
-            store.deferredDispatch("agent", Action(
+            store.deferredDispatch(agent.identityHandle.handle, Action(
                 ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG,
                 buildJsonObject { put("personaId", kgId) }
             ))
