@@ -30,6 +30,8 @@ import app.auf.core.resolveDisplayColor
 import app.auf.core.generated.ActionRegistry
 import app.auf.ui.components.IconRegistry
 import app.auf.util.PlatformDependencies
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -285,7 +287,34 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
         }
     }
 
-    fun dispatchDraftChange(newText: String) {
+    // ── Debounced draft dispatch ──────────────────────────────────────────
+    // Typing updates the local TextFieldValue immediately for a responsive UI,
+    // but the store action is throttled to fire at most once every 2 seconds.
+    // This prevents log spam and unnecessary reducer churn on every keystroke.
+    val draftDebounceScope = rememberCoroutineScope()
+    var draftDebounceJob by remember { mutableStateOf<Job?>(null) }
+
+    // Flush any pending debounced draft when switching sessions or unmounting,
+    // so the store always has the latest text before navigating away.
+    DisposableEffect(sessionLocalHandle) {
+        onDispose {
+            if (draftDebounceJob?.isActive == true) {
+                draftDebounceJob?.cancel()
+                store.dispatch("session", Action(
+                    ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED,
+                    buildJsonObject {
+                        put("sessionId", sessionLocalHandle)
+                        put("draft", textFieldValue.text)
+                    }
+                ))
+            }
+        }
+    }
+
+    /** Dispatches INPUT_DRAFT_CHANGED immediately (no debounce). */
+    fun dispatchDraftChangeImmediate(newText: String) {
+        draftDebounceJob?.cancel()
+        draftDebounceJob = null
         store.dispatch("session", Action(
             ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED,
             buildJsonObject {
@@ -295,10 +324,32 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
         ))
     }
 
-    /** Sets the local TextFieldValue with the cursor at the end and dispatches the draft change. */
+    /**
+     * Debounced draft dispatch — schedules a store update after a 2-second quiet period.
+     * Called on every keystroke; only the trailing edge fires.
+     */
+    fun dispatchDraftChange(newText: String) {
+        draftDebounceJob?.cancel()
+        draftDebounceJob = draftDebounceScope.launch {
+            delay(2_000)
+            store.dispatch("session", Action(
+                ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED,
+                buildJsonObject {
+                    put("sessionId", sessionLocalHandle)
+                    put("draft", newText)
+                }
+            ))
+        }
+    }
+
+    /**
+     * Sets the local TextFieldValue with the cursor at the end and dispatches
+     * the draft change **immediately** (used by slash-command completions and
+     * programmatic text changes that need instant store synchronisation).
+     */
     fun setTextAndDispatch(newText: String) {
         textFieldValue = TextFieldValue(newText, TextRange(newText.length))
-        dispatchDraftChange(newText)
+        dispatchDraftChangeImmediate(newText)
     }
 
     val engine = remember(
@@ -600,7 +651,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
 
                             // ── Ctrl+Enter to send ──
                             if (event.key == Key.Enter && (event.isCtrlPressed || event.isMetaPressed)) {
-                                if (textFieldValue.text.isNotBlank()) { onSend(textFieldValue.text); acState = null; editMode = false }
+                                if (textFieldValue.text.isNotBlank()) { draftDebounceJob?.cancel(); onSend(textFieldValue.text); acState = null; editMode = false }
                                 return@onPreviewKeyEvent true
                             }
 
@@ -712,7 +763,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                         }
                     }
                 }
-                IconButton(onClick = { if (textFieldValue.text.isNotBlank()) { onSend(textFieldValue.text); acState = null; editMode = false } }, enabled = textFieldValue.text.isNotBlank()) {
+                IconButton(onClick = { if (textFieldValue.text.isNotBlank()) { draftDebounceJob?.cancel(); onSend(textFieldValue.text); acState = null; editMode = false } }, enabled = textFieldValue.text.isNotBlank()) {
                     Icon(Icons.AutoMirrored.Filled.Send, "Send")
                 }
             }
