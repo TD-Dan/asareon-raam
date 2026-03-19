@@ -28,6 +28,8 @@ import androidx.compose.animation.shrinkVertically
 import app.auf.core.*
 import app.auf.core.resolveDisplayColor
 import app.auf.core.generated.ActionRegistry
+import app.auf.feature.core.AppLifecycle
+import app.auf.feature.core.CoreState
 import app.auf.ui.components.IconRegistry
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.Job
@@ -294,19 +296,23 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
     val draftDebounceScope = rememberCoroutineScope()
     var draftDebounceJob by remember { mutableStateOf<Job?>(null) }
 
-    // Flush any pending debounced draft when switching sessions or unmounting,
-    // so the store always has the latest text before navigating away.
+    // Flush any pending debounced draft when switching sessions.
+    // During app shutdown, the feature layer handles flushing via SYSTEM_CLOSING,
+    // so we skip the dispatch if the lifecycle has moved past RUNNING.
     DisposableEffect(sessionLocalHandle) {
         onDispose {
             if (draftDebounceJob?.isActive == true) {
                 draftDebounceJob?.cancel()
-                store.dispatch("session", Action(
-                    ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED,
-                    buildJsonObject {
-                        put("sessionId", sessionLocalHandle)
-                        put("draft", textFieldValue.text)
-                    }
-                ))
+                val lifecycle = (store.state.value.featureStates["core"] as? CoreState)?.lifecycle
+                if (lifecycle == AppLifecycle.RUNNING) {
+                    store.dispatch("session", Action(
+                        ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED,
+                        buildJsonObject {
+                            put("sessionId", sessionLocalHandle)
+                            put("draft", textFieldValue.text)
+                        }
+                    ))
+                }
             }
         }
     }

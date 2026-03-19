@@ -53,6 +53,14 @@ class CoreFeatureT1ReducerTest {
         assertEquals(AppLifecycle.CLOSING, newState?.lifecycle)
     }
 
+    @Test
+    fun `reducer transitions to SHUTDOWN on SYSTEM_SHUTDOWN`() {
+        val initialState = CoreState(lifecycle = AppLifecycle.CLOSING)
+        val action = Action(ActionRegistry.Names.SYSTEM_SHUTDOWN)
+        val newState = feature.reducer(initialState, action) as? CoreState
+        assertEquals(AppLifecycle.SHUTDOWN, newState?.lifecycle)
+    }
+
     // ================================================================
     // State Mutation Reducer Tests
     // ================================================================

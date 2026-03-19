@@ -21,7 +21,15 @@
     },
     {
       "action_name": "system.CLOSING",
-      "summary": "Dispatched when the user requests to close the application. Features can listen for this to perform any necessary cleanup before the process terminates.",
+      "summary": "Dispatched when the user requests to close the application. The lifecycle transitions to CLOSING, which still permits normal action dispatch. Features MUST use this signal to flush any unsaved transient state (e.g., debounced writes, dirty caches) via deferredDispatch. All deferred actions will drain before the host dispatches SHUTDOWN.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "required_permissions": []
+    },
+    {
+      "action_name": "system.SHUTDOWN",
+      "summary": "The final action dispatched at shutdown, after CLOSING has fully drained. Transitions the lifecycle to SHUTDOWN which is a hard lockdown — no further actions are accepted. The host MUST dispatch this only after the CLOSING dispatch has returned (ensuring all cleanup actions have been processed).",
       "public": false,
       "broadcast": true,
       "targeted": false,

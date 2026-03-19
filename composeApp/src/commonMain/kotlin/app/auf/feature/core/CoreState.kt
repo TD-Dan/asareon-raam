@@ -13,7 +13,8 @@ enum class AppLifecycle {
     BOOTING,                // The initial state before any actions are dispatched.
     INITIALIZING,           // The stage for registering settings and loading from disk.
     RUNNING,                // The application is fully hydrated and operational.
-    CLOSING                 // The application is shutting down.
+    CLOSING,                // Features flush unsaved state; normal actions still permitted.
+    SHUTDOWN                // Hard lockdown — no further actions accepted.
 }
 
 /**

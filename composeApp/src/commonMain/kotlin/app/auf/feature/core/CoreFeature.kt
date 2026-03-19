@@ -897,6 +897,7 @@ class CoreFeature(
             ActionRegistry.Names.SYSTEM_INITIALIZING -> return coreState.copy(lifecycle = AppLifecycle.INITIALIZING)
             ActionRegistry.Names.SYSTEM_STARTING -> return coreState.copy(lifecycle = AppLifecycle.RUNNING)
             ActionRegistry.Names.SYSTEM_CLOSING -> return coreState.copy(lifecycle = AppLifecycle.CLOSING)
+            ActionRegistry.Names.SYSTEM_SHUTDOWN -> return coreState.copy(lifecycle = AppLifecycle.SHUTDOWN)
             ActionRegistry.Names.CORE_SET_ACTIVE_VIEW -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SetActiveViewPayload>(it) }
                 return payload?.let { coreState.copy(activeViewKey = it.key) } ?: coreState

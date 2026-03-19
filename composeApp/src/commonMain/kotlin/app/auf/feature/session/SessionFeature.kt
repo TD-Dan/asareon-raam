@@ -210,6 +210,18 @@ class SessionFeature(
                 }))
             }
 
+            // ── Graceful shutdown: flush all pending draft writes immediately ──────
+            ActionRegistry.Names.SYSTEM_CLOSING -> {
+                // Cancel all debounce timers — we're writing everything now.
+                draftDebounceJobs.values.forEach { it.cancel() }
+                draftDebounceJobs.clear()
+                // Persist every session's input state that has draft content or history.
+                // This ensures no data is lost even if the UI debounce hadn't fired yet.
+                sessionState.sessions.keys.forEach { localHandle ->
+                    persistInputState(localHandle, sessionState, store)
+                }
+            }
+
             // Phase 4: SESSION_CREATE and SESSION_CLONE now dispatch REGISTER_IDENTITY for pending creations
             ActionRegistry.Names.SESSION_CREATE, ActionRegistry.Names.SESSION_CLONE -> {
                 val prevPending = (previousState as? SessionState)?.pendingCreations ?: emptyMap()

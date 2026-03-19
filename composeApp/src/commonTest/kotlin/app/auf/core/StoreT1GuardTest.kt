@@ -125,15 +125,18 @@ class StoreT1GuardTest {
     }
 
     @Test
-    fun `store guard blocks normal actions when CLOSING`() {
+    fun `store guard allows normal actions when CLOSING`() {
         val store = createStore(CoreState(lifecycle = AppLifecycle.CLOSING))
         val initialState = store.state.value
-        store.dispatch("test.feature", Action("test.INCREMENT"))
-        assertEquals(initialState, store.state.value, "State should not have changed during CLOSING.")
+        store.dispatch("testfeature", Action("test.INCREMENT"))
+        val finalState = store.state.value
+        assertNotEquals(initialState, finalState, "Normal actions should be allowed during CLOSING (flush phase).")
+        val testState = finalState.featureStates["testfeature"] as TestState
+        assertEquals(1, testState.value, "State should reflect the increment.")
     }
 
     @Test
-    fun `store guard allows SYSTEM_CLOSING when CLOSING`() {
+    fun `store guard blocks re-entry of SYSTEM_CLOSING when CLOSING`() {
         platform.capturedLogs.clear()
         val store = createStore(CoreState(lifecycle = AppLifecycle.CLOSING))
         store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_CLOSING))
@@ -141,7 +144,65 @@ class StoreT1GuardTest {
         val lifecycleError = platform.capturedLogs.find {
             it.level == LogLevel.ERROR && it.message.contains("invalid lifecycle state")
         }
-        assertNull(lifecycleError, "system.CLOSING should be allowed during CLOSING lifecycle.")
+        assertNotNull(lifecycleError, "system.CLOSING should be blocked during CLOSING lifecycle (no re-entry).")
+    }
+
+    @Test
+    fun `store guard blocks SYSTEM_INITIALIZING when CLOSING`() {
+        platform.capturedLogs.clear()
+        val store = createStore(CoreState(lifecycle = AppLifecycle.CLOSING))
+        store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
+
+        val lifecycleError = platform.capturedLogs.find {
+            it.level == LogLevel.ERROR && it.message.contains("invalid lifecycle state")
+        }
+        assertNotNull(lifecycleError, "system.INITIALIZING should be blocked during CLOSING lifecycle.")
+    }
+
+    @Test
+    fun `store guard blocks SYSTEM_STARTING when CLOSING`() {
+        platform.capturedLogs.clear()
+        val store = createStore(CoreState(lifecycle = AppLifecycle.CLOSING))
+        store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_STARTING))
+
+        val lifecycleError = platform.capturedLogs.find {
+            it.level == LogLevel.ERROR && it.message.contains("invalid lifecycle state")
+        }
+        assertNotNull(lifecycleError, "system.STARTING should be blocked during CLOSING lifecycle.")
+    }
+
+    @Test
+    fun `store guard allows SYSTEM_SHUTDOWN when CLOSING`() {
+        platform.capturedLogs.clear()
+        val store = createStore(CoreState(lifecycle = AppLifecycle.CLOSING))
+        store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_SHUTDOWN))
+
+        val lifecycleError = platform.capturedLogs.find {
+            it.level == LogLevel.ERROR && it.message.contains("invalid lifecycle state")
+        }
+        assertNull(lifecycleError, "system.SHUTDOWN should be allowed during CLOSING lifecycle.")
+        val finalCoreState = store.state.value.featureStates["core"] as CoreState
+        assertEquals(AppLifecycle.SHUTDOWN, finalCoreState.lifecycle, "Lifecycle should transition to SHUTDOWN.")
+    }
+
+    @Test
+    fun `store guard blocks normal actions when SHUTDOWN`() {
+        val store = createStore(CoreState(lifecycle = AppLifecycle.SHUTDOWN))
+        val initialState = store.state.value
+        store.dispatch("testfeature", Action("test.INCREMENT"))
+        assertEquals(initialState, store.state.value, "State should not have changed during SHUTDOWN.")
+    }
+
+    @Test
+    fun `store guard allows SYSTEM_SHUTDOWN when SHUTDOWN`() {
+        platform.capturedLogs.clear()
+        val store = createStore(CoreState(lifecycle = AppLifecycle.SHUTDOWN))
+        store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_SHUTDOWN))
+
+        val lifecycleError = platform.capturedLogs.find {
+            it.level == LogLevel.ERROR && it.message.contains("invalid lifecycle state")
+        }
+        assertNull(lifecycleError, "system.SHUTDOWN should be allowed during SHUTDOWN lifecycle (idempotent).")
     }
 
     @Test
