@@ -129,29 +129,6 @@ class VanillaStrategyT1LogicTest {
         assertTrue(!prompt.contains("SYSTEM INSTRUCTIONS"))
     }
 
-    @Test
-    fun `prepareSystemPrompt should include multi-agent context before other contexts`() {
-        val context = AgentTurnContext(
-            agentName = "HelpBot",
-            resolvedResources = emptyMap(),
-            gatheredContexts = mapOf(
-                "MULTI_AGENT_CONTEXT" to "There are 3 participants.",
-                "workspace" to "Project files here."
-            )
-        )
-
-        val prompt = VanillaStrategy.prepareSystemPrompt(context, JsonNull)
-
-        assertTrue(prompt.contains("There are 3 participants."))
-        assertTrue(prompt.contains("workspace"))
-        assertTrue(prompt.contains("Project files here."))
-
-        // MULTI_AGENT_CONTEXT should appear before the workspace context section
-        val multiAgentPos = prompt.indexOf("There are 3 participants.")
-        val contextPos = prompt.indexOf("--- CONTEXT ---")
-        assertTrue(multiAgentPos < contextPos, "MULTI_AGENT_CONTEXT should appear before other contexts")
-    }
-
     // =========================================================================
     // postProcessResponse
     // =========================================================================

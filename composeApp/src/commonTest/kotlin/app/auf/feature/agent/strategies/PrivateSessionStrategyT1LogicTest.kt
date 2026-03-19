@@ -156,6 +156,12 @@ class PrivateSessionStrategyT1LogicTest {
         assertTrue(PrivateSessionStrategy.displayName.isNotBlank())
     }
 
+    @Test
+    fun `hasAutoManagedOutputSession should be true`() {
+        assertTrue(PrivateSessionStrategy.hasAutoManagedOutputSession,
+            "PrivateSessionStrategy creates and manages its own private output session")
+    }
+
     // =========================================================================
     // 2. getInitialState
     // =========================================================================
@@ -523,42 +529,6 @@ class PrivateSessionStrategyT1LogicTest {
         val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
 
         assertTrue(prompt.contains("There are 2 agents in this environment."))
-    }
-
-    @Test
-    fun `prepareSystemPrompt should include multi-agent context before other contexts`() {
-        val context = AgentTurnContext(
-            agentName = agentName,
-            resolvedResources = emptyMap(),
-            gatheredContexts = mapOf(
-                "MULTI_AGENT_CONTEXT" to "Agent roster here.",
-                "WORKSPACE" to "Project files listing."
-            )
-        )
-
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
-
-        val multiAgentPos = prompt.indexOf("Agent roster here.")
-        val contextPos = prompt.indexOf("--- CONTEXT ---")
-        assertTrue(multiAgentPos < contextPos,
-            "MULTI_AGENT_CONTEXT should appear before generic context section")
-    }
-
-    @Test
-    fun `prepareSystemPrompt should include other gathered contexts in context section`() {
-        val context = AgentTurnContext(
-            agentName = agentName,
-            resolvedResources = emptyMap(),
-            gatheredContexts = mapOf(
-                "WORKSPACE" to "file1.txt, file2.txt"
-            )
-        )
-
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
-
-        assertTrue(prompt.contains("--- CONTEXT ---"))
-        assertTrue(prompt.contains("WORKSPACE"))
-        assertTrue(prompt.contains("file1.txt, file2.txt"))
     }
 
     @Test

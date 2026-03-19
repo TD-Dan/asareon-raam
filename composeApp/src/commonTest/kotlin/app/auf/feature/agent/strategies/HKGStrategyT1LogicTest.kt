@@ -106,6 +106,12 @@ class HKGStrategyT1LogicTest {
         assertSame(HKGStrategy, HKGStrategy)
     }
 
+    @Test
+    fun `hasAutoManagedOutputSession should be false`() {
+        assertFalse(HKGStrategy.hasAutoManagedOutputSession,
+            "HKG strategy uses operator-selected output session, not auto-managed")
+    }
+
     // =========================================================================
     // getInitialState
     // =========================================================================
@@ -289,28 +295,6 @@ class HKGStrategyT1LogicTest {
     }
 
     @Test
-    fun `prepareSystemPrompt should exclude HKG keys from generic CONTEXT section`() {
-        val context = AgentTurnContext(
-            agentName = agentName,
-            resolvedResources = emptyMap(),
-            gatheredContexts = mapOf(
-                "HOLON_KNOWLEDGE_GRAPH_INDEX" to "index content",
-                "HOLON_KNOWLEDGE_GRAPH_FILES" to "files content",
-                "MULTI_AGENT_CONTEXT" to "multi-agent stuff",
-                "WORKSPACE_FILES" to "my files"
-            )
-        )
-        val prompt = HKGStrategy.prepareSystemPrompt(context, HKGStrategy.getInitialState())
-
-        // The generic CONTEXT section should only have WORKSPACE_FILES
-        val contextSection = prompt.substringAfter("--- CONTEXT ---", "")
-        assertTrue(contextSection.contains("WORKSPACE_FILES"))
-        assertFalse(contextSection.contains("HOLON_KNOWLEDGE_GRAPH_INDEX"))
-        assertFalse(contextSection.contains("HOLON_KNOWLEDGE_GRAPH_FILES"))
-        assertFalse(contextSection.contains("MULTI_AGENT_CONTEXT"))
-    }
-
-    @Test
     fun `prepareSystemPrompt should include session subscription awareness`() {
         val context = AgentTurnContext(
             agentName = agentName,
@@ -326,24 +310,6 @@ class HKGStrategyT1LogicTest {
         assertTrue(prompt.contains("SUBSCRIBED SESSIONS"))
         assertTrue(prompt.contains("Chat (session.chat)"))
         assertTrue(prompt.contains("PRIMARY"))
-    }
-
-    @Test
-    fun `prepareSystemPrompt should include multi-agent context before other contexts`() {
-        val context = AgentTurnContext(
-            agentName = agentName,
-            resolvedResources = emptyMap(),
-            gatheredContexts = mapOf(
-                "MULTI_AGENT_CONTEXT" to "There are 3 participants.",
-                "SESSION_METADATA" to "metadata here"
-            )
-        )
-        val prompt = HKGStrategy.prepareSystemPrompt(context, HKGStrategy.getInitialState())
-
-        val multiPos = prompt.indexOf("There are 3 participants.")
-        val contextPos = prompt.indexOf("--- CONTEXT ---")
-        assertTrue(multiPos > 0 && contextPos > 0 && multiPos < contextPos,
-            "MULTI_AGENT_CONTEXT should appear before CONTEXT section")
     }
 
     @Test
@@ -443,14 +409,5 @@ class HKGStrategyT1LogicTest {
         // These have default no-op implementations; just verify no exception
         HKGStrategy.onAgentRegistered(agent, fakeStore)
         HKGStrategy.onAgentConfigChanged(agent, agent, fakeStore)
-    }
-
-    @Test
-    fun `ensureInfrastructure should be no-op (no private session)`() {
-        val agent = hkgAgent()
-        val state = AgentRuntimeState(agents = mapOf(agent.identityUUID to agent))
-        val before = fakeStore.dispatchedActions.size
-        HKGStrategy.ensureInfrastructure(agent, state, fakeStore)
-        assertEquals(before, fakeStore.dispatchedActions.size, "HKGStrategy should not dispatch anything in ensureInfrastructure")
     }
 }

@@ -369,15 +369,21 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     }
 
     // =========================================================================
-    // MESSAGE_POSTED — Avatar Card Tracking
+    // MESSAGE_POSTED — Avatar Card Filtering
+    //
+    // Avatar card state is managed exclusively by AGENT_AVATAR_MOVED.
+    // MESSAGE_POSTED must NOT update agentAvatarCardIds — doing so creates
+    // a race condition where late-arriving broadcasts overwrite newer entries.
+    // Avatar messages are filtered out early to prevent agent WAITING transitions.
     // =========================================================================
 
     @Test
-    fun `MESSAGE_POSTED with render_as_partial metadata should track avatar card`() {
+    fun `MESSAGE_POSTED with render_as_partial metadata should NOT update avatar card state`() {
         val agent = testAgent(AGENT_1, "Test", subscribedSessionIds = listOf(SESSION_1))
         val initialState = AgentRuntimeState(
             agents = mapOf(uid(AGENT_1) to agent),
-            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(status = AgentStatus.IDLE))
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(status = AgentStatus.IDLE)),
+            agentAvatarCardIds = emptyMap() // No existing avatar cards
         )
 
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
@@ -389,13 +395,19 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        assertEquals("avatar-msg-1", newState.agentAvatarCardIds[uid(AGENT_1)]?.get(uid(SESSION_1)))
+
+        // Avatar card state must NOT be updated — AGENT_AVATAR_MOVED is the sole authority
+        assertTrue(newState.agentAvatarCardIds.isEmpty(),
+            "MESSAGE_POSTED must not track avatar cards — AGENT_AVATAR_MOVED is the sole authority")
     }
 
     @Test
-    fun `MESSAGE_POSTED with avatar metadata resolves agent by handle`() {
+    fun `MESSAGE_POSTED with avatar metadata should not trigger WAITING transition`() {
         val agent = testAgent(AGENT_1, "Test", subscribedSessionIds = listOf(SESSION_1))
-        val initialState = AgentRuntimeState(agents = mapOf(uid(AGENT_1) to agent))
+        val initialState = AgentRuntimeState(
+            agents = mapOf(uid(AGENT_1) to agent),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(status = AgentStatus.IDLE))
+        )
 
         val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
             put("sessionId", SESSION_1); put("sessionUUID", SESSION_1)
@@ -406,7 +418,36 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         })
 
         val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
-        assertEquals("avatar-msg-2", newState.agentAvatarCardIds[uid(AGENT_1)]?.get(uid(SESSION_1)))
+
+        assertEquals(AgentStatus.IDLE, newState.agentStatuses[uid(AGENT_1)]?.status,
+            "Avatar messages must not trigger WAITING transition")
+    }
+
+    @Test
+    fun `MESSAGE_POSTED with avatar metadata should not overwrite existing AGENT_AVATAR_MOVED entries`() {
+        val agent = testAgent(AGENT_1, "Test", subscribedSessionIds = listOf(SESSION_1))
+        val initialState = AgentRuntimeState(
+            agents = mapOf(uid(AGENT_1) to agent),
+            agentStatuses = mapOf(uid(AGENT_1) to AgentStatusInfo(status = AgentStatus.IDLE)),
+            // AGENT_AVATAR_MOVED has already set this card — it is the authoritative entry
+            agentAvatarCardIds = mapOf(uid(AGENT_1) to mapOf(uid(SESSION_1) to "current-card-from-avatar-moved"))
+        )
+
+        // A late-arriving MESSAGE_POSTED broadcast for an OLD card
+        val action = Action(ActionRegistry.Names.SESSION_MESSAGE_POSTED, buildJsonObject {
+            put("sessionId", SESSION_1); put("sessionUUID", SESSION_1)
+            put("entry", buildJsonObject {
+                put("id", "old-stale-card"); put("senderId", AGENT_1); put("timestamp", 1000L)
+                put("metadata", buildJsonObject { put("render_as_partial", true) })
+            })
+        })
+
+        val newState = AgentRuntimeReducer.reduce(initialState, action, platform)
+
+        // The authoritative entry from AGENT_AVATAR_MOVED must be preserved
+        assertEquals("current-card-from-avatar-moved",
+            newState.agentAvatarCardIds[uid(AGENT_1)]?.get(uid(SESSION_1)),
+            "MESSAGE_POSTED must not overwrite entries set by AGENT_AVATAR_MOVED")
     }
 
     // =========================================================================
