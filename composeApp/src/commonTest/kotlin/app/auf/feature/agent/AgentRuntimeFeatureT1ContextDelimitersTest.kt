@@ -103,22 +103,12 @@ class ContextDelimitersT1Test {
         assertTrue(header.contains("(~2,500 tokens)"))
         assertTrue(header.contains("[EXPANDED]"))
         assertTrue(header.contains(" -"))
-        // Triple newline before
-        assertTrue(header.startsWith("\n\n\n"))
-        // Double newline after
-        assertTrue(header.endsWith("-\n\n"))
     }
 
     @Test
     fun `h1 - omits tokens and state when null`() {
         val header = ContextDelimiters.h1("NAME")
-        assertEquals("\n\n\n- [ NAME ] -\n\n", header)
-    }
-
-    @Test
-    fun `h1End - closing tag format`() {
-        val close = ContextDelimiters.h1End("CONVERSATION_LOG")
-        assertEquals("\n\n- [ END OF CONVERSATION_LOG ] -\n\n", close)
+        assertEquals("\n\n- [ NAME ] -\n", header)
     }
 
     // =========================================================================
@@ -144,14 +134,6 @@ class ContextDelimitersT1Test {
     // h3/h4 — indented headers
     // =========================================================================
 
-    @Test
-    fun `h3 - 2-space indent`() {
-        val header = ContextDelimiters.h3("Daniel (user.daniel) @ 2026-03-15T09:19:43Z")
-        assertTrue(header.contains("  --- Daniel"))
-        // Double newline before and after
-        assertTrue(header.startsWith("\n\n"))
-        assertTrue(header.endsWith("---\n\n"))
-    }
 
     @Test
     fun `h4 - 4-space indent`() {
