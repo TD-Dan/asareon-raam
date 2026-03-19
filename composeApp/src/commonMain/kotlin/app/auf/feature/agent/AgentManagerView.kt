@@ -1211,9 +1211,13 @@ private fun StrategySelector(agent: AgentInstance, onUpdate: (AgentInstance) -> 
                 DropdownMenuItem(text = { Text(strategy.displayName) }, onClick = {
                     // Reset cognitiveState to the new strategy's initial state on switch.
                     // Each strategy defines its own defaults — the core never inspects them.
+                    // Clear outputSessionId when switching to an auto-managed strategy —
+                    // the stale pointer from the previous strategy would block
+                    // ensureInfrastructure from creating the private session.
                     val updated = agent.copy(
                         cognitiveStrategyId = strategy.identityHandle,
-                        cognitiveState = strategy.getInitialState()
+                        cognitiveState = strategy.getInitialState(),
+                        outputSessionId = if (strategy.hasAutoManagedOutputSession) null else agent.outputSessionId
                     )
                     onUpdate(updated)
                     isExpanded = false
